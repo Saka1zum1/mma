@@ -108,10 +108,10 @@ jobs:
           LINUX_SIG=$(cat "$(find artifacts -name '*.AppImage.sig' | head -1)" 2>/dev/null || echo "")
 
           # Get filenames
-          WIN_FILE=$(find artifacts -name '*.nsis.exe' ! -name '*.sig' | head -1 | xargs -r basename)
-          MAC_ARM_FILE=$(find artifacts -path '*aarch64*' -name '*.dmg' ! -name '*.sig' | head -1 | xargs -r basename)
-          MAC_INTEL_FILE=$(find artifacts -path '*x86_64*' -name '*.dmg' ! -name '*.sig' | head -1 | xargs -r basename)
-          LINUX_FILE=$(find artifacts -name '*.AppImage' ! -name '*.sig' | head -1 | xargs -r basename)
+          WIN_FILE=$(basename "$(find artifacts -name '*.nsis.exe' ! -name '*.sig' | head -1)")
+          MAC_ARM_FILE=$(basename "$(find artifacts -path '*aarch64*' -name '*.dmg' ! -name '*.sig' | head -1)")
+          MAC_INTEL_FILE=$(basename "$(find artifacts -path '*x86_64*' -name '*.dmg' ! -name '*.sig' | head -1)")
+          LINUX_FILE=$(basename "$(find artifacts -name '*.AppImage' ! -name '*.sig' | head -1)")
 
           cat > latest.json <<EOF
           {
