@@ -14,7 +14,7 @@
 		"build:e2e": "set VITE_E2E=1&& cargo tauri build --debug --features e2e",
 		"test:e2e": "set MMA_TEST_DB=1&& wdio run wdio.conf.ts",
 		"test:e2e:log": "powershell -Command \"$f = 'test/logs/e2e-' + (Get-Date -Format 'yyyy-MM-ddTHH-mm-ss') + '.txt'; wdio run wdio.conf.ts 2>&1 | Tee-Object -FilePath $f\"",
-		"prepare": "husky"
+		"prepare": "husky || true"
 	},
 	"dependencies": {
 		"@deck.gl/core": "^9.3.1",
