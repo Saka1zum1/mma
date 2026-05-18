@@ -2,6 +2,7 @@ import { useState, useEffect, useId } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { useCurrentMap, useSelectedLocationIds } from "@/store/useMapStore";
 import { invoke } from "@tauri-apps/api/core";
+import { mmaBufUrl } from "@/lib/util/util";
 import { fmt } from "@/lib/util/format";
 
 interface Props {
@@ -14,8 +15,7 @@ enum ExportScope {
 }
 
 async function fetchExportFile(path: string): Promise<string> {
-	const clean = path.replace(/\\/g, "/");
-	const res = await fetch(`http://mma-buf.localhost/${clean}`);
+	const res = await fetch(mmaBufUrl(path));
 	return res.text();
 }
 

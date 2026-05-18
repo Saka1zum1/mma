@@ -14,6 +14,7 @@ import { openMapWindow } from "@/lib/window.add";
 import { log } from "@/lib/util/log";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { mmaBufUrl } from "@/lib/util/util";
 import { listen } from "@tauri-apps/api/event";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Dialog, DialogContent, useCloseDialog } from "@/components/primitives/Dialog";
@@ -484,8 +485,7 @@ export function BulkActions() {
 		setExporting(true);
 		try {
 			const path: string = await invoke("store_export_bulk_zip");
-			const clean = path.replace(/\\/g, "/");
-			const res = await fetch(`http://mma-buf.localhost/${clean}`);
+			const res = await fetch(mmaBufUrl(path));
 			const blob = await res.blob();
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement("a");

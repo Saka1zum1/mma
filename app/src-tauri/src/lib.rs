@@ -342,7 +342,8 @@ pub fn run() {
                     .unwrap(),
                 Err(e) => tauri::http::Response::builder()
                     .status(404)
-                    .body(format!("file not found: {e}").into_bytes())
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(format!("file not found: {clean} — {e}").into_bytes())
                     .unwrap(),
             }
         })

@@ -6,6 +6,7 @@ import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/l
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
 import { lookupStreetView, svThumbnailUrl, showToast, svSearchRadius } from "@/lib/sv/lookup.add";
 import { invoke } from "@tauri-apps/api/core";
+import { mmaBufUrl } from "@/lib/util/util";
 import { log } from "@/lib/util/log";
 import { useSetting } from "@/store/settings.add";
 import { CellManager } from "@/lib/render/CellManager";
@@ -1199,7 +1200,7 @@ export function MapEmbed() {
 			};
 			try {
 				const filePath: string = await invoke("store_fill_render_file", reqPayload);
-				const resp = await fetch(`http://mma-buf.localhost/${filePath}`);
+				const resp = await fetch(mmaBufUrl(filePath));
 				const buf = await resp.arrayBuffer();
 				const t1 = performance.now();
 				if (cancelled) return;

@@ -8,6 +8,7 @@ import { emit as emitEvent } from "@/lib/events";
 import { log } from "@/lib/util/log";
 import { ENRICHMENT_FIELD_DEFS } from "@/lib/data/fieldDefs.add";
 import { debugSpan } from "@/lib/util/debug";
+import { mmaBufUrl } from "@/lib/util/util";
 import type { CellDelta } from "@/lib/render/CellManager";
 
 type DeltaHandler = (delta: CellDelta) => void;
@@ -375,7 +376,7 @@ export function getActiveLocation(): Location | null {
 
 export async function fetchAllLocations(): Promise<Location[]> {
 	const path: string = await invoke("store_get_all_locations");
-	const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+	const res = await fetch(mmaBufUrl(path));
 	return res.json();
 }
 
@@ -737,8 +738,7 @@ async function applySelectionUpdate(updater: (m: MapData, sels: Selection[]) => 
 		selections[i] = { ...selections[i], count: result.counts[i] ?? 0 };
 	}
 	if (result.patchFile) {
-		const clean = result.patchFile.replace(/\\/g, "/");
-		const resp = await fetch(`http://mma-buf.localhost/${clean}`);
+		const resp = await fetch(mmaBufUrl(result.patchFile));
 		const buf = await resp.arrayBuffer();
 		const dv = new DataView(buf);
 		let off = 0;
