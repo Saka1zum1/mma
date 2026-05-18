@@ -331,7 +331,9 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("mma-buf", |_ctx, req| {
             let raw = req.uri().path().replace("%20", " ").replace("%3A", ":");
-            let clean = raw.trim_start_matches('/');
+            let trimmed = raw.trim_start_matches('/');
+            let clean = if trimmed.starts_with(|c: char| c.is_ascii_alphabetic())
+                && trimmed.as_bytes().get(1) == Some(&b':') { trimmed } else { &raw };
             match std::fs::read(clean) {
                 Ok(data) => tauri::http::Response::builder()
                     .header("Access-Control-Allow-Origin", "*")
