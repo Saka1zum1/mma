@@ -172,6 +172,20 @@ impl<'a> LocView<'a> {
         (all_selected, color_map)
     }
 
+    pub fn resolve_mask(
+        &self,
+        batch_test: impl Fn(usize) -> bool + Sync + Send,
+        add_test: impl Fn(usize, &Location) -> bool,
+    ) -> Vec<bool> {
+        let mut mask: Vec<bool> = (0..self.batch_rows)
+            .into_par_iter()
+            .with_min_len(CHUNK_SIZE)
+            .map(|i| self.is_alive(i) && batch_test(i))
+            .collect();
+        mask.extend(self.adds.iter().enumerate().map(|(j, loc)| add_test(j, loc)));
+        mask
+    }
+
     pub fn build_render_lookup(&self, render_id_to_index: &HashMap<u32, usize>) -> Vec<i32> {
         let n = self.batch_rows + self.adds.len();
         let mut lookup = vec![-1i32; n];
@@ -201,7 +215,6 @@ const INFORMATIONAL: u32 = 2;
 // Per-row test function for batch rows -- returns true if the row matches the selection.
 // Must be safe to call from multiple threads (reads only shared Arrow columns + overlay refs).
 fn test_batch_row(view: &LocView, i: usize, props: &SelectionProps) -> bool {
-    if !view.is_alive(i) { return false; }
     match props {
         SelectionProps::Everything => true,
         SelectionProps::Locations { locations, .. }
@@ -289,12 +302,7 @@ pub fn resolve_bitmask(view: &LocView, props: &SelectionProps) -> Vec<bool> {
         | SelectionProps::Manual { locations }
         | SelectionProps::ValidationState { locations, .. } => {
             let set: HashSet<u32> = locations.iter().copied().collect();
-            let mut mask: Vec<bool> = (0..view.batch_rows)
-                .into_par_iter()
-                .map(|i| view.is_alive(i) && set.contains(&view.id_at(i)))
-                .collect();
-            mask.extend(view.adds.iter().map(|loc| set.contains(&loc.id)));
-            return mask;
+            return view.resolve_mask(|i| set.contains(&view.id_at(i)), |_, loc| set.contains(&loc.id));
         }
         SelectionProps::Duplicates { distance } => {
             let mut mask = vec![false; n];
@@ -327,27 +335,12 @@ pub fn resolve_bitmask(view: &LocView, props: &SelectionProps) -> Vec<bool> {
                 return mask;
             }
             let inner = resolve_bitmask(view, &selections[0].props);
-            let mut mask: Vec<bool> = (0..view.batch_rows)
-                .into_par_iter()
-                .map(|i| view.is_alive(i) && !inner[i])
-                .collect();
-            mask.extend(view.adds.iter().enumerate().map(|(j, _)| !inner[view.batch_rows + j]));
-            return mask;
+            return view.resolve_mask(|i| !inner[i], |j, _| !inner[view.batch_rows + j]);
         }
         _ => {}
     }
 
-    // Parallel scan over batch rows
-    let mut mask: Vec<bool> = (0..view.batch_rows)
-        .into_par_iter()
-        .with_min_len(CHUNK_SIZE)
-        .map(|i| test_batch_row(view, i, props))
-        .collect();
-
-    // Sequential scan over overlay adds (usually small)
-    mask.extend(view.adds.iter().map(|loc| test_add_row(loc, props)));
-
-    mask
+    view.resolve_mask(|i| test_batch_row(view, i, props), |_, loc| test_add_row(loc, props))
 }
 
 pub fn mask_to_ids(view: &LocView, mask: &[bool]) -> Vec<u32> {
