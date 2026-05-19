@@ -44,10 +44,10 @@ import { loadGeoJSON } from "@/lib/util/loadGeoJSON.add";
 
 async function fitSelectionBounds(map: google.maps.Map, selection: Selection) {
 	if (selection.props.type === "Polygon") {
-		const coords = (selection.props.polygon.coordinates ?? []).flat();
+		const coords = selection.props.polygon.coordinates.flat();
 		if (coords.length === 0) return;
 		const bounds = new google.maps.LatLngBounds();
-		for (const [lng, lat] of coords) bounds.extend({ lat: lat!, lng: lng! });
+		for (const [lng, lat] of coords) bounds.extend({ lat, lng });
 		map.fitBounds(bounds, 100);
 		return;
 	}

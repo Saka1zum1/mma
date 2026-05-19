@@ -2,7 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { MapData, MapMeta, Location, Tag, WorkArea, ExtraFieldDef } from "@/types";
 import { emit as tauriEmit, listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
-import type { MutationResult_Serialize as MutationResult } from "@/bindings.gen";
+import type { MutationResult_Serialize as MutationResult, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
 import { emit as emitEvent } from "@/lib/events";
 import { log } from "@/lib/util/log";
 import { ENRICHMENT_FIELD_DEFS } from "@/lib/data/fieldDefs.add";
@@ -177,13 +177,6 @@ export function refreshAfterMutation() {
 	}
 	mapVersion++;
 	notify();
-	if (selections.length > 0) {
-		applySelectionUpdate((_, sels) => sels);
-	}
-	// NOTE: callers that remove locations must clear activeLocationId
-	// synchronously BEFORE calling this (see removeLocations). Undo/redo
-	// uses fullReset which re-fetches everything. Do NOT add an async
-	// store_has_location check here — it races with pending invoke()s.
 }
 
 export function useCurrentMap() {
@@ -379,11 +372,11 @@ export async function fetchAllLocations(): Promise<Location[]> {
 }
 
 export async function fetchLocation(id: number): Promise<Location | null> {
-	return cmd.storeGetLocation(id) as Promise<Location | null>;
+	return cmd.storeGetLocation(id);
 }
 
 export async function fetchLocationsByIds(ids: number[]): Promise<Location[]> {
-	return cmd.storeGetLocationsByIds(ids) as Promise<Location[]>;
+	return cmd.storeGetLocationsByIds(ids);
 }
 
 export function getSelections() {
@@ -529,6 +522,48 @@ function syncMutationResult(r: MutationResult) {
 		mapVersion++;
 		notify();
 	}
+	if (r.selectionSync) {
+		applySelectionSync(r.selectionSync);
+	}
+}
+
+async function applySelectionSync(sync: { counts: number[]; patchFile: string | null; selectedCount: number }) {
+	for (let i = 0; i < selections.length; i++) {
+		selections[i] = { ...selections[i], count: sync.counts[i] ?? 0 };
+	}
+	if (sync.patchFile) {
+		const resp = await fetch(mmaBufUrl(sync.patchFile));
+		const buf = await resp.arrayBuffer();
+		const dv = new DataView(buf);
+		let off = 0;
+		const numSels = dv.getUint8(off);
+		off += 1;
+		const selColors: [number, number, number][] = [];
+		for (let i = 0; i < numSels; i++) {
+			selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);
+			off += 3;
+		}
+		const numCells = dv.getUint8(off);
+		off += 1;
+		const cellEntries: { cellChar: string; locCount: number; masks: Uint8Array[] }[] = [];
+		for (let ci = 0; ci < numCells; ci++) {
+			const cellChar = String.fromCharCode(dv.getUint8(off));
+			off += 1;
+			const locCount = dv.getUint32(off, true);
+			off += 4;
+			const maskBytes = Math.ceil(locCount / 8);
+			const masks: Uint8Array[] = [];
+			for (let si = 0; si < numSels; si++) {
+				masks.push(new Uint8Array(buf, off, maskBytes));
+				off += maskBytes;
+			}
+			cellEntries.push({ cellChar, locCount, masks });
+		}
+		emitSelectionBitmasks(selColors, cellEntries);
+	}
+	selectionVersion++;
+	mapVersion++;
+	notify();
 }
 
 async function mutate(p: Promise<MutationResult>): Promise<MutationResult> {
@@ -574,7 +609,7 @@ export async function addLocations(locs: Location[], opts?: { hideInDelta?: bool
 
 export async function duplicateLocation(locId: number): Promise<number | null> {
 	if (!currentMap) return null;
-	const loc = await cmd.storeGetLocation(locId) as Location | null;
+	const loc = await cmd.storeGetLocation(locId);
 	if (!loc) return null;
 	const now = new Date().toISOString();
 	const clone: Location = { ...loc, id: 0, createdAt: now, modifiedAt: now };
@@ -628,7 +663,7 @@ export function updateLocation(locId: number, patch: Partial<Location>) {
 			if (activeLocationId === locId) {
 				cmd.storeGetLocation(locId)
 					.then((loc) => {
-						cachedActiveLocation = (loc as Location) ?? null;
+						cachedActiveLocation = loc ?? null;
 						mapVersion++;
 						notify();
 					})
@@ -662,7 +697,7 @@ export function patchLocationExtra(
 			() => {
 				if (activeLocationId === locId) {
 					cmd.storeGetLocation(locId).then((loc) => {
-						cachedActiveLocation = (loc as Location) ?? null;
+						cachedActiveLocation = loc ?? null;
 						mapVersion++;
 						notify();
 					});
@@ -675,7 +710,7 @@ export function patchLocationExtra(
 		send(extraPatch);
 	} else {
 		cmd.storeGetLocation(locId).then((loc) => {
-			send({ ...((loc as Location)?.extra || {}), ...extraPatch });
+			send({ ...(loc?.extra || {}), ...extraPatch });
 		});
 	}
 }
@@ -895,9 +930,9 @@ export async function setActiveLocation(id: number | null) {
 		log.error("[setActive] store_set_active failed:", e),
 	);
 	if (id) {
-		const loc = await cmd.storeGetLocation(id) as Location | null;
+		const loc = await cmd.storeGetLocation(id);
 		log.debug(`[setActive] store_get_location ipc=${(performance.now() - t0).toFixed(0)}ms`);
-		cachedActiveLocation = loc;
+		cachedActiveLocation = loc ?? null;
 		workArea = "location";
 	} else {
 		cachedActiveLocation = null;
@@ -1041,23 +1076,23 @@ export async function reorderTags(orderedIds: number[]) {
 export async function bulkAddTag(tagId: number) {
 	if (!currentMap || selectedLocationIds.size === 0) return;
 	const ids = [...selectedLocationIds];
-	const locs = await cmd.storeGetLocationsByIds(ids) as Location[];
-	const updates = locs
+	const locs = await cmd.storeGetLocationsByIds(ids);
+	const updates: [number, LocationPatch][] = locs
 		.filter((l) => !l.tags.includes(tagId))
 		.map((l) => [l.id, { tags: [...l.tags, tagId] }]);
 	if (updates.length === 0) return;
-	await mutate(cmd.storeUpdateLocations(updates as [number, Record<string, unknown>][], true));
+	await mutate(cmd.storeUpdateLocations(updates, true));
 	scheduleSave();
 }
 
 export async function bulkRemoveTag(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
-	const locs = await cmd.storeGetLocationsByIds(locationIds) as Location[];
-	const updates = locs
+	const locs = await cmd.storeGetLocationsByIds(locationIds);
+	const updates: [number, LocationPatch][] = locs
 		.filter((l) => l.tags.includes(tagId))
 		.map((l) => [l.id, { tags: l.tags.filter((t: number) => t !== tagId) }]);
 	if (updates.length === 0) return;
-	await mutate(cmd.storeUpdateLocations(updates as [number, Record<string, unknown>][], true));
+	await mutate(cmd.storeUpdateLocations(updates, true));
 	scheduleSave();
 }
 
@@ -1092,12 +1127,12 @@ export async function renameTagInSelection(tagId: number, newName: string) {
 		}]);
 	}
 
-	const locs = await cmd.storeGetLocationsByIds([...selectedLocationIds]) as Location[];
-	const updates = locs
+	const locs = await cmd.storeGetLocationsByIds([...selectedLocationIds]);
+	const updates: [number, LocationPatch][] = locs
 		.filter((l) => l.tags.includes(tagId))
 		.map((l) => [l.id, { tags: [...l.tags.filter((t: number) => t !== tagId), newTagId] }]);
 	if (updates.length > 0) {
-		await mutate(cmd.storeUpdateLocations(updates as [number, Record<string, unknown>][], true));
+		await mutate(cmd.storeUpdateLocations(updates, true));
 		scheduleSave();
 	}
 }
@@ -1106,7 +1141,7 @@ export async function renameTagInSelection(tagId: number, newName: string) {
 
 export async function beginReview(locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
-	const existing = await cmd.storeGetLocationsByIds(locationIds) as Location[];
+	const existing = await cmd.storeGetLocationsByIds(locationIds);
 	const valid = existing.map((l) => l.id);
 	if (valid.length === 0) return;
 	review = { locations: valid, index: 0 };
@@ -1180,7 +1215,7 @@ async function undoRedo(which: () => Promise<MutationResult>) {
 		}
 		scheduleSave();
 	} catch (e) {
-		log.debug(`[${which}] nothing or failed:`, e);
+		log.debug(`[${which.name}] nothing or failed:`, e);
 	}
 }
 

@@ -25,13 +25,15 @@ pub enum SelectionProps {
     Filter { field: String, op: String, #[specta(type = specta_typescript::Any)] value: serde_json::Value, #[specta(type = Option<specta_typescript::Any>)] value2: Option<serde_json::Value> },
 }
 
-#[derive(Clone, Default, Serialize, Deserialize, specta::Type)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct PolygonGeometry {
     #[specta(type = Vec<Vec<[specta_typescript::Number; 2]>>)]
     pub coordinates: Vec<Vec<[f64; 2]>>,
+    #[serde(default)]
     #[specta(type = Option<Vec<Vec<Vec<[specta_typescript::Number; 2]>>>>)]
     pub extra_polygons: Option<Vec<Vec<Vec<[f64; 2]>>>>,
+    #[serde(default)]
     #[specta(type = Option<specta_typescript::Any>)]
     pub properties: Option<serde_json::Value>,
 }

@@ -8,7 +8,7 @@ use arrow::array::{
 use arrow::compute::concat_batches;
 use arrow::datatypes::SchemaRef;
 use rayon::prelude::*;
-use tauri::{ipc::Response, Manager};
+use tauri::Manager;
 
 use crate::arrow_bridge;
 use crate::fast_io;
@@ -182,10 +182,106 @@ impl Store {
 
     pub(crate) fn finish_mutation(&mut self, delta: RenderDelta) -> MutationResult {
         self.bump();
+        let selection_sync = if !self.selections.is_empty() {
+            Some(self.refresh_and_sync_selections())
+        } else {
+            None
+        };
         MutationResult {
             status: self.store_status(),
             delta,
+            selection_sync,
         }
+    }
+
+    pub(crate) fn refresh_and_sync_selections(&mut self) -> SelectionSync {
+        let props: Vec<SelectionProps> = self.selections.iter().map(|s| s.props.clone()).collect();
+        let masks: Vec<Vec<bool>> = {
+            let view = self.loc_view();
+            props.iter().map(|p| selections::resolve_bitmask(&view, p)).collect()
+        };
+
+        let counts: Vec<usize> = masks.iter()
+            .map(|m| m.iter().filter(|&&b| b).count())
+            .collect();
+
+        let colors: Vec<[u8; 3]> = self.selections.iter().map(|s| s.color).collect();
+        let num_sels = masks.len();
+        let mut all_selected = HashSet::new();
+        let mut color_map = HashMap::new();
+        let mut all_ids: Vec<Vec<u32>> = vec![Vec::new(); num_sels];
+
+        let batch_len = self.batch.as_ref().map_or(0, |b| b.num_rows());
+        for si in 0..num_sels {
+            let mask = &masks[si];
+            if let Some(ref b) = self.batch {
+                let id_col = col_id(b);
+                for i in 0..b.num_rows() {
+                    let id = id_col.value(i);
+                    if self.overlay_dead.contains(&id) { continue; }
+                    if i < mask.len() && mask[i] {
+                        all_ids[si].push(id);
+                        all_selected.insert(id);
+                        color_map.insert(id, colors[si]);
+                    }
+                }
+            }
+            for (j, loc) in self.overlay_adds.iter().enumerate() {
+                let mi = batch_len + j;
+                if mi < mask.len() && mask[mi] {
+                    all_ids[si].push(loc.id);
+                    all_selected.insert(loc.id);
+                    color_map.insert(loc.id, colors[si]);
+                }
+            }
+        }
+
+        for (si, ids) in all_ids.into_iter().enumerate() {
+            self.selections[si].locations = ids;
+        }
+
+        let selected_count = all_selected.len();
+        self.selected_ids = all_selected;
+        self.selected_colors = color_map;
+        self.selection_version += 1;
+
+        // Build bitmask binary
+        let num_sels = self.selections.len();
+        let mut buf: Vec<u8> = Vec::new();
+        buf.push(num_sels as u8);
+        for sel in &self.selections {
+            buf.extend_from_slice(&sel.color);
+        }
+        let num_cells = self.render_cells.len();
+        buf.push(num_cells as u8);
+        let sel_id_sets: Vec<HashSet<u32>> = self.selections.iter()
+            .map(|s| s.locations.iter().copied().collect())
+            .collect();
+        for (cell_key, cr) in &self.render_cells {
+            buf.push(cell_key.as_bytes()[0]);
+            let n = cr.id_order.len();
+            buf.extend_from_slice(&(n as u32).to_le_bytes());
+            let mask_bytes = n.div_ceil(8);
+            for si in 0..num_sels {
+                let mut bitmask = vec![0u8; mask_bytes];
+                for (li, &id) in cr.id_order.iter().enumerate() {
+                    if sel_id_sets[si].contains(&id) {
+                        bitmask[li / 8] |= 1 << (li % 8);
+                    }
+                }
+                buf.extend_from_slice(&bitmask);
+            }
+        }
+
+        let patch_file = if num_cells > 0 {
+            let path = std::env::temp_dir().join("mma_sel_patches.bin");
+            let _ = std::fs::write(&path, &buf);
+            Some(path.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+
+        SelectionSync { counts, patch_file, selected_count }
     }
 
     pub(crate) fn mark_dirty(&mut self, lat: f64, lng: f64) {
@@ -545,10 +641,19 @@ pub struct ColorPatchEntry {
 
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct SelectionSync {
+    pub counts: Vec<usize>,
+    pub patch_file: Option<String>,
+    pub selected_count: usize,
+}
+
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct MutationResult {
     #[serde(flatten)]
     pub status: StoreStatus,
     pub delta: RenderDelta,
+    pub selection_sync: Option<SelectionSync>,
 }
 
 /// Deserialize a present-but-null JSON field as `Some(None)` instead of `None`.
@@ -998,10 +1103,10 @@ pub fn store_set_active(
 pub fn store_get_location(
     state: tauri::State<'_, StoreState>,
     id: u32,
-) -> Result<Location, String> {
+) -> Result<Option<Location>, String> {
     let _t = std::time::Instant::now();
     let store = state.lock().map_err(|e| e.to_string())?;
-    let r = store.get_loc_by_id(id).ok_or_else(|| "location not found".to_string());
+    let r = Ok(store.get_loc_by_id(id));
     log::debug!("[cmd] store_get_location lock={}ms total={}ms", _t.elapsed().as_millis(), _t.elapsed().as_millis());
     r
 }
@@ -1487,16 +1592,6 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
 }
 
 #[tauri::command]
-pub fn store_fill_render_attrs(
-    state: tauri::State<'_, StoreState>,
-    req: RenderRequest,
-) -> Result<Response, String> {
-    let mut store = state.lock().map_err(|e| e.to_string())?;
-    let buf = build_cell_render_buffers(&mut store, &req);
-    Ok(Response::new(buf))
-}
-
-#[tauri::command]
 #[specta::specta]
 pub async fn store_fill_render_file(
     app: tauri::AppHandle,
@@ -1949,6 +2044,16 @@ pub async fn store_sync_selections(
             color_map.insert(id, sels[si].color);
         }
         store.selected_colors = color_map;
+
+        store.selections = sels.iter().enumerate().map(|(i, sel)| {
+            selections::Selection {
+                key: format!("sync:{i}"),
+                color: sel.color,
+                props: sel.props.clone(),
+                locations: Vec::new(),
+            }
+        }).collect();
+        store.selection_version += 1;
 
         let render_total: usize = store.render_cells.values().map(|cr| cr.id_order.len()).sum();
         log::debug!("[cmd] store_sync_selections total={}ms sels={} selected={} cells={} buf_size={} batch_rows={} overlay_adds={} dead={} alive={} render_total={} mask_len={} counts={:?}",

@@ -70,6 +70,7 @@ import {
 } from "@/lib/seen/seen.add";
 import { loadSeenPano } from "@/components/editor/location/LocationPreview";
 import { cmd } from "@/lib/commands";
+import type { LocationPatch_Deserialize } from "@/bindings.gen";
 import type { Location, Tag, MapMeta } from "@/types";
 import { enrichAll, needsEnrichment } from "@/lib/sv/enrich.add";
 import { bulkPinToPano } from "@/lib/sv/pinPano.add";
@@ -226,7 +227,7 @@ function buildTestApi() {
 			for (const [k, v] of Object.entries(patch)) {
 				if (k !== "id") p[k] = v;
 			}
-			return cmd.storeUpdateLocations([[id, p]] as any, false);
+			return cmd.storeUpdateLocations([[id, p as LocationPatch_Deserialize]], false);
 		},
 
 		// --- Tag counts ---

@@ -139,11 +139,8 @@ async function writeEntry(
 	}
 }
 
-export interface SeenFilter {
-	country?: string | null;
-	mapId?: string | null;
-	search?: string | null;
-}
+export type { SeenFilter } from "@/bindings.gen";
+import type { SeenFilter } from "@/bindings.gen";
 
 export async function getSeenEntries(
 	limit = 100,

@@ -45,10 +45,9 @@ function selectionToRegion(sel: Selection, meta: GeneratorRegionMeta): Generator
 	if (sel.props.type !== "Polygon") return null;
 	const poly = sel.props.polygon;
 	const name = poly.properties?.name || "Unnamed polygon";
-	const coords = poly.coordinates!;
 	const geometry = poly.extraPolygons
-		? { type: "MultiPolygon" as const, coordinates: [coords, ...poly.extraPolygons] }
-		: { type: "Polygon" as const, coordinates: coords };
+		? { type: "MultiPolygon" as const, coordinates: [poly.coordinates, ...poly.extraPolygons] }
+		: { type: "Polygon" as const, coordinates: poly.coordinates };
 	return {
 		id: sel.key,
 		name,

@@ -22,7 +22,20 @@ export const commands = {
 	storeUpdateLocations: (updates: ([number, LocationPatch_Deserialize])[], recordUndo: boolean | null) => typedError<MutationResult_Serialize, string>(__TAURI_INVOKE("store_update_locations", { updates, recordUndo })),
 	storeStripTags: (tagIds: number[]) => typedError<MutationResult_Serialize, string>(__TAURI_INVOKE("store_strip_tags", { tagIds })),
 	storeSetActive: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("store_set_active", { id })),
-	storeGetLocation: (id: number) => typedError<Location_Serialize, string>(__TAURI_INVOKE("store_get_location", { id })),
+	storeGetLocation: (id: number) => typedError<{
+	id: number,
+	lat: number,
+	lng: number,
+	heading: number,
+	pitch: number,
+	zoom: number,
+	panoId: string | null,
+	flags: number,
+	tags: number[],
+	extra?: any | null,
+	createdAt: string,
+	modifiedAt?: string | null,
+} | null, string>(__TAURI_INVOKE("store_get_location", { id })),
 	storeGetLocationsByIds: (ids: number[]) => typedError<Location_Serialize[], string>(__TAURI_INVOKE("store_get_locations_by_ids", { ids })),
 	storeGetAllLocations: () => typedError<string, string>(__TAURI_INVOKE("store_get_all_locations")),
 	storeSaveDirty: () => typedError<SaveResult, string>(__TAURI_INVOKE("store_save_dirty")),
@@ -201,11 +214,13 @@ export type ExportOpts = {
 };
 
 export type ExtraFieldDef = {
-	type: string,
+	type: ExtraFieldType,
 	label?: string | null,
 	values?: string[] | null,
 	labels?: { [key in string]: string } | null,
 };
+
+export type ExtraFieldType = "string" | "number" | "date" | "month" | "enum";
 
 export type FieldCount = {
 	key: string,
@@ -349,10 +364,12 @@ export type MutationResult = MutationResult_Serialize | MutationResult_Deseriali
 
 export type MutationResult_Deserialize = {
 	delta: RenderDelta_Deserialize,
+	selectionSync: SelectionSync | null,
 } & StoreStatus;
 
 export type MutationResult_Serialize = {
 	delta: RenderDelta_Serialize,
+	selectionSync: SelectionSync | null,
 } & StoreStatus;
 
 export type PluginManifest = {
@@ -364,7 +381,7 @@ export type PluginManifest = {
 };
 
 export type PolygonGeometry = {
-	coordinates?: (([number, number])[])[],
+	coordinates: (([number, number])[])[],
 	extraPolygons?: ((([number, number])[])[])[] | null,
 	properties?: any | null,
 };
@@ -489,6 +506,12 @@ export type SelectionSummary = {
 	color: [number, number, number],
 	type: string,
 	count: number,
+};
+
+export type SelectionSync = {
+	counts: number[],
+	patchFile: string | null,
+	selectedCount: number,
 };
 
 export type StoreStatus = {

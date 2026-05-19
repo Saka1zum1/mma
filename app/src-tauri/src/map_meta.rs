@@ -1,31 +1,7 @@
 use std::collections::HashMap;
 use rusqlite::params;
 use crate::types::Tag;
-
-fn now_iso() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    let days_since_epoch = secs / 86400;
-    let time_secs = (secs % 86400) as u32;
-    let z = days_since_epoch + 719468;
-    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
-    let doe = (z - era * 146097) as u32;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.000Z",
-        y, m, d,
-        time_secs / 3600, (time_secs % 3600) / 60, time_secs % 60
-    )
-}
+use crate::util::now_iso;
 
 // ---------------------------------------------------------------------------
 // Typed sub-structs for MapMeta
@@ -50,9 +26,24 @@ pub struct MapSettings {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub enum ExtraFieldType {
+    #[serde(rename = "string")]
+    String,
+    #[serde(rename = "number")]
+    Number,
+    #[serde(rename = "date")]
+    Date,
+    #[serde(rename = "month")]
+    Month,
+    #[serde(rename = "enum")]
+    Enum,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtraFieldDef {
     #[serde(rename = "type")]
-    pub field_type: String,
+    pub field_type: ExtraFieldType,
     #[serde(default)]
     pub label: Option<String>,
     #[serde(default)]
