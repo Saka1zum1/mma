@@ -511,41 +511,43 @@ function syncMutationResult(r: MutationResult) {
 	}
 }
 
-/** Parse a binary selection bitmask file from Rust and push it to the render overlay via selBitmaskBus. */
+/** Parse a binary bitmask file from Rust and emit to selBitmaskBus. */
+async function emitBitmaskFile(patchFile: string) {
+	const resp = await fetch(mmaBufUrl(patchFile));
+	const buf = await resp.arrayBuffer();
+	const dv = new DataView(buf);
+	let off = 0;
+	const numSels = dv.getUint8(off);
+	off += 1;
+	const selColors: [number, number, number][] = [];
+	for (let i = 0; i < numSels; i++) {
+		selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);
+		off += 3;
+	}
+	const numCells = dv.getUint8(off);
+	off += 1;
+	const cellEntries: { cellChar: string; locCount: number; masks: Uint8Array[] }[] = [];
+	for (let ci = 0; ci < numCells; ci++) {
+		const cellChar = String.fromCharCode(dv.getUint8(off));
+		off += 1;
+		const locCount = dv.getUint32(off, true);
+		off += 4;
+		const maskBytes = Math.ceil(locCount / 8);
+		const masks: Uint8Array[] = [];
+		for (let si = 0; si < numSels; si++) {
+			masks.push(new Uint8Array(buf, off, maskBytes));
+			off += maskBytes;
+		}
+		cellEntries.push({ cellChar, locCount, masks });
+	}
+	selBitmaskBus.emit(selColors, cellEntries, (ids) => { selectedLocationIds = ids; });
+}
+
 async function applySelectionSync(sync: { counts: number[]; patchFile: string | null; selectedCount: number }) {
 	for (let i = 0; i < selections.length; i++) {
 		selections[i] = { ...selections[i], count: sync.counts[i] ?? 0 };
 	}
-	if (sync.patchFile) {
-		const resp = await fetch(mmaBufUrl(sync.patchFile));
-		const buf = await resp.arrayBuffer();
-		const dv = new DataView(buf);
-		let off = 0;
-		const numSels = dv.getUint8(off);
-		off += 1;
-		const selColors: [number, number, number][] = [];
-		for (let i = 0; i < numSels; i++) {
-			selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);
-			off += 3;
-		}
-		const numCells = dv.getUint8(off);
-		off += 1;
-		const cellEntries: { cellChar: string; locCount: number; masks: Uint8Array[] }[] = [];
-		for (let ci = 0; ci < numCells; ci++) {
-			const cellChar = String.fromCharCode(dv.getUint8(off));
-			off += 1;
-			const locCount = dv.getUint32(off, true);
-			off += 4;
-			const maskBytes = Math.ceil(locCount / 8);
-			const masks: Uint8Array[] = [];
-			for (let si = 0; si < numSels; si++) {
-				masks.push(new Uint8Array(buf, off, maskBytes));
-				off += maskBytes;
-			}
-			cellEntries.push({ cellChar, locCount, masks });
-		}
-		selBitmaskBus.emit(selColors, cellEntries, (ids) => { selectedLocationIds = ids; });
-	}
+	if (sync.patchFile) await emitBitmaskFile(sync.patchFile);
 	selectionVersion++;
 	mapVersion++;
 	notify();
@@ -743,38 +745,7 @@ async function applySelectionUpdate(updater: (m: MapData, sels: Selection[]) => 
 	for (let i = 0; i < selections.length; i++) {
 		selections[i] = { ...selections[i], count: result.counts[i] ?? 0 };
 	}
-	if (result.patchFile) {
-		const resp = await fetch(mmaBufUrl(result.patchFile));
-		const buf = await resp.arrayBuffer();
-		const dv = new DataView(buf);
-		let off = 0;
-		const numSels = dv.getUint8(off);
-		off += 1;
-		const selColors: [number, number, number][] = [];
-		for (let i = 0; i < numSels; i++) {
-			selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);
-			off += 3;
-		}
-		const numCells = dv.getUint8(off);
-		off += 1;
-
-		const cellEntries: { cellChar: string; locCount: number; masks: Uint8Array[] }[] = [];
-		for (let ci = 0; ci < numCells; ci++) {
-			const cellChar = String.fromCharCode(dv.getUint8(off));
-			off += 1;
-			const locCount = dv.getUint32(off, true);
-			off += 4;
-			const maskBytes = Math.ceil(locCount / 8);
-			const masks: Uint8Array[] = [];
-			for (let si = 0; si < numSels; si++) {
-				masks.push(new Uint8Array(buf, off, maskBytes));
-				off += maskBytes;
-			}
-			cellEntries.push({ cellChar, locCount, masks });
-		}
-
-		selBitmaskBus.emit(selColors, cellEntries, (ids) => { selectedLocationIds = ids; });
-	}
+	if (result.patchFile) await emitBitmaskFile(result.patchFile);
 	const t3 = performance.now();
 	log.debug(
 		`[selection] total=${(t3 - t0).toFixed(0)}ms ipc=${(t2 - t1).toFixed(0)}ms apply=${(t3 - t2).toFixed(0)}ms selected=${result.selectedCount}`,
@@ -922,7 +893,7 @@ export async function setActiveLocation(id: number | null, checkDuplicates = tru
 		log.debug(`[setActive] store_get_location_file ipc=${(performance.now() - t0).toFixed(0)}ms`);
 		if (checkDuplicates && loc) {
 			//todo
-			const nearby = (await cmd.storeFindNearby(loc.lat, loc.lng, 2.0)) as Location[];
+			const nearby = await cmd.storeFindNearby(loc.lat, loc.lng, 2.0);
 			if (nearby.length >= 2) {
 				duplicateLocations = nearby;
 				workArea = "duplicates";
