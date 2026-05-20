@@ -269,8 +269,8 @@ fn resolve_intersection() {
     let view = make_view(None, &dead, &patches, &adds);
     let props = SelectionProps::Intersection {
         selections: vec![
-            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::Tag { tag_id: 10 }, locations: vec![] },
-            Selection { key: "b".into(), color: [0,0,0], props: SelectionProps::PanoIds, locations: vec![] },
+            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::Tag { tag_id: 10 } },
+            Selection { key: "b".into(), color: [0,0,0], props: SelectionProps::PanoIds },
         ],
     };
     let ids = resolve(&view, &props);
@@ -290,8 +290,8 @@ fn resolve_union() {
     let view = make_view(None, &dead, &patches, &adds);
     let props = SelectionProps::Union {
         selections: vec![
-            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::Tag { tag_id: 10 }, locations: vec![] },
-            Selection { key: "b".into(), color: [0,0,0], props: SelectionProps::PanoIds, locations: vec![] },
+            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::Tag { tag_id: 10 } },
+            Selection { key: "b".into(), color: [0,0,0], props: SelectionProps::PanoIds },
         ],
     };
     let ids = resolve(&view, &props);
@@ -312,7 +312,7 @@ fn resolve_invert() {
     let view = make_view(None, &dead, &patches, &adds);
     let props = SelectionProps::Invert {
         selections: vec![
-            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::PanoIds, locations: vec![] },
+            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::PanoIds },
         ],
     };
     let ids = resolve(&view, &props);

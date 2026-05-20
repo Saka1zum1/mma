@@ -328,6 +328,83 @@ pub(crate) fn read_arrow_ipc(path: &std::path::Path) -> Result<arrow::array::Rec
     arrow::compute::concat_batches(&schema, &batches).map_err(|e| e.to_string())
 }
 
+/// Keeps the mmap alive for as long as the RecordBatch references it.
+pub(crate) struct MmapHandle {
+    _buffer: arrow::buffer::Buffer,
+}
+
+/// Zero-copy Arrow IPC read via memory-mapped file.
+pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::array::RecordBatch, MmapHandle), String> {
+    use arrow::buffer::Buffer;
+    use arrow::ipc::reader::{FileDecoder, read_footer_length};
+    use arrow::ipc::{root_as_footer, convert::fb_to_schema};
+    use std::sync::Arc;
+
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    // SAFETY: we own the file exclusively; no other process modifies it while mapped.
+    // On Windows, the mmap holds an exclusive lock preventing external modification.
+    let mmap = unsafe { memmap2::Mmap::map(&file) }.map_err(|e| e.to_string())?;
+    let buffer = Buffer::from(bytes::Bytes::from_owner(mmap));
+
+    let buf_len = buffer.len();
+    if buf_len < 10 {
+        let schema = Arc::new(crate::arrow_bridge::location_schema());
+        return Ok((
+            arrow::array::RecordBatch::new_empty(schema),
+            MmapHandle { _buffer: buffer },
+        ));
+    }
+
+    let trailer: [u8; 10] = buffer[buf_len - 10..].try_into().unwrap();
+    let footer_len = read_footer_length(trailer)
+        .map_err(|e| e.to_string())?;
+    let footer = root_as_footer(&buffer[buf_len - 10 - footer_len..buf_len - 10])
+        .map_err(|e| e.to_string())?;
+    let schema = Arc::new(fb_to_schema(footer.schema().unwrap()));
+    let mut decoder = FileDecoder::new(schema.clone(), footer.version());
+
+    // Read dictionaries if present
+    for block in footer.dictionaries().iter().flatten() {
+        let block_len = block.bodyLength() as usize + block.metaDataLength() as usize;
+        let data = buffer.slice_with_length(block.offset() as usize, block_len);
+        decoder.read_dictionary(&block, &data).map_err(|e| e.to_string())?;
+    }
+
+    let blocks = footer.recordBatches();
+    let blocks = blocks.as_ref();
+    if blocks.map_or(true, |b| b.is_empty()) {
+        return Ok((
+            arrow::array::RecordBatch::new_empty(schema),
+            MmapHandle { _buffer: buffer },
+        ));
+    }
+    let blocks = blocks.unwrap();
+
+    if blocks.len() == 1 {
+        let block = blocks.get(0);
+        let block_len = block.bodyLength() as usize + block.metaDataLength() as usize;
+        let data = buffer.slice_with_length(block.offset() as usize, block_len);
+        let batch = decoder.read_record_batch(&block, &data)
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| arrow::array::RecordBatch::new_empty(schema));
+        Ok((batch, MmapHandle { _buffer: buffer }))
+    } else {
+        let mut batches = Vec::with_capacity(blocks.len());
+        for i in 0..blocks.len() {
+            let block = blocks.get(i);
+            let block_len = block.bodyLength() as usize + block.metaDataLength() as usize;
+            let data = buffer.slice_with_length(block.offset() as usize, block_len);
+            if let Some(batch) = decoder.read_record_batch(&block, &data)
+                .map_err(|e| e.to_string())? {
+                batches.push(batch);
+            }
+        }
+        let merged = arrow::compute::concat_batches(&schema, &batches)
+            .map_err(|e| e.to_string())?;
+        Ok((merged, MmapHandle { _buffer: buffer }))
+    }
+}
+
 
 /// Returns msgpack map `{ undoStack: [...], redoStack: [...] }`.
 // #[tauri::command]

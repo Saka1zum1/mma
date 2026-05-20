@@ -48,7 +48,7 @@ fn render_cell_key(gh: &str) -> &str {
 }
 
 
-fn render_cell_idx(lat: f64, lng: f64) -> u8 {
+pub(crate) fn render_cell_idx(lat: f64, lng: f64) -> u8 {
     let (mut min_lat, mut max_lat) = (-90.0, 90.0);
     let (mut min_lng, mut max_lng) = (-180.0, 180.0);
     let mut ch: u8 = 0;
@@ -70,6 +70,11 @@ fn cell_key_from_idx(idx: u8) -> String {
     String::from(BASE32[idx as usize] as char)
 }
 
+fn cell_idx_from_key(key: &str) -> Option<u8> {
+    let b = *key.as_bytes().first()?;
+    BASE32.iter().position(|&c| c == b).map(|i| i as u8)
+}
+
 // ---------------------------------------------------------------------------
 // Column accessors — typed downcasts from a RecordBatch
 // ---------------------------------------------------------------------------
@@ -83,6 +88,20 @@ fn col_tags(b: &RecordBatch) -> &ListArray { b.column(8).as_any().downcast_ref()
 fn col_extra(b: &RecordBatch) -> &StringArray { b.column(9).as_any().downcast_ref().unwrap() }
 
 fn num_rows(store: &Store) -> usize { store.batch.as_ref().map_or(0, |b| b.num_rows()) }
+
+/// Binary search for a location ID in a sorted batch. O(log n).
+fn batch_row_for_id(batch: &RecordBatch, id: u32) -> Option<usize> {
+    let ids = col_id(batch);
+    let (mut lo, mut hi) = (0usize, batch.num_rows());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let mid_id = ids.value(mid);
+        if mid_id < id { lo = mid + 1; }
+        else if mid_id > id { hi = mid; }
+        else { return Some(mid); }
+    }
+    None
+}
 
 fn schema() -> SchemaRef { Arc::new(arrow_bridge::location_schema()) }
 
@@ -101,14 +120,14 @@ pub(crate) struct CellRender {
 
 pub struct Store {
     pub(crate) map_id: Option<String>,
-    // Arrow batch = immutable base snapshot, loaded from disk
+    // Arrow batch = immutable base snapshot, loaded from disk.
+    // batch is declared before mmap_handle so it drops first (columns reference the mmap).
     pub(crate) batch: Option<RecordBatch>,
+    mmap_handle: Option<fast_io::MmapHandle>,
     // Overlay: mutations accumulate here, merged into batch on save/close
     pub(crate) overlay_adds: Vec<Location>,
     overlay_dead: HashSet<u32>,
     overlay_patches: HashMap<u32, Location>,
-    // Indexes (cover batch + overlay)
-    pub(crate) id_to_index: HashMap<u32, usize>,
     pub(crate) geohash_index: HashMap<String, Vec<usize>>,
     dirty_geohashes: HashSet<String>,
     pub(crate) dirty: bool,
@@ -116,9 +135,9 @@ pub struct Store {
     next_id: u32,
     next_tag_id: u32,
     version: u64,
-    // Per-cell render tracking
-    pub(crate) render_cells: HashMap<String, CellRender>,
-    pub(crate) id_to_cell: HashMap<u32, String>,
+    // Per-cell render tracking (32 cells = geohash precision 1, BASE32)
+    pub(crate) render_cells: [Option<CellRender>; 32],
+    pub(crate) id_to_cell_idx: Vec<u8>,
     pub selections: Vec<Selection>,
     pub(crate) selection_loc_sets: Vec<HashSet<u32>>,
     pub selection_version: u64,
@@ -142,10 +161,10 @@ impl Store {
         Self {
             map_id: None,
             batch: None,
+            mmap_handle: None,
             overlay_adds: Vec::new(),
             overlay_dead: HashSet::new(),
             overlay_patches: HashMap::new(),
-            id_to_index: HashMap::new(),
             geohash_index: HashMap::new(),
             dirty_geohashes: HashSet::new(),
             dirty: false,
@@ -153,8 +172,8 @@ impl Store {
             next_id: 1,
             next_tag_id: 1,
             version: 0,
-            render_cells: HashMap::new(),
-            id_to_cell: HashMap::new(),
+            render_cells: [const { None }; 32],
+            id_to_cell_idx: Vec::new(),
             selections: Vec::new(),
             selection_loc_sets: Vec::new(),
             selection_version: 0,
@@ -243,14 +262,16 @@ impl Store {
             .collect();
 
         // Find affected cells
-        let mut affected_cells: Vec<(&String, &CellRender)> = Vec::new();
-        for (cell_key, cr) in &self.render_cells {
-            if cr.id_order.iter().any(|id| changed_ids.contains(id)) {
-                affected_cells.push((cell_key, cr));
+        let mut affected_count = 0usize;
+        for opt in &self.render_cells {
+            if let Some(cr) = opt {
+                if cr.id_order.iter().any(|id| changed_ids.contains(id)) {
+                    affected_count += 1;
+                }
             }
         }
 
-        if affected_cells.is_empty() {
+        if affected_count == 0 {
             return SelectionSync { counts, patch_file: None, selected_count };
         }
 
@@ -260,10 +281,11 @@ impl Store {
         for sel in &self.selections {
             buf.extend_from_slice(&sel.color);
         }
-        let num_cells = self.render_cells.len();
+        let num_cells = self.render_cells.iter().filter(|o| o.is_some()).count();
         buf.push(num_cells as u8);
-        for (cell_key, cr) in &self.render_cells {
-            buf.push(cell_key.as_bytes()[0]);
+        for (ci, opt) in self.render_cells.iter().enumerate() {
+            let cr = match opt { Some(cr) => cr, None => continue };
+            buf.push(BASE32[ci]);
             let n = cr.id_order.len();
             buf.extend_from_slice(&(n as u32).to_le_bytes());
             let mask_bytes = n.div_ceil(8);
@@ -288,7 +310,7 @@ impl Store {
 
         log::debug!("[sel-incr] total={}ms sels={} selected={} cells={} affected={} buf={}",
             std::time::Instant::now().duration_since(std::time::Instant::now()).as_millis(),
-            num_sels, selected_count, num_cells, affected_cells.len(), buf.len());
+            num_sels, selected_count, num_cells, affected_count, buf.len());
 
         SelectionSync { counts, patch_file, selected_count }
     }
@@ -351,10 +373,11 @@ impl Store {
         for sel in &self.selections {
             buf.extend_from_slice(&sel.color);
         }
-        let num_cells = self.render_cells.len();
+        let num_cells = self.render_cells.iter().filter(|o| o.is_some()).count();
         buf.push(num_cells as u8);
-        for (cell_key, cr) in &self.render_cells {
-            buf.push(cell_key.as_bytes()[0]);
+        for (ci, opt) in self.render_cells.iter().enumerate() {
+            let cr = match opt { Some(cr) => cr, None => continue };
+            buf.push(BASE32[ci]);
             let n = cr.id_order.len();
             buf.extend_from_slice(&(n as u32).to_le_bytes());
             let mask_bytes = n.div_ceil(8);
@@ -392,8 +415,13 @@ impl Store {
     pub(crate) fn update_tag_counts(&mut self, locs: &[Location], delta: isize) {
         for loc in locs {
             for &tag in &loc.tags {
-                let c = self.tag_counts.entry(tag).or_default();
-                *c = (*c as isize + delta).max(0) as usize;
+                if delta < 0 {
+                    if let Some(c) = self.tag_counts.get_mut(&tag) {
+                        *c = c.saturating_sub((-delta) as usize);
+                    }
+                } else {
+                    *self.tag_counts.entry(tag).or_default() += delta as usize;
+                }
             }
         }
     }
@@ -401,21 +429,31 @@ impl Store {
     pub(crate) fn add_tag_counts(&mut self, locs: &[Location]) { self.update_tag_counts(locs, 1); }
     pub(crate) fn remove_tag_counts(&mut self, locs: &[Location]) { self.update_tag_counts(locs, -1); }
 
-    pub(crate) fn cell_add_render(&mut self, cell: &str, id: u32) -> usize {
-        let cr = self.render_cells.entry(cell.to_string()).or_insert_with(|| CellRender {
+    fn ensure_id_to_cell_capacity(&mut self, id: u32) {
+        let needed = id as usize + 1;
+        if self.id_to_cell_idx.len() < needed {
+            self.id_to_cell_idx.resize(needed, 255u8);
+        }
+    }
+
+    pub(crate) fn cell_add_render(&mut self, cell_idx: u8, id: u32) -> usize {
+        let cr = self.render_cells[cell_idx as usize].get_or_insert_with(|| CellRender {
             id_order: Vec::new(),
             id_to_index: HashMap::new(),
         });
         let idx = cr.id_order.len();
         cr.id_to_index.insert(id, idx);
         cr.id_order.push(id);
-        self.id_to_cell.insert(id, cell.to_string());
+        self.ensure_id_to_cell_capacity(id);
+        self.id_to_cell_idx[id as usize] = cell_idx;
         idx
     }
 
     fn cell_remove_render(&mut self, id: u32) -> Option<CellRemoval> {
-        let cell = self.id_to_cell.remove(&id)?;
-        let cr = self.render_cells.get_mut(&cell)?;
+        let ci = *self.id_to_cell_idx.get(id as usize)?;
+        if ci == 255 { return None; }
+        self.id_to_cell_idx[id as usize] = 255;
+        let cr = self.render_cells[ci as usize].as_mut()?;
         let idx = cr.id_to_index.remove(&id)?;
         let last = cr.id_order.len() - 1;
         if idx != last {
@@ -424,14 +462,15 @@ impl Store {
             cr.id_to_index.insert(moved_id, idx);
         }
         cr.id_order.pop();
-        Some(CellRemoval { cell, cell_index: idx, id })
+        Some(CellRemoval { cell: cell_key_from_idx(ci), cell_index: idx, id })
     }
 
     fn cell_lookup(&self, id: u32) -> Option<(String, usize)> {
-        let cell = self.id_to_cell.get(&id)?;
-        let cr = self.render_cells.get(cell)?;
+        let ci = *self.id_to_cell_idx.get(id as usize)?;
+        if ci == 255 { return None; }
+        let cr = self.render_cells[ci as usize].as_ref()?;
         let idx = *cr.id_to_index.get(&id)?;
-        Some((cell.clone(), idx))
+        Some((cell_key_from_idx(ci), idx))
     }
 
     pub(crate) fn alloc_id(&mut self) -> u32 {
@@ -466,8 +505,8 @@ impl Store {
         for loc in &self.overlay_adds {
             if loc.id == id { return Some(loc.clone()); }
         }
-        if let (Some(b), Some(&idx)) = (&self.batch, self.id_to_index.get(&id)) {
-            if idx < b.num_rows() {
+        if let Some(ref b) = self.batch {
+            if let Some(idx) = batch_row_for_id(b, id) {
                 return Some(arrow_bridge::row_to_location(b, idx));
             }
         }
@@ -514,7 +553,8 @@ impl Store {
         self.mark_dirty(loc.lat, loc.lng);
         self.dirty = true;
         self.alive_count += 1;
-        if self.id_to_index.contains_key(&loc.id) {
+        let in_batch = self.batch.as_ref().and_then(|b| batch_row_for_id(b, loc.id)).is_some();
+        if in_batch {
             self.overlay_dead.remove(&loc.id);
             self.overlay_patches.insert(loc.id, loc);
         } else {
@@ -607,27 +647,19 @@ impl Store {
             }
         }
 
-        // Step 2: apply patches -- remove patched rows, concat replacement batch
+        // Step 2: apply patches in place (preserves row order for sorted ID invariant)
         if !self.overlay_patches.is_empty() {
             let ids = col_id(&batch);
-            let keep: Vec<u32> = (0..batch.num_rows())
-                .filter(|&i| !self.overlay_patches.contains_key(&ids.value(i)))
-                .map(|i| i as u32)
-                .collect();
-            if keep.len() < batch.num_rows() {
-                let patched_locs: Vec<Location> = self.overlay_patches.values().cloned().collect();
-                let take_idx = arrow::array::UInt32Array::from(keep);
-                let filtered = RecordBatch::try_new(
-                    batch.schema(),
-                    batch.columns().iter().map(|col| {
-                        arrow::compute::take(col.as_ref(), &take_idx, None).unwrap()
-                    }).collect(),
-                ).unwrap();
-                drop(batch);
-                let patch_batch = arrow_bridge::locations_to_batch(&patched_locs);
-                let s = schema();
-                batch = arrow::compute::concat_batches(&s, &[filtered, patch_batch])
-                    .expect("concat failed");
+            let has_any = (0..batch.num_rows()).any(|i| self.overlay_patches.contains_key(&ids.value(i)));
+            if has_any {
+                let all: Vec<Location> = (0..batch.num_rows()).map(|i| {
+                    let id = ids.value(i);
+                    match self.overlay_patches.get(&id) {
+                        Some(p) => p.clone(),
+                        None => arrow_bridge::row_to_location(&batch, i),
+                    }
+                }).collect();
+                batch = arrow_bridge::locations_to_batch(&all);
             }
         }
 
@@ -640,21 +672,22 @@ impl Store {
         }
 
         log::debug!("[bake_overlay] total={}ms rows={}", _t.elapsed().as_millis(), batch.num_rows());
+        assert!({
+            let ids = col_id(&batch);
+            (1..batch.num_rows()).all(|i| ids.value(i - 1) < ids.value(i))
+        }, "batch IDs must be strictly sorted after bake");
         self.batch = Some(batch);
         self.clear_overlay();
         self.rebuild_index();
     }
 
-    /// Rebuild id_to_index and geohash_index from the batch. O(N).
+    /// Rebuild geohash_index from the batch. O(N).
     pub(crate) fn rebuild_index(&mut self) {
-        self.id_to_index.clear();
         self.geohash_index.clear();
         if let Some(ref b) = self.batch {
-            let ids = col_id(b);
             let lats = col_lat(b);
             let lngs = col_lng(b);
             for i in 0..b.num_rows() {
-                self.id_to_index.insert(ids.value(i), i);
                 let gh = encode_geohash(lats.value(i), lngs.value(i));
                 self.geohash_index.entry(gh).or_default().push(i);
             }
@@ -824,18 +857,25 @@ pub async fn store_open_map(
         use std::time::Instant;
         let t_total = Instant::now();
 
-        let batch = {
+        let (batch, mmap_handle) = {
             let t0 = Instant::now();
             let path = fast_io::arrow_path(&app2, &map_id2)?;
-            let mut batch = if path.exists() {
-                fast_io::read_arrow_ipc(&path)?
-            } else {
-                RecordBatch::new_empty(schema())
-            };
-            log::debug!("[store_open] arrow_read={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
-
             let delta_path = fast_io::arrow_delta_path(&app2, &map_id2)?;
-            if delta_path.exists() {
+            let has_delta = delta_path.exists();
+
+            if !path.exists() {
+                log::debug!("[store_open] no arrow file, empty batch");
+                (RecordBatch::new_empty(schema()), None)
+            } else if !has_delta {
+                // Fast path: mmap directly, no copying
+                let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
+                log::debug!("[store_open] mmap_read={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
+                (batch, Some(handle))
+            } else {
+                // Delta exists: heap read + merge + checkpoint, then mmap the result
+                let mut batch = fast_io::read_arrow_ipc(&path)?;
+                log::debug!("[store_open] arrow_read={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
+
                 let t_d = Instant::now();
                 if let Ok(data) = std::fs::read(&delta_path) {
                     if let Ok(delta) = rmp_serde::from_slice::<DeltaOverlay>(&data) {
@@ -872,9 +912,7 @@ pub async fn store_open_map(
                             let add_batch = arrow_bridge::locations_to_batch(&delta.adds);
                             batch = concat_batches(&schema(), &[batch, add_batch]).map_err(|e| e.to_string())?;
                         }
-                        // Checkpoint: write merged batch to Arrow IPC so the delta can be discarded
-                        let checkpoint_path = fast_io::arrow_path(&app2, &map_id2)?;
-                        fast_io::write_arrow_ipc(&checkpoint_path, &batch)?;
+                        fast_io::write_arrow_ipc(&path, &batch)?;
                         let _ = std::fs::remove_file(&delta_path);
                         log::debug!("[store_open] delta checkpointed to Arrow IPC");
                     } else {
@@ -882,22 +920,49 @@ pub async fn store_open_map(
                     }
                 }
                 log::debug!("[store_open] delta_merge={}ms rows={}", t_d.elapsed().as_millis(), batch.num_rows());
+
+                // Drop the heap batch and mmap the checkpointed file instead
+                drop(batch);
+                let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
+                log::debug!("[store_open] post-delta mmap={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
+                (batch, Some(handle))
             }
-            batch
+        };
+
+        // Ensure sorted ID invariant (one-time migration for pre-Phase2 files)
+        let (batch, mmap_handle) = {
+            let ids = col_id(&batch);
+            let sorted = (1..batch.num_rows()).all(|i| ids.value(i - 1) < ids.value(i));
+            if sorted || batch.num_rows() == 0 {
+                (batch, mmap_handle)
+            } else {
+                log::info!("[store_open] migrating unsorted Arrow file to sorted ID order");
+                let sort_idx = arrow::compute::sort_to_indices(ids, None, None)
+                    .map_err(|e| e.to_string())?;
+                let sorted_batch = RecordBatch::try_new(
+                    batch.schema(),
+                    batch.columns().iter().map(|col| {
+                        arrow::compute::take(col.as_ref(), &sort_idx, None).unwrap()
+                    }).collect(),
+                ).unwrap();
+                drop(batch);
+                drop(mmap_handle);
+                let path = fast_io::arrow_path(&app2, &map_id2)?;
+                fast_io::write_arrow_ipc(&path, &sorted_batch)?;
+                drop(sorted_batch);
+                let (b, h) = fast_io::read_arrow_ipc_mmap(&path)?;
+                log::info!("[store_open] migration complete, re-mmap'd sorted file");
+                (b, Some(h))
+            }
         };
 
         let t3 = Instant::now();
-        let ids = col_id(&batch);
         let lats = col_lat(&batch);
         let lngs = col_lng(&batch);
         let n = batch.num_rows();
-        let mut id_to_index: HashMap<u32, usize> = HashMap::with_capacity(n);
         let mut geohash_index: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut max_id: u32 = 0;
+        let max_id = if n > 0 { col_id(&batch).value(n - 1) } else { 0 };
         for i in 0..n {
-            let id = ids.value(i);
-            id_to_index.insert(id, i);
-            if id > max_id { max_id = id; }
             let gh = encode_geohash(lats.value(i), lngs.value(i));
             geohash_index.entry(gh).or_default().push(i);
         }
@@ -906,12 +971,12 @@ pub async fn store_open_map(
         let (undo, redo) = load_edit_history_inner(&app2, &map_id2)?;
 
         log::debug!("[store_open] TOTAL={}ms", t_total.elapsed().as_millis());
-        Ok::<_, String>((batch, id_to_index, geohash_index, max_id, undo, redo))
+        Ok::<_, String>((batch, mmap_handle, geohash_index, max_id, undo, redo))
     })
     .await
     .map_err(|e| e.to_string())??;
 
-    let (batch, id_to_index, geohash_index, max_id, undo, redo) = result;
+    let (batch, mmap_handle, geohash_index, max_id, undo, redo) = result;
 
     let mut store = state.lock().map_err(|e| e.to_string())?;
     let count = batch.num_rows();
@@ -935,6 +1000,7 @@ pub async fn store_open_map(
         }
     }
     store.batch = Some(batch);
+    store.mmap_handle = mmap_handle;
     store.clear_overlay();
     store.alive_count = count;
     store.tag_counts = tc;
@@ -945,7 +1011,6 @@ pub async fn store_open_map(
         let tags = read_tags_json(&conn, &map_id);
         tags.keys().max().copied().unwrap_or(0) + 1
     };
-    store.id_to_index = id_to_index;
     store.geohash_index = geohash_index;
     store.dirty_geohashes.clear();
     store.committed_blobs.clear();
@@ -971,6 +1036,8 @@ pub fn store_close_map(
     if let Some(ref map_id) = store.map_id.clone() {
         if store.dirty {
             store.bake_overlay();
+            // Drop mmap before writing (Windows holds exclusive file lock)
+            store.mmap_handle = None;
             if let Some(ref batch) = store.batch {
                 let path = fast_io::arrow_path(&app, map_id)?;
                 fast_io::write_arrow_ipc(&path, batch)?;
@@ -986,13 +1053,13 @@ pub fn store_close_map(
     }
     store.map_id = None;
     store.batch = None;
+    store.mmap_handle = None;
     store.clear_overlay();
     store.alive_count = 0;
-    store.id_to_index.clear();
     store.geohash_index.clear();
     store.dirty_geohashes.clear();
-    store.render_cells.clear();
-    store.id_to_cell.clear();
+    store.render_cells = [const { None }; 32];
+    store.id_to_cell_idx.clear();
     store.selected_ids.clear();
     store.selected_colors.clear();
     store.active_id = None;
@@ -1019,11 +1086,10 @@ pub fn store_add_locations(
     let mut added = Vec::with_capacity(locations.len());
     for loc in &locations {
         store.mark_dirty(loc.lat, loc.lng);
-        let gh = encode_geohash(loc.lat, loc.lng);
-        let cell = render_cell_key(&gh).to_string();
-        store.cell_add_render(&cell, loc.id);
+        let ci = render_cell_idx(loc.lat, loc.lng);
+        store.cell_add_render(ci, loc.id);
         added.push(RenderEntry {
-            cell,
+            cell: cell_key_from_idx(ci),
             id: loc.id,
             lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
             r: 42, g: 42, b: 42, a: 255,
@@ -1073,16 +1139,15 @@ fn build_update_delta(store: &mut Store, id: u32, new_loc: &Location, patch: &Lo
     let heading_changed = patch.heading.is_some();
 
     if pos_changed {
-        let gh = encode_geohash(new_loc.lat, new_loc.lng);
-        let new_cell = render_cell_key(&gh).to_string();
-        let old_cell = store.id_to_cell.get(&id).cloned();
-        if old_cell.as_deref() != Some(new_cell.as_str()) {
+        let new_ci = render_cell_idx(new_loc.lat, new_loc.lng);
+        let old_ci = store.id_to_cell_idx.get(id as usize).copied().unwrap_or(255);
+        if old_ci != new_ci {
             if let Some(removal) = store.cell_remove_render(id) {
                 delta.removed.push(removal);
             }
-            store.cell_add_render(&new_cell, id);
+            store.cell_add_render(new_ci, id);
             delta.added.push(RenderEntry {
-                cell: new_cell,
+                cell: cell_key_from_idx(new_ci),
                 id,
                 lng: new_loc.lng as f32, lat: new_loc.lat as f32, heading: new_loc.heading as f32,
                 r: 42, g: 42, b: 42, a: 255,
@@ -1405,7 +1470,16 @@ pub fn store_bake_and_save(
     let mut store = state.lock().map_err(|e| e.to_string())?;
     let map_id = store.map_id.clone().ok_or("no map open")?;
     store.bake_overlay();
+    // Drop mmap before writing (Windows holds exclusive file lock)
+    store.mmap_handle = None;
     save_arrow_inner(&store, &app, &map_id)?;
+    // Re-mmap the written file
+    let path = fast_io::arrow_path(&app, &map_id)?;
+    if path.exists() {
+        let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
+        store.batch = Some(batch);
+        store.mmap_handle = Some(handle);
+    }
     let count = store.batch.as_ref().map_or(0, |b| b.num_rows());
     let conn = fast_io::open_db(&app)?;
     conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2", rusqlite::params![count, map_id])
@@ -1682,22 +1756,22 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     }
 
     // Rebuild per-cell render tracking
-    store.render_cells.clear();
-    store.id_to_cell.clear();
+    store.render_cells = [const { None }; 32];
+    store.id_to_cell_idx.clear();
     let mut total_count = 0usize;
     let mut non_empty = 0u32;
     for ci in 0..32 {
         let out = match &cells[ci] { Some(o) => o, None => continue };
-        let key = cell_key_from_idx(ci as u8);
         let mut cr = CellRender { id_order: Vec::with_capacity(out.ids.len()), id_to_index: HashMap::new() };
         for (i, &id) in out.ids.iter().enumerate() {
             cr.id_to_index.insert(id, i);
             cr.id_order.push(id);
-            store.id_to_cell.insert(id, key.clone());
+            store.ensure_id_to_cell_capacity(id);
+            store.id_to_cell_idx[id as usize] = ci as u8;
         }
         total_count += out.ids.len();
         non_empty += 1;
-        store.render_cells.insert(key, cr);
+        store.render_cells[ci] = Some(cr);
     }
 
     // Serialize: u32 cell_count, per cell: [1 byte geohash char][u32 count][positions][colors][angles]
@@ -1761,7 +1835,8 @@ pub fn store_resolve_pick(
     cell_index: u32,
 ) -> Result<Option<u32>, String> {
     let store = state.lock().map_err(|e| e.to_string())?;
-    Ok(store.render_cells.get(&cell)
+    let ci = cell_idx_from_key(&cell).ok_or("invalid cell key")?;
+    Ok(store.render_cells[ci as usize].as_ref()
         .and_then(|cr| cr.id_order.get(cell_index as usize).copied()))
 }
 
@@ -1871,25 +1946,23 @@ fn apply_edit(store: &mut Store, remove: &[Location], create: &[Location]) -> Re
                 if let Some(removal) = store.cell_remove_render(loc.id) {
                     delta.removed.push(removal);
                 }
-                let gh = encode_geohash(loc.lat, loc.lng);
-                let cell = render_cell_key(&gh).to_string();
+                let ci = render_cell_idx(loc.lat, loc.lng);
                 let is_selected = store.selected_ids.contains(&loc.id);
                 let (r, g, b, a) = if is_selected { (0, 0, 0, 0) } else { (42, 42, 42, 255) };
-                store.cell_add_render(&cell, loc.id);
+                store.cell_add_render(ci, loc.id);
                 delta.added.push(RenderEntry {
-                    cell, id: loc.id,
+                    cell: cell_key_from_idx(ci), id: loc.id,
                     lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
                     r, g, b, a,
                 });
             }
         } else {
-            let gh = encode_geohash(loc.lat, loc.lng);
-            let cell = render_cell_key(&gh).to_string();
+            let ci = render_cell_idx(loc.lat, loc.lng);
             let is_selected = store.selected_ids.contains(&loc.id);
             let (r, g, b, a) = if is_selected { (0, 0, 0, 0) } else { (42, 42, 42, 255) };
-            store.cell_add_render(&cell, loc.id);
+            store.cell_add_render(ci, loc.id);
             delta.added.push(RenderEntry {
-                cell, id: loc.id,
+                cell: cell_key_from_idx(ci), id: loc.id,
                 lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
                 r, g, b, a,
             });
@@ -2186,10 +2259,11 @@ pub async fn store_sync_selections(
         for sel in &sels {
             buf.extend_from_slice(&sel.color);
         }
-        let num_cells = store.render_cells.len();
+        let num_cells = store.render_cells.iter().filter(|o| o.is_some()).count();
         buf.push(num_cells as u8);
-        for (cell_key, cr) in &store.render_cells {
-            buf.push(cell_key.as_bytes()[0]);
+        for (ci, opt) in store.render_cells.iter().enumerate() {
+            let cr = match opt { Some(cr) => cr, None => continue };
+            buf.push(BASE32[ci]);
             let n = cr.id_order.len();
             buf.extend_from_slice(&(n as u32).to_le_bytes());
             let mask_bytes = n.div_ceil(8);
@@ -2216,7 +2290,7 @@ pub async fn store_sync_selections(
         store.selection_loc_sets = sel_sets;
         store.selection_version += 1;
 
-        let render_total: usize = store.render_cells.values().map(|cr| cr.id_order.len()).sum();
+        let render_total: usize = store.render_cells.iter().filter_map(|o| o.as_ref()).map(|cr| cr.id_order.len()).sum();
         log::debug!("[cmd] store_sync_selections total={}ms sels={} selected={} cells={} buf_size={} batch_rows={} overlay_adds={} dead={} alive={} render_total={} mask_len={} counts={:?}",
             _t.elapsed().as_millis(), sels.len(), selected_count, num_cells, buf.len(),
             store.batch.as_ref().map_or(0, |b| b.num_rows()), store.overlay_adds.len(),

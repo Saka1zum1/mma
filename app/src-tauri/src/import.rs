@@ -860,9 +860,8 @@ fn add_parsed_to_store(
 
     if parsed.locations.len() <= 100_000 {
         for loc in &parsed.locations {
-            let gh = crate::location_store::encode_geohash(loc.lat, loc.lng);
-            let cell = &gh[..1];
-            store.cell_add_render(cell, loc.id);
+            let ci = crate::location_store::render_cell_idx(loc.lat, loc.lng);
+            store.cell_add_render(ci, loc.id);
             store.overlay_add(loc.clone());
             for &tag in &loc.tags { *store.tag_counts.entry(tag).or_default() += 1; }
         }
@@ -891,9 +890,8 @@ fn add_parsed_to_store(
 
         for loc in &parsed.locations {
             for &tag in &loc.tags { *store.tag_counts.entry(tag).or_default() += 1; }
-            let gh = crate::location_store::encode_geohash(loc.lat, loc.lng);
-            let cell = &gh[..1];
-            store.cell_add_render(cell, loc.id);
+            let ci = crate::location_store::render_cell_idx(loc.lat, loc.lng);
+            store.cell_add_render(ci, loc.id);
         }
         store.alive_count += parsed.locations.len();
 

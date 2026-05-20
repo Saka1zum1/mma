@@ -38,6 +38,8 @@ tauri-plugin-dialog = "2.7.1"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 reverse_geocoder = "4"
+memmap2 = "0.9"
+bytes = "1.9"
 specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "0.0.12"
