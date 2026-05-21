@@ -1125,8 +1125,7 @@ export function LocationPreview() {
 			if (nav.held.has("panoLookDown")) dp -= speed;
 
 			if (dh || dp) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- opensv undocumented API
-				(singletonPano as any).setOptions({
+				singletonPano.setOptions({
 					pov: {
 						heading: (pov.heading + dh + 360) % 360,
 						pitch: Math.max(-90, Math.min(90, pov.pitch + dp)),

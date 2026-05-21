@@ -17,8 +17,8 @@ export interface MapSettingsState {
 	setDefaultPanoId: (v: boolean) => void;
 	enrichMetadata: boolean;
 	setEnrichMetadata: (v: boolean) => void;
-	enrichFields: string[] | undefined;
-	setEnrichFields: (v: string[] | undefined) => void;
+	enrichFields: string[] | null;
+	setEnrichFields: (v: string[] | null) => void;
 }
 
 export function useMapSettings(
@@ -32,7 +32,7 @@ export function useMapSettings(
 	const [preferHigherQuality, _setPreferHigherQuality] = useState(false);
 	const [defaultPanoId, _setDefaultPanoId] = useState(false);
 	const [enrichMetadata, _setEnrichMetadata] = useState(true);
-	const [enrichFields, _setEnrichFields] = useState<string[] | undefined>(undefined);
+	const [enrichFields, _setEnrichFields] = useState<string[] | null>(null);
 
 	useEffect(() => {
 		if (!ms) return;

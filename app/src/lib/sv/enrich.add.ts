@@ -27,7 +27,7 @@ export function needsEnrichment(loc: Location): boolean {
 function buildPatch(
 	data: google.maps.StreetViewPanoramaData,
 	loc: Location,
-	enrichFields: string[] | undefined,
+	enrichFields: string[] | null,
 ): Record<string, unknown> | null {
 	if (!data.extra) return null;
 	const fullPatch: Record<string, unknown> = {
@@ -54,8 +54,8 @@ export async function enrich(
 		if (!data) return false;
 	}
 	const map = getCurrentMap();
-	if (!(map?.meta.settings.enrichMetadata ?? true)) return false;
-	const enrichFields = map?.meta.settings.enrichFields;
+	if (!map || !(map.meta.settings.enrichMetadata ?? true)) return false;
+	const enrichFields = map.meta.settings.enrichFields;
 	const patch = buildPatch(data, loc, enrichFields);
 	if (patch) patchLocationExtra(loc.id, patch);
 

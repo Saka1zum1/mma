@@ -8,10 +8,11 @@ type Unwrapped = {
 		Promise<ExtractOk<Awaited<ReturnType<(typeof commands)[K]>>>>;
 };
 
-function unwrap(result: any) {
+function unwrap(result: unknown) {
 	if (result && typeof result === "object" && "status" in result) {
-		if (result.status === "error") throw result.error;
-		return result.data;
+		const r = result as { status: string; data?: unknown; error?: unknown };
+		if (r.status === "error") throw r.error;
+		return r.data;
 	}
 	return result;
 }
@@ -20,7 +21,7 @@ export const cmd = new Proxy(commands, {
 	get(target, prop) {
 		const fn = target[prop as keyof typeof commands];
 		if (typeof fn !== "function") return fn;
-		return (...args: unknown[]) => (fn as Function)(...args).then(unwrap);
+		return (...args: unknown[]) => (fn as (...a: unknown[]) => Promise<unknown>)(...args).then(unwrap);
 	},
 }) as unknown as Unwrapped;
 

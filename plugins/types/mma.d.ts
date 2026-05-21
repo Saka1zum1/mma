@@ -30,7 +30,16 @@ export type PluginBehavior = Partial<Plugin$1> & {
 	activate(): void | (() => void);
 };
 declare function registerPlugin(plugin: Plugin$1 | PluginBehavior): void;
-interface Location$1 {
+export type ExtraFieldDef = {
+	type: ExtraFieldType;
+	label?: string | null;
+	values?: string[] | null;
+	labels?: {
+		[key in string]: string;
+	} | null;
+};
+export type ExtraFieldType = "string" | "number" | "date" | "month" | "enum";
+export type Location_Serialize = {
 	id: number;
 	lat: number;
 	lng: number;
@@ -40,28 +49,36 @@ interface Location$1 {
 	panoId: string | null;
 	flags: number;
 	tags: number[];
-	extra?: Record<string, unknown>;
-	createdAt?: string;
-	modifiedAt?: string;
-}
-declare function createLocation(partial: Partial<Location$1> & {
-	lat: number;
-	lng: number;
-}): Location$1;
-export interface Tag {
-	id: number;
+	extra?: any | null;
+	createdAt: string;
+	modifiedAt?: string | null;
+};
+export type MapData = {
+	meta: MapMeta;
+};
+export type MapExtra = {
+	fields?: {
+		[key in string]: ExtraFieldDef;
+	} | null;
+};
+export type MapMeta = {
+	id: string;
 	name: string;
-	color: string;
-	visible: boolean;
-	order?: number;
-}
-export interface ExtraFieldDef {
-	type: "string" | "number" | "date" | "month" | "enum";
-	label?: string;
-	values?: string[];
-	labels?: Record<string, string>;
-}
-export interface MapSettings {
+	description: string;
+	folder: string | null;
+	settings: MapSettings;
+	scoreBounds: ScoreBounds;
+	extra: MapExtra;
+	tags: {
+		[key in string]: Tag;
+	};
+	labels: string[];
+	locationCount: number;
+	createdAt: string;
+	updatedAt: string;
+	lastOpenedAt: string | null;
+};
+export type MapSettings = {
 	pointAlongRoad: boolean;
 	preferDirection: number | null;
 	preferOfficial: boolean;
@@ -72,54 +89,38 @@ export interface MapSettings {
 	exportZoom: boolean;
 	exportUnpanned: boolean;
 	enrichMetadata: boolean;
-	enrichFields?: string[];
-}
-export interface MapMeta {
-	id: string;
-	name: string;
-	description: string;
-	folder: string | null;
-	locationCount: number;
-	tags: Record<string, Tag>;
-	labels: string[];
-	settings: MapSettings;
-	scoreBounds: "auto" | [
+	enrichFields: string[] | null;
+};
+export type PolygonGeometry = {
+	coordinates: (([
 		number,
+		number
+	])[])[];
+	extraPolygons?: ((([
+		number,
+		number
+	])[])[])[] | null;
+	properties?: any | null;
+};
+export type ScoreBounds = string | [
+	number,
+	number,
+	number,
+	number
+];
+type Selection$1 = {
+	key: string;
+	color: [
 		number,
 		number,
 		number
 	];
-	extra?: {
-		fields?: Record<string, ExtraFieldDef>;
-	};
-	createdAt: string;
-	updatedAt: string;
-	lastOpenedAt: string | null;
-}
-export interface MapData {
-	meta: MapMeta;
-}
-declare enum ValidationState {
-	Ok = 0,
-	UpdateAvailable = 1,
-	UpdateApplied = 2,
-	NotFound = 3,
-	PanoIdBroke = 4,
-	Unofficial = 5,
-	GoodcamAvailable = 6
-}
-export interface PolygonGeometry {
-	coordinates: number[][][];
-	extraPolygons?: number[][][][];
-	properties?: {
-		name?: string;
-		code?: string;
-	};
-}
+	props: SelectionProps;
+};
 export type SelectionProps = {
 	type: "Locations";
 	locations: number[];
-	name?: string;
+	name: string | null;
 } | {
 	type: "Everything";
 } | {
@@ -146,7 +147,7 @@ export type SelectionProps = {
 } | {
 	type: "ValidationState";
 	locations: number[];
-	state: ValidationState;
+	state: number;
 } | {
 	type: "Intersection";
 	selections: Selection$1[];
@@ -159,21 +160,26 @@ export type SelectionProps = {
 } | {
 	type: "Filter";
 	field: string;
-	op: FilterOp;
-	value: unknown;
-	value2?: unknown;
+	op: string;
+	value: any;
+	value2: any | null;
 };
-export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "has" | "nothas";
-interface Selection$1 {
-	key: string;
-	color: [
-		number,
-		number,
-		number
-	];
-	props: SelectionProps;
-	count: number;
-}
+export type Tag = {
+	id: number;
+	name: string;
+	color: string;
+	visible?: boolean;
+	order?: number | null;
+};
+type Location$1 = Location_Serialize;
+type Tag$1 = Tag;
+declare function createLocation(partial: Partial<Location$1> & {
+	lat: number;
+	lng: number;
+}): Location$1;
+type Selection$1 = Selection$1 & {
+	count?: number;
+};
 export interface EnrichFieldOption {
 	key: string;
 	label: string;
@@ -181,7 +187,7 @@ export interface EnrichFieldOption {
 declare function registerEnrichFields(fields: EnrichFieldOption[]): void;
 export interface EnrichmentProvider {
 	id: string;
-	enrich(locations: Location$1[], enrichFields: string[] | undefined): Promise<Map<number, Record<string, unknown>>>;
+	enrich(locations: Location$1[], enrichFields: string[] | null): Promise<Map<number, Record<string, unknown>>>;
 	fieldDefs: Record<string, ExtraFieldDef>;
 }
 declare function registerEnrichmentProvider(provider: EnrichmentProvider): void;
@@ -575,18 +581,18 @@ declare const mmaApi: {
 		save: typeof save;
 	};
 	getMap: () => MapData | null;
-	getActiveLocation: () => Location$1 | null;
+	getActiveLocation: () => Location_Serialize | null;
 	getGoogleMap: () => google.maps.Map | null;
 	addLocations: (locs: Location$1[]) => Promise<void>;
 	removeLocations: (ids: Set<number>) => void;
 	updateLocation: (id: number, patch: Partial<Location$1>) => void;
 	setActiveLocation: (id: number | null) => Promise<void>;
-	addTag: (tag: Tag) => Promise<void>;
-	updateTag: (tagId: number, patch: Partial<Tag>) => Promise<void>;
+	addTag: (tag: Tag$1) => void;
+	updateTag: (tagId: number, patch: Partial<Tag$1>) => void;
 	getSelections: () => Selection$1[];
 	getSelectedLocationIds: () => Set<number>;
 	queryIds: (props: SelectionProps) => Promise<number[]>;
-	getLocationsByIds: (ids: number[]) => Promise<Location$1[]>;
+	getLocationsByIds: (ids: number[]) => Promise<Location_Serialize[]>;
 	enterPluginMode: (pluginId: string) => void;
 	exitPluginMode: () => void;
 	on(event: EditorEvent, handler: Handler): () => void;

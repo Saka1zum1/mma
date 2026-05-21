@@ -113,9 +113,9 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 	const origShaderSource = gl.shaderSource.bind(gl);
 	const origGetUniformLocation = gl.getUniformLocation.bind(gl);
 	const origAttachShader = gl.attachShader.bind(gl);
-	const origUniform1fv = (gl as any).uniform1fv.bind(gl);
-	const origUniform2fv = (gl as any).uniform2fv.bind(gl);
-	const origUniform3fv = (gl as any).uniform3fv.bind(gl);
+	const origUniform1fv = gl.uniform1fv.bind(gl);
+	const origUniform2fv = gl.uniform2fv.bind(gl);
+	const origUniform3fv = gl.uniform3fv.bind(gl);
 
 	const triggerRefresh = () => {
 		window.requestAnimationFrame(() => {
@@ -281,11 +281,12 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 		"uniformMatrix4fv",
 	];
 
+	const glr = gl as unknown as Record<string, (...a: unknown[]) => unknown>;
 	for (const fn of uniformFns) {
-		const orig = (gl as any)[fn].bind(gl);
-		(gl as any)[fn] = function (...args: any[]) {
+		const orig = (glr[fn] as Function).bind(gl);
+		glr[fn] = function (...args: unknown[]) {
 			const prog = currentProgram;
-			const loc = args[0];
+			const loc = args[0] as { uniformVariableName: string };
 
 			if (prog?.defaultProgram) {
 				savedUniforms[loc.uniformVariableName] = { func: orig, args };

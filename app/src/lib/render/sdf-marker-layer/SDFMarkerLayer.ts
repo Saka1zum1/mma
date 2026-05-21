@@ -29,6 +29,7 @@ type _SDFMarkerLayerProps<DataT> = {
 	getPosition?: Accessor<DataT, Position>;
 	getFillColor?: Accessor<DataT, Color>;
 	getAngle?: Accessor<DataT, number>;
+	getRadius?: Accessor<DataT, number>;
 };
 
 export type SDFMarkerLayerProps<DataT = unknown> = _SDFMarkerLayerProps<DataT> & LayerProps;
@@ -36,17 +37,14 @@ export type SDFMarkerLayerProps<DataT = unknown> = _SDFMarkerLayerProps<DataT> &
 const defaultProps: DefaultProps<SDFMarkerLayerProps> = {
 	shape: "circle",
 	radiusPixels: { type: "number", min: 0, value: 12 },
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl accessor default
-	getPosition: { type: "accessor", value: (x: any) => x.position },
+	getPosition: { type: "accessor", value: [0, 0] },
 	getFillColor: { type: "accessor", value: [0, 0, 0, 255] },
 	getAngle: { type: "accessor", value: 0 },
 	// Prevent errors when transitioning from ScatterplotLayer on the same layer ID
 	getRadius: { type: "accessor", value: 1 },
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl DefaultProps type mismatch
-} as any;
+};
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl generic defaults
-export default class SDFMarkerLayer<DataT = any, ExtraPropsT extends Record<string, unknown> = Record<string, unknown>> extends Layer<
+export default class SDFMarkerLayer<DataT = unknown, ExtraPropsT extends Record<string, unknown> = Record<string, unknown>> extends Layer<
 	ExtraPropsT & Required<_SDFMarkerLayerProps<DataT>>
 > {
 	static defaultProps = defaultProps;

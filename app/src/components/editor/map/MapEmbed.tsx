@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
-import type { PickingInfo, Layer } from "@deck.gl/core";
+import type { GoogleMapsOverlayProps } from "@deck.gl/google-maps";
+import type { PickingInfo, Layer, Position } from "@deck.gl/core";
+type OverlayEvent = { srcEvent?: { domEvent?: Event } };
 import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
 import { lookupStreetView, svThumbnailUrl, showToast, svSearchRadius } from "@/lib/sv/lookup.add";
@@ -427,19 +429,16 @@ export function MapEmbed() {
 				new PolygonLayer<number[][][]>({
 					id: `selectionPolygonFill:${sel.key}`,
 					data: allPolygons,
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- data is the polygon
-					getPolygon: (d) => d as any,
+					getPolygon: (d) => d,
 					getFillColor: fillColor,
 					stroked: false,
 					pickable: false,
 					opacity: 1,
 				}),
-				new PathLayer<number[][]>({
+				new PathLayer<Position[]>({
 					id: `selectionPolygonStroke:${sel.key}`,
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw coordinate rings
-					data: allPolygons.flatMap((p) => p) as any,
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- data is the path
-					getPath: (d) => d as any,
+					data: allPolygons.flatMap((p) => p) as Position[][],
+					getPath: (d) => d,
 					getColor: strokeColor,
 					getWidth: 4,
 					widthUnits: "pixels",
@@ -489,8 +488,7 @@ export function MapEmbed() {
 									getPosition: { value: cell.positions, size: 2 },
 									getFillColor: { value: cell.colors, size: 4 },
 								},
-								// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl binary data format
-							} as any,
+							},
 							getRadius: 6,
 							radiusUnits: "pixels",
 							radiusMinPixels: 3,
@@ -514,8 +512,7 @@ export function MapEmbed() {
 									getFillColor: { value: cell.colors, size: 4 },
 									getAngle: { value: cell.angles, size: 1 },
 								},
-								// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl binary data format
-							} as any,
+							},
 							shape: "arrow",
 							radiusPixels: 12,
 							opacity: markerVisibility === "transparent" ? 0.3 : 1,
@@ -538,8 +535,7 @@ export function MapEmbed() {
 									getPosition: { value: cell.positions, size: 2 },
 									getFillColor: { value: cell.colors, size: 4 },
 								},
-								// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl binary data format
-							} as any,
+							},
 							shape: "pin",
 							radiusPixels: 16,
 							opacity: markerVisibility === "transparent" ? 0.3 : 1,
@@ -567,8 +563,7 @@ export function MapEmbed() {
 								getPosition: { value: cm.selOverlayPositions, size: 2 },
 								getFillColor: { value: cm.selOverlayColors, size: 4 },
 							},
-							// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl binary data format
-						} as any,
+						},
 						getRadius: 6,
 						radiusUnits: "pixels",
 						radiusMinPixels: 3,
@@ -590,8 +585,7 @@ export function MapEmbed() {
 								getFillColor: { value: cm.selOverlayColors, size: 4 },
 								getAngle: { value: cm.selOverlayAngles, size: 1 },
 							},
-							// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl binary data format
-						} as any,
+						},
 						shape: "arrow",
 						radiusPixels: 12,
 						pickable: selPickable,
@@ -612,8 +606,7 @@ export function MapEmbed() {
 								getPosition: { value: cm.selOverlayPositions, size: 2 },
 								getFillColor: { value: cm.selOverlayColors, size: 4 },
 							},
-							// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl binary data format
-						} as any,
+						},
 						shape: "pin",
 						radiusPixels: 16,
 						pickable: selPickable,
@@ -651,8 +644,7 @@ export function MapEmbed() {
 						data: [activeLoc],
 						getPosition: (d) => [d.lng, d.lat],
 						getRadius: 6,
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl type gap
-						radiusUnits: "pixels" as any,
+						radiusUnits: "pixels",
 						radiusMinPixels: 3,
 						getFillColor: [200, 0, 0, 255],
 						pickable: true,
@@ -783,7 +775,7 @@ export function MapEmbed() {
 	}, []);
 
 	const handleClick = useCallback(
-		async (info: PickingInfo, event: { srcEvent?: { domEvent?: Event } }) => {
+		async (info: PickingInfo, event: OverlayEvent) => {
 			const domEvent = event?.srcEvent?.domEvent;
 
 			const resolvePickedLocationAsync = async (): Promise<Location | undefined> => {
@@ -876,9 +868,7 @@ export function MapEmbed() {
 	);
 
 	const handleHover = useCallback(
-		(info: PickingInfo, event: { srcEvent?: { domEvent?: Event } }) => {
-			// Binary-attribute layers don't populate info.object; the layer id +
-			// a non-negative index is enough to know we're over a marker.
+		(info: PickingInfo, event: OverlayEvent) => {
 			const hasObject =
 				info.object != null ||
 				(isLocationLayer(info.layer?.id) === true &&
@@ -1361,20 +1351,13 @@ export function MapEmbed() {
 
 	const updateOverlay = useCallback(() => {
 		if (!overlayRef.current) return;
-		const t0 = performance.now();
 		const layers = buildLayers();
-		const t1 = performance.now();
 		overlayRef.current.setProps({
 			layers,
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl Mjolnir type mismatch
-			onClick: handleClick as any,
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- deck.gl Mjolnir type mismatch
-			onHover: handleHover as any,
+			onClick: handleClick as GoogleMapsOverlayProps["onClick"],
+			onHover: handleHover as GoogleMapsOverlayProps["onHover"],
 			onError: (e: unknown) => log.error("[deck.gl overlay error]", e),
 		});
-		// log.debug(
-		// 	`[overlay] buildLayers=${(t1 - t0).toFixed(0)}ms setProps=${(performance.now() - t1).toFixed(0)}ms layers=${layers.length}`,
-		// );
 	}, [buildLayers, handleClick, handleHover]);
 
 	useEffect(() => {

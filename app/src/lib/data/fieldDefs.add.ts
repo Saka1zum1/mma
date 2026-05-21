@@ -36,7 +36,7 @@ export function getAllEnrichKeys(): string[] {
 
 export interface EnrichmentProvider {
 	id: string;
-	enrich(locations: Location[], enrichFields: string[] | undefined): Promise<Map<number, Record<string, unknown>>>;
+	enrich(locations: Location[], enrichFields: string[] | null): Promise<Map<number, Record<string, unknown>>>;
 	fieldDefs: Record<string, ExtraFieldDef>;
 }
 
@@ -50,14 +50,14 @@ export function getEnrichmentProviders(): EnrichmentProvider[] {
 	return providers;
 }
 
-export function isFieldEnabled(enrichFields: string[] | undefined, key: string): boolean {
+export function isFieldEnabled(enrichFields: string[] | null, key: string): boolean {
 	if ((key === "datetime" || key === "timezone") && !getSettings().showExactDate) return false;
 	return !enrichFields || enrichFields.includes(key);
 }
 
 export function filterEnrichPatch(
 	patch: Record<string, unknown>,
-	enrichFields: string[] | undefined,
+	enrichFields: string[] | null,
 ): Record<string, unknown> {
 	if (!enrichFields) return patch;
 	const filtered: Record<string, unknown> = {};

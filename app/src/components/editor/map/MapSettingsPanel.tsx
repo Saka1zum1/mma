@@ -67,8 +67,8 @@ export interface MapSettingsDropdownProps {
 	setShowPreviews: (v: boolean) => void;
 	enrichMetadata: boolean;
 	setEnrichMetadata: (v: boolean) => void;
-	enrichFields: string[] | undefined;
-	setEnrichFields: (v: string[] | undefined) => void;
+	enrichFields: string[] | null;
+	setEnrichFields: (v: string[] | null) => void;
 }
 
 function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
@@ -443,7 +443,7 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 															? [...current, f.key]
 															: current.filter((k) => k !== f.key);
 														s.setEnrichFields(
-															next.length === allKeys.length ? undefined : next,
+															next.length === allKeys.length ? null : next,
 														);
 													}}
 												/>
