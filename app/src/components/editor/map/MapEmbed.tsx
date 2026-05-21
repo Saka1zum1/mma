@@ -551,8 +551,7 @@ export function MapEmbed() {
 			}
 		}
 
-		if (cm.selOverlayCount > 0) {
-			const selPickable = markerVisibility === "hidden";
+		if (cm.selOverlayCount > 0) {			
 			if (markerStyle === "circle") {
 				layers.push(
 					new ScatterplotLayer({
@@ -567,7 +566,10 @@ export function MapEmbed() {
 						getRadius: 6,
 						radiusUnits: "pixels",
 						radiusMinPixels: 3,
-						pickable: selPickable,
+						// Selection overlay is drawn on top of the cell markers, so it must also be pickable on
+						// top — otherwise clicks fall through to the cell layer where selected markers have no
+						// z-priority, and an overlapping neighbor gets picked instead of the marker on top.
+						pickable: true,
 						updateTriggers: {
 							getFillColor: [cm.selOverlayVersion],
 							getPosition: [cm.selOverlayVersion],
