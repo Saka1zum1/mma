@@ -590,7 +590,7 @@ export function MapEmbed() {
 						},
 						shape: "arrow",
 						radiusPixels: 12,
-						pickable: selPickable,
+						pickable: true,
 						updateTriggers: {
 							getFillColor: [cm.selOverlayVersion],
 							getPosition: [cm.selOverlayVersion],
@@ -611,7 +611,7 @@ export function MapEmbed() {
 						},
 						shape: "pin",
 						radiusPixels: 16,
-						pickable: selPickable,
+						pickable: true,
 						updateTriggers: {
 							getFillColor: [cm.selOverlayVersion],
 							getPosition: [cm.selOverlayVersion],
