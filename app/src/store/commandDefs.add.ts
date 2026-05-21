@@ -82,10 +82,7 @@ registerCommand({
 	label: "Select everything",
 	group: "Selections",
 	defaultBinding: "Mod+a",
-	execute: () => {
-		resetSelections();
-		selectEverything();
-	},
+	execute: selectEverything,
 });
 
 registerCommand({
