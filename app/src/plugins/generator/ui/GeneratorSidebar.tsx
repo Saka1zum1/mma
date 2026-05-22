@@ -6,7 +6,7 @@ import { GenerationEngine } from "../engine/GenerationEngine";
 import { RegionSelector } from "./RegionSelector";
 import { SettingsPanel } from "./SettingsPanel";
 import { ProgressDisplay } from "./ProgressDisplay";
-import { getGoogle } from "@/lib/sv/opensv";
+import { google } from "@/lib/sv/opensv";
 import { getSelections } from "@/store/useMapStore";
 import type { Selection } from "@/store/selections";
 import { Icon } from "@/components/primitives/Icon";
@@ -111,8 +111,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 	const handleStart = useCallback(() => {
 		const sels = getSelections().filter((s) => s.props.type === "Polygon");
 		if (sels.length === 0) return;
-		const g = getGoogle();
-		if (!g) return;
+		if (!google) return;
 
 		// Reset metadata for selected regions
 		const nextMeta = new Map(sessionMeta);
@@ -128,7 +127,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		}
 		setMeta(nextMeta);
 
-		const engine = new GenerationEngine(g, settings, regions, {
+		const engine = new GenerationEngine(google, settings, regions, {
 			onLocationsFound: (locs: GeneratedLocation[]) => {
 				MMA.addLocations(locs.map(generatedToLocation));
 				rerender((n) => n + 1);

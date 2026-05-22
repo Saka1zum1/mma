@@ -17,6 +17,8 @@ HTMLCanvasElement.prototype.getContext = function (
 	return origGetContext.call(this, type, attrs);
 } as typeof origGetContext;
 
+export let google: typeof globalThis.google;
+
 export function loadOpenSV(): Promise<void> {
 	if (loaded) return Promise.resolve();
 	if (loading) return loading;
@@ -32,6 +34,7 @@ export function loadOpenSV(): Promise<void> {
 			script.onload = () => {
 				URL.revokeObjectURL(url);
 				loaded = true;
+				google = (window as any).google;
 				resolve();
 			};
 			script.onerror = reject;
@@ -39,8 +42,4 @@ export function loadOpenSV(): Promise<void> {
 		});
 	})();
 	return loading;
-}
-
-export function getGoogle(): typeof google {
-	return (window as any).google;
 }

@@ -4,7 +4,6 @@ import { ValidationState } from "@/store/selections";
 import { fetchSvMetadata } from "./svMeta";
 import { isOfficialPano } from "./panoId";
 import { getPanoAtCoords } from "./lookup.add";
-import { getGoogle } from "./opensv";
 import { runConcurrent } from "@/lib/util/concurrent";
 
 const GOOD_CAM_TYPES = new Set(["gen4", "gen2"]);

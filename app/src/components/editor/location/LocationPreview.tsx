@@ -29,7 +29,7 @@ import {
 	reviewPrev,
 	reviewDelete,
 } from "@/store/useMapStore";
-import { loadOpenSV, getGoogle } from "@/lib/sv/opensv";
+import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { useHotkey, parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
 import { useBinding, getBinding } from "@/lib/util/hotkeys.add";
@@ -274,8 +274,8 @@ const DARK_MODE_STYLES: MapStyle[] = [
 	{ featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
 ];
 
-function buildMiniMapType(g: Google): google.maps.ImageMapType {
-	const tileSize = new g.maps.Size(256, 256);
+function buildMiniMapType(): google.maps.ImageMapType {
+	const tileSize = new google.maps.Size(256, 256);
 	const basemap = (() => {
 		try {
 			return JSON.parse(localStorage.getItem("basemap") ?? '"map"');
@@ -313,7 +313,7 @@ function buildMiniMapType(g: Google): google.maps.ImageMapType {
 
 	if (basemap === "satellite") {
 		const cfg = createSatelliteTileConfig();
-		return new g.maps.ImageMapType({
+		return new google.maps.ImageMapType({
 			getTileUrl: (c: TileCoord, z: number) => buildTileUrl(cfg, c.x, c.y, z),
 			tileSize,
 			minZoom: 0,
@@ -321,7 +321,7 @@ function buildMiniMapType(g: Google): google.maps.ImageMapType {
 		});
 	}
 	if (basemap === "osm") {
-		return new g.maps.ImageMapType({
+		return new google.maps.ImageMapType({
 			getTileUrl: (_c: TileCoord, z: number) =>
 				`https://tile.openstreetmap.org/${z}/${_c.x}/${_c.y}.png`,
 			tileSize,
@@ -331,7 +331,7 @@ function buildMiniMapType(g: Google): google.maps.ImageMapType {
 	}
 	if (terrain) {
 		const cfg = createTerrainBasemapTileConfig(extraStyles);
-		return new g.maps.ImageMapType({
+		return new google.maps.ImageMapType({
 			getTileUrl: (c: TileCoord, z: number) => buildTileUrl(cfg, c.x, c.y, z),
 			tileSize,
 			minZoom: 0,
@@ -339,7 +339,7 @@ function buildMiniMapType(g: Google): google.maps.ImageMapType {
 		});
 	}
 	const cfg = createRoadmapTileConfig(extraStyles);
-	return new g.maps.ImageMapType({
+	return new google.maps.ImageMapType({
 		getTileUrl: (c: TileCoord, z: number) => buildTileUrl(cfg, c.x, c.y, z),
 		tileSize,
 		minZoom: 0,
@@ -347,11 +347,11 @@ function buildMiniMapType(g: Google): google.maps.ImageMapType {
 	});
 }
 
-function createDotOverlay(g: Google, map: google.maps.Map, pos: { lat: number; lng: number }) {
-	const overlay = new g.maps.OverlayView();
+function createDotOverlay(map: google.maps.Map, pos: { lat: number; lng: number }) {
+	const overlay = new google.maps.OverlayView();
 	const div = document.createElement("div");
 	div.className = "fullscreen-minimap__marker";
-	let position = new g.maps.LatLng(pos.lat, pos.lng);
+	let position = new google.maps.LatLng(pos.lat, pos.lng);
 
 	overlay.onAdd = () => {
 		overlay.getPanes()!.overlayMouseTarget.appendChild(div);
@@ -372,7 +372,7 @@ function createDotOverlay(g: Google, map: google.maps.Map, pos: { lat: number; l
 
 	return {
 		setPosition(p: { lat: number; lng: number }) {
-			position = new g.maps.LatLng(p.lat, p.lng);
+			position = new google.maps.LatLng(p.lat, p.lng);
 			overlay.draw();
 		},
 		remove() {
@@ -398,10 +398,9 @@ function FullscreenMiniMap({
 	} | null>(null);
 
 	useEffect(() => {
-		const g = getGoogle();
-		if (!containerRef.current || !g?.maps) return;
-		const customType = buildMiniMapType(g);
-		const map = new g.maps.Map(containerRef.current, {
+		if (!containerRef.current || !google?.maps) return;
+		const customType = buildMiniMapType();
+		const map = new google.maps.Map(containerRef.current, {
 			center: { lat, lng },
 			zoom: 14,
 			disableDefaultUI: true,
@@ -412,7 +411,7 @@ function FullscreenMiniMap({
 		map.mapTypes.set("custom", customType);
 		map.setMapTypeId("custom");
 		mapRef.current = map;
-		dotRef.current = createDotOverlay(g, map, { lat, lng });
+		dotRef.current = createDotOverlay(map, { lat, lng });
 		return () => {
 			dotRef.current?.remove();
 			dotRef.current = null;
@@ -430,7 +429,7 @@ function FullscreenMiniMap({
 			dotRef.current?.setPosition(ll);
 		});
 		return () => {
-			getGoogle()?.maps?.event?.removeListener(listener);
+			google?.maps?.event?.removeListener(listener);
 		};
 	}, [panorama]);
 
@@ -611,11 +610,10 @@ const singletonDiv = (() => {
 
 function getPanorama(): google.maps.StreetViewPanorama | null {
 	if (singletonPano) return singletonPano;
-	const g = getGoogle();
-	if (!g?.maps) return null;
+	if (!google?.maps) return null;
 	const s = getSettings();
 	const noMove = s.defaultMovementMode !== "moving";
-	singletonPano = new g.maps.StreetViewPanorama(singletonDiv, {
+	singletonPano = new google.maps.StreetViewPanorama(singletonDiv, {
 		disableDefaultUI: true,
 		showRoadLabels: s.showRoadLabels,
 		linksControl: noMove ? false : s.showLinksControl,
@@ -736,8 +734,7 @@ export function LocationPreview() {
 
 		loadOpenSV().then(async () => {
 			if (cancelled) return;
-			const g = getGoogle();
-			if (!g?.maps) return;
+			if (!google?.maps) return;
 			const pano = getPanorama();
 			if (!pano) return;
 
@@ -813,9 +810,8 @@ export function LocationPreview() {
 		return () => {
 			cancelled = true;
 			clearTrail();
-			const g = getGoogle();
-			if (statusListener) g?.maps?.event?.removeListener(statusListener);
-			if (lockListener) g?.maps?.event?.removeListener(lockListener);
+			if (statusListener) google?.maps?.event?.removeListener(statusListener);
+			if (lockListener) google?.maps?.event?.removeListener(lockListener);
 			const pano = singletonPano;
 			if (pano) {
 				seenFlush(() => ({
@@ -920,8 +916,7 @@ export function LocationPreview() {
 
 	const handleReturnToSpawn = useCallback(async () => {
 		if (!location || !singletonPano) return;
-		const g = getGoogle();
-		if (!g) return;
+		if (!google) return;
 		const result = await resolvePano(location);
 		applyResolved(singletonPano, result, location);
 		google.maps.event.trigger(singletonPano, "resize");

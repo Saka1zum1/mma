@@ -1,6 +1,6 @@
 import { distMeters } from "@/lib/geo/geo";
 import { fetchPanoDotsWithIds } from "@/lib/geo/photometa";
-import { getGoogle } from "@/lib/sv/opensv";
+import { google } from "@/lib/sv/opensv";
 import { cameraTypeFromHeight, fetchSvMetadata } from "@/lib/sv/svMeta";
 import { LocationFlag, hasLoadAsPanoId } from "@/types";
 import type { Location } from "@/types";
@@ -31,8 +31,7 @@ export async function fetchPanoData(
 	request: google.maps.StreetViewPanoRequest | google.maps.StreetViewLocationRequest,
 ): Promise<google.maps.StreetViewResolvedPanoramaData | null> {
 	try {
-		const g = getGoogle();
-		const sv = new g.maps.StreetViewService();
+		const sv = new google.maps.StreetViewService();
 		const result = await sv.getPanorama(request);
 		const data = result?.data;
 		if (data?.location?.latLng) return data as google.maps.StreetViewResolvedPanoramaData;
@@ -47,8 +46,7 @@ export async function getPanoAtCoords(
 	lng: number,
 	radius = SV_SEARCH_RADIUS,
 ): Promise<string | null> {
-	const g = getGoogle();
-	const sv = new g.maps.StreetViewService();
+	const sv = new google.maps.StreetViewService();
 	try {
 		const result = await sv.getPanorama({ location: { lat, lng }, radius });
 		return result.data.location?.pano ?? null;
@@ -94,8 +92,7 @@ export async function resolvePanoIds(
 ): Promise<ResolvePanoResult> {
 	const { concurrency = 500, batchSize = 200, signal, onProgress } = opts;
 	const result: ResolvePanoResult = { resolved: [], failed: [] };
-	const g = getGoogle();
-	if (!g) return result;
+	if (!google) return result;
 	const { runConcurrent } = await import("@/lib/util/concurrent");
 	const { batchUpdateLocations } = await import("@/store/useMapStore");
 
@@ -242,7 +239,6 @@ export async function lookupStreetView(
 		preferHigherQuality?: boolean;
 	},
 ): Promise<Location | null> {
-	const g = getGoogle();
 	const radius = Math.max(50, Math.round(svSearchRadius(lat, zoom)));
 	const click = { lat, lng };
 	const userUploaded: "ignore" | "avoid" | "allow" = opts.onlyOfficial
@@ -256,8 +252,8 @@ export async function lookupStreetView(
 		fetchPanoData({
 			location: click,
 			radius,
-			sources: [g.maps.StreetViewSource.GOOGLE],
-			preference: g.maps.StreetViewPreference.NEAREST,
+			sources: [google.maps.StreetViewSource.GOOGLE],
+			preference: google.maps.StreetViewPreference.NEAREST,
 		}),
 		photometaSnap(click, radius),
 		userUploaded === "allow"
@@ -265,7 +261,7 @@ export async function lookupStreetView(
 					location: click,
 					radius,
 					sources: ["unofficial" as unknown as google.maps.StreetViewSource],
-					preference: g.maps.StreetViewPreference.NEAREST,
+					preference: google.maps.StreetViewPreference.NEAREST,
 				})
 			: null,
 	]);

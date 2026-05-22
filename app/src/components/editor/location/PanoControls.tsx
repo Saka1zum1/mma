@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { hasLoadAsPanoId, LocationFlag } from "@/types";
 import type { Location } from "@/types";
-import { getGoogle } from "@/lib/sv/opensv";
+import { google } from "@/lib/sv/opensv";
 import { lookupStreetView } from "@/lib/sv/lookup.add";
 import { shortenMapsUrl } from "@/lib/sv/shortUrl";
 import { useSettings } from "@/store/settings.add";
@@ -158,7 +158,6 @@ export function PanoControls({
 	);
 
 	useEffect(() => {
-		const g = getGoogle();
 		const povListener = panorama.addListener("pov_changed", () => {
 			setHeading(panorama.getPov().heading);
 		});
@@ -174,9 +173,9 @@ export function PanoControls({
 		setZoom(panorama.getZoom());
 		setLinks((panorama.getLinks() ?? []).filter((l): l is google.maps.StreetViewLink => l != null));
 		return () => {
-			g?.maps?.event?.removeListener(povListener);
-			g?.maps?.event?.removeListener(zoomListener);
-			g?.maps?.event?.removeListener(linksListener);
+			google?.maps?.event?.removeListener(povListener);
+			google?.maps?.event?.removeListener(zoomListener);
+			google?.maps?.event?.removeListener(linksListener);
 		};
 	}, [panorama]);
 
@@ -273,9 +272,8 @@ export function PanoControls({
 			await jumpPending.current;
 			const pos = panorama.getPosition();
 			if (!pos) return;
-			const g = getGoogle();
-			if (!g?.maps?.geometry) return;
-			const target = g.maps.geometry.spherical.computeOffset(
+			if (!google?.maps?.geometry) return;
+			const target = google.maps.geometry.spherical.computeOffset(
 				pos,
 				100,
 				panorama.getPov().heading + headingOffset,

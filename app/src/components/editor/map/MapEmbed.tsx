@@ -36,7 +36,7 @@ import {
 	renderDeltaBus,
 	selBitmaskBus,
 } from "@/store/useMapStore";
-import { loadOpenSV, getGoogle } from "@/lib/sv/opensv";
+import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { useTrailVersion, getTrail } from "@/lib/sv/svTrail.add";
 import {
 	setGoogleMap as setGoogleMapInstance,
@@ -159,17 +159,16 @@ const DARK_MODE_STYLES: MapStyle[] = [
 
 function waitForTileLoad(el: Element): Promise<void> {
 	return new Promise((resolve) => {
-		const g = getGoogle();
-		g.maps.event.addListenerOnce(el, "load", resolve);
+		google.maps.event.addListenerOnce(el, "load", resolve);
 	});
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime-created class
 let StackedMapType: any = null;
 
-function initStackedMapType(g: Google) {
+function initStackedMapType() {
 	if (StackedMapType) return;
-	StackedMapType = class extends g.maps.ImageMapType {
+	StackedMapType = class extends google.maps.ImageMapType {
 		layers: google.maps.ImageMapType[];
 		constructor(layers: google.maps.ImageMapType[], opts: google.maps.ImageMapTypeOptions) {
 			super({ ...opts, getTileUrl: () => null });
@@ -181,7 +180,7 @@ function initStackedMapType(g: Google) {
 			const div = doc.createElement("div");
 			div.append(...tiles.filter(Boolean));
 			Promise.all(tiles.filter((t): t is Element => t != null).map(waitForTileLoad)).then(() => {
-				g.maps.event.trigger(div, "load");
+				google.maps.event.trigger(div, "load");
 			});
 			return div;
 		}
@@ -199,12 +198,11 @@ function initStackedMapType(g: Google) {
 }
 
 function createCompositeMapType(
-	g: Google,
 	layers: google.maps.ImageMapType[],
 ): google.maps.ImageMapType {
-	initStackedMapType(g);
+	initStackedMapType();
 	return new StackedMapType(layers, {
-		tileSize: new g.maps.Size(256, 256),
+		tileSize: new google.maps.Size(256, 256),
 		minZoom: 0,
 		maxZoom: 20,
 	});
@@ -888,9 +886,7 @@ export function MapEmbed() {
 	const svLayerRef = useRef<google.maps.ImageMapType>(null);
 
 	const buildMapStack = useCallback(
-		(
-			g: Google,
-			opts: {
+		(opts: {
 				type: MapTypeKey;
 				labels: boolean;
 				terrain: boolean;
@@ -904,7 +900,7 @@ export function MapEmbed() {
 				customStyles?: MapStyle[];
 			},
 		) => {
-			const tileSize = new g.maps.Size(256, 256);
+			const tileSize = new google.maps.Size(256, 256);
 			const layers: google.maps.ImageMapType[] = [];
 
 			const extraStyles: MapStyle[] = [];
@@ -933,7 +929,7 @@ export function MapEmbed() {
 			if (opts.type === "satellite") {
 				const cfg = createSatelliteTileConfig();
 				layers.push(
-					new g.maps.ImageMapType({
+					new google.maps.ImageMapType({
 						getTileUrl: (coord: TileCoord, zoom: number) =>
 							buildTileUrl(cfg, coord.x, coord.y, zoom),
 						tileSize,
@@ -944,7 +940,7 @@ export function MapEmbed() {
 				if (opts.terrain) {
 					const tcfg = createTerrainOverlayTileConfig();
 					layers.push(
-						new g.maps.ImageMapType({
+						new google.maps.ImageMapType({
 							getTileUrl: (coord: TileCoord, zoom: number) =>
 								buildTileUrl(tcfg, coord.x, coord.y, zoom),
 							tileSize,
@@ -955,7 +951,7 @@ export function MapEmbed() {
 				}
 			} else if (opts.type === "osm") {
 				layers.push(
-					new g.maps.ImageMapType({
+					new google.maps.ImageMapType({
 						getTileUrl: (coord: TileCoord, zoom: number) =>
 							`https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
 						tileSize,
@@ -975,7 +971,7 @@ export function MapEmbed() {
 						...extraStyles,
 					]);
 					layers.push(
-						new g.maps.ImageMapType({
+						new google.maps.ImageMapType({
 							getTileUrl: (coord: TileCoord, zoom: number) =>
 								buildTileUrl(cfg, coord.x, coord.y, zoom),
 							tileSize,
@@ -986,7 +982,7 @@ export function MapEmbed() {
 				} else {
 					const cfg = createRoadmapTileConfig(extraStyles);
 					layers.push(
-						new g.maps.ImageMapType({
+						new google.maps.ImageMapType({
 							getTileUrl: (coord: TileCoord, zoom: number) =>
 								buildTileUrl(cfg, coord.x, coord.y, zoom),
 							tileSize,
@@ -1011,7 +1007,7 @@ export function MapEmbed() {
 						color: opts.color,
 						thickness: opts.thickness,
 					});
-			const svLayer = new g.maps.ImageMapType({
+			const svLayer = new google.maps.ImageMapType({
 				getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(svCfg, coord.x, coord.y, zoom),
 				tileSize,
 				minZoom: 0,
@@ -1025,7 +1021,7 @@ export function MapEmbed() {
 			if (opts.labels && opts.type !== "osm") {
 				const labelCfg = createLabelsTileConfig(extraStyles);
 				layers.push(
-					new g.maps.ImageMapType({
+					new google.maps.ImageMapType({
 						getTileUrl: (coord: TileCoord, zoom: number) =>
 							buildTileUrl(labelCfg, coord.x, coord.y, zoom),
 						tileSize,
@@ -1035,7 +1031,7 @@ export function MapEmbed() {
 				);
 			}
 
-			return createCompositeMapType(g, layers);
+			return createCompositeMapType(layers);
 		},
 		[svOpacity],
 	);
@@ -1047,12 +1043,11 @@ export function MapEmbed() {
 
 		loadOpenSV().then(() => {
 			if (cancelled || !containerRef.current) return;
-			const g = getGoogle();
-			if (!g?.maps) return;
-			gRef.current = g;
+			if (!google?.maps) return;
+			gRef.current = google;
 
 			if (!gMapRef.current) {
-				gMapRef.current = new g.maps.Map(containerRef.current, {
+				gMapRef.current = new google.maps.Map(containerRef.current, {
 					center: { lat: 0, lng: 0 },
 					zoom: 2,
 					minZoom: 1,
@@ -1070,7 +1065,7 @@ export function MapEmbed() {
 				});
 
 				const custom = customStyles.find((s) => s.name === mapStyleName);
-				const stack = buildMapStack(g, {
+				const stack = buildMapStack({
 					type: mapType,
 					labels: showLabels,
 					terrain: showTerrain,
@@ -1156,8 +1151,7 @@ export function MapEmbed() {
 		const listener = map.addListener("idle", load);
 		return () => {
 			cancelled = true;
-			const g = getGoogle();
-			if (g?.maps) g.maps.event.removeListener(listener);
+			if (google?.maps) google.maps.event.removeListener(listener);
 		};
 	}, [svPanoramas, mapZoom]);
 
@@ -1258,8 +1252,7 @@ export function MapEmbed() {
 			return;
 		}
 		const map = gMapRef.current;
-		const g = getGoogle();
-		if (!g?.maps) return;
+		if (!google?.maps) return;
 
 		const moveListener = map.addListener("mousemove", async (e: google.maps.MapMouseEvent) => {
 			if (!e.latLng) return;
@@ -1275,13 +1268,13 @@ export function MapEmbed() {
 			await new Promise((r) => setTimeout(r, 300));
 			if (ac.signal.aborted) return;
 
-			const sv = new g.maps.StreetViewService();
+			const sv = new google.maps.StreetViewService();
 			sv.getPanorama(
 				{
 					location: { lat, lng },
 					radius: svSearchRadius(lat, zoom),
-					sources: [g.maps.StreetViewSource.GOOGLE],
-					preference: g.maps.StreetViewPreference.NEAREST,
+					sources: [google.maps.StreetViewSource.GOOGLE],
+					preference: google.maps.StreetViewPreference.NEAREST,
 				},
 				async (data: google.maps.StreetViewPanoramaData | null, status: string) => {
 					if (ac.signal.aborted || status !== "OK" || !data?.location?.pano) return;
@@ -1307,8 +1300,8 @@ export function MapEmbed() {
 		});
 
 		return () => {
-			g.maps.event.removeListener(moveListener);
-			g.maps.event.removeListener(outListener);
+			google.maps.event.removeListener(moveListener);
+			google.maps.event.removeListener(outListener);
 			previewAbortRef.current?.abort();
 			setSvPreview(null);
 		};
@@ -1318,10 +1311,9 @@ export function MapEmbed() {
 
 	useEffect(() => {
 		if (!gMapRef.current) return;
-		const g = getGoogle();
-		if (!g?.maps) return;
+		if (!google?.maps) return;
 		const custom = customStyles.find((s) => s.name === mapStyleName);
-		const stack = buildMapStack(g, {
+		const stack = buildMapStack({
 			type: mapType,
 			labels: showLabels,
 			terrain: showTerrain,
@@ -1390,9 +1382,8 @@ export function MapEmbed() {
 
 	const handleSearchResult = useCallback((lat: number, lng: number, _name: string) => {
 		if (!gMapRef.current) return;
-		const g = getGoogle();
-		if (!g?.maps) return;
-		const bounds = new g.maps.LatLngBounds(
+		if (!google?.maps) return;
+		const bounds = new google.maps.LatLngBounds(
 			{ lat: lat - 0.003, lng: lng - 0.003 },
 			{ lat: lat + 0.003, lng: lng + 0.003 },
 		);

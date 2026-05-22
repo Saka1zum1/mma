@@ -1,4 +1,4 @@
-import { getGoogle } from "./opensv";
+import { google } from "./opensv";
 
 interface CameraFrame {
 	heading: number;
@@ -47,9 +47,8 @@ function norm(deg: number) {
 
 async function getCameraFrame(panoId: string): Promise<CameraFrame | null> {
 	if (frameCache.has(panoId)) return frameCache.get(panoId)!;
-	const g = getGoogle();
-	if (!g?.maps) return null;
-	svService ??= new g.maps.StreetViewService();
+	if (!google?.maps) return null;
+	svService ??= new google.maps.StreetViewService();
 	return new Promise((resolve) => {
 		svService!.getPanorama(
 			{ pano: panoId },
@@ -57,7 +56,7 @@ async function getCameraFrame(panoId: string): Promise<CameraFrame | null> {
 				data: google.maps.StreetViewPanoramaData | null,
 				status: google.maps.StreetViewStatusString,
 			) => {
-				if (status !== g!.maps.StreetViewStatus.OK || !data?.tiles) return resolve(null);
+				if (status !== google.maps.StreetViewStatus.OK || !data?.tiles) return resolve(null);
 				const t = data.tiles;
 				const heading = Number(t.centerHeading ?? t.originHeading ?? 0);
 				const originPitch = Number(t.originPitch ?? 0);

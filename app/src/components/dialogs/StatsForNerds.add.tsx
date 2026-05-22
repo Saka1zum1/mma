@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
-import { getGoogle } from "@/lib/sv/opensv";
+import { google } from "@/lib/sv/opensv";
 import { getDirtyCount } from "@/store/useMapStore";
 
 declare const __APP_VERSION__: string;
@@ -27,7 +27,6 @@ interface Stats {
 }
 
 async function gatherStats(): Promise<Stats> {
-	const g = getGoogle();
 	const dbStats = await cmd.storeDbStats();
 
 	const bytes = dbStats.dbSizeBytes;
@@ -80,14 +79,14 @@ async function gatherStats(): Promise<Stats> {
 		dbSize,
 		journalMode: dbStats.journalMode,
 		foreignKeys: dbStats.foreignKeys ? "ON" : "OFF",
-		opensvVersion: g?.maps?.version ?? "not loaded",
+		opensvVersion: google?.maps?.version ?? "not loaded",
 		webglRenderer,
 		userAgent: navigator.userAgent,
 		viewport: `${window.innerWidth}x${window.innerHeight}`,
 		devicePixelRatio: window.devicePixelRatio,
 		memory: mem,
 		uptime,
-		panoSingleton: !!getGoogle()?.maps?.StreetViewPanorama,
+		panoSingleton: !!google?.maps?.StreetViewPanorama,
 	};
 }
 

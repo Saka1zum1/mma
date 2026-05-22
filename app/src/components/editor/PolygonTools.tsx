@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getGoogle } from "@/lib/sv/opensv";
+import { google } from "@/lib/sv/opensv";
 
 type DrawMode = "polygon" | "rectangle" | "freehand" | null;
 
@@ -52,8 +52,7 @@ export function PolygonTools({
 
 	useEffect(() => {
 		if (!map) return;
-		const g = getGoogle();
-		if (!g?.maps) return;
+		if (!google?.maps) return;
 
 		let cancelled = false;
 		let listener: google.maps.MapsEventListener | null = null;
@@ -61,24 +60,24 @@ export function PolygonTools({
 
 		(async () => {
 			try {
-				await g.maps.importLibrary("drawing");
+				await google.maps.importLibrary("drawing");
 			} catch {
 				return;
 			}
-			if (cancelled || !g.maps.drawing?.DrawingManager) return;
+			if (cancelled || !google.maps.drawing?.DrawingManager) return;
 
-			dm = new g.maps.drawing.DrawingManager({
+			dm = new google.maps.drawing.DrawingManager({
 				drawingControl: false,
 				polygonOptions: { editable: true },
 			});
 			dm.setMap(map);
 			managerRef.current = dm;
 
-			listener = g.maps.event.addListener(
+			listener = google.maps.event.addListener(
 				dm,
 				"overlaycomplete",
 				(e: google.maps.drawing.OverlayCompleteEvent) => {
-					const Ym = g.maps.drawing.OverlayType;
+					const Ym = google.maps.drawing.OverlayType;
 					e.overlay?.setMap(null);
 					dm!.setDrawingMode(null);
 					setMode(null);
@@ -112,7 +111,7 @@ export function PolygonTools({
 
 		return () => {
 			cancelled = true;
-			if (listener) g.maps.event.removeListener(listener);
+			if (listener) google.maps.event.removeListener(listener);
 			if (dm) dm.setMap(null);
 			managerRef.current = null;
 		};
@@ -121,8 +120,7 @@ export function PolygonTools({
 	useEffect(() => {
 		const dm = managerRef.current;
 		if (!dm) return;
-		const g = getGoogle();
-		const Ym = g?.maps?.drawing?.OverlayType;
+		const Ym = google?.maps?.drawing?.OverlayType;
 		if (!Ym) return;
 		if (mode === "polygon") dm.setDrawingMode(Ym.POLYGON);
 		else if (mode === "rectangle") dm.setDrawingMode(Ym.RECTANGLE);
@@ -131,13 +129,12 @@ export function PolygonTools({
 
 	useEffect(() => {
 		if (!map || mode !== "freehand") return;
-		const g = getGoogle();
-		if (!g?.maps) return;
+		if (!google?.maps) return;
 
 		map.setOptions({ draggable: false });
 		const points: number[][] = [];
 
-		const down = g.maps.event.addListener(map, "mousedown", (e: google.maps.MapMouseEvent) => {
+		const down = google.maps.event.addListener(map, "mousedown", (e: google.maps.MapMouseEvent) => {
 			if (!e.latLng) return;
 			isDrawingRef.current = true;
 			points.length = 0;
@@ -146,13 +143,13 @@ export function PolygonTools({
 			requestUpdateRef.current();
 		});
 
-		const move = g.maps.event.addListener(map, "mousemove", (e: google.maps.MapMouseEvent) => {
+		const move = google.maps.event.addListener(map, "mousemove", (e: google.maps.MapMouseEvent) => {
 			if (!isDrawingRef.current || !e.latLng) return;
 			points.push([e.latLng.lng(), e.latLng.lat()]);
 			requestUpdateRef.current();
 		});
 
-		const up = g.maps.event.addListener(map, "mouseup", () => {
+		const up = google.maps.event.addListener(map, "mouseup", () => {
 			if (!isDrawingRef.current) return;
 			isDrawingRef.current = false;
 			freehandPathRef.current = null;
@@ -172,9 +169,9 @@ export function PolygonTools({
 		});
 
 		return () => {
-			g.maps.event.removeListener(down);
-			g.maps.event.removeListener(move);
-			g.maps.event.removeListener(up);
+			google.maps.event.removeListener(down);
+			google.maps.event.removeListener(move);
+			google.maps.event.removeListener(up);
 			map.setOptions({ draggable: true });
 			isDrawingRef.current = false;
 			freehandPathRef.current = null;
