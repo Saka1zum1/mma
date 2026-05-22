@@ -5,6 +5,7 @@ import {
 	useCurrentMap,
 	openDuplicateLocation,
 	closeDuplicates,
+	removeDuplicate,
 	removeLocations,
 } from "@/store/useMapStore";
 import { svThumbnailUrl } from "@/lib/sv/lookup.add";
@@ -113,7 +114,13 @@ export default function SameLocation() {
 
 	const deleteSingle = useCallback((loc: Location) => {
 		removeLocations(new Set([loc.id]));
-	}, []);
+		removeDuplicate(loc.id);
+		const remaining = locations.filter((l) => l.id !== loc.id);
+		if (remaining.length <= 1) {
+			if (remaining.length === 1) openDuplicateLocation(remaining[0]);
+			else closeDuplicates();
+		}
+	}, [locations]);
 
 	const keepSelected = useCallback(() => {
 		const toDelete = new Set(

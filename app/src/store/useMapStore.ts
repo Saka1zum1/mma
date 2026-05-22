@@ -906,6 +906,12 @@ export function openDuplicateLocation(loc: Location) {
 	notify();
 }
 
+export function removeDuplicate(id: number) {
+	duplicateLocations = duplicateLocations.filter((l) => l.id !== id);
+	mapVersion++;
+	notify();
+}
+
 export function closeDuplicates() {
 	duplicateLocations = [];
 	activeLocationId = null;

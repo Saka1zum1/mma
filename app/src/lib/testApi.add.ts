@@ -60,6 +60,7 @@ import {
 	checkoutCommit,
 	invalidateMapList,
 	fetchAllLocations,
+	getUndoRedoState,
 } from "@/store/useMapStore";
 import {
 	getSeenEntries,
@@ -108,10 +109,12 @@ function buildTestApi() {
 		fetchAllLocations: () => fetchAllLocations(),
 		fetchLocation: (id: number) => fetchViaFile<Location>(cmd.storeGetLocationFile(id)),
 		getLocationCount: () => cmd.storeLocationCount(),
+		findNearby: (lat: number, lng: number, radiusM: number) => cmd.storeFindNearby(lat, lng, radiusM),
 
 		// --- Undo/Redo ---
 		undo,
 		redo,
+		getUndoRedoState,
 
 		// --- Active location & work area ---
 		setActiveLocation: (id: number | null, checkDuplicates?: boolean) =>

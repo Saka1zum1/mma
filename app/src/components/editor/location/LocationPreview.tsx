@@ -1360,6 +1360,7 @@ export function LocationPreview() {
 							selectedPanoId={selectedPanoId}
 							defaultPanoId={location.panoId}
 							resolvedPanoId={currentPano?.panoId ?? null}
+							currentPanoDate={currentPano?.imageDate ?? null}
 							lat={currentPano?.lat ?? location.lat}
 							lng={currentPano?.lng ?? location.lng}
 							onChange={handleDateChange}

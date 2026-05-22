@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "@/styles.css";
 import App from "@/App.tsx";
 import { initLogging, log } from "@/lib/util/log";
-import { initStore, openMap } from "@/store/useMapStore";
+import { initStore, openMap, flushSave } from "@/store/useMapStore";
 import { cmd } from "@/lib/commands";
 import { exposeTestApi } from "@/lib/testApi.add";
 import "@/store/commandDefs.add";
@@ -28,9 +28,14 @@ async function boot() {
 	getCurrentWindow().onCloseRequested(async (event) => {
 		event.preventDefault();
 		log.info("Window close requested, closing map...");
+		await flushSave();
 		await cmd.storeCloseMap().catch((e) => log.error("[close] store_close_map failed:", e));
 		log.info("Map closed, destroying window");
 		getCurrentWindow().destroy();
+	});
+
+	window.addEventListener("beforeunload", () => {
+		cmd.storeCloseMap().catch(() => {});
 	});
 
 	const win = getCurrentWindow();
