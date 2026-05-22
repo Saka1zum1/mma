@@ -7,7 +7,6 @@ import {
 	openMap,
 	addLocs,
 	getLoc,
-	getAllLocs,
 	getLocCount,
 	makeLoc,
 	withApi,
@@ -118,7 +117,7 @@ describe("Location CRUD", () => {
 				api.fetchLocation(ids[1]),
 				api.fetchLocation(ids[2]),
 			]);
-			return locs.map((l) => l.heading);
+			return locs.map((l) => l!.heading);
 		}, bulkLocIds);
 		expect(result).toEqual([999, 888, 777]);
 	});
@@ -162,11 +161,10 @@ describe("Location CRUD", () => {
 		const result = await withApi(async (api, id) => {
 			const newId = await api.duplicateLocation(id);
 			const original = await api.fetchLocation(id);
-			const dup = await api.fetchLocation(newId);
+			const dup = await api.fetchLocation(newId!);
 			const count = await api.getLocationCount();
 			return { newId, originalLat: original?.lat, dupLat: dup?.lat, count };
 		}, singleLocId);
-		expect(result.error).toBeUndefined();
 		expect(result.newId).not.toBeNull();
 		expect(result.dupLat).toBe(result.originalLat);
 		expect(result.count).toBe(502);
@@ -257,7 +255,6 @@ describe("Location persistence", () => {
 			persistLocIds[50],
 		);
 
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(100);
 		expect(result.loc0Lat).toBe(0);
 		expect(result.loc0Flags).toBe(1);

@@ -8,11 +8,13 @@ import {
 	addLocs,
 	getAllLocs,
 	getLoc,
+	getLocOrNull,
 	getLocCount,
 	makeLoc,
 	createTag,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 // =============================================================================
 // 1. Delta recovery (crash simulation)
@@ -34,9 +36,9 @@ describe("Delta recovery", () => {
 		mapId = await createAndOpenMap("Stress DeltaRecovery");
 
 		const result = await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: 10 + i * 0.01,
 					lng: 20 + i * 0.01,
 					heading: i * 18,
@@ -49,9 +51,8 @@ describe("Delta recovery", () => {
 				});
 			}
 			await api.addLocations(locs);
-			return { ids: locs.map((l: any) => l.id) };
+			return { ids: locs.map((l) => l.id) };
 		});
-		if (result.error) throw new Error(result.error);
 		const originalIds: number[] = result.ids;
 
 		// Flush writes the delta but does NOT bake (no close)
@@ -105,7 +106,7 @@ describe("Bake with mixed overlay", () => {
 		const result = await withApi(async (api) => {
 			const locs: any[] = [];
 			for (let i = 0; i < 50; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: i,
 					lng: i * 2,
 					heading: i,
@@ -118,7 +119,7 @@ describe("Bake with mixed overlay", () => {
 				});
 			}
 			await api.addLocations(locs);
-			const ids = locs.map((l: any) => l.id);
+			const ids = locs.map((l) => l.id);
 
 			// Update 10 (indices 0-9): change heading and lat
 			for (let i = 0; i < 10; i++) {
@@ -131,7 +132,6 @@ describe("Bake with mixed overlay", () => {
 
 			return { ids, removeIds };
 		});
-		if (result.error) throw new Error(result.error);
 
 		// Close triggers bake, then reopen
 		await closeMap();
@@ -152,7 +152,7 @@ describe("Bake with mixed overlay", () => {
 
 		// Removed locations are gone
 		for (const rmId of result.removeIds) {
-			const loc = await getLoc(rmId);
+			const loc = await getLocOrNull(rmId);
 			expect(loc).toBeFalsy();
 		}
 
@@ -231,7 +231,7 @@ describe("Multiple save/close/reopen cycles", () => {
 		expect(count).toBe(70);
 
 		// Removed are gone
-		const removed = await getLoc(toRemove[0]);
+		const removed = await getLocOrNull(toRemove[0]);
 		expect(removed).toBeFalsy();
 
 		// Kept are intact
@@ -376,7 +376,7 @@ describe("Tag count accuracy", () => {
 		taggedIds = await addLocs(locs);
 
 		const counts = await withApi((api) => api.getTagCounts());
-		expect(counts[String(tagId)]).toBe(50);
+		expect(counts[tagId]).toBe(50);
 	});
 
 	it("remove 10 tagged -> tagCount=40", async () => {
@@ -384,14 +384,14 @@ describe("Tag count accuracy", () => {
 		await withApi((api, ids) => api.removeLocations(ids), toRemove);
 
 		const counts = await withApi((api) => api.getTagCounts());
-		expect(counts[String(tagId)]).toBe(40);
+		expect(counts[tagId]).toBe(40);
 	});
 
 	it("undo remove -> tagCount=50", async () => {
 		await withApi((api) => api.undo());
 
 		const counts = await withApi((api) => api.getTagCounts());
-		expect(counts[String(tagId)]).toBe(50);
+		expect(counts[tagId]).toBe(50);
 	});
 
 	it("bulkAddTag to untagged locs -> tagCount=70", async () => {
@@ -406,7 +406,7 @@ describe("Tag count accuracy", () => {
 		}, tagId);
 
 		const counts = await withApi((api) => api.getTagCounts());
-		expect(counts[String(tagId)]).toBe(70);
+		expect(counts[tagId]).toBe(70);
 	});
 
 	it("tagCount=70 survives close/reopen", async () => {
@@ -414,7 +414,7 @@ describe("Tag count accuracy", () => {
 		await openMap(mapId);
 
 		const counts = await withApi((api) => api.getTagCounts());
-		expect(counts[String(tagId)]).toBe(70);
+		expect(counts[tagId]).toBe(70);
 	});
 });
 
@@ -481,7 +481,7 @@ describe("Null vs absent field round-trip", () => {
 
 	it("null panoId and null/absent extra survive round-trip", async () => {
 		const result = await withApi(async (api) => {
-			const loc1 = {
+			const loc1 = { id: 0,
 				lat: 10,
 				lng: 20,
 				heading: 0,
@@ -492,7 +492,7 @@ describe("Null vs absent field round-trip", () => {
 				tags: [],
 				createdAt: new Date().toISOString(),
 			};
-			const loc2 = {
+			const loc2 = { id: 0,
 				lat: 30,
 				lng: 40,
 				heading: 0,
@@ -504,7 +504,7 @@ describe("Null vs absent field round-trip", () => {
 				createdAt: new Date().toISOString(),
 				extra: { foo: "bar" },
 			};
-			const loc3 = {
+			const loc3 = { id: 0,
 				lat: 50,
 				lng: 60,
 				heading: 0,
@@ -518,9 +518,8 @@ describe("Null vs absent field round-trip", () => {
 			};
 			const batch = [loc1, loc2, loc3];
 			await api.addLocations(batch);
-			return { ids: batch.map((l: any) => l.id) };
+			return { ids: batch.map((l) => l.id) };
 		});
-		if (result.error) throw new Error(result.error);
 		id1 = result.ids[0];
 		id2 = result.ids[1];
 		id3 = result.ids[2];
@@ -575,7 +574,7 @@ describe("Unicode in all fields", () => {
 				await api.addTag({ id: t.id, name: t.name, color: t.color, visible: true });
 			}
 
-			const loc = {
+			const loc = { id: 0,
 				lat: 35.6762,
 				lng: 139.6503,
 				heading: 90,
@@ -599,7 +598,6 @@ describe("Unicode in all fields", () => {
 				tagNames: resolved.map((t: any) => t.name),
 			};
 		});
-		if (result.error) throw new Error(result.error);
 
 		await closeMap();
 		await openMap(mapId);
@@ -616,7 +614,7 @@ describe("Unicode in all fields", () => {
 		expect(loc.tags).toContain(result.tagIds[2]);
 
 		// Verify tag names in meta
-		const tags = await withApi((api) => api.getCurrentMap().meta.tags);
+		const tags = await withApi((api) => api.getCurrentMap()!.meta.tags);
 		expect(tags[result.tagIds[0]].name).toBe("東京タワー");
 		expect(tags[result.tagIds[1]].name).toBe("café crème");
 		expect(tags[result.tagIds[2]].name).toBe("Москва");
@@ -680,7 +678,6 @@ describe("Import into non-empty map", () => {
 
 describe("Export with scope", () => {
 	let mapId: string;
-	let locIds: number[];
 	let tagId: number;
 
 	before(async () => {
@@ -707,7 +704,7 @@ describe("Export with scope", () => {
 				}),
 			);
 		}
-		locIds = await addLocs(locs);
+		await addLocs(locs);
 
 		// Select by tag (first 5 have the tag)
 		await withApi((api, tId) => api.selectTag(tId), tagId);
@@ -717,7 +714,7 @@ describe("Export with scope", () => {
 
 		// Export with scope = selectedIds
 		const result = await withApi(async (api, scope) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const path = await api.exportJson({
 				exportZoom: true,
 				exportUnpanned: true,
@@ -732,7 +729,6 @@ describe("Export with scope", () => {
 			const parsed = JSON.parse(json);
 			return { count: parsed.customCoordinates.length };
 		}, selectedIds);
-		if (result.error) throw new Error(result.error);
 
 		expect(result.count).toBe(5);
 	});
@@ -745,7 +741,6 @@ describe("Export with scope", () => {
 describe("VCS: checkout, edit, re-commit", () => {
 	let mapId: string;
 	let v1CommitId: string;
-	let v1LocIds: number[];
 
 	before(async () => {
 		await waitForReady();
@@ -760,7 +755,7 @@ describe("VCS: checkout, edit, re-commit", () => {
 	it("commit v1 with 5 locs", async () => {
 		const locs = [];
 		for (let i = 0; i < 5; i++) locs.push(makeLoc({ lat: i, lng: i }));
-		v1LocIds = await addLocs(locs);
+		await addLocs(locs);
 
 		v1CommitId = await withApi((api) => api.commitMap("v1"));
 		expect(String(v1CommitId)).not.toContain("ERROR");
@@ -868,9 +863,9 @@ describe("Large batch undo correctness", () => {
 	it("add 10000 -> undo -> redo -> close -> reopen", async () => {
 		// Add 10000 in a single batch (built in-browser to avoid serialization overhead)
 		await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: (i % 180) - 90,
 					lng: (i % 360) - 180,
 					heading: i % 360,
@@ -934,6 +929,7 @@ describe("Rapid fire-and-forget mutations", () => {
 						{
 							lat: i,
 							lng: i,
+							id: 0,
 							heading: i * 18,
 							pitch: 0,
 							zoom: 1,
@@ -949,7 +945,6 @@ describe("Rapid fire-and-forget mutations", () => {
 			const count = await api.getLocationCount();
 			return { count };
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(20);
 	});
 
@@ -958,7 +953,7 @@ describe("Rapid fire-and-forget mutations", () => {
 			// Add 10 locations
 			const locs: any[] = [];
 			for (let i = 0; i < 10; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: 50 + i,
 					lng: 50 + i,
 					heading: 0,
@@ -971,13 +966,13 @@ describe("Rapid fire-and-forget mutations", () => {
 				});
 			}
 			await api.addLocations(locs);
-			const ids = locs.map((l: any) => l.id);
+			const ids = locs.map((l) => l.id);
 
 			// Fire remove + add simultaneously (no await between)
 			const removePromise = Promise.resolve().then(() => api.removeLocations(ids.slice(0, 5)));
 			const addPromise = api.addLocations([
 				{
-					lat: 99,
+					lat: 99, id: 0,
 					lng: 99,
 					heading: 0,
 					pitch: 0,
@@ -994,7 +989,6 @@ describe("Rapid fire-and-forget mutations", () => {
 			// 10 - 5 + 1 = 6, plus the 20 from previous test
 			return { count };
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(26); // 20 + 10 - 5 + 1
 	});
 
@@ -1028,7 +1022,7 @@ describe("Autosave racing with mutations", () => {
 			// Add 50 locations
 			const locs: any[] = [];
 			for (let i = 0; i < 50; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: i,
 					lng: i,
 					heading: i * 7.2,
@@ -1047,7 +1041,7 @@ describe("Autosave racing with mutations", () => {
 			// These mutations happen while save might be serializing the overlay
 			const addPromise = api.addLocations([
 				{
-					lat: 100,
+					lat: 100, id: 0,
 					lng: 100,
 					heading: 0,
 					pitch: 0,
@@ -1066,7 +1060,6 @@ describe("Autosave racing with mutations", () => {
 			const count = await api.getLocationCount();
 			return { count };
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(51);
 
 		// Close and reopen to verify persistence
@@ -1077,9 +1070,9 @@ describe("Autosave racing with mutations", () => {
 
 		// Verify the post-save location survived
 		const locs = await getAllLocs();
-		const postSave = locs.find((l: any) => l.panoId === "post-save");
+		const postSave = locs.find((l) => l.panoId === "post-save");
 		expect(postSave).toBeTruthy();
-		expect(postSave.flags).toBe(1);
+		expect(postSave!.flags).toBe(1);
 	});
 });
 
@@ -1144,7 +1137,6 @@ describe("Undo while save in-flight", () => {
 			const count = await api.getLocationCount();
 			return { count };
 		});
-		expect(result.error).toBeUndefined();
 		// After undo of batch 2, should have 20
 		expect(result.count).toBe(20);
 
@@ -1308,7 +1300,6 @@ describe("Selection during mutation", () => {
 			const afterIds = api.getSelectedLocationIds();
 			return { before: beforeCount, after: afterIds.length };
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.after).toBe(result.before - 5);
 	});
 });

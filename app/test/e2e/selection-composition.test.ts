@@ -12,7 +12,6 @@ import {
 
 describe("Selection composition", () => {
 	let mapId: string;
-	let locIds: number[];
 	let tagAId: number;
 	let tagBId: number;
 
@@ -38,7 +37,7 @@ describe("Selection composition", () => {
 				}),
 			);
 		}
-		locIds = await addLocs(locs);
+		await addLocs(locs);
 	});
 
 	after(async () => {
@@ -96,7 +95,7 @@ describe("Selection composition", () => {
 			api.composeSelections(sels[0].key, sels[1].key, "union", null, null);
 
 			const composite = api.getSelections()[0];
-			const childKey = composite.props.selections[0].key;
+			const childKey = "selections" in composite.props ? composite.props.selections[0].key : "";
 			const parentKey = composite.key;
 
 			api.decomposeChild(parentKey, childKey);
@@ -131,7 +130,7 @@ describe("Selection composition", () => {
 			const composite = api
 				.getSelections()
 				.find((s) => s.props.type === "Union" || s.props.type === "Intersection");
-			if (composite && composite.props.selections?.length > 0) {
+			if (composite && "selections" in composite.props && composite.props.selections.length > 0) {
 				const childToRemove = composite.props.selections[0].key;
 				api.removeChildFromSelection(composite.key, childToRemove);
 			}
@@ -146,7 +145,6 @@ describe("Selection composition", () => {
 
 describe("Selection composition edge cases", () => {
 	let mapId: string;
-	let locIds: number[];
 	let edgeTagId: number;
 
 	before(async () => {
@@ -168,7 +166,7 @@ describe("Selection composition edge cases", () => {
 				}),
 			);
 		}
-		locIds = await addLocs(locs);
+		await addLocs(locs);
 	});
 
 	after(async () => {

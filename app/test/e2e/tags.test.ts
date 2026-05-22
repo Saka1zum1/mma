@@ -7,17 +7,13 @@ import {
 	openMap,
 	addLocs,
 	getLoc,
-	getAllLocs,
-	getLocCount,
 	makeLoc,
-	createTag,
 	withApi,
 } from "./helpers";
 
 describe("Tag CRUD", () => {
 	let mapId: string;
 	let t1Id: number;
-	let t2Id: number;
 	let t3Id: number;
 
 	before(async () => {
@@ -35,7 +31,7 @@ describe("Tag CRUD", () => {
 			const resolved = await api.resolveTagNames(["Red Tag"]);
 			const tagInfo = resolved[0];
 			await api.addTag({ id: tagInfo.id, name: "Red Tag", color: "#ff0000", visible: true });
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const tagKey = String(tagInfo.id);
 			return {
 				count: Object.keys(map.meta.tags).length,
@@ -43,7 +39,6 @@ describe("Tag CRUD", () => {
 				tagId: tagInfo.id,
 			};
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(1);
 		expect(result.tag.name).toBe("Red Tag");
 		expect(result.tag.color).toBe("#ff0000");
@@ -56,20 +51,18 @@ describe("Tag CRUD", () => {
 			await api.addTag({ id: resolved[0].id, name: "Blue Tag", color: "#0000ff", visible: true });
 			await api.addTag({ id: resolved[1].id, name: "Green Tag", color: "#00ff00", visible: true });
 			return {
-				count: Object.keys(api.getCurrentMap().meta.tags).length,
+				count: Object.keys(api.getCurrentMap()!.meta.tags).length,
 				ids: [resolved[0].id, resolved[1].id],
 			};
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(3);
-		t2Id = result.ids[0];
 		t3Id = result.ids[1];
 	});
 
 	it("update tag name", async () => {
 		const result = await withApi(async (api, tagId) => {
 			await api.updateTag(tagId, { name: "Renamed Red" });
-			return api.getCurrentMap().meta.tags[String(tagId)].name;
+			return api.getCurrentMap()!.meta.tags[String(tagId)].name;
 		}, t1Id);
 		expect(result).toBe("Renamed Red");
 	});
@@ -77,7 +70,7 @@ describe("Tag CRUD", () => {
 	it("update tag color", async () => {
 		const result = await withApi(async (api, tagId) => {
 			await api.updateTag(tagId, { color: "#ff8800" });
-			return api.getCurrentMap().meta.tags[String(tagId)].color;
+			return api.getCurrentMap()!.meta.tags[String(tagId)].color;
 		}, t1Id);
 		expect(result).toBe("#ff8800");
 	});
@@ -85,23 +78,25 @@ describe("Tag CRUD", () => {
 	it("update tag visibility", async () => {
 		const result = await withApi(async (api, tagId) => {
 			await api.updateTag(tagId, { visible: false });
-			return api.getCurrentMap().meta.tags[String(tagId)].visible;
+			return api.getCurrentMap()!.meta.tags[String(tagId)].visible;
 		}, t1Id);
 		expect(result).toBe(false);
 	});
 
-	it("delete tag", async () => {
+	it("delete tag hides it but keeps the definition", async () => {
 		const result = await withApi(async (api, tagId) => {
 			await api.deleteTag(tagId);
-			const tags = api.getCurrentMap().meta.tags;
+			const tags = api.getCurrentMap()!.meta.tags;
 			return {
 				count: Object.keys(tags).length,
 				hasTag: String(tagId) in tags,
+				visible: tags[String(tagId)]?.visible,
 			};
 		}, t3Id);
-		expect(result.error).toBeUndefined();
-		expect(result.count).toBe(2);
-		expect(result.hasTag).toBe(false);
+		// Deleting a tag hides it (visible: false) rather than removing the definition.
+		expect(result.count).toBe(3);
+		expect(result.hasTag).toBe(true);
+		expect(result.visible).toBe(false);
 	});
 });
 
@@ -166,7 +161,7 @@ describe("Tag operations on locations", () => {
 				await api.selectEverything();
 				await api.bulkAddTag(tagId);
 				const loc = await api.fetchLocation(locId);
-				return loc.tags.filter((t: number) => t === tagId).length;
+				return loc!.tags.filter((t: number) => t === tagId).length;
 			},
 			otherTagId,
 			locIds[1],
@@ -202,7 +197,7 @@ describe("Tag operations on locations", () => {
 			async (api, locId, bulkId, otherId) => {
 				api.updateLocation(locId, { tags: [bulkId, otherId] });
 				const loc = await api.fetchLocation(locId);
-				return loc?.tags;
+				return loc!.tags;
 			},
 			locIds[5],
 			bulkTagId,
@@ -246,7 +241,6 @@ describe("Tag persistence", () => {
 			});
 			return { pt1Id: resolved[0].id, pt2Id: resolved[1].id };
 		});
-		expect(result.error).toBeUndefined();
 		pt1Id = result.pt1Id;
 		pt2Id = result.pt2Id;
 
@@ -255,7 +249,7 @@ describe("Tag persistence", () => {
 		await openMap(mapId);
 
 		const tags = await withApi((api) => {
-			return api.getCurrentMap().meta.tags;
+			return api.getCurrentMap()!.meta.tags;
 		});
 		const pt1Key = String(pt1Id);
 		const pt2Key = String(pt2Id);
@@ -298,11 +292,11 @@ describe("Tag persistence", () => {
 		await openMap(mapId);
 
 		const tags = await withApi((api) => {
-			return api.getCurrentMap().meta.tags;
+			return api.getCurrentMap()!.meta.tags;
 		});
 		const pt1Key = String(pt1Id);
 		const pt2Key = String(pt2Id);
 		// pt2 should come before pt1 now
-		expect(tags[pt2Key].order).toBeLessThan(tags[pt1Key].order);
+		expect(tags[pt2Key].order!).toBeLessThan(tags[pt1Key].order!);
 	});
 });

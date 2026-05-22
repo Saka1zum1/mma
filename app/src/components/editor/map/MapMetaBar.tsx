@@ -3,6 +3,7 @@ import {
 	useCurrentMap,
 	useUndoRedo,
 	useCommitDiff,
+	hasCommitDiff,
 	undo,
 	redo,
 	commitMap,
@@ -20,7 +21,7 @@ export function MapMetaBar() {
 	const map = useCurrentMap();
 	const { canUndo, canRedo } = useUndoRedo();
 	const diff = useCommitDiff();
-	const hasDiff = diff.added > 0 || diff.removed > 0 || diff.modified > 0;
+	const hasDiff = hasCommitDiff();
 	const [showExport, setShowExport] = useState(false);
 	const [showImport, setShowImport] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);

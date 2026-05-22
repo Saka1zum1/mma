@@ -107,7 +107,6 @@ function PanoDatePicker({
 	selectedPanoId,
 	defaultPanoId,
 	resolvedPanoId,
-	currentPanoDate,
 	lat,
 	lng,
 	onChange,
@@ -117,7 +116,6 @@ function PanoDatePicker({
 	selectedPanoId: string | null;
 	defaultPanoId: string | null;
 	resolvedPanoId: string | null;
-	currentPanoDate: Date | null;
 	lat: number;
 	lng: number;
 	onChange: (panoId: string | null) => void;
@@ -136,7 +134,7 @@ function PanoDatePicker({
 			? (defaultEntry ?? resolvedEntry)
 			: sorted.find((d) => d.pano === selectedPanoId);
 	const isDefault = selectedPanoId == null;
-	const displayDate = currentEntry?.date ?? (isDefault ? currentPanoDate : null);
+	const displayDate = currentEntry?.date ?? null;
 	const prevLabelRef = useRef("");
 	const displayLabel = displayDate
 		? isDefault
@@ -239,8 +237,8 @@ function PanoDatePicker({
 								<Select.ItemText>
 									<span className="pano-option__name">
 										Default
-										{(defaultEntry?.date ?? currentPanoDate ?? sorted[sorted.length - 1]?.date)
-											? ` (${dateFmt.format((defaultEntry?.date ?? currentPanoDate ?? sorted[sorted.length - 1]?.date)!)})`
+										{(defaultEntry?.date ?? sorted[sorted.length - 1]?.date)
+											? ` (${dateFmt.format((defaultEntry?.date ?? sorted[sorted.length - 1]?.date)!)})`
 											: ""}
 									</span>
 								</Select.ItemText>
@@ -638,7 +636,6 @@ interface CurrentPano {
 	panoId: string;
 	lat: number;
 	lng: number;
-	imageDate: Date | null;
 }
 
 function applyResolved(sv: google.maps.StreetViewPanorama, result: ResolvedPano, loc: Location) {
@@ -749,18 +746,14 @@ export function LocationPreview() {
 			statusListener = pano.addListener("status_changed", () => {
 				if (cancelled || pano.getStatus() !== "OK") return;
 				const panoId = pano.getPano();
-				if (!panoId) return;
+				if (!panoId) return; // ?
 				const pos = pano.getPosition();
-				const imgDateStr =
-					(pano as unknown as { imageDate?: string }).imageDate ??
-					(pano as unknown as { getImageDate?: () => string }).getImageDate?.();
 				setCurrentPano((prev) => {
 					if (prev?.panoId === panoId) return prev;
 					return {
 						panoId,
 						lat: pos?.lat() ?? 0,
 						lng: pos?.lng() ?? 0,
-						imageDate: imgDateStr ? parsePanoDate(imgDateStr) : null,
 					};
 				});
 				if (pos) {
@@ -792,7 +785,7 @@ export function LocationPreview() {
 			setPanoDates([]);
 			resetTrail(location.lng, location.lat);
 
-			const result = await resolvePano(g, location);
+			const result = await resolvePano(location);
 			if (cancelled) return;
 			applyResolved(pano, result, location);
 			google.maps.event.trigger(pano, "resize");
@@ -811,7 +804,6 @@ export function LocationPreview() {
 					panoId: loc.pano,
 					lat: loc.latLng.lat(),
 					lng: loc.latLng.lng(),
-					imageDate: result.pano.imageDate ? parsePanoDate(result.pano.imageDate) : null,
 				});
 			}
 			setPanoReady(true);
@@ -930,7 +922,7 @@ export function LocationPreview() {
 		if (!location || !singletonPano) return;
 		const g = getGoogle();
 		if (!g) return;
-		const result = await resolvePano(g, location);
+		const result = await resolvePano(location);
 		applyResolved(singletonPano, result, location);
 		google.maps.event.trigger(singletonPano, "resize");
 		updateLocation(location.id, { flags: location.flags & ~LocationFlag.LoadAsPanoId });
@@ -1329,7 +1321,6 @@ export function LocationPreview() {
 							selectedPanoId={selectedPanoId}
 							defaultPanoId={location.panoId}
 							resolvedPanoId={currentPano?.panoId ?? null}
-							currentPanoDate={currentPano?.imageDate ?? null}
 							lat={currentPano?.lat ?? location.lat}
 							lng={currentPano?.lng ?? location.lng}
 							onChange={handleDateChange}

@@ -202,18 +202,23 @@ impl Store {
         }
     }
 
-    /// Bump version, sync selections if active, return full mutation result.
-    /// O(S * N) when selections exist (S selections, N locations); O(1) otherwise.
-    pub(crate) fn finish_mutation(&mut self, delta: RenderDelta) -> MutationResult {
+    /// Bump version, derive the render delta + selection sync from the semantic
+    /// changeset, and return the full mutation result. The changeset is the single
+    /// source of truth; the render delta and selection sync are two projections of it.
+    pub(crate) fn finish_mutation(&mut self, changes: ChangeSet) -> MutationResult {
         self.bump();
-        let selection_sync = if !self.selections.is_empty() {
-            if delta.full_reset || delta.added.len() + delta.removed.len() + delta.updated.len() > 100 {
+        let delta = self.derive_render_delta(&changes);
+        let selection_sync = if self.selections.is_empty() {
+            None
+        } else {
+            let total = changes.added.len() + changes.removed.len() + changes.updated.len();
+            // test_add_row can't evaluate relational selections (a row's membership
+            // depends on other rows), so those must always re-resolve in full.
+            if changes.full_reset || total > 100 || self.selections_need_full_resolve() {
                 Some(self.refresh_and_sync_selections())
             } else {
-                Some(self.incremental_selection_update(&delta))
+                Some(self.incremental_selection_update(&changes))
             }
-        } else {
-            None
         };
         MutationResult {
             status: self.store_status(),
@@ -222,28 +227,101 @@ impl Store {
         }
     }
 
-    fn incremental_selection_update(&mut self, delta: &RenderDelta) -> SelectionSync {
-        let removed_ids: HashSet<u32> = delta.removed.iter().map(|r| r.id).collect();
-        let added_ids: Vec<u32> = delta.added.iter().map(|a| a.id).collect();
+    fn base_color(&self, id: u32) -> (u8, u8, u8, u8) {
+        // Selected markers are hidden in the base layer (drawn by the selection overlay).
+        if self.selected_ids.contains(&id) { (0, 0, 0, 0) } else { (42, 42, 42, 255) }
+    }
 
-        if !removed_ids.is_empty() {
-            for set in &mut self.selection_loc_sets {
-                for id in &removed_ids { set.remove(id); }
-            }
-            for &id in &removed_ids {
-                self.selected_ids.remove(&id);
-                self.selected_colors.remove(&id);
+    fn selections_need_full_resolve(&self) -> bool {
+        self.selections.iter().any(|s| matches!(s.props,
+            SelectionProps::Duplicates { .. }
+            | SelectionProps::Intersection { .. }
+            | SelectionProps::Union { .. }
+            | SelectionProps::Invert { .. }))
+    }
+
+    /// Project the changeset onto render cells, returning the render delta and keeping
+    /// `render_cells` / `id_to_cell_idx` in sync. This is the single place cell
+    /// membership is mutated for adds / removes / moves.
+    fn derive_render_delta(&mut self, changes: &ChangeSet) -> RenderDelta {
+        let mut delta = RenderDelta { full_reset: changes.full_reset, ..Default::default() };
+
+        for &id in &changes.removed {
+            if let Some(removal) = self.cell_remove_render(id) {
+                delta.removed.push(removal);
             }
         }
 
-        let locs_to_check: Vec<Location> = added_ids.iter()
-            .filter_map(|&id| self.get_loc_by_id(id))
-            .collect();
+        for loc in &changes.added {
+            let ci = render_cell_idx(loc.lat, loc.lng);
+            let (r, g, b, a) = self.base_color(loc.id);
+            self.cell_add_render(ci, loc.id);
+            delta.added.push(RenderEntry {
+                cell: cell_key_from_idx(ci), id: loc.id,
+                lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
+                r, g, b, a,
+            });
+        }
 
+        for (old, new) in &changes.updated {
+            let pos_changed = old.lat != new.lat || old.lng != new.lng;
+            let heading_changed = old.heading != new.heading;
+            if pos_changed {
+                let new_ci = render_cell_idx(new.lat, new.lng);
+                let old_ci = self.id_to_cell_idx.get(new.id as usize).copied().unwrap_or(255);
+                if old_ci != new_ci {
+                    if let Some(removal) = self.cell_remove_render(new.id) {
+                        delta.removed.push(removal);
+                    }
+                    let (r, g, b, a) = self.base_color(new.id);
+                    self.cell_add_render(new_ci, new.id);
+                    delta.added.push(RenderEntry {
+                        cell: cell_key_from_idx(new_ci), id: new.id,
+                        lng: new.lng as f32, lat: new.lat as f32, heading: new.heading as f32,
+                        r, g, b, a,
+                    });
+                    continue;
+                }
+            }
+            if pos_changed || heading_changed {
+                if let Some((cell, ci)) = self.cell_lookup(new.id) {
+                    delta.updated.push(RenderPatchEntry {
+                        cell, cell_index: ci,
+                        lng: if pos_changed { Some(new.lng as f32) } else { None },
+                        lat: if pos_changed { Some(new.lat as f32) } else { None },
+                        heading: if heading_changed { Some(new.heading as f32) } else { None },
+                    });
+                }
+            }
+        }
+
+        delta
+    }
+
+    fn incremental_selection_update(&mut self, changes: &ChangeSet) -> SelectionSync {
+        // Removed and updated rows leave their current selection sets; updated rows are
+        // then re-tested below (an update is remove-then-add for selection membership).
+        let drop_ids: HashSet<u32> = changes.removed.iter().copied()
+            .chain(changes.updated.iter().map(|(_, n)| n.id))
+            .collect();
+        if !drop_ids.is_empty() {
+            for set in &mut self.selection_loc_sets {
+                for id in &drop_ids { set.remove(id); }
+            }
+            for id in &drop_ids {
+                self.selected_ids.remove(id);
+                self.selected_colors.remove(id);
+            }
+        }
+
+        // Re-test added + updated(new) rows against every selection.
+        let test_locs: Vec<&Location> = changes.added.iter()
+            .chain(changes.updated.iter().map(|(_, n)| n))
+            .collect();
         let sel_props: Vec<SelectionProps> = self.selections.iter().map(|s| s.props.clone()).collect();
         for (si, props) in sel_props.iter().enumerate() {
             let color = self.selections[si].color;
-            for loc in &locs_to_check {
+            for loc in &test_locs {
                 if selections::test_add_row(loc, props) {
                     self.selection_loc_sets[si].insert(loc.id);
                     self.selected_ids.insert(loc.id);
@@ -257,8 +335,8 @@ impl Store {
         self.selection_version += 1;
 
         // Build bitmask for ONLY changed cells, patch into existing file
-        let changed_ids: HashSet<u32> = removed_ids.iter().copied()
-            .chain(added_ids.iter().copied())
+        let changed_ids: HashSet<u32> = drop_ids.iter().copied()
+            .chain(changes.added.iter().map(|l| l.id))
             .collect();
 
         // Find affected cells
@@ -497,13 +575,12 @@ impl Store {
         self.batch.as_ref().expect("no map open")
     }
 
-    /// Look up a location by ID across patches, overlay_adds, and batch.
-    /// O(A) — linear scan of overlay_adds. Do NOT call in a loop.
+    /// Look up a location by ID across patches, overlay_adds (binary search), and batch.
     fn get_loc_by_id(&self, id: u32) -> Option<Location> {
         if self.overlay_dead.contains(&id) { return None; }
         if let Some(patched) = self.overlay_patches.get(&id) { return Some(patched.clone()); }
-        for loc in &self.overlay_adds {
-            if loc.id == id { return Some(loc.clone()); }
+        if let Ok(i) = self.overlay_adds.binary_search_by_key(&id, |l| l.id) {
+            return Some(self.overlay_adds[i].clone());
         }
         if let Some(ref b) = self.batch {
             if let Some(idx) = batch_row_for_id(b, id) {
@@ -559,7 +636,11 @@ impl Store {
             self.overlay_patches.insert(loc.id, loc);
         } else {
             self.overlay_dead.remove(&loc.id);
-            self.overlay_adds.push(loc);
+            // Keep overlay_adds sorted by id (invariant asserted in bake_overlay). A normal add has a
+            // monotonic new id so this inserts at the end (cheap, like push); undo re-adds an old id,
+            // which a plain push would append out of order — partition_point puts it in its sorted slot.
+            let pos = self.overlay_adds.partition_point(|l| l.id < loc.id);
+            self.overlay_adds.insert(pos, loc);
         }
     }
 
@@ -576,7 +657,6 @@ impl Store {
         self.dirty = true;
     }
 
-    /// Apply a partial patch to a single location. O(A) where A = overlay_adds length (linear scan).
     fn overlay_update(&mut self, id: u32, patch: &LocationPatch) {
         let mut loc = match self.get_loc_by_id(id) {
             Some(l) => l,
@@ -596,7 +676,7 @@ impl Store {
         if let Some(ref v) = patch.modified_at { loc.modified_at = v.clone(); }
         self.mark_dirty(loc.lat, loc.lng);
         // If it's in overlay_adds, update in place
-        if let Some(pos) = self.overlay_adds.iter().position(|l| l.id == id) {
+        if let Ok(pos) = self.overlay_adds.binary_search_by_key(&id, |l| l.id) {
             self.overlay_adds[pos] = loc;
         } else {
             self.overlay_patches.insert(id, loc);
@@ -733,6 +813,19 @@ pub struct RenderDelta {
     pub removed: Vec<CellRemoval>,
     pub color_patches: Vec<ColorPatchEntry>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub full_reset: bool,
+}
+
+/// Semantic description of what a mutation changed, independent of any consumer.
+/// `finish_mutation` derives both the render delta and the selection sync from it —
+/// one source of truth, two projections. `updated` carries `(old, new)` so the
+/// render side can detect cell moves / pos-heading patches and the selection side
+/// can re-test membership.
+#[derive(Default)]
+pub struct ChangeSet {
+    pub added: Vec<Location>,
+    pub removed: Vec<u32>,
+    pub updated: Vec<(Location, Location)>,
     pub full_reset: bool,
 }
 
@@ -1066,30 +1159,21 @@ pub fn store_add_locations(
     let _t = std::time::Instant::now();
     let mut store = state.lock().map_err(|e| e.to_string())?;
     let _lock = _t.elapsed().as_millis();
-    // Assign IDs from the store's allocator
     for loc in &mut locations {
         loc.id = store.alloc_id();
     }
     store.push_undo(EditEntry { created: locations.clone(), removed: Vec::new() });
     store.redo_stack.clear();
-    let mut added = Vec::with_capacity(locations.len());
     for loc in &locations {
         store.mark_dirty(loc.lat, loc.lng);
-        let ci = render_cell_idx(loc.lat, loc.lng);
-        store.cell_add_render(ci, loc.id);
-        added.push(RenderEntry {
-            cell: cell_key_from_idx(ci),
-            id: loc.id,
-            lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
-            r: 42, g: 42, b: 42, a: 255,
-        });
     }
     store.add_tag_counts(&locations);
+    let added = locations.clone();
     for loc in locations {
         store.overlay_add(loc);
     }
     log::debug!("[cmd] store_add_locations lock={}ms total={}ms", _lock, _t.elapsed().as_millis());
-    Ok(store.finish_mutation(RenderDelta { added, ..Default::default() }))
+    Ok(store.finish_mutation(ChangeSet { added, ..Default::default() }))
 }
 
 #[tauri::command]
@@ -1101,7 +1185,6 @@ pub fn store_remove_locations(
     let _t = std::time::Instant::now();
     let mut store = state.lock().map_err(|e| e.to_string())?;
     let mut removed_locs = Vec::new();
-    let mut removals = Vec::new();
     for &id in &ids {
         if let Some(loc) = store.get_loc_by_id(id) {
             removed_locs.push(loc);
@@ -1110,53 +1193,12 @@ pub fn store_remove_locations(
     store.remove_tag_counts(&removed_locs);
     store.overlay_remove(&removed_locs);
 
-    for &id in &ids {
-        if let Some(removal) = store.cell_remove_render(id) {
-            removals.push(removal);
-        }
-    }
+    let removed_ids: Vec<u32> = removed_locs.iter().map(|l| l.id).collect();
     store.push_undo(EditEntry { created: Vec::new(), removed: removed_locs });
     store.redo_stack.clear();
 
     log::debug!("[cmd] store_remove_locations total={}ms ids={}", _t.elapsed().as_millis(), ids.len());
-    Ok(store.finish_mutation(RenderDelta { removed: removals, ..Default::default() }))
-}
-
-fn build_update_delta(store: &mut Store, id: u32, new_loc: &Location, patch: &LocationPatch) -> RenderDelta {
-    let mut delta = RenderDelta::default();
-    let pos_changed = patch.lat.is_some() || patch.lng.is_some();
-    let heading_changed = patch.heading.is_some();
-
-    if pos_changed {
-        let new_ci = render_cell_idx(new_loc.lat, new_loc.lng);
-        let old_ci = store.id_to_cell_idx.get(id as usize).copied().unwrap_or(255);
-        if old_ci != new_ci {
-            if let Some(removal) = store.cell_remove_render(id) {
-                delta.removed.push(removal);
-            }
-            store.cell_add_render(new_ci, id);
-            delta.added.push(RenderEntry {
-                cell: cell_key_from_idx(new_ci),
-                id,
-                lng: new_loc.lng as f32, lat: new_loc.lat as f32, heading: new_loc.heading as f32,
-                r: 42, g: 42, b: 42, a: 255,
-            });
-            return delta;
-        }
-    }
-
-    if let Some((cell, ci)) = store.cell_lookup(id) {
-        if pos_changed || heading_changed {
-            delta.updated.push(RenderPatchEntry {
-                cell,
-                cell_index: ci,
-                lng: if pos_changed { Some(new_loc.lng as f32) } else { None },
-                lat: if pos_changed { Some(new_loc.lat as f32) } else { None },
-                heading: if heading_changed { Some(new_loc.heading as f32) } else { None },
-            });
-        }
-    }
-    delta
+    Ok(store.finish_mutation(ChangeSet { removed: removed_ids, ..Default::default() }))
 }
 
 #[tauri::command]
@@ -1169,30 +1211,25 @@ pub fn store_update_locations(
     let record_undo = record_undo.unwrap_or(true);
     let _t = std::time::Instant::now();
     let mut store = state.lock().map_err(|e| e.to_string())?;
-    let mut old_locs = Vec::new();
-    let mut new_locs = Vec::new();
-    let mut delta = RenderDelta::default();
+    let mut updated: Vec<(Location, Location)> = Vec::new();
     let any_tags = updates.iter().any(|(_, p)| p.tags.is_some());
     for (id, patch) in &updates {
         if let Some(old) = store.get_loc_by_id(*id) {
-            old_locs.push(old);
             store.overlay_update(*id, patch);
             let new_loc = store.get_loc_by_id(*id).unwrap();
-            new_locs.push(new_loc.clone());
-            let d = build_update_delta(&mut store, *id, &new_loc, patch);
-            delta.added.extend(d.added);
-            delta.removed.extend(d.removed);
-            delta.updated.extend(d.updated);
+            updated.push((old, new_loc));
         }
     }
     if any_tags {
+        let old_locs: Vec<Location> = updated.iter().map(|(o, _)| o.clone()).collect();
+        let new_locs: Vec<Location> = updated.iter().map(|(_, n)| n.clone()).collect();
         store.remove_tag_counts(&old_locs);
         store.add_tag_counts(&new_locs);
     }
     if record_undo {
-        let (changed_old, changed_new): (Vec<_>, Vec<_>) = old_locs.into_iter()
-            .zip(new_locs)
+        let (changed_old, changed_new): (Vec<_>, Vec<_>) = updated.iter()
             .filter(|(o, n)| o != n)
+            .map(|(o, n)| (o.clone(), n.clone()))
             .unzip();
         if !changed_old.is_empty() {
             store.push_undo(EditEntry { created: changed_new, removed: changed_old });
@@ -1200,7 +1237,7 @@ pub fn store_update_locations(
         }
     }
     log::debug!("[cmd] store_update_locations n={} undo={} total={}ms", updates.len(), record_undo, _t.elapsed().as_millis());
-    Ok(store.finish_mutation(delta))
+    Ok(store.finish_mutation(ChangeSet { updated, ..Default::default() }))
 }
 
 /// Remove the given tag IDs from every location that has them. Returns a MutationResult.
@@ -1222,34 +1259,34 @@ pub fn store_strip_tags(
     drop(view);
     let affected_ids: HashSet<u32> = affected_ids.into_iter().collect();
     if affected_ids.is_empty() {
-        return Ok(store.finish_mutation(RenderDelta::default()));
+        return Ok(store.finish_mutation(ChangeSet::default()));
     }
-    let mut old_locs = Vec::new();
-    let mut new_locs = Vec::new();
+    let mut updated: Vec<(Location, Location)> = Vec::new();
     for &id in &affected_ids {
         if let Some(old) = store.get_loc_by_id(id) {
             let mut new_loc = old.clone();
             new_loc.tags.retain(|t| !tag_set.contains(t));
-            old_locs.push(old);
-            new_locs.push(new_loc);
+            updated.push((old, new_loc));
         }
     }
+    let old_locs: Vec<Location> = updated.iter().map(|(o, _)| o.clone()).collect();
     store.remove_tag_counts(&old_locs);
-    for new_loc in &new_locs {
+    for (_, new_loc) in &updated {
         let patch = LocationPatch { tags: Some(new_loc.tags.clone()), ..Default::default() };
         store.overlay_update(new_loc.id, &patch);
     }
+    let new_locs: Vec<Location> = updated.iter().map(|(_, n)| n.clone()).collect();
     store.add_tag_counts(&new_locs);
-    let (changed_old, changed_new): (Vec<_>, Vec<_>) = old_locs.into_iter()
-        .zip(new_locs)
+    let (changed_old, changed_new): (Vec<_>, Vec<_>) = updated.iter()
         .filter(|(o, n)| o != n)
+        .map(|(o, n)| (o.clone(), n.clone()))
         .unzip();
     if !changed_old.is_empty() {
         store.push_undo(EditEntry { created: changed_new, removed: changed_old });
         store.redo_stack.clear();
     }
     log::debug!("[cmd] store_strip_tags n={} total={}ms", affected_ids.len(), _t.elapsed().as_millis());
-    Ok(store.finish_mutation(RenderDelta::default()))
+    Ok(store.finish_mutation(ChangeSet { updated, ..Default::default() }))
 }
 
 #[tauri::command]
@@ -1345,7 +1382,7 @@ pub async fn store_save_dirty(
 ) -> Result<SaveResult, String> {
     let _t = std::time::Instant::now();
     log::debug!("[cmd] store_save_dirty ENTER");
-    let (map_id, delta_data, alive, undo_bytes, redo_bytes) = {
+    let (map_id, delta_data, alive) = {
         let store = state.lock().map_err(|e| e.to_string())?;
         let map_id = store.map_id.clone().ok_or("no map open")?;
         if !store.dirty {
@@ -1357,9 +1394,7 @@ pub async fn store_save_dirty(
             patches: store.overlay_patches.values().cloned().collect(),
         };
         let data = rmp_serde::to_vec_named(&overlay).map_err(|e| e.to_string())?;
-        let ub = rmp_serde::to_vec_named(&store.undo_stack).unwrap_or_default();
-        let rb = rmp_serde::to_vec_named(&store.redo_stack).unwrap_or_default();
-        (map_id, data, store.alive_count, ub, rb)
+        (map_id, data, store.alive_count)
     };
 
     let size = delta_data.len();
@@ -1374,10 +1409,6 @@ pub async fn store_save_dirty(
         let conn = fast_io::open_db(&app2)?;
         conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2",
             rusqlite::params![alive, &map_id2]).map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT OR REPLACE INTO edit_history (map_id, undo_stack, redo_stack) VALUES (?1, ?2, ?3)",
-            rusqlite::params![map_id2, undo_bytes, redo_bytes],
-        ).map_err(|e| e.to_string())?;
         Ok::<_, String>(())
     })
     .await
@@ -1837,10 +1868,10 @@ pub fn store_undo(state: tauri::State<'_, StoreState>) -> Result<MutationResult,
     let entry = store.undo_stack.pop().ok_or("nothing to undo")?;
     log::debug!("[UNDO] stack_depth={} created={} removed={}",
         store.undo_stack.len(), entry.created.len(), entry.removed.len());
-    let delta = apply_edit_reverse(&mut store, &entry);
-    log::debug!("[UNDO] apply_edit={}ms delta: +{} -{}", _t.elapsed().as_millis(), delta.added.len(), delta.removed.len());
+    let changes = apply_edit_reverse(&mut store, &entry);
+    log::debug!("[UNDO] apply_edit={}ms changes: +{} ~{} -{}", _t.elapsed().as_millis(), changes.added.len(), changes.updated.len(), changes.removed.len());
     store.redo_stack.push(entry);
-    Ok(store.finish_mutation(delta))
+    Ok(store.finish_mutation(changes))
 }
 
 #[tauri::command]
@@ -1851,10 +1882,10 @@ pub fn store_redo(state: tauri::State<'_, StoreState>) -> Result<MutationResult,
     let entry = store.redo_stack.pop().ok_or("nothing to redo")?;
     log::debug!("[REDO] stack_depth={} created={} removed={}",
         store.redo_stack.len(), entry.created.len(), entry.removed.len());
-    let delta = apply_edit_forward(&mut store, &entry);
-    log::debug!("[REDO] apply_edit={}ms delta: +{} -{}", _t.elapsed().as_millis(), delta.added.len(), delta.removed.len());
+    let changes = apply_edit_forward(&mut store, &entry);
+    log::debug!("[REDO] apply_edit={}ms changes: +{} ~{} -{}", _t.elapsed().as_millis(), changes.added.len(), changes.updated.len(), changes.removed.len());
     store.push_undo(entry);
-    Ok(store.finish_mutation(delta))
+    Ok(store.finish_mutation(changes))
 }
 
 #[tauri::command]
@@ -1895,76 +1926,43 @@ pub fn store_can_undo_redo(state: tauri::State<'_, StoreState>) -> Result<(bool,
 
 /// Core edit primitive: atomically remove then create locations, updating tags, overlay, and
 /// render cells. Undo/redo swap the arguments. O(R + C) where R = removed, C = created.
-fn apply_edit(store: &mut Store, remove: &[Location], create: &[Location]) -> RenderDelta {
+fn apply_edit(store: &mut Store, remove: &[Location], create: &[Location]) -> ChangeSet {
     let t0 = std::time::Instant::now();
-    let mut delta = RenderDelta::default();
-    let remove_ids: HashSet<u32> = remove.iter().map(|l| l.id).collect();
     let create_ids: HashSet<u32> = create.iter().map(|l| l.id).collect();
-    let t1 = t0.elapsed();
-
-    store.remove_tag_counts(remove);
-    let t2 = t0.elapsed();
-
-    store.overlay_remove(remove);
-    let t3 = t0.elapsed();
-
-    for id in &remove_ids {
-        if !create_ids.contains(id) {
-            if let Some(removal) = store.cell_remove_render(*id) {
-                delta.removed.push(removal);
-            }
-        }
-    }
-    let t4 = t0.elapsed();
-
     let remove_by_id: HashMap<u32, &Location> = remove.iter().map(|l| (l.id, l)).collect();
 
+    store.remove_tag_counts(remove);
+    store.overlay_remove(remove);
     store.add_tag_counts(create);
     for loc in create {
         store.overlay_add(loc.clone());
+    }
 
-        if remove_ids.contains(&loc.id) {
-            let render_changed = remove_by_id.get(&loc.id).map_or(true, |o|
-                o.lat != loc.lat || o.lng != loc.lng || o.heading != loc.heading
-            );
-            if render_changed {
-                if let Some(removal) = store.cell_remove_render(loc.id) {
-                    delta.removed.push(removal);
-                }
-                let ci = render_cell_idx(loc.lat, loc.lng);
-                let is_selected = store.selected_ids.contains(&loc.id);
-                let (r, g, b, a) = if is_selected { (0, 0, 0, 0) } else { (42, 42, 42, 255) };
-                store.cell_add_render(ci, loc.id);
-                delta.added.push(RenderEntry {
-                    cell: cell_key_from_idx(ci), id: loc.id,
-                    lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
-                    r, g, b, a,
-                });
-            }
-        } else {
-            let ci = render_cell_idx(loc.lat, loc.lng);
-            let is_selected = store.selected_ids.contains(&loc.id);
-            let (r, g, b, a) = if is_selected { (0, 0, 0, 0) } else { (42, 42, 42, 255) };
-            store.cell_add_render(ci, loc.id);
-            delta.added.push(RenderEntry {
-                cell: cell_key_from_idx(ci), id: loc.id,
-                lng: loc.lng as f32, lat: loc.lat as f32, heading: loc.heading as f32,
-                r, g, b, a,
-            });
+    // Categorize: same-id remove+create is an update; the rest are pure add/remove.
+    let mut changes = ChangeSet::default();
+    for loc in remove {
+        if !create_ids.contains(&loc.id) {
+            changes.removed.push(loc.id);
         }
     }
-    let t5 = t0.elapsed();
+    for loc in create {
+        if let Some(old) = remove_by_id.get(&loc.id) {
+            changes.updated.push(((*old).clone(), loc.clone()));
+        } else {
+            changes.added.push(loc.clone());
+        }
+    }
 
-    log::debug!("[apply_edit] hashsets={}ms tags_rm={}ms overlay_rm={}ms cell_rm={}ms create={}ms total={}ms",
-        t1.as_millis(), (t2-t1).as_millis(), (t3-t2).as_millis(), (t4-t3).as_millis(), (t5-t4).as_millis(), t5.as_millis());
-    delta
+    log::debug!("[apply_edit] +{} ~{} -{} in {}ms",
+        changes.added.len(), changes.updated.len(), changes.removed.len(), t0.elapsed().as_millis());
+    changes
 }
 
-fn apply_edit_forward(store: &mut Store, entry: &EditEntry) -> RenderDelta {
+fn apply_edit_forward(store: &mut Store, entry: &EditEntry) -> ChangeSet {
     apply_edit(store, &entry.removed, &entry.created)
 }
 
-fn apply_edit_reverse(store: &mut Store, entry: &EditEntry) -> RenderDelta {
+fn apply_edit_reverse(store: &mut Store, entry: &EditEntry) -> ChangeSet {
     apply_edit(store, &entry.created, &entry.removed)
 }
 

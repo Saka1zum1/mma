@@ -60,7 +60,10 @@ function seedLocs(n: number, tagId?: number, panoFrac = 0, flagsFrac = 0): Promi
 					createdAt: ts,
 				});
 			}
-			await api.addLocations(locs);
+			// Use import-paste path for bulk: Rust parses JSON directly and returns
+			// full_reset (tiny response), avoiding the slow per-entry IPC delta.
+			const json = JSON.stringify({ customCoordinates: locs });
+			await api.importPaste(json);
 			return "ok";
 		},
 		n,
@@ -88,7 +91,7 @@ function timeOp(fnName: string, ...args: any[]): Promise<number> {
 		async (api, name: string, a: any[]) => {
 			const t0 = performance.now();
 			try {
-				const result = api[name](...a);
+				const result = (api as any)[name](...a);
 				if (result && typeof result.then === "function") {
 					await result;
 				}
@@ -111,7 +114,7 @@ function addOneLoc(): Promise<void> {
 				heading: 0,
 				pitch: 0,
 				zoom: 1,
-				panoId: null,
+				panoId: null, id: 0,
 				flags: 0,
 				tags: [],
 				createdAt: new Date().toISOString(),
@@ -131,7 +134,7 @@ function timeAddLocs(n: number): Promise<number> {
 				heading: Math.random() * 360,
 				pitch: 0,
 				zoom: 1,
-				panoId: null,
+				panoId: null, id: 0,
 				flags: 0,
 				tags: [],
 				createdAt: ts,
@@ -156,7 +159,7 @@ function timeSelection(selName: string, tagId: number): Promise<number> {
 		async (api, name: string, tid: number) => {
 			api.resetSelections();
 			const t0 = performance.now();
-			const result = name === "selectTag" ? api.selectTag(tid) : api[name]();
+			const result = name === "selectTag" ? api.selectTag(tid) : (api as any)[name]();
 			if (result && typeof result.then === "function") {
 				await result;
 			}
@@ -178,7 +181,7 @@ function timeComposite(setup: string, measure: string, tagId: number): Promise<n
 				await api.selectPanoIds();
 			}
 			const t0 = performance.now();
-			const result = api[m]();
+			const result = (api as any)[m]();
 			if (result && typeof result.then === "function") {
 				await result;
 			}
@@ -190,20 +193,23 @@ function timeComposite(setup: string, measure: string, tagId: number): Promise<n
 	);
 }
 
-// TODO: store_fill_render_file has no test API equivalent.
-// openMap/closeMap use the test API; the raw invoke for store_fill_render_file remains.
-function timeRenderBuild(mapId: string): Promise<number> {
-	return withApi(async (api, id: string) => {
-		await api.openMap(id);
-		const inv =
-			(window as any).__TAURI_INTERNALS__?.invoke ?? (window as any).__TAURI__?.core?.invoke;
-		if (!inv) return -1;
+function timeRemoveAll(): Promise<number> {
+	return withApi(async (api) => {
+		const ids: number[] = await api.resolveSelection({ type: "Everything" });
 		const t0 = performance.now();
-		await inv("store_fill_render_file");
-		const elapsed = performance.now() - t0;
-		await api.closeMap();
-		return elapsed;
-	}, mapId);
+		await api.removeLocations(ids);
+		return performance.now() - t0;
+	});
+}
+
+function timeRemoveOne(): Promise<number> {
+	return withApi(async (api) => {
+		const ids: number[] = await api.resolveSelection({ type: "Everything" });
+		if (ids.length === 0) return -1;
+		const t0 = performance.now();
+		await api.removeLocations([ids[0]]);
+		return performance.now() - t0;
+	});
 }
 
 function timeBatchUpdate(count: number, iter: number): Promise<number> {
@@ -266,8 +272,8 @@ describe("Speed Matrix", () => {
 		console.log(`\n[SPEED] Matrix written to ${artifactPath}`);
 	});
 
-	// --- addLocations ---
-	for (const n of SCALES) {
+	// --- addLocations (capped at 10K — larger scales are IPC-bound, not Rust-bound) ---
+	for (const n of SCALES.filter((s) => s <= 10_000)) {
 		it(`addLocations @ ${n.toLocaleString()}`, async () => {
 			const times: number[] = [];
 			for (let i = 0; i < RUNS; i++) {
@@ -470,6 +476,38 @@ describe("Speed Matrix", () => {
 				if (ms >= 0) times.push(ms);
 			}
 			if (times.length > 0) record("batchUpdate", n, times);
+			await closeMap();
+			await deleteMap(mapId);
+		});
+	}
+
+	// --- removeLocations (bulk) ---
+	for (const n of SCALES) {
+		it(`removeLocations @ ${n.toLocaleString()}`, async () => {
+			const times: number[] = [];
+			for (let i = 0; i < RUNS; i++) {
+				const mapId = await createAndOpenMap(`speed-rm-${n}-${i}`);
+				await seedLocs(n);
+				await flushAndWait();
+				const ms = await timeRemoveAll();
+				if (ms >= 0) times.push(ms);
+				await closeMap();
+				await deleteMap(mapId);
+			}
+			if (times.length > 0) record("removeLocations", n, times);
+		});
+	}
+
+	// --- removeOne from existing N ---
+	for (const n of SCALES) {
+		it(`removeOne @ ${n.toLocaleString()}`, async () => {
+			const mapId = await seedMap(`speed-rm1-${n}`, n);
+			const times: number[] = [];
+			for (let i = 0; i < RUNS; i++) {
+				const ms = await timeRemoveOne();
+				if (ms >= 0) times.push(ms);
+			}
+			if (times.length > 0) record("removeOne", n, times);
 			await closeMap();
 			await deleteMap(mapId);
 		});

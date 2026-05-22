@@ -8,10 +8,12 @@ import {
 	addLocs,
 	getAllLocs,
 	getLoc,
+	getLocOrNull,
 	getLocCount,
 	makeLoc,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 // =============================================================================
 // 1. Save failure recovery -- dirty state must survive a failed write
@@ -35,29 +37,9 @@ describe.skip("Save failure recovery", () => {
 
 	it("data added before a failed save persists after a successful retry", async () => {
 		const result = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 10,
-					lng: 20,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-				{
-					lat: 30,
-					lng: 40,
-					heading: 90,
-					pitch: 0,
-					zoom: 1,
-					panoId: "pano_sf2",
-					flags: 1,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+			const locs: Location[] = [
+				makeLoc({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
+				makeLoc({ lat: 30, lng: 40, heading: 90, pitch: 0, zoom: 1, panoId: "pano_sf2", flags: 1 }),
 			];
 			await api.addLocations(locs);
 			const sf1Id = locs[0].id;
@@ -98,19 +80,7 @@ describe.skip("Save failure recovery", () => {
 
 	it("data added AFTER a failed save also persists", async () => {
 		const result = await withApi(async (api) => {
-			const preLocs = [
-				{
-					lat: 1,
-					lng: 1,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const preLocs: Location[] = [makeLoc({ lat: 1, lng: 1, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(preLocs);
 			const preId = preLocs[0].id;
 
@@ -120,19 +90,7 @@ describe.skip("Save failure recovery", () => {
 			} catch {}
 
 			// Add more data AFTER the failure
-			const postLocs = [
-				{
-					lat: 2,
-					lng: 2,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const postLocs: Location[] = [makeLoc({ lat: 2, lng: 2, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(postLocs);
 			const postId = postLocs[0].id;
 
@@ -152,19 +110,7 @@ describe.skip("Save failure recovery", () => {
 
 	it("delete_chunks failure preserves data", async () => {
 		const result = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 50,
-					lng: 50,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 50, lng: 50, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			const delId = locs[0].id;
 			await api.flushSave();
@@ -186,7 +132,7 @@ describe.skip("Save failure recovery", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const loc = await getLoc(result.delId);
+		const loc = await getLocOrNull(result.delId);
 		// sf-del-1 was removed -- after successful retry it should be gone
 		expect(loc).toBeFalsy();
 	});
@@ -213,19 +159,7 @@ describe("Save ordering under concurrent mutations", () => {
 
 	it("add during save is captured by next save cycle", async () => {
 		const result = await withApi(async (api) => {
-			const locs1 = [
-				{
-					lat: 10,
-					lng: 10,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs1: Location[] = [makeLoc({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs1);
 			const id1 = locs1[0].id;
 
@@ -233,26 +167,13 @@ describe("Save ordering under concurrent mutations", () => {
 			await api.flushSave();
 
 			// Add while no save is in flight, then save again
-			const locs2 = [
-				{
-					lat: 20,
-					lng: 20,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs2: Location[] = [makeLoc({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs2);
 			const id2 = locs2[0].id;
 
 			await api.flushSave();
 			return { id1, id2 };
 		});
-		if (result.error) throw new Error(result.error);
 		so1Id = result.id1;
 		so2Id = result.id2;
 
@@ -287,49 +208,26 @@ describe("Save ordering under concurrent mutations", () => {
 	it("remove then add to same geohash region persists correctly", async () => {
 		const result = await withApi(async (api) => {
 			// Add and save a location
-			const geoLocs1 = [
-				{
-					lat: 45.0,
-					lng: 90.0,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const geoLocs1: Location[] = [makeLoc({ lat: 45.0, lng: 90.0, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(geoLocs1);
 			const geoId1 = geoLocs1[0].id;
 			await api.flushSave();
 
 			// Remove it and add a different one at similar coords (same geohash cell)
 			await api.removeLocations([geoId1]);
-			const geoLocs2 = [
-				{
-					lat: 45.001,
-					lng: 90.001,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+			const geoLocs2: Location[] = [
+				makeLoc({ lat: 45.001, lng: 90.001, heading: 0, pitch: 0, zoom: 1 }),
 			];
 			await api.addLocations(geoLocs2);
 			const geoId2 = geoLocs2[0].id;
 			await api.flushSave();
 			return { geoId1, geoId2 };
 		});
-		if (result.error) throw new Error(result.error);
 
 		await closeMap();
 		await openMap(mapId);
 
-		const old = await getLoc(result.geoId1);
+		const old = await getLocOrNull(result.geoId1);
 		const newLoc = await getLoc(result.geoId2);
 		expect(old).toBeFalsy();
 		expect(newLoc).toBeTruthy();
@@ -357,8 +255,8 @@ describe("Field fidelity across multiple save cycles", () => {
 
 	it("all location fields survive 3 save/load cycles", async () => {
 		const result = await withApi(async (api) => {
-			const locs = [
-				{
+			const locs: Location[] = [
+				makeLoc({
 					lat: -33.8688,
 					lng: 151.2093,
 					heading: 274.5,
@@ -366,15 +264,13 @@ describe("Field fidelity across multiple save cycles", () => {
 					zoom: 2.5,
 					panoId: "CAoSK0FGMVFpcE1XRGU",
 					flags: 3,
-					tags: [],
 					createdAt: "2025-01-15T08:30:00.000Z",
 					extra: { country: "AU", altitude: 58.2, nested: { a: 1 } },
-				},
+				}),
 			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result.error) throw new Error(result.error);
 		ff1Id = result.id;
 
 		// 3 cycles of save/close/reopen
@@ -423,23 +319,12 @@ describe("Field fidelity across multiple save cycles", () => {
 
 	it("null panoId and zero flags survive save/load", async () => {
 		const result = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 0,
-					lng: 0,
-					heading: 0,
-					pitch: 0,
-					zoom: 0,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+			const locs: Location[] = [
+				makeLoc({ lat: 0, lng: 0, heading: 0, pitch: 0, zoom: 0, panoId: null, flags: 0 }),
 			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result.error) throw new Error(result.error);
 		ffNullId = result.id;
 
 		await flushAndWait();
@@ -489,7 +374,7 @@ describe("Geohash cell boundary correctness", () => {
 		await openMap(mapId);
 
 		const allLocs = await getAllLocs();
-		const loadedIds = new Set(allLocs.map((l: any) => l.id));
+		const loadedIds = new Set(allLocs.map((l) => l.id));
 
 		expect(allLocs.length).toBe(5);
 		for (const id of ids) {
@@ -524,13 +409,13 @@ describe("Geohash cell boundary correctness", () => {
 		await openMap(mapId);
 
 		const allLocs = await getAllLocs();
-		const loadedIds = new Set(allLocs.map((l: any) => l.id));
+		const loadedIds = new Set(allLocs.map((l) => l.id));
 
 		expect(loadedIds.has(removeId)).toBe(false);
 		expect(loadedIds.has(spreadIds[0])).toBe(true);
 		expect(loadedIds.has(spreadIds[19])).toBe(true);
 		// 5 from edge test + 19 remaining spread = 24
-		const spreadRemaining = allLocs.filter((l: any) => spreadIds.includes(l.id)).length;
+		const spreadRemaining = allLocs.filter((l) => spreadIds.includes(l.id)).length;
 		expect(spreadRemaining).toBe(19);
 	});
 });
@@ -555,9 +440,10 @@ describe("Large dataset save/load fidelity", () => {
 
 	it("1000 locations survive save/load with correct field values", async () => {
 		const result = await withApi(async (api) => {
-			const locs: any[] = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 1000; i++) {
 				locs.push({
+					id: 0,
 					lat: -85 + (i / 1000) * 170,
 					lng: -180 + (i / 1000) * 360,
 					heading: i % 360,
@@ -576,7 +462,6 @@ describe("Large dataset save/load fidelity", () => {
 			for (let i = 0; i < locs.length; i++) idMap[i] = locs[i].id;
 			return { idMap };
 		});
-		if (result.error) throw new Error(result.error);
 
 		await flushAndWait();
 		await closeMap();
@@ -627,7 +512,7 @@ describe("Large dataset save/load fidelity", () => {
 		await openMap(mapId);
 
 		const allLocs = await getAllLocs();
-		const loadedIds = new Set(allLocs.map((l: any) => l.id));
+		const loadedIds = new Set(allLocs.map((l) => l.id));
 
 		expect(loadedIds.has(lgIds[0])).toBe(false); // removed (0 % 3 === 0)
 		expect(loadedIds.has(lgIds[1])).toBe(true); // kept
@@ -640,9 +525,10 @@ describe("Large dataset save/load fidelity", () => {
 
 	it("add after large remove persists correctly", async () => {
 		const result = await withApi(async (api) => {
-			const locs: any[] = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 100; i++) {
 				locs.push({
+					id: 0,
 					lat: i,
 					lng: i,
 					heading: i,
@@ -655,10 +541,9 @@ describe("Large dataset save/load fidelity", () => {
 				});
 			}
 			await api.addLocations(locs);
-			const newIds = locs.map((l: any) => l.id);
+			const newIds = locs.map((l) => l.id);
 			return { newIds };
 		});
-		if (result.error) throw new Error(result.error);
 
 		await flushAndWait();
 		await closeMap();
@@ -668,7 +553,7 @@ describe("Large dataset save/load fidelity", () => {
 		expect(count).toBe(766); // 666 + 100
 
 		const allLocs = await getAllLocs();
-		const freshCount = allLocs.filter((l: any) => result.newIds.includes(l.id)).length;
+		const freshCount = allLocs.filter((l) => result.newIds.includes(l.id)).length;
 		expect(freshCount).toBe(100);
 	});
 });
@@ -693,23 +578,10 @@ describe("Dirty tracking accuracy", () => {
 
 	it("mutation marks dirty, close/reopen clears it", async () => {
 		const result = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 10,
-					lng: 20,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result.error) throw new Error(result.error);
 		dt1Id = result.id;
 
 		const afterMutation = await withApi(async (api) => {
@@ -770,23 +642,10 @@ describe("Worker lifecycle across map close/open", () => {
 
 	it("save works correctly after close and reopen", async () => {
 		const result1 = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 10,
-					lng: 10,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result1.error) throw new Error(result1.error);
 		const wl1Id = result1.id;
 
 		await flushAndWait();
@@ -795,23 +654,10 @@ describe("Worker lifecycle across map close/open", () => {
 
 		// Add more after reopen (new worker instance)
 		const result2 = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 20,
-					lng: 20,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result2.error) throw new Error(result2.error);
 		const wl2Id = result2.id;
 
 		await flushAndWait();
@@ -829,23 +675,10 @@ describe("Worker lifecycle across map close/open", () => {
 
 	it("rapid open/close/open does not lose pending saves", async () => {
 		const result1 = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 30,
-					lng: 30,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 30, lng: 30, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result1.error) throw new Error(result1.error);
 		const rapidId = result1.id;
 
 		await flushAndWait();
@@ -853,23 +686,10 @@ describe("Worker lifecycle across map close/open", () => {
 		await openMap(mapId);
 		// Immediately add and save again
 		const result2 = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 40,
-					lng: 40,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 40, lng: 40, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result2.error) throw new Error(result2.error);
 		const rapid2Id = result2.id;
 
 		await flushAndWait();
@@ -890,54 +710,24 @@ describe("Worker lifecycle across map close/open", () => {
 describe("Multi-map isolation", () => {
 	let mapIdA: string;
 	let mapIdB: string;
-	let isoA1Id: number;
-	let isoB1Id: number;
 
 	before(async () => {
 		await waitForReady();
 		mapIdA = await createAndOpenMap("E2E IsolationA");
-		const resultA = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 10,
-					lng: 10,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+		await withApi(async (api) => {
+			const locs: Location[] = [makeLoc({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (resultA.error) throw new Error(resultA.error);
-		isoA1Id = resultA.id;
 		await flushAndWait();
 		await closeMap();
 
 		mapIdB = await createAndOpenMap("E2E IsolationB");
-		const resultB = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 20,
-					lng: 20,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+		await withApi(async (api) => {
+			const locs: Location[] = [makeLoc({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (resultB.error) throw new Error(resultB.error);
-		isoB1Id = resultB.id;
 		await flushAndWait();
 		await closeMap();
 	});
@@ -971,30 +761,17 @@ describe("Multi-map isolation", () => {
 	it("mutating map A does not affect map B", async () => {
 		await openMap(mapIdA);
 		const result = await withApi(async (api) => {
-			const locs = [
-				{
-					lat: 15,
-					lng: 15,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const locs: Location[] = [makeLoc({ lat: 15, lng: 15, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
-		if (result.error) throw new Error(result.error);
 		const isoA2Id = result.id;
 		await flushAndWait();
 		await closeMap();
 
 		await openMap(mapIdB);
 		const allLocs = await getAllLocs();
-		const ids = new Set(allLocs.map((l: any) => l.id));
+		const ids = new Set(allLocs.map((l) => l.id));
 		await closeMap();
 
 		expect(allLocs.length).toBe(1);

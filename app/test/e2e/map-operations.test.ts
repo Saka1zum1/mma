@@ -6,11 +6,8 @@ import {
 	flushAndWait,
 	openMap,
 	addLocs,
-	getAllLocs,
-	getLoc,
 	getLocCount,
 	makeLoc,
-	createTag,
 	withApi,
 } from "./helpers";
 
@@ -49,9 +46,9 @@ describe("Map rename", () => {
 		const maps = await withApi(async (api) => {
 			return await api.listMaps();
 		});
-		const ourMap = maps.find((m: any) => m.id === mapId);
+		const ourMap = maps.find((m) => m.id === mapId);
 		expect(ourMap).toBeTruthy();
-		expect(ourMap.name).toBe("Renamed Map");
+		expect(ourMap!.name).toBe("Renamed Map");
 	});
 });
 
@@ -81,8 +78,8 @@ describe("Folder operations", () => {
 		const maps = await withApi(async (api) => {
 			return await api.listMaps();
 		});
-		const ourMap = maps.find((m: any) => m.id === id);
-		expect(ourMap.folder).toBe("MyFolder");
+		const ourMap = maps.find((m) => m.id === id);
+		expect(ourMap!.folder).toBe("MyFolder");
 	});
 
 	it("move map to root (folder=null)", async () => {
@@ -93,8 +90,8 @@ describe("Folder operations", () => {
 		const maps = await withApi(async (api) => {
 			return await api.listMaps();
 		});
-		const ourMap = maps.find((m: any) => m.id === mapIds[0]);
-		expect(ourMap.folder).toBeNull();
+		const ourMap = maps.find((m) => m.id === mapIds[0]);
+		expect(ourMap!.folder).toBeNull();
 	});
 
 	it("rename folder updates all maps in it", async () => {
@@ -118,10 +115,10 @@ describe("Folder operations", () => {
 		const maps = await withApi(async (api) => {
 			return await api.listMaps();
 		});
-		const m1 = maps.find((m: any) => m.id === id1);
-		const m2 = maps.find((m: any) => m.id === id2);
-		expect(m1.folder).toBe("NewFolder");
-		expect(m2.folder).toBe("NewFolder");
+		const m1 = maps.find((m) => m.id === id1);
+		const m2 = maps.find((m) => m.id === id2);
+		expect(m1!.folder).toBe("NewFolder");
+		expect(m2!.folder).toBe("NewFolder");
 	});
 
 	it("deleteFolder moves maps to root, does not delete them", async () => {
@@ -134,12 +131,12 @@ describe("Folder operations", () => {
 		});
 
 		// Maps still exist but in root
-		const m1 = maps.find((m: any) => m.id === mapIds[1]);
-		const m2 = maps.find((m: any) => m.id === mapIds[2]);
+		const m1 = maps.find((m) => m.id === mapIds[1]);
+		const m2 = maps.find((m) => m.id === mapIds[2]);
 		expect(m1).toBeTruthy();
 		expect(m2).toBeTruthy();
-		expect(m1.folder).toBeNull();
-		expect(m2.folder).toBeNull();
+		expect(m1!.folder).toBeNull();
+		expect(m2!.folder).toBeNull();
 	});
 });
 
@@ -167,14 +164,12 @@ describe("Map metadata updates", () => {
 
 	it("update settings", async () => {
 		await withApi(async (api) => {
-			await api.updateMapMeta({
-				settings: { mapType: "satellite", svEndDate: "2020-01" },
-			});
+			const cur = api.getCurrentMap()!.meta.settings;
+			await api.updateMapMeta({ settings: { ...cur, enrichMetadata: true } });
 		});
 
-		const settings = await withApi(async (api) => api.getCurrentMap()?.meta.settings);
-		expect(settings.mapType).toBe("satellite");
-		expect(settings.svEndDate).toBe("2020-01");
+		const settings = await withApi(async (api) => api.getCurrentMap()!.meta.settings);
+		expect(settings.enrichMetadata).toBe(true);
 	});
 
 	it("update scoreBounds", async () => {
@@ -193,9 +188,9 @@ describe("Map metadata updates", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const meta = await withApi(async (api) => api.getCurrentMap()?.meta);
+		const meta = await withApi(async (api) => api.getCurrentMap()!.meta);
 		expect(meta.description).toBe("Test map for E2E");
-		expect(meta.settings.mapType).toBe("satellite");
+		expect(meta.settings.enrichMetadata).toBe(true);
 		expect(meta.scoreBounds).toEqual([100, 200, 300, 400]);
 	});
 });
@@ -215,13 +210,13 @@ describe.skip("Bulk import", () => {
 	});
 
 	it("bulk import creates multiple maps", async () => {
-		const beforeCount = await withApi(async (api) => {
+		await withApi(async (api) => {
 			const maps = await api.listMaps();
 			return maps.length;
 		});
 
 		await withApi(async (api) => {
-			await api.bulkImportMaps([
+			await (api as any).bulkImportMaps([
 				{
 					name: "Bulk Map 1",
 					folder: "Imported",
@@ -282,8 +277,8 @@ describe.skip("Bulk import", () => {
 
 		const m1 = bulkMaps.find((m: any) => m.name === "Bulk Map 1");
 		const m2 = bulkMaps.find((m: any) => m.name === "Bulk Map 2");
-		expect(m1.folder).toBe("Imported");
-		expect(m2.folder).toBe("Imported");
+		expect(m1!.folder).toBe("Imported");
+		expect(m2!.folder).toBe("Imported");
 	});
 
 	it("bulk imported maps have correct locations", async () => {
@@ -299,8 +294,8 @@ describe.skip("Bulk import", () => {
 		const tags = await withApi(async (api) => {
 			return api.getCurrentMap()?.meta.tags;
 		});
-		expect(Object.keys(tags).length).toBeGreaterThanOrEqual(1);
-		const tagValues = Object.values(tags) as any[];
+		expect(Object.keys(tags!).length).toBeGreaterThanOrEqual(1);
+		const tagValues = Object.values(tags!) as any[];
 		expect(tagValues.some((t: any) => t.name === "Imported")).toBe(true);
 	});
 });
@@ -399,9 +394,9 @@ describe("Extra field definitions", () => {
 		});
 
 		const extra = await withApi(async (api) => api.getCurrentMap()?.meta.extra);
-		expect(extra.fields.altitude.type).toBe("number");
-		expect(extra.fields.country.type).toBe("string");
-		expect(extra.fields.region.values).toEqual(["NA", "EU", "AS"]);
+		expect(extra!.fields!.altitude.type).toBe("number");
+		expect(extra!.fields!.country.type).toBe("string");
+		expect(extra!.fields!.region.values).toEqual(["NA", "EU", "AS"]);
 	});
 
 	it("extra field definitions persist", async () => {
@@ -410,7 +405,7 @@ describe("Extra field definitions", () => {
 		await openMap(mapId);
 
 		const extra = await withApi(async (api) => api.getCurrentMap()?.meta.extra);
-		expect(extra.fields.altitude.type).toBe("number");
-		expect(extra.fields.altitude.label).toBe("Altitude (m)");
+		expect(extra!.fields!.altitude.type).toBe("number");
+		expect(extra!.fields!.altitude.label).toBe("Altitude (m)");
 	});
 });

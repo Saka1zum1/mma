@@ -6,7 +6,6 @@ import {
 	flushAndWait,
 	openMap,
 	addLocs,
-	getAllLocs,
 	getLoc,
 	getLocCount,
 	makeLoc,
@@ -87,7 +86,7 @@ describe("Undo/Redo", () => {
 
 	it("multiple undos in sequence", async () => {
 		// Add three locations in separate calls (separate undo entries)
-		const result = await withApi(async (api) => {
+		await withApi(async (api) => {
 			const l1 = [
 				{
 					lat: 1,
@@ -95,7 +94,7 @@ describe("Undo/Redo", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -109,7 +108,7 @@ describe("Undo/Redo", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -123,7 +122,7 @@ describe("Undo/Redo", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -131,7 +130,6 @@ describe("Undo/Redo", () => {
 			];
 			await api.addLocations(l3);
 		});
-		if (result?.error) throw new Error(result.error);
 
 		let count = await getLocCount();
 		expect(count).toBe(4); // undo-1 + seq-1,2,3
@@ -165,7 +163,7 @@ describe("Undo/Redo", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -189,7 +187,7 @@ describe("Undo/Redo", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -217,7 +215,7 @@ describe("Undo/Redo", () => {
 			const allLocs = await api.fetchAllLocations();
 			// seq-1 has lat=1
 			const seq1 = allLocs.find((l) => l.lat === 1);
-			if (!seq1) return { error: "seq-1 not found" };
+			if (!seq1) throw new Error("seq-1 not found");
 
 			await api.batchUpdateLocations([
 				{ id: u1Id, patch: { heading: 111 } },
@@ -225,7 +223,6 @@ describe("Undo/Redo", () => {
 			]);
 			return { seq1Id: seq1.id };
 		}, undo1Id);
-		if (result.error) throw new Error(result.error);
 		const seq1Id = result.seq1Id;
 
 		let u1 = await getLoc(undo1Id);
@@ -267,7 +264,7 @@ describe("Undo/Redo persistence", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -281,7 +278,7 @@ describe("Undo/Redo persistence", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -290,7 +287,6 @@ describe("Undo/Redo persistence", () => {
 			await api.addLocations(l2);
 			return { id1: l1[0].id, id2: l2[0].id };
 		});
-		if (result.error) throw new Error(result.error);
 		uh1Id = result.id1;
 
 		await flushAndWait();

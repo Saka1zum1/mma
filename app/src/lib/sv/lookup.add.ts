@@ -28,10 +28,10 @@ export function parsePanoDate(d: Date | { year?: number; month?: number } | stri
 
 /** Fetch panorama data via StreetViewService. Returns null on failure or missing location. */
 export async function fetchPanoData(
-	g: Google,
 	request: google.maps.StreetViewPanoRequest | google.maps.StreetViewLocationRequest,
 ): Promise<google.maps.StreetViewResolvedPanoramaData | null> {
 	try {
+		const g = getGoogle();
 		const sv = new g.maps.StreetViewService();
 		const result = await sv.getPanorama(request);
 		const data = result?.data;
@@ -43,11 +43,11 @@ export async function fetchPanoData(
 }
 
 export async function getPanoAtCoords(
-	g: Google,
 	lat: number,
 	lng: number,
 	radius = SV_SEARCH_RADIUS,
 ): Promise<string | null> {
+	const g = getGoogle();
 	const sv = new g.maps.StreetViewService();
 	try {
 		const result = await sv.getPanorama({ location: { lat, lng }, radius });
@@ -62,13 +62,13 @@ export interface ResolvedPano {
 	isFallback: boolean;
 }
 
-export async function resolvePano(g: Google, loc: Location): Promise<ResolvedPano> {
+export async function resolvePano(loc: Location): Promise<ResolvedPano> {
 	const pinned = hasLoadAsPanoId(loc);
 	let resolved: google.maps.StreetViewResolvedPanoramaData | null = null;
 	if (pinned && loc.panoId) {
-		resolved = await fetchPanoData(g, { pano: loc.panoId });
+		resolved = await fetchPanoData({ pano: loc.panoId });
 	}
-	resolved ??= await fetchPanoData(g, {
+	resolved ??= await fetchPanoData({
 		location: { lat: loc.lat, lng: loc.lng },
 		radius: SV_SEARCH_RADIUS,
 	});
@@ -106,7 +106,7 @@ export async function resolvePanoIds(
 		await runConcurrent(
 			chunk,
 			async (loc) => {
-				const pano = await getPanoAtCoords(g, loc.lat, loc.lng);
+				const pano = await getPanoAtCoords(loc.lat, loc.lng);
 				if (pano) {
 					updates.push({ id: loc.id, patch: { panoId: pano } });
 					result.resolved.push({ id: loc.id, panoId: pano });
@@ -198,8 +198,7 @@ export function isUnofficial(p: google.maps.StreetViewResolvedPanoramaData | nul
 /** Find nearest pano via photometa tile dots (bypasses StreetViewService for coverage discovery). */
 export async function photometaSnap(
 	click: { lat: number; lng: number },
-	radius: number,
-	g: Google,
+	radius: number
 ): Promise<google.maps.StreetViewResolvedPanoramaData | null> {
 	try {
 		const wc = (() => {
@@ -218,7 +217,7 @@ export async function photometaSnap(
 			if (dist < radius && (!best || dist < best.dist)) best = { panoId: d.panoId, dist };
 		}
 		if (!best) return null;
-		return fetchPanoData(g, { pano: best.panoId });
+		return fetchPanoData({ pano: best.panoId });
 	} catch {
 		return null;
 	}
@@ -231,7 +230,6 @@ const CAMERA_PRIORITY = ["gen4", "gen2", "tripod", "badcam", "gen1"];
  * resolves heading, and determines LoadAsPanoId flag by comparing to default coverage.
  */
 export async function lookupStreetView(
-	g: Google,
 	lat: number,
 	lng: number,
 	zoom: number,
@@ -244,6 +242,7 @@ export async function lookupStreetView(
 		preferHigherQuality?: boolean;
 	},
 ): Promise<Location | null> {
+	const g = getGoogle();
 	const radius = Math.max(50, Math.round(svSearchRadius(lat, zoom)));
 	const click = { lat, lng };
 	const userUploaded: "ignore" | "avoid" | "allow" = opts.onlyOfficial
@@ -253,16 +252,16 @@ export async function lookupStreetView(
 			: "allow";
 
 	const [iRes, aRes, oRes, sRes] = await Promise.all([
-		fetchPanoData(g, { location: click, radius }),
-		fetchPanoData(g, {
+		fetchPanoData({ location: click, radius }),
+		fetchPanoData({
 			location: click,
 			radius,
 			sources: [g.maps.StreetViewSource.GOOGLE],
 			preference: g.maps.StreetViewPreference.NEAREST,
 		}),
-		photometaSnap(click, radius, g),
+		photometaSnap(click, radius),
 		userUploaded === "allow"
-			? fetchPanoData(g, {
+			? fetchPanoData({
 					location: click,
 					radius,
 					sources: ["unofficial" as unknown as google.maps.StreetViewSource],
@@ -291,7 +290,7 @@ export async function lookupStreetView(
 	const official = candidates.find((c) => !isUnofficial(c));
 	if (official?.time?.length) {
 		const fetches = await Promise.allSettled(
-			official.time.map((t) => fetchPanoData(g, { pano: t.pano })),
+			official.time.map((t) => fetchPanoData({ pano: t.pano })),
 		);
 		for (const r of fetches) {
 			if (r.status === "fulfilled") push(r.value);
@@ -336,7 +335,7 @@ export async function lookupStreetView(
 	const chosen = filtered[0];
 	if (!chosen) return null;
 
-	const verify = await fetchPanoData(g, { location: panoLatLng(chosen), radius: 50 });
+	const verify = await fetchPanoData({ location: panoLatLng(chosen), radius: 50 });
 	const isDefault = verify !== null && samePano(chosen, verify);
 
 	const pos = chosen.location.latLng;

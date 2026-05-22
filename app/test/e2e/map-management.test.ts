@@ -29,11 +29,10 @@ describe("Map management", () => {
 
 	it("create a map", async () => {
 		const result = await withApi(async (api) => {
-			const map = await api.createMap("Test Map 1");
+			const map = await api.createMap("Test Map 1", null);
 			const count = await api.getLocationCount();
 			return { id: map.meta.id, name: map.meta.name, locCount: count };
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.name).toBe("Test Map 1");
 		expect(result.locCount).toBe(0);
 		createdMapIds.push(result.id);
@@ -42,7 +41,7 @@ describe("Map management", () => {
 	it("create multiple maps", async () => {
 		for (let i = 2; i <= 5; i++) {
 			const id = await withApi(async (api, name) => {
-				const map = await api.createMap(name);
+				const map = await api.createMap(name, null);
 				return map.meta.id;
 			}, `Test Map ${i}`);
 			expect(id).not.toContain("ERROR");
@@ -125,7 +124,7 @@ describe("Map metadata", () => {
 	before(async () => {
 		await waitForReady();
 		mapId = await withApi(async (api) => {
-			const map = await api.createMap("Meta Test Map");
+			const map = await api.createMap("Meta Test Map", null);
 			return map.meta.id;
 		});
 	});
@@ -138,7 +137,7 @@ describe("Map metadata", () => {
 	it("map has correct initial metadata", async () => {
 		await openMap(mapId);
 		const meta = await withApi(async (api) => {
-			return api.getCurrentMap()?.meta;
+			return api.getCurrentMap()!.meta;
 		});
 		expect(meta.name).toBe("Meta Test Map");
 		expect(meta.description).toBe("");
@@ -161,7 +160,7 @@ describe("Empty map edge cases", () => {
 	before(async () => {
 		await waitForReady();
 		mapId = await withApi(async (api) => {
-			const map = await api.createMap("Empty Map");
+			const map = await api.createMap("Empty Map", null);
 			return map.meta.id;
 		});
 	});

@@ -848,7 +848,7 @@ export function MapEmbed() {
 				if (!g) return;
 				const currentZoom = gMapRef.current?.getZoom() ?? 2;
 				const t0 = performance.now();
-				const loc = await lookupStreetView(g, lat, lng, currentZoom, svSettingsRef.current);
+				const loc = await lookupStreetView(lat, lng, currentZoom, svSettingsRef.current);
 				if (!loc) {
 					if (containerRef.current) {
 						showToast(containerRef.current, "No coverage found at this location.");

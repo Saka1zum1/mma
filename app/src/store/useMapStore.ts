@@ -200,6 +200,14 @@ export function useReview() {
 
 let cachedCommitDiff = { added: 0, removed: 0, modified: 0 };
 
+export function hasCommitDiff(): boolean {
+	return (
+		cachedCommitDiff.added > 0 ||
+		cachedCommitDiff.removed > 0 ||
+		cachedCommitDiff.modified > 0
+	);
+}
+
 export function useCommitDiff() {
 	const version = useSyncExternalStore(subscribe, getMapSnapshot);
 	useEffect(() => {
@@ -605,21 +613,8 @@ export async function duplicateLocation(locId: number): Promise<number | null> {
 	return clone.id;
 }
 
-export function removeLocations(ids: Set<number>) {
-	if (!currentMap || ids.size === 0) return;
-	const t0 = performance.now();
-	cmd.storeRemoveLocations([...ids])
-		.then((r) => {
-			log.debug(
-				`[delete] ipc_roundtrip=${(performance.now() - t0).toFixed(0)}ms ids=${ids.size} delta: +${r.delta.added.length} -${r.delta.removed.length}`,
-			);
-			renderDeltaBus.emit(r.delta);
-			syncMutationResult(r);
-			if (selections.length > 0) {
-				applySelectionUpdate((_, sels) => sels);
-			}
-		})
-		.catch((e) => log.error("[delete] store_remove_locations failed:", e));
+export function removeLocations(ids: Set<number>): Promise<void> {
+	if (!currentMap || ids.size === 0) return Promise.resolve();
 	if (activeLocationId && ids.has(activeLocationId)) {
 		activeLocationId = null;
 		cachedActiveLocation = null;
@@ -629,6 +624,9 @@ export function removeLocations(ids: Set<number>) {
 	notify();
 	scheduleSave();
 	emitEvent("location:remove", [...ids]);
+	return mutate(cmd.storeRemoveLocations([...ids]))
+		.then(() => {})
+		.catch((e) => log.error("[delete] store_remove_locations failed:", e));
 }
 
 function buildUpdates(
@@ -643,10 +641,12 @@ function buildUpdates(
 	});
 }
 
-export function updateLocation(locId: number, patch: Partial<Location>) {
-	if (!currentMap) return;
+export function updateLocation(locId: number, patch: Partial<Location>): Promise<void> {
+	if (!currentMap) return Promise.resolve();
 	const updates = buildUpdates([{ id: locId, patch }]);
-	mutate(cmd.storeUpdateLocations(updates, true))
+	scheduleSave();
+	emitEvent("location:update", { id: locId, ...patch });
+	return mutate(cmd.storeUpdateLocations(updates, true))
 		.then(() => {
 			if (activeLocationId === locId) {
 				fetchViaFile<Location>(cmd.storeGetLocationFile(locId))
@@ -659,8 +659,6 @@ export function updateLocation(locId: number, patch: Partial<Location>) {
 			}
 		})
 		.catch((e) => log.error("[update] store_update_locations failed:", e));
-	scheduleSave();
-	emitEvent("location:update", { id: locId, ...patch });
 }
 
 export function batchUpdateLocations(updates: { id: number; patch: Partial<Location> }[]) {

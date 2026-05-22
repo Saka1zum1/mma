@@ -35,6 +35,7 @@ import {
 	getUndoRedoState,
 	deleteSelectedTags,
 	getSelections,
+	hasCommitDiff,
 } from "./useMapStore";
 import { loadGeoJSON } from "@/lib/util/loadGeoJSON.add";
 
@@ -45,7 +46,7 @@ registerCommand({
 	group: "Map",
 	defaultBinding: "Mod+s",
 	execute: () => commitMap(),
-	enabled: () => getCurrentMap() !== null,
+	enabled: () => getCurrentMap() !== null && hasCommitDiff(),
 });
 
 registerCommand({
@@ -72,7 +73,7 @@ registerCommand({
 	label: "Redo",
 	icon: mdiRedo,
 	group: "Map",
-	defaultBinding: "Mod+y",
+	defaultBinding: "Mod+y, Mod+Shift+z",
 	execute: redo,
 	enabled: () => getUndoRedoState().canRedo,
 });

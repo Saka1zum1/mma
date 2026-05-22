@@ -1,26 +1,17 @@
-MMA Speed Matrix -- 2026-05-13T17:30:20.676Z
+MMA Speed Matrix -- 2026-05-22T16:02:01.481Z
 ================================================================================
 
 Operation                                  100       1,000      10,000     100,000   1,000,000
 -----------------------------------------------------------------------------------------------
-addLocations                              45ms        13ms       124ms      1247ms     11452ms
-save (incremental)                         7ms         7ms        14ms        66ms       840ms
-mapOpen                                    7ms        10ms        20ms       130ms      1231ms
-mapClose                                  12ms        11ms        11ms        14ms        60ms
-addOne                                     3ms         2ms         2ms         2ms         2ms
-undo                                       2ms         2ms        47ms         ---         ---
-redo                                       2ms         2ms         5ms         ---         ---
-tagCounts                                  2ms         2ms         2ms         2ms         2ms
-batchUpdate                                2ms         7ms       214ms         ---         ---
-commit                                    77ms       266ms       377ms         ---         ---
-selectEverything                           4ms         5ms        24ms       171ms      2249ms
-selectTag                                  4ms         5ms        14ms       118ms      1348ms
-selectUntagged                             4ms         5ms        14ms       108ms      1353ms
-selectPanoIds                              4ms         5ms        11ms        80ms       857ms
-selectNotPanoIds                           4ms         5ms        16ms       148ms      1540ms
-selectUnpanned                             4ms         4ms         7ms        54ms       376ms
-selectIntersection                         5ms         4ms        12ms        84ms       944ms
-selectUnion                                4ms         4ms        12ms        90ms      1041ms
-selectInverse                              3ms         5ms        18ms       154ms      1825ms
+addLocations                              24ms        42ms       103ms       859ms      9024ms
+save (incremental)                        19ms        20ms        24ms        80ms       778ms
+mapOpen                                   18ms        26ms        27ms       128ms      1153ms
+mapClose                                  34ms        35ms        39ms        33ms       212ms
+addOne                                     4ms         5ms         8ms         9ms         5ms
+undo                                      18ms        32ms        36ms         ---         ---
+redo                                       4ms        10ms        29ms         ---         ---
+tagCounts                                  3ms         2ms         2ms         2ms         2ms
+batchUpdate                                4ms        10ms       219ms         ---         ---
+removeLocations                            4ms        10ms        62ms      4966ms         ---
 
 All times in ms (avg of 3 runs)

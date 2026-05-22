@@ -18,13 +18,13 @@ export const config: WebdriverIO.Config = {
 	port: 4444,
 	path: "/",
 	logLevel: "warn",
-	waitforTimeout: 30000,
-	connectionRetryTimeout: 120000,
-	connectionRetryCount: 5,
+	waitforTimeout: 10000,
+	connectionRetryTimeout: 20000,
+	connectionRetryCount: 2,
 	framework: "mocha",
 	reporters: ["spec"],
 	mochaOpts: {
 		ui: "bdd",
-		timeout: 300000,
+		timeout: 120000,
 	},
 };

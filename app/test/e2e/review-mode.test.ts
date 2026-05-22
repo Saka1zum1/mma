@@ -201,7 +201,7 @@ describe("Review mode - delete", () => {
 		const deletedId = locIds[0];
 		const nextId = locIds[1];
 		const result = await withApi(
-			async (api, did, nid, settle) => {
+			async (api, did, _nid, settle) => {
 				await api.reviewDelete();
 				await new Promise((r) => setTimeout(r, settle));
 				const count = await api.getLocationCount();

@@ -5,7 +5,6 @@ import {
 	deleteMap,
 	addLocs,
 	makeLoc,
-	getLoc,
 	getLocCount,
 	createTag,
 	withApi,
@@ -111,13 +110,11 @@ describe("UI: Tag manager", () => {
 		const visibleTags = await browser.$$(".tag-list .tag");
 		// Should show only Coastal
 		let coastalFound = false;
-		let mountainsFound = false;
 		for (const tag of visibleTags) {
 			if (!(await tag.isDisplayed())) continue;
 			const textEl = await tag.$(".tag__text");
 			const text = await textEl.getText();
 			if (text.includes("Coastal")) coastalFound = true;
-			if (text.includes("Mountains")) mountainsFound = true;
 		}
 		expect(coastalFound).toBe(true);
 
@@ -157,7 +154,6 @@ describe("UI: Tag manager", () => {
 
 describe("UI: Selection manager", () => {
 	let mapId: string;
-	let locIds: number[];
 
 	before(async () => {
 		await waitForReady();
@@ -175,7 +171,7 @@ describe("UI: Selection manager", () => {
 				}),
 			);
 		}
-		locIds = await addLocs(locs);
+		await addLocs(locs);
 	});
 
 	after(async () => {

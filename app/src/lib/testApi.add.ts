@@ -88,6 +88,11 @@ function buildTestApi() {
 		deleteMap: (id: string) => cmd.storeDeleteMap(id),
 		flushSave: () => flushSave(),
 		getDirtyCount: () => getDirtyCount(),
+		// Placeholder for save-failure injection. Real fault injection needs a Rust-side
+		// test command (#[cfg(feature = "e2e")]); the JS path can't intercept Tauri invoke.
+		interceptInvoke: (_command: string, _mode: string): void => {
+			throw new Error("interceptInvoke not implemented (needs Rust e2e test command)");
+		},
 
 		// --- Location CRUD ---
 		getCurrentMap,
@@ -109,7 +114,8 @@ function buildTestApi() {
 		redo,
 
 		// --- Active location & work area ---
-		setActiveLocation: (id: number | null) => setActiveLocation(id),
+		setActiveLocation: (id: number | null, checkDuplicates?: boolean) =>
+			setActiveLocation(id, checkDuplicates),
 		getActiveLocation,
 		getWorkArea,
 
@@ -196,7 +202,7 @@ function buildTestApi() {
 		enrichAll: (opts?: any) => enrichAll(opts),
 		bulkPinToPano: (opts?: any) => bulkPinToPano(opts),
 		validateLocations: (locs: Location[], opts?: any) => validateLocations(locs, opts),
-		needsEnrichment,
+		needsEnrichment: (loc: Pick<Location, "extra">) => needsEnrichment(loc as Location),
 
 		// --- Rust bulk import ---
 		bulkImportPreview: (path: string) => cmd.bulkImportPreview(path),
@@ -220,6 +226,7 @@ function buildTestApi() {
 		writeTempFile: (name: string, content: string) => cmd.writeTempFile(name, content),
 		importPreview: (path: string) => cmd.storeImportPreview(path),
 		importFile: (droppedFields: string[]) => cmd.storeImportFile(droppedFields),
+		importPaste: (text: string) => cmd.storeImportPaste(text),
 
 		// --- Low-level updates ---
 		updateLocationNoUndo: (id: number, patch: Partial<Location>) => {
@@ -237,7 +244,7 @@ function buildTestApi() {
 		resolveSelection: (props: any) => cmd.storeResolveSelection(props),
 		syncSelections: async () => {
 			const sels = getSelections().map((s) => ({ props: s.props, color: s.color }));
-			if (sels.length === 0) return { ids: [], counts: [] };
+			if (sels.length === 0) return { ids: [] as number[], counts: [] };
 			await cmd.storeSyncSelections(sels);
 			const ids = await cmd.storeGetSelectedIdsList();
 			return { ids };

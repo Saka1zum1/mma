@@ -221,6 +221,11 @@ fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("[PANIC] {info}");
+        default_hook(info);
+    }));
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("mma-buf", |_ctx, req| {
             let raw = req.uri().path().replace("%20", " ").replace("%3A", ":");

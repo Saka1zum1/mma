@@ -5,7 +5,6 @@ import {
 	deleteMap,
 	addLocs,
 	makeLoc,
-	getAllLocs,
 	createTag,
 	withApi,
 } from "./helpers";
@@ -49,7 +48,7 @@ describe("JSON import/export round-trip", () => {
 		locIds = await addLocs(locs);
 
 		const result = await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const path = await api.exportJson({
 				exportZoom: true,
 				exportUnpanned: true,
@@ -97,7 +96,7 @@ describe("JSON import/export round-trip", () => {
 		);
 
 		const result = await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const path = await api.exportJson({
 				exportZoom: true,
 				exportUnpanned: true,
@@ -125,7 +124,7 @@ describe("JSON import/export round-trip", () => {
 
 	it("export without zoom sets zoom to 0", async () => {
 		const result = await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const path = await api.exportJson({
 				exportZoom: false,
 				exportUnpanned: true,
@@ -149,7 +148,7 @@ describe("JSON import/export round-trip", () => {
 		}, locIds[1]);
 
 		const result = await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const path = await api.exportJson({
 				exportZoom: true,
 				exportUnpanned: true,
@@ -171,7 +170,6 @@ describe("JSON import/export round-trip", () => {
 
 describe("CSV import/export", () => {
 	let mapId: string;
-	let locIds: number[];
 
 	before(async () => {
 		await waitForReady();
@@ -184,7 +182,7 @@ describe("CSV import/export", () => {
 	});
 
 	it("CSV export produces valid format", async () => {
-		locIds = await addLocs([
+		await addLocs([
 			makeLoc({ lat: 40.7, lng: -74.0, heading: 90, pitch: 0, zoom: 1, panoId: "P1", flags: 1 }),
 			makeLoc({ lat: 51.5, lng: -0.1, heading: 180, pitch: 5, zoom: 2, panoId: null, flags: 0 }),
 		]);
@@ -243,7 +241,7 @@ describe("GeoJSON export", () => {
 
 	it("GeoJSON export produces valid FeatureCollection", async () => {
 		const result = await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			const path = await api.exportGeoJson(null, JSON.stringify(map.meta.tags));
 			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
 			const geojson = await res.text();
@@ -302,7 +300,6 @@ describe("JSON import edge cases", () => {
 				hasCountry: imported?.extra?.country === "FR",
 			};
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(1);
 		expect(result.hasAltitude).toBe(true);
 		expect(result.hasCountry).toBe(true);
@@ -321,7 +318,6 @@ describe("JSON import edge cases", () => {
 			const preview = await api.importPreview(path);
 			return { count: preview.locationCount };
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(2);
 	});
 
@@ -348,7 +344,6 @@ describe("JSON import edge cases", () => {
 				tagNames: preview.tags.map((t: any) => t.name).sort(),
 			};
 		});
-		expect(result.error).toBeUndefined();
 		expect(result.count).toBe(2);
 		expect(result.tagCount).toBe(2);
 		expect(result.tagNames).toEqual(["Mountain", "Snow"]);

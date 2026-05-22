@@ -281,7 +281,7 @@ export function PanoControls({
 				panorama.getPov().heading + headingOffset,
 			);
 			try {
-				const loc = await lookupStreetView(g, target.lat(), target.lng(), 0, {
+				const loc = await lookupStreetView(target.lat(), target.lng(), 0, {
 					onlyOfficial: true,
 				});
 				if (!loc?.panoId) return;

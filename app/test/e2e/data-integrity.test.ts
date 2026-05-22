@@ -6,9 +6,7 @@ import {
 	flushAndWait,
 	openMap,
 	addLocs,
-	getAllLocs,
 	getLoc,
-	getLocCount,
 	makeLoc,
 	withApi,
 } from "./helpers";
@@ -350,7 +348,7 @@ describe("Data integrity - concurrent operations", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -371,7 +369,7 @@ describe("Data integrity - concurrent operations", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -382,7 +380,6 @@ describe("Data integrity - concurrent operations", () => {
 			const count = await api.getLocationCount();
 			return { count };
 		});
-		if (result.error) throw new Error(result.error);
 		expect(result.count).toBe(100); // 50 remaining from first batch + 50 new
 	});
 
@@ -398,9 +395,8 @@ describe("Data integrity - concurrent operations", () => {
 			}
 
 			const loc = await api.fetchLocation(targetId);
-			return { heading: loc.heading };
+			return { heading: loc!.heading };
 		});
-		if (result.error) throw new Error(result.error);
 		expect(result.heading).toBe(324); // last update: 9 * 36
 	});
 
@@ -414,7 +410,7 @@ describe("Data integrity - concurrent operations", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -431,7 +427,7 @@ describe("Data integrity - concurrent operations", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null,
+					panoId: null, id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),
@@ -442,7 +438,6 @@ describe("Data integrity - concurrent operations", () => {
 
 			return { triggerId, duringId };
 		});
-		if (result.error) throw new Error(result.error);
 
 		await flushAndWait();
 		await closeMap();

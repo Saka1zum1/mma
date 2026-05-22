@@ -4,47 +4,29 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	getLoc,
-	getLocCount,
+	makeLoc,
+	openLocation,
+	closeLocation,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 const OFFICIAL_PANO = "-zrYsLR4Fh-cfJG_EMZ1-A";
 const OFFICIAL_COORDS = { lat: 52.10947502806108, lng: 34.90131410856584 };
-// A different official pano (Times Square, NYC)
-const ALT_PANO = "JA6p3MofOkO1IJTy6SL2XA";
-const ALT_COORDS = { lat: 40.758, lng: -73.9855 };
 
 const LoadAsPanoId = 1;
 const PANO_TIMEOUT = 10_000;
 
-function loc(overrides: Record<string, any> = {}) {
-	return {
+function loc(overrides: Partial<Location> = {}): Location {
+	return makeLoc({
 		lat: 0,
 		lng: 0,
 		heading: 0,
 		pitch: 0,
 		zoom: 0,
-		panoId: null,
-		flags: 0,
-		tags: [],
-		createdAt: new Date().toISOString(),
 		modifiedAt: new Date().toISOString(),
 		...overrides,
-	};
-}
-
-async function openLocation(id: number) {
-	await withApi(async (api, locId) => {
-		api.setActiveLocation(locId);
-	}, id);
-}
-
-async function closeLocation() {
-	await withApi(async (api) => {
-		api.setActiveLocation(null);
 	});
-	await browser.pause(300);
 }
 
 async function readLocation(id: number): Promise<any> {
@@ -61,7 +43,7 @@ async function getMapMeta(): Promise<any> {
 
 async function updateMapSettings(patch: Record<string, any>) {
 	await withApi(async (api, p) => {
-		const map = api.getCurrentMap();
+		const map = api.getCurrentMap()!;
 		await api.updateMapMeta({ settings: { ...map.meta.settings, ...p } });
 		return "ok";
 	}, patch);
@@ -375,7 +357,7 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 	it("patchLocationExtra auto-registers known field defs", async () => {
 		// Wipe field defs
 		await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			await api.updateMapMeta({ extra: { ...map.meta.extra, fields: {} } });
 			return "ok";
 		});
@@ -395,26 +377,12 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 	it("addLocations auto-registers known field defs", async () => {
 		// Wipe field defs
 		await withApi(async (api) => {
-			const map = api.getCurrentMap();
+			const map = api.getCurrentMap()!;
 			await api.updateMapMeta({ extra: { ...map.meta.extra, fields: {} } });
 			return "ok";
 		});
 
-		await addLocs([
-			{
-				lat: 10,
-				lng: 20,
-				heading: 0,
-				pitch: 0,
-				zoom: 0,
-				panoId: null,
-				flags: 0,
-				tags: [],
-				createdAt: new Date().toISOString(),
-				modifiedAt: new Date().toISOString(),
-				extra: { altitude: 100, countryCode: "US" },
-			},
-		]);
+		await addLocs([loc({ lat: 10, lng: 20, extra: { altitude: 100, countryCode: "US" } })]);
 
 		const meta = await getMapMeta();
 		const fields = meta?.extra?.fields ?? {};

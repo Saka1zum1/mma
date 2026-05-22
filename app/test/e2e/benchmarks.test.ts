@@ -4,13 +4,10 @@ import {
 	closeMap,
 	deleteMap,
 	flushAndWait,
-	openMap,
-	addLocs,
-	getLocCount,
-	makeLoc,
 	createTag,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 const ITERATIONS = 3;
 
@@ -60,9 +57,9 @@ describe("Benchmarks - addLocations", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			mapId = await createAndOpenMap(`Bench Add 1K #${iter}`);
 			const ms = await withApi(async (api) => {
-				const locs = [];
+				const locs: Location[] = [];
 				for (let i = 0; i < 1000; i++) {
-					locs.push({
+					locs.push({ id: 0,
 						lat: Math.random() * 170 - 85,
 						lng: Math.random() * 360 - 180,
 						heading: Math.random() * 360,
@@ -92,9 +89,9 @@ describe("Benchmarks - addLocations", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			mapId = await createAndOpenMap(`Bench Add 10K #${iter}`);
 			const ms = await withApi(async (api) => {
-				const locs = [];
+				const locs: Location[] = [];
 				for (let i = 0; i < 10000; i++) {
-					locs.push({
+					locs.push({ id: 0,
 						lat: Math.random() * 170 - 85,
 						lng: Math.random() * 360 - 180,
 						heading: Math.random() * 360,
@@ -124,9 +121,9 @@ describe("Benchmarks - addLocations", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			mapId = await createAndOpenMap(`Bench Add 100K #${iter}`);
 			const ms = await withApi(async (api) => {
-				const locs = [];
+				const locs: Location[] = [];
 				for (let i = 0; i < 100000; i++) {
-					locs.push({
+					locs.push({ id: 0,
 						lat: Math.random() * 170 - 85,
 						lng: Math.random() * 360 - 180,
 						heading: Math.random() * 360,
@@ -169,9 +166,9 @@ describe("Benchmarks - save", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			mapId = await createAndOpenMap(`Bench Save 1K #${iter}`);
 			await withApi(async (api) => {
-				const locs = [];
+				const locs: Location[] = [];
 				for (let i = 0; i < 1000; i++) {
-					locs.push({
+					locs.push({ id: 0,
 						lat: Math.random() * 170 - 85,
 						lng: Math.random() * 360 - 180,
 						heading: 0,
@@ -206,9 +203,9 @@ describe("Benchmarks - save", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			mapId = await createAndOpenMap(`Bench Save 10K #${iter}`);
 			await withApi(async (api) => {
-				const locs = [];
+				const locs: Location[] = [];
 				for (let i = 0; i < 10000; i++) {
-					locs.push({
+					locs.push({ id: 0,
 						lat: Math.random() * 170 - 85,
 						lng: Math.random() * 360 - 180,
 						heading: 0,
@@ -243,9 +240,9 @@ describe("Benchmarks - save", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			mapId = await createAndOpenMap(`Bench Save 100K #${iter}`);
 			await withApi(async (api) => {
-				const locs = [];
+				const locs: Location[] = [];
 				for (let i = 0; i < 100000; i++) {
-					locs.push({
+					locs.push({ id: 0,
 						lat: Math.random() * 170 - 85,
 						lng: Math.random() * 360 - 180,
 						heading: 0,
@@ -284,9 +281,9 @@ describe("Benchmarks - map open", () => {
 	it("open map with 1K locations", async () => {
 		const mapId = await createAndOpenMap("Bench Open 1K");
 		await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 1000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: Math.random() * 170 - 85,
 					lng: Math.random() * 360 - 180,
 					heading: 0,
@@ -324,9 +321,9 @@ describe("Benchmarks - map open", () => {
 	it("open map with 10K locations", async () => {
 		const mapId = await createAndOpenMap("Bench Open 10K");
 		await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: Math.random() * 170 - 85,
 					lng: Math.random() * 360 - 180,
 					heading: 0,
@@ -364,9 +361,9 @@ describe("Benchmarks - map open", () => {
 	it("open map with 100K locations", async () => {
 		const mapId = await createAndOpenMap("Bench Open 100K");
 		await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 100000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: Math.random() * 170 - 85,
 					lng: Math.random() * 360 - 180,
 					heading: 0,
@@ -413,9 +410,9 @@ describe("Benchmarks - selection refresh", () => {
 		benchTagId = tag.id;
 
 		await withApi(async (api, tagId) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 50000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: Math.random() * 170 - 85,
 					lng: Math.random() * 360 - 180,
 					heading: 0,
@@ -577,9 +574,9 @@ describe("Benchmarks - undo/redo", () => {
 
 	it("undo add of 10K locations", async () => {
 		await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: Math.random() * 170 - 85,
 					lng: Math.random() * 360 - 180,
 					heading: 0,
@@ -638,9 +635,9 @@ describe("Benchmarks - batch update", () => {
 		await waitForReady();
 		mapId = await createAndOpenMap("Bench Batch Update");
 		await withApi(async (api) => {
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
-				locs.push({
+				locs.push({ id: 0,
 					lat: Math.random() * 170 - 85,
 					lng: Math.random() * 360 - 180,
 					heading: 0,

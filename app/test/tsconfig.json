@@ -1,15 +1,7 @@
 {
+	"extends": "../tsconfig.app.json",
 	"compilerOptions": {
-		"target": "es2023",
-		"lib": ["ES2023", "DOM"],
-		"module": "esnext",
-		"moduleResolution": "bundler",
-		"types": ["node", "@wdio/globals/types", "@types/mocha"],
-		"skipLibCheck": true,
-		"noEmit": true,
-		"esModuleInterop": true,
-		"strict": true,
-		"paths": { "@/*": ["../src/*"] }
+		"types": ["vite/client", "google.maps", "node", "@wdio/globals/types", "@types/mocha"]
 	},
-	"include": ["e2e/**/*.ts"]
+	"include": ["e2e/**/*.ts", "../src/**/*.ts", "../src/**/*.tsx"]
 }

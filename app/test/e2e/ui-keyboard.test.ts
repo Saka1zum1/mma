@@ -11,15 +11,13 @@ import {
 
 describe("UI: Keyboard shortcuts", () => {
 	let mapId: string;
-	let kb1Id: number;
 
 	before(async () => {
 		await waitForReady();
 		mapId = await createAndOpenMap("UI Keyboard Test");
 		await browser.$(".page-map-editor").waitForDisplayed({ timeout: 5000 });
 
-		const ids = await addLocs([makeLoc({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 })]);
-		kb1Id = ids[0];
+		await addLocs([makeLoc({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 })]);
 	});
 
 	after(async () => {

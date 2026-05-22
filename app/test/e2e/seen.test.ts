@@ -4,7 +4,6 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	getLoc,
 	getLocCount,
 	withApi,
 	makeLoc,
@@ -12,6 +11,7 @@ import {
 	closeLocation,
 } from "./helpers";
 import { LocationFlag } from "@/types";
+import type { SeenEntry } from "@/lib/seen/seen.add";
 
 const OFFICIAL_PANO = "-zrYsLR4Fh-cfJG_EMZ1-A";
 const OFFICIAL_COORDS = { lat: 52.10947502806108, lng: 34.90131410856584 };
@@ -60,7 +60,6 @@ async function clearSeen() {
 
 describe("Seen -- recording consistency", () => {
 	let mapId: string;
-	let countBefore: number;
 	let seenOffId: number;
 	let seenTrekId: number;
 
@@ -70,7 +69,6 @@ describe("Seen -- recording consistency", () => {
 			api.setSetting("enableSeen", true);
 		});
 		mapId = await createAndOpenMap("E2E Seen Recording");
-		countBefore = await getSeenCount();
 		const ids = await addLocs([
 			makeLoc({
 				lat: OFFICIAL_COORDS.lat,
@@ -108,7 +106,7 @@ describe("Seen -- recording consistency", () => {
 		await browser.pause(500);
 
 		const entries = await getSeenEntries(10);
-		const recent = entries.find(e => e.pano_id === OFFICIAL_PANO);
+		const recent = entries.find(e => e.panoId === OFFICIAL_PANO);
 		expect(recent).toBeTruthy();
 	});
 
@@ -123,8 +121,8 @@ describe("Seen -- recording consistency", () => {
 		const recent = entries.find(e => e.panoId === OFFICIAL_PANO);
 		expect(recent).toBeTruthy();
 		// lat/lng should be near the official coords, not some stale previous location
-		expect(Math.abs(recent.lat - OFFICIAL_COORDS.lat)).toBeLessThan(1);
-		expect(Math.abs(recent.lng - OFFICIAL_COORDS.lng)).toBeLessThan(1);
+		expect(Math.abs(recent!.lat - OFFICIAL_COORDS.lat)).toBeLessThan(1);
+		expect(Math.abs(recent!.lng - OFFICIAL_COORDS.lng)).toBeLessThan(1);
 	});
 
 	it("switching locations records distinct entries with correct pano_ids", async () => {
@@ -169,8 +167,8 @@ describe("Seen -- recording consistency", () => {
 		expect(trekEntry).toBeTruthy();
 
 		// Each entry's lat/lng should match its own pano, not the other's
-		expect(Math.abs(offEntry.lat - OFFICIAL_COORDS.lat)).toBeLessThan(1);
-		expect(Math.abs(trekEntry.lat - TREKKER_COORDS.lat)).toBeLessThan(1);
+		expect(Math.abs(offEntry!.lat - OFFICIAL_COORDS.lat)).toBeLessThan(1);
+		expect(Math.abs(trekEntry!.lat - TREKKER_COORDS.lat)).toBeLessThan(1);
 	});
 
 	it("pano_id is never reused across entries with different coordinates", async () => {
@@ -180,7 +178,7 @@ describe("Seen -- recording consistency", () => {
 			if (!byPano.has(e.panoId)) byPano.set(e.panoId, []);
 			byPano.get(e.panoId)!.push(e);
 		}
-		for (const [panoId, group] of byPano) {
+		for (const [, group] of byPano) {
 			if (group.length < 2) continue;
 			// All entries with the same pano_id should have similar lat/lng
 			for (let i = 1; i < group.length; i++) {
@@ -235,16 +233,16 @@ describe("Seen -- loadSeenPano opens location viewer", () => {
 			(api, pano, lat, lng, locId) => {
 				api.loadSeenPano({
 					id: 999,
-					pano_id: pano,
+					panoId: pano,
 					lat,
 					lng,
 					heading: 90,
 					pitch: 0,
 					zoom: 0,
-					entered_at: Date.now(),
-					map_id: null,
-					location_id: locId,
-					country_code: null,
+					enteredAt: Date.now(),
+					mapId: null,
+					locationId: locId,
+					countryCode: null,
 					address: null,
 					thumbnail: null,
 				});
@@ -271,16 +269,16 @@ describe("Seen -- loadSeenPano opens location viewer", () => {
 			(api, pano, lat, lng) => {
 				api.loadSeenPano({
 					id: 998,
-					pano_id: pano,
+					panoId: pano,
 					lat,
 					lng,
 					heading: 45,
 					pitch: 5,
 					zoom: 1,
-					entered_at: Date.now(),
-					map_id: null,
-					location_id: 999999,
-					country_code: "RU",
+					enteredAt: Date.now(),
+					mapId: null,
+					locationId: 999999,
+					countryCode: "RU",
 					address: null,
 					thumbnail: null,
 				});

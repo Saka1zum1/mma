@@ -14,7 +14,6 @@ async function validateOne(loc: Location, signal?: AbortSignal): Promise<Validat
 	signal?.throwIfAborted();
 
 	const n = hasLoadAsPanoId(loc);
-	const g = getGoogle();
 	let r: google.maps.StreetViewResolvedPanoramaData | null = null;
 	let i: google.maps.StreetViewResolvedPanoramaData | null = null;
 	let a = ValidationState.Ok;
@@ -28,12 +27,12 @@ async function validateOne(loc: Location, signal?: AbortSignal): Promise<Validat
 		// LoadAsPanoId: if pano lookup failed, mark broke, fall back to coord
 		if (r == null) {
 			if (loc.panoId != null) a = ValidationState.PanoIdBroke;
-			const coordPano = g ? await getPanoAtCoords(g, loc.lat, loc.lng) : null;
+			const coordPano = await getPanoAtCoords(loc.lat, loc.lng);
 			if (coordPano) [r] = await fetchSvMetadata([coordPano]);
 		}
 	} else {
 		// No LoadAsPanoId: do coord lookup
-		const coordPano = g ? await getPanoAtCoords(g, loc.lat, loc.lng) : null;
+		const coordPano = await getPanoAtCoords(loc.lat, loc.lng);
 		if (coordPano) [i] = await fetchSvMetadata([coordPano]);
 	}
 

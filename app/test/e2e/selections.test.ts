@@ -5,8 +5,6 @@ import {
 	deleteMap,
 	addLocs,
 	makeLoc,
-	getAllLocs,
-	getLocCount,
 	createTag,
 	refreshSelections,
 	withApi,
@@ -183,7 +181,7 @@ describe("Selections - basic types", () => {
 	// --- Duplicates ---
 
 	it("selectDuplicates finds locations at same coordinates", async () => {
-		const dupIds = await addLocs([
+		await addLocs([
 			makeLoc({ lat: 55.0, lng: 37.0, heading: 0 }),
 			makeLoc({ lat: 55.0, lng: 37.0, heading: 90 }),
 		]);
@@ -199,7 +197,6 @@ describe("Selections - basic types", () => {
 
 describe("Selection operations", () => {
 	let mapId: string;
-	let locIds: number[];
 	let tagAId: number;
 
 	before(async () => {
@@ -221,7 +218,7 @@ describe("Selection operations", () => {
 				}),
 			);
 		}
-		locIds = await addLocs(locs);
+		await addLocs(locs);
 	});
 
 	after(async () => {
@@ -369,6 +366,7 @@ describe("Selection correctness after mutations", () => {
 					pitch: 0,
 					zoom: 1,
 					panoId: null,
+					id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: new Date().toISOString(),

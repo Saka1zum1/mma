@@ -73,7 +73,7 @@ pub fn store_create_commit(
     // 1. Find parent commit
     let parent_id: Option<String> = conn
         .query_row(
-            "SELECT id FROM commits WHERE map_id = ?1 ORDER BY created_at DESC LIMIT 1",
+            "SELECT id FROM commits WHERE map_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
             params![map_id],
             |row| row.get(0),
         )
@@ -158,7 +158,7 @@ pub fn store_list_commits(
     let conn = fast_io::open_db(&app)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, map_id, parent_id, message, tree_hash, added, removed, modified, location_count, created_at FROM commits WHERE map_id = ?1 ORDER BY created_at DESC",
+            "SELECT id, map_id, parent_id, message, tree_hash, added, removed, modified, location_count, created_at FROM commits WHERE map_id = ?1 ORDER BY created_at DESC, rowid DESC",
         )
         .map_err(|e| e.to_string())?;
 

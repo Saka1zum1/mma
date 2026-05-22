@@ -295,19 +295,20 @@ fn delta_has_removed_entry_for_deleted_location() {
     let entry = EditEntry { created: vec![], removed: vec![l] };
     let delta = apply_edit_forward(&mut store, &entry);
     assert_eq!(delta.removed.len(), 1);
-    assert_eq!(delta.removed[0].id, 1);
+    assert_eq!(delta.removed[0], 1);
     assert_eq!(delta.added.len(), 0);
 }
 
 #[test]
 fn delta_has_both_for_moved_location() {
     let old = loc(1, 10.0, 20.0);
-    let new = loc(1, 50.0, 60.0);
+    let new = loc(1, -80.0, -170.0); // far enough to cross render cells
     let mut store = setup_store_with(&[old.clone()]);
 
     let entry = EditEntry { created: vec![new], removed: vec![old] };
-    let delta = apply_edit_forward(&mut store, &entry);
-    // position changed => remove old + add new
+    let changes = apply_edit_forward(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
+    // cross-cell move => remove old + add new
     assert_eq!(delta.removed.len(), 1);
     assert_eq!(delta.added.len(), 1);
 }
@@ -326,10 +327,12 @@ fn samey_location_skips_render_delta() {
     let mut store = setup_store_with(&[old.clone()]);
 
     let entry = EditEntry { created: vec![new], removed: vec![old] };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let changes = apply_edit_forward(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
 
     assert_eq!(delta.added.len(), 0, "no re-render needed for pitch/zoom change");
     assert_eq!(delta.removed.len(), 0);
+    assert_eq!(delta.updated.len(), 0);
 }
 
 #[test]
@@ -339,10 +342,13 @@ fn samey_location_with_heading_change_does_rerender() {
     let mut store = setup_store_with(&[old.clone()]);
 
     let entry = EditEntry { created: vec![new], removed: vec![old] };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let changes = apply_edit_forward(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
 
-    assert_eq!(delta.added.len(), 1, "heading change requires re-render");
-    assert_eq!(delta.removed.len(), 1);
+    // heading change in the same cell => in-place render patch
+    assert_eq!(delta.updated.len(), 1, "heading change requires a render patch");
+    assert_eq!(delta.added.len(), 0);
+    assert_eq!(delta.removed.len(), 0);
 }
 
 #[test]
@@ -352,9 +358,10 @@ fn samey_location_with_lat_change_does_rerender() {
     let mut store = setup_store_with(&[old.clone()]);
 
     let entry = EditEntry { created: vec![new], removed: vec![old] };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let changes = apply_edit_forward(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
 
-    assert!(delta.added.len() + delta.removed.len() > 0, "lat change requires re-render");
+    assert!(delta.added.len() + delta.removed.len() + delta.updated.len() > 0, "lat change requires re-render");
 }
 
 #[test]
@@ -400,7 +407,7 @@ fn finish_mutation_reports_correct_state() {
     let mut store = setup_store_with(&[l]);
     store.push_undo(EditEntry { created: vec![], removed: vec![] });
 
-    let result = store.finish_mutation(RenderDelta::default());
+    let result = store.finish_mutation(ChangeSet::default());
     assert_eq!(result.status.location_count, 1);
     assert!(result.status.can_undo);
     assert!(!result.status.can_redo);
@@ -704,17 +711,21 @@ fn multiple_undo_redo_cycles_consistent() {
 }
 
 // -----------------------------------------------------------------------
-// build_update_delta
+// derive_render_delta (updates)
 // -----------------------------------------------------------------------
+
+fn render_delta_for_update(store: &mut Store, id: u32, patch: LocationPatch) -> RenderDelta {
+    let old = store.get_loc_by_id(id).unwrap();
+    store.overlay_update(id, &patch);
+    let new_loc = store.get_loc_by_id(id).unwrap();
+    store.derive_render_delta(&ChangeSet { updated: vec![(old, new_loc)], ..Default::default() })
+}
 
 #[test]
 fn update_delta_heading_only_produces_patch() {
     let l = loc_with_heading(1, 10.0, 20.0, 0.0);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(1, &LocationPatch { heading: Some(90.0), ..patch() });
-    let new_loc = store.get_loc_by_id(1).unwrap();
-    let p = LocationPatch { heading: Some(90.0), ..patch() };
-    let delta = build_update_delta(&mut store, 1, &new_loc, &p);
+    let delta = render_delta_for_update(&mut store, 1, LocationPatch { heading: Some(90.0), ..patch() });
     assert!(delta.added.is_empty());
     assert!(delta.removed.is_empty());
     assert_eq!(delta.updated.len(), 1);
@@ -727,10 +738,7 @@ fn update_delta_same_cell_position_produces_patch() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
     // small position change that stays in the same render cell
-    store.overlay_update(1, &LocationPatch { lat: Some(10.001), ..patch() });
-    let new_loc = store.get_loc_by_id(1).unwrap();
-    let p = LocationPatch { lat: Some(10.001), ..patch() };
-    let delta = build_update_delta(&mut store, 1, &new_loc, &p);
+    let delta = render_delta_for_update(&mut store, 1, LocationPatch { lat: Some(10.001), ..patch() });
     // should be an in-place patch, not a cell migration
     assert_eq!(delta.updated.len(), 1);
     assert!(delta.added.is_empty());
@@ -741,10 +749,7 @@ fn update_delta_cross_cell_position_produces_remove_and_add() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
     // large position change that crosses render cells
-    store.overlay_update(1, &LocationPatch { lat: Some(-80.0), lng: Some(-170.0), ..patch() });
-    let new_loc = store.get_loc_by_id(1).unwrap();
-    let p = LocationPatch { lat: Some(-80.0), lng: Some(-170.0), ..patch() };
-    let delta = build_update_delta(&mut store, 1, &new_loc, &p);
+    let delta = render_delta_for_update(&mut store, 1, LocationPatch { lat: Some(-80.0), lng: Some(-170.0), ..patch() });
     assert_eq!(delta.removed.len(), 1, "old cell entry removed");
     assert_eq!(delta.added.len(), 1, "new cell entry added");
     assert!(delta.updated.is_empty());
@@ -754,10 +759,7 @@ fn update_delta_cross_cell_position_produces_remove_and_add() {
 fn update_delta_tags_only_produces_empty_delta() {
     let l = loc_with_tags(1, 10.0, 20.0, vec![10]);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(1, &LocationPatch { tags: Some(vec![20]), ..patch() });
-    let new_loc = store.get_loc_by_id(1).unwrap();
-    let p = LocationPatch { tags: Some(vec![20]), ..patch() };
-    let delta = build_update_delta(&mut store, 1, &new_loc, &p);
+    let delta = render_delta_for_update(&mut store, 1, LocationPatch { tags: Some(vec![20]), ..patch() });
     assert!(delta.added.is_empty());
     assert!(delta.removed.is_empty());
     assert!(delta.updated.is_empty());
@@ -1139,12 +1141,14 @@ fn undo_delete_readds_render_entry() {
 
     // Delete
     let entry = EditEntry { created: vec![], removed: vec![l.clone()] };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let changes = apply_edit_forward(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
     assert_eq!(delta.removed.len(), 1);
     assert!(store.cell_lookup(1).is_none());
 
     // Undo delete
-    let delta = apply_edit_reverse(&mut store, &entry);
+    let changes = apply_edit_reverse(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
     assert_eq!(delta.added.len(), 1);
     assert_eq!(delta.added[0].id, 1);
     assert!(store.cell_lookup(1).is_some(), "render entry must be restored after undo delete");
@@ -1159,13 +1163,15 @@ fn undo_delete_multiple_then_readd_renders_correctly() {
 
     // Delete l1 and l2
     let entry = EditEntry { created: vec![], removed: vec![l1.clone(), l2.clone()] };
-    apply_edit_forward(&mut store, &entry);
+    let changes = apply_edit_forward(&mut store, &entry);
+    store.derive_render_delta(&changes);
     assert!(store.cell_lookup(1).is_none());
     assert!(store.cell_lookup(2).is_none());
     assert!(store.cell_lookup(3).is_some());
 
     // Undo
-    let delta = apply_edit_reverse(&mut store, &entry);
+    let changes = apply_edit_reverse(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
     assert_eq!(delta.added.len(), 2);
     assert!(store.cell_lookup(1).is_some());
     assert!(store.cell_lookup(2).is_some());
