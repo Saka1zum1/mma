@@ -64,28 +64,41 @@ use crate::util::color_for_name;
 // ---------------------------------------------------------------------------
 
 fn parse_csv(text: &str) -> ParsedMap {
-    let mut lines = text.lines();
-    let header = match lines.next() {
+    let warn = |w: &str| ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: vec![w.into()] };
+
+    let first = match text.lines().next() {
         Some(h) => h,
-        None => return ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: vec!["Empty CSV".into()] },
+        None => return warn("Empty CSV"),
     };
-    let cols: Vec<&str> = header.split(',').map(|h| h.trim()).collect();
+    let cols: Vec<&str> = first.split(',').map(|h| h.trim()).collect();
     let lower: Vec<String> = cols.iter().map(|h| h.to_lowercase()).collect();
 
-    let lat_idx = lower.iter().position(|h| h == "lat" || h == "latitude");
-    let lng_idx = lower.iter().position(|h| h == "lng" || h == "longitude" || h == "lon");
-    let (lat_idx, lng_idx) = match (lat_idx, lng_idx) {
-        (Some(la), Some(ln)) => (la, ln),
-        _ => return ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: vec!["CSV missing lat/lng columns".into()] },
-    };
-    let heading_idx = lower.iter().position(|h| h == "heading");
-    let pitch_idx = lower.iter().position(|h| h == "pitch");
-    let zoom_idx = lower.iter().position(|h| h == "zoom");
-    let pano_idx = lower.iter().position(|h| h == "pano" || h == "panoid" || h == "pano_id");
+    let lat_named = lower.iter().position(|h| h == "lat" || h == "latitude");
+    let lng_named = lower.iter().position(|h| h == "lng" || h == "longitude" || h == "lon");
+
+    // The first line is a header only if it names lat/lng columns. Otherwise, accept a
+    // bare positional `lat,lng` row (headerless) as data — matching the original importer.
+    let (lat_idx, lng_idx, heading_idx, pitch_idx, zoom_idx, pano_idx, has_header) =
+        if let (Some(la), Some(ln)) = (lat_named, lng_named) {
+            (
+                la, ln,
+                lower.iter().position(|h| h == "heading"),
+                lower.iter().position(|h| h == "pitch"),
+                lower.iter().position(|h| h == "zoom"),
+                lower.iter().position(|h| h == "pano" || h == "panoid" || h == "pano_id"),
+                true,
+            )
+        } else {
+            let is_num = |s: &&str| s.parse::<f64>().map(f64::is_finite).unwrap_or(false);
+            if !(cols.first().is_some_and(is_num) && cols.get(1).is_some_and(is_num)) {
+                return warn("CSV missing lat/lng columns");
+            }
+            (0, 1, None, None, None, None, false)
+        };
 
     let now = chrono_now();
     let mut locations = Vec::new();
-    for line in lines {
+    for line in text.lines().skip(if has_header { 1 } else { 0 }) {
         let fields: Vec<&str> = line.split(',').map(|f| f.trim()).collect();
         let lat: f64 = match fields.get(lat_idx).and_then(|s| s.parse::<f64>().ok()) {
             Some(v) if v.is_finite() => v,

@@ -35,6 +35,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiBackburger, mdiPencil } from "@mdi/js";
 import { PluginSidebarHost } from "@/components/editor/PluginSidebarHost";
 import SameLocation from "@/components/editor/SameLocation.add";
+import { log } from "@/lib/util/log"
 
 function usePasteHandler() {
 	useEffect(() => {
@@ -80,7 +81,7 @@ function usePasteHandler() {
 					scheduleSave();
 				}
 			} catch {
-				// ignored
+				log.warn('Couldn\'t import locations via paste.')
 			}
 		}
 		document.body.addEventListener("paste", onPaste);
