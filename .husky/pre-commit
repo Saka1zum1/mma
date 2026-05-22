@@ -22,6 +22,6 @@ cd app
 
 # Clippy
 echo "[pre-commit] Clippy..."
-cargo clippy --manifest-path src-tauri/Cargo.toml || exit 1
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -Dclippy::correctness || exit 1
 
 echo "[pre-commit] All checks passed."

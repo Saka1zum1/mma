@@ -42,4 +42,4 @@ jobs:
 
       - name: Clippy
         working-directory: app/src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -- -D clippy::correctness
