@@ -5,6 +5,7 @@ import { log } from "@/lib/util/log";
 import {
 	getAllBindings,
 	useBinding,
+	getBinding,
 	setBinding,
 	resetBinding,
 	resetAllBindings,
@@ -147,13 +148,28 @@ function HotkeyRow({ action, label }: { action: HotkeyAction; label: string }) {
 const GROUPS: HotkeyGroup[] = ["Commands", "Global", "Map Navigation", "Location Editor", "Review"];
 
 function KeyboardShortcutsSection() {
+	const [filter, setFilter] = useState("");
+	const lower = filter.toLowerCase();
+	const allBindings = getAllBindings();
+
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
 				Keyboard Shortcuts <span className="fieldset__divider" />
 			</legend>
+			<input
+				className="input"
+				type="text"
+				placeholder="Filter shortcuts..."
+				value={filter}
+				onChange={(e) => setFilter(e.target.value)}
+				style={{ width: "100%", marginBottom: ".5rem" }}
+			/>
 			{GROUPS.map((group) => {
-				const defs = getAllBindings().filter((d) => d.group === group);
+				const defs = allBindings.filter(
+					(d) => d.group === group && (!lower || d.label.toLowerCase().includes(lower) || getBinding(d.action).toLowerCase().includes(lower)),
+				);
+				if (defs.length === 0) return null;
 				return (
 					<div key={group}>
 						<h3 style={{ margin: ".5rem 0 .25rem", fontSize: ".85rem", color: "#888" }}>{group}</h3>
