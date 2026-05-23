@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { cmd } from "@/lib/commands";
 import { HslColorPicker } from "react-colorful";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -39,8 +39,7 @@ export function TagManager() {
 	);
 
 	const tags = map ? Object.values(map.meta.tags).filter((t) => t.visible !== false) : [];
-	const tagListRef = useRef<HTMLUListElement>(null);
-	const [shiftBox, setShiftBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+	const lastShiftClickRef = useRef<number | null>(null);
 
 	const sortedTags = useMemo(() => {
 		let filtered = tags;
@@ -53,51 +52,6 @@ export function TagManager() {
 			return [...filtered].sort((a, b) => (tagCounts[b.id] ?? 0) - (tagCounts[a.id] ?? 0));
 		return [...filtered].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 	}, [tags, filterText, sortMode, tagCounts]);
-
-	// Shift+drag to select multiple tags
-	const handleShiftDragStart = useCallback((e: React.MouseEvent) => {
-		if (!e.shiftKey || e.button !== 0) return;
-		e.preventDefault();
-		const startX = e.clientX;
-		const startY = e.clientY;
-
-		const onMove = (me: MouseEvent) => {
-			const x = Math.min(startX, me.clientX);
-			const y = Math.min(startY, me.clientY);
-			const w = Math.abs(me.clientX - startX);
-			const h = Math.abs(me.clientY - startY);
-			setShiftBox({ x, y, w, h });
-		};
-
-		const onUp = (me: MouseEvent) => {
-			window.removeEventListener("mousemove", onMove);
-			window.removeEventListener("mouseup", onUp);
-			setShiftBox(null);
-
-			const rect = {
-				left: Math.min(startX, me.clientX),
-				top: Math.min(startY, me.clientY),
-				right: Math.max(startX, me.clientX),
-				bottom: Math.max(startY, me.clientY),
-			};
-
-			if (rect.right - rect.left < 5 && rect.bottom - rect.top < 5) return;
-
-			const list = tagListRef.current;
-			if (!list) return;
-			const items = list.querySelectorAll<HTMLElement>("li.tag");
-			for (const item of items) {
-				const r = item.getBoundingClientRect();
-				if (r.left < rect.right && r.right > rect.left && r.top < rect.bottom && r.bottom > rect.top) {
-					const tagId = Number(item.dataset.tagId);
-					if (tagId) toggleTagSelection(tagId);
-				}
-			}
-		};
-
-		window.addEventListener("mousemove", onMove);
-		window.addEventListener("mouseup", onUp);
-	}, []);
 
 	if (!map) return null;
 
@@ -199,7 +153,7 @@ export function TagManager() {
 				}
 			>
 				{sortedTags.length > 0 && (
-					<ul className="tag-list" ref={tagListRef} onMouseDown={handleShiftDragStart}>
+					<ul className="tag-list">
 						{sortedTags.map((tag) => {
 							const bg = tag.color;
 							const fg = textColorFor(bg);
@@ -218,8 +172,23 @@ export function TagManager() {
 											}}
 											data-tag-id={tag.id}
 											data-drop={dragTagId && !isDragging ? (drop ?? undefined) : undefined}
-											onClick={() => {
-												if (!dragTagId) toggleTagSelection(tag.id);
+											onClick={(e) => {
+												if (dragTagId) return;
+												if (e.shiftKey && lastShiftClickRef.current != null) {
+													const anchorIdx = sortedTags.findIndex((t) => t.id === lastShiftClickRef.current);
+													const targetIdx = sortedTags.findIndex((t) => t.id === tag.id);
+													if (anchorIdx !== -1 && targetIdx !== -1) {
+														const lo = Math.min(anchorIdx, targetIdx);
+														const hi = Math.max(anchorIdx, targetIdx);
+														for (let i = lo; i <= hi; i++) {
+															if (i === anchorIdx) continue;
+															toggleTagSelection(sortedTags[i].id);
+														}
+													}
+												} else {
+													toggleTagSelection(tag.id);
+												}
+												lastShiftClickRef.current = tag.id;
 											}}
 											onMouseDown={(e) => handleTagMouseDown(e, tag.id)}
 											onMouseMove={(e) => handleTagMouseMove(e, tag.id, e.currentTarget)}
@@ -268,22 +237,6 @@ export function TagManager() {
 
 			{renamingTag && (
 				<RenameInSelectionDialog tag={renamingTag} onClose={() => setRenamingTag(null)} />
-			)}
-
-			{shiftBox && (
-				<div
-					style={{
-						position: "fixed",
-						left: shiftBox.x,
-						top: shiftBox.y,
-						width: shiftBox.w,
-						height: shiftBox.h,
-						border: "2px solid rgba(74, 158, 255, 0.7)",
-						backgroundColor: "rgba(74, 158, 255, 0.15)",
-						pointerEvents: "none",
-						zIndex: 99999,
-					}}
-				/>
 			)}
 		</>
 	);
