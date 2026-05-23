@@ -76,8 +76,7 @@ fn parse_csv(text: &str) -> ParsedMap {
     let lat_named = lower.iter().position(|h| h == "lat" || h == "latitude");
     let lng_named = lower.iter().position(|h| h == "lng" || h == "longitude" || h == "lon");
 
-    // The first line is a header only if it names lat/lng columns. Otherwise, accept a
-    // bare positional `lat,lng` row (headerless) as data — matching the original importer.
+    // The first line is a header only if it names lat/lng columns.
     let (lat_idx, lng_idx, heading_idx, pitch_idx, zoom_idx, pano_idx, has_header) =
         if let (Some(la), Some(ln)) = (lat_named, lng_named) {
             (

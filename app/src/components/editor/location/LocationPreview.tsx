@@ -832,11 +832,6 @@ export function LocationPreview() {
 	}, [location?.id]);
 
 	// Reactive: fetch dates + metadata whenever the current pano changes.
-	// Like the original, two getPanorama calls provide the date list:
-	//   - by-ID: time entries for the pinned pano
-	//   - by-location: time entries for the default coverage ("nearby" dates)
-	// The date picker shows the merged, deduplicated union (keyed by pano ID).
-	// A separate GetMetadata RPC enriches the current pano (altitude, camera type).
 	useEffect(() => {
 		if (!currentPano) {
 			setPanoDates([]);
@@ -860,7 +855,7 @@ export function LocationPreview() {
 			for (const t of extractTimes(locData)) merged.set(t.pano, t);
 			for (const t of extractTimes(panoData)) merged.set(t.pano, t);
 
-			// Like the original: if all entries are unofficial, do an extra
+			// If all entries are unofficial, do an extra
 			// official-only lookup to get the full multi-year coverage history.
 			const allUnofficial = merged.size > 0 && [...merged.keys()].every((p) => !isOfficialPano(p));
 			if (allUnofficial && !cancelled) {

@@ -101,7 +101,7 @@ export function buildSelection(map: MapData, props: SelectionProps): Selection {
 	return { key, color: colorForKey(key), props, count: 0 };
 }
 
-// dedupe by key, preserving order of last occurrence (matches original ou)
+// dedupe by key, preserving order of last occurrence
 function dedupe(selections: Selection[]): Selection[] {
 	const map = new Map<string, Selection>();
 	for (const s of selections) map.set(s.key, s);
