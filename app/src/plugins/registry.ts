@@ -75,7 +75,7 @@ export function registerPlugin(plugin: Plugin | PluginBehavior) {
 }
 
 export function getPlugins(): Plugin[] {
-	return [...plugins.values()];
+	return [...plugins.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function getPlugin(id: string): Plugin | undefined {
