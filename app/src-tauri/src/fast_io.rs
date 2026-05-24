@@ -20,7 +20,11 @@ pub(crate) fn db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Stri
 }
 
 pub(crate) fn open_db(app: &tauri::AppHandle) -> Result<Connection, String> {
-    Connection::open(db_path(app)?).map_err(|e| e.to_string())
+    let path = db_path(app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("failed to create app data dir: {e}"))?;
+    }
+    Connection::open(path).map_err(|e| e.to_string())
 }
 
 pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
