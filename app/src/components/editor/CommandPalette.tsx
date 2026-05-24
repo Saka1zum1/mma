@@ -11,6 +11,7 @@ import {
 	saveCurrentSelections,
 	deleteSavedSelection,
 	applySavedSelection,
+	selectionToSaved,
 	describeRule,
 } from "@/store/savedSelections.add";
 import { useSetting } from "@/store/settings.add";
@@ -135,9 +136,16 @@ function SaveSelectionsPage() {
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [name, setName] = useState("");
 
-	const hasSaveable = selections.some(
-		(s) => s.props.type !== "Locations" && s.props.type !== "Manual" && s.props.type !== "ValidationState",
-	);
+	const saveableItems = useMemo(() => {
+		if (!map) return [];
+		return selections
+			.map((s) => {
+				const saved = selectionToSaved(s, map);
+				if (!saved) return null;
+				return { props: saved, color: s.color };
+			})
+			.filter((item): item is NonNullable<typeof item> => item !== null);
+	}, [selections, map]);
 
 	const handleSave = () => {
 		if (!name.trim() || !map) return;
@@ -149,7 +157,7 @@ function SaveSelectionsPage() {
 		setTimeout(() => inputRef.current?.focus(), 0);
 	}, []);
 
-	if (!map || selections.length === 0 || !hasSaveable) {
+	if (!map || saveableItems.length === 0) {
 		return (
 			<Command.Group heading="Save Selections">
 				<PaletteItem label="Back" onSelect={() => ctx.setPage(null)} icon={<UndoIcon />} closeOnSelect={false} />
@@ -178,9 +186,17 @@ function SaveSelectionsPage() {
 					Save
 				</button>
 			</div>
-			<p className="command-palette__save-hint">
-				{selections.length} selection{selections.length !== 1 ? "s" : ""} will be saved
-			</p>
+			<div className="command-palette__saved-rules">
+				{saveableItems.map((item, i) => (
+					<span key={i} className="command-palette__rule-chip">
+						<span
+							className="command-palette__rule-dot"
+							style={{ background: `rgb(${item.color[0]},${item.color[1]},${item.color[2]})` }}
+						/>
+						{describeRule(item.props)}
+					</span>
+				))}
+			</div>
 		</div>
 	);
 }

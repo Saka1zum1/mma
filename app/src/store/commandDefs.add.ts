@@ -16,6 +16,7 @@ import {
 	mdiHistory,
 	mdiEye,
 	mdiTagRemove,
+	mdiDatabaseRemoveOutline,
 } from "@mdi/js";
 import { registerCommand } from "./commands.add";
 import {
@@ -165,15 +166,23 @@ registerCommand({
 
 registerCommand({
 	id: "bulk-enrich",
-	label: "Enrich all locations with metadata",
+	label: "Enrich metadata fields",
 	icon: mdiDatabaseArrowUp,
 	group: "Bulk Operations",
 	execute: () => document.dispatchEvent(new CustomEvent("open-bulk-op", { detail: "enrich" })),
 });
 
 registerCommand({
+	id: "bulk-clear-fields",
+	label: "Clear metadata fields",
+	icon: mdiDatabaseRemoveOutline,
+	group: "Bulk Operations",
+	execute: () => document.dispatchEvent(new CustomEvent("open-bulk-op", { detail: "clearFields" })),
+});
+
+registerCommand({
 	id: "bulk-pin-pano",
-	label: "Pin all locations to pano ID",
+	label: "Pin locations to pano ID",
 	icon: mdiMapMarkerCheck,
 	group: "Bulk Operations",
 	execute: () => document.dispatchEvent(new CustomEvent("open-bulk-op", { detail: "pinPano" })),

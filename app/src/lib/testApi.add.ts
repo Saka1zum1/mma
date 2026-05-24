@@ -201,8 +201,8 @@ function buildTestApi() {
 		loadSeenPano: (entry: SeenEntry) => loadSeenPano(entry),
 
 		// --- Bulk operations ---
-		enrichAll: (opts?: any) => enrichAll(opts),
-		bulkPinToPano: (opts?: any) => bulkPinToPano(opts),
+		enrichAll: async (opts?: any) => enrichAll(await fetchAllLocations(), opts),
+		bulkPinToPano: async (opts?: any) => bulkPinToPano(await fetchAllLocations(), opts),
 		validateLocations: (locs: Location[], opts?: any) => validateLocations(locs, opts),
 		needsEnrichment: (loc: Pick<Location, "extra">) => needsEnrichment(loc as Location),
 

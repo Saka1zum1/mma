@@ -3,7 +3,7 @@ import { resolveExactTimestamp } from "@/lib/sv/exactDate.add";
 import { resolveTimezone } from "@/lib/util/timezone.add";
 import {
 	getCurrentMap,
-	fetchAllLocations,
+	fetchLocationsByIds,
 	batchUpdateLocations,
 	patchLocationExtra,
 } from "@/store/useMapStore";
@@ -75,6 +75,7 @@ export interface EnrichResult {
 }
 
 export async function enrichAll(
+	locations: Location[],
 	opts: {
 		signal?: AbortSignal;
 		force?: boolean;
@@ -88,8 +89,8 @@ export async function enrichAll(
 	const enrichFields = map.meta.settings.enrichFields;
 	const exactDates = isFieldEnabled(enrichFields, "datetime");
 
-	const allLocations = await fetchAllLocations();
-	const pending: Location[] = allLocations.filter((l) => force || needsEnrichment(l));
+	const scopeIds = locations.map((l) => l.id);
+	const pending: Location[] = locations.filter((l) => force || needsEnrichment(l));
 
 	if (pending.length === 0 && !exactDates) return result;
 
@@ -153,8 +154,8 @@ export async function enrichAll(
 	if (exactDates) {
 		const freshMap = getCurrentMap();
 		if (!freshMap) return result;
-		const allLocs = await fetchAllLocations();
-		const datePending = allLocs.filter(
+		const freshLocs = await fetchLocationsByIds(scopeIds);
+		const datePending = freshLocs.filter(
 			(l) => l.extra?.imageDate && (force || l.extra?.datetime == null),
 		);
 		const metaDone = pending.length;
@@ -194,13 +195,13 @@ export async function enrichAll(
 	// Run plugin enrichment providers
 	const providers = getEnrichmentProviders();
 	if (providers.length > 0) {
-		const freshLocs = await fetchAllLocations();
+		const pluginLocs = await fetchLocationsByIds(scopeIds);
 		for (const provider of providers) {
 			signal?.throwIfAborted();
-			const patches = await provider.enrich(freshLocs, enrichFields);
+			const patches = await provider.enrich(pluginLocs, enrichFields);
 			if (patches.size > 0) {
 				const updates = [...patches.entries()].map(([id, patch]) => {
-					const loc = freshLocs.find((l) => l.id === id);
+					const loc = pluginLocs.find((l) => l.id === id);
 					return { id, patch: { extra: { ...loc?.extra, ...patch } } };
 				});
 				batchUpdateLocations(updates);

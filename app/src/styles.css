@@ -2822,6 +2822,45 @@ summary.button {
 	display: flex;
 	justify-content: flex-end;
 }
+.bulk-operation__scope {
+	display: flex;
+	gap: 1rem;
+	font-size: 0.875rem;
+}
+.bulk-operation__scope-option {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	cursor: pointer;
+}
+.bulk-operation__field-list {
+	display: grid;
+	gap: 0.25rem;
+	max-height: 16rem;
+	overflow-y: auto;
+}
+.bulk-operation__field-item {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.875rem;
+	cursor: pointer;
+	padding: 0.25rem 0;
+}
+.bulk-operation__field-label {
+	flex: 1;
+	min-width: 0;
+}
+.bulk-operation__field-key {
+	color: #888;
+	font-size: 0.75rem;
+	font-family: monospace;
+}
+.bulk-operation__field-count {
+	color: #888;
+	font-size: 0.75rem;
+	white-space: nowrap;
+}
 .manage-fields-modal {
 	max-width: 36rem;
 }
@@ -3409,8 +3448,7 @@ summary.button {
 .command-palette__scroll {
 	width: 100vw;
 	max-width: 36rem;
-	height: 324px;
-	max-height: 50vh;
+	max-height: min(324px, 50vh);
 	padding: 0 0.5rem;
 	scroll-padding-block: 2rem;
 	overflow-y: auto;
@@ -3496,10 +3534,8 @@ summary.button {
 	opacity: 0.4;
 	cursor: default;
 }
-.command-palette__save-hint {
-	color: #ffffff80;
-	font-size: 0.8rem;
-	margin-top: 0.5rem;
+.command-palette__save-page .command-palette__saved-rules {
+	margin-top: 0.75rem;
 }
 .command-palette__saved-item {
 	flex-direction: column;

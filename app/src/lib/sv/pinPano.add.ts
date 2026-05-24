@@ -1,9 +1,10 @@
-import { getCurrentMap, fetchAllLocations, batchUpdateLocations } from "@/store/useMapStore";
+import { getCurrentMap, batchUpdateLocations } from "@/store/useMapStore";
 import { LocationFlag, isPinnedToPano } from "@/types";
 import type { Location } from "@/types";
 import { resolvePanoIds } from "./lookup.add";
 
 export async function bulkPinToPano(
+	locations: Location[],
 	opts: {
 		signal?: AbortSignal;
 		force?: boolean;
@@ -14,8 +15,7 @@ export async function bulkPinToPano(
 	const map = getCurrentMap();
 	if (!map) return 0;
 
-	const allLocations = await fetchAllLocations();
-	const pending: Location[] = allLocations.filter((l) => force || !isPinnedToPano(l));
+	const pending: Location[] = locations.filter((l) => force || !isPinnedToPano(l));
 	if (pending.length === 0) return 0;
 
 	const panoResult = await resolvePanoIds(pending, {
