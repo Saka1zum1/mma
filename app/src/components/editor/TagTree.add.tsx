@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiChevronDown, mdiChevronRight, mdiPencil } from "@mdi/js";
@@ -87,6 +87,20 @@ function sumCounts(node: TagTreeNode, tagCounts: Record<number, number>): number
 	return total;
 }
 
+const EXPANDED_KEY = "tagTreeExpanded";
+
+function loadExpanded(): Set<string> {
+	try {
+		const raw = localStorage.getItem(EXPANDED_KEY);
+		if (raw) return new Set(JSON.parse(raw));
+	} catch { /* ignored */ }
+	return new Set();
+}
+
+function saveExpanded(set: Set<string>) {
+	localStorage.setItem(EXPANDED_KEY, JSON.stringify([...set]));
+}
+
 interface TagTreeViewProps {
 	tags: Tag[];
 	selectedTagIds: Set<number>;
@@ -105,6 +119,17 @@ export function TagTreeView({
 	filterText,
 }: TagTreeViewProps) {
 	const tree = useMemo(() => buildTagTree(tags), [tags]);
+	const [expandedPaths, setExpandedPaths] = useState(loadExpanded);
+
+	const toggleExpanded = useCallback((path: string) => {
+		setExpandedPaths((prev) => {
+			const next = new Set(prev);
+			if (next.has(path)) next.delete(path);
+			else next.add(path);
+			saveExpanded(next);
+			return next;
+		});
+	}, []);
 
 	const filteredTree = useMemo(() => {
 		if (!filterText) return tree;
@@ -137,6 +162,8 @@ export function TagTreeView({
 					onEditTag={onEditTag}
 					onRenameTag={onRenameTag}
 					forceExpanded={!!filterText}
+					expandedPaths={expandedPaths}
+					onToggleExpanded={toggleExpanded}
 				/>
 			))}
 		</ul>
@@ -151,6 +178,8 @@ function TagTreeNodeRow({
 	onEditTag,
 	onRenameTag,
 	forceExpanded,
+	expandedPaths,
+	onToggleExpanded,
 }: {
 	node: TagTreeNode;
 	depth: number;
@@ -159,10 +188,11 @@ function TagTreeNodeRow({
 	onEditTag: (tagId: number) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	forceExpanded: boolean;
+	expandedPaths: Set<string>;
+	onToggleExpanded: (path: string) => void;
 }) {
-	const [expanded, setExpanded] = useState(false);
 	const hasChildren = node.children.length > 0;
-	const isOpen = forceExpanded || expanded;
+	const isOpen = forceExpanded || expandedPaths.has(node.fullPath);
 
 	const isSelected = node.tag ? selectedTagIds.has(node.tag.id) : false;
 	const allChildrenSelected =
@@ -191,7 +221,7 @@ function TagTreeNodeRow({
 
 	const handleChevronClick = (e: React.MouseEvent) => {
 		e.stopPropagation();
-		setExpanded((v) => !v);
+		onToggleExpanded(node.fullPath);
 	};
 
 	return (
@@ -258,6 +288,8 @@ function TagTreeNodeRow({
 							onEditTag={onEditTag}
 							onRenameTag={onRenameTag}
 							forceExpanded={forceExpanded}
+							expandedPaths={expandedPaths}
+							onToggleExpanded={onToggleExpanded}
 						/>
 					))}
 				</ul>

@@ -647,7 +647,7 @@ function TagsSection() {
 					onChange={(e) => setSetting("tagViewMode", e.target.value as TagViewMode)}
 				>
 					<option value="flat">Flat</option>
-					<option value="tree">Tree (folder hierarchy)</option>
+					<option value="tree">Tree</option>
 				</select>
 			</label>
 		</fieldset>
