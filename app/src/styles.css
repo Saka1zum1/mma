@@ -3298,6 +3298,100 @@ summary.button {
 	width: 2rem;
 	padding: 0;
 }
+.tag-tree {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.tag-tree__children {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	margin-top: 0.25rem;
+}
+.tag-tree__node {
+	display: flex;
+	flex-direction: column;
+}
+.tag-tree__row {
+	display: flex;
+	align-items: center;
+	height: 2rem;
+	padding-right: 0.75rem;
+	cursor: pointer;
+	opacity: 0.7;
+	border-radius: 1rem;
+	box-shadow: var(--shadow-1);
+	user-select: none;
+	gap: 0.25rem;
+}
+.tag-tree__row.is-selected {
+	opacity: 1;
+	outline: 2px solid #fff;
+}
+.tag-tree__row.is-partial {
+	opacity: 0.85;
+	outline: 1px dashed rgba(255, 255, 255, 0.5);
+}
+.tag-tree__row:hover {
+	opacity: 1;
+}
+.tag-tree__chevron {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.25rem;
+	flex-shrink: 0;
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+	color: inherit;
+}
+.tag-tree__chevron:hover {
+	opacity: 0.7;
+}
+.tag-tree__chevron-spacer {
+	width: 1.25rem;
+	flex-shrink: 0;
+}
+.tag-tree__label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.875rem;
+	line-height: 2rem;
+}
+.tag-tree__count {
+	flex-shrink: 0;
+	font-weight: 600;
+	font-size: 0.8rem;
+	margin-left: auto;
+}
+.tag-tree__edit {
+	flex-shrink: 0;
+	background: none;
+	border: none;
+	padding: 0.125rem;
+	cursor: pointer;
+	opacity: 0;
+	box-shadow: none;
+}
+.tag-tree__row:hover .tag-tree__edit {
+	opacity: 0.7;
+}
+.tag-tree__edit:hover {
+	opacity: 1 !important;
+}
+
 .edit-tag-modal {
 	grid-gap: 0.5rem;
 	grid-template-areas: "name" "color" "actions";

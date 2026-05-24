@@ -23,6 +23,7 @@ import {
 	type SeenResolution,
 	type MapListField,
 	type GeocodeProvider,
+	type TagViewMode,
 } from "@/store/settings.add";
 
 const IS_MAC = /Mac|iPod|iPhone|iPad/i.test(navigator.platform);
@@ -632,12 +633,34 @@ function GeocodingSection() {
 	);
 }
 
+function TagsSection() {
+	const s = useSettings();
+	return (
+		<fieldset className="fieldset">
+			<legend className="fieldset__header">
+				Tags <span className="fieldset__divider" />
+			</legend>
+			<label className="settings-popup__item">
+				View mode
+				<select
+					value={s.tagViewMode}
+					onChange={(e) => setSetting("tagViewMode", e.target.value as TagViewMode)}
+				>
+					<option value="flat">Flat</option>
+					<option value="tree">Tree (folder hierarchy)</option>
+				</select>
+			</label>
+		</fieldset>
+	);
+}
+
 function StreetViewTab() {
 	return (
 		<>
 			<StreetViewSection />
 			<ViewerControlsSection />
 			<FullscreenSection />
+			<TagsSection />
 			<DatePickerSection />
 			<GeocodingSection />
 		</>

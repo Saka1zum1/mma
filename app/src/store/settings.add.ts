@@ -7,6 +7,7 @@ export type SeenResolution = "low" | "medium" | "high";
 
 export type MapListField = "locationCount" | "lastOpened" | "created";
 export type GeocodeProvider = "local" | "nominatim";
+export type TagViewMode = "flat" | "tree";
 
 import type { SavedSelection } from "./savedSelections.add";
 
@@ -47,6 +48,7 @@ export interface AppSettings {
 	mapListFields: MapListField[];
 	geocodeProvider: GeocodeProvider;
 	nominatimApiKey: string;
+	tagViewMode: TagViewMode;
 	savedSelections: SavedSelection[];
 }
 
@@ -87,6 +89,7 @@ const DEFAULTS: AppSettings = {
 	mapListFields: ["locationCount"],
 	geocodeProvider: "local" as GeocodeProvider,
 	nominatimApiKey: "",
+	tagViewMode: "flat" as TagViewMode,
 	savedSelections: [] as SavedSelection[],
 };
 

@@ -23,11 +23,14 @@ import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { fmt } from "@/lib/util/format";
 import { textColorFor, hexToHsl, hslToHex } from "@/lib/util/color";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
+import { useSetting } from "@/store/settings.add";
+import { TagTreeView } from "./TagTree.add";
 
 export function TagManager() {
 	const map = useCurrentMap();
 	const selectedTagIds = useSelectedTagIds();
 	const tagCounts = useTagCounts();
+	const tagViewMode = useSetting("tagViewMode");
 	const [filterText, setFilterText] = useState("");
 	const [sortMode, setTagSortMode] = useLocalStorage<TagSortMode>("tagTagSortMode", "default");
 	const [editingTagId, setEditingTagId] = useState<number | null>(null);
@@ -152,84 +155,95 @@ export function TagManager() {
 					</>
 				}
 			>
-				{sortedTags.length > 0 && (
-					<ul className="tag-list">
-						{sortedTags.map((tag) => {
-							const bg = tag.color;
-							const fg = textColorFor(bg);
-							const isSelected = selectedTagIds.has(tag.id);
-							const isDragging = dragTagId === tag.id;
-							const drop = dropTarget?.id === tag.id ? dropTarget.position : null;
-							return (
-								<ContextMenu.Root key={tag.id} modal={false}>
-									<ContextMenu.Trigger asChild>
-										<li
-											className={`tag has-button${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}`}
-											style={{
-												backgroundColor: bg,
-												color: fg,
-												cursor: sortMode === "default" ? "grab" : "pointer",
-											}}
-											data-tag-id={tag.id}
-											data-drop={dragTagId && !isDragging ? (drop ?? undefined) : undefined}
-											onClick={(e) => {
-												if (dragTagId) return;
-												if (e.shiftKey && lastShiftClickRef.current != null) {
-													const anchorIdx = sortedTags.findIndex((t) => t.id === lastShiftClickRef.current);
-													const targetIdx = sortedTags.findIndex((t) => t.id === tag.id);
-													if (anchorIdx !== -1 && targetIdx !== -1) {
-														const lo = Math.min(anchorIdx, targetIdx);
-														const hi = Math.max(anchorIdx, targetIdx);
-														for (let i = lo; i <= hi; i++) {
-															if (i === anchorIdx) continue;
-															toggleTagSelection(sortedTags[i].id);
-														}
-													}
-												} else {
-													toggleTagSelection(tag.id);
-												}
-												lastShiftClickRef.current = tag.id;
-											}}
-											onMouseDown={(e) => handleTagMouseDown(e, tag.id)}
-											onMouseMove={(e) => handleTagMouseMove(e, tag.id, e.currentTarget)}
-											onMouseUp={() => handleTagMouseUp(tag.id)}
-											onMouseLeave={handleTagMouseLeave}
-										>
-											<button
-												className="button tag__button tag__button--edit"
-												onClick={(e) => {
-													e.stopPropagation();
-													setEditingTagId(tag.id);
+				{tagViewMode === "tree" ? (
+					<TagTreeView
+						tags={tags}
+						selectedTagIds={selectedTagIds}
+						tagCounts={tagCounts}
+						onEditTag={setEditingTagId}
+						onRenameTag={setRenamingTag}
+						filterText={filterText}
+					/>
+				) : (
+					sortedTags.length > 0 && (
+						<ul className="tag-list">
+							{sortedTags.map((tag) => {
+								const bg = tag.color;
+								const fg = textColorFor(bg);
+								const isSelected = selectedTagIds.has(tag.id);
+								const isDragging = dragTagId === tag.id;
+								const drop = dropTarget?.id === tag.id ? dropTarget.position : null;
+								return (
+									<ContextMenu.Root key={tag.id} modal={false}>
+										<ContextMenu.Trigger asChild>
+											<li
+												className={`tag has-button${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}`}
+												style={{
+													backgroundColor: bg,
+													color: fg,
+													cursor: sortMode === "default" ? "grab" : "pointer",
 												}}
-												type="button"
+												data-tag-id={tag.id}
+												data-drop={dragTagId && !isDragging ? (drop ?? undefined) : undefined}
+												onClick={(e) => {
+													if (dragTagId) return;
+													if (e.shiftKey && lastShiftClickRef.current != null) {
+														const anchorIdx = sortedTags.findIndex((t) => t.id === lastShiftClickRef.current);
+														const targetIdx = sortedTags.findIndex((t) => t.id === tag.id);
+														if (anchorIdx !== -1 && targetIdx !== -1) {
+															const lo = Math.min(anchorIdx, targetIdx);
+															const hi = Math.max(anchorIdx, targetIdx);
+															for (let i = lo; i <= hi; i++) {
+																if (i === anchorIdx) continue;
+																toggleTagSelection(sortedTags[i].id);
+															}
+														}
+													} else {
+														toggleTagSelection(tag.id);
+													}
+													lastShiftClickRef.current = tag.id;
+												}}
+												onMouseDown={(e) => handleTagMouseDown(e, tag.id)}
+												onMouseMove={(e) => handleTagMouseMove(e, tag.id, e.currentTarget)}
+												onMouseUp={() => handleTagMouseUp(tag.id)}
+												onMouseLeave={handleTagMouseLeave}
 											>
-												<Icon path={mdiPencil} />
-											</button>
-											<label className="tag__text">
-												{tag.name}
-												<small
-													style={{
-														marginLeft: ".375rem",
-														fontWeight: 600,
-														verticalAlign: "middle",
+												<button
+													className="button tag__button tag__button--edit"
+													onClick={(e) => {
+														e.stopPropagation();
+														setEditingTagId(tag.id);
 													}}
+													type="button"
 												>
-													{fmt.format(tagCounts[tag.id] ?? 0)}
-												</small>
-											</label>
-										</li>
-									</ContextMenu.Trigger>
-									<ContextMenu.Portal>
-										<TagContextMenuContent
-											tagId={tag.id}
-											totalCount={tagCounts[tag.id] ?? 0}
-											onRename={() => setRenamingTag({ id: tag.id, name: tag.name })}
-										/>
-									</ContextMenu.Portal>
-								</ContextMenu.Root>
-							);
-						})}
-					</ul>
+													<Icon path={mdiPencil} />
+												</button>
+												<label className="tag__text">
+													{tag.name}
+													<small
+														style={{
+															marginLeft: ".375rem",
+															fontWeight: 600,
+															verticalAlign: "middle",
+														}}
+													>
+														{fmt.format(tagCounts[tag.id] ?? 0)}
+													</small>
+												</label>
+											</li>
+										</ContextMenu.Trigger>
+										<ContextMenu.Portal>
+											<TagContextMenuContent
+												tagId={tag.id}
+												totalCount={tagCounts[tag.id] ?? 0}
+												onRename={() => setRenamingTag({ id: tag.id, name: tag.name })}
+											/>
+										</ContextMenu.Portal>
+									</ContextMenu.Root>
+								);
+							})}
+						</ul>
+					)
 				)}
 			</ToolBlock>
 
