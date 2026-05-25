@@ -1,3 +1,4 @@
+import type { Location } from "@/types";
 import {
 	waitForReady,
 	createAndOpenMap,
@@ -340,19 +341,9 @@ describe("Data integrity - concurrent operations", () => {
 	it("rapid add/remove does not corrupt", async () => {
 		const result = await withApi(async (api) => {
 			// Add 100
-			const locs = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 100; i++) {
-				locs.push({
-					lat: i,
-					lng: i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				locs.push(api.createLocation({ lat: i, lng: i, zoom: 1 }));
 			}
 			await api.addLocations(locs);
 
@@ -361,19 +352,9 @@ describe("Data integrity - concurrent operations", () => {
 			await api.removeLocations(toRemove);
 
 			// Add 50 more
-			const moreLocs = [];
+			const moreLocs: Location[] = [];
 			for (let i = 100; i < 150; i++) {
-				moreLocs.push({
-					lat: i,
-					lng: i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				moreLocs.push(api.createLocation({ lat: i, lng: i, zoom: 1 }));
 			}
 			await api.addLocations(moreLocs);
 
@@ -403,36 +384,12 @@ describe("Data integrity - concurrent operations", () => {
 	it("add during save does not lose locations", async () => {
 		const result = await withApi(async (api) => {
 			// Trigger add
-			const triggerLocs = [
-				{
-					lat: 0,
-					lng: 0,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const triggerLocs = [api.createLocation({ lat: 0, lng: 0, zoom: 1 })];
 			await api.addLocations(triggerLocs);
 			const triggerId = triggerLocs[0].id;
 
 			// Add more while save may be in progress
-			const duringLocs = [
-				{
-					lat: 1,
-					lng: 1,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
+			const duringLocs = [api.createLocation({ lat: 1, lng: 1, zoom: 1 })];
 			await api.addLocations(duringLocs);
 			const duringId = duringLocs[0].id;
 

@@ -11,6 +11,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 // ============================================================================
 // 1. Live selection correctness after add/remove
@@ -29,7 +30,7 @@ describe("Live selection correctness after add/remove", () => {
 		const tagRed = await createTag("t-red");
 		tagRedId = tagRed.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
 				createLocation({
@@ -58,17 +59,13 @@ describe("Live selection correctness after add/remove", () => {
 
 			const newLocs = [];
 			for (let i = 0; i < 10; i++) {
-				newLocs.push({
-					lat: 50 + i,
-					lng: 50 + i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: i < 5 ? [tagId] : [],
-					createdAt: new Date().toISOString(),
-				});
+				newLocs.push(
+					api.createLocation({
+						lat: 50 + i,
+						lng: 50 + i,
+						tags: i < 5 ? [tagId] : [],
+					}),
+				);
 			}
 			await api.addLocations(newLocs);
 			return before;
@@ -83,17 +80,7 @@ describe("Live selection correctness after add/remove", () => {
 			await api.selectEverything();
 			const before = api.getSelectedLocationIds().length;
 			await api.addLocations([
-				{
-					lat: 99,
-					lng: 99,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+				api.createLocation({ lat: 99, lng: 99 }),
 			]);
 			return before;
 		});
@@ -146,39 +133,9 @@ describe("Live selection correctness after add/remove", () => {
 
 		const afterAddIds = await withApi(async (api, tagId: number) => {
 			const newLocs = [
-				{
-					lat: 70,
-					lng: 70,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [tagId],
-					createdAt: new Date().toISOString(),
-				},
-				{
-					lat: 71,
-					lng: 71,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [tagId],
-					createdAt: new Date().toISOString(),
-				},
-				{
-					lat: 72,
-					lng: 72,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [tagId],
-					createdAt: new Date().toISOString(),
-				},
+				api.createLocation({ lat: 70, lng: 70, tags: [tagId] }),
+				api.createLocation({ lat: 71, lng: 71, tags: [tagId] }),
+				api.createLocation({ lat: 72, lng: 72, tags: [tagId] }),
 			];
 			await api.addLocations(newLocs);
 			const result = await api.syncSelections();
@@ -213,7 +170,7 @@ describe("Live selection correctness after update", () => {
 		const tagAlpha = await createTag("t-alpha");
 		tagAlphaId = tagAlpha.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
 				createLocation({
@@ -340,7 +297,7 @@ describe("Review mode delete with active selections", () => {
 		const tagRv = await createTag("t-rv");
 		tagRvId = tagRv.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
 				createLocation({
@@ -405,21 +362,9 @@ describe("Review mode delete with active selections", () => {
 		expect(afterDeleteCount).toBe(result.before - 1);
 
 		await withApi(async (api) => {
-			const newLoc = [
-				{
-					id: 0,
-					lat: 99,
-					lng: 99,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-			];
-			await api.addLocations(newLoc);
+			await api.addLocations([
+				api.createLocation({ lat: 99, lng: 99 }),
+			]);
 		});
 		const afterAddIds = await refreshSelections();
 		expect(afterAddIds.length).toBe(afterDeleteCount);
@@ -459,7 +404,7 @@ describe("Selection correctness after undo/redo", () => {
 		const tagUndo = await createTag("t-undo");
 		tagUndoId = tagUndo.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
 				createLocation({
@@ -487,17 +432,7 @@ describe("Selection correctness after undo/redo", () => {
 			const before = api.getSelectedLocationIds().length;
 
 			await api.addLocations([
-				{
-					lat: 50,
-					lng: 50,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [tagId],
-					createdAt: new Date().toISOString(),
-				},
+				api.createLocation({ lat: 50, lng: 50, tags: [tagId] }),
 			]);
 			return before;
 		}, tagUndoId);
@@ -562,39 +497,9 @@ describe("Selection correctness after undo/redo", () => {
 			const baseline = api.getSelectedLocationIds().length;
 
 			await api.addLocations([
-				{
-					lat: 60,
-					lng: 60,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-				{
-					lat: 61,
-					lng: 61,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
-				{
-					lat: 62,
-					lng: 62,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+				api.createLocation({ lat: 60, lng: 60 }),
+				api.createLocation({ lat: 61, lng: 61 }),
+				api.createLocation({ lat: 62, lng: 62 }),
 			]);
 			return baseline;
 		});
@@ -662,7 +567,7 @@ describe("Composite selection correctness after mutations", () => {
 		const tagCompB = await createTag("t-comp-b");
 		tagCompBId = tagCompB.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 20; i++) {
 			const tags: number[] = [];
 			if (i < 10) tags.push(tagCompAId);
@@ -742,20 +647,9 @@ describe("Composite selection correctness after mutations", () => {
 				await api.selectUnion();
 				const before = api.getSelectedLocationIds().length;
 
-				const newLoc = [
-					{
-						lat: 99,
-						lng: 99,
-						heading: 0,
-						pitch: 0,
-						zoom: 1,
-						panoId: null, id: 0,
-						flags: 0,
-						tags: [tagAId],
-						createdAt: new Date().toISOString(),
-					},
-				];
-				await api.addLocations(newLoc);
+				await api.addLocations([
+					api.createLocation({ lat: 99, lng: 99, tags: [tagAId] }),
+				]);
 				return before;
 			},
 			tagCompAId,
@@ -774,17 +668,7 @@ describe("Composite selection correctness after mutations", () => {
 				const before = api.getSelectedLocationIds().length;
 
 				await api.addLocations([
-					{
-						lat: 98,
-						lng: 98,
-						heading: 0,
-						pitch: 0,
-						zoom: 1,
-						panoId: null, id: 0,
-						flags: 0,
-						tags: [],
-						createdAt: new Date().toISOString(),
-					},
+					api.createLocation({ lat: 98, lng: 98 }),
 				]);
 				return before;
 			},
@@ -858,19 +742,15 @@ describe("Bulk operations with active selections", () => {
 			await api.selectTag(tagId);
 			const before = api.getSelectedLocationIds().length;
 
-			const newLocs: any[] = [];
+			const newLocs: Location[] = [];
 			for (let i = 0; i < 100; i++) {
-				newLocs.push({
-					lat: 50 + i * 0.01,
-					lng: 50 + i * 0.01,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: i < 30 ? [tagId] : [],
-					createdAt: new Date().toISOString(),
-				});
+				newLocs.push(
+					api.createLocation({
+						lat: 50 + i * 0.01,
+						lng: 50 + i * 0.01,
+						tags: i < 30 ? [tagId] : [],
+					}),
+				);
 			}
 			await api.addLocations(newLocs);
 			return before;
@@ -884,26 +764,21 @@ describe("Bulk operations with active selections", () => {
 			await api.selectEverything();
 			const baseline = api.getSelectedLocationIds().length;
 
-			const newLocs: any[] = [];
+			const newLocs: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				newLocs.push({
-					lat: 80 + i * 0.01,
-					lng: 80 + i * 0.01,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				newLocs.push(
+					api.createLocation({
+						lat: 80 + i * 0.01,
+						lng: 80 + i * 0.01,
+					}),
+				);
 			}
 			await api.addLocations(newLocs);
 			const afterAddResult = await api.syncSelections();
 			const afterAdd = afterAddResult.ids.length;
 
 			// Remove first 10 of the newly added
-			const toRemove = newLocs.slice(0, 10).map((l: any) => l.id);
+			const toRemove = newLocs.slice(0, 10).map((l) => l.id);
 			api.removeLocations(toRemove);
 			const afterRemoveResult = await api.syncSelections();
 			const afterRemove = afterRemoveResult.ids.length;
@@ -931,7 +806,7 @@ describe("Selection survives save/load cycle", () => {
 		const tagPersist = await createTag("t-persist");
 		tagPersistId = tagPersist.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 30; i++) {
 			locs.push(
 				createLocation({
@@ -1057,19 +932,15 @@ describe("Slot reuse correctness", () => {
 	it("add, remove (freeing slots), add new (reusing slots) -- tag selection stays correct", async () => {
 		const result = await withApi(async (api, tagId: number) => {
 			// Add 20 locations, first 10 tagged
-			const initial: any[] = [];
+			const initial: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				initial.push({
-					lat: i,
-					lng: i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: i < 10 ? [tagId] : [],
-					createdAt: new Date().toISOString(),
-				});
+				initial.push(
+					api.createLocation({
+						lat: i,
+						lng: i,
+						tags: i < 10 ? [tagId] : [],
+					}),
+				);
 			}
 			await api.addLocations(initial);
 
@@ -1077,26 +948,18 @@ describe("Slot reuse correctness", () => {
 			const afterInitial = api.getSelectedLocationIds().length;
 
 			// Remove first 10 (the tagged ones)
-			const toRemove = initial.slice(0, 10).map((l: any) => l.id);
+			const toRemove = initial.slice(0, 10).map((l) => l.id);
 			await api.removeLocations(toRemove);
 			const afterRemoveResult = await api.syncSelections();
 			const afterRemoveIds: number[] = afterRemoveResult.ids;
 			const afterRemove = afterRemoveIds.length;
 
 			// Add 10 new UNtagged locations -- they may reuse the freed slots
-			const reuse: any[] = [];
+			const reuse: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				reuse.push({
-					lat: 50 + i,
-					lng: 50 + i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				reuse.push(
+					api.createLocation({ lat: 50 + i, lng: 50 + i }),
+				);
 			}
 			await api.addLocations(reuse);
 			const afterReuseResult = await api.syncSelections();
@@ -1104,7 +967,7 @@ describe("Slot reuse correctness", () => {
 			const afterReuse = afterReuseIds.length;
 
 			// None of the reuse locations should be in tag selection
-			const reuseIdSet = new Set(reuse.map((l: any) => l.id));
+			const reuseIdSet = new Set(reuse.map((l) => l.id));
 			const hasAnyReuse = afterReuseIds.some((id: number) => reuseIdSet.has(id));
 			// None of the removed locations should be in tag selection
 			const removedSet = new Set(toRemove);
@@ -1122,44 +985,32 @@ describe("Slot reuse correctness", () => {
 	it("slot reuse with tagged new locations -- only new tagged appear", async () => {
 		const result = await withApi(async (api, tagId: number) => {
 			// Add 10 tagged locations
-			const batch1: any[] = [];
+			const batch1: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				batch1.push({
-					lat: i,
-					lng: i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: [tagId],
-					createdAt: new Date().toISOString(),
-				});
+				batch1.push(
+					api.createLocation({ lat: i, lng: i, tags: [tagId] }),
+				);
 			}
 			await api.addLocations(batch1);
 
 			await api.selectTag(tagId);
 
 			// Remove all 10
-			api.removeLocations(batch1.map((l: any) => l.id));
+			api.removeLocations(batch1.map((l) => l.id));
 			const afterRemoveResult = await api.syncSelections();
 			const afterRemoveIds: number[] = afterRemoveResult.ids;
 			const afterRemoveAll = afterRemoveIds.length;
 
 			// Add 5 tagged and 5 untagged into freed slots
-			const batch2: any[] = [];
+			const batch2: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				batch2.push({
-					lat: 40 + i,
-					lng: 40 + i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: 0,
-					tags: i < 5 ? [tagId] : [],
-					createdAt: new Date().toISOString(),
-				});
+				batch2.push(
+					api.createLocation({
+						lat: 40 + i,
+						lng: 40 + i,
+						tags: i < 5 ? [tagId] : [],
+					}),
+				);
 			}
 			await api.addLocations(batch2);
 			const afterRefillResult = await api.syncSelections();
@@ -1167,8 +1018,8 @@ describe("Slot reuse correctness", () => {
 			const afterRefill = afterRefillIds.length;
 
 			// Collect the IDs of tagged vs untagged batch2 entries
-			const taggedNewIds = batch2.slice(0, 5).map((l: any) => l.id);
-			const untaggedNewIds = batch2.slice(5).map((l: any) => l.id);
+			const taggedNewIds = batch2.slice(0, 5).map((l) => l.id);
+			const untaggedNewIds = batch2.slice(5).map((l) => l.id);
 
 			return {
 				afterRemoveAll,
@@ -1192,65 +1043,59 @@ describe("Slot reuse correctness", () => {
 		const tagSlot3 = await createTag("t-slot3");
 		const result = await withApi(async (api, tagId: number) => {
 			// Add 20 locs: first 10 tagged, first 8 have flags=1
-			const locs: any[] = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				locs.push({
-					lat: i,
-					lng: i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: i < 8 ? 1 : 0,
-					tags: i < 10 ? [tagId] : [],
-					createdAt: new Date().toISOString(),
-				});
+				locs.push(
+					api.createLocation({
+						lat: i,
+						lng: i,
+						flags: i < 8 ? 1 : 0,
+						tags: i < 10 ? [tagId] : [],
+					}),
+				);
 			}
 			await api.addLocations(locs);
 
 			await api.selectTag(tagId);
 			await api.selectPanoIds();
-			const tagBefore = api.getSelections().find((s: any) => s.props.type === "Tag")?.locationCount;
+			const tagBefore = api.getSelections().find((s) => s.props.type === "Tag")?.locationCount;
 			const panoBefore = api
 				.getSelections()
-				.find((s: any) => s.props.type === "PanoIds")?.locationCount;
+				.find((s) => s.props.type === "PanoIds")?.locationCount;
 
 			// Remove indices 0-4 (tagged AND flagged)
-			const toRemove = locs.slice(0, 5).map((l: any) => l.id);
+			const toRemove = locs.slice(0, 5).map((l) => l.id);
 			api.removeLocations(toRemove);
 			await api.syncSelections();
 
 			const tagAfterRemove = api
 				.getSelections()
-				.find((s: any) => s.props.type === "Tag")?.locationCount;
+				.find((s) => s.props.type === "Tag")?.locationCount;
 			const panoAfterRemove = api
 				.getSelections()
-				.find((s: any) => s.props.type === "PanoIds")?.locationCount;
+				.find((s) => s.props.type === "PanoIds")?.locationCount;
 
 			// Add new locs: 3 tagged+flagged, 2 untagged+unflagged
-			const refill: any[] = [];
+			const refill: Location[] = [];
 			for (let i = 0; i < 5; i++) {
-				refill.push({
-					lat: 60 + i,
-					lng: 60 + i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null, id: 0,
-					flags: i < 3 ? 1 : 0,
-					tags: i < 3 ? [tagId] : [],
-					createdAt: new Date().toISOString(),
-				});
+				refill.push(
+					api.createLocation({
+						lat: 60 + i,
+						lng: 60 + i,
+						flags: i < 3 ? 1 : 0,
+						tags: i < 3 ? [tagId] : [],
+					}),
+				);
 			}
 			await api.addLocations(refill);
 			await api.syncSelections();
 
 			const tagAfterRefill = api
 				.getSelections()
-				.find((s: any) => s.props.type === "Tag")?.locationCount;
+				.find((s) => s.props.type === "Tag")?.locationCount;
 			const panoAfterRefill = api
 				.getSelections()
-				.find((s: any) => s.props.type === "PanoIds")?.locationCount;
+				.find((s) => s.props.type === "PanoIds")?.locationCount;
 
 			return {
 				tagBefore,
@@ -1277,22 +1122,17 @@ describe("Slot reuse correctness", () => {
 
 			// Do 10 cycles of: add 5, remove 3
 			for (let cycle = 0; cycle < 10; cycle++) {
-				const batch: any[] = [];
+				const batch: Location[] = [];
 				for (let i = 0; i < 5; i++) {
-					batch.push({
-						lat: cycle * 10 + i,
-						lng: cycle * 10 + i,
-						heading: 0,
-						pitch: 0,
-						zoom: 1,
-						panoId: null, id: 0,
-						flags: 0,
-						tags: [],
-						createdAt: new Date().toISOString(),
-					});
+					batch.push(
+						api.createLocation({
+							lat: cycle * 10 + i,
+							lng: cycle * 10 + i,
+						}),
+					);
 				}
 				await api.addLocations(batch);
-				api.removeLocations(batch.slice(0, 3).map((l: any) => l.id));
+				api.removeLocations(batch.slice(0, 3).map((l) => l.id));
 			}
 
 			const totalLocs = await api.getLocationCount();

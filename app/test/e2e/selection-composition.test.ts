@@ -9,6 +9,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 describe("Selection composition", () => {
 	let mapId: string;
@@ -24,7 +25,7 @@ describe("Selection composition", () => {
 		const tagB = await createTag("tag-b");
 		tagBId = tagB.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 100; i++) {
 			locs.push(
 				createLocation({
@@ -154,7 +155,7 @@ describe("Selection composition edge cases", () => {
 		const edgeTag = await createTag("edge-tag");
 		edgeTagId = edgeTag.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
 				createLocation({

@@ -87,7 +87,7 @@ describe.skip("Save failure recovery", () => {
 			api.interceptInvoke("save_blob_chunks", "failOnce");
 			try {
 				await api.flushSave();
-			} catch {}
+			} catch { /* expected failure */ }
 
 			// Add more data AFTER the failure
 			const postLocs: Location[] = [createLocation({ lat: 2, lng: 2, heading: 0, pitch: 0, zoom: 1 })];
@@ -122,7 +122,7 @@ describe.skip("Save failure recovery", () => {
 			api.interceptInvoke("delete_chunks", "failOnce");
 			try {
 				await api.flushSave();
-			} catch {}
+			} catch { /* expected failure */ }
 
 			// Retry
 			await api.flushSave();
@@ -442,19 +442,18 @@ describe("Large dataset save/load fidelity", () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 1000; i++) {
-				locs.push({
-					id: 0,
-					lat: -85 + (i / 1000) * 170,
-					lng: -180 + (i / 1000) * 360,
-					heading: i % 360,
-					pitch: (i % 180) - 90,
-					zoom: 1 + (i % 5),
-					panoId: i % 3 === 0 ? `pano_${i}` : null,
-					flags: i % 4 === 0 ? 1 : 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-					extra: i % 10 === 0 ? { idx: i } : {},
-				});
+				locs.push(
+					api.createLocation({
+						lat: -85 + (i / 1000) * 170,
+						lng: -180 + (i / 1000) * 360,
+						heading: i % 360,
+						pitch: (i % 180) - 90,
+						zoom: 1 + (i % 5),
+						panoId: i % 3 === 0 ? `pano_${i}` : null,
+						flags: i % 4 === 0 ? 1 : 0,
+						extra: i % 10 === 0 ? { idx: i } : {},
+					}),
+				);
 			}
 			await api.addLocations(locs);
 			// Return ids mapped by creation index for spot-checking
@@ -527,18 +526,14 @@ describe("Large dataset save/load fidelity", () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 100; i++) {
-				locs.push({
-					id: 0,
-					lat: i,
-					lng: i,
-					heading: i,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				locs.push(
+					api.createLocation({
+						lat: i,
+						lng: i,
+						heading: i,
+						zoom: 1,
+					}),
+				);
 			}
 			await api.addLocations(locs);
 			const newIds = locs.map((l) => l.id);

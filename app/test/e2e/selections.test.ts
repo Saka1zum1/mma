@@ -9,6 +9,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
+import type { Location } from "@/types";
 
 describe("Selections - basic types", () => {
 	let mapId: string;
@@ -27,7 +28,7 @@ describe("Selections - basic types", () => {
 		tagBlueId = tagBlue.id;
 
 		// Seed 200 locations with varied properties
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 200; i++) {
 			locs.push(
 				createLocation({
@@ -207,7 +208,7 @@ describe("Selection operations", () => {
 		const tagA = await createTag("tag-a");
 		tagAId = tagA.id;
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 100; i++) {
 			locs.push(
 				createLocation({
@@ -326,7 +327,7 @@ describe("Selection correctness after mutations", () => {
 	});
 
 	it("PanoIds selection updates after flag change", async () => {
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
 				createLocation({
@@ -430,7 +431,7 @@ describe("Selection with Filter", () => {
 		mapId = await createAndOpenMap("E2E Filter");
 		await browser.pause(500);
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 50; i++) {
 			locs.push(
 				createLocation({

@@ -40,17 +40,14 @@ describe("Delta recovery", () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				locs.push({ id: 0,
+				locs.push(api.createLocation({
 					lat: 10 + i * 0.01,
 					lng: 20 + i * 0.01,
 					heading: i * 18,
-					pitch: 0,
 					zoom: 1,
 					panoId: i % 3 === 0 ? `delta_pano_${i}` : null,
 					flags: i % 2,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				}));
 			}
 			await api.addLocations(locs);
 			return { ids: locs.map((l) => l.id) };
@@ -106,19 +103,15 @@ describe("Bake with mixed overlay", () => {
 	it("add/update/remove then close/reopen produces correct state", async () => {
 		// Add 50 locations with deterministic data
 		const result = await withApi(async (api) => {
-			const locs: any[] = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 50; i++) {
-				locs.push({ id: 0,
+				locs.push(api.createLocation({
 					lat: i,
 					lng: i * 2,
 					heading: i,
-					pitch: 0,
 					zoom: 1,
 					panoId: `mix_${i}`,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				}));
 			}
 			await api.addLocations(locs);
 			const ids = locs.map((l) => l.id);
@@ -260,7 +253,7 @@ describe("Repeated updates to same location", () => {
 	});
 
 	it("only the final heading value persists after close/reopen", async () => {
-		const ids = await addLocs([createLocation({ lat: 10, lng: 20, heading: 0 })]);
+		const ids = await addLocs([createLocation({ lat: 10, lng: 20 })]);
 		const locId = ids[0];
 
 		const headings = [45, 90, 135, 270, 315];
@@ -483,41 +476,20 @@ describe("Null vs absent field round-trip", () => {
 
 	it("null panoId and null/absent extra survive round-trip", async () => {
 		const result = await withApi(async (api) => {
-			const loc1 = { id: 0,
-				lat: 10,
-				lng: 20,
-				heading: 0,
-				pitch: 0,
-				zoom: 1,
-				panoId: null,
-				flags: 0,
-				tags: [],
-				createdAt: new Date().toISOString(),
-			};
-			const loc2 = { id: 0,
+			const loc1 = api.createLocation({ lat: 10, lng: 20, zoom: 1 });
+			const loc2 = api.createLocation({
 				lat: 30,
 				lng: 40,
-				heading: 0,
-				pitch: 0,
 				zoom: 1,
 				panoId: "ABC",
-				flags: 0,
-				tags: [],
-				createdAt: new Date().toISOString(),
 				extra: { foo: "bar" },
-			};
-			const loc3 = { id: 0,
+			});
+			const loc3 = api.createLocation({
 				lat: 50,
 				lng: 60,
-				heading: 0,
-				pitch: 0,
 				zoom: 1,
-				panoId: null,
-				flags: 0,
-				tags: [],
-				createdAt: new Date().toISOString(),
 				extra: {},
-			};
+			});
 			const batch = [loc1, loc2, loc3];
 			await api.addLocations(batch);
 			return { ids: batch.map((l) => l.id) };
@@ -576,28 +548,25 @@ describe("Unicode in all fields", () => {
 				await api.addTag({ id: t.id, name: t.name, color: t.color, visible: true });
 			}
 
-			const loc = { id: 0,
+			const loc = api.createLocation({
 				lat: 35.6762,
 				lng: 139.6503,
 				heading: 90,
-				pitch: 0,
 				zoom: 1,
 				panoId: "CAoSK0FG_東京_éè",
-				flags: 0,
 				tags: [resolved[0].id, resolved[1].id, resolved[2].id],
-				createdAt: new Date().toISOString(),
 				extra: {
 					地名: "東京タワー",
 					straße: "café",
 					nested: { Адрес: "Москва" },
 				},
-			};
+			});
 			const batch = [loc];
 			await api.addLocations(batch);
 			return {
 				locId: batch[0].id,
-				tagIds: resolved.map((t: any) => t.id),
-				tagNames: resolved.map((t: any) => t.name),
+				tagIds: resolved.map((t) => t.id),
+				tagNames: resolved.map((t) => t.name),
 			};
 		});
 
@@ -867,17 +836,12 @@ describe("Large batch undo correctness", () => {
 		await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
-				locs.push({ id: 0,
+				locs.push(api.createLocation({
 					lat: (i % 180) - 90,
 					lng: (i % 360) - 180,
 					heading: i % 360,
-					pitch: 0,
 					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				}));
 			}
 			await api.addLocations(locs);
 		});
@@ -928,18 +892,12 @@ describe("Rapid fire-and-forget mutations", () => {
 			for (let i = 0; i < 20; i++) {
 				promises.push(
 					api.addLocations([
-						{
+						api.createLocation({
 							lat: i,
 							lng: i,
-							id: 0,
 							heading: i * 18,
-							pitch: 0,
 							zoom: 1,
-							panoId: null,
-							flags: 0,
-							tags: [],
-							createdAt: new Date().toISOString(),
-						},
+						}),
 					]),
 				);
 			}
@@ -953,19 +911,13 @@ describe("Rapid fire-and-forget mutations", () => {
 	it("rapid add + remove interleaved", async () => {
 		const result = await withApi(async (api) => {
 			// Add 10 locations
-			const locs: any[] = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				locs.push({ id: 0,
+				locs.push(api.createLocation({
 					lat: 50 + i,
 					lng: 50 + i,
-					heading: 0,
-					pitch: 0,
 					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				}));
 			}
 			await api.addLocations(locs);
 			const ids = locs.map((l) => l.id);
@@ -973,17 +925,7 @@ describe("Rapid fire-and-forget mutations", () => {
 			// Fire remove + add simultaneously (no await between)
 			const removePromise = Promise.resolve().then(() => api.removeLocations(ids.slice(0, 5)));
 			const addPromise = api.addLocations([
-				{
-					lat: 99, id: 0,
-					lng: 99,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+				api.createLocation({ lat: 99, lng: 99, zoom: 1 }),
 			]);
 			await Promise.all([removePromise, addPromise]);
 
@@ -1022,19 +964,14 @@ describe("Autosave racing with mutations", () => {
 
 		const result = await withApi(async (api) => {
 			// Add 50 locations
-			const locs: any[] = [];
+			const locs: Location[] = [];
 			for (let i = 0; i < 50; i++) {
-				locs.push({ id: 0,
+				locs.push(api.createLocation({
 					lat: i,
 					lng: i,
 					heading: i * 7.2,
-					pitch: 0,
 					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				}));
 			}
 			await api.addLocations(locs);
 
@@ -1042,17 +979,13 @@ describe("Autosave racing with mutations", () => {
 			const savePromise = api.flushSave();
 			// These mutations happen while save might be serializing the overlay
 			const addPromise = api.addLocations([
-				{
-					lat: 100, id: 0,
+				api.createLocation({
+					lat: 100,
 					lng: 100,
-					heading: 0,
-					pitch: 0,
 					zoom: 1,
 					panoId: "post-save",
 					flags: 1,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				},
+				}),
 			]);
 			await Promise.all([savePromise, addPromise]);
 
@@ -1098,36 +1031,16 @@ describe("Undo while save in-flight", () => {
 
 		const result = await withApi(async (api) => {
 			// Add batch 1
-			const batch1: any[] = [];
+			const batch1: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				batch1.push({
-					lat: i,
-					lng: i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				batch1.push(api.createLocation({ lat: i, lng: i, zoom: 1 }));
 			}
 			await api.addLocations(batch1);
 
 			// Add batch 2
-			const batch2: any[] = [];
+			const batch2: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				batch2.push({
-					lat: 100 + i,
-					lng: 100 + i,
-					heading: 0,
-					pitch: 0,
-					zoom: 1,
-					panoId: null,
-					flags: 0,
-					tags: [],
-					createdAt: new Date().toISOString(),
-				});
+				batch2.push(api.createLocation({ lat: 100 + i, lng: 100 + i, zoom: 1 }));
 			}
 			await api.addLocations(batch2);
 
@@ -1212,8 +1125,8 @@ describe("Rapid batch updates", () => {
 
 	it("100 concurrent updateLocation calls all persist", async () => {
 		mapId = await createAndOpenMap("Stress RapidUpdate");
-		const locs: any[] = [];
-		for (let i = 0; i < 100; i++) locs.push(createLocation({ lat: i, lng: i, heading: 0 }));
+		const locs: Location[] = [];
+		for (let i = 0; i < 100; i++) locs.push(createLocation({ lat: i, lng: i }));
 		const ids = await addLocs(locs);
 
 		// Fire 100 updates simultaneously -- each sets heading to its index
@@ -1264,7 +1177,7 @@ describe("Selection during mutation", () => {
 		const tag = await createTag("sel-mut-tag");
 
 		// Add 30 tagged locations
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 30; i++) locs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
 		await addLocs(locs);
 
@@ -1276,7 +1189,7 @@ describe("Selection during mutation", () => {
 		expect(count1).toBe(30);
 
 		// Add 10 more tagged locations while selection is active
-		const moreLocs: any[] = [];
+		const moreLocs: Location[] = [];
 		for (let i = 0; i < 10; i++) moreLocs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
 		await addLocs(moreLocs);
 
@@ -1362,7 +1275,7 @@ describe("Delete all then undo", () => {
 	it("empty map after delete-all, undo restores everything", async () => {
 		mapId = await createAndOpenMap("Stress DeleteAll");
 
-		const locs: any[] = [];
+		const locs: Location[] = [];
 		for (let i = 0; i < 25; i++) locs.push(createLocation({ lat: i, lng: i, heading: i * 14.4 }));
 		const ids = await addLocs(locs);
 

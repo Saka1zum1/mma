@@ -197,6 +197,7 @@ describe("Map metadata updates", () => {
 
 // bulkImportMaps was removed in the Rust migration — bulk import now requires files on disk
 // via bulk_import_preview + bulk_import_confirm. Covered by bulk-import-rust.test.ts.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 describe.skip("Bulk import", () => {
 	const importedIds: string[] = [];
 
@@ -220,47 +221,15 @@ describe.skip("Bulk import", () => {
 				{
 					name: "Bulk Map 1",
 					folder: "Imported",
-					locations: [
-						{
-							lat: 10,
-							lng: 20,
-							heading: 0,
-							pitch: 0,
-							zoom: 1,
-							panoId: null,
-							flags: 0,
-							tags: [],
-							createdAt: new Date().toISOString(),
-						},
-					],
+					locations: [api.createLocation({ lat: 10, lng: 20, zoom: 1 })],
 					tags: [],
 				},
 				{
 					name: "Bulk Map 2",
 					folder: "Imported",
 					locations: [
-						{
-							lat: 30,
-							lng: 40,
-							heading: 0,
-							pitch: 0,
-							zoom: 1,
-							panoId: null,
-							flags: 0,
-							tags: [],
-							createdAt: new Date().toISOString(),
-						},
-						{
-							lat: 50,
-							lng: 60,
-							heading: 0,
-							pitch: 0,
-							zoom: 1,
-							panoId: null,
-							flags: 0,
-							tags: [],
-							createdAt: new Date().toISOString(),
-						},
+						api.createLocation({ lat: 30, lng: 40, zoom: 1 }),
+						api.createLocation({ lat: 50, lng: 60, zoom: 1 }),
 					],
 					tags: [{ name: "Imported", color: "#ff0000", visible: true }],
 				},
