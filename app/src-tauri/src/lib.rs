@@ -342,7 +342,7 @@ pub fn run() {
                     location_store::store_save_dirty,
                     location_store::store_get_summary,
                     location_store::store_tag_counts,
-                    location_store::store_resolve_tag_names,
+                    location_store::store_create_tags,
                     location_store::store_reorder_tags,
                     location_store::store_bounds,
                     location_store::store_commit_diff,

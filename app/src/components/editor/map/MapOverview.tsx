@@ -16,7 +16,7 @@ import {
 	setPolygonName,
 	setSelectionColor,
 	bulkAddTag,
-	resolveTagsByName,
+	createTags,
 	beginReview,
 	selectDuplicates,
 	selectFilter,
@@ -628,7 +628,7 @@ export function MapOverview() {
 		e.preventDefault();
 		const name = bulkTagInput.trim();
 		if (!name || selected.size === 0) return;
-		const [resolved] = await resolveTagsByName([name]);
+		const [resolved] = await createTags([name]);
 		bulkAddTag(resolved.id);
 		setBulkTagInput("");
 	};

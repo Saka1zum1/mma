@@ -38,9 +38,8 @@ import {
 	composeSelections,
 	decomposeChild,
 	removeChildFromSelection,
-	addTags,
 	mutate,
-	resolveTagsByName,
+	createTags,
 	updateTags,
 	deleteTags,
 	bulkAddTag,
@@ -176,12 +175,11 @@ function buildTestApi() {
 			removeChildFromSelection(parentKey, childKey),
 
 		// --- Tags ---
-		addTag: (tag: Tag) => addTags([tag]),
+		createTags: (names: string[]) => createTags(names),
 		updateTag: (id: number, patch: Partial<Tag>) => updateTags([{ id, patch }]),
 		deleteTag: (id: number) => deleteTags([id]),
 		bulkAddTag: (tagId: number) => bulkAddTag(tagId),
 		reorderTags: (ids: number[]) => reorderTags(ids),
-		resolveTagNames: (names: string[]) => resolveTagsByName(names),
 
 		// --- Map management ---
 		renameMap: (id: string, name: string) => renameMap(id, name),

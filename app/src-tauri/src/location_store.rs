@@ -2253,10 +2253,10 @@ pub(crate) fn write_tags_json(conn: &rusqlite::Connection, map_id: &str, tags: &
 
 #[tauri::command]
 #[specta::specta]
-pub fn store_resolve_tag_names(
+pub fn store_create_tags(
     state: tauri::State<'_, StoreState>,
     names: Vec<String>,
-) -> Result<Vec<Tag>, String> {
+) -> Result<MutationResult, String> {
     let mut store = state.lock().map_err(|e| e.to_string())?;
 
     let mut name_to_id: HashMap<String, u32> = HashMap::new();
@@ -2264,15 +2264,12 @@ pub fn store_resolve_tag_names(
         name_to_id.insert(entry.name.to_lowercase(), id);
     }
 
-    let mut result = Vec::with_capacity(names.len());
-
     for name in &names {
         if let Some(&id) = name_to_id.get(&name.to_lowercase()) {
             let tag = store.tags.get_mut(&id).unwrap();
             if !tag.visible {
                 tag.visible = true;
             }
-            result.push(tag.clone());
         } else {
             let id = store.alloc_tag_id();
             let color = crate::util::color_for_name(name);
@@ -2280,15 +2277,20 @@ pub fn store_resolve_tag_names(
             let tag = Tag { id, name: name.clone(), color, visible: true, order, count: 0 };
             store.tags.insert(id, tag.clone());
             name_to_id.insert(name.to_lowercase(), id);
-            result.push(tag);
         }
     }
 
-    if !result.is_empty() {
+    if !names.is_empty() {
         store.tags_dirty = true;
     }
 
-    Ok(result)
+    Ok(MutationResult {
+        status: store.store_status(),
+        delta: RenderDelta::default(),
+        selection_sync: None,
+        new_field_defs: None,
+        tags: Some(store.tags.clone()),
+    })
 }
 
 /// Persist tag ordering. `ordered_ids` specifies the desired order; each tag's
@@ -2298,7 +2300,7 @@ pub fn store_resolve_tag_names(
 pub fn store_reorder_tags(
     state: tauri::State<'_, StoreState>,
     ordered_ids: Vec<u32>,
-) -> Result<(), String> {
+) -> Result<MutationResult, String> {
     let mut store = state.lock().map_err(|e| e.to_string())?;
     for (i, &id) in ordered_ids.iter().enumerate() {
         if let Some(tag) = store.tags.get_mut(&id) {
@@ -2306,7 +2308,13 @@ pub fn store_reorder_tags(
         }
     }
     store.tags_dirty = true;
-    Ok(())
+    Ok(MutationResult {
+        status: store.store_status(),
+        delta: RenderDelta::default(),
+        selection_sync: None,
+        new_field_defs: None,
+        tags: Some(store.tags.clone()),
+    })
 }
 
 #[tauri::command]

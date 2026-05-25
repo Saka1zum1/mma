@@ -917,22 +917,12 @@ export function exitPluginMode() {
 
 // --- Tag CRUD ---
 
-export async function resolveTagsByName(names: string[]): Promise<Tag[]> {
+export async function createTags(names: string[]): Promise<Tag[]> {
 	if (names.length === 0) return [];
-	const tags = await cmd.storeResolveTagNames(names);
-	addTags(tags);
-	return tags;
-}
-
-export function addTags(tags: Tag[]) {
-	if (!currentMapId || !currentMap || tags.length === 0) return;
-	const newTags = { ...currentMap.meta.tags };
-	for (const tag of tags) {
-		newTags[tag.id] = tag;
-	}
-	currentMap = { ...currentMap, meta: { ...currentMap.meta, tags: newTags } };
-	mapVersion++;
-	notify();
+	await mutate(cmd.storeCreateTags(names));
+	// TODO: this returns all the tags on the map, which is not ideal (we have to filter), but fine
+	const lower = new Set(names.map(n => n.toLowerCase()));
+	return Object.values(currentMap!.meta.tags).filter(t => lower.has(t.name.toLowerCase()));
 }
 
 export async function updateTags(patches: { id: number; patch: Partial<Tag> }[]) {
@@ -952,15 +942,7 @@ export async function deleteTags(tagIds: number[]) {
 
 export async function reorderTags(orderedIds: number[]) {
 	if (!currentMapId || !currentMap) return;
-	const newTags = { ...currentMap.meta.tags };
-	for (let i = 0; i < orderedIds.length; i++) {
-		const id = orderedIds[i];
-		if (newTags[id]) newTags[id] = { ...newTags[id], order: i };
-	}
-	currentMap = { ...currentMap, meta: { ...currentMap.meta, tags: newTags } };
-	mapVersion++;
-	notify();
-	cmd.storeReorderTags(orderedIds);
+	await mutate(cmd.storeReorderTags(orderedIds));
 }
 
 export async function bulkAddTag(tagId: number) {

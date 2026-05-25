@@ -21,7 +21,7 @@ import {
 	removeLocations,
 	duplicateLocation,
 	addLocations,
-	resolveTagsByName,
+	createTags,
 	setActiveLocation,
 	cancelReview,
 	reviewNext,
@@ -461,7 +461,7 @@ function FullscreenTagBar({
 		e.preventDefault();
 		const name = input.trim();
 		if (!name) return;
-		const [resolved] = await resolveTagsByName([name]);
+		const [resolved] = await createTags([name]);
 		if (!pendingTags.includes(resolved.id)) {
 			onChangeTags([...pendingTags, resolved.id]);
 		}
@@ -1257,7 +1257,7 @@ export function LocationPreview() {
 		e.preventDefault();
 		const name = tagInput.trim();
 		if (!name) return;
-		const [resolved] = await resolveTagsByName([name]);
+		const [resolved] = await createTags([name]);
 		if (!pendingTags.includes(resolved.id)) {
 			setPendingTags([...pendingTags, resolved.id]);
 		}

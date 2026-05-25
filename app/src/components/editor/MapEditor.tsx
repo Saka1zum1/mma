@@ -8,7 +8,7 @@ import {
 	addLocations,
 	setActiveLocation,
 	getActiveLocation,
-	resolveTagsByName,
+	createTags,
 	mutate,
 } from "@/store/useMapStore";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
@@ -45,16 +45,11 @@ function usePasteHandler() {
 				if (parsed) {
 					let tagIds: number[] = [];
 					if (parsed.tags.length > 0) {
-						const resolved = await resolveTagsByName(parsed.tags);
+						const resolved = await createTags(parsed.tags);
 						tagIds = resolved.map((t) => t.id);
 					}
 					const loc = createLocation({
-						lat: parsed.lat,
-						lng: parsed.lng,
-						heading: parsed.heading,
-						pitch: parsed.pitch,
-						zoom: parsed.zoom,
-						panoId: parsed.panoId,
+						...parsed,
 						tags: tagIds,
 					});
 					await addLocations([loc]);

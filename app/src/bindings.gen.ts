@@ -70,12 +70,12 @@ export const commands = {
 	storeSaveDirty: () => typedError<SaveResult, string>(__TAURI_INVOKE("store_save_dirty")),
 	storeGetSummary: () => typedError<SummaryResult, string>(__TAURI_INVOKE("store_get_summary")),
 	storeTagCounts: () => typedError<{ [key in number]: number }, string>(__TAURI_INVOKE("store_tag_counts")),
-	storeResolveTagNames: (names: string[]) => typedError<Tag[], string>(__TAURI_INVOKE("store_resolve_tag_names", { names })),
+	storeCreateTags: (names: string[]) => typedError<MutationResult_Serialize, string>(__TAURI_INVOKE("store_create_tags", { names })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})}) } : v) as typeof v)),
 	/**
 	 *  Persist tag ordering. `ordered_ids` specifies the desired order; each tag's
 	 *  `order` field is set to its index in the list.
 	 */
-	storeReorderTags: (orderedIds: number[]) => typedError<null, string>(__TAURI_INVOKE("store_reorder_tags", { orderedIds })),
+	storeReorderTags: (orderedIds: number[]) => typedError<MutationResult_Serialize, string>(__TAURI_INVOKE("store_reorder_tags", { orderedIds })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})}) } : v) as typeof v)),
 	storeBounds: () => typedError<[number, number, number, number] | null, string>(__TAURI_INVOKE("store_bounds")).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:v.data.map(i=>i) } : v) as typeof v)),
 	storeCommitDiff: () => typedError<[number, number, number], string>(__TAURI_INVOKE("store_commit_diff")),
 	storeResetUndo: () => typedError<null, string>(__TAURI_INVOKE("store_reset_undo")),
