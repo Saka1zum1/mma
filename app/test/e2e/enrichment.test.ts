@@ -4,7 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	makeLoc,
+	createLocation,
 	openLocation,
 	closeLocation,
 	withApi,
@@ -18,15 +18,7 @@ const LoadAsPanoId = 1;
 const PANO_TIMEOUT = 10_000;
 
 function loc(overrides: Partial<Location> = {}): Location {
-	return makeLoc({
-		lat: 0,
-		lng: 0,
-		heading: 0,
-		pitch: 0,
-		zoom: 0,
-		modifiedAt: new Date().toISOString(),
-		...overrides,
-	});
+	return createLocation({ lat: 0, lng: 0, modifiedAt: new Date().toISOString(), ...overrides });
 }
 
 async function readLocation(id: number): Promise<any> {

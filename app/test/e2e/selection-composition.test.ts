@@ -4,7 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	makeLoc,
+	createLocation,
 	createTag,
 	refreshSelections,
 	withApi,
@@ -27,7 +27,7 @@ describe("Selection composition", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 100; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					heading: i < 40 ? 0 : 90,
@@ -157,7 +157,7 @@ describe("Selection composition edge cases", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					panoId: i < 10 ? `p${i}` : null,

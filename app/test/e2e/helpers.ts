@@ -4,6 +4,7 @@
  */
 
 import type { TestAPI } from "@/lib/testApi.add";
+import { createLocation } from "../../src/types";
 import type { Location } from "@/types";
 
 /**
@@ -21,7 +22,6 @@ export async function withApi<A extends unknown[], R>(
 		"...___a",
 		`const ___d = ___a.pop();
      const api = window.__TEST_API__;
-     const makeLoc = (o = {}) => ({ id: 0, lat: Math.random() * 170 - 85, lng: Math.random() * 360 - 180, heading: Math.random() * 360, pitch: 0, zoom: 1, panoId: null, flags: 0, tags: [], createdAt: new Date().toISOString(), ...o });
      (async () => { try { ___d(await (${fn.toString()})(api, ...___a)); } catch(e) { ___d({ __withApiError: e.message }); } })();`,
 	);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- callback is serialized and re-evaluated in the browser; this bridge can't be statically typed
@@ -89,58 +89,14 @@ export async function closeLocation() {
 
 // --- Location helpers ---
 
-export function makeLoc(overrides: Partial<Location> = {}): Location {
-	return {
-		id: 0, // placeholder; Rust assigns the real ID on insert
-		lat: Math.random() * 170 - 85,
-		lng: Math.random() * 360 - 180,
-		heading: Math.random() * 360,
-		pitch: 0,
-		zoom: 1,
-		panoId: null,
-		flags: 0,
-		tags: [],
-		createdAt: new Date().toISOString(),
-		...overrides,
-	};
+export { createLocation };
+
+export function randomLatLng(): { lat: number; lng: number } {
+	return { lat: Math.random() * 180 - 90, lng: Math.random() * 360 - 180 };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function makeLocBatch(
-	count: number,
-	overrides: Record<string, any> | ((i: number) => Record<string, any>) = {},
-): string {
-	const overrideFn = typeof overrides === "function";
-	if (overrideFn) {
-		return `
-      const locs = [];
-      const overrideFn = ${overrides.toString()};
-      for (let i = 0; i < ${count}; i++) {
-        locs.push({
-          lat: Math.random() * 170 - 85,
-          lng: Math.random() * 360 - 180,
-          heading: Math.random() * 360,
-          pitch: 0, zoom: 1, panoId: null, flags: 0, tags: [],
-          createdAt: new Date().toISOString(),
-          ...overrideFn(i),
-        });
-      }
-    `;
-	}
-	const ovStr = JSON.stringify(overrides);
-	return `
-    const locs = [];
-    for (let i = 0; i < ${count}; i++) {
-      locs.push({
-        lat: Math.random() * 170 - 85,
-        lng: Math.random() * 360 - 180,
-        heading: Math.random() * 360,
-        pitch: 0, zoom: 1, panoId: null, flags: 0, tags: [],
-        createdAt: new Date().toISOString(),
-        ...${ovStr},
-      });
-    }
-  `;
+export function randomHeading(): { heading: number } {
+	return { heading: Math.random() * 360 };
 }
 
 export async function addLocs(locs: Location[]): Promise<number[]> {

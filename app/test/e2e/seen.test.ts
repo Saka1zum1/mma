@@ -6,7 +6,7 @@ import {
 	addLocs,
 	getLocCount,
 	withApi,
-	makeLoc,
+	createLocation,
 	openLocation,
 	closeLocation,
 } from "./helpers";
@@ -70,13 +70,13 @@ describe("Seen -- recording consistency", () => {
 		});
 		mapId = await createAndOpenMap("E2E Seen Recording");
 		const ids = await addLocs([
-			makeLoc({
+			createLocation({
 				lat: OFFICIAL_COORDS.lat,
 				lng: OFFICIAL_COORDS.lng,
 				panoId: OFFICIAL_PANO,
 				flags: LocationFlag.LoadAsPanoId,
 			}),
-			makeLoc({
+			createLocation({
 				lat: TREKKER_COORDS.lat,
 				lng: TREKKER_COORDS.lng,
 				panoId: TREKKER_PANO,
@@ -202,7 +202,7 @@ describe("Seen -- loadSeenPano opens location viewer", () => {
 		});
 		mapId = await createAndOpenMap("E2E Seen Load");
 		const ids = await addLocs([
-			makeLoc({
+			createLocation({
 				lat: OFFICIAL_COORDS.lat,
 				lng: OFFICIAL_COORDS.lng,
 				panoId: OFFICIAL_PANO,
@@ -308,7 +308,7 @@ describe("Seen -- enableSeen setting", () => {
 		await waitForReady();
 		mapId = await createAndOpenMap("E2E Seen Setting");
 		const ids = await addLocs([
-			makeLoc({
+			createLocation({
 				lat: OFFICIAL_COORDS.lat,
 				lng: OFFICIAL_COORDS.lng,
 				panoId: OFFICIAL_PANO,
@@ -367,13 +367,13 @@ describe("Seen -- clear", () => {
 		});
 		mapId = await createAndOpenMap("E2E Seen Clear");
 		const ids = await addLocs([
-			makeLoc({
+			createLocation({
 				lat: TREKKER_COORDS.lat,
 				lng: TREKKER_COORDS.lng,
 				panoId: TREKKER_PANO,
 				flags: LocationFlag.LoadAsPanoId,
 			}),
-			makeLoc({
+			createLocation({
 				lat: OFFICIAL_COORDS.lat,
 				lng: OFFICIAL_COORDS.lng,
 				panoId: OFFICIAL_PANO,

@@ -8,7 +8,9 @@ import {
 	addLocs,
 	getLoc,
 	getLocCount,
-	makeLoc,
+	createLocation,
+	randomLatLng,
+	randomHeading,
 	withApi,
 } from "./helpers";
 
@@ -30,7 +32,7 @@ describe("Location CRUD", () => {
 	// --- Add ---
 
 	it("add single location", async () => {
-		const ids = await addLocs([makeLoc({ lat: 40.7, lng: -74.0, heading: 90, pitch: 5, zoom: 2 })]);
+		const ids = await addLocs([createLocation({ lat: 40.7, lng: -74.0, heading: 90, pitch: 5, zoom: 2 })]);
 		singleLocId = ids[0];
 		const count = await getLocCount();
 		expect(count).toBe(1);
@@ -39,7 +41,7 @@ describe("Location CRUD", () => {
 	it("add bulk locations (500)", async () => {
 		const locs = [];
 		for (let i = 0; i < 500; i++) {
-			locs.push(makeLoc());
+			locs.push(createLocation({ ...randomLatLng(), ...randomHeading() }));
 		}
 		bulkLocIds = await addLocs(locs);
 		const count = await getLocCount();
@@ -216,7 +218,7 @@ describe("Location persistence", () => {
 		const locs = [];
 		for (let i = 0; i < 100; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: -i,
 					heading: i * 3.6,

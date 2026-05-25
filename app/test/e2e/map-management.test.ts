@@ -6,7 +6,7 @@ import {
 	openMap,
 	addLocs,
 	getLocCount,
-	makeLoc,
+	createLocation,
 	withApi,
 } from "./helpers";
 
@@ -105,7 +105,7 @@ describe("Map management", () => {
 
 		const locs = [];
 		for (let i = 0; i < 25; i++) {
-			locs.push(makeLoc({ lat: i, lng: i }));
+			locs.push(createLocation({ lat: i, lng: i }));
 		}
 		await addLocs(locs);
 
@@ -147,7 +147,7 @@ describe("Map metadata", () => {
 	});
 
 	it("location count updates in meta after adding locations", async () => {
-		await addLocs([makeLoc({ lat: 10, lng: 20 })]);
+		await addLocs([createLocation({ lat: 10, lng: 20 })]);
 
 		const count = await getLocCount();
 		expect(count).toBe(1);

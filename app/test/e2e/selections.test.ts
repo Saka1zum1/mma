@@ -4,7 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	makeLoc,
+	createLocation,
 	createTag,
 	refreshSelections,
 	withApi,
@@ -30,7 +30,7 @@ describe("Selections - basic types", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 200; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: (i % 20) - 10,
 					lng: (i % 36) * 10 - 180,
 					heading: 0,
@@ -183,8 +183,8 @@ describe("Selections - basic types", () => {
 
 	it("selectDuplicates finds locations at same coordinates", async () => {
 		await addLocs([
-			makeLoc({ lat: 55.0, lng: 37.0, heading: 0 }),
-			makeLoc({ lat: 55.0, lng: 37.0, heading: 90 }),
+			createLocation({ lat: 55.0, lng: 37.0, heading: 0 }),
+			createLocation({ lat: 55.0, lng: 37.0, heading: 90 }),
 		]);
 
 		const result = await withApi(async (api) => {
@@ -210,7 +210,7 @@ describe("Selection operations", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 100; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					panoId: i < 40 ? `pano_${i}` : null,
@@ -329,7 +329,7 @@ describe("Selection correctness after mutations", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					panoId: `pano_${i}`,
@@ -361,7 +361,7 @@ describe("Selection correctness after mutations", () => {
 			await api.selectEverything();
 			const before = (await api.syncSelections()).ids.length;
 
-			await api.addLocations([makeLoc({ lat: 50, lng: 50 })]);
+			await api.addLocations([api.createLocation({ lat: 50, lng: 50 })]);
 
 			await api.resetSelections();
 			await api.selectEverything();
@@ -433,7 +433,7 @@ describe("Selection with Filter", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 50; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					extra: { altitude: i * 10, country: i < 25 ? "US" : "GB" },

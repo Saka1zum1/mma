@@ -7,7 +7,7 @@ import {
 	getAllLocs,
 	getLocCount,
 	createTag,
-	makeLoc,
+	createLocation,
 	openLocation,
 	closeLocation,
 	withApi,
@@ -35,7 +35,7 @@ const LoadAsPanoId = 1;
 const PANO_TIMEOUT = 30_000;
 
 function loc(overrides: Partial<Location> = {}): Location {
-	return makeLoc({ lat: 0, lng: 0, heading: 0, pitch: 0, zoom: 0, ...overrides });
+	return createLocation({ lat: 0, lng: 0, ...overrides });
 }
 
 /** Wait for the date count badge to show a positive number. */

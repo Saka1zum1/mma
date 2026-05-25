@@ -6,7 +6,7 @@ import {
 	flushAndWait,
 	openMap,
 	addLocs,
-	makeLoc,
+	createLocation,
 	createTag,
 	refreshSelections,
 	withApi,
@@ -32,7 +32,7 @@ describe("Live selection correctness after add/remove", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					tags: i < 10 ? [tagRedId] : [],
@@ -216,7 +216,7 @@ describe("Live selection correctness after update", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					heading: i < 10 ? 0 : 90,
@@ -343,7 +343,7 @@ describe("Review mode delete with active selections", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					tags: i < 5 ? [tagRvId] : [],
@@ -462,7 +462,7 @@ describe("Selection correctness after undo/redo", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					tags: i < 5 ? [tagUndoId] : [],
@@ -622,7 +622,7 @@ describe("Selection correctness after undo/redo", () => {
 		await withApi(async (api, tagId: number) => {
 			await api.resetSelections();
 			await api.selectTag(tagId);
-			await api.addLocations([makeLoc({ lat: 80, lng: 80, tags: [tagId] })]);
+			await api.addLocations([api.createLocation({ lat: 80, lng: 80, tags: [tagId] })]);
 		}, tagUndoId);
 		const afterAdd = await refreshSelections();
 
@@ -668,7 +668,7 @@ describe("Composite selection correctness after mutations", () => {
 			if (i < 10) tags.push(tagCompAId);
 			if (i >= 5 && i < 15) tags.push(tagCompBId);
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					tags,
@@ -816,7 +816,7 @@ describe("Bulk operations with active selections", () => {
 		const locs = [];
 		for (let i = 0; i < 100; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i * 0.1,
 					lng: i * 0.1,
 				}),
@@ -934,7 +934,7 @@ describe("Selection survives save/load cycle", () => {
 		const locs: any[] = [];
 		for (let i = 0; i < 30; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					heading: i < 15 ? 0 : 90,

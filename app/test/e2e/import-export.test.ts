@@ -4,7 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	makeLoc,
+	createLocation,
 	createTag,
 	withApi,
 } from "./helpers";
@@ -25,7 +25,7 @@ describe("JSON import/export round-trip", () => {
 
 	it("export JSON and re-import produces same locations", async () => {
 		const locs = [
-			makeLoc({
+			createLocation({
 				lat: 40.7,
 				lng: -74.0,
 				heading: 90,
@@ -34,7 +34,7 @@ describe("JSON import/export round-trip", () => {
 				panoId: "ABC123",
 				flags: 1,
 			}),
-			makeLoc({
+			createLocation({
 				lat: -33.8,
 				lng: 151.2,
 				heading: 180,
@@ -43,7 +43,7 @@ describe("JSON import/export round-trip", () => {
 				panoId: null,
 				flags: 0,
 			}),
-			makeLoc({ lat: 51.5, lng: -0.1, heading: 0, pitch: 0, zoom: 1, panoId: "XYZ789", flags: 0 }),
+			createLocation({ lat: 51.5, lng: -0.1, heading: 0, pitch: 0, zoom: 1, panoId: "XYZ789", flags: 0 }),
 		];
 		locIds = await addLocs(locs);
 
@@ -183,8 +183,8 @@ describe("CSV import/export", () => {
 
 	it("CSV export produces valid format", async () => {
 		await addLocs([
-			makeLoc({ lat: 40.7, lng: -74.0, heading: 90, pitch: 0, zoom: 1, panoId: "P1", flags: 1 }),
-			makeLoc({ lat: 51.5, lng: -0.1, heading: 180, pitch: 5, zoom: 2, panoId: null, flags: 0 }),
+			createLocation({ lat: 40.7, lng: -74.0, heading: 90, pitch: 0, zoom: 1, panoId: "P1", flags: 1 }),
+			createLocation({ lat: 51.5, lng: -0.1, heading: 180, pitch: 5, zoom: 2, panoId: null, flags: 0 }),
 		]);
 
 		const result = await withApi(async (api) => {
@@ -229,8 +229,8 @@ describe("GeoJSON export", () => {
 		mapId = await createAndOpenMap("E2E GeoJSON");
 
 		await addLocs([
-			makeLoc({ lat: 40.7, lng: -74.0, heading: 90, panoId: "GJ1" }),
-			makeLoc({ lat: 51.5, lng: -0.1, heading: 0, panoId: null }),
+			createLocation({ lat: 40.7, lng: -74.0, heading: 90, panoId: "GJ1" }),
+			createLocation({ lat: 51.5, lng: -0.1, heading: 0, panoId: null }),
 		]);
 	});
 

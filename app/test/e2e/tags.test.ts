@@ -8,7 +8,7 @@ import {
 	openMap,
 	addLocs,
 	getLoc,
-	makeLoc,
+	createLocation,
 	withApi,
 } from "./helpers";
 
@@ -113,7 +113,7 @@ describe("Tag operations on locations", () => {
 
 		const locs = [];
 		for (let i = 0; i < 50; i++) {
-			locs.push(makeLoc({ lat: i, lng: i }));
+			locs.push(createLocation({ lat: i, lng: i }));
 		}
 		locIds = await addLocs(locs);
 	});
@@ -242,7 +242,7 @@ describe("Tag persistence", () => {
 	});
 
 	it("tag assignments on locations survive save/load", async () => {
-		const locs = [makeLoc({ lat: 10, lng: 20, tags: [pt1Id, pt2Id] })];
+		const locs = [createLocation({ lat: 10, lng: 20, tags: [pt1Id, pt2Id] })];
 		const ids = await addLocs(locs);
 		const locId = ids[0];
 
@@ -302,13 +302,13 @@ describe("Tag merge on rename collision", () => {
 
 		const locs = [];
 		for (let i = 0; i < 10; i++) {
-			locs.push(makeLoc({ lat: i, lng: i, tags: [tagAId] }));
+			locs.push(createLocation({ lat: i, lng: i, tags: [tagAId] }));
 		}
 		for (let i = 10; i < 15; i++) {
-			locs.push(makeLoc({ lat: i, lng: i, tags: [tagBId] }));
+			locs.push(createLocation({ lat: i, lng: i, tags: [tagBId] }));
 		}
 		// One location has both tags
-		locs.push(makeLoc({ lat: 20, lng: 20, tags: [tagAId, tagBId] }));
+		locs.push(createLocation({ lat: 20, lng: 20, tags: [tagAId, tagBId] }));
 		await addLocs(locs);
 	});
 
@@ -400,8 +400,8 @@ describe("Tag merge persists across save/load", () => {
 		tagYId = tagResult.yId;
 
 		await addLocs([
-			makeLoc({ lat: 1, lng: 1, tags: [tagXId] }),
-			makeLoc({ lat: 2, lng: 2, tags: [tagYId] }),
+			createLocation({ lat: 1, lng: 1, tags: [tagXId] }),
+			createLocation({ lat: 2, lng: 2, tags: [tagYId] }),
 		]);
 	});
 
@@ -529,7 +529,7 @@ describe("Tag visibility lifecycle", () => {
 	it("delete strips tag from locations", async () => {
 		const result = await withApi(async (api) => {
 			const [tag] = await api.resolveTagNames(["StripMe"]);
-			const locs = [makeLoc({ lat: 50, lng: 50, tags: [tag.id] }), makeLoc({ lat: 51, lng: 51, tags: [tag.id] })];
+			const locs = [api.createLocation({ lat: 50, lng: 50, tags: [tag.id] }), api.createLocation({ lat: 51, lng: 51, tags: [tag.id] })];
 			await api.addLocations(locs);
 			await api.deleteTag(tag.id);
 			const allLocs = await api.fetchAllLocations();
@@ -676,12 +676,12 @@ describe("Tag merge advanced", () => {
 		tagCId = tags.c;
 
 		await addLocs([
-			makeLoc({ lat: 1, lng: 1, tags: [tagAId] }),
-			makeLoc({ lat: 2, lng: 2, tags: [tagAId] }),
-			makeLoc({ lat: 3, lng: 3, tags: [tagBId] }),
-			makeLoc({ lat: 4, lng: 4, tags: [tagCId] }),
-			makeLoc({ lat: 5, lng: 5, tags: [tagCId] }),
-			makeLoc({ lat: 6, lng: 6, tags: [tagCId] }),
+			createLocation({ lat: 1, lng: 1, tags: [tagAId] }),
+			createLocation({ lat: 2, lng: 2, tags: [tagAId] }),
+			createLocation({ lat: 3, lng: 3, tags: [tagBId] }),
+			createLocation({ lat: 4, lng: 4, tags: [tagCId] }),
+			createLocation({ lat: 5, lng: 5, tags: [tagCId] }),
+			createLocation({ lat: 6, lng: 6, tags: [tagCId] }),
 		]);
 	});
 

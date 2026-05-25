@@ -73,6 +73,7 @@ import {
 import { loadSeenPano } from "@/components/editor/location/LocationPreview";
 import { cmd, fetchViaFile } from "@/lib/commands";
 import type { LocationPatch_Deserialize } from "@/bindings.gen";
+import { createLocation } from "@/types";
 import type { Location, Tag, MapMeta } from "@/types";
 import { enrichAll, needsEnrichment } from "@/lib/sv/enrich.add";
 import { bulkPinToPano } from "@/lib/sv/pinPano.add";
@@ -81,6 +82,7 @@ import { validateLocations } from "@/lib/sv/validate";
 function buildTestApi() {
 	return {
 		ready: false as boolean,
+		createLocation,
 
 		// --- Lifecycle ---
 		createMap: (name: string, folder: string | null) => cmd.storeCreateMap(name, folder),

@@ -10,7 +10,9 @@ import {
 	getLoc,
 	getLocOrNull,
 	getLocCount,
-	makeLoc,
+	createLocation,
+	randomLatLng,
+	randomHeading,
 	createTag,
 	withApi,
 } from "./helpers";
@@ -189,7 +191,7 @@ describe("Multiple save/close/reopen cycles", () => {
 
 	it("cycle 1: add 50, close, reopen", async () => {
 		const locs = [];
-		for (let i = 0; i < 50; i++) locs.push(makeLoc({ lat: i, lng: i }));
+		for (let i = 0; i < 50; i++) locs.push(createLocation({ lat: i, lng: i }));
 		batch1Ids = await addLocs(locs);
 
 		await closeMap();
@@ -201,7 +203,7 @@ describe("Multiple save/close/reopen cycles", () => {
 
 	it("cycle 2: add 30 more, close, reopen", async () => {
 		const locs = [];
-		for (let i = 0; i < 30; i++) locs.push(makeLoc({ lat: 100 + i, lng: 100 + i }));
+		for (let i = 0; i < 30; i++) locs.push(createLocation({ lat: 100 + i, lng: 100 + i }));
 		batch2Ids = await addLocs(locs);
 
 		await closeMap();
@@ -258,7 +260,7 @@ describe("Repeated updates to same location", () => {
 	});
 
 	it("only the final heading value persists after close/reopen", async () => {
-		const ids = await addLocs([makeLoc({ lat: 10, lng: 20, heading: 0 })]);
+		const ids = await addLocs([createLocation({ lat: 10, lng: 20, heading: 0 })]);
 		const locId = ids[0];
 
 		const headings = [45, 90, 135, 270, 315];
@@ -301,7 +303,7 @@ describe("alive_count accuracy", () => {
 
 	it("add 100 -> count=100", async () => {
 		const locs = [];
-		for (let i = 0; i < 100; i++) locs.push(makeLoc({ lat: i, lng: i }));
+		for (let i = 0; i < 100; i++) locs.push(createLocation({ lat: i, lng: i }));
 		allIds = await addLocs(locs);
 
 		const count = await getLocCount();
@@ -332,7 +334,7 @@ describe("alive_count accuracy", () => {
 
 	it("add 10 more -> count=80", async () => {
 		const locs = [];
-		for (let i = 0; i < 10; i++) locs.push(makeLoc({ lat: 200 + i, lng: 200 + i }));
+		for (let i = 0; i < 10; i++) locs.push(createLocation({ lat: 200 + i, lng: 200 + i }));
 		await addLocs(locs);
 
 		const count = await getLocCount();
@@ -372,7 +374,7 @@ describe("Tag count accuracy", () => {
 		tagId = tag.id;
 
 		const locs = [];
-		for (let i = 0; i < 50; i++) locs.push(makeLoc({ lat: i, lng: i, tags: [tagId] }));
+		for (let i = 0; i < 50; i++) locs.push(createLocation({ lat: i, lng: i, tags: [tagId] }));
 		taggedIds = await addLocs(locs);
 
 		const counts = await withApi((api) => api.getTagCounts());
@@ -397,7 +399,7 @@ describe("Tag count accuracy", () => {
 	it("bulkAddTag to untagged locs -> tagCount=70", async () => {
 		// Add 20 untagged locs
 		const untaggedLocs = [];
-		for (let i = 0; i < 20; i++) untaggedLocs.push(makeLoc({ lat: 100 + i, lng: 100 + i }));
+		for (let i = 0; i < 20; i++) untaggedLocs.push(createLocation({ lat: 100 + i, lng: 100 + i }));
 		await addLocs(untaggedLocs);
 
 		await withApi(async (api, tId) => {
@@ -442,7 +444,7 @@ describe("Float precision round-trip", () => {
 		const pitch = -12.345678;
 		const zoom = 2.56789;
 
-		const ids = await addLocs([makeLoc({ lat, lng, heading, pitch, zoom })]);
+		const ids = await addLocs([createLocation({ lat, lng, heading, pitch, zoom })]);
 		const locId = ids[0];
 
 		await closeMap();
@@ -646,14 +648,14 @@ describe("Import into non-empty map", () => {
 
 		// First batch: 50 locs with tag
 		const locs1 = [];
-		for (let i = 0; i < 50; i++) locs1.push(makeLoc({ lat: i, lng: i, tags: [tagId] }));
+		for (let i = 0; i < 50; i++) locs1.push(createLocation({ lat: i, lng: i, tags: [tagId] }));
 		batch1Ids = await addLocs(locs1);
 
 		await flushAndWait();
 
 		// Second batch: 30 more (simulates import path)
 		const locs2 = [];
-		for (let i = 0; i < 30; i++) locs2.push(makeLoc({ lat: 100 + i, lng: 100 + i }));
+		for (let i = 0; i < 30; i++) locs2.push(createLocation({ lat: 100 + i, lng: 100 + i }));
 		await addLocs(locs2);
 
 		const count = await getLocCount();
@@ -697,7 +699,7 @@ describe("Export with scope", () => {
 		const locs = [];
 		for (let i = 0; i < 10; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i * 10,
 					lng: i * 10,
 					tags: i < 5 ? [tagId] : [],
@@ -754,7 +756,7 @@ describe("VCS: checkout, edit, re-commit", () => {
 
 	it("commit v1 with 5 locs", async () => {
 		const locs = [];
-		for (let i = 0; i < 5; i++) locs.push(makeLoc({ lat: i, lng: i }));
+		for (let i = 0; i < 5; i++) locs.push(createLocation({ lat: i, lng: i }));
 		await addLocs(locs);
 
 		v1CommitId = await withApi((api) => api.commitMap("v1"));
@@ -763,7 +765,7 @@ describe("VCS: checkout, edit, re-commit", () => {
 
 	it("commit v2 with 5 more locs (total 10)", async () => {
 		const locs = [];
-		for (let i = 0; i < 5; i++) locs.push(makeLoc({ lat: 100 + i, lng: 100 + i }));
+		for (let i = 0; i < 5; i++) locs.push(createLocation({ lat: 100 + i, lng: 100 + i }));
 		await addLocs(locs);
 
 		const v2CommitId = await withApi((api) => api.commitMap("v2"));
@@ -782,7 +784,7 @@ describe("VCS: checkout, edit, re-commit", () => {
 
 	it("add 3 new locs and commit v3 -> count=8", async () => {
 		const locs = [];
-		for (let i = 0; i < 3; i++) locs.push(makeLoc({ lat: 200 + i, lng: 200 + i }));
+		for (let i = 0; i < 3; i++) locs.push(createLocation({ lat: 200 + i, lng: 200 + i }));
 		await addLocs(locs);
 
 		await withApi((api) => api.commitMap("v3 from v1 fork"));
@@ -822,7 +824,7 @@ describe("Commit with pending overlay", () => {
 	it("commit bakes pending overlay data", async () => {
 		// Add 10 locs -- they sit in overlay, no save/close
 		const locs = [];
-		for (let i = 0; i < 10; i++) locs.push(makeLoc({ lat: i, lng: i, panoId: `ov_${i}` }));
+		for (let i = 0; i < 10; i++) locs.push(createLocation({ lat: i, lng: i, panoId: `ov_${i}` }));
 		const ids = await addLocs(locs);
 
 		// Commit immediately (overlay not flushed separately)
@@ -1166,8 +1168,8 @@ describe("Rapid open/close cycles", () => {
 	it("data survives rapid open/close without corruption", async () => {
 		mapId = await createAndOpenMap("Stress RapidOpenClose");
 		const ids = await addLocs([
-			makeLoc({ lat: 11.11, lng: 22.22, heading: 33.33, panoId: "survives", flags: 1 }),
-			makeLoc({ lat: 44.44, lng: 55.55, heading: 66.66 }),
+			createLocation({ lat: 11.11, lng: 22.22, heading: 33.33, panoId: "survives", flags: 1 }),
+			createLocation({ lat: 44.44, lng: 55.55, heading: 66.66 }),
 		]);
 		await flushAndWait();
 		await closeMap();
@@ -1211,7 +1213,7 @@ describe("Rapid batch updates", () => {
 	it("100 concurrent updateLocation calls all persist", async () => {
 		mapId = await createAndOpenMap("Stress RapidUpdate");
 		const locs: any[] = [];
-		for (let i = 0; i < 100; i++) locs.push(makeLoc({ lat: i, lng: i, heading: 0 }));
+		for (let i = 0; i < 100; i++) locs.push(createLocation({ lat: i, lng: i, heading: 0 }));
 		const ids = await addLocs(locs);
 
 		// Fire 100 updates simultaneously -- each sets heading to its index
@@ -1263,7 +1265,7 @@ describe("Selection during mutation", () => {
 
 		// Add 30 tagged locations
 		const locs: any[] = [];
-		for (let i = 0; i < 30; i++) locs.push(makeLoc({ tags: [tag.id] }));
+		for (let i = 0; i < 30; i++) locs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
 		await addLocs(locs);
 
 		// Select by tag -- should get 30
@@ -1275,7 +1277,7 @@ describe("Selection during mutation", () => {
 
 		// Add 10 more tagged locations while selection is active
 		const moreLocs: any[] = [];
-		for (let i = 0; i < 10; i++) moreLocs.push(makeLoc({ tags: [tag.id] }));
+		for (let i = 0; i < 10; i++) moreLocs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
 		await addLocs(moreLocs);
 
 		// Re-select -- should now get 40
@@ -1322,7 +1324,7 @@ describe("Implicit save on close", () => {
 		mapId = await createAndOpenMap("Stress ImplicitSave");
 
 		const ids = await addLocs([
-			makeLoc({ lat: 77.77, lng: 88.88, heading: 99.99, panoId: "nosave", flags: 1 }),
+			createLocation({ lat: 77.77, lng: 88.88, heading: 99.99, panoId: "nosave", flags: 1 }),
 		]);
 
 		// Update without flushing
@@ -1361,7 +1363,7 @@ describe("Delete all then undo", () => {
 		mapId = await createAndOpenMap("Stress DeleteAll");
 
 		const locs: any[] = [];
-		for (let i = 0; i < 25; i++) locs.push(makeLoc({ lat: i, lng: i, heading: i * 14.4 }));
+		for (let i = 0; i < 25; i++) locs.push(createLocation({ lat: i, lng: i, heading: i * 14.4 }));
 		const ids = await addLocs(locs);
 
 		// Delete all
@@ -1409,7 +1411,7 @@ describe("Duplicate then delete original", () => {
 		mapId = await createAndOpenMap("Stress DupDelete");
 
 		const ids = await addLocs([
-			makeLoc({ lat: 42.42, lng: 13.13, heading: 270, panoId: "original", flags: 1 }),
+			createLocation({ lat: 42.42, lng: 13.13, heading: 270, panoId: "original", flags: 1 }),
 		]);
 		const origId = ids[0];
 

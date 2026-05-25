@@ -8,7 +8,7 @@ import {
 	addLocs,
 	getLoc,
 	getLocCount,
-	makeLoc,
+	createLocation,
 	withApi,
 } from "./helpers";
 
@@ -27,7 +27,7 @@ describe("Undo/Redo", () => {
 	});
 
 	it("undo add locations", async () => {
-		const ids = await addLocs([makeLoc({ lat: 10, lng: 20, heading: 0 })]);
+		const ids = await addLocs([createLocation({ lat: 10, lng: 20, heading: 0 })]);
 		undo1Id = ids[0];
 
 		let count = await getLocCount();

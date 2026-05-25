@@ -5,7 +5,7 @@ import {
 	deleteMap,
 	flushAndWait,
 	addLocs,
-	makeLoc,
+	createLocation,
 	getAllLocs,
 	getLocCount,
 	withApi,
@@ -27,8 +27,8 @@ describe("Version control - commits", () => {
 
 	it("commitMap returns a commit ID", async () => {
 		locIds = await addLocs([
-			makeLoc({ lat: 10, lng: 20, heading: 0, panoId: null, flags: 0 }),
-			makeLoc({ lat: 30, lng: 40, heading: 90, panoId: "P1", flags: 1 }),
+			createLocation({ lat: 10, lng: 20, heading: 0, panoId: null, flags: 0 }),
+			createLocation({ lat: 30, lng: 40, heading: 90, panoId: "P1", flags: 1 }),
 		]);
 
 		const commitId = await withApi(async (api) => api.commitMap("initial commit"));
@@ -52,7 +52,7 @@ describe("Version control - commits", () => {
 	});
 
 	it("second commit records diff stats", async () => {
-		const newLocs = [makeLoc({ lat: 50, lng: 60, heading: 0, panoId: null, flags: 0 })];
+		const newLocs = [createLocation({ lat: 50, lng: 60, heading: 0, panoId: null, flags: 0 })];
 		await addLocs(newLocs);
 
 		await withApi(async (api, removeId) => api.removeLocations([removeId]), locIds[0]);
@@ -77,8 +77,8 @@ describe("Version control - checkout", () => {
 		mapId = await createAndOpenMap("E2E VCS Checkout");
 
 		locIds = await addLocs([
-			makeLoc({ lat: 10, lng: 20, heading: 0, panoId: null, flags: 0 }),
-			makeLoc({ lat: 30, lng: 40, heading: 0, panoId: null, flags: 0 }),
+			createLocation({ lat: 10, lng: 20, heading: 0, panoId: null, flags: 0 }),
+			createLocation({ lat: 30, lng: 40, heading: 0, panoId: null, flags: 0 }),
 		]);
 
 		firstCommitId = await withApi(async (api) => api.commitMap("v1: two locations"));
@@ -91,7 +91,7 @@ describe("Version control - checkout", () => {
 
 	it("checkout reverts to committed state", async () => {
 		// Make changes after commit
-		await addLocs([makeLoc({ lat: 50, lng: 60, heading: 0, panoId: null, flags: 0 })]);
+		await addLocs([createLocation({ lat: 50, lng: 60, heading: 0, panoId: null, flags: 0 })]);
 
 		await withApi(async (api, removeId) => api.removeLocations([removeId]), locIds[0]);
 

@@ -4,7 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
-	makeLoc,
+	createLocation,
 	getLocCount,
 	createTag,
 	withApi,
@@ -44,7 +44,7 @@ describe("UI: Tag manager", () => {
 		const locs = [];
 		for (let i = 0; i < 20; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					tags: i < 8 ? [uiTag1Id] : i < 14 ? [uiTag2Id] : [],
@@ -163,7 +163,7 @@ describe("UI: Selection manager", () => {
 		const locs = [];
 		for (let i = 0; i < 50; i++) {
 			locs.push(
-				makeLoc({
+				createLocation({
 					lat: i,
 					lng: i,
 					panoId: i < 20 ? `p${i}` : null,
@@ -297,7 +297,7 @@ describe("UI: Location editor", () => {
 		}, leTagId);
 
 		const ids = await addLocs([
-			makeLoc({ lat: 48.8566, lng: 2.3522, heading: 90, pitch: 5, zoom: 2 }),
+			createLocation({ lat: 48.8566, lng: 2.3522, heading: 90, pitch: 5, zoom: 2 }),
 		]);
 		le1Id = ids[0];
 	});

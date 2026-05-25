@@ -7,7 +7,7 @@ import {
 	openMap,
 	addLocs,
 	getLocCount,
-	makeLoc,
+	createLocation,
 	withApi,
 } from "./helpers";
 
@@ -308,8 +308,8 @@ describe("Active location and work area", () => {
 		await waitForReady();
 		mapId = await createAndOpenMap("E2E Active Loc");
 		const locs = [
-			makeLoc({ lat: 10, lng: 20, heading: 90, pitch: 5, zoom: 2, panoId: "P1", flags: 1 }),
-			makeLoc({ lat: 30, lng: 40, heading: 180, pitch: 0, zoom: 1 }),
+			createLocation({ lat: 10, lng: 20, heading: 90, pitch: 5, zoom: 2, panoId: "P1", flags: 1 }),
+			createLocation({ lat: 30, lng: 40, heading: 180, pitch: 0, zoom: 1 }),
 		];
 		locIds = await addLocs(locs);
 	});
@@ -412,7 +412,7 @@ describe("Extra field definitions", () => {
 	it("auto-registers field defs when adding locations with extras", async () => {
 		await withApi(async (api) => {
 			await api.addLocations([
-				makeLoc({ extra: { plumbus: 1, captured: "2024-03", note: "hello" } }),
+				api.createLocation({ lat: 0, lng: 0, extra: { plumbus: 1, captured: "2024-03", note: "hello" } }),
 			]);
 		});
 
@@ -425,7 +425,7 @@ describe("Extra field definitions", () => {
 	it("auto-registered field defs use known labels for enrichment keys", async () => {
 		await withApi(async (api) => {
 			await api.addLocations([
-				makeLoc({ extra: { countryCode: "US", imageDate: "2023-05" } }),
+				api.createLocation({ lat: 0, lng: 0, extra: { countryCode: "US", imageDate: "2023-05" } }),
 			]);
 		});
 
@@ -438,7 +438,7 @@ describe("Extra field definitions", () => {
 	it("auto-registered field defs persist across map close/reopen", async () => {
 		await withApi(async (api) => {
 			await api.addLocations([
-				makeLoc({ extra: { fleeb: 99 } }),
+				api.createLocation({ lat: 0, lng: 0, extra: { fleeb: 99 } }),
 			]);
 		});
 
@@ -462,7 +462,7 @@ describe("Extra field definitions", () => {
 		// Add a location with the same key — should not overwrite the custom def
 		await withApi(async (api) => {
 			await api.addLocations([
-				makeLoc({ extra: { score: 42 } }),
+				api.createLocation({ lat: 0, lng: 0, extra: { score: 42 } }),
 			]);
 		});
 
