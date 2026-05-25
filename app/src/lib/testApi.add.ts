@@ -42,7 +42,7 @@ import {
 	createTags,
 	updateTags,
 	deleteTags,
-	bulkAddTag,
+	addTagToLocations,
 	reorderTags,
 	renameMap,
 	renameFolder,
@@ -178,7 +178,7 @@ function buildTestApi() {
 		createTags: (names: string[]) => createTags(names),
 		updateTag: (id: number, patch: Partial<Tag>) => updateTags([{ id, patch }]),
 		deleteTag: (id: number) => deleteTags([id]),
-		bulkAddTag: (tagId: number) => bulkAddTag(tagId),
+		bulkAddTag: (tagId: number) => addTagToLocations(tagId, [...getSelectedLocationIds()]),
 		reorderTags: (ids: number[]) => reorderTags(ids),
 
 		// --- Map management ---

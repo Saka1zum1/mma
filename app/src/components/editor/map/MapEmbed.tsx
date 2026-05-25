@@ -778,7 +778,7 @@ export function MapEmbed() {
 		async (info: PickingInfo, event: OverlayEvent) => {
 			const domEvent = event?.srcEvent?.domEvent;
 
-			const resolvePickedLocationAsync = async (): Promise<Location | undefined> => {
+			const resolvePickedLocation = async (): Promise<Location | undefined> => {
 				if (info.object) return info.object as Location;
 				if (typeof info.index !== "number" || info.index < 0) return undefined;
 				const layerId = info.layer?.id;
@@ -803,7 +803,7 @@ export function MapEmbed() {
 
 			if (domEvent instanceof MouseEvent && domEvent.button === 2) {
 				if (isLocationLayer(info.layer?.id)) {
-					const loc = await resolvePickedLocationAsync();
+					const loc = await resolvePickedLocation();
 					if (loc) {
 						openContextMenuLocation(loc);
 					} else if (info.coordinate) {
@@ -825,7 +825,7 @@ export function MapEmbed() {
 			if (domEvent instanceof MouseEvent && domEvent.button !== 0) return;
 
 			if (isLocationLayer(info.layer?.id)) {
-				const loc = await resolvePickedLocationAsync();
+				const loc = await resolvePickedLocation();
 				if (loc) {
 					if (domEvent instanceof MouseEvent && domEvent.ctrlKey) {
 						toggleManualSelection(loc.id);

@@ -2166,13 +2166,6 @@ pub fn store_reset_undo(state: tauri::State<'_, StoreState>) -> Result<(), Strin
     Ok(())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn store_can_undo_redo(state: tauri::State<'_, StoreState>) -> Result<(bool, bool), String> {
-    let store = state.lock().map_err(|e| e.to_string())?;
-    Ok((!store.undo_stack.is_empty(), !store.redo_stack.is_empty()))
-}
-
 /// Core edit primitive: atomically remove then create locations, updating tags, overlay, and
 /// render cells. Undo/redo swap the arguments. O(R + C) where R = removed, C = created.
 fn apply_edit(store: &mut Store, remove: &[Location], create: &[Location]) -> ChangeSet {
@@ -2228,8 +2221,6 @@ pub fn store_tag_counts(state: tauri::State<'_, StoreState>) -> Result<HashMap<u
     log::debug!("[cmd] store_tag_counts total={}ms", _t.elapsed().as_millis());
     Ok(r)
 }
-
-
 
 pub(crate) fn read_tags_json(conn: &rusqlite::Connection, map_id: &str) -> HashMap<u32, Tag> {
     let json: String = conn.query_row(

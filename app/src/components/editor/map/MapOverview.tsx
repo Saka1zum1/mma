@@ -15,7 +15,7 @@ import {
 	selectNotPanoIds,
 	setPolygonName,
 	setSelectionColor,
-	bulkAddTag,
+	addTagToLocations,
 	createTags,
 	beginReview,
 	selectDuplicates,
@@ -629,7 +629,7 @@ export function MapOverview() {
 		const name = bulkTagInput.trim();
 		if (!name || selected.size === 0) return;
 		const [resolved] = await createTags([name]);
-		bulkAddTag(resolved.id);
+		addTagToLocations(resolved.id, [...selected]);
 		setBulkTagInput("");
 	};
 

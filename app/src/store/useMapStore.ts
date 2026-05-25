@@ -917,14 +917,19 @@ export function exitPluginMode() {
 
 // --- Tag CRUD ---
 
+/** Get-or-create tags by name. Returns the tag objects for use
+ *  in subsequent location updates. Idempotent — existing tags are returned
+ *  as-is, new names get auto-generated colors. */
 export async function createTags(names: string[]): Promise<Tag[]> {
 	if (names.length === 0) return [];
 	await mutate(cmd.storeCreateTags(names));
-	// TODO: this returns all the tags on the map, which is not ideal (we have to filter), but fine
 	const lower = new Set(names.map(n => n.toLowerCase()));
 	return Object.values(currentMap!.meta.tags).filter(t => lower.has(t.name.toLowerCase()));
 }
 
+/** Rename or recolor tags. If a rename collides with an existing tag name
+ *  (case-insensitive), the two tags are merged — all locations are remapped
+ *  to the survivor. */
 export async function updateTags(patches: { id: number; patch: Partial<Tag> }[]) {
 	if (!currentMapId || !currentMap || patches.length === 0) return;
 	for (const { id, patch } of patches) {
@@ -935,20 +940,22 @@ export async function updateTags(patches: { id: number; patch: Partial<Tag> }[])
 	}
 }
 
+/** Delete tags and strip them from all locations. Undoable (the location
+ *  changes are in the undo stack; visibility auto-restores on undo). */
 export async function deleteTags(tagIds: number[]) {
 	if (!currentMapId || !currentMap || tagIds.length === 0) return;
 	await mutate(cmd.storeDeleteTags(tagIds));
 }
 
+/** Persist a new tag display order. */
 export async function reorderTags(orderedIds: number[]) {
 	if (!currentMapId || !currentMap) return;
 	await mutate(cmd.storeReorderTags(orderedIds));
 }
 
-export async function bulkAddTag(tagId: number) {
-	if (!currentMap || selectedLocationIds.size === 0) return;
-	const ids = [...selectedLocationIds];
-	const locs = await cmd.storeGetLocationsByIds(ids);
+export async function addTagToLocations(tagId: number, locationIds: number[]) {
+	if (!currentMap || locationIds.length === 0) return;
+	const locs = await cmd.storeGetLocationsByIds(locationIds);
 	const updates: [number, LocationPatch][] = locs
 		.filter((l) => !l.tags.includes(tagId))
 		.map((l) => [l.id, { tags: [...l.tags, tagId] }]);
@@ -956,7 +963,7 @@ export async function bulkAddTag(tagId: number) {
 	await mutate(cmd.storeUpdateLocations(updates, true));
 }
 
-export async function bulkRemoveTag(tagId: number, locationIds: number[]) {
+export async function removeTagFromLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
 	const updates: [number, LocationPatch][] = locs
@@ -966,16 +973,10 @@ export async function bulkRemoveTag(tagId: number, locationIds: number[]) {
 	await mutate(cmd.storeUpdateLocations(updates, true));
 }
 
-export async function removeTagFromAll(tagId: number) {
+export async function removeTagFromAllLocations(tagId: number) {
 	if (!currentMap) return;
 	const allWithTag = await cmd.storeResolveSelection({ type: "Tag", tagId });
-	if (allWithTag.length > 0) await bulkRemoveTag(tagId, allWithTag);
-}
-
-export async function removeTagFromSelection(tagId: number) {
-	if (!currentMap || selectedLocationIds.size === 0) return;
-	const ids = [...selectedLocationIds];
-	await bulkRemoveTag(tagId, ids);
+	if (allWithTag.length > 0) await removeTagFromLocations(tagId, allWithTag);
 }
 
 // --- Review ---
