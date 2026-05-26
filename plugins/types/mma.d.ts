@@ -1319,5 +1319,5 @@ export {
 export {};
 
 declare global {
-	const MMA: typeof mmaApi;
+	const MMA: typeof mma;
 }
