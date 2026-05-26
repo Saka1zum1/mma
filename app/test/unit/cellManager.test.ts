@@ -699,4 +699,141 @@ describe("applySelectionBitmasks", () => {
 		expect(selectedIds.has(10)).toBe(false);
 		expect(selectedIds.has(40)).toBe(false);
 	});
+
+	it("partial bitmask: sending one cell preserves other cells' overlay", () => {
+		mgr.applyDelta({
+			added: [
+				entry("s", 10, 1, 1),
+				entry("s", 20, 2, 2),
+				entry("t", 30, 3, 3),
+				entry("t", 40, 4, 4),
+			],
+			updated: [],
+			removed: [],
+			colorPatches: [],
+		});
+
+		// Full bitmask: select id=20 in "s" and id=30 in "t"
+		mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[
+				{ cellChar: "s", locCount: 2, masks: [new Uint8Array([0b10])] },
+				{ cellChar: "t", locCount: 2, masks: [new Uint8Array([0b01])] },
+			],
+		);
+		expect(mgr.selOverlayCount).toBe(2);
+
+		// Partial bitmask: only update cell "s", now select id=10 instead of id=20
+		const ids = mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 2, masks: [new Uint8Array([0b01])] }],
+		);
+
+		// Cell "s" updated: id=10 selected. Cell "t" untouched: id=30 still selected.
+		expect(ids.has(10)).toBe(true);
+		expect(ids.has(20)).toBe(false);
+		expect(ids.has(30)).toBe(true);
+		expect(mgr.selOverlayCount).toBe(2);
+	});
+
+	it("partial bitmask: deselecting all in one cell keeps other cells' overlay", () => {
+		mgr.applyDelta({
+			added: [entry("s", 10, 1, 1), entry("t", 20, 2, 2)],
+			updated: [],
+			removed: [],
+			colorPatches: [],
+		});
+
+		// Select both
+		mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[
+				{ cellChar: "s", locCount: 1, masks: [new Uint8Array([0b1])] },
+				{ cellChar: "t", locCount: 1, masks: [new Uint8Array([0b1])] },
+			],
+		);
+		expect(mgr.selOverlayCount).toBe(2);
+
+		// Deselect cell "s" only
+		const ids = mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 1, masks: [new Uint8Array([0b0])] }],
+		);
+
+		expect(ids.has(10)).toBe(false);
+		expect(ids.has(20)).toBe(true);
+		expect(mgr.selOverlayCount).toBe(1);
+	});
+
+	it("deleted location's overlay entry is dropped on next bitmask", () => {
+		mgr.applyDelta({
+			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
+			updated: [],
+			removed: [],
+			colorPatches: [],
+		});
+
+		// Select both
+		mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 2, masks: [new Uint8Array([0b11])] }],
+		);
+		expect(mgr.selOverlayCount).toBe(2);
+
+		// Delete id=10 (swap-remove at index 0, id=20 moves to index 0)
+		mgr.applyDelta({
+			added: [],
+			updated: [],
+			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			colorPatches: [],
+		});
+
+		// Partial bitmask for cell "s" — only 1 entry now (id=20), selected
+		const ids = mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 1, masks: [new Uint8Array([0b1])] }],
+		);
+
+		expect(ids.has(20)).toBe(true);
+		expect(ids.has(10)).toBe(false);
+		expect(mgr.selOverlayCount).toBe(1);
+	});
+
+	it("_removedIds does not leak across mutations", () => {
+		mgr.applyDelta({
+			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			updated: [],
+			removed: [],
+			colorPatches: [],
+		});
+
+		// Select all three
+		mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 3, masks: [new Uint8Array([0b111])] }],
+		);
+
+		// Mutation 1: delete id=10
+		mgr.applyDelta({
+			added: [],
+			updated: [],
+			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			colorPatches: [],
+		});
+		mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 2, masks: [new Uint8Array([0b11])] }],
+		);
+
+		// Mutation 2: no removals, just a bitmask refresh.
+		// id=30 should NOT be dropped by stale _removedIds from mutation 1.
+		mgr.applyDelta({ added: [], updated: [], removed: [], colorPatches: [] });
+		const ids = mgr.applySelectionBitmasks(
+			[[255, 0, 0]],
+			[{ cellChar: "s", locCount: 2, masks: [new Uint8Array([0b11])] }],
+		);
+
+		expect(ids.size).toBe(2);
+		expect(ids.has(10)).toBe(false);
+	});
 });

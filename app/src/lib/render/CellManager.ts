@@ -195,7 +195,6 @@ export class CellManager {
 
 	applyDelta(delta: RenderDelta): Set<string> {
 		const affected = new Set<string>();
-		this._removedIds.clear();
 
 		for (const rem of delta.removed) {
 			const cb = this.cells.get(rem.cell);

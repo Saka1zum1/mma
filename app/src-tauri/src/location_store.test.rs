@@ -1610,3 +1610,125 @@ fn manager_remove_preserves_other() {
     assert!(mgr.store_for_map("map-a").is_err());
     assert_eq!(mgr.store_for_map("map-b").unwrap().alive_count, 99);
 }
+
+// -----------------------------------------------------------------------
+// Selection bitmask: partial cell invariants
+// -----------------------------------------------------------------------
+
+fn add_tag_selection(store: &mut Store, tag_id: u32, color: [u8; 3]) {
+    store.selections.all.push(selections::Selection {
+        key: format!("tag:{}", tag_id),
+        color,
+        props: selections::SelectionProps::Tag { tag_id },
+        count: None,
+    });
+    store.selections.loc_sets.push(HashSet::new());
+}
+
+/// Parse the binary bitmask and return the cell chars it contains.
+fn bitmask_cell_chars(buf: &[u8]) -> Vec<char> {
+    if buf.is_empty() { return vec![]; }
+    let num_sels = buf[0] as usize;
+    let mut off = 1 + num_sels * 3;
+    let num_cells = buf[off] as usize;
+    off += 1;
+    let mut chars = Vec::new();
+    for _ in 0..num_cells {
+        chars.push(buf[off] as char);
+        off += 1;
+        let loc_count = u32::from_le_bytes(buf[off..off+4].try_into().unwrap()) as usize;
+        off += 4;
+        let mask_bytes = loc_count.div_ceil(8);
+        off += mask_bytes * num_sels;
+    }
+    chars
+}
+
+#[test]
+fn partial_bitmask_only_contains_affected_cells() {
+    // Two locations in different geohash cells
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let l2 = loc_with_tags(2, -30.0, -40.0, vec![1]);
+    let mut store = setup_store_with(&[l1.clone(), l2.clone()]);
+    store.tags.all.insert(1, Tag { id: 1, name: "A".into(), color: "#ff0000".into(), visible: true, order: None, count: 2 });
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+
+    // Verify they're in different cells
+    let c1 = render_cell_idx(10.0, 20.0);
+    let c2 = render_cell_idx(-30.0, -40.0);
+    assert_ne!(c1, c2, "test requires locations in different cells");
+
+    // Update only l1's tags — only l1's cell should be in the bitmask
+    let result = store.finish_mutation(ChangeSet {
+        updated: vec![(l1.clone(), loc_with_tags(1, 10.0, 20.0, vec![1]))],
+        ..Default::default()
+    });
+
+    let sync = result.selection_sync.unwrap();
+    assert!(sync.patch_file.is_some());
+    let buf = std::fs::read(sync.patch_file.unwrap()).unwrap();
+    let cells = bitmask_cell_chars(&buf);
+    assert_eq!(cells.len(), 1, "only the affected cell should be in the bitmask");
+}
+
+#[test]
+fn membership_delta_reports_gained_on_tag_add() {
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![]);
+    let mut store = setup_store_with(&[l1.clone()]);
+    store.tags.all.insert(1, Tag { id: 1, name: "A".into(), color: "#ff0000".into(), visible: true, order: None, count: 0 });
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+
+    // Add tag 1 to location 1
+    let with_tag = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let result = store.finish_mutation(ChangeSet {
+        updated: vec![(l1, with_tag)],
+        ..Default::default()
+    });
+
+    // Should have a colorPatch for the gained selection
+    assert!(!result.delta.color_patches.is_empty(), "should emit colorPatch for gained selection");
+    let cp = &result.delta.color_patches[0];
+    assert_eq!(cp.r, 255);
+    assert_eq!(cp.g, 0);
+    assert_eq!(cp.b, 0);
+}
+
+#[test]
+fn membership_delta_no_colorpatch_when_membership_unchanged() {
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let mut store = setup_store_with(&[l1.clone()]);
+    store.tags.all.insert(1, Tag { id: 1, name: "A".into(), color: "#ff0000".into(), visible: true, order: None, count: 1 });
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    // Resolve initial membership
+    store.resolve_selection_membership();
+
+    // Update heading only — selection membership doesn't change
+    let updated = Location { heading: 90.0, ..l1.clone() };
+    let result = store.finish_mutation(ChangeSet {
+        updated: vec![(l1, updated)],
+        ..Default::default()
+    });
+
+    // No colorPatch — membership unchanged
+    assert!(result.delta.color_patches.is_empty(), "no colorPatch when membership unchanged");
+}
+
+#[test]
+fn removal_bitmask_includes_affected_cell() {
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let l2 = loc_with_tags(2, 10.001, 20.001, vec![1]);
+    let mut store = setup_store_with(&[l1.clone(), l2.clone()]);
+    store.tags.all.insert(1, Tag { id: 1, name: "A".into(), color: "#ff0000".into(), visible: true, order: None, count: 2 });
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    store.resolve_selection_membership();
+
+    // Remove l1
+    let result = store.finish_mutation(ChangeSet {
+        removed: vec![1],
+        ..Default::default()
+    });
+
+    // The bitmask should include the cell that l1 was in
+    let sync = result.selection_sync.unwrap();
+    assert!(sync.patch_file.is_some(), "should send bitmask for the affected cell");
+}
