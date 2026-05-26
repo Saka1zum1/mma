@@ -355,6 +355,7 @@ pub fn run() {
                     location_store::store_location_count,
                     location_store::store_has_location,
                     location_store::store_bounds,
+                    location_store::store_selection_bounds,
                     location_store::store_find_nearby,
                     location_store::store_extra_field_values,
                     // --- Tag CRUD ---

@@ -76,6 +76,7 @@ export const commands = {
 	storeLocationCount: () => typedError<number, string>(__TAURI_INVOKE("store_location_count")),
 	storeHasLocation: (id: number) => typedError<boolean, string>(__TAURI_INVOKE("store_has_location", { id })),
 	storeBounds: () => typedError<[number, number, number, number] | null, string>(__TAURI_INVOKE("store_bounds")).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:v.data.map(i=>i) } : v) as typeof v)),
+	storeSelectionBounds: () => typedError<[number, number, number, number] | null, string>(__TAURI_INVOKE("store_selection_bounds")).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:v.data.map(i=>i) } : v) as typeof v)),
 	/**
 	 *  Find all locations within `radius_m` metres of (`lat`, `lng`).
 	 * 

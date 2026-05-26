@@ -1017,6 +1017,12 @@ declare const mma: {
 			number,
 			number
 		] | null>;
+		storeSelectionBounds: () => Promise<[
+			number,
+			number,
+			number,
+			number
+		] | null>;
 		storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location_Serialize[]>;
 		storeExtraFieldValues: (field: string) => Promise<string[]>;
 		storeCreateTags: (names: string[]) => Promise<MutationResult_Serialize>;

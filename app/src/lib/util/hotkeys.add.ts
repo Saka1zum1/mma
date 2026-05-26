@@ -41,6 +41,7 @@ export type HotkeyAction =
 	| "mapZoomOut"
 	| "mapZoomBounds"
 	| "mapZoomReset"
+	| "mapZoomSelection"
 	| "panoLookLeft"
 	| "panoLookRight"
 	| "panoLookUp"
@@ -256,6 +257,12 @@ const RAW_HOTKEY_DEFS: HotkeyDef[] = [
 		label: "Hold + click to select country",
 		group: "Global",
 		defaultBinding: "q",
+	},
+	{
+		action: "mapZoomSelection",
+		label: "Zoom to selection bounds",
+		group: "Map Navigation",
+		defaultBinding: "Shift+e",
 	},
 ];
 

@@ -1436,6 +1436,18 @@ export function MapEmbed() {
 		});
 	});
 
+	useHotkey(useBinding("mapZoomSelection"), () => {
+		cmd.storeSelectionBounds().then((bounds) => {
+			const gm = gMapRef.current;
+			if (!gm || !bounds || !google?.maps) return;
+			const [west, south, east, north] = bounds as [number, number, number, number];
+			gm.fitBounds({ west, south, east, north });
+			google.maps.event.addListenerOnce(gm, "bounds_changed", () => {
+				gm.moveCamera({ center: gm.getCenter()!, zoom: gm.getZoom()! });
+			});
+		});
+	});
+
 	useEffect(() => {
 		const nav = mapNavRef.current;
 		const actions = ["panLeft", "panRight", "panUp", "panDown", "mapZoomIn", "mapZoomOut"] as const;

@@ -2385,6 +2385,48 @@ pub fn store_bounds(state: tauri::State<'_, StoreState>) -> Result<Option<[f64; 
 
 #[tauri::command]
 #[specta::specta]
+pub fn store_selection_bounds(state: tauri::State<'_, StoreState>) -> Result<Option<[f64; 4]>, String> {
+    let store = state.lock().map_err(|e| e.to_string())?;
+    if store.selected_ids.is_empty() { return Ok(None); }
+
+    let (mut w, mut s, mut e, mut n) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    let mut count = 0usize;
+
+    if let Some(ref b) = store.batch {
+        let lats = col_lat(b);
+        let lngs = col_lng(b);
+        let ids = col_id(b);
+        for i in 0..b.num_rows() {
+            let id = ids.value(i);
+            if !store.selected_ids.contains(&id) { continue; }
+            if store.overlay_dead.contains(&id) { continue; }
+            let (lat, lng) = if let Some(p) = store.overlay_patches.get(&id) {
+                (p.lat, p.lng)
+            } else {
+                (lats.value(i), lngs.value(i))
+            };
+            if lng < w { w = lng; }
+            if lat < s { s = lat; }
+            if lng > e { e = lng; }
+            if lat > n { n = lat; }
+            count += 1;
+        }
+    }
+    for loc in &store.overlay_adds {
+        if !store.selected_ids.contains(&loc.id) { continue; }
+        if loc.lng < w { w = loc.lng; }
+        if loc.lat < s { s = loc.lat; }
+        if loc.lng > e { e = loc.lng; }
+        if loc.lat > n { n = loc.lat; }
+        count += 1;
+    }
+
+    log::debug!("[cmd] store_selection_bounds total count={}", count);
+    if count == 0 { Ok(None) } else { Ok(Some([w, s, e, n])) }
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn store_location_count(state: tauri::State<'_, StoreState>) -> Result<u32, String> {
     let store = state.lock().map_err(|e| e.to_string())?;
     Ok(store.alive_count as u32)
