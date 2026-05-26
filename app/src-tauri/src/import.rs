@@ -8,8 +8,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use tauri::Emitter;
-use crate::types::{Tag, Location};
+use crate::arrow_bridge;
 use crate::fast_io;
+use crate::location_store;
+use crate::types::{Tag, Location};
 
 static CACHED_PARSE: Mutex<Option<CachedImport>> = Mutex::new(None);
 
@@ -622,7 +624,7 @@ fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap
     }
 
     // Write Arrow IPC file
-    let batch = crate::arrow_bridge::locations_to_batch(&map.locations);
+    let batch = arrow_bridge::locations_to_batch(&map.locations);
     let arrow_path = fast_io::arrow_path(app, &map_id)?;
     fast_io::write_arrow_ipc(&arrow_path, &batch)?;
 
@@ -814,13 +816,13 @@ pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String>
 #[serde(rename_all = "camelCase")]
 pub struct EditorImportResult {
     #[serde(flatten)]
-    pub mutation: crate::location_store::MutationResult,
+    pub mutation: location_store::MutationResult,
     pub imported_count: u32,
     pub warnings: Vec<String>,
 }
 
 fn reconcile_tags(
-    store: &mut crate::location_store::Store,
+    store: &mut location_store::Store,
     parsed: &mut ParsedMap,
     existing_tags: &HashMap<u32, Tag>,
 ) -> HashMap<u32, u32> {
@@ -848,9 +850,9 @@ fn reconcile_tags(
 
 fn add_parsed_to_store(
     app: &tauri::AppHandle,
-    store: &mut crate::location_store::Store,
+    store: &mut location_store::Store,
     parsed: &mut ParsedMap,
-) -> Result<crate::location_store::MutationResult, String> {
+) -> Result<location_store::MutationResult, String> {
     let existing_tags = store.tags.clone();
 
     let tag_id_remap = reconcile_tags(store, parsed, &existing_tags);
@@ -869,23 +871,23 @@ fn add_parsed_to_store(
 
     if parsed.locations.len() <= 100_000 {
         for loc in &parsed.locations {
-            let ci = crate::location_store::render_cell_idx(loc.lat, loc.lng);
+            let ci = location_store::render_cell_idx(loc.lat, loc.lng);
             store.cell_add_render(ci, loc.id);
             store.overlay_add(loc.clone());
             store.add_tag_counts(&[loc.clone()]);
         }
-        store.push_undo(crate::location_store::EditEntry {
+        store.push_undo(location_store::EditEntry {
             created: parsed.locations.clone(),
             removed: Vec::new(),
         });
     } else {
         store.bake_overlay();
-        let import_batch = crate::arrow_bridge::locations_to_batch(&parsed.locations);
+        let import_batch = arrow_bridge::locations_to_batch(&parsed.locations);
         let new_batch = if let Some(existing) = store.batch.take() {
             if existing.num_rows() == 0 {
                 import_batch
             } else {
-                let s = std::sync::Arc::new(crate::arrow_bridge::location_schema());
+                let s = std::sync::Arc::new(arrow_bridge::location_schema());
                 arrow::compute::concat_batches(&s, &[existing, import_batch])
                     .map_err(|e| e.to_string())?
             }
@@ -899,7 +901,7 @@ fn add_parsed_to_store(
 
         for loc in &parsed.locations {
             store.add_tag_counts(&[loc.clone()]);
-            let ci = crate::location_store::render_cell_idx(loc.lat, loc.lng);
+            let ci = location_store::render_cell_idx(loc.lat, loc.lng);
             store.cell_add_render(ci, loc.id);
         }
         store.alive_count += parsed.locations.len();
@@ -920,14 +922,14 @@ fn add_parsed_to_store(
     store.redo_stack.clear();
 
     let mut result = store.finish_mutation(
-        crate::location_store::ChangeSet { full_reset: true, ..Default::default() }
+        location_store::ChangeSet { full_reset: true, ..Default::default() }
     );
     result.tags = Some(store.tags.clone());
 
     let extras: Vec<&serde_json::Map<String, serde_json::Value>> = parsed.locations.iter()
         .filter_map(|l| l.extra.as_ref())
         .collect();
-    crate::location_store::auto_register_extras(app, store, &extras, &mut result);
+    location_store::auto_register_extras(app, store, &extras, &mut result);
     Ok(result)
 }
 
@@ -935,7 +937,7 @@ fn add_parsed_to_store(
 #[specta::specta]
 pub fn store_import_file(
     app: tauri::AppHandle,
-    state: tauri::State<'_, crate::location_store::StoreState>,
+    state: tauri::State<'_, location_store::StoreState>,
     dropped_fields: Vec<String>,
 ) -> Result<EditorImportResult, String> {
     let t0 = std::time::Instant::now();
@@ -977,7 +979,7 @@ pub fn store_import_file(
 #[specta::specta]
 pub fn store_import_paste(
     app: tauri::AppHandle,
-    state: tauri::State<'_, crate::location_store::StoreState>,
+    state: tauri::State<'_, location_store::StoreState>,
     text: String,
 ) -> Result<(EditorImportResult, Option<u32>), String> {
     let t0 = std::time::Instant::now();

@@ -12,7 +12,9 @@ use tauri::Manager;
 
 use crate::arrow_bridge;
 use crate::fast_io;
+use crate::map_meta;
 use crate::types::{Location, Tag};
+use crate::util;
 use crate::selections::{self, SelectionProps, Selection, SelectionSummary};
 
 const GEOHASH_PRECISION: usize = 2;
@@ -523,7 +525,7 @@ impl Store {
                     self.tags.insert(tag_id, Tag {
                         id: tag_id,
                         name: format!("Tag {}", tag_id),
-                        color: crate::util::color_for_name(&format!("Tag {}", tag_id)),
+                        color: util::color_for_name(&format!("Tag {}", tag_id)),
                         visible: true,
                         order: None,
                         count: delta as usize,
@@ -911,7 +913,7 @@ pub struct MutationResult {
     pub status: StoreStatus,
     pub delta: RenderDelta,
     pub selection_sync: Option<SelectionSync>,
-    pub new_field_defs: Option<HashMap<String, crate::map_meta::ExtraFieldDef>>,
+    pub new_field_defs: Option<HashMap<String, map_meta::ExtraFieldDef>>,
     pub tags: Option<HashMap<u32, Tag>>,
 }
 
@@ -1124,7 +1126,7 @@ pub async fn store_open_map(
                         tags.insert(tid, Tag {
                             id: tid,
                             name: format!("Tag {}", tid),
-                            color: crate::util::color_for_name(&format!("Tag {}", tid)),
+                            color: util::color_for_name(&format!("Tag {}", tid)),
                             visible: true,
                             order: None,
                             count: 1,
@@ -1142,7 +1144,7 @@ pub async fn store_open_map(
             rusqlite::params![map_id],
             |row| row.get(0),
         ).unwrap_or_default();
-        let extra: crate::map_meta::MapExtra = serde_json::from_str(&extra_str).unwrap_or_default();
+        let extra: map_meta::MapExtra = serde_json::from_str(&extra_str).unwrap_or_default();
         store.known_field_keys = extra.fields.as_ref()
             .map(|f| f.keys().cloned().collect())
             .unwrap_or_default();
@@ -1218,10 +1220,10 @@ pub(crate) fn auto_register_extras(
     result: &mut MutationResult,
 ) {
     if extras.is_empty() { return; }
-    if let Some(new_defs) = crate::map_meta::auto_register_field_defs(&store.known_field_keys, extras) {
+    if let Some(new_defs) = map_meta::auto_register_field_defs(&store.known_field_keys, extras) {
         if let Some(map_id) = &store.map_id {
             if let Ok(conn) = fast_io::open_db(app) {
-                let _ = crate::map_meta::persist_field_defs(&conn, map_id, &new_defs);
+                let _ = map_meta::persist_field_defs(&conn, map_id, &new_defs);
             }
         }
         for key in new_defs.keys() {
@@ -2258,7 +2260,7 @@ pub fn store_create_tags(
             }
         } else {
             let id = store.alloc_tag_id();
-            let color = crate::util::color_for_name(name);
+            let color = util::color_for_name(name);
             let order = Some(store.tags.len() as u32);
             let tag = Tag { id, name: name.clone(), color, visible: true, order, count: 0 };
             store.tags.insert(id, tag.clone());
@@ -2774,7 +2776,7 @@ fn color_for_key(key: &str) -> [u8; 3] {
     let mut hash: u32 = 0;
     for b in key.bytes() { hash = hash.wrapping_mul(31).wrapping_add(b as u32); }
     let hue = (hash % 360) as f64;
-    let (r, g, b) = crate::util::hsl_to_rgb(hue, 0.65, 0.5);
+    let (r, g, b) = util::hsl_to_rgb(hue, 0.65, 0.5);
     [r, g, b]
 }
 
