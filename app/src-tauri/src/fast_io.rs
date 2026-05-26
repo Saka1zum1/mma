@@ -1,17 +1,28 @@
+//! Persistence layer: SQLite metadata database and Arrow IPC file I/O.
+//!
+//! All disk writes use [`atomic_write`] (temp-file-then-rename) to prevent
+//! corruption on crash. Arrow IPC writes go through [`BufWriter`](std::io::BufWriter)
+//! because unbuffered `File` writes are ~15x slower.
+
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use tauri::ipc::InvokeBody;
 use tauri::Manager;
 use crate::arrow_bridge;
 
+/// True when running under e2e tests or with `MMA_TEST_DB` set.
+/// Controls which database file and Arrow directory are used, keeping
+/// test data isolated from production.
 pub fn is_test_mode() -> bool {
     cfg!(feature = "e2e") || std::env::var("MMA_TEST_DB").is_ok()
 }
 
+/// Returns `"mma_test.db"` in test mode, `"mma.db"` otherwise.
 pub fn db_filename() -> &'static str {
     if is_test_mode() { "mma_test.db" } else { "mma.db" }
 }
 
+/// Resolve the full path to the SQLite database inside the app data directory.
 pub(crate) fn db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -19,6 +30,7 @@ pub(crate) fn db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Stri
         .map_err(|e| e.to_string())
 }
 
+/// Open (or create) the SQLite database, ensuring the parent directory exists.
 pub(crate) fn open_db(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = db_path(app)?;
     if let Some(parent) = path.parent() {
@@ -27,6 +39,11 @@ pub(crate) fn open_db(app: &tauri::AppHandle) -> Result<Connection, String> {
     Connection::open(path).map_err(|e| e.to_string())
 }
 
+/// Apply all pending schema migrations from [`MIGRATIONS`] in order.
+///
+/// On first run after migrating from the old `tauri-plugin-sql` system, seeds
+/// already-applied versions from `_sqlx_migrations` so they aren't replayed.
+/// Sets WAL mode and foreign keys as part of the connection setup.
 pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
     let conn = open_db(app)?;
     conn.execute_batch("
@@ -238,6 +255,8 @@ const MIGRATIONS: &[(u32, &str)] = &[
 // Arrow IPC
 // ---------------------------------------------------------------------------
 
+/// Root directory for all Arrow IPC files (`arrow/` or `arrow_test/`).
+/// Created on first access.
 pub(crate) fn arrow_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let subdir = if is_test_mode() { "arrow_test" } else { "arrow" };
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(subdir);
@@ -247,14 +266,19 @@ pub(crate) fn arrow_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
     Ok(dir)
 }
 
+/// Path to a map's base Arrow IPC snapshot: `<arrow_dir>/<map_id>.arrow`.
 pub(crate) fn arrow_path(app: &tauri::AppHandle, map_id: &str) -> Result<std::path::PathBuf, String> {
     Ok(arrow_dir(app)?.join(format!("{map_id}.arrow")))
 }
 
+/// Path to a map's uncommitted delta file: `<arrow_dir>/<map_id>_delta.arrow`.
+/// Contains overlay mutations not yet baked into the base snapshot.
 pub(crate) fn arrow_delta_path(app: &tauri::AppHandle, map_id: &str) -> Result<std::path::PathBuf, String> {
     Ok(arrow_dir(app)?.join(format!("{map_id}_delta.arrow")))
 }
 
+/// Directory for content-addressed Arrow blobs used by the VCS commit tree.
+/// Created on first access.
 pub(crate) fn arrow_blobs_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = arrow_dir(app)?.join("blobs");
     if !dir.exists() {
@@ -263,10 +287,16 @@ pub(crate) fn arrow_blobs_dir(app: &tauri::AppHandle) -> Result<std::path::PathB
     Ok(dir)
 }
 
+/// Resolve path to a specific content-addressed blob: `<blobs_dir>/<hash>.arrow`.
 pub(crate) fn blob_path(app: &tauri::AppHandle, hash: &str) -> Result<std::path::PathBuf, String> {
     Ok(arrow_blobs_dir(app)?.join(format!("{hash}.arrow")))
 }
 
+/// Write a RecordBatch as a content-addressed blob. Returns `(sha256_hex, row_count)`.
+///
+/// The batch is serialized to an in-memory buffer, hashed, then atomically
+/// written to `<blobs_dir>/<hash>.arrow`. Skips the write if the blob already
+/// exists (deduplication by content hash).
 pub(crate) fn write_blob(app: &tauri::AppHandle, batch: &arrow::array::RecordBatch) -> Result<(String, usize), String> {
     let mut buf = Vec::new();
     {
@@ -288,11 +318,17 @@ pub(crate) fn write_blob(app: &tauri::AppHandle, batch: &arrow::array::RecordBat
     Ok((hash, rows))
 }
 
+/// Read a content-addressed blob back into a RecordBatch.
 pub(crate) fn read_blob(app: &tauri::AppHandle, hash: &str) -> Result<arrow::array::RecordBatch, String> {
     let path = blob_path(app, hash)?;
     read_arrow_ipc(&path)
 }
 
+/// Atomically write a RecordBatch to an Arrow IPC file.
+///
+/// Uses a 1 MB `BufWriter` (unbuffered writes are ~15x slower on Windows).
+/// The write targets a `.tmp` sibling then renames, so readers never see
+/// a partial file.
 pub(crate) fn write_arrow_ipc(path: &std::path::Path, batch: &arrow::array::RecordBatch) -> Result<(), String> {
     atomic_write(path, |file| {
         let buf = std::io::BufWriter::with_capacity(1 << 20, file);
@@ -304,6 +340,8 @@ pub(crate) fn write_arrow_ipc(path: &std::path::Path, batch: &arrow::array::Reco
     })
 }
 
+/// Write to `path` via a temporary `.tmp` sibling, then atomically rename.
+/// Guarantees readers never observe a partially-written file.
 pub(crate) fn atomic_write(path: &std::path::Path, write_fn: impl FnOnce(std::fs::File) -> Result<(), String>) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
     let file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
@@ -312,6 +350,10 @@ pub(crate) fn atomic_write(path: &std::path::Path, write_fn: impl FnOnce(std::fs
     Ok(())
 }
 
+/// Read an Arrow IPC file into a single RecordBatch.
+///
+/// If the file contains multiple batches they are concatenated. An empty or
+/// missing-batch file returns an empty batch with the location schema.
 pub(crate) fn read_arrow_ipc(path: &std::path::Path) -> Result<arrow::array::RecordBatch, String> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let reader = arrow::ipc::reader::FileReader::try_new(file, None)
@@ -338,6 +380,11 @@ pub(crate) struct MmapHandle {
 }
 
 /// Zero-copy Arrow IPC read via memory-mapped file.
+///
+/// Returns the batch alongside an [`MmapHandle`] that must be kept alive for
+/// as long as any array data from the batch is referenced. Parses the IPC
+/// footer and record-batch blocks directly from the mmap buffer, avoiding
+/// any heap allocation for the raw column data.
 pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::array::RecordBatch, MmapHandle), String> {
     use arrow::buffer::Buffer;
     use arrow::ipc::reader::{FileDecoder, read_footer_length};
@@ -447,6 +494,8 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
 // Save
 // ---------------------------------------------------------------------------
 
+/// SHA-256 hash of `bytes` as a lowercase hex string. Used for
+/// content-addressing Arrow blobs and computing commit tree hashes.
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut s = String::with_capacity(digest.len() * 2);
@@ -489,6 +538,8 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Extract the raw binary body from a Tauri IPC request, or error if the
+/// body is JSON rather than binary.
 fn raw_body<'a>(req: &'a tauri::ipc::Request<'a>) -> Result<&'a [u8], String> {
     match req.body() {
         InvokeBody::Raw(b) => Ok(b),
@@ -497,6 +548,7 @@ fn raw_body<'a>(req: &'a tauri::ipc::Request<'a>) -> Result<&'a [u8], String> {
 }
 
 
+/// Append a msgpack fixstr (up to 31 bytes) to `out`. Panics if `s` exceeds 31 bytes.
 fn write_fixstr(out: &mut Vec<u8>, s: &str) {
     assert!(s.len() <= 31);
     out.push(0xa0 | s.len() as u8);

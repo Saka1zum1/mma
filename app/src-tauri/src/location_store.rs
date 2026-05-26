@@ -1,3 +1,10 @@
+//! Core data engine: immutable Arrow RecordBatch base + in-memory overlay for mutations.
+//!
+//! All location data lives here. The overlay (adds, patches, dead set) accumulates mutations
+//! between saves; `bake_overlay` merges them back into the batch. IDs are kept strictly sorted
+//! in the batch to enable O(log n) lookups via `batch_row_for_id`. Render cells (32 geohash-1
+//! buckets) and selection bitmasks are derived from the same `ChangeSet` via `finish_mutation`.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -17,9 +24,12 @@ use crate::types::{Location, Tag};
 use crate::util;
 use crate::selections::{self, SelectionProps, Selection};
 
+/// Full geohash precision used for dirty-tracking and VCS snapshots.
 const GEOHASH_PRECISION: usize = 2;
+/// Truncated precision for render cells (32 buckets = 5 bits = 1 base-32 char).
 const RENDER_PRECISION: usize = 1;
 const MAX_UNDO_ENTRIES: usize = 1000;
+/// Standard base-32 alphabet for geohash encoding (Gustavo Niemeyer variant).
 const BASE32: &[u8] = b"0123456789bcdefghjkmnpqrstuvwxyz";
 
 /// Encode (lat, lng) into a base-32 geohash string. O(GEOHASH_PRECISION) — constant.
@@ -45,11 +55,13 @@ pub(crate) fn encode_geohash(lat: f64, lng: f64) -> String {
     hash
 }
 
+/// Truncate a full geohash to its render cell key (first character).
 fn render_cell_key(gh: &str) -> &str {
     &gh[..RENDER_PRECISION]
 }
 
-
+/// Compute the render cell index (0-31) directly from coordinates without allocating
+/// a geohash string. Equivalent to `BASE32.position(encode_geohash(lat, lng)[0])`.
 pub(crate) fn render_cell_idx(lat: f64, lng: f64) -> u8 {
     let (mut min_lat, mut max_lat) = (-90.0, 90.0);
     let (mut min_lng, mut max_lng) = (-180.0, 180.0);
@@ -68,10 +80,12 @@ pub(crate) fn render_cell_idx(lat: f64, lng: f64) -> u8 {
     ch
 }
 
+/// Convert a cell index (0-31) back to its single-character base-32 key.
 fn cell_key_from_idx(idx: u8) -> String {
     String::from(BASE32[idx as usize] as char)
 }
 
+/// Reverse lookup: parse a single-character cell key to its 0-31 index.
 fn cell_idx_from_key(key: &str) -> Option<u8> {
     let b = *key.as_bytes().first()?;
     BASE32.iter().position(|&c| c == b).map(|i| i as u8)
@@ -115,11 +129,19 @@ fn empty_batch() -> RecordBatch {
 // Store
 // ---------------------------------------------------------------------------
 
+/// Per-cell render index: maps location IDs to their position within a cell's typed arrays.
+/// `id_order` is the authoritative ordering; `id_to_index` provides O(1) reverse lookup.
+/// Swap-remove semantics keep removals O(1) at the cost of reordering the last element.
 pub(crate) struct CellRender {
     pub id_order: Vec<u32>,
     pub id_to_index: HashMap<u32, usize>,
 }
 
+/// Central state for one open map. Holds the immutable Arrow base batch plus an in-memory
+/// overlay that accumulates mutations (adds, patches, dead). `bake_overlay` merges the
+/// overlay back into the batch. The sorted ID invariant on `batch` + `overlay_adds` enables
+/// O(log n) lookups via binary search. Render cells, selection bitmasks, undo/redo stacks,
+/// and tag metadata all live here.
 pub struct Store {
     pub(crate) map_id: Option<String>,
     // Arrow batch = immutable base snapshot, loaded from disk.
@@ -154,6 +176,9 @@ pub struct Store {
     pub(crate) known_field_keys: HashSet<String>,
 }
 
+/// One undo/redo entry. Records the locations created and removed by a single user action.
+/// Updates are encoded as simultaneous remove-old + create-new with the same ID.
+/// Reversing an entry swaps `created` and `removed`.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EditEntry {
     pub created: Vec<Location>,
@@ -193,11 +218,13 @@ impl Store {
         }
     }
 
+    /// Increment the store version counter. JS uses this to detect stale responses.
     pub(crate) fn bump(&mut self) -> u64 {
         self.version += 1;
         self.version
     }
 
+    /// Snapshot current store metadata for the frontend: version, counts, undo/redo availability.
     pub(crate) fn store_status(&self) -> StoreStatus {
         StoreStatus {
             version: self.version,
@@ -282,11 +309,15 @@ impl Store {
         }
     }
 
+    /// Return the RGBA color for a location in the base render layer.
+    /// Selected locations are transparent (alpha=0) because they are drawn separately
+    /// by the selection overlay layer with their selection color.
     fn base_color(&self, id: u32) -> (u8, u8, u8, u8) {
-        // Selected markers are hidden in the base layer (drawn by the selection overlay).
         if self.selected_ids.contains(&id) { (0, 0, 0, 0) } else { (42, 42, 42, 255) }
     }
 
+    /// Whether any active selection requires a full O(S*N) resolve rather than
+    /// incremental membership updates (composites and duplicates depend on global state).
     fn selections_need_full_resolve(&self) -> bool {
         self.selections.iter().any(|s| matches!(s.props,
             SelectionProps::Duplicates { .. }
@@ -544,6 +575,8 @@ impl Store {
         SelectionSync { counts, patch_file, selected_count }
     }
 
+    /// Record that the geohash cell containing `(lat, lng)` has been modified.
+    /// Used by VCS snapshot to determine which cells need re-serialization.
     pub(crate) fn mark_dirty(&mut self, lat: f64, lng: f64) {
         self.dirty_geohashes.insert(encode_geohash(lat, lng));
     }
@@ -573,9 +606,12 @@ impl Store {
         }
     }
 
+    /// Increment tag counts for all tags referenced by `locs`.
     pub(crate) fn add_tag_counts(&mut self, locs: &[Location]) { self.update_tag_counts(locs, 1); }
+    /// Decrement tag counts for all tags referenced by `locs` (saturating at zero).
     pub(crate) fn remove_tag_counts(&mut self, locs: &[Location]) { self.update_tag_counts(locs, -1); }
 
+    /// Grow `id_to_cell_idx` so it can index `id`. Fills new slots with 255 (sentinel = unmapped).
     fn ensure_id_to_cell_capacity(&mut self, id: u32) {
         let needed = id as usize + 1;
         if self.id_to_cell_idx.len() < needed {
@@ -583,6 +619,7 @@ impl Store {
         }
     }
 
+    /// Register a location in a render cell, appending it to the end. Returns the new index.
     pub(crate) fn cell_add_render(&mut self, cell_idx: u8, id: u32) -> usize {
         let cr = self.render_cells[cell_idx as usize].get_or_insert_with(|| CellRender {
             id_order: Vec::new(),
@@ -596,6 +633,8 @@ impl Store {
         idx
     }
 
+    /// Remove a location from its render cell via swap-remove. Returns the removal
+    /// descriptor (needed by JS to patch its typed arrays) or `None` if not found.
     fn cell_remove_render(&mut self, id: u32) -> Option<CellRemoval> {
         let ci = *self.id_to_cell_idx.get(id as usize)?;
         if ci == 255 { return None; }
@@ -612,6 +651,7 @@ impl Store {
         Some(CellRemoval { cell: cell_key_from_idx(ci), cell_index: idx, id })
     }
 
+    /// Look up a location's render cell key and index within that cell.
     fn cell_lookup(&self, id: u32) -> Option<(String, usize)> {
         let ci = *self.id_to_cell_idx.get(id as usize)?;
         if ci == 255 { return None; }
@@ -620,12 +660,14 @@ impl Store {
         Some((cell_key_from_idx(ci), idx))
     }
 
+    /// Allocate the next monotonically increasing location ID.
     pub(crate) fn alloc_id(&mut self) -> u32 {
         let id = self.next_id;
         self.next_id += 1;
         id
     }
 
+    /// Allocate the next monotonically increasing tag ID.
     pub(crate) fn alloc_tag_id(&mut self) -> u32 {
         let id = self.next_tag_id;
         self.next_tag_id += 1;
@@ -640,6 +682,7 @@ impl Store {
         }
     }
 
+    /// Unwrap the batch ref; panics if no map is open.
     fn batch_ref(&self) -> &RecordBatch {
         self.batch.as_ref().expect("no map open")
     }
@@ -659,6 +702,7 @@ impl Store {
         None
     }
 
+    /// Read a location from the batch by row index, applying any overlay patch.
     fn get_loc(&self, idx: usize) -> Location {
         let loc = arrow_bridge::row_to_location(self.batch_ref(), idx);
         if let Some(patched) = self.overlay_patches.get(&loc.id) {
@@ -685,6 +729,7 @@ impl Store {
         locs
     }
 
+    /// Construct a read-only view over all alive locations for selection resolution.
     fn loc_view(&self) -> selections::LocView<'_> {
         selections::LocView::new(
             self.batch.as_ref(),
@@ -726,6 +771,8 @@ impl Store {
         self.dirty = true;
     }
 
+    /// Apply a partial patch to an existing location. Reads the current state, merges
+    /// non-None fields from the patch, and writes back to overlay_adds or overlay_patches.
     fn overlay_update(&mut self, id: u32, patch: &LocationPatch) {
         let mut loc = match self.get_loc_by_id(id) {
             Some(l) => l,
@@ -753,6 +800,7 @@ impl Store {
         self.dirty = true;
     }
 
+    /// Reset overlay state. Called after bake or on map close.
     fn clear_overlay(&mut self) {
         self.overlay_adds.clear();
         self.overlay_dead.clear();
@@ -844,12 +892,15 @@ impl Store {
     }
 }
 
+/// Tauri managed state: a mutex-wrapped `Store` shared across all IPC commands.
 pub type StoreState = Mutex<Store>;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Metadata snapshot returned to JS after every mutation. JS uses `version` to
+/// detect stale responses and `canUndo`/`canRedo` for toolbar button state.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreStatus {
@@ -860,12 +911,14 @@ pub struct StoreStatus {
     pub tag_counts: HashMap<u32, usize>,
 }
 
+/// Result of `store_save_dirty`: how many bytes were written to the delta file.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveResult {
     pub saved_chunks: usize,
 }
 
+/// Lightweight status for polling: count, version, and whether unsaved changes exist.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SummaryResult {
@@ -874,6 +927,9 @@ pub struct SummaryResult {
     pub dirty_count: usize,
 }
 
+/// Incremental render update sent to JS after a mutation. Contains adds, position/heading
+/// patches, swap-removals, and color patches (for selection overlay changes).
+/// `full_reset` signals JS to discard all cell data and re-fetch via `store_fill_render_file`.
 #[derive(serde::Serialize, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderDelta {
@@ -898,6 +954,7 @@ pub struct ChangeSet {
     pub full_reset: bool,
 }
 
+/// A newly-added marker to a render cell: position, heading, and base color.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderEntry {
@@ -909,6 +966,7 @@ pub struct RenderEntry {
     pub r: u8, pub g: u8, pub b: u8, pub a: u8,
 }
 
+/// Partial update to an existing marker within its cell (position and/or heading changed).
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderPatchEntry {
@@ -919,6 +977,8 @@ pub struct RenderPatchEntry {
     pub heading: Option<f32>,
 }
 
+/// A swap-removal from a render cell. JS must move the last element into `cell_index`
+/// and pop the array to mirror the Rust-side swap-remove.
 #[derive(serde::Serialize, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CellRemoval {
@@ -927,6 +987,8 @@ pub struct CellRemoval {
     pub id: u32,
 }
 
+/// Override the RGBA color of a single marker within a cell (used when selection
+/// membership changes without a position change).
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ColorPatchEntry {
@@ -935,6 +997,9 @@ pub struct ColorPatchEntry {
     pub r: u8, pub g: u8, pub b: u8, pub a: u8,
 }
 
+/// Selection bitmask sync payload. `patch_file` points to a temp binary that JS reads
+/// via `mma-buf://` to update the selection overlay colors. `counts` gives per-selection
+/// match counts for sidebar display.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectionSync {
@@ -943,6 +1008,9 @@ pub struct SelectionSync {
     pub selected_count: usize,
 }
 
+/// Unified response for every mutation IPC. Bundles the store status, render delta,
+/// optional selection sync, optional new field definitions, and optional updated tags.
+/// JS applies all of these atomically to stay in sync with the Rust state.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MutationResult {
@@ -966,6 +1034,8 @@ where
     Ok(Some(Option::deserialize(deserializer)?))
 }
 
+/// Partial location update from JS. `None` fields are unchanged; `Some(None)` on
+/// nullable fields (panoId, extra, modifiedAt) explicitly sets the field to null.
 #[derive(Default, serde::Deserialize, specta::Type)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LocationPatch {
@@ -1201,6 +1271,8 @@ pub async fn store_open_map(
     Ok(store.store_status())
 }
 
+/// Close the current map: bake overlay, flush Arrow + tags + edit history to disk, then
+/// release all in-memory state (batch, mmap, indexes, selections, undo stacks).
 #[tauri::command]
 #[specta::specta]
 pub fn store_close_map(
@@ -1250,6 +1322,9 @@ pub fn store_close_map(
     Ok(())
 }
 
+/// Scan `extra` JSON maps for keys not yet in `known_field_keys`, persist new field
+/// definitions to SQLite, and attach them to `result.new_field_defs` so JS can update
+/// the filter UI.
 pub(crate) fn auto_register_extras(
     app: &tauri::AppHandle,
     store: &mut Store,
@@ -1270,6 +1345,8 @@ pub(crate) fn auto_register_extras(
     }
 }
 
+/// Add new locations. IDs are allocated server-side (monotonic). Records an undo entry
+/// and clears the redo stack.
 #[tauri::command]
 #[specta::specta]
 pub fn store_add_locations(
@@ -1302,6 +1379,7 @@ pub fn store_add_locations(
     Ok(result)
 }
 
+/// Remove locations by ID. Snapshots the full location data for undo before deleting.
 #[tauri::command]
 #[specta::specta]
 pub fn store_remove_locations(
@@ -1327,6 +1405,9 @@ pub fn store_remove_locations(
     Ok(store.finish_mutation(ChangeSet { removed: removed_ids, ..Default::default() }))
 }
 
+/// Apply partial patches to existing locations. `record_undo` defaults to true;
+/// set to false for ephemeral updates (e.g., plugin-driven batch modifications
+/// that manage their own undo).
 #[tauri::command]
 #[specta::specta]
 pub fn store_update_locations(
@@ -1503,6 +1584,8 @@ pub fn store_delete_tags(
     Ok(store.finish_mutation(ChangeSet { updated, ..Default::default() }))
 }
 
+/// Set (or clear) the active location. Fire-and-forget from JS; no re-render triggered.
+/// JS patches the cell buffer synchronously to hide/show the active marker.
 #[tauri::command]
 #[specta::specta]
 pub fn store_set_active(
@@ -1514,6 +1597,7 @@ pub fn store_set_active(
     Ok(())
 }
 
+/// Fetch a single location by ID. Returns `None` if the ID is dead or doesn't exist.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_location(
@@ -1545,6 +1629,7 @@ pub fn store_get_location_file(
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
+/// Fetch multiple locations by ID. Silently skips IDs that don't exist.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_locations_by_ids(
@@ -1561,6 +1646,8 @@ pub fn store_get_locations_by_ids(
     Ok(result)
 }
 
+/// Dump every alive location to a temp JSON file. Returns the file path.
+/// Used by export and plugins that need the full dataset.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_all_locations(
@@ -1576,6 +1663,8 @@ pub fn store_get_all_locations(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Msgpack-serialized overlay state written to the `.delta` file on autosave.
+/// On next `store_open_map`, the delta is merged into the Arrow file and deleted.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct DeltaOverlay {
     adds: Vec<Location>,
@@ -1645,6 +1734,7 @@ pub async fn store_save_dirty(
     Ok(SaveResult { saved_chunks: size })
 }
 
+/// Lightweight status query: location count, version, and dirty flag.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_summary(
@@ -1661,6 +1751,7 @@ pub fn store_get_summary(
     })
 }
 
+/// Persist undo/redo stacks to SQLite as msgpack blobs, capped at MAX_UNDO_ENTRIES.
 fn save_edit_history_inner(app: &tauri::AppHandle, map_id: &str, undo: &[EditEntry], redo: &[EditEntry]) -> Result<(), String> {
     let conn = fast_io::open_db(app)?;
     let undo_capped = if undo.len() > MAX_UNDO_ENTRIES { &undo[undo.len() - MAX_UNDO_ENTRIES..] } else { undo };
@@ -1674,6 +1765,7 @@ fn save_edit_history_inner(app: &tauri::AppHandle, map_id: &str, undo: &[EditEnt
     Ok(())
 }
 
+/// Load undo/redo stacks from SQLite. Returns empty stacks if no history exists.
 fn load_edit_history_inner(app: &tauri::AppHandle, map_id: &str) -> Result<(Vec<EditEntry>, Vec<EditEntry>), String> {
     let conn = fast_io::open_db(app)?;
     let result = conn.query_row(
@@ -1692,6 +1784,7 @@ fn load_edit_history_inner(app: &tauri::AppHandle, map_id: &str) -> Result<(Vec<
     }
 }
 
+/// Write the current batch to disk as Arrow IPC and remove any stale delta file.
 fn save_arrow_inner(store: &Store, app: &tauri::AppHandle, map_id: &str) -> Result<(), String> {
     if let Some(ref batch) = store.batch {
         let path = fast_io::arrow_path(app, map_id)?;
@@ -1738,6 +1831,8 @@ pub fn store_bake_and_save(
     Ok(())
 }
 
+/// One geohash cell's content-addressed blob in a VCS commit.
+/// The blob hash is a SHA-256 of the Arrow IPC bytes for that cell.
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitBlobEntry {
@@ -1746,6 +1841,9 @@ pub struct CommitBlobEntry {
     pub location_count: u32,
 }
 
+/// Create a VCS snapshot: partition batch by geohash, write each cell as a content-addressed
+/// blob. First commit writes all cells; subsequent commits only write dirty cells.
+/// Returns the full manifest of blob entries for the commit record.
 pub(crate) fn snapshot_inner(
     app: &tauri::AppHandle,
     state: &StoreState,
@@ -1851,6 +1949,8 @@ pub(crate) fn snapshot_inner(
     }
 }
 
+/// Restore a VCS snapshot: read blobs in parallel, concatenate into a single batch,
+/// and write the Arrow IPC file. The caller (`store_checkout_commit`) reopens the map.
 pub(crate) fn restore_inner(
     app: &tauri::AppHandle,
     map_id: &str,
@@ -1880,6 +1980,9 @@ pub(crate) fn restore_inner(
 // Render buffer
 // ---------------------------------------------------------------------------
 
+/// Parameters for a full render rebuild. `marker_style` ("arrow" or "pin") determines
+/// whether heading angles are written. The bounding box fields are currently unused
+/// (no viewport culling -- all locations are rendered).
 #[derive(Default, serde::Deserialize, specta::Type)]
 #[serde(default, rename_all = "camelCase")]
 pub struct RenderRequest {
@@ -2055,6 +2158,8 @@ pub async fn store_fill_render_file(
     .map_err(|e| e.to_string())?
 }
 
+/// Resolve a deck.gl pick result (cell key + index within cell) to a location ID.
+/// Called on marker click to map the GPU pick back to a logical location.
 #[tauri::command]
 #[specta::specta]
 pub fn store_resolve_pick(
@@ -2072,6 +2177,7 @@ pub fn store_resolve_pick(
 // Undo / Redo
 // ---------------------------------------------------------------------------
 
+/// Pop the undo stack and reverse the last edit. Pushes the entry onto the redo stack.
 #[tauri::command]
 #[specta::specta]
 pub fn store_undo(state: tauri::State<'_, StoreState>) -> Result<MutationResult, String> {
@@ -2086,6 +2192,7 @@ pub fn store_undo(state: tauri::State<'_, StoreState>) -> Result<MutationResult,
     Ok(store.finish_mutation(changes))
 }
 
+/// Pop the redo stack and replay the edit forward. Pushes the entry back onto undo.
 #[tauri::command]
 #[specta::specta]
 pub fn store_redo(state: tauri::State<'_, StoreState>) -> Result<MutationResult, String> {
@@ -2100,6 +2207,8 @@ pub fn store_redo(state: tauri::State<'_, StoreState>) -> Result<MutationResult,
     Ok(store.finish_mutation(changes))
 }
 
+/// Compute the net diff since last commit by walking the undo stack.
+/// Returns (added, removed, modified) counts for the commit dialog.
 #[tauri::command]
 #[specta::specta]
 pub fn store_commit_diff(state: tauri::State<'_, StoreState>) -> Result<(u32, u32, u32), String> {
@@ -2120,6 +2229,7 @@ pub fn store_commit_diff(state: tauri::State<'_, StoreState>) -> Result<(u32, u3
     Ok((added.len() as u32, removed.len() as u32, modified.len() as u32))
 }
 
+/// Clear both undo and redo stacks. Called after a commit to start fresh.
 #[tauri::command]
 #[specta::specta]
 pub fn store_reset_undo(state: tauri::State<'_, StoreState>) -> Result<(), String> {
@@ -2163,10 +2273,12 @@ fn apply_edit(store: &mut Store, remove: &[Location], create: &[Location]) -> Ch
     changes
 }
 
+/// Replay an edit forward: remove `entry.removed`, create `entry.created`.
 fn apply_edit_forward(store: &mut Store, entry: &EditEntry) -> ChangeSet {
     apply_edit(store, &entry.removed, &entry.created)
 }
 
+/// Reverse an edit: remove `entry.created`, restore `entry.removed`.
 fn apply_edit_reverse(store: &mut Store, entry: &EditEntry) -> ChangeSet {
     apply_edit(store, &entry.created, &entry.removed)
 }
@@ -2175,6 +2287,7 @@ fn apply_edit_reverse(store: &mut Store, entry: &EditEntry) -> ChangeSet {
 // Query commands
 // ---------------------------------------------------------------------------
 
+/// Load tags from the SQLite `maps.tags` JSON column, keyed by string ID.
 pub(crate) fn read_tags_json(conn: &rusqlite::Connection, map_id: &str) -> HashMap<u32, Tag> {
     let json: String = conn.query_row(
         "SELECT tags FROM maps WHERE id = ?1", [map_id], |row| row.get(0),
@@ -2183,11 +2296,13 @@ pub(crate) fn read_tags_json(conn: &rusqlite::Connection, map_id: &str) -> HashM
     raw.into_iter().filter_map(|(k, v)| k.parse::<u32>().ok().map(|id| (id, v))).collect()
 }
 
+/// Serialize tags to JSON with string keys (SQLite stores them this way).
 fn serialize_tags_json(tags: &HashMap<u32, Tag>) -> String {
     let as_str_keys: HashMap<String, &Tag> = tags.iter().map(|(k, v)| (k.to_string(), v)).collect();
     serde_json::to_string(&as_str_keys).unwrap_or_default()
 }
 
+/// Persist tags to the SQLite `maps.tags` JSON column.
 pub(crate) fn write_tags_json(conn: &rusqlite::Connection, map_id: &str, tags: &HashMap<u32, Tag>) -> Result<(), String> {
     let json = serialize_tags_json(tags);
     conn.execute("UPDATE maps SET tags = ?1 WHERE id = ?2", rusqlite::params![json, map_id])
@@ -2195,6 +2310,8 @@ pub(crate) fn write_tags_json(conn: &rusqlite::Connection, map_id: &str, tags: &
     Ok(())
 }
 
+/// Create tags by name. Deduplicates case-insensitively: if a tag with the same name
+/// already exists, it is made visible instead of creating a duplicate.
 #[tauri::command]
 #[specta::specta]
 pub fn store_create_tags(
@@ -2261,6 +2378,7 @@ pub fn store_reorder_tags(
     })
 }
 
+/// Compute the bounding box [west, south, east, north] of all alive locations. O(N).
 #[tauri::command]
 #[specta::specta]
 pub fn store_bounds(state: tauri::State<'_, StoreState>) -> Result<Option<[f64; 4]>, String> {
@@ -2302,6 +2420,7 @@ pub fn store_bounds(state: tauri::State<'_, StoreState>) -> Result<Option<[f64; 
     if count == 0 { Ok(None) } else { Ok(Some([w, s, e, n])) }
 }
 
+/// Compute the bounding box of currently selected locations only. O(N).
 #[tauri::command]
 #[specta::specta]
 pub fn store_selection_bounds(state: tauri::State<'_, StoreState>) -> Result<Option<[f64; 4]>, String> {
@@ -2344,6 +2463,7 @@ pub fn store_selection_bounds(state: tauri::State<'_, StoreState>) -> Result<Opt
     if count == 0 { Ok(None) } else { Ok(Some([w, s, e, n])) }
 }
 
+/// Return the number of alive locations (batch + adds - dead).
 #[tauri::command]
 #[specta::specta]
 pub fn store_location_count(state: tauri::State<'_, StoreState>) -> Result<u32, String> {
@@ -2352,6 +2472,8 @@ pub fn store_location_count(state: tauri::State<'_, StoreState>) -> Result<u32, 
 }
 
 
+/// Collect all distinct values for an `extra` field across all alive locations. O(N).
+/// Used by the filter UI to populate dropdown options.
 #[tauri::command]
 #[specta::specta]
 pub fn store_extra_field_values(state: tauri::State<'_, StoreState>, field: String) -> Result<Vec<String>, String> {
@@ -2414,6 +2536,7 @@ pub fn store_extra_field_values(state: tauri::State<'_, StoreState>, field: Stri
 // Selections
 // ---------------------------------------------------------------------------
 
+/// Input for `store_sync_selections`: selection criteria + display color.
 #[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectionInput {
@@ -2421,6 +2544,7 @@ pub struct SelectionInput {
     pub color: [u8; 3],
 }
 
+/// Result of `store_sync_selections`: per-selection counts and the bitmask patch file path.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncSelectionsResult {
@@ -2546,6 +2670,7 @@ pub async fn store_sync_selections(
     Ok(SyncSelectionsResult { counts, patch_file, selected_count })
 }
 
+/// Return the union of all currently selected location IDs.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_selected_ids_list(state: tauri::State<'_, StoreState>) -> Result<Vec<u32>, String> {
@@ -2553,6 +2678,8 @@ pub fn store_get_selected_ids_list(state: tauri::State<'_, StoreState>) -> Resul
     Ok(store.selected_ids.iter().copied().collect())
 }
 
+/// Resolve a single selection to its matching location IDs without persisting it.
+/// Used by plugins and one-off queries (e.g., tag merge, export filtered).
 #[tauri::command]
 #[specta::specta]
 pub fn store_resolve_selection(state: tauri::State<'_, StoreState>, props: SelectionProps) -> Result<Vec<u32>, String> {

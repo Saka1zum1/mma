@@ -1,9 +1,22 @@
+//! Bitmask-based selection resolution engine.
+//!
+//! Selections are predicates over the location set (tag membership, polygon containment,
+//! duplicates, filters on arbitrary fields, etc.). This module resolves each selection to
+//! a `Vec<bool>` bitmask over the unified `LocView` (batch + overlay), using rayon for
+//! parallel evaluation. Composite selections (Intersection, Union, Invert) combine child
+//! bitmasks. The bitmasks are then serialized into a per-cell binary format that JS reads
+//! to color the selection overlay.
+
 use std::collections::{HashMap, HashSet};
 use arrow::array::{RecordBatch, StringArray, Float64Array, UInt32Array, ListArray, Array};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::types::Location;
 
+/// Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
+/// for JS interop. Simple types (Tag, Untagged, PanoIds, etc.) resolve in O(N) with
+///  parallel batch scans. Composites (Intersection, Union, Invert) recursively resolve
+/// children. Duplicates uses a grid-accelerated spatial scan.
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type")]
 pub enum SelectionProps {
@@ -25,6 +38,8 @@ pub enum SelectionProps {
     Filter { field: String, op: String, #[specta(type = specta_typescript::Any)] value: serde_json::Value, #[specta(type = Option<specta_typescript::Any>)] value2: Option<serde_json::Value> },
 }
 
+/// GeoJSON-like polygon geometry. `coordinates` is the primary polygon (outer ring +
+/// optional holes). `extra_polygons` allows multipolygon selections (e.g., from GeoJSON import).
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PolygonGeometry {
@@ -36,6 +51,8 @@ pub struct PolygonGeometry {
     pub properties: Option<serde_json::Value>,
 }
 
+/// A named, colored selection. `key` is deterministic (e.g., `"tag:5"`, `"polygon:abc"`)
+/// so JS can diff selections across syncs. `color` is the RGB overlay color.
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Selection {
@@ -99,26 +116,33 @@ impl<'a> LocView<'a> {
         Self { batch, dead, patches, adds, ids, lats, lngs, headings, pitches, zooms, flags, tags, extras, created_ats, modified_ats, batch_rows, has_dead, has_patches }
     }
 
+    /// Total logical row count (batch rows + overlay adds).
     pub fn len(&self) -> usize {
         self.batch_rows + self.adds.len()
     }
 
+    /// Number of rows in the Arrow batch (before overlay).
     pub fn batch_rows(&self) -> usize { self.batch_rows }
+    /// Overlay add locations (appended after batch rows in logical order).
     pub fn adds(&self) -> &[Location] { self.adds }
 
+    /// Read the raw batch ID at row `i` (no overlay check).
     pub fn batch_id(&self, i: usize) -> u32 { self.ids.unwrap().value(i) }
 
+    /// Whether batch row `i` is alive (not in the dead set).
     #[inline]
     pub fn is_alive(&self, i: usize) -> bool {
         !self.has_dead || !self.dead.contains(&self.batch_id(i))
     }
 
+    /// Return the overlay patch for batch row `i`, if one exists.
     #[inline]
     pub fn patch_at(&self, i: usize) -> Option<&Location> {
         if !self.has_patches { return None; }
         self.patches.get(&self.batch_id(i))
     }
 
+    /// Read the effective ID at batch row `i`, checking patches first.
     pub fn id_at(&self, i: usize) -> u32 {
         if self.has_patches {
             if let Some(p) = self.patches.get(&self.batch_id(i)) { return p.id; }
@@ -207,11 +231,13 @@ impl<'a> LocView<'a> {
 // Bitmask resolve
 // ---------------------------------------------------------------------------
 
+/// Location flag: load using pano ID rather than lat/lng coordinates.
 const LOAD_AS_PANO_ID: u32 = 1;
+/// Location flag: informational marker (excluded from some polygon selections).
 const INFORMATIONAL: u32 = 2;
 
-// Per-row test function for batch rows -- returns true if the row matches the selection.
-// Must be safe to call from multiple threads (reads only shared Arrow columns + overlay refs).
+/// Per-row predicate for batch rows. Thread-safe (reads only shared Arrow columns
+/// and immutable overlay refs). Returns true if the row matches the selection.
 fn test_batch_row(view: &LocView, i: usize, props: &SelectionProps) -> bool {
     match props {
         SelectionProps::Everything => true,
@@ -266,6 +292,8 @@ fn test_batch_row(view: &LocView, i: usize, props: &SelectionProps) -> bool {
     }
 }
 
+/// Per-row predicate for overlay add locations. Same logic as `test_batch_row` but
+/// operates on a `Location` struct instead of Arrow columns.
 pub(crate) fn test_add_row(loc: &Location, props: &SelectionProps) -> bool {
     match props {
         SelectionProps::Everything => true,
@@ -290,6 +318,8 @@ pub(crate) fn test_add_row(loc: &Location, props: &SelectionProps) -> bool {
     }
 }
 
+/// Minimum rayon chunk size for parallel batch iteration. Tuned to amortize
+/// per-chunk overhead while keeping cache-friendly access patterns.
 const CHUNK_SIZE: usize = 64 * 1024;
 
 /// Resolve a selection into a bool mask. O(N) for simple selections (parallel),
@@ -343,6 +373,7 @@ pub fn resolve_bitmask(view: &LocView, props: &SelectionProps) -> Vec<bool> {
     view.resolve_mask(|i| test_batch_row(view, i, props), |_, loc| test_add_row(loc, props))
 }
 
+/// Convert a bitmask to a Vec of matching location IDs. O(N).
 pub fn mask_to_ids(view: &LocView, mask: &[bool]) -> Vec<u32> {
     let mut ids = Vec::new();
     for i in 0..view.batch_rows {
@@ -364,8 +395,10 @@ pub fn resolve(view: &LocView, props: &SelectionProps) -> Vec<u32> {
     mask_to_ids(view, &mask)
 }
 
-// --- Geometry ---
+// --- Geometry (ray-casting point-in-polygon) ---
 
+/// Ray-casting algorithm: cast a horizontal ray eastward from (lng, lat) and count
+/// edge crossings. Odd count = inside. O(V) where V = vertices.
 fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
     let mut inside = false;
     let n = ring.len();
@@ -381,6 +414,8 @@ fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
     inside
 }
 
+/// Test point-in-polygon with holes: must be inside the outer ring (coords[0])
+/// and outside all hole rings (coords[1..]).
 fn point_in_polygon(lng: f64, lat: f64, coords: &[Vec<[f64; 2]>]) -> bool {
     if coords.is_empty() { return false; }
     if !point_in_ring(lng, lat, &coords[0]) { return false; }
@@ -390,6 +425,7 @@ fn point_in_polygon(lng: f64, lat: f64, coords: &[Vec<[f64; 2]>]) -> bool {
     true
 }
 
+/// Test against the full geometry (primary polygon + extra_polygons). Any hit = true.
 fn point_in_geometry(lng: f64, lat: f64, geom: &PolygonGeometry) -> bool {
     if point_in_polygon(lng, lat, &geom.coordinates) { return true; }
     if let Some(extras) = &geom.extra_polygons {
@@ -457,6 +493,7 @@ fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
     }
 }
 
+/// Great-circle distance in metres using the haversine formula. Assumes spherical Earth (R = 6371 km).
 pub(crate) fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     let r = 6_371_000.0;
     let dlat = (lat2 - lat1).to_radians();
@@ -466,8 +503,9 @@ pub(crate) fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     2.0 * r * a.sqrt().asin()
 }
 
-// --- Filter ---
+// --- Filter: field-level comparison predicates ---
 
+/// Convert a Unix day count to (year, month, day) using Howard Hinnant's civil_from_days algorithm.
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719468;
     let era = z.div_euclid(146097);
@@ -482,17 +520,20 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (y, m as u32, d as u32)
 }
 
+/// Extract (month, day) from a Unix timestamp. Used by `between_anyyear` filter.
 fn unix_to_month_day(ts: f64) -> (u32, u32) {
     let days = (ts / 86400.0).floor() as i64;
     let (_, m, d) = civil_from_days(days);
     (m, d)
 }
 
+/// Extract (hour, minute) from a Unix timestamp. Used by `between_anytime` filter.
 fn unix_to_hour_min(ts: f64) -> (u32, u32) {
     let secs = ((ts % 86400.0) + 86400.0) % 86400.0;
     (secs as u32 / 3600, (secs as u32 % 3600) / 60)
 }
 
+/// Parse a simplified ISO-8601 datetime string (e.g., "2024-01-15T12:30:00Z") to Unix timestamp.
 fn iso_to_unix(s: &str) -> Option<f64> {
     let s = s.trim_end_matches('Z');
     let (date_part, time_part) = s.split_once('T')?;
@@ -516,6 +557,9 @@ fn iso_to_unix(s: &str) -> Option<f64> {
     Some((days_from_civil(y, m, d) * 86400 + h * 3600 + min * 60 + sec) as f64)
 }
 
+/// Resolve a field name to its JSON value from a `Location` struct.
+/// Built-in fields (lat, lng, heading, etc.) are accessed directly;
+/// unknown fields fall through to `loc.extra`.
 fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
     match field {
         "lat" => Some(serde_json::json!(loc.lat)),
@@ -530,6 +574,7 @@ fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
     }
 }
 
+/// Test a filter predicate against a `Location` struct.
 fn matches_filter_loc(
     loc: &Location,
     field: &str, op: &str, value: &serde_json::Value, value2: Option<&serde_json::Value>,
@@ -540,6 +585,8 @@ fn matches_filter_loc(
     }
 }
 
+/// Resolve a field name to its JSON value directly from Arrow columns (avoids
+/// materializing a full `Location`). Falls through to `extras` JSON for unknown fields.
 fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_json::Value> {
     match field {
         "lat" => view.lats.map(|c| serde_json::json!(c.value(idx))),
@@ -562,6 +609,7 @@ fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_
     }
 }
 
+/// Test a filter predicate against an Arrow batch row.
 fn matches_filter_arrow(
     view: &LocView, idx: usize,
     field: &str, op: &str, value: &serde_json::Value, value2: Option<&serde_json::Value>,
@@ -572,6 +620,9 @@ fn matches_filter_arrow(
     }
 }
 
+/// Core comparison dispatch. Supports eq, neq, has, nothas, gt, lt, gte, lte, between,
+/// between_anyyear (month-day range ignoring year), and between_anytime (time-of-day range).
+/// Numeric comparison is attempted first; falls back to lexicographic string comparison.
 fn compare_filter(field_val: &serde_json::Value, op: &str, value: &serde_json::Value, value2: Option<&serde_json::Value>) -> bool {
     match op {
         "eq" => val_eq(field_val, value),
@@ -650,6 +701,7 @@ fn compare_filter(field_val: &serde_json::Value, op: &str, value: &serde_json::V
     }
 }
 
+/// Equality comparison with type coercion: tries numeric, then string, then JSON equality.
 fn val_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     if a == b { return true; }
     if a.is_null() || b.is_null() { return false; }
@@ -663,6 +715,7 @@ fn val_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     }
 }
 
+/// Coerce a JSON value to a string for comparison. Numbers use their string repr.
 fn val_to_str(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::String(s) => s.clone(),
@@ -671,6 +724,7 @@ fn val_to_str(v: &serde_json::Value) -> String {
     }
 }
 
+/// Try to extract an f64 from a JSON value: native number or parseable string.
 fn as_f64(v: &serde_json::Value) -> Option<f64> {
     v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }

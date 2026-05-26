@@ -1,3 +1,10 @@
+//! Map metadata CRUD and extra-field registration.
+//!
+//! Each map's metadata (name, settings, tags, extra field definitions) lives in
+//! SQLite. This module provides the IPC commands for listing, creating, updating,
+//! and deleting maps, plus the auto-registration logic that discovers new
+//! `Location.extra` fields and persists their type definitions.
+
 use std::collections::HashMap;
 use rusqlite::params;
 use crate::fast_io;
@@ -9,6 +16,8 @@ use crate::util::now_iso;
 // Typed sub-structs for MapMeta
 // ---------------------------------------------------------------------------
 
+/// Per-map editor preferences. Controls Street View lookup behavior (official vs
+/// unofficial, camera type filters), export defaults, and metadata enrichment.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MapSettings {
@@ -26,6 +35,8 @@ pub struct MapSettings {
     pub generated_location_tag: Option<String>,
 }
 
+/// Type discriminant for `Location.extra` field definitions.
+/// Determines how the field is displayed and filtered in the UI.
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ExtraFieldType {
@@ -41,6 +52,9 @@ pub enum ExtraFieldType {
     Enum,
 }
 
+/// Schema definition for a single `Location.extra` field. Stored in the map's
+/// `extra.fields` JSON. For enum types, `values` lists valid options and `labels`
+/// provides display names.
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtraFieldDef {
@@ -54,6 +68,8 @@ pub struct ExtraFieldDef {
     pub labels: Option<HashMap<String, String>>,
 }
 
+/// Top-level `extra` JSON blob on a map row. Currently only holds field definitions,
+/// but structured as an object to allow future extensions.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MapExtra {
@@ -61,6 +77,8 @@ pub struct MapExtra {
     pub fields: Option<HashMap<String, ExtraFieldDef>>,
 }
 
+/// Score bounding box: either `"auto"` (computed from locations) or an
+/// explicit `[south, west, north, east]` rectangle.
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(untagged)]
 pub enum ScoreBounds {
@@ -78,6 +96,9 @@ impl Default for ScoreBounds {
 // Known field defs + auto-registration
 // ---------------------------------------------------------------------------
 
+/// Returns a curated field definition for well-known SV metadata keys
+/// (altitude, countryCode, cameraType, etc.). Falls back to `None` for
+/// user-defined fields, which get type-inferred instead.
 pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
     match key {
         "altitude" => Some(ExtraFieldDef {
@@ -128,6 +149,8 @@ pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
     }
 }
 
+/// Infer an `ExtraFieldType` from a sample JSON value. Numbers become `Number`,
+/// strings matching `YYYY-MM` become `Month`, everything else becomes `String`.
 pub fn infer_field_type(value: &serde_json::Value) -> ExtraFieldType {
     if value.is_number() {
         return ExtraFieldType::Number;
@@ -144,6 +167,9 @@ pub fn infer_field_type(value: &serde_json::Value) -> ExtraFieldType {
     ExtraFieldType::String
 }
 
+/// Scan extra maps for keys not yet in `known_keys` and produce field definitions.
+/// Known SV metadata keys get curated definitions; unknown keys get type-inferred ones.
+/// Returns `None` if no new fields are discovered.
 pub fn auto_register_field_defs(
     known_keys: &std::collections::HashSet<String>,
     extras: &[&serde_json::Map<String, serde_json::Value>],
@@ -214,6 +240,8 @@ pub fn persist_field_defs(
 // MapMeta
 // ---------------------------------------------------------------------------
 
+/// Full metadata for a map, deserialized from the SQLite `maps` row.
+/// JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MapMeta {
@@ -238,6 +266,8 @@ pub struct MapData {
     pub meta: MapMeta,
 }
 
+/// Partial update for map metadata. Only non-`None` fields are written.
+/// `folder: Some(None)` explicitly unsets the folder (moves to root).
 #[derive(Default, serde::Deserialize, specta::Type)]
 #[serde(default, rename_all = "camelCase")]
 pub struct MapMetaPatch {
@@ -251,6 +281,8 @@ pub struct MapMetaPatch {
     pub labels: Option<Vec<String>>,
 }
 
+/// Deserialize a SQLite row into `MapMeta`, parsing JSON columns with
+/// fallback defaults for forward compatibility.
 fn row_to_map_meta(row: &rusqlite::Row<'_>) -> Result<MapMeta, rusqlite::Error> {
     let settings_str: String = row.get("settings")?;
     let score_bounds_str: String = row.get("score_bounds")?;
@@ -279,6 +311,7 @@ fn row_to_map_meta(row: &rusqlite::Row<'_>) -> Result<MapMeta, rusqlite::Error> 
 // Commands
 // ---------------------------------------------------------------------------
 
+/// Return metadata for every map in the database.
 #[tauri::command]
 #[specta::specta]
 pub fn store_list_maps(app: tauri::AppHandle) -> Result<Vec<MapMeta>, String> {
@@ -296,6 +329,7 @@ pub fn store_list_maps(app: tauri::AppHandle) -> Result<Vec<MapMeta>, String> {
     Ok(maps)
 }
 
+/// Fetch a single map's metadata by ID. Returns `None` if not found.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_map(app: tauri::AppHandle, id: String) -> Result<Option<MapData>, String> {
@@ -312,6 +346,8 @@ pub fn store_get_map(app: tauri::AppHandle, id: String) -> Result<Option<MapData
 
 const DEFAULT_SETTINGS: &str = r#"{"pointAlongRoad":true,"preferDirection":null,"preferOfficial":true,"preferHigherQuality":false,"onlyOfficial":false,"cameraTypes":null,"defaultPanoId":false,"exportZoom":false,"exportUnpanned":true,"enrichMetadata":false}"#;
 
+/// Create a new empty map with default settings. Returns the full metadata
+/// (including the generated UUID) so the frontend can navigate to it immediately.
 #[tauri::command]
 #[specta::specta]
 pub fn store_create_map(
@@ -336,6 +372,8 @@ pub fn store_create_map(
     Ok(MapData { meta })
 }
 
+/// Delete a map and all associated data: SQLite rows (maps, edit_history,
+/// commits, orphaned commit_trees) and Arrow IPC files on disk.
 #[tauri::command]
 #[specta::specta]
 pub fn store_delete_map(app: tauri::AppHandle, id: String) -> Result<(), String> {
@@ -361,6 +399,10 @@ pub fn store_delete_map(app: tauri::AppHandle, id: String) -> Result<(), String>
     Ok(())
 }
 
+/// Apply a partial update to a map's metadata. Dynamically builds the SQL
+/// UPDATE from non-`None` fields in the patch. Also syncs `known_field_keys`
+/// on the in-memory store when extra fields change, so auto-registration
+/// doesn't re-discover fields the user explicitly defined.
 #[tauri::command]
 #[specta::specta]
 pub fn store_update_map_meta(
@@ -432,6 +474,8 @@ pub fn store_update_map_meta(
 }
 
 
+/// Update `last_opened_at` to the current timestamp. Used to sort the map
+/// list by recency in the dashboard.
 #[tauri::command]
 #[specta::specta]
 pub fn store_touch_map_opened(app: tauri::AppHandle, map_id: String) -> Result<(), String> {
@@ -445,6 +489,7 @@ pub fn store_touch_map_opened(app: tauri::AppHandle, map_id: String) -> Result<(
     Ok(())
 }
 
+/// Rename a folder across all maps that reference it.
 #[tauri::command]
 #[specta::specta]
 pub fn store_rename_folder(app: tauri::AppHandle, from: String, to: String) -> Result<(), String> {
@@ -457,6 +502,7 @@ pub fn store_rename_folder(app: tauri::AppHandle, from: String, to: String) -> R
     Ok(())
 }
 
+/// Delete a folder by setting all its maps' folder to `NULL` (moves them to root).
 #[tauri::command]
 #[specta::specta]
 pub fn store_delete_folder(app: tauri::AppHandle, name: String) -> Result<(), String> {
@@ -469,6 +515,9 @@ pub fn store_delete_folder(app: tauri::AppHandle, name: String) -> Result<(), St
     Ok(())
 }
 
+/// Look up a cached exact pano capture timestamp. Returns `None` on cache miss.
+/// The `pano_date_cache` table avoids re-running the expensive binary search
+/// RPC in `resolveExactTimestamp` for panos we've already resolved.
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_pano_date(app: tauri::AppHandle, pano_id: String) -> Result<Option<i64>, String> {
@@ -485,6 +534,7 @@ pub fn store_get_pano_date(app: tauri::AppHandle, pano_id: String) -> Result<Opt
     }
 }
 
+/// Cache an exact pano capture timestamp (unix millis) for future lookups.
 #[tauri::command]
 #[specta::specta]
 pub fn store_set_pano_date(
@@ -506,6 +556,7 @@ pub fn store_set_pano_date(
 // Debug / diagnostics
 // ---------------------------------------------------------------------------
 
+/// Row count for a single SQLite table, used in the debug diagnostics panel.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DbTableInfo {
@@ -513,6 +564,7 @@ pub struct DbTableInfo {
     pub rows: i64,
 }
 
+/// Aggregate database statistics for the debug panel.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DbStats {
@@ -525,6 +577,7 @@ pub struct DbStats {
     pub foreign_keys: bool,
 }
 
+/// List all user-created tables with their row counts. Excludes SQLite internals.
 #[tauri::command]
 #[specta::specta]
 pub fn store_db_table_info(app: tauri::AppHandle) -> Result<Vec<DbTableInfo>, String> {
@@ -547,6 +600,8 @@ pub fn store_db_table_info(app: tauri::AppHandle) -> Result<Vec<DbTableInfo>, St
     Ok(results)
 }
 
+/// Delete all rows from a table. Returns the number of deleted rows.
+/// Used in the debug panel for cache/history cleanup.
 #[tauri::command]
 #[specta::specta]
 pub fn store_db_clear_table(app: tauri::AppHandle, table: String) -> Result<i64, String> {
@@ -557,6 +612,9 @@ pub fn store_db_clear_table(app: tauri::AppHandle, table: String) -> Result<i64,
     Ok(deleted as i64)
 }
 
+/// Compute aggregate database statistics (map/location/tag/commit counts,
+/// database file size, journal mode). Tag count is summed across all maps
+/// by parsing each map's tags JSON column.
 #[tauri::command]
 #[specta::specta]
 pub fn store_db_stats(app: tauri::AppHandle) -> Result<DbStats, String> {

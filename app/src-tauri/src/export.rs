@@ -1,3 +1,7 @@
+//! Location data export in JSON, CSV, GeoJSON, and bulk ZIP formats.
+//! All exports write to temp files and return the path -- the frontend
+//! triggers a native save dialog to move the file to its final destination.
+
 use std::io::Write;
 use crate::arrow_bridge;
 use crate::fast_io;
@@ -5,14 +9,19 @@ use crate::location_store::StoreState;
 
 const LOAD_AS_PANO_ID: u32 = 1;
 
+/// Configuration for JSON export. Controls which fields are included and
+/// whether the export covers all locations or a specific selection.
 #[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOpts {
     pub export_zoom: bool,
     pub export_unpanned: bool,
     pub export_extras: bool,
+    /// When `Some`, restricts export to these location IDs (e.g. current selection).
     pub scope: Option<Vec<u32>>,
     pub map_name: String,
+    /// Serialized `{id: {name, color}}` tag definitions from the store, used to
+    /// convert numeric tag IDs back to human-readable names in the output.
     pub tags_json: String,
     pub extra_fields_json: Option<String>,
 }
@@ -31,6 +40,12 @@ fn hex_to_rgb(hex: &str) -> Option<[u8; 3]> {
 #[path = "export.test.rs"]
 mod tests;
 
+/// Export locations as a map-making.app-compatible JSON file.
+///
+/// Produces `{name, customCoordinates: [...]}` with optional `extra` block
+/// containing tags (with colors as RGB arrays) and field definitions.
+/// Heading of exactly 0 is written as 0.001 when `export_unpanned` is set,
+/// matching the original app's convention for "no heading specified".
 #[tauri::command]
 #[specta::specta]
 pub fn store_export_json(
@@ -135,6 +150,7 @@ pub fn store_export_json(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Export locations as a minimal lat/lng CSV file.
 #[tauri::command]
 #[specta::specta]
 pub fn store_export_csv(
@@ -162,6 +178,8 @@ pub fn store_export_csv(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Export locations as a GeoJSON FeatureCollection of Point features.
+/// Each feature carries its tag names in `properties.tags`.
 #[tauri::command]
 #[specta::specta]
 pub fn store_export_geojson(
@@ -208,6 +226,12 @@ pub fn store_export_geojson(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Export every map in the database as a deflate-compressed ZIP of JSON files.
+///
+/// Each map becomes one `{name}.json` file in the archive, with full location
+/// data, tags, and extra fields. Reads Arrow IPC files directly from disk
+/// (bypasses the in-memory store). Duplicate map names get a numeric suffix.
+/// Runs on a blocking thread to avoid starving the async runtime.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_export_bulk_zip(

@@ -1,3 +1,9 @@
+//! Tauri command layer and URI scheme proxies for the MMA desktop app.
+//!
+//! This is the application entry point. It registers all IPC commands (via tauri-specta),
+//! custom URI scheme handlers (svtile, gmaps, googl, mma-buf, mma-plugin), and Tauri plugins.
+//! No business logic lives here -- commands delegate to `location_store`, `map_meta`, `import`, etc.
+
 use tauri::Manager;
 
 mod fast_io;
@@ -13,6 +19,8 @@ mod types;
 mod util;
 mod vcs;
 
+/// Write arbitrary text content to a named temp file (`mma_{name}`). Returns the path.
+/// Used by JS to pass large payloads via file instead of IPC serialization.
 #[tauri::command]
 #[specta::specta]
 fn write_temp_file(name: String, content: String) -> Result<String, String> {
@@ -21,12 +29,14 @@ fn write_temp_file(name: String, content: String) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Read a file from disk as UTF-8 text. Used by JS to read temp files and plugin sources.
 #[tauri::command]
 #[specta::specta]
 fn read_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Return the platform-specific app data directory path (e.g., `%LOCALAPPDATA%/app.map-making.local`).
 #[tauri::command]
 #[specta::specta]
 fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -35,6 +45,7 @@ fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Open the app data directory in the OS file explorer.
 #[tauri::command]
 #[specta::specta]
 fn open_data_folder(app: tauri::AppHandle) -> Result<(), String> {
@@ -48,6 +59,7 @@ fn open_data_folder(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`.
 #[derive(serde::Serialize, specta::Type)]
 struct PluginManifest {
     id: String,
@@ -57,6 +69,7 @@ struct PluginManifest {
     main: String,
 }
 
+/// Scan the `plugins/` directory under app data and return manifests for all installed plugins.
 #[tauri::command]
 #[specta::specta]
 fn list_user_plugins(app: tauri::AppHandle) -> Vec<PluginManifest> {
@@ -94,9 +107,12 @@ fn list_user_plugins(app: tauri::AppHandle) -> Vec<PluginManifest> {
     plugins
 }
 
+/// Base URL for the plugin marketplace repository on GitHub.
 const PLUGIN_REPO_BASE: &str =
     "https://raw.githubusercontent.com/ccmdi/mma/master/plugins";
 
+/// Download a plugin from the GitHub plugin repository and install it to the local plugins directory.
+/// Fetches `manifest.json` and the main JS file specified in the manifest.
 #[tauri::command]
 #[specta::specta]
 fn install_plugin(app: tauri::AppHandle, id: String) -> Result<PluginManifest, String> {
@@ -131,6 +147,7 @@ fn install_plugin(app: tauri::AppHandle, id: String) -> Result<PluginManifest, S
     Ok(PluginManifest { id, name, description, icon, main: main.to_string() })
 }
 
+/// Remove a plugin by deleting its directory from the local plugins folder.
 #[tauri::command]
 #[specta::specta]
 fn uninstall_plugin(app: tauri::AppHandle, id: String) -> Result<(), String> {
@@ -141,6 +158,7 @@ fn uninstall_plugin(app: tauri::AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Build a blocking HTTP client with native TLS and a 15-second timeout.
 fn build_http_client(follow_redirects: bool) -> reqwest::blocking::Client {
     let redirect = if follow_redirects {
         reqwest::redirect::Policy::default()
@@ -167,6 +185,7 @@ fn resolve_client() -> &'static reqwest::blocking::Client {
     C.get_or_init(|| build_http_client(false))
 }
 
+/// Build a 502 error response with CORS headers for failed proxy requests.
 fn proxy_error(msg: String) -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
         .status(502)
@@ -259,6 +278,8 @@ fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
     }
 }
 
+/// Application entry point. Configures panic logging, URI scheme protocols, Tauri plugins,
+/// the IPC command handler (with specta binding generation in debug builds), and window setup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let default_hook = std::panic::take_hook();

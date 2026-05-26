@@ -1,3 +1,8 @@
+//! Conversion layer between [`Location`] structs and Arrow [`RecordBatch`]es.
+//!
+//! Every persistent location passes through this module on read and write.
+//! The canonical column order and types are defined by [`location_schema`].
+
 use std::sync::Arc;
 
 use arrow::array::{
@@ -8,6 +13,11 @@ use arrow::datatypes::{DataType, Field, Schema};
 
 use crate::types::Location;
 
+/// The canonical Arrow schema for location data. Column order here determines
+/// the positional indices used by [`row_to_location`] and must stay in sync.
+///
+/// `tags` is a `List<UInt32>` (variable-length per row). `extra` and `pano_id`
+/// are nullable UTF-8; all other columns are non-nullable.
 pub fn location_schema() -> Schema {
     Schema::new(vec![
         Field::new("id", DataType::UInt32, false),
@@ -29,6 +39,10 @@ pub fn location_schema() -> Schema {
     ])
 }
 
+/// Serialize a slice of [`Location`]s into a single Arrow [`RecordBatch`].
+///
+/// `extra` fields are JSON-stringified. Panics if the resulting columns don't
+/// match [`location_schema`] (indicates a code bug, not a data problem).
 pub fn locations_to_batch(locs: &[Location]) -> RecordBatch {
     let n = locs.len();
 
@@ -82,6 +96,10 @@ pub fn locations_to_batch(locs: &[Location]) -> RecordBatch {
     RecordBatch::try_new(schema, columns).expect("schema matches columns")
 }
 
+/// Extract a single [`Location`] from row `idx` of a batch.
+///
+/// Accesses columns by positional index (must match [`location_schema`] order).
+/// Nullable `extra` is deserialized from its JSON string; malformed JSON yields `None`.
 pub fn row_to_location(batch: &RecordBatch, idx: usize) -> Location {
     let id = batch
         .column(0)
@@ -139,6 +157,7 @@ pub fn row_to_location(batch: &RecordBatch, idx: usize) -> Location {
     }
 }
 
+/// Materialize every row of a batch into a `Vec<Location>`.
 pub fn batch_to_locations(batch: &RecordBatch) -> Vec<Location> {
     (0..batch.num_rows()).map(|i| row_to_location(batch, i)).collect()
 }

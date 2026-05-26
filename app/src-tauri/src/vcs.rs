@@ -1,3 +1,10 @@
+//! Git-like version control for map snapshots.
+//!
+//! Each commit captures a content-addressed tree of geohash-bucketed Arrow blobs.
+//! Commit IDs are derived from the tree hash + parent + timestamp (deterministic,
+//! like git). Checkout restores a map to any prior commit's state by reassembling
+//! blobs from the blob store.
+
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 use tauri::State;
@@ -9,6 +16,7 @@ use crate::location_store::{self, CommitBlobEntry, StoreState};
 // Types
 // ---------------------------------------------------------------------------
 
+/// Metadata for a single commit, returned to the frontend for the commit history UI.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitInfo {
@@ -24,6 +32,9 @@ pub struct CommitInfo {
     pub created_at: String,
 }
 
+/// Diff statistics passed from the frontend at commit time.
+/// The frontend tracks add/remove/modify counts through the undo stack
+/// and provides them here so the commit can store them without recomputing.
 #[derive(serde::Deserialize, specta::Type)]
 #[serde(default)]
 pub struct CommitDiff {
@@ -58,6 +69,15 @@ use crate::util::now_iso;
 // Commands
 // ---------------------------------------------------------------------------
 
+/// Create a new commit for a map.
+///
+/// 1. Finds the current HEAD commit (parent).
+/// 2. Bakes the overlay and snapshots all geohash blobs to the blob store.
+/// 3. Computes a SHA-256 tree hash over sorted `(geohash, blob_hash)` pairs.
+/// 4. Derives the commit ID from `tree_hash + parent + timestamp`.
+/// 5. Batch-inserts `commit_trees` entries (200 per INSERT for SQLite perf).
+///
+/// Returns the new commit ID.
 #[tauri::command]
 #[specta::specta]
 pub fn store_create_commit(
@@ -149,6 +169,7 @@ pub fn store_create_commit(
     Ok(id)
 }
 
+/// List all commits for a map, newest first.
 #[tauri::command]
 #[specta::specta]
 pub fn store_list_commits(
@@ -186,6 +207,11 @@ pub fn store_list_commits(
     Ok(commits)
 }
 
+/// Restore a map to the state captured by a previous commit.
+///
+/// Reads the commit's blob entries from `commit_trees`, then delegates to
+/// `location_store::restore_inner` which reassembles the Arrow base batch
+/// from the blob store and resets the overlay. Clears undo/redo history.
 #[tauri::command]
 #[specta::specta]
 pub fn store_checkout_commit(

@@ -1,3 +1,10 @@
+//! Import pipeline for JSON, CSV, and ZIP files containing map location data.
+//!
+//! Two import paths: **bulk import** creates new maps from files, and **editor
+//! import** merges locations into the currently open map. JSON parsing uses
+//! simd_json with parallel object deserialization via rayon. A two-phase
+//! preview/confirm flow lets the user inspect data before committing.
+
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Mutex;
@@ -13,6 +20,8 @@ use crate::fast_io;
 use crate::location_store;
 use crate::types::{Tag, Location};
 
+/// Cached result from `bulk_import_preview` so `bulk_import_confirm` can
+/// skip re-parsing. Keyed by file path to detect stale caches.
 static CACHED_PARSE: Mutex<Option<CachedImport>> = Mutex::new(None);
 
 struct CachedImport {
@@ -26,6 +35,8 @@ const DEFAULT_SETTINGS: &str = r#"{"pointAlongRoad":true,"preferDirection":null,
 // Types returned to JS
 // ---------------------------------------------------------------------------
 
+/// Summary of a single map found during bulk import preview.
+/// Shown in the import dialog so the user can select which maps to import.
 #[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportPreviewEntry {
@@ -36,6 +47,7 @@ pub struct ImportPreviewEntry {
     pub warnings: Vec<String>,
 }
 
+/// Result returned per map after a successful bulk import.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedMapInfo {
@@ -50,6 +62,8 @@ pub struct ImportedMapInfo {
 // ---------------------------------------------------------------------------
 
 
+/// Intermediate representation produced by all parsers (JSON, CSV, ZIP entry).
+/// Locations have placeholder IDs (0) -- real IDs are assigned at insert time.
 struct ParsedMap {
     name: String,
     folder: Option<String>,
@@ -65,6 +79,8 @@ use crate::util::color_for_name;
 // CSV parsing
 // ---------------------------------------------------------------------------
 
+/// Parse CSV text into locations. Supports both named columns (lat/lng/heading/etc.)
+/// and positional (first two numeric columns = lat, lng). Skips malformed rows silently.
 fn parse_csv(text: &str) -> ParsedMap {
     let warn = |w: &str| ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: vec![w.into()] };
 
@@ -137,6 +153,9 @@ struct ExtraTagMeta {
     order: Option<u32>,
 }
 
+/// Extract tag color/order metadata from the top-level `"extra"."tags"` block
+/// without parsing the entire JSON. Uses a manual depth-tracking scanner to find
+/// the `"extra"` key at depth 1, avoiding a full-document parse on multi-MB files.
 fn extract_tag_meta(buf: &[u8]) -> HashMap<String, ExtraTagMeta> {
     let mut meta = HashMap::new();
     let needle = b"\"extra\"";
@@ -202,6 +221,7 @@ fn extract_tag_meta(buf: &[u8]) -> HashMap<String, ExtraTagMeta> {
 // Format detection
 // ---------------------------------------------------------------------------
 
+/// Auto-detect format (JSON vs CSV) by first non-whitespace byte and dispatch.
 fn parse_file(buf: &mut [u8]) -> ParsedMap {
     let trimmed = buf.iter().position(|&b| !b.is_ascii_whitespace()).unwrap_or(0);
     match buf.get(trimmed) {
@@ -222,8 +242,9 @@ fn parse_single_json(text: &str) -> ParsedMap {
     parse_single_json_mut(&mut buf)
 }
 
-// Scan raw bytes for object `{...}` boundaries at depth 1 inside an array.
-// Returns (start, end) byte offsets relative to the input slice.
+/// Scan raw bytes for `{...}` object boundaries at depth 1 inside a JSON array.
+/// Returns `(start, end)` byte offsets. This is the key to parallel parsing:
+/// we find boundaries in a single pass, then hand each slice to rayon/simd_json.
 fn find_object_boundaries(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
     let mut depth = 0i32;
@@ -253,8 +274,8 @@ fn find_object_boundaries(bytes: &[u8]) -> Vec<(usize, usize)> {
     ranges
 }
 
-// Find the byte range of a JSON key's array value in raw bytes.
-// Returns (array_content_start, array_content_end) — inside the [ ].
+/// Find the byte range of a JSON key's array value in raw bytes.
+/// Returns `(array_content_start, array_content_end)` -- inside the `[ ]`.
 fn find_key_array_range(bytes: &[u8], key: &str) -> Option<(usize, usize)> {
     let needle = format!("\"{}\"", key);
     let needle_bytes = needle.as_bytes();
@@ -295,7 +316,8 @@ fn find_key_array_range(bytes: &[u8], key: &str) -> Option<(usize, usize)> {
     None
 }
 
-// Extract lightweight metadata from raw JSON bytes without full parse.
+/// Extract a top-level string field from raw JSON bytes without full parse.
+/// Only matches keys at depth 1 to avoid false positives inside nested objects.
 fn extract_string_field(bytes: &[u8], key: &str) -> Option<String> {
     let needle = format!("\"{}\"", key);
     let needle_bytes = needle.as_bytes();
@@ -333,6 +355,16 @@ fn extract_string_field(bytes: &[u8], key: &str) -> Option<String> {
     None
 }
 
+/// Core JSON parser. Three-phase pipeline:
+/// 1. **Scan** -- find metadata keys (`name`, `folder`) in the first 4-8KB,
+///    then locate the coordinate array (`customCoordinates` or `locations`).
+/// 2. **Boundary detection** -- single-pass scanner finds each `{...}` object
+///    boundary inside the coordinate array.
+/// 3. **Parallel parse** -- rayon hands each object slice to simd_json for
+///    deserialization. Non-coordinate fields are collected into `extra`.
+///
+/// Tag names from `extra.tags` arrays are collected and deduplicated; tag
+/// metadata (colors, order) is extracted separately from the top-level `extra`.
 fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
     let mut warnings = Vec::new();
     let t0 = std::time::Instant::now();
@@ -606,6 +638,8 @@ fn read_single_json(path: &str) -> Result<Vec<(String, String)>, String> {
 // DB write
 // ---------------------------------------------------------------------------
 
+/// Persist a parsed map as a new database entry + Arrow IPC file.
+/// Assigns sequential u32 location IDs starting at 1.
 fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap) -> Result<ImportedMapInfo, String> {
     let map_id = Uuid::new_v4().to_string();
     let now = chrono_now();
@@ -659,6 +693,9 @@ fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap
 // Tauri commands
 // ---------------------------------------------------------------------------
 
+/// Parse a file (JSON or ZIP of JSONs) and return previews without persisting.
+/// Results are cached in `CACHED_PARSE` so `bulk_import_confirm` can skip re-parsing.
+/// ZIP files have each `.json` entry parsed in parallel via rayon.
 #[tauri::command]
 #[specta::specta]
 pub async fn bulk_import_preview(path: String) -> Result<Vec<ImportPreviewEntry>, String> {
@@ -688,6 +725,8 @@ pub async fn bulk_import_preview(path: String) -> Result<Vec<ImportPreviewEntry>
     }).await.map_err(|e| e.to_string())?
 }
 
+/// Progress event emitted per-map during bulk import, consumed by the frontend
+/// to drive a progress indicator.
 #[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {
@@ -696,6 +735,10 @@ pub struct ImportProgress {
     pub map_name: String,
 }
 
+/// Persist selected maps from a previously previewed import.
+/// Uses the cached parse if available; otherwise re-parses the file.
+/// Each map gets a new UUID, Arrow IPC file, and SQLite row.
+/// Emits `bulk-import-progress` events per map for UI feedback.
 #[tauri::command]
 #[specta::specta]
 pub async fn bulk_import_confirm(
@@ -756,6 +799,8 @@ pub async fn bulk_import_confirm(
 // ---------------------------------------------------------------------------
 
 
+/// Field presence count for the editor import preview dialog, letting
+/// the user see which optional fields exist and decide which to keep/drop.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FieldCount {
@@ -763,6 +808,9 @@ pub struct FieldCount {
     pub count: u32,
 }
 
+/// Preview data for importing a file into the currently open map.
+/// Unlike bulk import, this shows per-field counts so the user can
+/// selectively drop fields (heading, panoId, etc.) before importing.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EditorImportPreview {
@@ -774,6 +822,8 @@ pub struct EditorImportPreview {
 
 static EDITOR_IMPORT_CACHE: Mutex<Option<ParsedMap>> = Mutex::new(None);
 
+/// Parse a file and return field-level statistics for the editor import dialog.
+/// Caches the parse result for `store_import_file` to consume.
 #[tauri::command]
 #[specta::specta]
 pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String> {
@@ -812,6 +862,8 @@ pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String>
     Ok(preview)
 }
 
+/// Combined result of an editor import: the mutation delta (for render pipeline)
+/// plus import-specific metadata.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EditorImportResult {
@@ -821,6 +873,9 @@ pub struct EditorImportResult {
     pub warnings: Vec<String>,
 }
 
+/// Merge imported tags with existing map tags by case-insensitive name matching.
+/// Tags that already exist get remapped to the existing ID; new tags get fresh
+/// IDs from the store's allocator. Returns a `{parsed_id -> store_id}` remap table.
 fn reconcile_tags(
     store: &mut location_store::Store,
     parsed: &mut ParsedMap,
@@ -848,6 +903,15 @@ fn reconcile_tags(
     remap
 }
 
+/// Insert parsed locations into the open map's store.
+///
+/// Small imports (<=100K) go through the overlay with a single undo entry.
+/// Large imports (>100K) bypass the overlay: bake, concat Arrow batches,
+/// write directly to disk, rebuild the index, and clear the undo stack
+/// (the batch concat is not reversible through the normal undo mechanism).
+///
+/// In both paths, tag reconciliation, render cell registration, and
+/// extra-field auto-registration happen.
 fn add_parsed_to_store(
     app: &tauri::AppHandle,
     store: &mut location_store::Store,
@@ -933,6 +997,9 @@ fn add_parsed_to_store(
     Ok(result)
 }
 
+/// Commit a previously previewed editor import, optionally dropping fields.
+/// Consumes the cached parse from `store_import_preview`. Fields in
+/// `dropped_fields` (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 #[tauri::command]
 #[specta::specta]
 pub fn store_import_file(

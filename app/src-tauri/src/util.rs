@@ -1,3 +1,13 @@
+//! Pure utility functions with no app-specific dependencies.
+//!
+//! Provides timestamp generation, color math, and deterministic tag color
+//! assignment. No I/O, no state -- safe to call from any context.
+
+/// Returns the current UTC time as an ISO 8601 string (e.g. "2024-03-15T08:30:00.000Z").
+///
+/// Uses a dependency-free civil-date algorithm (Howard Hinnant's `days_from_civil`)
+/// to avoid pulling in `chrono` for a single formatting call. Milliseconds are
+/// always ".000" since `SystemTime` only gives us second resolution here.
 pub fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -23,6 +33,7 @@ pub fn now_iso() -> String {
     )
 }
 
+/// Converts HSL to RGB. `h` is in degrees [0, 360), `s` and `l` in [0, 1].
 pub fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
     let a = s * l.min(1.0 - l);
     let f = |n: f64| -> u8 {
@@ -32,6 +43,11 @@ pub fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
     (f(0.0), f(8.0), f(4.0))
 }
 
+/// Generates a deterministic hex color string from a tag name.
+///
+/// Hashes the name bytes into a hue via a linear congruential generator,
+/// then converts to RGB at fixed saturation/lightness (50%/50%) so every
+/// tag gets a distinct, moderately saturated color that's stable across sessions.
 pub fn color_for_name(name: &str) -> String {
     let mut h: i32 = 0;
     for b in name.bytes() {

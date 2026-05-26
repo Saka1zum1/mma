@@ -1,6 +1,13 @@
+//! "Seen" history -- a capped log of Street View panoramas the user has visited.
+//!
+//! Stored in SQLite (the `seen` table), capped at 10,000 entries with oldest-first
+//! eviction. Provides paginated listing, filtering by country/map/search, and
+//! aggregate queries for the history UI. All functions are Tauri IPC commands.
+
 use rusqlite::params_from_iter;
 use crate::fast_io;
 
+/// A panorama visit record as returned to the frontend.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SeenEntry {
@@ -19,6 +26,8 @@ pub struct SeenEntry {
     pub thumbnail: Option<String>,
 }
 
+/// Inbound payload for recording a new panorama visit. Same shape as `SeenEntry`
+/// minus the auto-assigned `id`.
 #[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SeenWriteEntry {
@@ -36,6 +45,8 @@ pub struct SeenWriteEntry {
     pub thumbnail: Option<String>,
 }
 
+/// Optional filters for seen-history queries. All fields are AND-combined.
+/// `search` does a substring match on the `address` column.
 #[derive(serde::Deserialize, specta::Type)]
 #[serde(default)]
 pub struct SeenFilter {
@@ -51,12 +62,16 @@ impl Default for SeenFilter {
     }
 }
 
+/// Map id + display name pair for the "filter by map" dropdown.
+/// Name is resolved from the `maps` table when available, falling back to raw id.
 #[derive(serde::Serialize, specta::Type)]
 pub struct SeenMapInfo {
     pub id: String,
     pub name: String,
 }
 
+/// Builds a SQL WHERE clause and parameter list from the optional filter.
+/// Returns an empty string (no WHERE) when no filter fields are set.
 fn build_where_clause(filter: &Option<SeenFilter>) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
     let mut conditions: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -84,8 +99,14 @@ fn build_where_clause(filter: &Option<SeenFilter>) -> (String, Vec<Box<dyn rusql
     (clause, params)
 }
 
+/// Maximum number of seen entries retained. Once exceeded, the oldest entries
+/// are evicted in the same write transaction.
 const MAX_SEEN: i64 = 10_000;
 
+/// Records a panorama visit and evicts excess entries beyond `MAX_SEEN`.
+///
+/// Eviction deletes the oldest rows by `entered_at`, so the table acts as a
+/// bounded ring buffer without requiring explicit rotation.
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_write(app: tauri::AppHandle, entry: SeenWriteEntry) -> Result<(), String> {
@@ -114,6 +135,7 @@ pub fn store_seen_write(app: tauri::AppHandle, entry: SeenWriteEntry) -> Result<
     Ok(())
 }
 
+/// Returns a page of seen entries, newest first, with optional filtering.
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_list(
@@ -161,6 +183,7 @@ pub fn store_seen_list(
     Ok(entries)
 }
 
+/// Returns the total number of seen entries matching the filter (for pagination).
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_count(app: tauri::AppHandle, filter: Option<SeenFilter>) -> Result<u32, String> {
@@ -177,6 +200,8 @@ pub fn store_seen_count(app: tauri::AppHandle, filter: Option<SeenFilter>) -> Re
     Ok(count)
 }
 
+/// Returns all distinct country codes present in the seen table, sorted alphabetically.
+/// Used to populate the country filter dropdown.
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_countries(app: tauri::AppHandle) -> Result<Vec<String>, String> {
@@ -196,6 +221,9 @@ pub fn store_seen_countries(app: tauri::AppHandle) -> Result<Vec<String>, String
     Ok(countries)
 }
 
+/// Returns all distinct maps that have seen entries, with resolved display names.
+/// Joins against the `maps` table for human-readable names; falls back to the raw
+/// map id if the map has been deleted.
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_maps(app: tauri::AppHandle) -> Result<Vec<SeenMapInfo>, String> {
@@ -224,6 +252,7 @@ pub fn store_seen_maps(app: tauri::AppHandle) -> Result<Vec<SeenMapInfo>, String
     Ok(maps)
 }
 
+/// Deletes all seen history entries.
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_clear(app: tauri::AppHandle) -> Result<(), String> {
