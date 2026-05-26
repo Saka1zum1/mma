@@ -3,6 +3,7 @@
  * The MMA API is defined in @/api.ts and exposed as window.MMA.
  */
 
+import "./externals";
 import { setPendingManifest, type PluginManifest } from "./registry";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";

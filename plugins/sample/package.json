@@ -2,7 +2,7 @@
   "name": "mma-sample-plugin",
   "private": true,
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=esm --outfile=index.js"
+    "build": "node build.js"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

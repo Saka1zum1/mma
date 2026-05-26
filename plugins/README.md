@@ -99,17 +99,9 @@ Component props:
 - `modal` receives `{ onClose: () => void }`
 - `locationPanel` receives no props
 
-Since external plugins are plain JS (not compiled with the app), UI plugins need to **bundle React** into their output. Use esbuild, rollup, or Vite in library mode:
+## Shared modules
 
-```js
-require("esbuild").build({
-  entryPoints: ["src/index.tsx"],
-  bundle: true,
-  format: "esm",
-  outfile: "index.js",
-  external: [],
-});
-```
+The plugin template's build config automatically deduplicates libraries the app already bundles (React, deck.gl, luma.gl). Just write normal imports -- the build handles the rest. Libraries the app doesn't have get bundled into your plugin automatically.
 
 ## Distribution
 

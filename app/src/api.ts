@@ -13,21 +13,15 @@ import { cmd as commands } from "@/lib/commands";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
 import { registerPlugin } from "@/plugins/registry";
-import {
-	registerEnrichFields,
-	registerEnrichmentProvider,
-} from "@/lib/data/fieldDefs.add";
+import { preloadModules, getAvailableExternals } from "@/plugins/externals";
+import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs.add";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { getGoogleMap } from "@/lib/map/mapState";
 import { subscribe, type EditorEvent } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings.add";
-import {
-	getSeenEntries,
-	getSeenCount,
-	clearSeen,
-} from "@/lib/seen/seen.add";
+import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen.add";
 import { loadSeenPano } from "@/components/editor/location/LocationPreview";
 import { enrichAll, needsEnrichment } from "@/lib/sv/enrich.add";
 import { bulkPinToPano } from "@/lib/sv/pinPano.add";
@@ -53,6 +47,8 @@ const mma = {
 	registerPlugin,
 	registerEnrichFields,
 	registerEnrichmentProvider,
+	preloadModules,
+	getAvailableExternals,
 
 	// --- Types ---
 	createLocation,
@@ -76,8 +72,10 @@ const mma = {
 	loadSeenPano,
 
 	// --- Enrichment ---
-	enrichAll: async (opts?: Record<string, unknown>) => enrichAll(await store.fetchAllLocations(), opts),
-	bulkPinToPano: async (opts?: Record<string, unknown>) => bulkPinToPano(await store.fetchAllLocations(), opts),
+	enrichAll: async (opts?: Record<string, unknown>) =>
+		enrichAll(await store.fetchAllLocations(), opts),
+	bulkPinToPano: async (opts?: Record<string, unknown>) =>
+		bulkPinToPano(await store.fetchAllLocations(), opts),
 	validateLocations,
 	needsEnrichment: (loc: Pick<Location, "extra">) => needsEnrichment(loc as Location),
 };
