@@ -921,7 +921,6 @@ export interface AppSettings {
 	enableSeenThumbnails: boolean;
 	seenResolution: SeenResolution;
 	mapPanSpeed: number;
-	mapZoomSpeed: number;
 	panoLookSpeed: number;
 	slowModifier: number;
 	showFps: boolean;
@@ -1130,7 +1129,6 @@ declare const mma: {
 		enableSeenThumbnails: boolean;
 		seenResolution: SeenResolution;
 		mapPanSpeed: number;
-		mapZoomSpeed: number;
 		panoLookSpeed: number;
 		slowModifier: number;
 		showFps: boolean;
