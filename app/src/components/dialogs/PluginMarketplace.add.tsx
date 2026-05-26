@@ -14,7 +14,8 @@ import { loadAndActivatePlugin } from "@/plugins/index";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 
-const REGISTRY_URL = "https://raw.githubusercontent.com/ccmdi/mma/master/plugins/registry.json";
+const REGISTRY_URL =
+	"https://raw.githubusercontent.com/ccmdi/mma/master/plugins/registry.json";
 
 interface RegistryEntry {
 	id: string;
@@ -50,7 +51,9 @@ function CoreCard({ plugin }: { plugin: Plugin }) {
 			</div>
 			<div className="plugin-card__info">
 				<div className="plugin-card__name">{plugin.name}</div>
-				{plugin.description && <div className="plugin-card__desc">{plugin.description}</div>}
+				{plugin.description && (
+					<div className="plugin-card__desc">{plugin.description}</div>
+				)}
 			</div>
 			{!plugin.comingSoon && (
 				<button
@@ -65,49 +68,89 @@ function CoreCard({ plugin }: { plugin: Plugin }) {
 }
 
 function AdditionalCard({
-	entry,
+	id,
+	name,
+	description,
+	icon,
 	installed,
+	enabled,
 	onInstall,
+	onEnable,
+	onDisable,
 	onUninstall,
 }: {
-	entry: RegistryEntry;
+	id: string;
+	name: string;
+	description: string;
+	icon: string;
 	installed: boolean;
+	enabled: boolean;
 	onInstall: (id: string) => void;
+	onEnable: (id: string) => void;
+	onDisable: (id: string) => void;
 	onUninstall: (id: string) => void;
 }) {
 	const [busy, setBusy] = useState(false);
 
-	const toggle = async () => {
+	const handlePrimary = async () => {
 		setBusy(true);
 		try {
-			if (installed) {
-				onUninstall(entry.id);
-			} else {
-				onInstall(entry.id);
-			}
+			if (!installed) onInstall(id);
+			else if (enabled) onDisable(id);
+			else onEnable(id);
 		} finally {
 			setBusy(false);
 		}
 	};
 
+	const primaryLabel = !installed ? "Install" : enabled ? "Disable" : "Enable";
+	const primaryClass = !installed
+		? "button--primary"
+		: enabled
+			? "button--danger"
+			: "button--primary";
+
+	const TRASH = "M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z";
+
 	return (
-		<div className={`plugin-card ${installed ? "plugin-card--enabled" : ""}`}>
+		<div className={`plugin-card ${enabled ? "plugin-card--enabled" : ""}`}>
 			<div className="plugin-card__icon">
-				{entry.icon ? <Icon path={entry.icon} size={32} /> : null}
+				{icon ? <Icon path={icon} size={32} /> : null}
 			</div>
 			<div className="plugin-card__info">
-				<div className="plugin-card__name">{entry.name}</div>
-				{entry.description && <div className="plugin-card__desc">{entry.description}</div>}
+				<div className="plugin-card__name">{name}</div>
+				{description && <div className="plugin-card__desc">{description}</div>}
 			</div>
-			<button
-				className={`button plugin-card__toggle ${installed ? "button--danger" : "button--primary"}`}
-				onClick={toggle}
-				disabled={busy}
-			>
-				{busy ? "..." : installed ? "Disable" : "Enable"}
-			</button>
+			<div className="plugin-card__actions">
+				<button
+					className={`button plugin-card__toggle ${primaryClass}`}
+					onClick={handlePrimary}
+					disabled={busy}
+				>
+					{busy ? "..." : primaryLabel}
+				</button>
+				{installed && (
+					<button
+						className="plugin-card__uninstall"
+						onClick={() => onUninstall(id)}
+						disabled={busy}
+						aria-label="Uninstall"
+					>
+						<Icon path={TRASH} size={16} />
+					</button>
+				)}
+			</div>
 		</div>
 	);
+}
+
+interface AdditionalEntry {
+	id: string;
+	name: string;
+	description: string;
+	icon: string;
+	installed: boolean;
+	enabled: boolean;
 }
 
 export function PluginMarketplace({
@@ -120,17 +163,18 @@ export function PluginMarketplace({
 	const [tab, setTab] = useState<Tab>("core");
 	const [registry, setRegistry] = useState<RegistryEntry[] | null>(registryCache);
 	const [fetchError, setFetchError] = useState<string | null>(null);
-	const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
+	const [installedManifests, setInstalledManifests] = useState<PluginManifest[]>([]);
 	const [, rerender] = useState(0);
 
 	const corePlugins = getPlugins().filter((p) => p.core);
 
+	const refreshInstalled = useCallback(() => {
+		cmd.listUserPlugins().then((m: PluginManifest[]) => setInstalledManifests(m));
+	}, []);
+
 	useEffect(() => {
-		if (!open) return;
-		cmd.listUserPlugins().then((manifests: PluginManifest[]) => {
-			setInstalledIds(new Set(manifests.map((m) => m.id)));
-		});
-	}, [open, tab]);
+		if (open) refreshInstalled();
+	}, [open, refreshInstalled]);
 
 	const fetchRegistry = useCallback(() => {
 		setFetchError(null);
@@ -150,16 +194,62 @@ export function PluginMarketplace({
 		if (open && tab === "additional" && !registry) fetchRegistry();
 	}, [open, tab, registry, fetchRegistry]);
 
+	const additionalEntries: AdditionalEntry[] = (() => {
+		const installedIds = new Set(installedManifests.map((m) => m.id));
+		const seen = new Set<string>();
+		const entries: AdditionalEntry[] = [];
+
+		if (registry) {
+			for (const r of registry) {
+				seen.add(r.id);
+				entries.push({
+					id: r.id,
+					name: r.name,
+					description: r.description,
+					icon: r.icon,
+					installed: installedIds.has(r.id),
+					enabled: isPluginEnabled(r.id),
+				});
+			}
+		}
+
+		for (const m of installedManifests) {
+			if (seen.has(m.id)) continue;
+			entries.push({
+				id: m.id,
+				name: m.name,
+				description: m.description || "",
+				icon: m.icon,
+				installed: true,
+				enabled: isPluginEnabled(m.id),
+			});
+		}
+
+		return entries;
+	})();
+
 	const handleInstall = useCallback(async (id: string) => {
 		try {
 			const manifest = await cmd.installPlugin(id);
 			await loadAndActivatePlugin(manifest);
 			setPluginEnabled(id, true);
-			setInstalledIds((prev) => new Set([...prev, id]));
+			refreshInstalled();
 			rerender((n) => n + 1);
 		} catch (e) {
 			log.error(`[marketplace] install failed for "${id}":`, e);
 		}
+	}, [refreshInstalled]);
+
+	const handleEnable = useCallback((id: string) => {
+		setPluginEnabled(id, true);
+		activatePlugin(id);
+		rerender((n) => n + 1);
+	}, []);
+
+	const handleDisable = useCallback((id: string) => {
+		deactivatePlugin(id);
+		setPluginEnabled(id, false);
+		rerender((n) => n + 1);
 	}, []);
 
 	const handleUninstall = useCallback(async (id: string) => {
@@ -171,13 +261,9 @@ export function PluginMarketplace({
 		} catch (e) {
 			log.error(`[marketplace] uninstall failed for "${id}":`, e);
 		}
-		setInstalledIds((prev) => {
-			const next = new Set(prev);
-			next.delete(id);
-			return next;
-		});
+		refreshInstalled();
 		rerender((n) => n + 1);
-	}, []);
+	}, [refreshInstalled]);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -219,17 +305,18 @@ export function PluginMarketplace({
 								</button>
 							</div>
 						)}
-						{registry && registry.length === 0 && (
+						{registry && additionalEntries.length === 0 && (
 							<div className="plugin-marketplace__empty">No additional plugins available.</div>
 						)}
-						{registry && registry.length > 0 && (
+						{additionalEntries.length > 0 && (
 							<div className="plugin-marketplace__grid">
-								{registry.map((entry) => (
+								{additionalEntries.map((e) => (
 									<AdditionalCard
-										key={entry.id}
-										entry={entry}
-										installed={installedIds.has(entry.id)}
+										key={e.id}
+										{...e}
 										onInstall={handleInstall}
+										onEnable={handleEnable}
+										onDisable={handleDisable}
 										onUninstall={handleUninstall}
 									/>
 								))}

@@ -4760,10 +4760,33 @@ body {
 	color: #666;
 	margin-top: 2px;
 }
-.plugin-card__toggle {
+.plugin-card__actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	flex-shrink: 0;
+}
+.plugin-card__toggle {
 	font-size: 0.8rem;
 	padding: 4px 12px;
+}
+.plugin-card__uninstall {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	align-self: stretch;
+	color: #aaa;
+	background: #f0f0f0;
+	border: 1px solid #ddd;
+	cursor: pointer;
+	padding: 0;
+	border-radius: 4px;
+}
+.plugin-card__uninstall:hover {
+	color: #c00;
+	background: rgba(200, 0, 0, 0.08);
+	border-color: #c00;
 }
 .plugin-card--coming-soon {
 	opacity: 0.5;
