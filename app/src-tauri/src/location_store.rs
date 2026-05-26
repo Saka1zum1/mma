@@ -204,6 +204,11 @@ pub(crate) struct EditEntry {
     pub removed: Vec<Location>,
 }
 
+struct MembershipDelta {
+    gained: Vec<(u32, [u8; 3])>,
+    lost: Vec<u32>,
+}
+
 impl Store {
     pub fn new() -> Self {
         Self {
@@ -271,43 +276,65 @@ impl Store {
     pub(crate) fn finish_mutation(&mut self, changes: ChangeSet) -> MutationResult {
         self.bump();
 
-        // Phase 1: Update selection membership so selected_ids is correct before
-        // deriving the render delta (base_color and colorPatches depend on it).
         let has_selections = !self.selections.all.is_empty();
         let full_resolve = has_selections &&
             (changes.full_reset || changes.added.len() + changes.removed.len() + changes.updated.len() > 100
              || self.selections_need_full_resolve());
-        if has_selections {
+
+        // Step 1: Record which render cells contain changed IDs BEFORE anything mutates render_cells.
+        let affected_cells: HashSet<u8> = if has_selections {
+            let mut cells = HashSet::new();
+            for &id in changes.removed.iter()
+                .chain(changes.added.iter().map(|l| &l.id))
+                .chain(changes.updated.iter().map(|(_, n)| &n.id))
+            {
+                if let Some(&ci) = self.render.id_to_cell_idx.get(id as usize) {
+                    if ci != 255 { cells.insert(ci); }
+                }
+            }
+            cells
+        } else {
+            HashSet::new()
+        };
+
+        // Step 2: Update selection membership and get back what changed.
+        let membership_delta = if has_selections {
             if full_resolve {
                 self.resolve_selection_membership();
+                None
             } else {
-                self.update_selection_membership(&changes);
+                Some(self.update_selection_membership(&changes))
             }
-        }
+        } else {
+            None
+        };
 
-        // Phase 2: Derive render delta (base_color now correct, render_cells populated).
+        // Step 3: Derive render delta (mutates render_cells).
         let mut delta = self.derive_render_delta(&changes);
 
-        // Emit colorPatches for newly-added entries that landed in a selection.
-        if has_selections {
-            for entry in &delta.added {
-                if let Some(&color) = self.selections.colors.get(&entry.id) {
-                    if let Some((cell, ci)) = self.cell_lookup(entry.id) {
-                        delta.color_patches.push(ColorPatchEntry {
-                            cell, cell_index: ci,
-                            r: color[0], g: color[1], b: color[2], a: 255,
-                        });
-                    }
+        // Step 4: Emit colorPatches from membership changes.
+        if let Some(ref md) = membership_delta {
+            for &(id, color) in &md.gained {
+                if let Some((cell, ci)) = self.cell_lookup(id) {
+                    delta.color_patches.push(ColorPatchEntry {
+                        cell, cell_index: ci,
+                        r: color[0], g: color[1], b: color[2], a: 255,
+                    });
                 }
             }
         }
 
-        // Phase 3: Build bitmask file (render_cells now contain new entries).
+        // Step 5: Build bitmask for affected cells.
+        let mut bitmask_cells = affected_cells;
+        for loc in &changes.added {
+            let ci = render_cell_idx(loc.lat, loc.lng);
+            bitmask_cells.insert(ci);
+        }
         let selection_sync = if has_selections {
             if full_resolve {
                 Some(self.rebuild_selection_bitmask())
             } else {
-                Some(self.build_selection_bitmask(&changes))
+                Some(self.build_selection_bitmask_for_cells(&bitmask_cells))
             }
         } else {
             None
@@ -418,12 +445,17 @@ impl Store {
     }
 
     /// Update selection membership sets for incremental changes (adds/removes/updates).
-    /// Only touches selected_ids/selected_colors/selection_loc_sets — no render_cells access.
-    fn update_selection_membership(&mut self, changes: &ChangeSet) {
+    /// Returns which IDs gained or lost selection so callers can emit colorPatches.
+    fn update_selection_membership(&mut self, changes: &ChangeSet) -> MembershipDelta {
+        let mut was_selected: HashSet<u32> = HashSet::new();
+
         let drop_ids: HashSet<u32> = changes.removed.iter().copied()
             .chain(changes.updated.iter().map(|(_, n)| n.id))
             .collect();
         if !drop_ids.is_empty() {
+            for id in &drop_ids {
+                if self.selections.ids.contains(id) { was_selected.insert(*id); }
+            }
             for set in &mut self.selections.loc_sets {
                 for id in &drop_ids { set.remove(id); }
             }
@@ -448,28 +480,35 @@ impl Store {
             }
         }
         self.selections.version += 1;
-    }
 
-    /// Build the bitmask file from current render_cells + selection_loc_sets.
-    fn build_selection_bitmask(&self, changes: &ChangeSet) -> SelectionSync {
-        let counts: Vec<usize> = self.selections.loc_sets.iter().map(|s| s.len()).collect();
-        let selected_count = self.selections.ids.len();
-
-        let changed_ids: HashSet<u32> = changes.removed.iter().copied()
-            .chain(changes.added.iter().map(|l| l.id))
-            .chain(changes.updated.iter().map(|(_, n)| n.id))
-            .collect();
-
-        let mut affected_count = 0usize;
-        for opt in &self.render.cells {
-            if let Some(cr) = opt {
-                if cr.id_order.iter().any(|id| changed_ids.contains(id)) {
-                    affected_count += 1;
-                }
+        let mut gained = Vec::new();
+        let mut lost = Vec::new();
+        for loc in changes.added.iter().chain(changes.updated.iter().map(|(_, n)| n)) {
+            let is_now = self.selections.ids.contains(&loc.id);
+            let was_before = was_selected.contains(&loc.id);
+            if is_now && !was_before {
+                let color = self.selections.colors.get(&loc.id).copied().unwrap_or([255, 0, 0]);
+                gained.push((loc.id, color));
+            } else if !is_now && was_before {
+                lost.push(loc.id);
+            }
+        }
+        // Removed locations that were selected
+        for &id in &changes.removed {
+            if was_selected.contains(&id) {
+                lost.push(id);
             }
         }
 
-        if affected_count == 0 && changes.removed.is_empty() {
+        MembershipDelta { gained, lost }
+    }
+
+    /// Build the bitmask file for only the specified cell indices.
+    fn build_selection_bitmask_for_cells(&self, affected: &HashSet<u8>) -> SelectionSync {
+        let counts: Vec<usize> = self.selections.loc_sets.iter().map(|s| s.len()).collect();
+        let selected_count = self.selections.ids.len();
+
+        if affected.is_empty() {
             return SelectionSync { counts, patch_file: None, selected_count };
         }
 
@@ -479,9 +518,9 @@ impl Store {
         for sel in &self.selections.all {
             buf.extend_from_slice(&sel.color);
         }
-        let num_cells = self.render.cells.iter().filter(|o| o.is_some()).count();
-        buf.push(num_cells as u8);
+        buf.push(affected.len() as u8);
         for (ci, opt) in self.render.cells.iter().enumerate() {
+            if !affected.contains(&(ci as u8)) { continue; }
             let cr = match opt { Some(cr) => cr, None => continue };
             buf.push(BASE32[ci]);
             let n = cr.id_order.len();
@@ -498,16 +537,14 @@ impl Store {
             }
         }
 
-        let patch_file = if num_cells > 0 {
+        let patch_file = {
             let path = std::env::temp_dir().join(format!("mma_sel_{}.bin", self.map_id.as_deref().unwrap_or("default")));
             let _ = std::fs::write(&path, &buf);
             Some(path.to_string_lossy().into_owned())
-        } else {
-            None
         };
 
-        log::debug!("[sel-incr] sels={} selected={} cells={} affected={} buf={}",
-            num_sels, selected_count, num_cells, affected_count, buf.len());
+        log::debug!("[sel-incr] sels={} selected={} affected={} buf={}",
+            num_sels, selected_count, affected.len(), buf.len());
 
         SelectionSync { counts, patch_file, selected_count }
     }
@@ -1518,7 +1555,8 @@ pub fn store_update_locations(
                 .collect();
             auto_register_extras(&app, store, &extras, &mut result);
         }
-        log::debug!("[cmd] store_update_locations n={} undo={} total={}ms", updates.len(), record_undo, _t.elapsed().as_millis());
+        log::debug!("[cmd] store_update_locations n={} undo={} total={}ms",
+            updates.len(), record_undo, _t.elapsed().as_millis());
         Ok(result)
     })
 }

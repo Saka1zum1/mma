@@ -432,9 +432,14 @@ const TIMEZONE_VALUES = Intl.supportedValuesOf("timeZone");
 function useEnumValues(
 	fieldKey: string | undefined,
 	def: import("@/types").ExtraFieldDef | undefined,
+	fieldType: string | undefined,
 ): string[] {
 	const [values, setValues] = useState<string[]>([]);
 	useEffect(() => {
+		if (fieldType !== "enum" && fieldType !== undefined) {
+			setValues([]);
+			return;
+		}
 		if (def?.values) {
 			setValues(def.values);
 			return;
@@ -448,7 +453,7 @@ function useEnumValues(
 			return;
 		}
 		cmd.storeExtraFieldValues(fieldKey).then(setValues);
-	}, [fieldKey, def]);
+	}, [fieldKey, def, fieldType]);
 	return values;
 }
 
@@ -477,7 +482,7 @@ function FilterValueInput({
 }) {
 	const type = fieldEntry?.fieldType;
 	const def = fieldEntry?.fieldDef;
-	const enumValues = useEnumValues(fieldEntry?.key, def);
+	const enumValues = useEnumValues(fieldEntry?.key, def, type);
 
 	if (type === "enum") {
 		return (

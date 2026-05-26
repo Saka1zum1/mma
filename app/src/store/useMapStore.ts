@@ -451,10 +451,9 @@ function syncMutationResult(r: MutationResult) {
 		meta: {
 			...currentMap.meta,
 			locationCount: r.locationCount,
-			extra: {
-				...currentMap.meta.extra,
-				fields: { ...currentMap.meta.extra.fields, ...r.newFieldDefs },
-			},
+			extra: r.newFieldDefs != null
+			? { ...currentMap.meta.extra, fields: { ...currentMap.meta.extra.fields, ...r.newFieldDefs } }
+			: currentMap.meta.extra,
 		},
 	};
 	undoRedoState = { canUndo: r.canUndo, canRedo: r.canRedo };

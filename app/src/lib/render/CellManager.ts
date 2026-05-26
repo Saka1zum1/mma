@@ -191,8 +191,11 @@ export class CellManager {
 	}
 
 	/** Apply an incremental delta (adds, swap-removes, position patches, color patches). Returns affected cell keys. */
+	private _removedIds = new Set<number>();
+
 	applyDelta(delta: RenderDelta): Set<string> {
 		const affected = new Set<string>();
+		this._removedIds.clear();
 
 		for (const rem of delta.removed) {
 			const cb = this.cells.get(rem.cell);
@@ -201,6 +204,7 @@ export class CellManager {
 				this.totalCount--;
 				affected.add(rem.cell);
 			}
+			this._removedIds.add(rem.id);
 		}
 
 		for (const entry of delta.added) {
@@ -322,37 +326,78 @@ export class CellManager {
 	 * Decode per-cell bitmasks from Rust into a colored selection overlay.
 	 * Selected locations are hidden in their main cell (alpha=0) and drawn in the overlay with
 	 * the selection's color. Later selections overdraw earlier ones. Returns the set of selected IDs.
+	 *
+	 * Supports partial updates: only cells included in `cellEntries` are touched.
+	 * Overlay entries and selectedIds for other cells are preserved.
 	 */
 	applySelectionBitmasks(
 		selColors: [number, number, number][],
 		cellEntries: { cellChar: string; locCount: number; masks: Uint8Array[] }[],
 	): Set<number> {
 		const numSels = selColors.length;
-		let totalEntries = 0;
-		const selectedIds = new Set<number>();
 
-		// Count total overlay entries — one per (location, selection) membership
+		// Set of IDs in incoming cells — only these get rebuilt from bitmask.
+		const incomingIds = new Set<number>();
+		for (const entry of cellEntries) {
+			const cb = this.cells.get(entry.cellChar);
+			if (!cb) continue;
+			for (const id of cb.idToIndex.keys()) incomingIds.add(id);
+		}
+
+		// Collect existing overlay entries NOT in incoming cells and not recently removed.
+		const kept: { pos0: number; pos1: number; r: number; g: number; b: number; a: number; angle: number; id: number }[] = [];
+		const selectedIds = new Set<number>();
+		for (let i = 0; i < this.selOverlayCount; i++) {
+			const id = this.selOverlayIds[i];
+			if (incomingIds.has(id) || this._removedIds.has(id)) continue;
+			kept.push({
+				pos0: this.selOverlayPositions[i * 2],
+				pos1: this.selOverlayPositions[i * 2 + 1],
+				r: this.selOverlayColors[i * 4],
+				g: this.selOverlayColors[i * 4 + 1],
+				b: this.selOverlayColors[i * 4 + 2],
+				a: this.selOverlayColors[i * 4 + 3],
+				angle: this.selOverlayAngles[i],
+				id,
+			});
+			if (this.selOverlayColors[i * 4 + 3] > 0) selectedIds.add(id);
+		}
+
+		// Count new overlay entries from incoming cells
+		let newEntries = 0;
 		for (const entry of cellEntries) {
 			const cb = this.cells.get(entry.cellChar);
 			const n = cb ? Math.min(entry.locCount, cb.count) : 0;
 			for (let li = 0; li < n; li++) {
-				const byteIdx = li >> 3;
-				const bitIdx = li & 7;
 				for (let si = 0; si < numSels; si++) {
-					if (entry.masks[si][byteIdx] & (1 << bitIdx)) {
-						totalEntries++;
+					if (entry.masks[si][li >> 3] & (1 << (li & 7))) {
+						newEntries++;
 					}
 				}
 			}
 		}
 
-		this.selOverlayPositions = new Float32Array(totalEntries * 2);
-		this.selOverlayColors = new Uint8Array(totalEntries * 4);
-		this.selOverlayAngles = new Float32Array(totalEntries);
-		this.selOverlayIds = new Array(totalEntries);
-		let oi = 0;
+		const total = kept.length + newEntries;
+		this.selOverlayPositions = new Float32Array(total * 2);
+		this.selOverlayColors = new Uint8Array(total * 4);
+		this.selOverlayAngles = new Float32Array(total);
+		this.selOverlayIds = new Array(total);
 
-		// Reset all colors to default, then hide selected locations
+		// Write kept entries
+		let oi = 0;
+		for (const k of kept) {
+			this.selOverlayPositions[oi * 2] = k.pos0;
+			this.selOverlayPositions[oi * 2 + 1] = k.pos1;
+			this.selOverlayColors[oi * 4] = k.r;
+			this.selOverlayColors[oi * 4 + 1] = k.g;
+			this.selOverlayColors[oi * 4 + 2] = k.b;
+			this.selOverlayColors[oi * 4 + 3] = k.a;
+			this.selOverlayAngles[oi] = k.angle;
+			this.selOverlayIds[oi] = k.id;
+			oi++;
+		}
+
+		// Reset base colors for incoming cells, then write new overlay entries
 		for (const entry of cellEntries) {
 			const cb = this.cells.get(entry.cellChar);
 			if (!cb) continue;
@@ -366,28 +411,21 @@ export class CellManager {
 			}
 		}
 
-		// Append per-selection in order — later selections overdraw earlier ones
 		for (let si = 0; si < numSels; si++) {
 			const [r, g, b] = selColors[si];
 			for (const entry of cellEntries) {
 				const cb = this.cells.get(entry.cellChar);
 				if (!cb) continue;
 				const n = Math.min(entry.locCount, cb.count);
-
 				for (let li = 0; li < n; li++) {
-					const byteIdx = li >> 3;
-					const bitIdx = li & 7;
-					if (!(entry.masks[si][byteIdx] & (1 << bitIdx))) continue;
-
+					if (!(entry.masks[si][li >> 3] & (1 << (li & 7)))) continue;
 					const locId = cb.ids[li];
 					if (locId != null) selectedIds.add(locId);
-
 					const c4 = li * 4;
 					cb.colors[c4] = 0;
 					cb.colors[c4 + 1] = 0;
 					cb.colors[c4 + 2] = 0;
 					cb.colors[c4 + 3] = 0;
-
 					this.selOverlayPositions[oi * 2] = cb.positions[li * 2];
 					this.selOverlayPositions[oi * 2 + 1] = cb.positions[li * 2 + 1];
 					this.selOverlayColors[oi * 4] = r;
@@ -409,6 +447,7 @@ export class CellManager {
 		this.selOverlayCount = oi;
 		this.selOverlayVersion++;
 		this.version++;
+		this._removedIds.clear();
 		return selectedIds;
 	}
 
