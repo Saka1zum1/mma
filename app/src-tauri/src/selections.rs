@@ -642,13 +642,22 @@ fn compare_filter(field_val: &serde_json::Value, op: &str, value: &serde_json::V
 
 fn val_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     if a == b { return true; }
-    // Cross-type: compare string representations (e.g. Number(2) vs String("2"))
-    let sa = match a { serde_json::Value::String(s) => s.as_str().into(), _ => None };
-    let sb = match b { serde_json::Value::String(s) => s.as_str().into(), _ => None };
-    match (sa, sb) {
-        (Some(s), None) => s == *b,
-        (None, Some(s)) => *a == s,
-        _ => false,
+    if a.is_null() || b.is_null() { return false; }
+    match (as_f64(a), as_f64(b)) {
+        (Some(fa), Some(fb)) => fa == fb,
+        _ => {
+            let sa = val_to_str(a);
+            let sb = val_to_str(b);
+            !sa.is_empty() && sa == sb
+        }
+    }
+}
+
+fn val_to_str(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => String::new(),
     }
 }
 

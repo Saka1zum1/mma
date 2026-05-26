@@ -181,19 +181,25 @@ fn val_eq_same_type() {
     assert!(!val_eq(&serde_json::json!("a"), &serde_json::json!("b")));
 }
 
-// TODO: val_eq's comment claims cross-type comparison (e.g. Number(2) vs
-// String("2")), but it doesn't work. The cross-type branch extracts the
-// &str from the String side and compares via serde_json's PartialEq<&str>
-// for Value, which only matches Value::String — it won't coerce Number to
-// string. The entire cross-type block is effectively dead code; the
-// function reduces to just `a == b`. This means Filter "eq" with
-// mismatched types (e.g. altitude stored as Number(100), filter value
-// String("100")) will silently match nothing.
 #[test]
-#[should_panic]
-fn val_eq_cross_type_is_broken() {
+fn val_eq_cross_type() {
+    // number vs string
     assert!(val_eq(&serde_json::json!(2), &serde_json::json!("2")));
     assert!(val_eq(&serde_json::json!("2"), &serde_json::json!(2)));
+    assert!(val_eq(&serde_json::json!(10), &serde_json::json!("10")));
+    assert!(!val_eq(&serde_json::json!(2), &serde_json::json!("3")));
+    // float vs int
+    assert!(val_eq(&serde_json::json!(2.0), &serde_json::json!(2)));
+    assert!(val_eq(&serde_json::json!(100), &serde_json::json!(100.0)));
+    // float vs string
+    assert!(val_eq(&serde_json::json!(3.5), &serde_json::json!("3.5")));
+    // bool never equals number/string
+    assert!(!val_eq(&serde_json::json!(true), &serde_json::json!(1)));
+    assert!(!val_eq(&serde_json::json!(true), &serde_json::json!("true")));
+    // null
+    assert!(val_eq(&serde_json::json!(null), &serde_json::json!(null)));
+    assert!(!val_eq(&serde_json::json!(null), &serde_json::json!(0)));
+    assert!(!val_eq(&serde_json::json!(null), &serde_json::json!("")));
 }
 
 // -----------------------------------------------------------------------
