@@ -220,7 +220,7 @@ function parseResult(r: any): google.maps.StreetViewResolvedPanoramaData | null 
 		const ref = panoRefs[targetIdx];
 		return {
 			pano: ref ? imageKeyToPanoId(ref[0]) : "",
-			heading: l[1]?.[0] ?? 0,
+			heading: l[1]?.[3] ?? 0,
 		};
 	});
 
