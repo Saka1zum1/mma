@@ -2950,6 +2950,20 @@ summary.button {
 	--rdp-day_button-width: 30px;
 	--rdp-nav-height: 2.25rem;
 	font-size: 0.85rem;
+	width: 280px;
+}
+.date-picker__popover .rdp-months {
+	max-width: none;
+	width: 100%;
+}
+.date-picker__popover .rdp-month {
+	width: 100%;
+}
+.date-picker__popover .rdp-month_grid {
+	width: 100%;
+}
+.date-picker__popover .rdp-month_caption {
+	justify-content: center;
 }
 .date-picker__any-year {
 	display: flex;
@@ -2963,7 +2977,7 @@ summary.button {
 	margin-top: 0.25rem;
 }
 .month-grid {
-	width: 200px;
+	width: 280px;
 }
 .month-grid__nav {
 	display: flex;

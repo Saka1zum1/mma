@@ -151,6 +151,7 @@ export function DatePicker({
 							month={navMonth}
 							onMonthChange={setNavMonth}
 							captionLayout="dropdown"
+							navLayout="around"
 							startMonth={new Date(2007, 0)}
 							endMonth={new Date(new Date().getFullYear() + 1, 11)}
 						/>
