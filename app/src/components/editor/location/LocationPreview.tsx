@@ -671,6 +671,7 @@ export function LocationPreview() {
 	const [panoReady, setPanoReady] = useState(false);
 	const [altitude, setAltitude] = useState(0);
 	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0);
+	const cancelTweenRef = useRef<(() => void) | null>(null);
 	const geoRef = useRef(geoResult);
 	geoRef.current = geoResult;
 	useEffect(() => {
@@ -988,18 +989,20 @@ export function LocationPreview() {
 	});
 	useHotkey(useBinding("pointNorth"), () => {
 		if (singletonPano) {
+			cancelTweenRef.current?.();
 			const h = singletonPano.getPov().heading;
 			if (Math.abs(h) < 1 && Math.abs(singletonPano.getPov().pitch) < 1) {
-				tweenPov(singletonPano, { heading: 0, pitch: -90 });
+				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: -90 });
 			} else {
-				tweenPov(singletonPano, { heading: 0, pitch: 0 });
+				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: 0 });
 			}
 		}
 	});
 	useHotkey(useBinding("spin180"), () => {
 		if (singletonPano) {
+			cancelTweenRef.current?.();
 			const pov = singletonPano.getPov();
-			tweenPov(singletonPano, { heading: (pov.heading + 180) % 360, pitch: pov.pitch });
+			cancelTweenRef.current = tweenPov(singletonPano, { heading: (pov.heading + 180) % 360, pitch: pov.pitch });
 		}
 	});
 	useHotkey(useBinding("zoomIn"), () => {
