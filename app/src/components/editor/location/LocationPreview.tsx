@@ -456,7 +456,6 @@ function FullscreenTagBar({
 }) {
 	const [input, setInput] = useState("");
 	const [focused, setFocused] = useState(false);
-	const [hovered, setHovered] = useState(false);
 
 	const handleAdd = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -469,34 +468,24 @@ function FullscreenTagBar({
 		setInput("");
 	};
 
-	const handleSuggestionClick = (t: Tag) => {
-		if (!pendingTags.includes(t.id)) {
-			onChangeTags([...pendingTags, t.id]);
-		}
-		setInput("");
-	};
-
 	const toggleTag = (t: Tag) => {
 		if (pendingTags.includes(t.id)) {
 			onChangeTags(pendingTags.filter((id) => id !== t.id));
 		} else {
 			onChangeTags([...pendingTags, t.id]);
 		}
+		setInput("");
 	};
 
 	const locTags = pendingTags.map((id) => tags.find((t) => t.id === id)).filter(Boolean) as Tag[];
 	const sorted = [...tags].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
 	const available = sorted.filter((t) => !pendingTags.includes(t.id));
-	const suggestions = input.trim()
-		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase())).slice(0, 15)
-		: available.slice(0, 15);
+	const filtered = input.trim()
+		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase()))
+		: available;
 
 	return (
-		<div
-			className="fullscreen-tagbar"
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
-		>
+		<div className="fullscreen-tagbar">
 			<ul className="tag-list">
 				{locTags.map((t) => (
 					<li
@@ -517,48 +506,29 @@ function FullscreenTagBar({
 					</li>
 				))}
 			</ul>
-			<div style={{ position: "relative" }}>
-				<form className="form-add-tag" onSubmit={handleAdd}>
-					<button className="button form-add-tag__button" type="submit">
-						+
-					</button>
-					<input
-						className="form-add-tag__input fullscreen-tagbar__input"
-						type="text"
-						placeholder="Add a tag..."
-						value={input}
-						onChange={(e) => setInput(e.target.value)}
-						onFocus={() => setFocused(true)}
-						onBlur={() => setTimeout(() => setFocused(false), 150)}
-					/>
-				</form>
-				{focused && suggestions.length > 0 && (
-					<ul className="fullscreen-tagbar__suggestions">
-						{suggestions.map((t) => (
-							<li
-								key={t.id}
-								className="fullscreen-tagbar__suggestion"
-								onMouseDown={() => handleSuggestionClick(t)}
-							>
-								<span
-									className="tag is-small"
-									style={{ backgroundColor: t.color, color: textColorFor(t.color) }}
-								>
-									<span className="tag__text">{t.name}</span>
-								</span>
-							</li>
-						))}
-					</ul>
-				)}
-			</div>
-			{hovered && available.length > 0 && (
+			<form className="form-add-tag" onSubmit={handleAdd}>
+				<button className="button form-add-tag__button" type="submit">
+					+
+				</button>
+				<input
+					className="form-add-tag__input fullscreen-tagbar__input"
+					type="text"
+					placeholder="Add a tag..."
+					spellCheck={false}
+					value={input}
+					onChange={(e) => setInput(e.target.value)}
+					onFocus={() => setFocused(true)}
+					onBlur={() => setTimeout(() => setFocused(false), 150)}
+				/>
+			</form>
+			{focused && filtered.length > 0 && (
 				<div className="fullscreen-tagbar__palette">
-					{available.map((t) => (
+					{filtered.map((t) => (
 						<button
 							key={t.id}
 							className="tag is-small fullscreen-tagbar__palette-tag"
 							style={{ backgroundColor: t.color, color: textColorFor(t.color) }}
-							onClick={() => toggleTag(t)}
+							onMouseDown={() => toggleTag(t)}
 							type="button"
 						>
 							<span className="tag__text">{t.name}</span>

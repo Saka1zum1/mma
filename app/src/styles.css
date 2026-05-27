@@ -4605,15 +4605,11 @@ body {
 }
 .fullscreen-tagbar .form-add-tag {
 	display: flex;
+	align-items: center;
 	gap: 4px;
 }
 .fullscreen-tagbar .form-add-tag__input {
-	background: rgba(255, 255, 255, 0.15) !important;
-	color: #fff !important;
-	border: 1px solid rgba(255, 255, 255, 0.3);
-	border-radius: 4px;
-	padding: 2px 8px;
-	font-size: 0.8125rem;
+	color: #000 !important;
 	width: 120px;
 }
 .fullscreen-tagbar .form-add-tag__input::placeholder {
@@ -4621,26 +4617,6 @@ body {
 }
 .fullscreen-tagbar .form-add-tag__button {
 	color: #fff !important;
-}
-.fullscreen-tagbar__suggestions {
-	position: absolute;
-	bottom: 100%;
-	left: 0;
-	margin: 0 0 4px;
-	padding: 4px;
-	list-style: none;
-	background: #222;
-	border: 1px solid #444;
-	border-radius: 4px;
-	max-height: 200px;
-	overflow-y: auto;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
-	min-width: 160px;
-}
-.fullscreen-tagbar__suggestion {
-	cursor: pointer;
 }
 .fullscreen-tagbar__palette {
 	position: absolute;
