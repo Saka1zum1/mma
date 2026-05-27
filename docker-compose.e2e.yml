@@ -1,0 +1,14 @@
+services:
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    volumes:
+      - cargo-registry:/root/.cargo/registry
+      - cargo-git:/root/.cargo/git
+      - target-cache:/repo/app/src-tauri/target
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  target-cache:

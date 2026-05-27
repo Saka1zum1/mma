@@ -9,7 +9,7 @@ import { dirname, resolve } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const FIXTURE_ZIP = resolve(__dirname, "../fixtures/mma-export-sample.zip").replace(/\//g, "\\");
+const FIXTURE_ZIP = resolve(__dirname, "../fixtures/mma-export-sample.zip");
 
 // ============================================================================
 // Rust bulk import — preview

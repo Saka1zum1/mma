@@ -23,7 +23,7 @@ async function loadUserPlugin(m: PluginManifest) {
 	const appDataDir = await cmd.getAppDataDir();
 	setPendingManifest(m);
 	try {
-		const filePath = `${appDataDir}\\plugins\\${m.id}\\${m.main}`;
+		const filePath = `${appDataDir}/plugins/${m.id}/${m.main}`;
 		const code = await cmd.readFile(filePath);
 		const blob = new Blob([code], { type: "application/javascript" });
 		await import(/* @vite-ignore */ URL.createObjectURL(blob));

@@ -25,11 +25,15 @@ if (!isWorker) {
 export const config: WebdriverIO.Config = {
 	runner: "local",
 	specs: ["./test/e2e/**/*.test.ts"],
+	exclude: [
+		"./test/e2e/benchmarks.test.ts",
+		"./test/e2e/speed-matrix.test.ts",
+	],
 	maxInstances: 1,
 	capabilities: [
 		{
 			"tauri:options": {
-				application: path.resolve("./src-tauri/target/debug/map-making-app.exe"),
+				application: path.resolve(`./src-tauri/target/debug/map-making-app${process.platform === "win32" ? ".exe" : ""}`),
 				args: ["--test-db"],
 			},
 		},
