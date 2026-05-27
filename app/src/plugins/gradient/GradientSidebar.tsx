@@ -86,11 +86,6 @@ function isNumericField(def: ExtraFieldDef | undefined): boolean {
 	return def.type === "number" || def.type === "date";
 }
 
-function isDateLikeField(def: ExtraFieldDef | undefined, key: string): boolean {
-	if (def?.type === "date" || def?.type === "month") return true;
-	return key === "imageDate" || key === "datetime";
-}
-
 export function GradientSidebar({ onClose }: { onClose: () => void }) {
 	const [fieldKey, setFieldKey] = useState("");
 	const [presetIdx, setPresetIdx] = useState(0);
@@ -105,8 +100,8 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 		if (!map?.meta.extra?.fields) return result;
 		for (const [key, raw] of Object.entries(map.meta.extra.fields)) {
 			const def = raw as ExtraFieldDef;
-			const numeric = isNumericField(def) || isDateLikeField(def, key);
-			if (numeric || def.type === "enum" || def.type === "string") {
+			const numeric = isNumericField(def);
+			if (numeric || def.type === "enum" || def.type === "string" || def.type === "month") {
 				result.push({ key, label: def.label ?? key, def, numeric });
 			}
 		}
@@ -143,18 +138,7 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 
 			if (fieldOpt.numeric) {
 				// Numeric: compute range, create "between" filter buckets
-				let nums: number[];
-				if (isDateLikeField(fieldOpt.def, fieldKey)) {
-					nums = values
-						.map((v) => {
-							const s = String(v.raw);
-							const ts = Date.parse(s);
-							return isNaN(ts) ? Number(v.raw) : ts / 1000;
-						})
-						.filter((n) => !isNaN(n));
-				} else {
-					nums = values.map((v) => Number(v.raw)).filter((n) => !isNaN(n));
-				}
+				const nums = values.map((v) => Number(v.raw)).filter((n) => !isNaN(n));
 				if (nums.length === 0) return;
 
 				let min = Infinity, max = -Infinity;
