@@ -6,6 +6,11 @@ import { ComponentType } from 'react';
 
 declare function preloadModules(ids: string[]): Promise<void>;
 declare function getAvailableExternals(): string[];
+export interface LocationStore {
+	locations: Map<number, Location>;
+	onChange(cb: () => void): () => void;
+	destroy(): void;
+}
 export interface PluginSettingDef {
 	key: string;
 	label: string;
@@ -1249,6 +1254,7 @@ declare const mma: {
 	registerEnrichmentProvider: typeof registerEnrichmentProvider;
 	preloadModules: typeof preloadModules;
 	getAvailableExternals: typeof getAvailableExternals;
+	createLocationStore: () => Promise<LocationStore>;
 	createLocation: typeof createLocation;
 	getGoogleMap: () => google.maps.Map | null;
 	waitForGoogleMap: () => Promise<google.maps.Map>;

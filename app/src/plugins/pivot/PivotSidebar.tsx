@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { Selection, SelectionProps } from "@/store/selections";
 import { selectionDisplayName } from "@/store/selections";
 import {
@@ -9,7 +9,10 @@ import {
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import type { ExtraFieldDef } from "@/types";
+import type { LocationStore } from "@/api";
 import "./pivot.css";
+
+let locStore: LocationStore | null = null;
 
 interface PivotRow {
 	label: string;
@@ -43,8 +46,8 @@ async function computePivot(
 	const map = MMA.getCurrentMap();
 	if (!map) return null;
 
-	const { fetchAllLocations } = await import("@/store/useMapStore");
-	const allLocs = await fetchAllLocations();
+	if (!locStore) locStore = await MMA.createLocationStore();
+	const allLocs = [...locStore.locations.values()];
 
 	// Determine rows + resolve ID sets
 	let rowDefs: { label: string; color: [number, number, number] }[];
@@ -196,16 +199,24 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 		}
 	}, [rowSource, fieldKey, fields]);
 
+	const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+	const debouncedRecompute = useCallback(() => {
+		clearTimeout(timerRef.current);
+		timerRef.current = setTimeout(recompute, 150);
+	}, [recompute]);
+
 	useEffect(() => {
 		recompute();
-		const unsubs = [
-			MMA.on("location:add", recompute),
-			MMA.on("location:remove", recompute),
-			MMA.on("location:update", recompute),
-			MMA.on("selection:change", recompute),
-		];
-		return () => unsubs.forEach((fn: () => void) => fn());
-	}, [recompute]);
+		const unsubStore = locStore?.onChange(debouncedRecompute);
+		const unsubSel = MMA.on("selection:change", debouncedRecompute);
+		return () => {
+			clearTimeout(timerRef.current);
+			unsubStore?.();
+			unsubSel();
+			locStore?.destroy();
+			locStore = null;
+		};
+	}, [recompute, debouncedRecompute]);
 
 	return (
 		<section className="map-sidebar pivot-sidebar">

@@ -931,14 +931,23 @@ var DEFAULT_SETTINGS = {
   filterTags: null
 };
 var overlay = null;
-var allLocations = [];
+var locStore = null;
 var settings = { ...DEFAULT_SETTINGS };
 var onSettingsChange = null;
 function getSettings() {
   return settings;
 }
 function getLocationCount() {
-  return filterLocations().length;
+  return filterLocations(allLocations()).length;
+}
+function allLocations() {
+  if (!locStore) return [];
+  const out = [];
+  for (const l of locStore.locations.values()) {
+    const loc = l;
+    out.push({ lat: loc.lat, lng: loc.lng, tags: loc.tags });
+  }
+  return out;
 }
 function setOnSettingsChange(cb) {
   onSettingsChange = cb;
@@ -948,14 +957,14 @@ function updateSettings(patch) {
   rebuild();
   onSettingsChange?.();
 }
-function filterLocations() {
+function filterLocations(locs) {
   const tags = settings.filterTags;
-  if (!tags || tags.size === 0) return allLocations;
-  return allLocations.filter((loc) => loc.tags.some((t) => tags.has(t)));
+  if (!tags || tags.size === 0) return locs;
+  return locs.filter((loc) => loc.tags.some((t) => tags.has(t)));
 }
 function rebuild() {
   if (!overlay) return;
-  const data = filterLocations();
+  const data = filterLocations(allLocations());
   const layer = new heatmap_layer_default({
     id: "mma-heatmap",
     data,
@@ -972,42 +981,23 @@ function rebuild() {
 async function init() {
   const map = MMA.getGoogleMap();
   if (!map) throw new Error("No map instance");
-  allLocations = (await MMA.fetchAllLocations()).map((l) => ({
-    lat: l.lat,
-    lng: l.lng,
-    tags: l.tags
-  }));
+  locStore = await MMA.createLocationStore();
   overlay = new import_google_maps.GoogleMapsOverlay({ layers: [] });
   overlay.setMap(map);
   rebuild();
-  const unsubs = [
-    MMA.on("location:add", async () => {
-      allLocations = (await MMA.fetchAllLocations()).map((l) => ({
-        lat: l.lat,
-        lng: l.lng,
-        tags: l.tags
-      }));
-      rebuild();
-      onSettingsChange?.();
-    }),
-    MMA.on("location:remove", async () => {
-      allLocations = (await MMA.fetchAllLocations()).map((l) => ({
-        lat: l.lat,
-        lng: l.lng,
-        tags: l.tags
-      }));
-      rebuild();
-      onSettingsChange?.();
-    })
-  ];
+  const unsubStore = locStore.onChange(() => {
+    rebuild();
+    onSettingsChange?.();
+  });
   return () => {
-    unsubs.forEach((u) => u());
+    unsubStore();
+    locStore?.destroy();
+    locStore = null;
     if (overlay) {
       overlay.setMap(null);
       overlay.finalize();
       overlay = null;
     }
-    allLocations = [];
     settings = { ...DEFAULT_SETTINGS };
     onSettingsChange = null;
   };

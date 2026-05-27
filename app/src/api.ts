@@ -27,6 +27,50 @@ import { enrichAll, needsEnrichment } from "@/lib/sv/enrich.add";
 import { bulkPinToPano } from "@/lib/sv/pinPano.add";
 import { validateLocations } from "@/lib/sv/validate";
 
+export interface LocationStore {
+	locations: Map<number, Location>;
+	onChange(cb: () => void): () => void;
+	destroy(): void;
+}
+
+async function createLocationStore(): Promise<LocationStore> {
+	const locs = new Map<number, Location>();
+	for (const l of await store.fetchAllLocations()) locs.set(l.id, l);
+
+	const listeners = new Set<() => void>();
+	const notify = () => { for (const cb of listeners) cb(); };
+
+	const unsubs = [
+		subscribe("location:add", (...args: unknown[]) => {
+			for (const l of args[0] as Location[]) locs.set(l.id, l);
+			notify();
+		}),
+		subscribe("location:remove", (...args: unknown[]) => {
+			for (const id of args[0] as number[]) locs.delete(id);
+			notify();
+		}),
+		subscribe("location:update", (...args: unknown[]) => {
+			const p = args[0] as Partial<Location> & { id: number };
+			const existing = locs.get(p.id);
+			if (existing) locs.set(p.id, { ...existing, ...p });
+			notify();
+		}),
+	];
+
+	return {
+		locations: locs,
+		onChange(cb) {
+			listeners.add(cb);
+			return () => { listeners.delete(cb); };
+		},
+		destroy() {
+			unsubs.forEach((fn) => fn());
+			listeners.clear();
+			locs.clear();
+		},
+	};
+}
+
 type Handler = (...args: unknown[]) => void;
 
 const mma = {
@@ -49,6 +93,7 @@ const mma = {
 	registerEnrichmentProvider,
 	preloadModules,
 	getAvailableExternals,
+	createLocationStore,
 
 	// --- Types ---
 	createLocation,
