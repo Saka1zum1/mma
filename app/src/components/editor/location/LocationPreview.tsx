@@ -8,7 +8,7 @@ import {
 	useMemo,
 	useSyncExternalStore,
 } from "react";
-import { LocationFlag, hasLoadAsPanoId, createLocation } from "@/types";
+import { LocationFlag, createLocation } from "@/types";
 import type { Location, Tag } from "@/types";
 import {
 	useActiveLocation,
@@ -76,6 +76,7 @@ import {
 import { useReverseGeocode } from "@/components/editor/location/useReverseGeocode";
 import { useCameraType } from "@/components/editor/location/useCameraType";
 import { useExactDate } from "@/components/editor/location/useExactDate";
+import { PanoViewerProvider, usePanoViewer } from "@/components/editor/location/PanoViewerContext";
 import {
 	toggleViewportLock,
 	applyViewportLock,
@@ -105,29 +106,21 @@ function PanoBadge({ cameraType }: { cameraType: FullCameraType | null }) {
 }
 
 function PanoDatePicker({
-	panoDates,
-	selectedPanoId,
 	defaultPanoId,
-	resolvedPanoId,
-	currentPanoDate,
-	lat,
-	lng,
 	onChange,
 	onExactDateResolved,
 }: {
-	panoDates: PanoTime[];
-	selectedPanoId: string | null;
 	defaultPanoId: string | null;
-	resolvedPanoId: string | null;
-	currentPanoDate: Date | null;
-	lat: number;
-	lng: number;
 	onChange: (panoId: string | null) => void;
 	onExactDateResolved?: (ts: number, timezone: string | null) => void;
 }) {
+	const { currentPano, panoDates, selectedPanoId } = usePanoViewer();
+	const location = useActiveLocation();
+	const lat = currentPano?.lat ?? location?.lat ?? 0;
+	const lng = currentPano?.lng ?? location?.lng ?? 0;
 	const defaultEntry = panoDates.find((d) => d.pano === defaultPanoId);
-	const resolvedEntry = resolvedPanoId
-		? panoDates.find((d) => d.pano === resolvedPanoId)
+	const resolvedEntry = currentPano
+		? panoDates.find((d) => d.pano === currentPano.panoId)
 		: undefined;
 	const sorted = useMemo(
 		() => [...panoDates].sort((a, b) => a.date.getTime() - b.date.getTime()),
@@ -138,7 +131,7 @@ function PanoDatePicker({
 			? (defaultEntry ?? resolvedEntry)
 			: sorted.find((d) => d.pano === selectedPanoId);
 	const isDefault = selectedPanoId == null;
-	const displayDate = currentEntry?.date ?? (isDefault ? currentPanoDate : null);
+	const displayDate = currentEntry?.date ?? (isDefault ? currentPano?.imageDate ?? null : null);
 	const prevLabelRef = useRef("");
 	const displayLabel = displayDate
 		? isDefault
@@ -160,7 +153,7 @@ function PanoDatePicker({
 	const exactDateFormat = useSetting("exactDateFormat");
 	const dateTimezone = useSetting("dateTimezone");
 	const triggerPanoId =
-		currentEntry?.pano ?? resolvedPanoId ?? sorted[sorted.length - 1]?.pano ?? defaultPanoId;
+		currentEntry?.pano ?? currentPano?.panoId ?? sorted[sorted.length - 1]?.pano ?? defaultPanoId;
 	const triggerCameraType = useCameraType(triggerPanoId);
 
 	const newestPano = sorted.length > 0 ? sorted[sorted.length - 1] : null;
@@ -632,13 +625,6 @@ function getPanorama(): google.maps.StreetViewPanorama | null {
 	return singletonPano;
 }
 
-interface CurrentPano {
-	panoId: string;
-	lat: number;
-	lng: number;
-	imageDate: Date | null;
-}
-
 function applyResolved(sv: google.maps.StreetViewPanorama, result: ResolvedPano, loc: Location) {
 	if (result.pano?.location?.pano) {
 		sv.setPano(result.pano.location.pano);
@@ -652,23 +638,30 @@ function applyResolved(sv: google.maps.StreetViewPanorama, result: ResolvedPano,
 }
 
 export function LocationPreview() {
+	return (
+		<PanoViewerProvider>
+			<LocationPreviewInner />
+		</PanoViewerProvider>
+	);
+}
+
+function LocationPreviewInner() {
 	const location = useActiveLocation();
 	const map = useCurrentMap();
 	const reviewState = useReview();
 	const isReviewMode = reviewState !== null;
 	const panoContainerRef = useRef<HTMLDivElement>(null);
 	const fullscreenContainerRef = useRef<HTMLDivElement>(null);
-	// Single source of truth for where the user is now.
-	// Updated atomically in status_changed (when pano is fully loaded and data is reliable).
-	const [currentPano, setCurrentPano] = useState<CurrentPano | null>(null);
-	const [panoDates, setPanoDates] = useState<PanoTime[]>([]);
-	const selectedPanoId =
-		location && hasLoadAsPanoId(location) && currentPano?.panoId ? currentPano.panoId : null;
+	const {
+		currentPano, setCurrentPano,
+		panoDates, setPanoDates,
+		isFullscreen, setIsFullscreen,
+		panoReady, setPanoReady,
+		altitude, setAltitude,
+		selectedPanoId,
+	} = usePanoViewer();
 	const [tagInput, setTagInput] = useState("");
 	const [pendingTags, setPendingTags] = useState<number[]>(location?.tags ?? []);
-	const [isFullscreen, setIsFullscreen] = useState(false);
-	const [panoReady, setPanoReady] = useState(false);
-	const [altitude, setAltitude] = useState(0);
 	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0);
 	const cancelTweenRef = useRef<(() => void) | null>(null);
 	const geoRef = useRef(geoResult);
@@ -1351,13 +1344,7 @@ export function LocationPreview() {
 					</span>
 					<div className="location-preview__date">
 						<PanoDatePicker
-							panoDates={panoDates}
-							selectedPanoId={selectedPanoId}
 							defaultPanoId={location.panoId}
-							resolvedPanoId={currentPano?.panoId ?? null}
-							currentPanoDate={currentPano?.imageDate ?? null}
-							lat={currentPano?.lat ?? location.lat}
-							lng={currentPano?.lng ?? location.lng}
 							onChange={handleDateChange}
 							onExactDateResolved={onExactDateResolved}
 						/>
