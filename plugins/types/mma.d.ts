@@ -1103,6 +1103,7 @@ declare function validateLocations(locations: Location$1[], opts?: {
 	signal?: AbortSignal;
 	onProgress?: (p: ValidationProgress) => void;
 }): Promise<Map<ValidationState, Location$1[]>>;
+declare function mmaBufUrl(path: string): string;
 export interface EnrichResult {
 	metaSuccess: number[];
 	metaFailed: number[];
@@ -1307,6 +1308,7 @@ declare const mma: {
 	bulkPinToPano: (opts?: Record<string, unknown>) => Promise<number>;
 	validateLocations: typeof validateLocations;
 	needsEnrichment: (loc: Pick<Location$1, "extra">) => boolean;
+	mmaBufUrl: typeof mmaBufUrl;
 	useMapList(): MapMeta[];
 	invalidateMapList(): Promise<void>;
 	useTagCounts(): Record<number, number>;
@@ -1361,13 +1363,13 @@ declare const mma: {
 	}): Promise<void>;
 	duplicateLocation(locId: number): Promise<number | null>;
 	updateLocationNoUndo(id: number, patch: Partial<Location$1>): Promise<MutationResult_Serialize>;
-	removeLocations(ids: Set<number>): void;
+	removeLocations(ids: Set<number>): Promise<void>;
 	updateLocation(locId: number, patch: Partial<Location$1>): void;
 	batchUpdateLocations(updates: {
 		id: number;
 		patch: Partial<Location$1>;
 	}[]): Promise<void | MutationResult_Serialize>;
-	patchLocationExtra(locId: number, extraPatch: Record<string, unknown>, replace?: boolean): void;
+	patchLocationExtra(locId: number, extraPatch: Record<string, unknown>, replace?: boolean): Promise<void>;
 	useSelections(): Selection$1[];
 	addSelections(props: SelectionProps[]): Promise<void>;
 	removeSelections(keys: string[]): Promise<void>;

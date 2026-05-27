@@ -692,7 +692,7 @@ describe("Export with scope", () => {
 				tagsJson: JSON.stringify(map.meta.tags),
 				extraFieldsJson: null,
 			});
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
 			return { count: parsed.customCoordinates.length };

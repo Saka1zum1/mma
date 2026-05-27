@@ -58,7 +58,7 @@ describe("JSON import/export round-trip", () => {
 				tagsJson: JSON.stringify(map.meta.tags),
 				extraFieldsJson: null,
 			});
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 
 			const parsed = JSON.parse(json);
@@ -105,7 +105,7 @@ describe("JSON import/export round-trip", () => {
 				tagsJson: JSON.stringify(map.meta.tags),
 				extraFieldsJson: null,
 			});
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
 			const coords = parsed.customCoordinates || [];
@@ -133,7 +133,7 @@ describe("JSON import/export round-trip", () => {
 				tagsJson: JSON.stringify(map.meta.tags),
 				extraFieldsJson: null,
 			});
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
 			return parsed.customCoordinates.every((c: any) => c.zoom === 0);
@@ -157,7 +157,7 @@ describe("JSON import/export round-trip", () => {
 				tagsJson: JSON.stringify(map.meta.tags),
 				extraFieldsJson: null,
 			});
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
 			const ie2 = parsed.customCoordinates.find((c: any) => Math.abs(c.lat - -33.8) < 0.01);
@@ -188,7 +188,7 @@ describe("CSV import/export", () => {
 
 		const result = await withApi(async (api) => {
 			const path = await api.cmd.storeExportCsv(null);
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const csv = await res.text();
 			const lines = csv.trim().split("\n");
 			return { lineCount: lines.length, header: lines[0] };
@@ -201,7 +201,7 @@ describe("CSV import/export", () => {
 	it("CSV round-trip preserves coordinates", async () => {
 		const result = await withApi(async (api) => {
 			const path = await api.cmd.storeExportCsv(null);
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const csv = await res.text();
 			const lines = csv.trim().split("\n").slice(1);
 			const rows = lines.map((line: string) => {
@@ -242,7 +242,7 @@ describe("GeoJSON export", () => {
 		const result = await withApi(async (api) => {
 			const map = api.getCurrentMap()!;
 			const path = await api.cmd.storeExportGeojson(null, JSON.stringify(map.meta.tags));
-			const res = await fetch("http://mma-buf.localhost/" + path.replace(/\\/g, "/"));
+			const res = await fetch(api.mmaBufUrl(path));
 			const geojson = await res.text();
 			const parsed = JSON.parse(geojson);
 			return {

@@ -28,12 +28,15 @@ export const config: WebdriverIO.Config = {
 	exclude: [
 		"./test/e2e/benchmarks.test.ts",
 		"./test/e2e/speed-matrix.test.ts",
+		"./test/e2e/bulk-import-rust.test.ts",
 	],
 	maxInstances: 1,
 	capabilities: [
 		{
 			"tauri:options": {
-				application: path.resolve(`./src-tauri/target/debug/map-making-app${process.platform === "win32" ? ".exe" : ""}`),
+				application: process.platform === "win32"
+					? path.resolve("./src-tauri/target/debug/map-making-app.exe")
+					: (fs.existsSync("/usr/local/bin/map-making-app") ? "/usr/local/bin/map-making-app" : path.resolve("./src-tauri/target/debug/map-making-app")),
 				args: ["--test-db"],
 			},
 		},

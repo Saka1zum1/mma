@@ -26,6 +26,7 @@ import { loadSeenPano } from "@/components/editor/location/LocationPreview";
 import { enrichAll, needsEnrichment } from "@/lib/sv/enrich.add";
 import { bulkPinToPano } from "@/lib/sv/pinPano.add";
 import { validateLocations } from "@/lib/sv/validate";
+import { mmaBufUrl } from "@/lib/util/util";
 
 export interface LocationStore {
 	locations: Map<number, Location>;
@@ -124,6 +125,9 @@ const mma = {
 		bulkPinToPano(await store.fetchAllLocations(), opts),
 	validateLocations,
 	needsEnrichment: (loc: Pick<Location, "extra">) => needsEnrichment(loc as Location),
+
+	// --- Util ---
+	mmaBufUrl,
 };
 
 export type MMA = typeof mma;

@@ -45,9 +45,9 @@ describe("Delete marks store dirty", () => {
 
 	it("store is dirty after delete", async () => {
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-		await browser.pause(500);
+
 
 		// dirtyCount is 0-or-1 (boolean flag from Rust)
 		const dirty = await withApi(async (api) => api.getDirtyCount());
@@ -80,9 +80,9 @@ describe("Delete updates location count", () => {
 	it("location count decreases by 1 after single delete", async () => {
 		const before = await getLocCount();
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-		await browser.pause(300);
+
 
 		const after = await getLocCount();
 		expect(after).toBe(before - 1);
@@ -92,9 +92,9 @@ describe("Delete updates location count", () => {
 		const before = await getLocCount();
 		const toDelete = locIds.slice(1, 4);
 		await withApi(async (api, ids) => {
-			api.removeLocations(new Set(ids));
+			await api.removeLocations(new Set(ids));
 		}, toDelete);
-		await browser.pause(300);
+
 
 		const after = await getLocCount();
 		expect(after).toBe(before - 3);
@@ -129,14 +129,13 @@ describe("Delete clears active location", () => {
 
 	it("active location cleared when it is deleted", async () => {
 		await openLocation(locIds[0]);
-		await browser.pause(200);
 		const activeBefore = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeBefore).toBe(locIds[0]);
 
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-		await browser.pause(300);
+
 
 		const activeAfter = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeAfter).toBeNull();
@@ -148,9 +147,9 @@ describe("Delete clears active location", () => {
 		expect(areaBefore).toBe("location");
 
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[1]);
-		await browser.pause(300);
+
 
 		const areaAfter = await withApi(async (api) => api.getWorkArea());
 		expect(areaAfter).toBe("overview");
@@ -160,9 +159,9 @@ describe("Delete clears active location", () => {
 		await openLocation(locIds[2]);
 
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[3]);
-		await browser.pause(300);
+
 
 		const activeAfter = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeAfter).toBe(locIds[2]);
@@ -209,9 +208,9 @@ describe("Delete syncs with selections", () => {
 		expect(before.length).toBe(5);
 
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, taggedIds[0]);
-		await browser.pause(300);
+
 
 		const after = await refreshSelections();
 		expect(after.length).toBe(4);
@@ -222,9 +221,9 @@ describe("Delete syncs with selections", () => {
 		const before = await refreshSelections();
 
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, untaggedIds[0]);
-		await browser.pause(300);
+
 
 		const after = await refreshSelections();
 		expect(after.length).toBe(before.length - 1);
@@ -266,9 +265,9 @@ describe("Delete updates tag counts", () => {
 
 	it("tag count decreases after deleting tagged location", async () => {
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-		await browser.pause(300);
+
 
 		const count = await withApi(async (api, tid) => {
 			const counts = api.getTagCounts();
@@ -280,9 +279,9 @@ describe("Delete updates tag counts", () => {
 	it("tag count decreases correctly after batch delete", async () => {
 		const toDelete = locIds.slice(1, 4);
 		await withApi(async (api, ids) => {
-			api.removeLocations(new Set(ids));
+			await api.removeLocations(new Set(ids));
 		}, toDelete);
-		await browser.pause(300);
+
 
 		const count = await withApi(async (api, tid) => {
 			const counts = api.getTagCounts();

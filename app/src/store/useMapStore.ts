@@ -572,7 +572,7 @@ export function updateLocationNoUndo(id: number, patch: Partial<Location>) {
 	return cmd.storeUpdateLocations([[id, p as LocationPatch]], false);
 }
 
-export function removeLocations(ids: Set<number>) {
+export async function removeLocations(ids: Set<number>) {
 	if (!currentMap || ids.size === 0) return;
 	if (activeLocationId && ids.has(activeLocationId)) {
 		activeLocationId = null;
@@ -591,7 +591,7 @@ export function removeLocations(ids: Set<number>) {
 	mapVersion++;
 	notify();
 	emitEvent("location:remove", [...ids]);
-	mutate(cmd.storeRemoveLocations([...ids])).catch((e) =>
+	await mutate(cmd.storeRemoveLocations([...ids])).catch((e) =>
 		log.error("[delete] store_remove_locations failed:", e),
 	);
 }
@@ -634,29 +634,20 @@ export function batchUpdateLocations(updates: { id: number; patch: Partial<Locat
 	);
 }
 
-export function patchLocationExtra(
+export async function patchLocationExtra(
 	locId: number,
 	extraPatch: Record<string, unknown>,
 	replace = false,
 ) {
 	if (!currentMap) return;
-	const send = (extra: Record<string, unknown>) => {
-		mutate(cmd.storeUpdateLocations([[locId, { extra }]], false)).then(() => {
-			if (activeLocationId === locId) {
-				fetchViaFile<Location>(cmd.storeGetLocationFile(locId)).then((loc) => {
-					cachedActiveLocation = loc ?? null;
-					mapVersion++;
-					notify();
-				});
-			}
-		});
-	};
-	if (replace) {
-		send(extraPatch);
-	} else {
-		fetchViaFile<Location>(cmd.storeGetLocationFile(locId)).then((loc) => {
-			send({ ...(loc?.extra || {}), ...extraPatch });
-		});
+	const extra = replace
+		? extraPatch
+		: { ...((await fetchViaFile<Location>(cmd.storeGetLocationFile(locId)))?.extra || {}), ...extraPatch };
+	await mutate(cmd.storeUpdateLocations([[locId, { extra }]], false));
+	if (activeLocationId === locId) {
+		cachedActiveLocation = await fetchViaFile<Location>(cmd.storeGetLocationFile(locId)) ?? null;
+		mapVersion++;
+		notify();
 	}
 }
 

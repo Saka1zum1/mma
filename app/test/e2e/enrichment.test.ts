@@ -166,7 +166,7 @@ describe("Enrichment — single location via preview", () => {
 		});
 		// Pre-seed with stale datetime
 		await withApi(async (api, id) => {
-			api.patchLocationExtra(id, {
+			await api.patchLocationExtra(id, {
 				imageDate: "2099-01",
 				datetime: 9999999999,
 				timezone: "Fake/Zone",
@@ -386,15 +386,16 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 		expect(fields.countryCode.type).toBe("string");
 	});
 
-	it("unknown extra fields do not get auto-registered", async () => {
+	it("unknown extra fields get auto-registered with inferred type", async () => {
 		await withApi(async (api, id) => {
-			api.patchLocationExtra(id, { randomCustomThing: "hello" });
+			await api.patchLocationExtra(id, { randomCustomThing: "hello" });
 			return "ok";
 		}, defsAutoId);
 
 		const meta = await getMapMeta();
 		const fields = meta?.extra?.fields ?? {};
-		expect(fields.randomCustomThing).toBeFalsy();
+		expect(fields.randomCustomThing).toBeTruthy();
+		expect(fields.randomCustomThing.type).toBe("string");
 	});
 });
 

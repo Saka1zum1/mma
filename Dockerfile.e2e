@@ -41,7 +41,10 @@ RUN chmod +x ./scripts/docker-e2e.sh
 WORKDIR /repo/app
 
 # Build Tauri debug binary with e2e features (no bundle -- just the binary)
-RUN cargo tauri build --debug --features e2e --no-bundle
+RUN --mount=type=cache,target=/repo/app/src-tauri/target \
+    --mount=type=cache,target=/root/.cargo/registry \
+    cargo tauri build --debug --features e2e --no-bundle \
+    && cp src-tauri/target/debug/map-making-app /usr/local/bin/map-making-app
 
 # Start Xvfb + tauri-driver, then run tests
 CMD ["/repo/scripts/docker-e2e.sh"]

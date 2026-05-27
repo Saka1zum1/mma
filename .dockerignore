@@ -1,0 +1,8 @@
+.git/
+test-*.json
+mma-source/
+tools/
+**/node_modules/
+**/target/
+**/.venv/
+**/.*

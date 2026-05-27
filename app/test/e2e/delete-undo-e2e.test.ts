@@ -47,9 +47,9 @@ describe("Delete tagged location + undo", () => {
 
 	it("delete reduces tag count", async () => {
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-		await browser.pause(300);
+
 
 		const count = await withApi(async (api, tid) => {
 			const counts = api.getTagCounts();
@@ -115,9 +115,9 @@ describe("Delete selected locations + undo restores selection", () => {
 		expect(before.length).toBe(8);
 
 		await withApi(async (api, ids) => {
-			api.removeLocations(new Set(ids));
+			await api.removeLocations(new Set(ids));
 		}, [locIds[0], locIds[1]]);
-		await browser.pause(300);
+
 
 		const after = await refreshSelections();
 		expect(after.length).toBe(6);
@@ -159,15 +159,14 @@ describe("Delete active location + undo", () => {
 	});
 
 	it("delete active location clears active and work area", async () => {
-		await withApi(async (api, lid) => api.setActiveLocation(lid, false), locIds[2]);
-		await browser.pause(500);
+		await withApi(async (api, lid) => await api.setActiveLocation(lid, false), locIds[2]);
 		const activeBefore = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeBefore).toBe(locIds[2]);
 
 		await withApi(async (api, id) => {
-			api.removeLocations(new Set([id]));
+			await api.removeLocations(new Set([id]));
 		}, locIds[2]);
-		await browser.pause(300);
+
 
 		const activeAfter = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeAfter).toBeNull();
@@ -226,9 +225,9 @@ describe("Batch delete + undo data fidelity", () => {
 	it("batch delete 5 locations", async () => {
 		const toDelete = locIds.slice(0, 5);
 		await withApi(async (api, ids) => {
-			api.removeLocations(new Set(ids));
+			await api.removeLocations(new Set(ids));
 		}, toDelete);
-		await browser.pause(300);
+
 
 		const count = await getLocCount();
 		expect(count).toBe(5);
@@ -302,9 +301,9 @@ describe("Multiple delete-undo cycles", () => {
 			const targetId = locIds[cycle % locIds.length];
 
 			await withApi(async (api, id) => {
-				api.removeLocations(new Set([id]));
+				await api.removeLocations(new Set([id]));
 			}, targetId);
-			await browser.pause(200);
+	
 
 			const countAfterDelete = await getLocCount();
 			expect(countAfterDelete).toBe(9);

@@ -73,16 +73,15 @@ export async function flushAndWait() {
 /** Open a location in the editor via the test API. */
 export async function openLocation(id: number) {
 	await withApi(async (api, locId) => {
-		api.setActiveLocation(locId, false);
+		await api.setActiveLocation(locId, false);
 	}, id);
 }
 
 /** Close the active location (return to overview) via the test API. */
 export async function closeLocation() {
 	await withApi(async (api) => {
-		api.setActiveLocation(null);
+		await api.setActiveLocation(null);
 	});
-	await browser.pause(300);
 }
 
 // --- Location helpers ---
