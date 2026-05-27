@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { cmd } from "@/lib/commands";
 import { resolveExactTimestamp } from "@/lib/sv/exactDate.add";
 import { getActiveLocation } from "@/store/useMapStore";
 
@@ -34,16 +33,9 @@ export function useExactDate(
 		setState({ ts: null, loading: true, error: false });
 
 		(async () => {
-			const cached = await cmd.storeGetPanoDate(panoId);
-			if (cancelled) return;
-			if (cached !== null) {
-				setState({ ts: cached, loading: false, error: false });
-				return;
-			}
 			try {
 				const ts = await resolveExactTimestamp(lat, lng, yearMonth);
 				if (cancelled) return;
-				await cmd.storeSetPanoDate(panoId, ts);
 				setState({ ts, loading: false, error: false });
 			} catch {
 				if (!cancelled) setState({ ts: null, loading: false, error: true });

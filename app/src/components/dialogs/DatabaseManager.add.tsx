@@ -12,7 +12,6 @@ interface TableInfo {
 }
 
 const KNOWN_TABLES: Record<string, { description: string; risk: Risk }> = {
-	pano_date_cache: { description: "Cached Street View capture dates", risk: "safe" },
 	edit_history: { description: "Undo/redo stacks per map", risk: "safe" },
 	commits: { description: "Version history snapshots", risk: "moderate" },
 	commit_trees: { description: "Chunk data for version history", risk: "moderate" },

@@ -518,43 +518,6 @@ pub fn store_delete_folder(app: tauri::AppHandle, name: String) -> Result<(), St
     Ok(())
 }
 
-/// Look up a cached exact pano capture timestamp. Returns `None` on cache miss.
-/// The `pano_date_cache` table avoids re-running the expensive binary search
-/// RPC in `resolveExactTimestamp` for panos we've already resolved.
-#[tauri::command]
-#[specta::specta]
-pub fn store_get_pano_date(app: tauri::AppHandle, pano_id: String) -> Result<Option<i64>, String> {
-    let conn = fast_io::open_db(&app)?;
-    let result = conn.query_row(
-        "SELECT timestamp FROM pano_date_cache WHERE pano_id = ?1",
-        params![pano_id],
-        |row| row.get::<_, i64>(0),
-    );
-    match result {
-        Ok(ts) => Ok(Some(ts)),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-/// Cache an exact pano capture timestamp (unix millis) for future lookups.
-#[tauri::command]
-#[specta::specta]
-pub fn store_set_pano_date(
-    app: tauri::AppHandle,
-    pano_id: String,
-    timestamp: i64,
-) -> Result<(), String> {
-    let conn = fast_io::open_db(&app)?;
-    conn.execute(
-        "INSERT OR REPLACE INTO pano_date_cache (pano_id, timestamp) VALUES (?1, ?2)",
-        params![pano_id, timestamp],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-
 // ---------------------------------------------------------------------------
 // Debug / diagnostics
 // ---------------------------------------------------------------------------

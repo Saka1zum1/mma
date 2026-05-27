@@ -413,8 +413,6 @@ pub fn run() {
                     map_meta::store_touch_map_opened,
                     map_meta::store_rename_folder,
                     map_meta::store_delete_folder,
-                    map_meta::store_get_pano_date,
-                    map_meta::store_set_pano_date,
                     map_meta::store_db_table_info,
                     // --- Location CRUD ---
                     location_store::store_add_locations,

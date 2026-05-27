@@ -6,11 +6,6 @@ import { ComponentType } from 'react';
 
 declare function preloadModules(ids: string[]): Promise<void>;
 declare function getAvailableExternals(): string[];
-export interface LocationStore {
-	locations: Map<number, Location>;
-	onChange(cb: () => void): () => void;
-	destroy(): void;
-}
 export interface PluginSettingDef {
 	key: string;
 	label: string;
@@ -1115,6 +1110,12 @@ export interface EnrichResult {
 	dateFailed: number[];
 }
 export type RenderDelta = RenderDelta_Serialize;
+export interface LocationStore {
+	locations: Map<number, Location$1>;
+	onChange(cb: () => void): () => void;
+	destroy(): void;
+}
+declare function createLocationStore(): Promise<LocationStore>;
 export type Handler = (...args: unknown[]) => void;
 declare const mma: {
 	cmd: {
@@ -1254,7 +1255,7 @@ declare const mma: {
 	registerEnrichmentProvider: typeof registerEnrichmentProvider;
 	preloadModules: typeof preloadModules;
 	getAvailableExternals: typeof getAvailableExternals;
-	createLocationStore: () => Promise<LocationStore>;
+	createLocationStore: typeof createLocationStore;
 	createLocation: typeof createLocation;
 	getGoogleMap: () => google.maps.Map | null;
 	waitForGoogleMap: () => Promise<google.maps.Map>;

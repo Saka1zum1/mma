@@ -90,14 +90,6 @@ export const commands = {
 	storeRenameFolder: (from: string, to: string) => typedError<null, string>(__TAURI_INVOKE("store_rename_folder", { from, to })),
 	/**  Delete a folder by setting all its maps' folder to `NULL` (moves them to root). */
 	storeDeleteFolder: (name: string) => typedError<null, string>(__TAURI_INVOKE("store_delete_folder", { name })),
-	/**
-	 *  Look up a cached exact pano capture timestamp. Returns `None` on cache miss.
-	 *  The `pano_date_cache` table avoids re-running the expensive binary search
-	 *  RPC in `resolveExactTimestamp` for panos we've already resolved.
-	 */
-	storeGetPanoDate: (panoId: string) => typedError<number | null, string>(__TAURI_INVOKE("store_get_pano_date", { panoId })),
-	/**  Cache an exact pano capture timestamp (unix millis) for future lookups. */
-	storeSetPanoDate: (panoId: string, timestamp: number) => typedError<null, string>(__TAURI_INVOKE("store_set_pano_date", { panoId, timestamp })),
 	/**  List all user-created tables with their row counts. Excludes SQLite internals. */
 	storeDbTableInfo: () => typedError<DbTableInfo[], string>(__TAURI_INVOKE("store_db_table_info")),
 	/**

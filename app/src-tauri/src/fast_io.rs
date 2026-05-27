@@ -249,6 +249,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
           CREATE INDEX IF NOT EXISTS idx_seen_entered ON seen(entered_at DESC);"),
     (14, "ALTER TABLE maps ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';
           ALTER TABLE maps ADD COLUMN last_opened_at TEXT;"),
+    (15, "DROP TABLE IF EXISTS pano_date_cache;"),
 ];
 
 // ---------------------------------------------------------------------------
