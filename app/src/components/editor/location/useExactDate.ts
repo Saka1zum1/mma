@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
 import { resolveExactTimestamp } from "@/lib/sv/exactDate.add";
+import { getActiveLocation } from "@/store/useMapStore";
 
 export function useExactDate(
 	panoId: string | null,
@@ -20,6 +21,11 @@ export function useExactDate(
 	});
 
 	useEffect(() => {
+		const existing = getActiveLocation()?.extra?.datetime as number | undefined;
+		if (existing != null) {
+			setState({ ts: existing, loading: false, error: false });
+			return;
+		}
 		if (!enabled || !panoId || !yearMonth) {
 			setState({ ts: null, loading: false, error: false });
 			return;
