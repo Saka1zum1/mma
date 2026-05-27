@@ -436,7 +436,7 @@ export function selectionDisplayName(map: MapData, sel: Selection): string {
 				const m = /^(\d{2})-(\d{2})$/.exec(s);
 				if (m) {
 					const dt = new Date(2000, Number(m[1]) - 1, Number(m[2]));
-					return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+					return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 				}
 				return s;
 			};

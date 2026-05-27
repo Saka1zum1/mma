@@ -69,13 +69,13 @@ function formatDisplay(
 		if (mode === "month") {
 			return MONTHS_SHORT[d.getMonth()] ?? "Select...";
 		}
-		return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+		return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 	}
 	if (mode === "month") {
 		return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
 	}
 	const hasTime = d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0;
-	const dateStr = d.toLocaleDateString(undefined, {
+	const dateStr = d.toLocaleDateString("en-US", {
 		year: "numeric",
 		month: "short",
 		day: "numeric",
