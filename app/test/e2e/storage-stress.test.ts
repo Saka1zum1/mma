@@ -370,7 +370,7 @@ describe("Tag count accuracy", () => {
 		for (let i = 0; i < 50; i++) locs.push(createLocation({ lat: i, lng: i, tags: [tagId] }));
 		taggedIds = await addLocs(locs);
 
-		const counts = await withApi((api) => api.cmd.storeTagCounts());
+		const counts = await withApi((api) => api.getTagCounts());
 		expect(counts[tagId]).toBe(50);
 	});
 
@@ -378,14 +378,14 @@ describe("Tag count accuracy", () => {
 		const toRemove = taggedIds.slice(0, 10);
 		await withApi((api, ids) => api.removeLocations(new Set(ids)), toRemove);
 
-		const counts = await withApi((api) => api.cmd.storeTagCounts());
+		const counts = await withApi((api) => api.getTagCounts());
 		expect(counts[tagId]).toBe(40);
 	});
 
 	it("undo remove -> tagCount=50", async () => {
 		await withApi((api) => api.undo());
 
-		const counts = await withApi((api) => api.cmd.storeTagCounts());
+		const counts = await withApi((api) => api.getTagCounts());
 		expect(counts[tagId]).toBe(50);
 	});
 
@@ -400,7 +400,7 @@ describe("Tag count accuracy", () => {
 			await api.addTagToLocations(tId, [...api.getSelectedLocationIds()]);
 		}, tagId);
 
-		const counts = await withApi((api) => api.cmd.storeTagCounts());
+		const counts = await withApi((api) => api.getTagCounts());
 		expect(counts[tagId]).toBe(70);
 	});
 
@@ -408,7 +408,7 @@ describe("Tag count accuracy", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const counts = await withApi((api) => api.cmd.storeTagCounts());
+		const counts = await withApi((api) => api.getTagCounts());
 		expect(counts[tagId]).toBe(70);
 	});
 });

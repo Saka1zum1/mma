@@ -178,7 +178,7 @@ describe("Bulk tag add", () => {
 			async (api, tagId) => {
 				await api.selectEverything();
 				await api.addTagToLocations(tagId, [...api.getSelectedLocationIds()]);
-				const counts = await api.cmd.storeTagCounts();
+				const counts = api.getTagCounts();
 				return (counts as any)[String(tagId)] ?? 0;
 			},
 			bulkTagId,
@@ -202,7 +202,7 @@ describe("Bulk tag add", () => {
 
 	it("tag count updates correctly after bulk add", async () => {
 		const count = await withApi(async (api, tagId) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tagId)] ?? 0;
 		}, bulkTagId);
 		expect(count).toBe(20);
@@ -220,7 +220,7 @@ describe("Bulk tag add", () => {
 		);
 
 		const beforeCount = await withApi(async (api, tagId) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tagId)] ?? 0;
 		}, newTag.id);
 		expect(beforeCount).toBe(20);
@@ -228,7 +228,7 @@ describe("Bulk tag add", () => {
 		await withApi(async (api) => api.undo());
 
 		const afterCount = await withApi(async (api, tagId) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tagId)] ?? 0;
 		}, newTag.id);
 		expect(afterCount).toBe(0);
@@ -283,7 +283,7 @@ describe("Tag deletion cascade", () => {
 
 	it("tag count is zero after deletion", async () => {
 		const count = await withApi(async (api, tagId) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tagId)] ?? 0;
 		}, delTagId);
 		expect(count).toBe(0);

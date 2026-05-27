@@ -1147,8 +1147,6 @@ declare const mma: {
 		storeTouchMapOpened: (mapId: string) => Promise<null>;
 		storeRenameFolder: (from: string, to: string) => Promise<null>;
 		storeDeleteFolder: (name: string) => Promise<null>;
-		storeGetPanoDate: (panoId: string) => Promise<number | null>;
-		storeSetPanoDate: (panoId: string, timestamp: number) => Promise<null>;
 		storeDbTableInfo: () => Promise<DbTableInfo[]>;
 		storeAddLocations: (locations: Location_Deserialize[]) => Promise<MutationResult_Serialize>;
 		storeRemoveLocations: (ids: number[]) => Promise<MutationResult_Serialize>;

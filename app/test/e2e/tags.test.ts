@@ -685,7 +685,7 @@ describe("Tag merge advanced", () => {
 		const result = await withApi(async (api, aId, bId) => {
 			// A has 2 locs, B has 1 loc → merge A into B → B should have 3
 			await api.updateTags([{ id: aId, patch: { name: "MrgB" } }]);
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return { bCount: counts[bId] ?? 0, aCount: counts[aId] ?? 0 };
 		}, tagAId, tagBId);
 		expect(result.bCount).toBe(3);
@@ -696,7 +696,7 @@ describe("Tag merge advanced", () => {
 		const result = await withApi(async (api, cId, bId) => {
 			// C has 3 locs, B now has 3 → merge C into B → B should have 6
 			await api.updateTags([{ id: cId, patch: { name: "MrgB" } }]);
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			const locs = await api.fetchAllLocations();
 			const withB = locs.filter((l: any) => l.tags.includes(bId));
 			return { bCount: counts[bId] ?? 0, locsWithB: withB.length };
@@ -714,7 +714,7 @@ describe("Tag merge advanced", () => {
 
 		const afterUndo = await withApi(async (api, cId, bId) => {
 			const tags = api.getCurrentMap()!.meta.tags;
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return {
 				cVisible: tags[String(cId)]?.visible,
 				bCount: counts[bId] ?? 0,
@@ -732,7 +732,7 @@ describe("Tag merge advanced", () => {
 
 		const afterRedo = await withApi(async (api, cId, bId) => {
 			const tags = api.getCurrentMap()!.meta.tags;
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return {
 				cVisible: tags[String(cId)]?.visible,
 				bCount: counts[bId] ?? 0,

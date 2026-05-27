@@ -52,7 +52,7 @@ describe("Delete tagged location + undo", () => {
 		await browser.pause(300);
 
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(4);
@@ -62,7 +62,7 @@ describe("Delete tagged location + undo", () => {
 		await withApi(async (api) => api.undo());
 
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(5);
@@ -77,7 +77,7 @@ describe("Delete tagged location + undo", () => {
 		await withApi(async (api) => api.redo());
 
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(4);
@@ -236,7 +236,7 @@ describe("Batch delete + undo data fidelity", () => {
 
 	it("tag count correct after batch delete", async () => {
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(0);
@@ -265,7 +265,7 @@ describe("Batch delete + undo data fidelity", () => {
 
 	it("tag count restored after undo", async () => {
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(5);

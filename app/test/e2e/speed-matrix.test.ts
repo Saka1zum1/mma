@@ -210,7 +210,7 @@ function timeBatchUpdate(count: number, iter: number): Promise<number> {
 function timeTagCounts(): Promise<number> {
 	return withApi(async (api) => {
 		const t0 = performance.now();
-		await api.cmd.storeTagCounts();
+		api.getTagCounts();
 		return performance.now() - t0;
 	});
 }

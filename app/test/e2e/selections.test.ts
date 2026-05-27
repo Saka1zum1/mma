@@ -270,7 +270,7 @@ describe("Selection operations", () => {
 			await api.selectTag(tagId);
 			const before = api.getSelections().length;
 			const key = api.getSelections()[0].key;
-			api.removeSelection(key);
+			api.removeSelections([key]);
 			const after = api.getSelections().length;
 			return { before, after };
 		}, tagAId);
@@ -297,7 +297,7 @@ describe("Selection operations", () => {
 
 	it("addSelection with custom props", async () => {
 		const result = await withApi(async (api) => {
-			await api.addSelection({ type: "Everything" });
+			await api.addSelections([{ type: "Everything" }]);
 			const sels = api.getSelections();
 			return {
 				count: sels.length,

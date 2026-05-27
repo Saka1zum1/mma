@@ -257,7 +257,7 @@ describe("Delete updates tag counts", () => {
 
 	it("tag count starts correct", async () => {
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(8);
@@ -270,7 +270,7 @@ describe("Delete updates tag counts", () => {
 		await browser.pause(300);
 
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(7);
@@ -284,7 +284,7 @@ describe("Delete updates tag counts", () => {
 		await browser.pause(300);
 
 		const count = await withApi(async (api, tid) => {
-			const counts = await api.cmd.storeTagCounts();
+			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
 		}, tagId);
 		expect(count).toBe(4);
