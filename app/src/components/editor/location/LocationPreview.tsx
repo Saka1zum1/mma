@@ -747,7 +747,7 @@ function LocationPreviewInner() {
 					return {
 						location: { pano: panoId, latLng: pos! },
 						imageDate: prev?.imageDate,
-					} as google.maps.StreetViewPanoramaData;
+					};
 				});
 				if (pos) {
 					pushTrail(pos.lng(), pos.lat());
