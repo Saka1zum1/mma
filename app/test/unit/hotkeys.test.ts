@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { parseHotkey, matchesKey } from "@/lib/hooks/useHotkey";
+import { getAltSlowConflict, getConflicts, getBinding } from "@/lib/util/hotkeys.add";
 
 describe("parseHotkey", () => {
 	it("parses single key", () => {
@@ -99,5 +100,87 @@ describe("matchesKey", () => {
 	it("shifted chars imply shift", () => {
 		const [combo] = parseHotkey("?")[0];
 		expect(matchesKey(mockEvent({ key: "?", shiftKey: true }), combo)).toBe(true);
+	});
+});
+
+describe("getAltSlowConflict", () => {
+	it("returns conflict for 'a' (panLeft)", () => {
+		const result = getAltSlowConflict("a");
+		expect(result).toBeDefined();
+		expect(result!.action).toBe("panLeft");
+	});
+
+	it("returns conflict for 'd' (panRight)", () => {
+		const result = getAltSlowConflict("d");
+		expect(result).toBeDefined();
+		expect(result!.action).toBe("panRight");
+	});
+
+	it("returns conflict for 'w'", () => {
+		const result = getAltSlowConflict("w");
+		expect(result).toBeDefined();
+		expect(["panUp", "mapZoomIn"]).toContain(result!.action);
+	});
+
+	it("returns conflict for 'ArrowLeft' (panoLookLeft)", () => {
+		const result = getAltSlowConflict("ArrowLeft");
+		expect(result).toBeDefined();
+		expect(result!.action).toBe("panoLookLeft");
+	});
+
+	it("returns conflict for 'ArrowDown'", () => {
+		const result = getAltSlowConflict("ArrowDown");
+		expect(result).toBeDefined();
+		expect(["panoLookDown", "panoMoveBackward"]).toContain(result!.action);
+	});
+
+	it("is case insensitive: 'A' returns same as 'a'", () => {
+		const upper = getAltSlowConflict("A");
+		const lower = getAltSlowConflict("a");
+		expect(upper).toEqual(lower);
+	});
+
+	it("returns undefined for 'f' (not an altSlow binding)", () => {
+		expect(getAltSlowConflict("f")).toBeUndefined();
+	});
+
+	it("returns undefined for 'q' (has binding but no altSlow)", () => {
+		expect(getAltSlowConflict("q")).toBeUndefined();
+	});
+
+	it("returns undefined for empty string", () => {
+		expect(getAltSlowConflict("")).toBeUndefined();
+	});
+
+	it("returned def has altSlow: true", () => {
+		const result = getAltSlowConflict("a");
+		expect(result).toBeDefined();
+		expect(result!.altSlow).toBe(true);
+	});
+});
+
+describe("getConflicts", () => {
+	it("returns empty array for empty binding", () => {
+		expect(getConflicts("panLeft", "")).toEqual([]);
+	});
+
+	it("returns empty array for unique binding", () => {
+		const binding = getBinding("toggleFullscreen");
+		const conflicts = getConflicts("toggleFullscreen", binding);
+		expect(conflicts).toEqual([]);
+	});
+
+	it("returns conflicting defs for duplicate binding", () => {
+		const binding = getBinding("panLeft");
+		const conflicts = getConflicts("someOtherAction", binding);
+		const actions = conflicts.map((c) => c.action);
+		expect(actions).toContain("panLeft");
+	});
+
+	it("excludes the action itself", () => {
+		const binding = getBinding("panLeft");
+		const conflicts = getConflicts("panLeft", binding);
+		const actions = conflicts.map((c) => c.action);
+		expect(actions).not.toContain("panLeft");
 	});
 });

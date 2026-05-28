@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
 	colorForKey,
 	buildSelection,
@@ -9,11 +9,14 @@ import {
 	invertSelections,
 	toggleManualSelection,
 	selectionDisplayName,
+	resolveLocations,
 	reorderSelections,
 	composeSelections,
 	decomposeChild,
 	removeFromComposite,
+	ValidationState,
 } from "@/store/selections";
+import { setUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 import type { MapData, Tag } from "@/types";
 
 function makeMap(tags: Record<number, Tag> = {}): MapData {
@@ -316,6 +319,313 @@ describe("selectionDisplayName", () => {
 			value2: 3000,
 		});
 		expect(selectionDisplayName(map, sel)).toBe("Altitude between 0..3000");
+	});
+
+	afterEach(() => {
+		resetForMapChange();
+	});
+
+	it("display name for Filter neq", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "countryCode",
+			op: "neq",
+			value: "BR",
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Country code != BR");
+	});
+
+	it("display name for Filter gt", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "altitude",
+			op: "gt",
+			value: 500,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Altitude > 500");
+	});
+
+	it("display name for Filter lt", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "altitude",
+			op: "lt",
+			value: 100,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Altitude < 100");
+	});
+
+	it("display name for Filter gte", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "altitude",
+			op: "gte",
+			value: 200,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Altitude >= 200");
+	});
+
+	it("display name for Filter lte", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "altitude",
+			op: "lte",
+			value: 300,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Altitude <= 300");
+	});
+
+	it("display name for Filter has", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "altitude",
+			op: "has",
+			value: null,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("has Altitude");
+	});
+
+	it("display name for Filter nothas", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "altitude",
+			op: "nothas",
+			value: null,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("missing Altitude");
+	});
+
+	it("display name for Filter between_anyyear formats MM-DD as month day", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "imageDate",
+			op: "between_anyyear",
+			value: "01-15",
+			value2: "03-20",
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Image date between (any year) Jan 15..Mar 20");
+	});
+
+	it("display name for Filter between_anytime uses raw values", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "imageDate",
+			op: "between_anytime",
+			value: "08:00",
+			value2: "16:00",
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Image date between (any date) 08:00..16:00");
+	});
+
+	it("display name for Filter enum field shows label not raw value", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "cameraType",
+			op: "eq",
+			value: "gen4",
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Camera type = Gen 4");
+	});
+
+	it("display name for Filter date field formats unix timestamp", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "datetime",
+			op: "gt",
+			value: 1700000000,
+		});
+		const expected = new Date(1700000000 * 1000).toISOString().slice(0, 16).replace("T", " ");
+		expect(selectionDisplayName(map, sel)).toBe(`Exact date > ${expected}`);
+	});
+
+	it("display name for Filter uses raw field name when no fieldDef exists", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "unknownField",
+			op: "eq",
+			value: "test",
+		});
+		expect(selectionDisplayName(map, sel)).toBe("unknownField = test");
+	});
+
+	it("display name for Filter enum uses user-defined field defs", () => {
+		setUserFieldDefs({
+			myCustomField: {
+				type: "enum",
+				label: "Custom",
+				values: ["a", "b"],
+				labels: { a: "Alpha", b: "Beta" },
+			},
+		});
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Filter",
+			field: "myCustomField",
+			op: "eq",
+			value: "a",
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Custom = Alpha");
+	});
+
+	it("display name for Locations with name", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, { type: "Locations", locations: [1, 2], name: "My Set" });
+		expect(selectionDisplayName(map, sel)).toBe("My Set");
+	});
+
+	it("display name for Locations without name", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, { type: "Locations", locations: [1], name: null });
+		expect(selectionDisplayName(map, sel)).toBe("Selection");
+	});
+
+	it("display name for Polygon without name", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Polygon",
+			polygon: { coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },
+			includeInformational: false,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Polygon");
+	});
+
+	it("display name for Polygon with name", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "Polygon",
+			polygon: { coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]], properties: { name: "Europe" } },
+			includeInformational: false,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Polygon: Europe");
+	});
+
+	it("display name for Duplicates", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, { type: "Duplicates", distance: 100 });
+		expect(selectionDisplayName(map, sel)).toBe("Duplicates (100m)");
+	});
+
+	it("display name for Manual", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, { type: "Manual", locations: [1, 2, 3] });
+		expect(selectionDisplayName(map, sel)).toBe("Manual selection");
+	});
+
+	it("display name for ValidationState", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "ValidationState",
+			locations: [1],
+			state: ValidationState.NotFound,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Not found");
+	});
+
+	it("display name for ValidationState PanoIdBroke", () => {
+		const map = makeMap();
+		const sel = buildSelection(map, {
+			type: "ValidationState",
+			locations: [2],
+			state: ValidationState.PanoIdBroke,
+		});
+		expect(selectionDisplayName(map, sel)).toBe("Pano ID broke");
+	});
+
+	it("display name for Intersection", () => {
+		const map = makeMap();
+		const s1 = buildSelection(map, { type: "PanoIds" });
+		const s2 = buildSelection(map, { type: "Untagged" });
+		const inter = intersectSelections(map, [s1, s2], null);
+		expect(selectionDisplayName(map, inter[0])).toBe("Intersection");
+	});
+
+	it("display name for Union", () => {
+		const map = makeMap();
+		const s1 = buildSelection(map, { type: "PanoIds" });
+		const s2 = buildSelection(map, { type: "Untagged" });
+		const union = unionSelections(map, [s1, s2], null);
+		expect(selectionDisplayName(map, union[0])).toBe("Union");
+	});
+
+	it("display name for Invert includes child name", () => {
+		const map = makeMap();
+		const s1 = buildSelection(map, { type: "PanoIds" });
+		const inverted = invertSelections(map, [s1], null);
+		expect(selectionDisplayName(map, inverted[0])).toBe("Invert: Pano ID locations");
+	});
+});
+
+describe("resolveLocations", () => {
+	const map = makeMap();
+
+	it("Manual returns copy of locations", () => {
+		const locs = [10, 20, 30];
+		const result = resolveLocations(map, { type: "Manual", locations: locs });
+		expect(result).toEqual([10, 20, 30]);
+		expect(result).not.toBe(locs);
+	});
+
+	it("Locations returns copy of locations", () => {
+		const locs = [5, 15];
+		const result = resolveLocations(map, { type: "Locations", locations: locs, name: null });
+		expect(result).toEqual([5, 15]);
+		expect(result).not.toBe(locs);
+	});
+
+	it("ValidationState returns copy of locations", () => {
+		const locs = [7, 8, 9];
+		const result = resolveLocations(map, {
+			type: "ValidationState",
+			locations: locs,
+			state: ValidationState.Ok,
+		});
+		expect(result).toEqual([7, 8, 9]);
+		expect(result).not.toBe(locs);
+	});
+
+	it("Everything returns empty array", () => {
+		expect(resolveLocations(map, { type: "Everything" })).toEqual([]);
+	});
+
+	it("Tag returns empty array", () => {
+		expect(resolveLocations(map, { type: "Tag", tagId: 1 })).toEqual([]);
+	});
+});
+
+describe("reorderSelections edge cases", () => {
+	const map = makeMap();
+
+	it("returns unchanged when from key not found", () => {
+		const s1 = buildSelection(map, { type: "PanoIds" });
+		const s2 = buildSelection(map, { type: "Untagged" });
+		const result = reorderSelections([s1, s2], "nonexistent", s2.key, "before");
+		expect(result.map((s) => s.key)).toEqual([s1.key, s2.key]);
+	});
+
+	it("returns unchanged when to key not found", () => {
+		const s1 = buildSelection(map, { type: "PanoIds" });
+		const s2 = buildSelection(map, { type: "Untagged" });
+		const result = reorderSelections([s1, s2], s1.key, "nonexistent", "before");
+		expect(result.map((s) => s.key)).toEqual([s1.key, s2.key]);
+	});
+
+	it("returns unchanged when from and to are the same", () => {
+		const s1 = buildSelection(map, { type: "PanoIds" });
+		const s2 = buildSelection(map, { type: "Untagged" });
+		const result = reorderSelections([s1, s2], s1.key, s1.key, "before");
+		expect(result.map((s) => s.key)).toEqual([s1.key, s2.key]);
 	});
 });
 

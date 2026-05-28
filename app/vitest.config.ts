@@ -5,6 +5,10 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			"measuretool-googlemaps-v3": path.resolve(
+				__dirname,
+				"node_modules/measuretool-googlemaps-v3/dist/gmaps-measuretool.esm.js",
+			),
 		},
 	},
 	test: {
