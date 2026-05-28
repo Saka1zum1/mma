@@ -4,6 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
+	getLoc,
 	createLocation,
 	createTag,
 	withApi,
@@ -86,11 +87,12 @@ describe("JSON import/export round-trip", () => {
 	it("export preserves tags in JSON", async () => {
 		const ieTag = await createTag("ImportExport");
 
+		const ieLoc = await getLoc(locIds[0]);
 		await withApi(
-			async (api, locId: number, tag: any) => {
-				await api.updateLocation(locId, { tags: [tag.id] });
+			async (api, loc, tag: any) => {
+				await api.updateLocation(loc, { tags: [tag.id] });
 			},
-			locIds[0],
+			ieLoc,
 			ieTag,
 		);
 
@@ -142,9 +144,10 @@ describe("JSON import/export round-trip", () => {
 	});
 
 	it("export with exportUnpanned tweaks heading=0 to 0.001", async () => {
-		await withApi(async (api, locId: number) => {
-			await api.updateLocation(locId, { heading: 0 });
-		}, locIds[1]);
+		const hLoc = await getLoc(locIds[1]);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 0 });
+		}, hLoc);
 
 		const result = await withApi(async (api) => {
 			const map = api.getCurrentMap()!;

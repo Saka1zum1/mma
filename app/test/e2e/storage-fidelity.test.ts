@@ -190,13 +190,15 @@ describe("Save ordering under concurrent mutations", () => {
 	});
 
 	it("update between two saves persists the latest value", async () => {
-		await withApi(async (api, id: number) => {
-			await api.updateLocation(id, { heading: 45 });
+		const loc = await getLoc(so1Id);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 45 });
 			await api.flushSave();
-			await api.updateLocation(id, { heading: 180 });
+			const l2 = await api.fetchLocation(l.id);
+			await api.updateLocation(l2, { heading: 180 });
 			await api.flushSave();
 			return { ok: true };
-		}, so1Id);
+		}, loc);
 
 		await closeMap();
 		await openMap(mapId);
@@ -296,10 +298,11 @@ describe("Field fidelity across multiple save cycles", () => {
 	});
 
 	it("updated fields survive save/load without corrupting other fields", async () => {
-		await withApi(async (api, id: number) => {
-			await api.updateLocation(id, { heading: 90 });
+		const loc = await getLoc(ff1Id);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 90 });
 			return { ok: true };
-		}, ff1Id);
+		}, loc);
 
 		await flushAndWait();
 		await closeMap();
@@ -594,10 +597,11 @@ describe("Dirty tracking accuracy", () => {
 	});
 
 	it("mutation after reopen marks dirty again", async () => {
-		await withApi(async (api, id: number) => {
-			await api.updateLocation(id, { heading: 99 });
+		const loc = await getLoc(dt1Id);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 99 });
 			return { ok: true };
-		}, dt1Id);
+		}, loc);
 
 		const dirty = await withApi(async (api) => {
 			return await api.getDirtyCount();

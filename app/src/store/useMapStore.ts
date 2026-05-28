@@ -151,10 +151,7 @@ export function getVisibleTags(): Tag[] {
 	return Object.values(currentMap.meta.tags).filter((t) => t.visible !== false);
 }
 
-/** Reactive map version counter. Bumps on every mutation. Use as a
- *  React effect dep when you want to react to changes to currentMap or
- *  its locations without depending on reference equality of the inner
- *  `locations: Location[]` array (which is now mutated in place on add). */
+/** Reactive map version counter. Bumps on every mutation. */
 export function useMapVersion(): number {
 	useSyncExternalStore(subscribe, getMapSnapshot);
 	return mapVersion;

@@ -4,6 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
+	getLoc,
 	createLocation,
 	withApi,
 } from "./helpers";
@@ -109,9 +110,10 @@ describe("Active location with undo/redo", () => {
 	it("updating active location field is persisted in store", async () => {
 		await withApi(async (api, id) => api.setActiveLocation(id), locIds[0]);
 
-		await withApi(async (api, id) => {
-			await api.updateLocation(id, { heading: 123 });
-		}, locIds[0]);
+		const loc = await getLoc(locIds[0]);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 123 });
+		}, loc);
 
 		const heading = await withApi(async (api, id) => {
 			const loc = await api.fetchLocation(id);

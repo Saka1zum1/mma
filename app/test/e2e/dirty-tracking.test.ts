@@ -4,6 +4,7 @@ import {
 	closeMap,
 	deleteMap,
 	addLocs,
+	getLoc,
 	createLocation,
 	flushAndWait,
 	withApi,
@@ -44,9 +45,10 @@ describe("Dirty tracking", () => {
 		const ids = await addLocs([createLocation({ lat: 30, lng: 40 })]);
 		await flushAndWait();
 
-		await withApi(async (api, id) => {
-			await api.updateLocation(id, { heading: 90 });
-		}, ids[0]);
+		const loc = await getLoc(ids[0]);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 90 });
+		}, loc);
 
 		const count = await withApi(async (api) => api.getDirtyCount());
 		expect(count).toBeGreaterThan(0);

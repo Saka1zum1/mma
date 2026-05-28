@@ -68,9 +68,10 @@ describe("Undo/Redo", () => {
 	});
 
 	it("undo update restores original values", async () => {
-		await withApi(async (api, id) => {
-			await api.updateLocation(id, { lat: 99, heading: 270 });
-		}, undo1Id);
+		const loc = await getLoc(undo1Id);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { lat: 99, heading: 270 });
+		}, loc);
 
 		let loc = await getLoc(undo1Id);
 		expect(loc.lat).toBe(99);
@@ -220,9 +221,10 @@ describe("Undo/Redo persistence", () => {
 	});
 
 	it("flags survive undo across save/load", async () => {
-		await withApi(async (api, id) => {
-			await api.updateLocation(id, { flags: 1, panoId: "PIN" });
-		}, uh1Id);
+		const loc = await getLoc(uh1Id);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { flags: 1, panoId: "PIN" });
+		}, loc);
 
 		await flushAndWait();
 		await closeMap();

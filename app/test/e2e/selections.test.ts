@@ -6,6 +6,7 @@ import {
 	addLocs,
 	createLocation,
 	createTag,
+	getLoc,
 	refreshSelections,
 	withApi,
 } from "./helpers";
@@ -340,18 +341,20 @@ describe("Selection correctness after mutations", () => {
 		}
 		locIds = await addLocs(locs);
 
-		const result = await withApi(async (api, ids: number[]) => {
+		const locsToFlag = [];
+		for (let i = 0; i < 5; i++) locsToFlag.push(await getLoc(locIds[i]));
+		const result = await withApi(async (api, locs) => {
 			await api.selectPanoIds();
 			const before = api.getSelectedLocationIds().size;
-			for (let i = 0; i < 5; i++) {
-				api.updateLocation(ids[i], { flags: 1 });
+			for (const l of locs) {
+				await api.updateLocation(l, { flags: 1 });
 			}
 			await new Promise((r) => setTimeout(r, 500));
 			api.resetSelections();
 			await api.selectPanoIds();
 			const after = api.getSelectedLocationIds().size;
 			return { before, after };
-		}, locIds);
+		}, locsToFlag);
 		expect(result.before).toBe(0);
 		expect(result.after).toBe(5);
 	});
@@ -387,12 +390,13 @@ describe("Selection correctness after mutations", () => {
 	});
 
 	it("PanoIds selection correct after undo of flag change", async () => {
-		await withApi(async (api, id: number) => {
+		const loc0 = await getLoc(locIds[0]);
+		await withApi(async (api, loc) => {
 			api.resetSelections();
 			await api.selectPanoIds();
-			api.updateLocation(id, { flags: 0 });
+			await api.updateLocation(loc, { flags: 0 });
 			await new Promise((r) => setTimeout(r, 300));
-		}, locIds[0]);
+		}, loc0);
 
 		const afterUnpin = await refreshSelections();
 		expect(afterUnpin.length).toBe(4);
@@ -408,14 +412,17 @@ describe("Selection correctness after mutations", () => {
 
 	it("tag selection updates after tag added to locations", async () => {
 		const testTag = await createTag("test-tag");
+		const tagLoc0 = await getLoc(locIds[0]);
+		const tagLoc1 = await getLoc(locIds[1]);
 		await withApi(
-			async (api, ids: number[], tagId: number) => {
+			async (api, l0, l1, tagId: number) => {
 				api.resetSelections();
-				await api.updateLocation(ids[0], { tags: [tagId] });
-				await api.updateLocation(ids[1], { tags: [tagId] });
+				await api.updateLocation(l0, { tags: [tagId] });
+				await api.updateLocation(l1, { tags: [tagId] });
 				await api.selectTag(tagId);
 			},
-			locIds,
+			tagLoc0,
+			tagLoc1,
 			testTag.id,
 		);
 		const selected = await refreshSelections();

@@ -3,6 +3,7 @@ import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { useCurrentMap, useSelectedLocationIds } from "@/store/useMapStore";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
+import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { fmt } from "@/lib/util/format";
 
 interface Props {
@@ -58,7 +59,7 @@ export function ExportDialog({ onClose }: Props) {
 			scope: scopeIds ?? null,
 			mapName: map.meta.name,
 			tagsJson: JSON.stringify(map.meta.tags),
-			extraFieldsJson: map.meta.extra?.fields ? JSON.stringify(map.meta.extra.fields) : null,
+			extraFieldsJson: JSON.stringify(getAllFieldDefs()),
 		});
 		return fetchExportFile(path);
 	};

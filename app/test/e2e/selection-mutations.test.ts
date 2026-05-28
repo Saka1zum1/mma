@@ -8,6 +8,7 @@ import {
 	addLocs,
 	createLocation,
 	createTag,
+	getLoc,
 	refreshSelections,
 	withApi,
 } from "./helpers";
@@ -197,17 +198,18 @@ describe("Live selection correctness after update", () => {
 
 	it("updating location to ADD matching tag joins active tag selection", async () => {
 		const id15 = locIds[15];
+		const loc15 = await getLoc(id15);
 		const result = await withApi(
-			async (api, tagId: number, locId: number) => {
+			async (api, tagId: number, loc) => {
 				await api.selectTag(tagId);
 				const before = api.getSelectedLocationIds().size;
-				await api.updateLocation(locId, { tags: [tagId] });
+				await api.updateLocation(loc, { tags: [tagId] });
 				const result = await api.syncSelections();
 				const after = result.ids;
-				return { before, after: after.length, has: after.includes(locId) };
+				return { before, after: after.length, has: after.includes(loc.id) };
 			},
 			tagAlphaId,
-			id15,
+			loc15,
 		);
 		expect(result.before).toBe(10);
 		expect(result.after).toBe(11);
@@ -216,15 +218,16 @@ describe("Live selection correctness after update", () => {
 
 	it("updating location to REMOVE matching tag leaves active tag selection", async () => {
 		const id0 = locIds[0];
+		const loc0 = await getLoc(id0);
 		const before = await withApi(
-			async (api, tagId: number, locId: number) => {
+			async (api, tagId: number, loc) => {
 				await api.selectTag(tagId);
 				const before = api.getSelectedLocationIds().size;
-				await api.updateLocation(locId, { tags: [] });
+				await api.updateLocation(loc, { tags: [] });
 				return before;
 			},
 			tagAlphaId,
-			id0,
+			loc0,
 		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(before - 1);
@@ -233,48 +236,52 @@ describe("Live selection correctness after update", () => {
 
 	it("PanoIds selection updates when flag toggled on (no reset)", async () => {
 		const id10 = locIds[10];
-		const before = await withApi(async (api, locId: number) => {
+		const loc10 = await getLoc(id10);
+		const before = await withApi(async (api, loc) => {
 			await api.selectPanoIds();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(locId, { flags: 1 });
+			await api.updateLocation(loc, { flags: 1 });
 			return before;
-		}, id10);
+		}, loc10);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(before + 1);
 	});
 
 	it("PanoIds selection updates when flag toggled off (no reset)", async () => {
 		const id0 = locIds[0];
-		const before = await withApi(async (api, locId: number) => {
+		const loc0 = await getLoc(id0);
+		const before = await withApi(async (api, loc) => {
 			await api.selectPanoIds();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(locId, { flags: 0 });
+			await api.updateLocation(loc, { flags: 0 });
 			return before;
-		}, id0);
+		}, loc0);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(before - 1);
 	});
 
 	it("Unpanned selection updates when heading changed from 0 (no reset)", async () => {
 		const id0 = locIds[0];
-		const before = await withApi(async (api, locId: number) => {
+		const loc0 = await getLoc(id0);
+		const before = await withApi(async (api, loc) => {
 			await api.selectUnpanned();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(locId, { heading: 45 });
+			await api.updateLocation(loc, { heading: 45 });
 			return before;
-		}, id0);
+		}, loc0);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(before - 1);
 	});
 
 	it("Unpanned selection updates when heading changed to 0 (no reset)", async () => {
 		const id10 = locIds[10];
-		const before = await withApi(async (api, locId: number) => {
+		const loc10 = await getLoc(id10);
+		const before = await withApi(async (api, loc) => {
 			await api.selectUnpanned();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(locId, { heading: 0 });
+			await api.updateLocation(loc, { heading: 0 });
 			return before;
-		}, id10);
+		}, loc10);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(before + 1);
 	});
@@ -470,15 +477,16 @@ describe("Selection correctness after undo/redo", () => {
 
 	it("undo of tag-add update removes location from tag selection", async () => {
 		const id5 = locIds[5];
+		const loc5 = await getLoc(id5);
 		await withApi(
-			async (api, tagId: number, locId: number) => {
+			async (api, tagId: number, loc) => {
 				await api.resetSelections();
 				await api.selectTag(tagId);
-				api.updateLocation(locId, { tags: [tagId] });
+				await api.updateLocation(loc, { tags: [tagId] });
 				await new Promise((r) => setTimeout(r, 300));
 			},
 			tagUndoId,
-			id5,
+			loc5,
 		);
 		const afterUpdateIds = await refreshSelections();
 		const before = afterUpdateIds.length;
@@ -598,19 +606,20 @@ describe("Composite selection correctness after mutations", () => {
 
 	it("intersection updates when location gains a tag to enter both children", async () => {
 		const id0 = locIds[0];
+		const loc0 = await getLoc(id0);
 		const before = await withApi(
-			async (api, tagAId: number, tagBId: number, locId: number) => {
+			async (api, tagAId: number, tagBId: number, loc) => {
 				await api.selectTag(tagAId);
 				await api.selectTag(tagBId);
 				await api.selectIntersection();
 				const before = api.getSelectedLocationIds().size;
 
-				await api.updateLocation(locId, { tags: [tagAId, tagBId] });
+				await api.updateLocation(loc, { tags: [tagAId, tagBId] });
 				return before;
 			},
 			tagCompAId,
 			tagCompBId,
-			id0,
+			loc0,
 		);
 		const ids = await refreshSelections();
 		expect(before).toBe(5);
@@ -620,19 +629,20 @@ describe("Composite selection correctness after mutations", () => {
 
 	it("intersection updates when location loses a tag to leave one child", async () => {
 		const id5 = locIds[5];
+		const loc5 = await getLoc(id5);
 		const before = await withApi(
-			async (api, tagAId: number, tagBId: number, locId: number) => {
+			async (api, tagAId: number, tagBId: number, loc) => {
 				await api.selectTag(tagAId);
 				await api.selectTag(tagBId);
 				await api.selectIntersection();
 				const before = api.getSelectedLocationIds().size;
 
-				await api.updateLocation(locId, { tags: [tagAId] });
+				await api.updateLocation(loc, { tags: [tagAId] });
 				return before;
 			},
 			tagCompAId,
 			tagCompBId,
-			id5,
+			loc5,
 		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(before - 1);

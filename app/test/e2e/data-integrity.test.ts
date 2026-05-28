@@ -39,9 +39,10 @@ describe("Data integrity - flags", () => {
 	});
 
 	it("flag=1 (LoadAsPanoId) survives save/load", async () => {
-		await withApi(async (api, id) => {
-			await api.updateLocation(id, { flags: 1 });
-		}, fl0Id);
+		const loc = await getLoc(fl0Id);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { flags: 1 });
+		}, loc);
 
 		await flushAndWait();
 		await closeMap();
@@ -121,9 +122,10 @@ describe("Data integrity - panoId", () => {
 	});
 
 	it("panoId set to null after being set", async () => {
-		await withApi(async (api, id) => {
-			await api.updateLocation(id, { panoId: null });
-		}, pnStrId);
+		const loc = await getLoc(pnStrId);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { panoId: null });
+		}, loc);
 
 		await flushAndWait();
 		await closeMap();
@@ -372,7 +374,8 @@ describe("Data integrity - concurrent operations", () => {
 
 			// Update same location 10 times rapidly
 			for (let i = 0; i < 10; i++) {
-				await api.updateLocation(targetId, { heading: i * 36 });
+				const loc = await api.fetchLocation(targetId);
+				await api.updateLocation(loc, { heading: i * 36 });
 			}
 
 			const loc = await api.fetchLocation(targetId);

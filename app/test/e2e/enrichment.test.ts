@@ -165,14 +165,15 @@ describe("Enrichment — single location via preview", () => {
 			api.setSetting("showExactDate", false);
 		});
 		// Pre-seed with stale datetime
-		await withApi(async (api, id) => {
-			await api.patchLocationExtra(id, {
+		const dtLoc = await readLocation(enrichExistingMetaId);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, {
 				imageDate: "2099-01",
 				datetime: 9999999999,
 				timezone: "Fake/Zone",
 			});
 			return "ok";
-		}, enrichExistingMetaId);
+		}, dtLoc);
 
 		const before = await readLocation(enrichExistingMetaId);
 		expect(before.extra.datetime).toBe(9999999999);
@@ -258,10 +259,11 @@ describe("Enrichment — respects enrichFields setting", () => {
 		await updateMapSettings({ enrichMetadata: false });
 
 		// Clear existing extra
-		await withApi(async (api, id) => {
-			api.patchLocationExtra(id, {}, true);
+		const clearLoc = await readLocation(fieldsSelectiveId);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, {}, true);
 			return "ok";
-		}, fieldsSelectiveId);
+		}, clearLoc);
 
 		await openLocation(fieldsSelectiveId);
 		await waitForPreview();
@@ -307,19 +309,24 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 		await closeLocation();
 	});
 
-	it("field defs appear on map meta after enrichment", async () => {
+	it("field defs appear after enrichment", async () => {
 		await openLocation(defsAutoId);
 		await waitForPreview();
 		await waitForEnrichment(defsAutoId);
 
-		const meta = await getMapMeta();
-		const fields = meta?.extra?.fields ?? {};
-		expect(fields.countryCode).toBeTruthy();
-		expect(fields.countryCode.type).toBe("string");
-		expect(fields.altitude).toBeTruthy();
-		expect(fields.altitude.type).toBe("number");
-		expect(fields.imageDate).toBeTruthy();
-		expect(fields.imageDate.type).toBe("month");
+		const keys = await withApi((api) => [...api.getKnownFieldKeys()]);
+		expect(keys).toContain("countryCode");
+		expect(keys).toContain("altitude");
+		expect(keys).toContain("imageDate");
+
+		const defs = await withApi((api) => ({
+			countryCode: api.getFieldDef("countryCode"),
+			altitude: api.getFieldDef("altitude"),
+			imageDate: api.getFieldDef("imageDate"),
+		}));
+		expect(defs.countryCode?.type).toBe("string");
+		expect(defs.altitude?.type).toBe("number");
+		expect(defs.imageDate?.type).toBe("month");
 	});
 
 	it("does not clobber user-customized field defs", async () => {
@@ -331,10 +338,11 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 		});
 
 		// Clear extra and re-enrich
-		await withApi(async (api, id) => {
-			api.patchLocationExtra(id, {}, true);
+		const defLoc = await readLocation(defsAutoId);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, {}, true);
 			return "ok";
-		}, defsAutoId);
+		}, defLoc);
 
 		await openLocation(defsAutoId);
 		await waitForPreview();
@@ -347,55 +355,43 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 		expect(fields.countryCode.label).toBe("My Custom Country");
 	});
 
-	it("patchLocationExtra auto-registers known field defs", async () => {
-		// Wipe field defs
-		await withApi(async (api) => {
-			const map = api.getCurrentMap()!;
-			await api.updateMapMeta({ extra: { ...map.meta.extra, fields: {} } });
+	it("patchLocationExtra auto-registers known field keys", async () => {
+		const patchLoc = await readLocation(defsAutoId);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, { datetime: 1700000000 });
 			return "ok";
-		});
-
-		// Patch a location with a known enrichment field
-		await withApi(async (api, id) => {
-			api.patchLocationExtra(id, { datetime: 1700000000 });
-			return "ok";
-		}, defsAutoId);
+		}, patchLoc);
 
 		await new Promise((r) => setTimeout(r, 500));
-		const meta = await getMapMeta();
-		const fields = meta?.extra?.fields ?? {};
-		expect(fields.datetime).toBeTruthy();
-		expect(fields.datetime.type).toBe("date");
+		const keys = await withApi((api) => [...api.getKnownFieldKeys()]);
+		expect(keys).toContain("datetime");
+		const def = await withApi((api) => api.getFieldDef("datetime"));
+		expect(def?.type).toBe("date");
 	});
 
-	it("addLocations auto-registers known field defs", async () => {
-		// Wipe field defs
-		await withApi(async (api) => {
-			const map = api.getCurrentMap()!;
-			await api.updateMapMeta({ extra: { ...map.meta.extra, fields: {} } });
-			return "ok";
-		});
-
+	it("addLocations auto-registers known field keys", async () => {
 		await addLocs([loc({ lat: 10, lng: 20, extra: { altitude: 100, countryCode: "US" } })]);
 
-		const meta = await getMapMeta();
-		const fields = meta?.extra?.fields ?? {};
-		expect(fields.altitude).toBeTruthy();
-		expect(fields.altitude.type).toBe("number");
-		expect(fields.countryCode).toBeTruthy();
-		expect(fields.countryCode.type).toBe("string");
+		const keys = await withApi((api) => [...api.getKnownFieldKeys()]);
+		expect(keys).toContain("altitude");
+		expect(keys).toContain("countryCode");
+		const defs = await withApi((api) => ({
+			altitude: api.getFieldDef("altitude"),
+			countryCode: api.getFieldDef("countryCode"),
+		}));
+		expect(defs.altitude?.type).toBe("number");
+		expect(defs.countryCode?.type).toBe("string");
 	});
 
-	it("unknown extra fields get auto-registered with inferred type", async () => {
-		await withApi(async (api, id) => {
-			await api.patchLocationExtra(id, { randomCustomThing: "hello" });
+	it("unknown extra fields get auto-registered as known keys", async () => {
+		const customLoc = await readLocation(defsAutoId);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, { randomCustomThing: "hello" });
 			return "ok";
-		}, defsAutoId);
+		}, customLoc);
 
-		const meta = await getMapMeta();
-		const fields = meta?.extra?.fields ?? {};
-		expect(fields.randomCustomThing).toBeTruthy();
-		expect(fields.randomCustomThing.type).toBe("string");
+		const keys = await withApi((api) => [...api.getKnownFieldKeys()]);
+		expect(keys).toContain("randomCustomThing");
 	});
 });
 
@@ -459,11 +455,11 @@ describe("Enrichment — exact date via preview", () => {
 		expect(l.extra.timezone.length).toBeGreaterThan(0);
 	});
 
-	it("datetime field def is registered on map", async () => {
-		const meta = await getMapMeta();
-		const fields = meta?.extra?.fields ?? {};
-		expect(fields.datetime).toBeTruthy();
-		expect(fields.datetime.type).toBe("date");
+	it("datetime field def is available", async () => {
+		const keys = await withApi((api) => [...api.getKnownFieldKeys()]);
+		expect(keys).toContain("datetime");
+		const def = await withApi((api) => api.getFieldDef("datetime"));
+		expect(def?.type).toBe("date");
 	});
 });
 

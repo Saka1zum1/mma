@@ -118,7 +118,8 @@ describe("Bake with mixed overlay", () => {
 
 			// Update 10 (indices 0-9): change heading and lat
 			for (let i = 0; i < 10; i++) {
-				await api.updateLocation(ids[i], { heading: 999, lat: 100 + i });
+				const loc = await api.fetchLocation(ids[i]);
+				await api.updateLocation(loc, { heading: 999, lat: 100 + i });
 			}
 
 			// Remove 5 (indices 45-49)
@@ -258,7 +259,8 @@ describe("Repeated updates to same location", () => {
 
 		const headings = [45, 90, 135, 270, 315];
 		for (const h of headings) {
-			await withApi((api, id, heading) => api.updateLocation(id, { heading }), locId, h);
+			const loc = await getLoc(locId);
+			await withApi((api, l, heading) => api.updateLocation(l, { heading }), loc, h);
 		}
 
 		// Verify in-memory
@@ -1237,7 +1239,8 @@ describe("Implicit save on close", () => {
 		]);
 
 		// Update without flushing
-		await withApi((api, id) => api.updateLocation(id, { heading: 222.22 }), ids[0]);
+		const loc = await getLoc(ids[0]);
+		await withApi((api, l) => api.updateLocation(l, { heading: 222.22 }), loc);
 
 		// Close immediately (bake happens in close)
 		await closeMap();

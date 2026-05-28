@@ -64,9 +64,10 @@ describe("Extra field definitions", () => {
 			}),
 		]);
 
-		await withApi(async (api, id) => {
-			await api.patchLocationExtra(id, { country: "France" });
-		}, ids[0]);
+		const loc = await getLoc(ids[0]);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, { country: "France" });
+		}, loc);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.extra.altitude).toBe(100);
@@ -82,9 +83,10 @@ describe("Extra field definitions", () => {
 			}),
 		]);
 
-		await withApi(async (api, id) => {
-			await api.patchLocationExtra(id, { newField: "value" }, true);
-		}, ids[0]);
+		const loc = await getLoc(ids[0]);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, { newField: "value" }, true);
+		}, loc);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.extra.newField).toBe("value");

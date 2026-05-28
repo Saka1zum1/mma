@@ -63,46 +63,51 @@ describe("Location CRUD", () => {
 	// --- Update ---
 
 	it("update location lat/lng", async () => {
-		await withApi(async (api, id) => {
-			api.updateLocation(id, { lat: 51.5, lng: -0.1 });
-		}, singleLocId);
 		const loc = await getLoc(singleLocId);
-		expect(loc.lat).toBe(51.5);
-		expect(loc.lng).toBe(-0.1);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { lat: 51.5, lng: -0.1 });
+		}, loc);
+		const updated = await getLoc(singleLocId);
+		expect(updated.lat).toBe(51.5);
+		expect(updated.lng).toBe(-0.1);
 	});
 
 	it("update location heading/pitch/zoom", async () => {
-		await withApi(async (api, id) => {
-			api.updateLocation(id, { heading: 180, pitch: -10, zoom: 3 });
-		}, singleLocId);
 		const loc = await getLoc(singleLocId);
-		expect(loc.heading).toBe(180);
-		expect(loc.pitch).toBe(-10);
-		expect(loc.zoom).toBe(3);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { heading: 180, pitch: -10, zoom: 3 });
+		}, loc);
+		const updated = await getLoc(singleLocId);
+		expect(updated.heading).toBe(180);
+		expect(updated.pitch).toBe(-10);
+		expect(updated.zoom).toBe(3);
 	});
 
 	it("update location flags", async () => {
-		await withApi(async (api, id) => {
-			api.updateLocation(id, { flags: 1 });
-		}, singleLocId);
 		const loc = await getLoc(singleLocId);
-		expect(loc.flags).toBe(1);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { flags: 1 });
+		}, loc);
+		const updated = await getLoc(singleLocId);
+		expect(updated.flags).toBe(1);
 	});
 
 	it("update location panoId", async () => {
-		await withApi(async (api, id) => {
-			api.updateLocation(id, { panoId: "CAoSK0FG" });
-		}, singleLocId);
 		const loc = await getLoc(singleLocId);
-		expect(loc.panoId).toBe("CAoSK0FG");
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { panoId: "CAoSK0FG" });
+		}, loc);
+		const updated = await getLoc(singleLocId);
+		expect(updated.panoId).toBe("CAoSK0FG");
 	});
 
 	it("update location tags", async () => {
-		await withApi(async (api, id) => {
-			api.updateLocation(id, { tags: [100, 200] });
-		}, singleLocId);
 		const loc = await getLoc(singleLocId);
-		expect(loc.tags).toEqual([100, 200]);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { tags: [100, 200] });
+		}, loc);
+		const updated = await getLoc(singleLocId);
+		expect(updated.tags).toEqual([100, 200]);
 	});
 
 	// --- Batch update ---
@@ -269,9 +274,10 @@ describe("Location persistence", () => {
 	});
 
 	it("extras survive save/load", async () => {
-		await withApi(async (api, id) => {
-			api.patchLocationExtra(id, { altitude: 42, country: "US", note: "test" });
-		}, persistLocIds[0]);
+		const extraLoc = await getLoc(persistLocIds[0]);
+		await withApi(async (api, l) => {
+			await api.patchLocationExtra(l, { altitude: 42, country: "US", note: "test" });
+		}, extraLoc);
 
 		await flushAndWait();
 		await closeMap();
@@ -293,11 +299,12 @@ describe("Location persistence", () => {
 			return resolved.map((t) => t.id);
 		});
 
+		const tagLoc = await getLoc(persistLocIds[1]);
 		await withApi(
-			async (api, locId, tIds) => {
-				api.updateLocation(locId, { tags: tIds });
+			async (api, l, tIds) => {
+				await api.updateLocation(l, { tags: tIds });
 			},
-			persistLocIds[1],
+			tagLoc,
 			tagIds,
 		);
 
@@ -313,9 +320,10 @@ describe("Location persistence", () => {
 	});
 
 	it("panoId and flags survive pin/unpin/save cycle", async () => {
-		await withApi(async (api, id) => {
-			api.updateLocation(id, { panoId: "PINNED_PANO", flags: 1 });
-		}, persistLocIds[5]);
+		const pinLoc = await getLoc(persistLocIds[5]);
+		await withApi(async (api, l) => {
+			await api.updateLocation(l, { panoId: "PINNED_PANO", flags: 1 });
+		}, pinLoc);
 
 		await flushAndWait();
 		await closeMap();

@@ -119,13 +119,14 @@ describe("Tag operations on locations", () => {
 	});
 
 	it("add tag to individual location", async () => {
+		const loc0 = await getLoc(locIds[0]);
 		const tags = await withApi(
-			async (api, locId, tagId) => {
-				api.updateLocation(locId, { tags: [tagId] });
-				const loc = await api.fetchLocation(locId);
-				return loc?.tags;
+			async (api, loc, tagId) => {
+				await api.updateLocation(loc, { tags: [tagId] });
+				const updated = await api.fetchLocation(loc.id);
+				return updated?.tags;
 			},
-			locIds[0],
+			loc0,
 			bulkTagId,
 		);
 		expect(tags).toEqual([bulkTagId]);
@@ -171,22 +172,24 @@ describe("Tag operations on locations", () => {
 	});
 
 	it("remove tag from location", async () => {
-		await withApi(async (api, locId) => {
-			api.updateLocation(locId, { tags: [] });
+		const loc0 = await getLoc(locIds[0]);
+		await withApi(async (api, loc) => {
+			await api.updateLocation(loc, { tags: [] });
 			return "ok";
-		}, locIds[0]);
+		}, loc0);
 		const loc = await getLoc(locIds[0]);
 		expect(loc.tags).toEqual([]);
 	});
 
 	it("multiple tags on one location", async () => {
+		const loc5 = await getLoc(locIds[5]);
 		const tags = await withApi(
-			async (api, locId, bulkId, otherId) => {
-				api.updateLocation(locId, { tags: [bulkId, otherId] });
-				const loc = await api.fetchLocation(locId);
-				return loc!.tags;
+			async (api, loc, bulkId, otherId) => {
+				await api.updateLocation(loc, { tags: [bulkId, otherId] });
+				const updated = await api.fetchLocation(loc.id);
+				return updated!.tags;
 			},
-			locIds[5],
+			loc5,
 			bulkTagId,
 			otherTagId,
 		);
