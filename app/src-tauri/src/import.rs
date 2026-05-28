@@ -83,20 +83,25 @@ use crate::util::color_for_name;
 /// Parse CSV text into locations. Supports both named columns (lat/lng/heading/etc.)
 /// and positional (first two numeric columns = lat, lng). Skips malformed rows silently.
 fn parse_csv(text: &str) -> ParsedMap {
-    let warn = |w: &str| ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: vec![w.into()] };
+    let empty = || ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: Vec::new() };
+    let warn = |w: &str| { let mut m = empty(); m.warnings.push(w.into()); m };
 
-    let first = match text.lines().next() {
-        Some(h) => h,
-        None => return warn("Empty CSV"),
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(text.as_bytes());
+
+    let mut rows = rdr.records();
+    let first = match rows.next() {
+        Some(Ok(r)) => r,
+        _ => return warn("Empty CSV"),
     };
-    let cols: Vec<&str> = first.split(',').map(|h| h.trim()).collect();
-    let lower: Vec<String> = cols.iter().map(|h| h.to_lowercase()).collect();
 
+    let lower: Vec<String> = first.iter().map(|f| f.trim().to_lowercase()).collect();
     let lat_named = lower.iter().position(|h| h == "lat" || h == "latitude");
     let lng_named = lower.iter().position(|h| h == "lng" || h == "longitude" || h == "lon");
 
-    // The first line is a header only if it names lat/lng columns.
-    let (lat_idx, lng_idx, heading_idx, pitch_idx, zoom_idx, pano_idx, has_header) =
+    let (lat_idx, lng_idx, heading_idx, pitch_idx, zoom_idx, pano_idx, first_is_header) =
         if let (Some(la), Some(ln)) = (lat_named, lng_named) {
             (
                 la, ln,
@@ -107,8 +112,8 @@ fn parse_csv(text: &str) -> ParsedMap {
                 true,
             )
         } else {
-            let is_num = |s: &&str| s.parse::<f64>().map(f64::is_finite).unwrap_or(false);
-            if !(cols.first().is_some_and(is_num) && cols.get(1).is_some_and(is_num)) {
+            let is_num = |s: &str| s.trim().parse::<f64>().map(f64::is_finite).unwrap_or(false);
+            if !(first.get(0).is_some_and(is_num) && first.get(1).is_some_and(is_num)) {
                 return warn("CSV missing lat/lng columns");
             }
             (0, 1, None, None, None, None, false)
@@ -116,34 +121,35 @@ fn parse_csv(text: &str) -> ParsedMap {
 
     let now = now_iso();
     let mut locations = Vec::new();
-    for line in text.lines().skip(if has_header { 1 } else { 0 }) {
-        let fields: Vec<&str> = line.split(',').map(|f| f.trim()).collect();
-        let lat: f64 = match fields.get(lat_idx).and_then(|s| s.parse::<f64>().ok()) {
-            Some(v) if v.is_finite() => v,
-            _ => continue,
-        };
-        let lng: f64 = match fields.get(lng_idx).and_then(|s| s.parse::<f64>().ok()) {
-            Some(v) if v.is_finite() => v,
-            _ => continue,
-        };
-        let heading = heading_idx.and_then(|i| fields.get(i)?.parse().ok()).unwrap_or(0.0);
-        let pitch = pitch_idx.and_then(|i| fields.get(i)?.parse().ok()).unwrap_or(0.0);
-        let zoom = zoom_idx.and_then(|i| fields.get(i)?.parse().ok()).unwrap_or(0.0);
+
+    let parse_row = |record: &csv::StringRecord| -> Option<Location> {
+        let lat: f64 = record.get(lat_idx)?.trim().parse().ok().filter(|v: &f64| v.is_finite())?;
+        let lng: f64 = record.get(lng_idx)?.trim().parse().ok().filter(|v: &f64| v.is_finite())?;
+        let heading = heading_idx.and_then(|i| record.get(i)?.trim().parse().ok()).unwrap_or(0.0);
+        let pitch = pitch_idx.and_then(|i| record.get(i)?.trim().parse().ok()).unwrap_or(0.0);
+        let zoom = zoom_idx.and_then(|i| record.get(i)?.trim().parse().ok()).unwrap_or(0.0);
         let pano_id = pano_idx.and_then(|i| {
-            let s = fields.get(i)?.trim();
+            let s = record.get(i)?.trim();
             if s.is_empty() { None } else { Some(s.to_string()) }
         });
         let flags = if pano_id.is_some() { 1u32 } else { 0u32 };
+        Some(Location {
+            id: 0, lat, lng, heading, pitch, zoom, pano_id, flags,
+            tags: Vec::new(), extra: None, created_at: now.clone(), modified_at: None,
+        })
+    };
 
-        locations.push(Location {
-            id: 0,
-            lat, lng, heading, pitch, zoom,
-            pano_id, flags,
-            tags: Vec::new(),
-            extra: None,
-            created_at: now.clone(),
-            modified_at: None,
-        });
+    if !first_is_header {
+        if let Some(loc) = parse_row(&first) {
+            locations.push(loc);
+        }
+    }
+
+    for result in rows {
+        let Ok(record) = result else { continue };
+        if let Some(loc) = parse_row(&record) {
+            locations.push(loc);
+        }
     }
 
     ParsedMap { name: String::new(), folder: None, locations, tags: Vec::new(), fields: None, warnings: Vec::new() }

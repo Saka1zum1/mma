@@ -171,7 +171,6 @@ fn uninstall_plugin(app: tauri::AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Build a blocking HTTP client with native TLS and a 15-second timeout.
 fn build_http_client(follow_redirects: bool) -> reqwest::blocking::Client {
     let redirect = if follow_redirects {
         reqwest::redirect::Policy::default()
@@ -179,7 +178,7 @@ fn build_http_client(follow_redirects: bool) -> reqwest::blocking::Client {
         reqwest::redirect::Policy::none()
     };
     reqwest::blocking::Client::builder()
-        .use_native_tls()
+        .use_rustls_tls()
         .redirect(redirect)
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -503,12 +502,7 @@ pub fn run() {
                 app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
             }
-
-            if let Some(window) = app.get_webview_window("main") {
-                let png_bytes = include_bytes!("../icons/icon.png");
-                let icon = tauri::image::Image::from_bytes(png_bytes).unwrap();
-                let _ = window.set_icon(icon);
-            }
+            
 
             Ok(())
         });
