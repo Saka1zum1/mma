@@ -38,6 +38,8 @@ export interface EnrichmentProvider {
 	id: string;
 	enrich(locations: Location[], enrichFields: string[] | null): Promise<Map<number, Record<string, unknown>>>;
 	fieldDefs: Record<string, ExtraFieldDef>;
+	/** When set, this provider is auto-invoked after patchLocationExtra writes any of these fields. */
+	requires?: string[];
 }
 
 const providers: EnrichmentProvider[] = [];
@@ -48,6 +50,13 @@ export function registerEnrichmentProvider(provider: EnrichmentProvider) {
 
 export function getEnrichmentProviders(): EnrichmentProvider[] {
 	return providers;
+}
+
+export function getTriggeredProviders(patchedKeys: string[]): EnrichmentProvider[] {
+	const keySet = new Set(patchedKeys);
+	return providers.filter(
+		(p) => p.requires && p.requires.some((r) => keySet.has(r)),
+	);
 }
 
 export function isFieldEnabled(enrichFields: string[] | null, key: string): boolean {

@@ -1,0 +1,16 @@
+{
+  "name": "mma-plugin-sun-position",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js --watch"
+  },
+  "dependencies": {
+    "suncalc": "^1.9.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "mma-plugin-types": "file:../types",
+    "@types/suncalc": "^1.8.0"
+  }
+}

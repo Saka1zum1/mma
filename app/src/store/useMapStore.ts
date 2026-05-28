@@ -12,6 +12,7 @@ import { emit as emitEvent } from "@/lib/events";
 import { log } from "@/lib/util/log";
 import { debugSpan } from "@/lib/util/debug";
 import { mmaBufUrl } from "@/lib/util/util";
+import { getTriggeredProviders } from "@/lib/data/fieldDefs.add";
 import type { RenderDelta } from "@/lib/render/CellManager";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */
@@ -648,6 +649,16 @@ export async function patchLocationExtra(
 		cachedActiveLocation = await fetchViaFile<Location>(cmd.storeGetLocationFile(locId)) ?? null;
 		mapVersion++;
 		notify();
+	}
+
+	const triggered = getTriggeredProviders(Object.keys(extraPatch));
+	for (const provider of triggered) {
+		const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(locId));
+		if (!loc) break;
+		const enrichFields = currentMap?.meta.settings.enrichFields ?? null;
+		const patches = await provider.enrich([loc], enrichFields);
+		const p = patches.get(locId);
+		if (p && Object.keys(p).length > 0) await patchLocationExtra(locId, p);
 	}
 }
 

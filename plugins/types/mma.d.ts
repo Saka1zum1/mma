@@ -277,7 +277,12 @@ export type MapMeta = {
  *  Partial update for map metadata. Only non-`None` fields are written.
  *  `folder: Some(None)` explicitly unsets the folder (moves to root).
  */
-export type MapMetaPatch = {
+export type MapMetaPatch = MapMetaPatch_Serialize | MapMetaPatch_Deserialize;
+/**
+ *  Partial update for map metadata. Only non-`None` fields are written.
+ *  `folder: Some(None)` explicitly unsets the folder (moves to root).
+ */
+export type MapMetaPatch_Deserialize = {
 	name?: string | null;
 	description?: string | null;
 	folder?: string | null;
@@ -288,6 +293,22 @@ export type MapMetaPatch = {
 		[key in string]: Tag;
 	} | null;
 	labels?: string[] | null;
+};
+/**
+ *  Partial update for map metadata. Only non-`None` fields are written.
+ *  `folder: Some(None)` explicitly unsets the folder (moves to root).
+ */
+export type MapMetaPatch_Serialize = {
+	name: string | null;
+	description: string | null;
+	folder: string | null;
+	settings: MapSettings | null;
+	scoreBounds: ScoreBounds | null;
+	extra: MapExtra | null;
+	tags: {
+		[key in string]: Tag;
+	} | null;
+	labels: string[] | null;
 };
 /**
  *  Per-map editor preferences. Controls Street View lookup behavior (official vs
@@ -606,6 +627,8 @@ export interface EnrichmentProvider {
 	id: string;
 	enrich(locations: Location$1[], enrichFields: string[] | null): Promise<Map<number, Record<string, unknown>>>;
 	fieldDefs: Record<string, ExtraFieldDef>;
+	/** When set, this provider is auto-invoked after patchLocationExtra writes any of these fields. */
+	requires?: string[];
 }
 declare function registerEnrichmentProvider(provider: EnrichmentProvider): void;
 /**
@@ -1144,7 +1167,7 @@ declare const mma: {
 		} | null>;
 		storeCreateMap: (name: string, folder: string | null) => Promise<MapData>;
 		storeDeleteMap: (id: string) => Promise<null>;
-		storeUpdateMapMeta: (id: string, patch: MapMetaPatch) => Promise<null>;
+		storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => Promise<null>;
 		storeTouchMapOpened: (mapId: string) => Promise<null>;
 		storeRenameFolder: (from: string, to: string) => Promise<null>;
 		storeDeleteFolder: (name: string) => Promise<null>;
