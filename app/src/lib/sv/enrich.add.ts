@@ -55,12 +55,12 @@ export async function enrich(
 	if (!map || !(map.meta.settings.enrichMetadata ?? true)) return false;
 	const enrichFields = map.meta.settings.enrichFields;
 	const patch = buildPatch(data, loc, enrichFields);
-	if (patch) patchLocationExtra(loc.id, patch);
+	if (patch) patchLocationExtra(loc, patch);
 
 	for (const provider of getEnrichmentProviders()) {
 		const patches = await provider.enrich([loc], enrichFields);
 		const p = patches.get(loc.id);
-		if (p) patchLocationExtra(loc.id, p);
+		if (p) patchLocationExtra(loc, p);
 	}
 
 	return true;
@@ -175,7 +175,7 @@ export async function enrichAll(
 						{ datetime: ts, timezone: tz },
 						freshMap!.meta.settings.enrichFields,
 					);
-					if (Object.keys(datePatch).length > 0) patchLocationExtra(loc.id, datePatch);
+					if (Object.keys(datePatch).length > 0) patchLocationExtra(loc, datePatch);
 					result.dateSuccess.push(loc.id);
 				} catch (e) {
 					log.warn(

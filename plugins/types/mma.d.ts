@@ -1392,12 +1392,12 @@ declare const mma: {
 	duplicateLocation(locId: number): Promise<number | null>;
 	updateLocationNoUndo(id: number, patch: Partial<Location$1>): Promise<MutationResult_Serialize>;
 	removeLocations(ids: Set<number>): Promise<void>;
-	updateLocation(locId: number, patch: Partial<Location$1>): void;
+	updateLocation(loc: Location$1, patch: Partial<Location$1>): Promise<void>;
 	batchUpdateLocations(updates: {
 		id: number;
 		patch: Partial<Location$1>;
 	}[]): Promise<void | MutationResult_Serialize>;
-	patchLocationExtra(locId: number, extraPatch: Record<string, unknown>, replace?: boolean): Promise<void>;
+	patchLocationExtra(loc: Location$1, extraPatch: Record<string, unknown>, replace?: boolean): Promise<void>;
 	useSelections(): Selection$1[];
 	addSelections(props: SelectionProps[]): Promise<void>;
 	removeSelections(keys: string[]): Promise<void>;

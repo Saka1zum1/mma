@@ -881,10 +881,10 @@ function LocationPreviewInner() {
 		(panoId: string | null) => {
 			if (!singletonPano || !location) return;
 			if (panoId == null) {
-				updateLocation(location.id, { flags: location.flags & ~LocationFlag.LoadAsPanoId });
+				updateLocation(location, { flags: location.flags & ~LocationFlag.LoadAsPanoId });
 				if (location.panoId) singletonPano.setPano(location.panoId);
 			} else {
-				updateLocation(location.id, { flags: location.flags | LocationFlag.LoadAsPanoId });
+				updateLocation(location, { flags: location.flags | LocationFlag.LoadAsPanoId });
 				singletonPano.setPano(panoId);
 			}
 		},
@@ -900,7 +900,7 @@ function LocationPreviewInner() {
 
 		const savedPanoId = selectedPanoId ?? pano ?? location.panoId;
 		const panoChanged = savedPanoId !== location.panoId;
-		updateLocation(location.id, {
+		updateLocation(location, {
 			heading: pov.heading,
 			pitch: pov.pitch,
 			zoom: zoom,
@@ -945,7 +945,7 @@ function LocationPreviewInner() {
 		const result = await resolvePano(location);
 		applyResolved(singletonPano, result, location);
 		google.maps.event.trigger(singletonPano, "resize");
-		updateLocation(location.id, { flags: location.flags & ~LocationFlag.LoadAsPanoId });
+		updateLocation(location, { flags: location.flags & ~LocationFlag.LoadAsPanoId });
 	}, [location]);
 
 	const handleFullscreen = useCallback(() => {
@@ -1224,7 +1224,7 @@ function LocationPreviewInner() {
 		if (!(getCurrentMap()?.meta.settings.enrichMetadata ?? true)) return;
 		const loc = getActiveLocation();
 		if (!loc || loc.extra?.datetime != null) return;
-		patchLocationExtra(loc.id, { datetime: ts, timezone });
+		patchLocationExtra(loc, { datetime: ts, timezone });
 	}, []);
 
 	if (!location || !map) return null;

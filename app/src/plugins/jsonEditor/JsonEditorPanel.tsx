@@ -39,7 +39,7 @@ export function JsonEditorPanel() {
 				parsed.tags = await resolveTagNames(parsed.tags as unknown as string[]);
 			}
 			setError(null);
-			MMA.updateLocation(active.id, parsed);
+			MMA.updateLocation(active, parsed);
 			setSaved(true);
 		} catch (e: unknown) {
 			setError(e instanceof Error ? e.message : String(e));

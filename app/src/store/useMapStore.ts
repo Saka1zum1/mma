@@ -631,23 +631,16 @@ function buildUpdates(
 	});
 }
 
-export function updateLocation(locId: number, patch: Partial<Location>) {
+export async function updateLocation(loc: Location, patch: Partial<Location>) {
 	if (!currentMap) return;
-	const updates = buildUpdates([{ id: locId, patch }]);
-	emitEvent("location:update", { id: locId, ...patch });
-	mutate(cmd.storeUpdateLocations(updates, true))
-		.then(() => {
-			if (activeLocationId === locId) {
-				fetchViaFile<Location>(cmd.storeGetLocationFile(locId))
-					.then((loc) => {
-						cachedActiveLocation = loc ?? null;
-						mapVersion++;
-						notify();
-					})
-					.catch((e) => log.error("[update] store_get_location refresh failed:", e));
-			}
-		})
-		.catch((e) => log.error("[update] store_update_locations failed:", e));
+	const updates = buildUpdates([{ id: loc.id, patch }]);
+	emitEvent("location:update", { id: loc.id, ...patch });
+	await mutate(cmd.storeUpdateLocations(updates, true));
+	if (activeLocationId === loc.id) {
+		cachedActiveLocation = { ...loc, ...patch };
+		mapVersion++;
+		notify();
+	}
 }
 
 export function batchUpdateLocations(updates: { id: number; patch: Partial<Location> }[]) {
@@ -658,29 +651,29 @@ export function batchUpdateLocations(updates: { id: number; patch: Partial<Locat
 }
 
 export async function patchLocationExtra(
-	locId: number,
+	loc: Location,
 	extraPatch: Record<string, unknown>,
 	replace = false,
 ) {
 	if (!currentMap) return;
-	const extra = replace
-		? extraPatch
-		: { ...((await fetchViaFile<Location>(cmd.storeGetLocationFile(locId)))?.extra || {}), ...extraPatch };
-	await mutate(cmd.storeUpdateLocations([[locId, { extra }]], false));
-	if (activeLocationId === locId) {
-		cachedActiveLocation = await fetchViaFile<Location>(cmd.storeGetLocationFile(locId)) ?? null;
+	const extra = replace ? extraPatch : { ...loc.extra, ...extraPatch };
+	await mutate(cmd.storeUpdateLocations([[loc.id, { extra }]], false));
+
+	const patched = { ...loc, extra };
+	if (activeLocationId === loc.id) {
+		cachedActiveLocation = patched;
 		mapVersion++;
 		notify();
 	}
 
 	const triggered = getTriggeredProviders(Object.keys(extraPatch));
-	for (const provider of triggered) {
-		const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(locId));
-		if (!loc) break;
+	if (triggered.length > 0) {
 		const enrichFields = currentMap?.meta.settings.enrichFields ?? null;
-		const patches = await provider.enrich([loc], enrichFields);
-		const p = patches.get(locId);
-		if (p && Object.keys(p).length > 0) await patchLocationExtra(locId, p);
+		for (const provider of triggered) {
+			const patches = await provider.enrich([patched], enrichFields);
+			const p = patches.get(loc.id);
+			if (p && Object.keys(p).length > 0) await patchLocationExtra(patched, p);
+		}
 	}
 }
 
