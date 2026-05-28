@@ -15,6 +15,7 @@ import type { Location } from "@/types";
 import { registerPlugin } from "@/plugins/registry";
 import { preloadModules, getAvailableExternals } from "@/plugins/externals";
 import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs.add";
+import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
@@ -95,6 +96,10 @@ const mma = {
 	preloadModules,
 	getAvailableExternals,
 	createLocationStore,
+
+	// --- Field definitions ---
+	getFieldDef,
+	getAllFieldDefs,
 
 	// --- Types ---
 	createLocation,

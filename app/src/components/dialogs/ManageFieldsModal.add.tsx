@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
-import { useCurrentMap, setMapExtraFields, fetchAllLocations } from "@/store/useMapStore";
-import type { Location } from "@/types";
+import { setMapExtraFields, getKnownFieldKeys } from "@/store/useMapStore";
 import type { ExtraFieldDef } from "@/types";
+import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 const FIELD_TYPES: ExtraFieldDef["type"][] = ["string", "number", "date", "month", "enum"];
 const TYPE_LABELS: Record<ExtraFieldDef["type"], string> = {
 	string: "Text",
@@ -20,26 +20,19 @@ interface FieldRow {
 }
 
 export function ManageFieldsModal({ onClose }: { onClose: () => void }) {
-	const map = useCurrentMap();
-	const defs = map?.meta.extra?.fields ?? {};
-	const [locs, setLocs] = useState<Location[]>([]);
-	useEffect(() => {
-		fetchAllLocations().then(setLocs);
-	}, []);
+	const knownKeys = getKnownFieldKeys();
+	const allDefs = getAllFieldDefs();
 
-	const allKeys = new Set<string>();
-	for (const loc of locs) {
-		if (loc.extra) for (const k of Object.keys(loc.extra)) allKeys.add(k);
-	}
-	for (const k of Object.keys(defs)) allKeys.add(k);
+	const allKeys = new Set<string>(knownKeys);
+	for (const k of Object.keys(allDefs)) allKeys.add(k);
 
 	const initialRows: FieldRow[] = [...allKeys].sort().map((key) => {
-		const def = defs[key];
+		const def = getFieldDef(key);
 		return {
 			key,
 			label: def?.label ?? key,
 			type: def?.type ?? "string",
-			hasData: locs.some((l) => l.extra?.[key] != null),
+			hasData: knownKeys.has(key),
 		};
 	});
 
@@ -53,7 +46,7 @@ export function ManageFieldsModal({ onClose }: { onClose: () => void }) {
 		const fields: Record<string, ExtraFieldDef> = {};
 		for (const row of rows) {
 			const entry: ExtraFieldDef = { type: row.type, label: row.label };
-			const existing = defs[row.key];
+			const existing = getFieldDef(row.key);
 			if (existing?.values) entry.values = existing.values;
 			if (existing?.labels) entry.labels = existing.labels;
 			fields[row.key] = entry;

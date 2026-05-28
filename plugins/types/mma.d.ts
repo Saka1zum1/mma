@@ -336,9 +336,7 @@ export type MapSettings = {
 export type MutationResult_Serialize = {
 	delta: RenderDelta_Serialize;
 	selectionSync: SelectionSync | null;
-	newFieldDefs: {
-		[key in string]: ExtraFieldDef;
-	} | null;
+	newFieldKeys: string[] | null;
 	tags: {
 		[key in number]: Tag;
 	} | null;
@@ -571,6 +569,7 @@ export type StoreStatus = {
 	tagCounts: {
 		[key in number]: number;
 	};
+	knownFieldKeys: string[];
 };
 /**  Lightweight status for polling: count, version, and whether unsaved changes exist. */
 export type SummaryResult = {
@@ -631,6 +630,8 @@ export interface EnrichmentProvider {
 	requires?: string[];
 }
 declare function registerEnrichmentProvider(provider: EnrichmentProvider): void;
+declare function getFieldDef(key: string): ExtraFieldDef | undefined;
+declare function getAllFieldDefs(): Record<string, ExtraFieldDef>;
 /**
  * Command arguments.
  *
@@ -1278,6 +1279,8 @@ declare const mma: {
 	preloadModules: typeof preloadModules;
 	getAvailableExternals: typeof getAvailableExternals;
 	createLocationStore: typeof createLocationStore;
+	getFieldDef: typeof getFieldDef;
+	getAllFieldDefs: typeof getAllFieldDefs;
 	createLocation: typeof createLocation;
 	getGoogleMap: () => google.maps.Map | null;
 	waitForGoogleMap: () => Promise<google.maps.Map>;
@@ -1362,6 +1365,8 @@ declare const mma: {
 	closeMap(pushHistory?: boolean): Promise<void>;
 	getCurrentMapId(): string | null;
 	getCurrentMap(): MapData | null;
+	getKnownFieldKeys(): ReadonlySet<string>;
+	useKnownFieldKeys(): ReadonlySet<string>;
 	getActiveLocation(): Location$1 | null;
 	fetchAllLocations(): Promise<Location$1[]>;
 	fetchLocation(id: number): Promise<Location$1 | null>;

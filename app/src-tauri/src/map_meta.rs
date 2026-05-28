@@ -472,12 +472,16 @@ pub fn store_update_map_meta(
     let conn = fast_io::open_db(&app)?;
     conn.execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
+    // Merge user-defined field keys into the runtime set (add-only -- never erase
+    // data-derived keys that happen to lack a persisted field definition).
     if let Some(ref extra) = patch.extra {
         let mut mgr = state.lock().map_err(|e| e.to_string())?;
         if let Ok(store) = mgr.store_for_map(&id_clone) {
-            store.known_field_keys = extra.fields.as_ref()
-                .map(|f| f.keys().cloned().collect())
-                .unwrap_or_default();
+            if let Some(ref fields) = extra.fields {
+                for key in fields.keys() {
+                    store.known_field_keys.insert(key.clone());
+                }
+            }
         }
     }
     Ok(())

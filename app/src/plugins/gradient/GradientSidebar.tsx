@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import type { ExtraFieldDef } from "@/types";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import "./gradient.css";
 
 interface GradientPreset {
@@ -95,18 +96,18 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 
 	const map = MMA.getCurrentMap();
 
+	const knownKeys = MMA.getKnownFieldKeys();
 	const fields = useMemo((): FieldOption[] => {
 		const result: FieldOption[] = [];
-		if (!map?.meta.extra?.fields) return result;
-		for (const [key, raw] of Object.entries(map.meta.extra.fields)) {
-			const def = raw as ExtraFieldDef;
+		for (const key of knownKeys) {
+			const def = getFieldDef(key);
 			const numeric = isNumericField(def);
-			if (numeric || def.type === "enum" || def.type === "string" || def.type === "month") {
-				result.push({ key, label: def.label ?? key, def, numeric });
+			if (!def || numeric || def.type === "enum" || def.type === "string" || def.type === "month") {
+				result.push({ key, label: def?.label ?? key, def, numeric });
 			}
 		}
 		return result;
-	}, [map?.meta.extra?.fields]);
+	}, [knownKeys]);
 
 	useEffect(() => {
 		if (fieldKey || fields.length === 0) return;

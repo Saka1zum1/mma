@@ -8,8 +8,9 @@ import {
 	batchUpdateLocations,
 	useSelectedLocationIds,
 } from "@/store/useMapStore";
-import type { Location, ExtraFieldDef } from "@/types";
+import type { Location } from "@/types";
 import { isPinnedToPano } from "@/types";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { ValidationState } from "@/store/selections";
 import { validateLocations } from "@/lib/sv/validate";
 import { enrichAll, needsEnrichment, type EnrichResult } from "@/lib/sv/enrich.add";
@@ -214,14 +215,10 @@ function ClearFieldsSetup({
 	selectionCount: number;
 	onStart: (keys: string[]) => void;
 }) {
-	const map = getCurrentMap()!;
-	const fieldDefs: Record<string, ExtraFieldDef> = map.meta.extra?.fields ?? {};
-
 	const allKeys = new Set<string>();
 	for (const loc of locs) {
 		if (loc.extra) for (const k of Object.keys(loc.extra)) allKeys.add(k);
 	}
-	for (const k of Object.keys(fieldDefs)) allKeys.add(k);
 
 	const sortedKeys = [...allKeys].sort();
 	const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -250,7 +247,7 @@ function ClearFieldsSetup({
 			) : (
 				<div className="bulk-operation__field-list">
 					{sortedKeys.map((key) => {
-						const def = fieldDefs[key];
+						const def = getFieldDef(key);
 						const count = scopedWithData(key);
 						return (
 							<label key={key} className="bulk-operation__field-item">

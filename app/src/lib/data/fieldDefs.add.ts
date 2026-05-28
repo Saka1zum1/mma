@@ -1,6 +1,7 @@
 import type { ExtraFieldDef } from "@/types";
 import type { Location } from "@/types";
 import { getSettings } from "@/store/settings.add";
+import { registerPluginFieldDefs } from "@/lib/data/fieldDefRegistry";
 
 export interface EnrichFieldOption {
 	key: string;
@@ -45,7 +46,10 @@ export interface EnrichmentProvider {
 const providers: EnrichmentProvider[] = [];
 
 export function registerEnrichmentProvider(provider: EnrichmentProvider) {
-	if (!providers.some((p) => p.id === provider.id)) providers.push(provider);
+	if (!providers.some((p) => p.id === provider.id)) {
+		providers.push(provider);
+		registerPluginFieldDefs(provider.fieldDefs);
+	}
 }
 
 export function getEnrichmentProviders(): EnrichmentProvider[] {

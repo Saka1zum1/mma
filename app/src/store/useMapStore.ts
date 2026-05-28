@@ -13,6 +13,7 @@ import { log } from "@/lib/util/log";
 import { debugSpan } from "@/lib/util/debug";
 import { mmaBufUrl } from "@/lib/util/util";
 import { getTriggeredProviders } from "@/lib/data/fieldDefs.add";
+import { setUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 import type { RenderDelta } from "@/lib/render/CellManager";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */
@@ -104,6 +105,10 @@ let activePluginId: string | null = null;
 let mapVersion = 0;
 let tagCounts: Record<number, number> = {};
 let undoRedoState = { canUndo: false, canRedo: false };
+/** Extra-field keys known to exist in location data on the current map.
+ *  Populated from `StoreStatus.knownFieldKeys` on map open, extended
+ *  incrementally via `MutationResult.newFieldKeys`. */
+let knownFieldKeys = new Set<string>();
 
 export function useTagCounts(): Record<number, number> {
 	useSyncExternalStore(subscribe, getMapSnapshot);
@@ -281,6 +286,8 @@ export async function openMap(id: string, pushHistory = true) {
 			log.debug(`[openMap] store_open_map=${(performance.now() - t1).toFixed(0)}ms`);
 			tagCounts = openResult.tagCounts;
 			undoRedoState = { canUndo: openResult.canUndo, canRedo: openResult.canRedo };
+			knownFieldKeys = new Set(openResult.knownFieldKeys);
+			setUserFieldDefs(currentMap!.meta.extra?.fields ?? {});
 		} catch (e) {
 			log.error("[openMap] store_open_map failed:", e);
 			currentMap = null;
@@ -315,6 +322,8 @@ export async function closeMap(pushHistory = true) {
 	activeLocationId = null;
 	review = null;
 	workArea = "overview";
+	knownFieldKeys = new Set();
+	resetForMapChange();
 
 	await cmd.storeCloseMap();
 	renderDeltaBus.emit({ added: [], updated: [], removed: [], colorPatches: [], fullReset: true });
@@ -331,6 +340,17 @@ export function getCurrentMapId() {
 
 export function getCurrentMap() {
 	return currentMap;
+}
+
+/** Returns the set of extra-field keys known to exist on the current map. */
+export function getKnownFieldKeys(): ReadonlySet<string> {
+	return knownFieldKeys;
+}
+
+/** Reactive hook for `knownFieldKeys`. Re-renders when keys are added. */
+export function useKnownFieldKeys(): ReadonlySet<string> {
+	useSyncExternalStore(subscribe, getMapSnapshot);
+	return knownFieldKeys;
 }
 
 export function getActiveLocation(): Location | null {
@@ -434,28 +454,30 @@ export async function setMapExtraFields(fields: Record<string, ExtraFieldDef>) {
 	const current = currentMap.meta.extra ?? {};
 	const replaced = { ...current, fields };
 	currentMap = { ...currentMap, meta: { ...currentMap.meta, extra: replaced } };
+	setUserFieldDefs(fields);
 	mapVersion++;
 	notify();
 	await cmd.storeUpdateMapMeta(currentMapId, { extra: replaced } as Partial<MapMeta>);
 }
 
-/** Sync JS-side state (location count, undo/redo, tag counts, selections) from a Rust MutationResult. */
+/** Sync JS-side state (location count, undo/redo, tag counts, field keys, selections) from a Rust MutationResult. */
 function syncMutationResult(r: MutationResult) {
 	if (!currentMap) return;
+	const hasNewKeys = r.newFieldKeys != null && r.newFieldKeys.length > 0;
 	const needsNotify =
 		currentMap.meta.locationCount !== r.locationCount ||
 		undoRedoState.canUndo !== r.canUndo ||
 		undoRedoState.canRedo !== r.canRedo ||
-		r.newFieldDefs != null ||
+		hasNewKeys ||
 		r.tags != null;
+	if (hasNewKeys) {
+		for (const key of r.newFieldKeys!) knownFieldKeys.add(key);
+	}
 	currentMap = {
 		...currentMap,
 		meta: {
 			...currentMap.meta,
 			locationCount: r.locationCount,
-			extra: r.newFieldDefs != null
-			? { ...currentMap.meta.extra, fields: { ...currentMap.meta.extra.fields, ...r.newFieldDefs } }
-			: currentMap.meta.extra,
 		},
 	};
 	undoRedoState = { canUndo: r.canUndo, canRedo: r.canRedo };

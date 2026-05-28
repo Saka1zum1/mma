@@ -9,6 +9,7 @@ import {
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import type { ExtraFieldDef } from "@/types";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import type { LocationStore } from "@/api";
 import "./pivot.css";
 
@@ -167,16 +168,15 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 	const [data, setData] = useState<PivotData | null>(null);
 	const [loading, setLoading] = useState(false);
 
-	const map = MMA.getCurrentMap();
+	const knownKeys = MMA.getKnownFieldKeys();
 	const fields = useMemo((): FieldOption[] => {
 		const result: FieldOption[] = [{ key: TAGS_FIELD_KEY, label: "Tags", def: undefined }];
-		if (map?.meta.extra?.fields) {
-			for (const [key, def] of Object.entries(map.meta.extra.fields)) {
-				result.push({ key, label: (def as ExtraFieldDef).label ?? key, def: def as ExtraFieldDef });
-			}
+		for (const key of knownKeys) {
+			const def = getFieldDef(key);
+			result.push({ key, label: def?.label ?? key, def });
 		}
 		return result;
-	}, [map?.meta.extra?.fields]);
+	}, [knownKeys]);
 
 	const savedSelections: SavedSelection[] = MMA.getSettings().savedSelections;
 

@@ -267,6 +267,7 @@ impl Store {
             can_undo: !self.edits.undo.is_empty(),
             can_redo: !self.edits.redo.is_empty(),
             tag_counts: self.tags.all.iter().map(|(&id, t)| (id, t.count)).collect(),
+            known_field_keys: self.known_field_keys.iter().cloned().collect(),
         }
     }
 
@@ -361,7 +362,7 @@ impl Store {
             status: self.store_status(),
             delta,
             selection_sync,
-            new_field_defs: None,
+            new_field_keys: None,
             tags,
         }
     }
@@ -1014,6 +1015,9 @@ macro_rules! with_store {
 
 /// Metadata snapshot returned to JS after every mutation. JS uses `version` to
 /// detect stale responses and `canUndo`/`canRedo` for toolbar button state.
+/// `known_field_keys` lists every extra-field key that exists in location data
+/// on this map. Add-only within a session; seeded from `MapMeta.extra.fields`
+/// on map open.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreStatus {
@@ -1022,6 +1026,7 @@ pub struct StoreStatus {
     pub can_undo: bool,
     pub can_redo: bool,
     pub tag_counts: HashMap<u32, usize>,
+    pub known_field_keys: Vec<String>,
 }
 
 /// Result of `store_save_dirty`: how many bytes were written to the delta file.
@@ -1122,8 +1127,10 @@ pub struct SelectionSync {
 }
 
 /// Unified response for every mutation IPC. Bundles the store status, render delta,
-/// optional selection sync, optional new field definitions, and optional updated tags.
-/// JS applies all of these atomically to stay in sync with the Rust state.
+/// optional selection sync, optional newly-discovered extra-field keys, and optional
+/// updated tags. JS applies all of these atomically to stay in sync with the Rust state.
+/// `new_field_keys` carries only keys discovered for the first time in this mutation --
+/// field metadata (type, label) is resolved on the JS side via the field-def registry.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MutationResult {
@@ -1131,7 +1138,7 @@ pub struct MutationResult {
     pub status: StoreStatus,
     pub delta: RenderDelta,
     pub selection_sync: Option<SelectionSync>,
-    pub new_field_defs: Option<HashMap<String, map_meta::ExtraFieldDef>>,
+    pub new_field_keys: Option<Vec<String>>,
     pub tags: Option<HashMap<u32, Tag>>,
 }
 
@@ -1420,9 +1427,10 @@ pub fn store_close_map(
     Ok(())
 }
 
-/// Scan `extra` JSON maps for keys not yet in `known_field_keys`, persist new field
-/// definitions to SQLite, and attach them to `result.new_field_defs` so JS can update
-/// the filter UI.
+/// Scan `extra` JSON maps for keys not yet in `known_field_keys`, persist inferred
+/// field definitions to SQLite (for export and cross-session survival), and return
+/// the newly-discovered keys to JS via `result.new_field_keys`. Field *metadata*
+/// (type, label) is resolved on the JS side; Rust only tracks key existence.
 pub(crate) fn auto_register_extras(
     app: &tauri::AppHandle,
     store: &mut Store,
@@ -1431,15 +1439,16 @@ pub(crate) fn auto_register_extras(
 ) {
     if extras.is_empty() { return; }
     if let Some(new_defs) = map_meta::auto_register_field_defs(&store.known_field_keys, extras) {
+        let new_keys: Vec<String> = new_defs.keys().cloned().collect();
         if let Some(map_id) = &store.map_id {
             if let Ok(conn) = fast_io::open_db(app) {
                 let _ = map_meta::persist_field_defs(&conn, map_id, &new_defs);
             }
         }
-        for key in new_defs.keys() {
+        for key in &new_keys {
             store.known_field_keys.insert(key.clone());
         }
-        result.new_field_defs = Some(new_defs);
+        result.new_field_keys = Some(new_keys);
     }
 }
 
@@ -2484,7 +2493,7 @@ pub fn store_create_tags(
             status: store.store_status(),
             delta: RenderDelta::default(),
             selection_sync: None,
-            new_field_defs: None,
+            new_field_keys: None,
             tags: Some(store.tags.all.clone()),
         })
     })
@@ -2510,7 +2519,7 @@ pub fn store_reorder_tags(
             status: store.store_status(),
             delta: RenderDelta::default(),
             selection_sync: None,
-            new_field_defs: None,
+            new_field_keys: None,
             tags: Some(store.tags.all.clone()),
         })
     })

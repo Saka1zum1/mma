@@ -2,6 +2,7 @@
 
 import type { MapData } from "@/types";
 import { hslToRgb } from "@/lib/util/color";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 
 export type { Selection, SelectionProps, PolygonGeometry } from "@/bindings.gen";
 import type { Selection, SelectionProps } from "@/bindings.gen";
@@ -427,7 +428,7 @@ export function selectionDisplayName(map: MapData, sel: Selection): string {
 				has: "has",
 				nothas: "does not have",
 			};
-			const fieldDef = map.meta.extra?.fields?.[p.field];
+			const fieldDef = getFieldDef(p.field);
 			const fieldLabel = fieldDef?.label ?? p.field;
 			if (p.op === "has") return `has ${fieldLabel}`;
 			if (p.op === "nothas") return `missing ${fieldLabel}`;

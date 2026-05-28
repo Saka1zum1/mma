@@ -6,7 +6,6 @@ import {
 	fetchLocationsByIds,
 	batchUpdateLocations,
 	patchLocationExtra,
-	setMapExtraFields,
 } from "@/store/useMapStore";
 import {
 	filterEnrichPatch,
@@ -205,8 +204,6 @@ export async function enrichAll(
 					return { id, patch: { extra: { ...loc?.extra, ...patch } } };
 				});
 				batchUpdateLocations(updates);
-				const currentFields = getCurrentMap()?.meta.extra?.fields ?? {};
-				await setMapExtraFields({ ...currentFields, ...provider.fieldDefs });
 			}
 		}
 	}

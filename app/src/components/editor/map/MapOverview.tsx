@@ -27,7 +27,9 @@ import {
 	removeChildFromSelection,
 	updateTags,
 	getVisibleTags,
+	useKnownFieldKeys,
 } from "@/store/useMapStore";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { cmd } from "@/lib/commands";
 
 import { RgbColorPicker } from "react-colorful";
@@ -406,25 +408,23 @@ const VIRTUAL_FIELDS: FieldEntry[] = [
 ];
 
 function useExtraFieldKeys(): FieldEntry[] {
-	const map = useCurrentMap();
-	const defs = map?.meta.extra?.fields;
+	const keys = useKnownFieldKeys();
 	return useMemo(() => {
 		const entries: FieldEntry[] = [];
-		if (defs) {
-			for (const [key, def] of Object.entries(defs)) {
-				entries.push({
-					key,
-					label: def.label ?? key,
-					fieldType: def.type ?? "string",
-					fieldDef: def,
-				});
-			}
+		for (const key of keys) {
+			const def = getFieldDef(key);
+			entries.push({
+				key,
+				label: def?.label ?? key,
+				fieldType: def?.type ?? "string",
+				fieldDef: def,
+			});
 		}
 		for (const vf of VIRTUAL_FIELDS) {
-			if (!defs?.[vf.key]) entries.push(vf);
+			if (!keys.has(vf.key)) entries.push(vf);
 		}
 		return entries;
-	}, [defs]);
+	}, [keys]);
 }
 
 const TIMEZONE_VALUES = Intl.supportedValuesOf("timeZone");
