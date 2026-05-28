@@ -122,7 +122,7 @@ export async function resolvePanoIds(
 
 /** Compute SV search radius in meters based on map zoom and latitude. */
 export function svSearchRadius(lat: number, zoom: number): number {
-	return Math.max(25, (4 * (156543.03392 * Math.cos((lat * Math.PI) / 180))) / 2 ** zoom);
+	return (4 * (156543.03392 * Math.cos((lat * Math.PI) / 180))) / 2 ** zoom;
 }
 
 /** Clamp heading to [-180, 180]. */
@@ -238,9 +238,10 @@ export async function lookupStreetView(
 		defaultPanoId?: boolean;
 		preferHigherQuality?: boolean;
 		radius?: number;
+		minRadius?: number;
 	},
 ): Promise<Location | null> {
-	const radius = opts.radius ?? Math.max(50, Math.round(svSearchRadius(lat, zoom)));
+	const radius = opts.radius ?? Math.max(opts.minRadius ?? 50, Math.round(svSearchRadius(lat, zoom)));
 	const click = { lat, lng };
 	const userUploaded: "ignore" | "avoid" | "allow" = opts.onlyOfficial
 		? "ignore"

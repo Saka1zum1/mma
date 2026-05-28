@@ -30,6 +30,7 @@ pub struct MapSettings {
     pub default_pano_id: bool,
     pub export_zoom: bool,
     pub export_unpanned: bool,
+    pub search_radius: Option<u32>,
     pub enrich_metadata: bool,
     pub enrich_fields: Option<Vec<String>>,
     pub generated_location_tag: Option<String>,

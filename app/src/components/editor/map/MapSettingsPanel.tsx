@@ -62,6 +62,8 @@ export interface MapSettingsDropdownProps {
 	setOnlyOfficial: (v: boolean) => void;
 	defaultPanoId: boolean;
 	setDefaultPanoId: (v: boolean) => void;
+	searchRadius: number | null;
+	setSearchRadius: (v: number | null) => void;
 	markerStyle: MarkerStyle;
 	setMarkerStyle: (v: MarkerStyle) => void;
 	showPerfectScoreCircle: boolean;
@@ -74,6 +76,33 @@ export interface MapSettingsDropdownProps {
 	setEnrichFields: (v: string[] | null) => void;
 	generatedLocationTag: string | null;
 	setGeneratedLocationTag: (v: string | null) => void;
+}
+
+function SearchRadiusSlider({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+	const [dragging, setDragging] = useState<number | null>(null);
+	const display = dragging ?? value ?? 50;
+	return (
+		<label className="settings-popup__item settings-popup__select">
+			Min search radius:{" "}
+			<input
+				type="range"
+				min={10}
+				max={500}
+				step={10}
+				value={display}
+				onInput={(e) => setDragging(Number((e.target as HTMLInputElement).value))}
+				onChange={() => {}}
+				onPointerUp={() => {
+					if (dragging != null) {
+						onChange(dragging === 50 ? null : dragging);
+						setDragging(null);
+					}
+				}}
+				style={{ width: 80, verticalAlign: "middle" }}
+			/>
+			{" "}{display}m
+		</label>
+	);
 }
 
 function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
@@ -407,6 +436,7 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 							/>
 							Use Pano ID locations by default
 						</label>
+						<SearchRadiusSlider value={s.searchRadius} onChange={s.setSearchRadius} />
 					</fieldset>
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">

@@ -717,6 +717,7 @@ export type MapSettings = {
 	defaultPanoId: boolean,
 	exportZoom: boolean,
 	exportUnpanned: boolean,
+	searchRadius: number | null,
 	enrichMetadata: boolean,
 	enrichFields: string[] | null,
 	generatedLocationTag: string | null,

@@ -321,6 +321,7 @@ export function MapEmbed() {
 		preferDirection: null as string | null,
 		defaultPanoId: false,
 		preferHigherQuality: false,
+		minRadius: undefined as number | undefined,
 	});
 	const [prefs, setPrefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
 	const pref =
@@ -372,6 +373,7 @@ export function MapEmbed() {
 		onlyOfficial,
 		preferHigherQuality,
 		defaultPanoId,
+		searchRadius,
 	} = mapSettings;
 	const [customStyles, setCustomStyles] = useState<{ name: string; style: MapStyle[] }[]>(() => {
 		try {
@@ -404,6 +406,7 @@ export function MapEmbed() {
 		preferDirection,
 		defaultPanoId,
 		preferHigherQuality,
+		minRadius: searchRadius ?? undefined,
 	};
 
 	const buildLayers = useCallback(() => {

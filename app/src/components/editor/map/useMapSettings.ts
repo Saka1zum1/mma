@@ -15,6 +15,8 @@ export interface MapSettingsState {
 	setPreferHigherQuality: (v: boolean) => void;
 	defaultPanoId: boolean;
 	setDefaultPanoId: (v: boolean) => void;
+	searchRadius: number | null;
+	setSearchRadius: (v: number | null) => void;
 	enrichMetadata: boolean;
 	setEnrichMetadata: (v: boolean) => void;
 	enrichFields: string[] | null;
@@ -33,6 +35,7 @@ export function useMapSettings(
 	const [onlyOfficial, _setOnlyOfficial] = useState(false);
 	const [preferHigherQuality, _setPreferHigherQuality] = useState(false);
 	const [defaultPanoId, _setDefaultPanoId] = useState(false);
+	const [searchRadius, _setSearchRadius] = useState<number | null>(null);
 	const [enrichMetadata, _setEnrichMetadata] = useState(true);
 	const [enrichFields, _setEnrichFields] = useState<string[] | null>(null);
 	const [generatedLocationTag, _setGeneratedLocationTag] = useState<string | null>(null);
@@ -45,6 +48,7 @@ export function useMapSettings(
 		_setPreferHigherQuality(ms.preferHigherQuality ?? false);
 		_setOnlyOfficial(ms.onlyOfficial);
 		_setDefaultPanoId(ms.defaultPanoId);
+		_setSearchRadius(ms.searchRadius ?? null);
 		_setEnrichMetadata(ms.enrichMetadata ?? true);
 		_setEnrichFields(ms.enrichFields);
 		_setGeneratedLocationTag(ms.generatedLocationTag ?? null);
@@ -76,6 +80,8 @@ export function useMapSettings(
 		setPreferHigherQuality: makeSetter("preferHigherQuality", _setPreferHigherQuality),
 		defaultPanoId,
 		setDefaultPanoId: makeSetter("defaultPanoId", _setDefaultPanoId),
+		searchRadius,
+		setSearchRadius: makeSetter("searchRadius", _setSearchRadius),
 		enrichMetadata,
 		setEnrichMetadata: makeSetter("enrichMetadata", _setEnrichMetadata),
 		enrichFields,
