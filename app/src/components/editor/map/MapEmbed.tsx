@@ -7,7 +7,7 @@ type OverlayEvent = { srcEvent?: { domEvent?: Event } };
 import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
 import { lookupStreetView, svThumbnailUrl, showToast, svSearchRadius } from "@/lib/sv/lookup.add";
-import { cmd, fetchViaFile } from "@/lib/commands";
+import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
 import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
@@ -782,7 +782,7 @@ export function MapEmbed() {
 				if (layerId?.startsWith("sel-overlay:")) {
 					const id = cellMgrRef.current.selOverlayIds[info.index];
 					if (id == null) return undefined;
-					const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(id));
+					const loc = await cmd.storeGetLocation(id);
 					return loc ?? undefined;
 				}
 				if (!layerId?.startsWith("cell:")) return undefined;
@@ -791,10 +791,10 @@ export function MapEmbed() {
 				if (id == null) {
 					const rustId: number | null = await cmd.storeResolvePick(cellKey, info.index);
 					if (rustId == null) return undefined;
-					const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(rustId));
+					const loc = await cmd.storeGetLocation(rustId);
 					return loc ?? undefined;
 				}
-				const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(id));
+				const loc = await cmd.storeGetLocation(id);
 				return loc ?? undefined;
 			};
 

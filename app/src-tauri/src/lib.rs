@@ -472,7 +472,6 @@ pub fn run() {
                     location_store::store_update_locations,
                     location_store::store_set_active,
                     location_store::store_get_location,
-                    location_store::store_get_location_file,
                     location_store::store_get_locations_by_ids,
                     location_store::store_get_all_locations,
                     location_store::store_location_count,

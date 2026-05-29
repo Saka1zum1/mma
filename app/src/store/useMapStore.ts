@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { MapData, MapMeta, Location, Tag, WorkArea, ExtraFieldDef } from "@/types";
 import { emit as tauriEmit, listen } from "@tauri-apps/api/event";
-import { cmd, fetchViaFile } from "@/lib/commands";
+import { cmd } from "@/lib/commands";
 import type {
 	MutationResult_Serialize as MutationResult,
 	LocationPatch_Deserialize as LocationPatch,
@@ -357,7 +357,7 @@ export async function fetchAllLocations(): Promise<Location[]> {
 }
 
 export async function fetchLocation(id: number): Promise<Location | null> {
-	return fetchViaFile<Location>(cmd.storeGetLocationFile(id));
+	return cmd.storeGetLocation(id);
 }
 
 export async function fetchLocationsByIds(ids: number[]): Promise<Location[]> {
@@ -570,7 +570,7 @@ export async function addLocations(locs: Location[], opts?: { hideInDelta?: bool
 
 export async function duplicateLocation(locId: number): Promise<number | null> {
 	if (!currentMap) return null;
-	const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(locId));
+	const loc = await cmd.storeGetLocation(locId);
 	if (!loc) return null;
 	const now = new Date().toISOString();
 	const clone: Location = { ...loc, id: 0, createdAt: now, modifiedAt: now };
@@ -862,7 +862,7 @@ export async function setActiveLocation(id: number | null, checkDuplicates = tru
 	activeLocationId = id;
 	cmd.storeSetActive(id).catch((e) => log.error("[setActive] store_set_active failed:", e));
 	if (id) {
-		const loc = await fetchViaFile<Location>(cmd.storeGetLocationFile(id));
+		const loc = await cmd.storeGetLocation(id);
 		t.step("ipc");
 		if (checkDuplicates && loc) {
 			const nearby = await cmd.storeFindNearby(loc.lat, loc.lng, 2.0);

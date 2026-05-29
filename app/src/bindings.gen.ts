@@ -136,11 +136,6 @@ export const commands = {
 	createdAt: string,
 	modifiedAt?: string | null,
 } | null, string>(__TAURI_INVOKE("store_get_location", { id })).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:v.data } : v) as typeof v)),
-	/**
-	 *  Write a single location as JSON to a temp file and return the path.
-	 *  Faster than invoke for the response payload (~10ms less IPC overhead).
-	 */
-	storeGetLocationFile: (id: number) => typedError<string | null, string>(__TAURI_INVOKE("store_get_location_file", { id })),
 	/**  Fetch multiple locations by ID. Silently skips IDs that don't exist. */
 	storeGetLocationsByIds: (ids: number[]) => typedError<Location_Serialize[], string>(__TAURI_INVOKE("store_get_locations_by_ids", { ids })).then((v) => ((v.status === "ok" ? { ...v, data: v.data.map(i=>i) } : v) as typeof v)),
 	/**

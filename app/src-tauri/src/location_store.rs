@@ -1730,28 +1730,6 @@ pub fn store_get_location(
     })
 }
 
-/// Write a single location as JSON to a temp file and return the path.
-/// Faster than invoke for the response payload (~10ms less IPC overhead).
-#[tauri::command]
-#[specta::specta]
-pub fn store_get_location_file(
-    webview: tauri::Webview,
-    state: tauri::State<'_, StoreState>,
-    id: u32,
-) -> Result<Option<String>, String> {
-    let _t = std::time::Instant::now();
-    with_store!(webview, state, |store| {
-        let loc = match store.get_loc_by_id(id) {
-            Some(l) => l,
-            None => return Ok(None),
-        };
-        let json = serde_json::to_vec(&loc).map_err(|e| e.to_string())?;
-        let path = std::env::temp_dir().join(format!("mma_loc_{id}.json"));
-        std::fs::write(&path, &json).map_err(|e| e.to_string())?;
-        log::debug!("[cmd] store_get_location_file total={}ms bytes={}", _t.elapsed().as_millis(), json.len());
-        Ok(Some(path.to_string_lossy().into_owned()))
-    })
-}
 
 /// Fetch multiple locations by ID. Silently skips IDs that don't exist.
 #[tauri::command]
