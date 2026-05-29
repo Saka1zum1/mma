@@ -527,6 +527,14 @@ function MapNavigationSection() {
 					{s.slowModifier}x
 				</span>
 			</label>
+			<label className="settings-popup__item">
+				<input
+					type="checkbox"
+					checked={s.panOnPaste}
+					onChange={(e) => setSetting("panOnPaste", e.target.checked)}
+				/>
+				Pan to pasted locations
+			</label>
 		</fieldset>
 	);
 }

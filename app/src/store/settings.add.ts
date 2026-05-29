@@ -50,6 +50,7 @@ export interface AppSettings {
 	geocodeProvider: GeocodeProvider;
 	nominatimApiKey: string;
 	tagViewMode: TagViewMode;
+	panOnPaste: boolean;
 	savedSelections: SavedSelection[];
 }
 
@@ -90,6 +91,7 @@ const DEFAULTS: AppSettings = {
 	mapListFields: ["locationCount"],
 	geocodeProvider: "local" as GeocodeProvider,
 	nominatimApiKey: "",
+	panOnPaste: true,
 	tagViewMode: "flat" as TagViewMode,
 	savedSelections: [] as SavedSelection[],
 };

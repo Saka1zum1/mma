@@ -32,6 +32,14 @@ import SameLocation from "@/components/editor/SameLocation.add";
 import { log } from "@/lib/util/log"
 import { useCountrySelect } from "@/lib/map/useCountrySelect.add";
 
+function zoomToPasted(bounds: [number, number, number, number] | null, padding = 0) {
+	if (!bounds || !getSettings().panOnPaste) return;
+	const gm = getGoogleMapInstance();
+	if (!gm) return;
+	const [west, south, east, north] = bounds;
+	gm.fitBounds({ west, south, east, north }, padding);
+}
+
 function usePasteHandler() {
 	useEffect(() => {
 		async function onPaste(e: ClipboardEvent) {
@@ -54,13 +62,17 @@ function usePasteHandler() {
 					});
 					await addLocations([loc]);
 					setActiveLocation(loc.id);
+					zoomToPasted([loc.lng, loc.lat, loc.lng, loc.lat]);
 					return;
 				}
 			}
 
 			try {
 				const [r, singleId] = await importPaste(text);
-				if (r.importedCount > 0 && singleId != null) setActiveLocation(singleId);
+				if (r.importedCount > 0) {
+					if (singleId != null) setActiveLocation(singleId);
+					zoomToPasted(r.bounds, 100);
+				}
 			} catch {
 				log.warn('Couldn\'t import locations via paste.')
 			}

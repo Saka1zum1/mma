@@ -242,12 +242,12 @@ export const commands = {
 	 *  Consumes the cached parse from `store_import_preview`. Fields in
 	 *  `dropped_fields` (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
-	storeImportFile: (droppedFields: string[]) => typedError<EditorImportResult_Serialize, string>(__TAURI_INVOKE("store_import_file", { droppedFields })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})}) } : v) as typeof v)),
+	storeImportFile: (droppedFields: string[]) => typedError<EditorImportResult_Serialize, string>(__TAURI_INVOKE("store_import_file", { droppedFields })).then((v) => ((v.status === "ok" ? { ...v, data: ({...({...v.data,bounds:v.data.bounds==null?v.data.bounds:v.data.bounds.map(i=>i)}),...({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})})}) } : v) as typeof v)),
 	/**
 	 *  Parse raw text (JSON or CSV) as locations and import into the open map.
 	 *  Handles tag reconciliation, ID allocation, and render delta in one shot.
 	 */
-	storeImportPaste: (text: string) => typedError<[EditorImportResult_Serialize, number | null], string>(__TAURI_INVOKE("store_import_paste", { text })).then((v) => ((v.status === "ok" ? { ...v, data: ([({...v.data[0],delta:({...v.data[0].delta,added:v.data[0].delta.added.map(i=>i),updated:v.data[0].delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})}),v.data[1]]) } : v) as typeof v)),
+	storeImportPaste: (text: string) => typedError<[EditorImportResult_Serialize, number | null], string>(__TAURI_INVOKE("store_import_paste", { text })).then((v) => ((v.status === "ok" ? { ...v, data: ([({...({...v.data[0],bounds:v.data[0].bounds==null?v.data[0].bounds:v.data[0].bounds.map(i=>i)}),...({...v.data[0],delta:({...v.data[0].delta,added:v.data[0].delta.added.map(i=>i),updated:v.data[0].delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})})}),v.data[1]]) } : v) as typeof v)),
 	/**
 	 *  Export locations as a map-making.app-compatible JSON file.
 	 * 
@@ -435,6 +435,7 @@ export type EditorImportResult = EditorImportResult_Serialize | EditorImportResu
 export type EditorImportResult_Deserialize = {
 	importedCount: number,
 	warnings: string[],
+	bounds: [number, number, number, number] | null,
 } & MutationResult_Deserialize;
 
 /**
@@ -444,6 +445,7 @@ export type EditorImportResult_Deserialize = {
 export type EditorImportResult_Serialize = {
 	importedCount: number,
 	warnings: string[],
+	bounds: [number, number, number, number] | null,
 } & MutationResult_Serialize;
 
 /**

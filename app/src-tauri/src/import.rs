@@ -841,6 +841,22 @@ pub struct EditorImportResult {
     pub mutation: location_store::MutationResult,
     pub imported_count: u32,
     pub warnings: Vec<String>,
+    pub bounds: Option<[f64; 4]>,
+}
+
+fn compute_bounds(locs: &[Location]) -> Option<[f64; 4]> {
+    if locs.is_empty() { return None; }
+    let mut w = f64::MAX;
+    let mut s = f64::MAX;
+    let mut e = f64::MIN;
+    let mut n = f64::MIN;
+    for l in locs {
+        w = w.min(l.lng);
+        s = s.min(l.lat);
+        e = e.max(l.lng);
+        n = n.max(l.lat);
+    }
+    Some([w, s, e, n])
 }
 
 /// Merge imported tags with existing map tags by case-insensitive name matching.
@@ -1006,6 +1022,7 @@ pub fn store_import_file(
 
         Ok(EditorImportResult {
             imported_count: parsed.locations.len() as u32,
+            bounds: compute_bounds(&parsed.locations),
             warnings: parsed.warnings,
             mutation,
         })
@@ -1039,6 +1056,7 @@ pub fn store_import_paste(
 
         Ok((EditorImportResult {
             imported_count: parsed.locations.len() as u32,
+            bounds: compute_bounds(&parsed.locations),
             warnings: parsed.warnings,
             mutation,
         }, single_id))
