@@ -177,7 +177,8 @@ function parseResult(r: any): google.maps.StreetViewResolvedPanoramaData | null 
 	const lat = pos?.[2] ?? 0;
 	const lng = pos?.[3] ?? 0;
 	const altitude = Number(locData?.[1]?.[0]) || 0;
-	// locData?.[2] is heading/pitch from protobuf — unused
+	// locData[2] is [heading, tilt, roll]; [0] is the driving direction (same value as tiles.centerHeading)
+	const drivingDirection = locData?.[2]?.[0] ?? null;
 	const countryCode = locData?.[4] || null;
 	const levelId = locData?.[3]?.[0] ?? null;
 
@@ -244,6 +245,7 @@ function parseResult(r: any): google.maps.StreetViewResolvedPanoramaData | null 
 			cameraType: null as CameraType,
 			countryCode,
 			uploaderName,
+			drivingDirection,
 			_levelId: levelId,
 		},
 	} as google.maps.StreetViewResolvedPanoramaData;

@@ -24,7 +24,7 @@ const coreDefs: Record<string, ExtraFieldDef> = {
 		type: "enum",
 		label: "Camera type",
 		values: ["gen1", "gen2", "gen4", "badcam", "tripod"],
-		labels: { gen1: "Gen 1", gen2: "Gen 2", gen4: "Gen 4", badcam: "Bad cam", tripod: "Tripod" },
+		labels: { gen1: "Gen 1", gen2: "Gen 2/3", gen4: "Gen 4", badcam: "Bad cam", tripod: "Tripod" },
 	},
 	panoType: {
 		type: "enum",
@@ -35,6 +35,7 @@ const coreDefs: Record<string, ExtraFieldDef> = {
 	imageDate: { type: "month", label: "Image date" },
 	datetime: { type: "date", label: "Exact date" },
 	timezone: { type: "enum", label: "Timezone" },
+	drivingDirection: { type: "number", label: "Driving direction" },
 };
 
 let pluginDefs: Record<string, ExtraFieldDef> = {};

@@ -144,7 +144,7 @@ pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
             field_type: ExtraFieldType::Enum,
             label: Some("Camera type".into()),
             values: Some(vec!["gen1".into(), "gen2".into(), "gen4".into(), "badcam".into(), "tripod".into()]),
-            labels: Some([("gen1", "Gen 1"), ("gen2", "Gen 2"), ("gen4", "Gen 4"), ("badcam", "Bad cam"), ("tripod", "Tripod")]
+            labels: Some([("gen1", "Gen 1"), ("gen2", "Gen 2/3"), ("gen4", "Gen 4"), ("badcam", "Bad cam"), ("tripod", "Tripod")]
                 .into_iter().map(|(k, v)| (k.into(), v.into())).collect()),
         }),
         "panoType" => Some(ExtraFieldDef {

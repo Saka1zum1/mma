@@ -11,6 +11,7 @@ import {
 	filterEnrichPatch,
 	isFieldEnabled,
 	getEnrichmentProviders,
+	getDefaultEnrichKeys,
 } from "@/lib/data/fieldDefs.add";
 import { resolvePanoIds } from "@/lib/sv/lookup.add";
 import { log } from "@/lib/util/log";
@@ -33,6 +34,7 @@ function buildPatch(
 		countryCode: data.extra.countryCode ?? null,
 		cameraType: data.extra.cameraType ?? null,
 		panoType: data.extra.panoType ?? null,
+		drivingDirection: data.extra.drivingDirection ?? null,
 		imageDate: data.imageDate || null,
 	};
 	if (loc.extra?.imageDate !== fullPatch.imageDate && loc.extra?.datetime != null) {
@@ -53,7 +55,7 @@ export async function enrich(
 	}
 	const map = getCurrentMap();
 	if (!map || !(map.meta.settings.enrichMetadata ?? true)) return false;
-	const enrichFields = map.meta.settings.enrichFields ?? null;
+	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 	const patch = buildPatch(data, loc, enrichFields);
 	if (patch) patchLocationExtra(loc, patch);
 
@@ -85,7 +87,7 @@ export async function enrichAll(
 	const result: EnrichResult = { metaSuccess: [], metaFailed: [], dateSuccess: [], dateFailed: [] };
 	const map = getCurrentMap();
 	if (!map) return result;
-	const enrichFields = map.meta.settings.enrichFields ?? null;
+	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 	const exactDates = isFieldEnabled(enrichFields, "datetime");
 
 	const scopeIds = locations.map((l) => l.id);
@@ -173,7 +175,7 @@ export async function enrichAll(
 					const tz = resolveTimezone(loc.lat, loc.lng);
 					const datePatch = filterEnrichPatch(
 						{ datetime: ts, timezone: tz },
-						freshMap!.meta.settings.enrichFields ?? null,
+						freshMap!.meta.settings.enrichFields ?? getDefaultEnrichKeys(),
 					);
 					if (Object.keys(datePatch).length > 0) patchLocationExtra(loc, datePatch);
 					result.dateSuccess.push(loc.id);

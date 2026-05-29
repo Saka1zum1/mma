@@ -14,6 +14,8 @@ interface SvExtra {
 	cameraType: CameraType;
 	countryCode: string | null;
 	uploaderName: string | null;
+	/** Capture-time driving direction in degrees (0–360), per Google. */
+	drivingDirection: number | null;
 	/** Indoor level ID; non-null indicates a tripod/indoor pano. */
 	_levelId: number | null;
 }

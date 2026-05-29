@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ManageFieldsModal } from "@/components/dialogs/ManageFieldsModal.add";
-import { getEnrichFieldOptions, getAllEnrichKeys } from "@/lib/data/fieldDefs.add";
+import { getEnrichFieldOptions, getDefaultEnrichKeys } from "@/lib/data/fieldDefs.add";
 import { useSetting } from "@/store/settings.add";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import type { MapStyle } from "@/lib/geo/tiles";
@@ -528,7 +528,8 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 					</p>
 					{getEnrichFieldOptions().map((f) => {
 						const exactDateOff = !showExactDate && (f.key === "datetime" || f.key === "timezone");
-						const enabled = !exactDateOff && (!enrichFields || enrichFields.includes(f.key));
+						const enabled =
+							!exactDateOff && (enrichFields ? enrichFields.includes(f.key) : !f.defaultOff);
 						return (
 							<label key={f.key} className="settings-popup__item" style={{ display: "flex", alignItems: "center", gap: ".5rem", ...(exactDateOff ? { opacity: 0.5 } : undefined) }}>
 								<input
@@ -536,14 +537,15 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 									checked={enabled}
 									disabled={exactDateOff}
 									onChange={(e) => {
-										const allKeys = getAllEnrichKeys();
-										const current = enrichFields ?? [...allKeys];
+										const defaultKeys = getDefaultEnrichKeys();
+										const current = enrichFields ?? [...defaultKeys];
 										const next = e.target.checked
 											? [...current, f.key]
 											: current.filter((k) => k !== f.key);
-										setEnrichFields(
-											next.length === allKeys.length ? null : next,
-										);
+										const isDefault =
+											next.length === defaultKeys.length &&
+											next.every((k) => defaultKeys.includes(k));
+										setEnrichFields(isDefault ? null : next);
 									}}
 								/>
 								{f.label}

@@ -5,6 +5,8 @@ import {
 	getTriggeredProviders,
 	registerEnrichFields,
 	getEnrichFieldOptions,
+	getAllEnrichKeys,
+	getDefaultEnrichKeys,
 	isFieldEnabled,
 	filterEnrichPatch,
 } from "@/lib/data/fieldDefs.add";
@@ -124,6 +126,13 @@ describe("registerEnrichFields", () => {
 		expect(options.some((o) => o.key === "altitude")).toBe(true);
 		expect(options.some((o) => o.key === "countryCode")).toBe(true);
 		expect(options.some((o) => o.key === "datetime")).toBe(true);
+	});
+
+	it("excludes defaultOff fields from the default set but keeps them selectable", () => {
+		expect(getAllEnrichKeys()).toContain("drivingDirection");
+		expect(getDefaultEnrichKeys()).not.toContain("drivingDirection");
+		// non-defaultOff core fields remain in the default set
+		expect(getDefaultEnrichKeys()).toContain("altitude");
 	});
 });
 

@@ -6,6 +6,8 @@ import { registerPluginFieldDefs } from "@/lib/data/fieldDefRegistry";
 export interface EnrichFieldOption {
 	key: string;
 	label: string;
+	/** Excluded from the default field set (null enrichFields); user must opt in. */
+	defaultOff?: boolean;
 }
 
 const coreFieldOptions: EnrichFieldOption[] = [
@@ -16,6 +18,7 @@ const coreFieldOptions: EnrichFieldOption[] = [
 	{ key: "imageDate", label: "Image date" },
 	{ key: "datetime", label: "Exact date" },
 	{ key: "timezone", label: "Timezone" },
+	{ key: "drivingDirection", label: "Driving direction", defaultOff: true },
 ];
 
 const pluginFieldOptions: EnrichFieldOption[] = [];
@@ -32,6 +35,11 @@ export function registerEnrichFields(fields: EnrichFieldOption[]) {
 
 export function getAllEnrichKeys(): string[] {
 	return getEnrichFieldOptions().map((f) => f.key);
+}
+
+/** Keys enriched when enrichFields is null (the default set: all options except defaultOff ones). */
+export function getDefaultEnrichKeys(): string[] {
+	return getEnrichFieldOptions().filter((f) => !f.defaultOff).map((f) => f.key);
 }
 
 
