@@ -9,10 +9,12 @@ import {
 	setBinding,
 	resetBinding,
 	resetAllBindings,
+	reassignBinding,
 	getConflicts,
 	getAltSlowConflict,
 	isCustomized,
 	type HotkeyAction,
+	type HotkeyDef,
 	type HotkeyGroup,
 } from "@/lib/util/hotkeys.add";
 import {
@@ -79,16 +81,33 @@ function getBlockedReason(e: KeyboardEvent): string | null {
 	return null;
 }
 
-function HotkeyRow({ action, label }: { action: HotkeyAction; label: string }) {
+function HotkeyRow({
+	action,
+	label,
+	flash,
+	onJump,
+}: {
+	action: HotkeyAction;
+	label: string;
+	flash: boolean;
+	onJump: (action: string) => void;
+}) {
 	const binding = useBinding(action);
 	const [recording, setRecording] = useState(false);
 	const [blocked, setBlocked] = useState<string | null>(null);
+	const [pending, setPending] = useState<{ combo: string; conflicts: HotkeyDef[] } | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const custom = isCustomized(action);
 
 	useEffect(() => {
-		if (recording && inputRef.current) inputRef.current.focus();
-	}, [recording]);
+		if (recording && !pending && inputRef.current) inputRef.current.focus();
+	}, [recording, pending]);
+
+	const cancel = useCallback(() => {
+		setRecording(false);
+		setBlocked(null);
+		setPending(null);
+	}, []);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent) => {
@@ -96,15 +115,13 @@ function HotkeyRow({ action, label }: { action: HotkeyAction; label: string }) {
 			e.stopPropagation();
 
 			if (e.key === "Escape") {
-				setRecording(false);
-				setBlocked(null);
+				cancel();
 				return;
 			}
 
 			if (e.key === "Backspace" || e.key === "Delete") {
 				setBinding(action, "");
-				setRecording(false);
-				setBlocked(null);
+				cancel();
 				return;
 			}
 
@@ -117,22 +134,55 @@ function HotkeyRow({ action, label }: { action: HotkeyAction; label: string }) {
 			const combo = buildComboString(e.nativeEvent);
 			if (!combo) return;
 
+			const collisions = getConflicts(action, combo);
+			if (collisions.length > 0) {
+				setBlocked(null);
+				setPending({ combo, conflicts: collisions });
+				return;
+			}
+
 			setBinding(action, combo);
-			setRecording(false);
-			setBlocked(null);
+			cancel();
 		},
-		[action],
+		[action, cancel],
 	);
+
+	const reassign = useCallback(() => {
+		if (!pending) return;
+		reassignBinding(action, pending.combo);
+		cancel();
+	}, [action, pending, cancel]);
 
 	const conflicts = getConflicts(action, binding);
 
 	return (
-		<tr className={custom ? "hotkey-row--custom" : undefined}>
+		<tr
+			id={`hotkey-row-${action}`}
+			className={`${custom ? "hotkey-row--custom" : ""}${flash ? " hotkey-row--flash" : ""}`}
+		>
 			<td>{label}</td>
 			<td>
 				{recording ? (
-					<>
-						<input
+					pending ? (
+						<div className="hotkey-reassign" onKeyDown={(e) => e.key === "Escape" && cancel()}>
+							<span className="hotkey-reassign__msg">
+								<code>{formatBinding(pending.combo)}</code> is bound to{" "}
+								<strong>{pending.conflicts.map((c) => c.label).join(", ")}</strong>
+							</span>
+							<button
+								className="button button--primary hotkey-reset"
+								autoFocus
+								onClick={reassign}
+							>
+								Reassign
+							</button>
+							<button className="button hotkey-reset" onClick={cancel}>
+								Cancel
+							</button>
+						</div>
+					) : (
+						<>
+							<input
 							ref={inputRef}
 							className="hotkey-record"
 							readOnly
@@ -140,8 +190,9 @@ function HotkeyRow({ action, label }: { action: HotkeyAction; label: string }) {
 							onKeyDown={handleKeyDown}
 							onBlur={() => { setRecording(false); setBlocked(null); }}
 						/>
-						{blocked && <span className="hotkey-blocked">{blocked}</span>}
-					</>
+							{blocked && <span className="hotkey-blocked">{blocked}</span>}
+						</>
+					)
 				) : (
 					<code
 						className={`hotkey-display${!binding ? " hotkey-display--empty" : ""}`}
@@ -151,14 +202,17 @@ function HotkeyRow({ action, label }: { action: HotkeyAction; label: string }) {
 						{binding ? formatBinding(binding) : " "}
 					</code>
 				)}
-				{conflicts.length > 0 && (
-					<span
-						className="hotkey-conflict"
-						title={`Conflicts with: ${conflicts.map((c) => c.label).join(", ")}`}
-					>
-						!
-					</span>
-				)}
+				{!recording &&
+					conflicts.map((c) => (
+						<button
+							key={c.action}
+							className="hotkey-conflict"
+							onClick={() => onJump(c.action)}
+							title={`Shared with "${c.label}" — click to jump`}
+						>
+							also: {c.label}
+						</button>
+					))}
 			</td>
 			<td>
 				{custom && (
@@ -179,8 +233,17 @@ const GROUPS: HotkeyGroup[] = ["Commands", "Global", "Map Navigation", "Location
 
 function KeyboardShortcutsSection() {
 	const [filter, setFilter] = useState("");
+	const [flash, setFlash] = useState<string | null>(null);
 	const lower = filter.toLowerCase();
 	const allBindings = getAllBindings();
+
+	const jumpTo = useCallback((action: string) => {
+		document
+			.getElementById(`hotkey-row-${action}`)
+			?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+		setFlash(action);
+		window.setTimeout(() => setFlash((cur) => (cur === action ? null : cur)), 1500);
+	}, []);
 
 	return (
 		<fieldset className="fieldset">
@@ -213,7 +276,13 @@ function KeyboardShortcutsSection() {
 							</thead>
 							<tbody>
 								{defs.map((d) => (
-									<HotkeyRow key={d.action} action={d.action} label={d.label} />
+									<HotkeyRow
+										key={d.action}
+										action={d.action}
+										label={d.label}
+										flash={flash === d.action}
+										onJump={jumpTo}
+									/>
 								))}
 							</tbody>
 						</table>

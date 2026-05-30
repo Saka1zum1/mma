@@ -4372,10 +4372,43 @@ body {
 	}
 }
 .hotkey-conflict {
+	margin-left: 0.4rem;
+	padding: 1px 6px;
+	border: 1px solid #e53e3e80;
+	border-radius: 10px;
+	background: #e53e3e1a;
 	color: #e53e3e;
+	font-size: 0.7rem;
+	line-height: 1.4;
+	cursor: pointer;
+}
+.hotkey-conflict:hover {
+	background: #e53e3e33;
+}
+.hotkey-reassign {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+}
+.hotkey-reassign__msg {
+	font-size: 0.75rem;
+	color: #e53e3e;
+}
+.hotkey-reassign__msg code {
 	font-weight: 700;
-	margin-left: 0.25rem;
-	cursor: help;
+}
+.hotkey-row--flash td {
+	animation: hotkey-flash 1.5s ease-out;
+}
+@keyframes hotkey-flash {
+	0%,
+	30% {
+		background: #2fcc8b40;
+	}
+	100% {
+		background: transparent;
+	}
 }
 .hotkey-blocked {
 	display: block;

@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { parseHotkey, matchesKey } from "@/lib/hooks/useHotkey";
-import { getAltSlowConflict, getConflicts, getBinding } from "@/lib/util/hotkeys.add";
+import {
+	getAltSlowConflict,
+	getConflicts,
+	getBinding,
+	setBinding,
+	reassignBinding,
+	resetAllBindings,
+} from "@/lib/util/hotkeys.add";
 
 describe("parseHotkey", () => {
 	it("parses single key", () => {
@@ -182,5 +189,30 @@ describe("getConflicts", () => {
 		const conflicts = getConflicts("panLeft", binding);
 		const actions = conflicts.map((c) => c.action);
 		expect(actions).not.toContain("panLeft");
+	});
+});
+
+describe("reassignBinding", () => {
+	afterEach(() => resetAllBindings());
+
+	it("assigns the binding and clears it from the prior holder", () => {
+		const target = getBinding("toggleFullscreen"); // "f"
+		const cleared = reassignBinding("returnToSpawn", target);
+
+		expect(getBinding("returnToSpawn")).toBe(target);
+		expect(getBinding("toggleFullscreen")).toBe("");
+		expect(cleared).toContain("toggleFullscreen");
+		expect(getConflicts("returnToSpawn", target)).toEqual([]);
+	});
+
+	it("clears every conflicting holder", () => {
+		setBinding("returnToSpawn", "z");
+		setBinding("pointNorth", "z");
+		const cleared = reassignBinding("centerRoad", "z");
+
+		expect(getBinding("centerRoad")).toBe("z");
+		expect(getBinding("returnToSpawn")).toBe("");
+		expect(getBinding("pointNorth")).toBe("");
+		expect(cleared.sort()).toEqual(["pointNorth", "returnToSpawn"]);
 	});
 });

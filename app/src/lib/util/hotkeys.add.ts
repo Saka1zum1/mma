@@ -353,6 +353,17 @@ export function setBinding(action: HotkeyAction, binding: string): void {
 	notify();
 }
 
+// Assign `binding` to `action`, clearing it from any other actions that currently
+// hold it so the binding becomes unique. Returns the actions that were cleared.
+export function reassignBinding(action: HotkeyAction, binding: string): string[] {
+	const cleared = getConflicts(action, binding).map((d) => d.action);
+	for (const a of cleared) overrides[a] = "";
+	overrides[action] = binding;
+	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+	notify();
+	return cleared;
+}
+
 export function resetBinding(action: HotkeyAction): void {
 	delete overrides[action];
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
