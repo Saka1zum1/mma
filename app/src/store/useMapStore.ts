@@ -661,11 +661,15 @@ export async function patchLocationExtra(
 	const triggered = getTriggeredProviders(Object.keys(extraPatch));
 	if (triggered.length > 0) {
 		const enrichFields = currentMap?.meta.settings.enrichFields ?? null;
-		for (const provider of triggered) {
-			const patches = await provider.enrich([patched], enrichFields);
-			const p = patches.get(loc.id);
-			if (p && Object.keys(p).length > 0) await patchLocationExtra(patched, p);
-		}
+		// Merge all triggered providers against the same base before writing once,
+		// so they don't clobber each other's fields.
+		const results = await Promise.all(
+			triggered.map((provider) =>
+				provider.enrich([patched], enrichFields).then((m) => m.get(loc.id)),
+			),
+		);
+		const merged = Object.assign({}, ...results.filter(Boolean));
+		if (Object.keys(merged).length > 0) await patchLocationExtra(patched, merged);
 	}
 }
 

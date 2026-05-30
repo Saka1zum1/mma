@@ -464,6 +464,125 @@ describe("Enrichment — exact date via preview", () => {
 });
 
 // ============================================================================
+// Multiple providers merge without clobbering each other (single-pass enrichment)
+// ============================================================================
+
+describe("Enrichment — multiple providers merge without clobbering", () => {
+	let mapId: string;
+	let singleId: number;
+	let bulkAId: number;
+	let bulkBId: number;
+	let trigId: number;
+
+	before(async () => {
+		await waitForReady();
+		mapId = await createAndOpenMap("E2E Enrich Merge");
+		await updateMapSettings({ enrichMetadata: true, enrichFields: undefined });
+
+		// Register four providers writing distinct keys. They gate on per-test sentinel
+		// extra keys so they never touch other suites' locations — there is no unregister
+		// API, so these persist for the rest of the app session.
+		await withApi(async (api) => {
+			const gated =
+				(sentinel: string, key: string, value: number) =>
+				async (locs: any[]) =>
+					new Map(
+						locs
+							.filter((l) => l.extra?.[sentinel])
+							.map((l) => [l.id, { [key]: value }]),
+					);
+			api.registerEnrichmentProvider({ id: "e2e-clobber-a", fieldDefs: {}, enrich: gated("__clobberTest", "clobberA", 1) });
+			api.registerEnrichmentProvider({ id: "e2e-clobber-b", fieldDefs: {}, enrich: gated("__clobberTest", "clobberB", 2) });
+			api.registerEnrichmentProvider({ id: "e2e-trig-a", fieldDefs: {}, requires: ["datetime"], enrich: gated("__trigTest", "trigA", 1) });
+			api.registerEnrichmentProvider({ id: "e2e-trig-b", fieldDefs: {}, requires: ["datetime"], enrich: gated("__trigTest", "trigB", 2) });
+			return "ok";
+		});
+
+		const ids = await addLocs([
+			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO, flags: LoadAsPanoId, extra: { __clobberTest: true } }),
+			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO, flags: LoadAsPanoId, extra: { __clobberTest: true } }),
+			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO, flags: LoadAsPanoId, extra: { __clobberTest: true } }),
+			loc({ lat: 12, lng: 34, extra: { __trigTest: true } }),
+		]);
+		singleId = ids[0];
+		bulkAId = ids[1];
+		bulkBId = ids[2];
+		trigId = ids[3];
+	});
+
+	after(async () => {
+		await closeLocation();
+		await closeMap();
+		await deleteMap(mapId);
+	});
+
+	afterEach(async () => {
+		await closeLocation();
+	});
+
+	it("single-location enrich keeps both providers' fields plus core metadata", async () => {
+		await openLocation(singleId);
+		await waitForPreview();
+		await waitForEnrichment(singleId); // core countryCode
+		await browser.waitUntil(
+			async () => {
+				const l = await readLocation(singleId);
+				return l?.extra?.clobberA != null && l?.extra?.clobberB != null;
+			},
+			{ timeout: PANO_TIMEOUT, timeoutMsg: "both provider fields never present" },
+		);
+
+		const l = await readLocation(singleId);
+		expect(l.extra.clobberA).toBe(1);
+		expect(l.extra.clobberB).toBe(2);
+		expect(l.extra.countryCode).toBeTruthy();
+	});
+
+	it("bulk enrichAll keeps both providers' fields on every location", async () => {
+		await withApi(async (api) => {
+			await api.enrichAll();
+			return "ok";
+		});
+		await browser.waitUntil(
+			async () => {
+				const a = await readLocation(bulkAId);
+				const b = await readLocation(bulkBId);
+				return a?.extra?.clobberA != null && a?.extra?.clobberB != null && b?.extra?.clobberA != null && b?.extra?.clobberB != null;
+			},
+			{ timeout: PANO_TIMEOUT, timeoutMsg: "bulk provider fields never present on both locations" },
+		);
+
+		for (const id of [bulkAId, bulkBId]) {
+			const l = await readLocation(id);
+			expect(l.extra.clobberA).toBe(1);
+			expect(l.extra.clobberB).toBe(2);
+			expect(l.extra.countryCode).toBeTruthy();
+		}
+	});
+
+	it("requires-triggered providers merge instead of clobbering", async () => {
+		const l0 = await readLocation(trigId);
+		await withApi(async (api, loc0) => {
+			await api.patchLocationExtra(loc0, { datetime: 1700000000 });
+			return "ok";
+		}, l0);
+
+		await browser.waitUntil(
+			async () => {
+				const l = await readLocation(trigId);
+				return l?.extra?.trigA != null && l?.extra?.trigB != null;
+			},
+			{ timeout: 5000, timeoutMsg: "both triggered provider fields never present" },
+		);
+
+		const l = await readLocation(trigId);
+		expect(l.extra.trigA).toBe(1);
+		expect(l.extra.trigB).toBe(2);
+		expect(l.extra.datetime).toBe(1700000000);
+	});
+});
+
+// ============================================================================
 // Filter by metadata uses correct types
 // ============================================================================
 

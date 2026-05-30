@@ -56,14 +56,17 @@ export async function enrich(
 	const map = getCurrentMap();
 	if (!map || !(map.meta.settings.enrichMetadata ?? true)) return false;
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
-	const patch = buildPatch(data, loc, enrichFields);
-	if (patch) patchLocationExtra(loc, patch);
-
-	for (const provider of getEnrichmentProviders()) {
-		const patches = await provider.enrich([loc], enrichFields);
-		const p = patches.get(loc.id);
-		if (p) patchLocationExtra(loc, p);
-	}
+	// Single merged pass: gather the core patch and every provider's patch against the
+	// same base, then write once. Per-provider writes would each rebuild extra from a
+	// stale base and clobber the previous provider's keys.
+	const corePatch = buildPatch(data, loc, enrichFields) ?? {};
+	const providerPatches = await Promise.all(
+		getEnrichmentProviders().map((provider) =>
+			provider.enrich([loc], enrichFields).then((m) => m.get(loc.id)),
+		),
+	);
+	const merged = Object.assign({}, corePatch, ...providerPatches.filter(Boolean));
+	if (Object.keys(merged).length > 0) await patchLocationExtra(loc, merged);
 
 	return true;
 }
@@ -198,20 +201,30 @@ export async function enrichAll(
 		await Promise.all(Array.from({ length: Math.min(1000, dateTotal) }, () => dateWorker()));
 	}
 
-	// Run plugin enrichment providers
+	// Run plugin enrichment providers in a single merged pass. Per-provider writes would
+	// each rebuild extra from the same stale snapshot and overwrite the previous
+	// provider's keys; merging all providers' patches first avoids that clobber.
 	const providers = getEnrichmentProviders();
 	if (providers.length > 0) {
+		signal?.throwIfAborted();
 		const pluginLocs = await fetchLocationsByIds(scopeIds);
-		for (const provider of providers) {
-			signal?.throwIfAborted();
-			const patches = await provider.enrich(pluginLocs, enrichFields);
-			if (patches.size > 0) {
-				const updates = [...patches.entries()].map(([id, patch]) => {
-					const loc = pluginLocs.find((l) => l.id === id);
-					return { id, patch: { extra: { ...loc?.extra, ...patch } } };
-				});
-				batchUpdateLocations(updates);
+		const providerResults = await Promise.all(
+			providers.map((provider) => provider.enrich(pluginLocs, enrichFields)),
+		);
+		signal?.throwIfAborted();
+		const mergedById = new Map<number, Record<string, unknown>>();
+		for (const result of providerResults) {
+			for (const [id, patch] of result) {
+				mergedById.set(id, { ...mergedById.get(id), ...patch });
 			}
+		}
+		if (mergedById.size > 0) {
+			const byId = new Map(pluginLocs.map((l) => [l.id, l]));
+			const updates = [...mergedById.entries()].map(([id, patch]) => ({
+				id,
+				patch: { extra: { ...byId.get(id)?.extra, ...patch } },
+			}));
+			batchUpdateLocations(updates);
 		}
 	}
 
