@@ -8,7 +8,6 @@ use rusqlite::Connection;
 use tauri::ipc::InvokeBody;
 use tauri::Manager;
 use crate::arrow_bridge;
-use crate::util::sha256_hex;
 
 /// True when running under e2e tests or with `MMA_TEST_DB` set.
 /// Controls which database file and Arrow directory are used, keeping
@@ -77,6 +76,7 @@ pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
         .filter_map(|r| r.ok())
         .collect();
 
+    let mut wiped_blobs = false;
     for (version, sql) in MIGRATIONS {
         if applied.contains(version) { continue; }
         log::info!("[migrations] applying v{version}");
@@ -85,6 +85,20 @@ pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
             "INSERT INTO _mma_migrations (version, applied_at) VALUES (?1, datetime('now'))",
             rusqlite::params![version],
         ).map_err(|e| e.to_string())?;
+        if *version == 16 { wiped_blobs = true; }
+    }
+
+    // The delta-chain migration (v16) retires the geohash blob store. Reclaim its disk
+    // once, when v16 first applies.
+    if wiped_blobs {
+        let blobs = arrow_dir(app)?.join("blobs");
+        if blobs.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&blobs) {
+                log::warn!("[migrations] failed to remove old blob store {blobs:?}: {e}");
+            } else {
+                log::info!("[migrations] removed retired blob store {blobs:?}");
+            }
+        }
     }
     Ok(())
 }
@@ -250,6 +264,12 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (14, "ALTER TABLE maps ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';
           ALTER TABLE maps ADD COLUMN last_opened_at TEXT;"),
     (15, "DROP TABLE IF EXISTS pano_date_cache;"),
+    // Delta-chain VCS: each commit's payload is a single Arrow delta file on disk
+    // (arrow/commits/<map_id>/<commit_id>.arrow); SQL only tracks the commit graph.
+    // Start fresh -- old geohash-blob snapshots are dropped, not migrated.
+    (16, "DROP TABLE IF EXISTS commit_trees;
+          DROP TABLE IF EXISTS working_tree;
+          DELETE FROM commits;"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -278,51 +298,18 @@ pub(crate) fn arrow_delta_path(app: &tauri::AppHandle, map_id: &str) -> Result<s
     Ok(arrow_dir(app)?.join(format!("{map_id}_delta.arrow")))
 }
 
-/// Directory for content-addressed Arrow blobs used by the VCS commit tree.
-/// Created on first access.
-pub(crate) fn arrow_blobs_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = arrow_dir(app)?.join("blobs");
+/// Directory holding a map's per-commit VCS delta files. Created on first access.
+pub(crate) fn commit_dir(app: &tauri::AppHandle, map_id: &str) -> Result<std::path::PathBuf, String> {
+    let dir = arrow_dir(app)?.join("commits").join(map_id);
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     }
     Ok(dir)
 }
 
-/// Resolve path to a specific content-addressed blob: `<blobs_dir>/<hash>.arrow`.
-pub(crate) fn blob_path(app: &tauri::AppHandle, hash: &str) -> Result<std::path::PathBuf, String> {
-    Ok(arrow_blobs_dir(app)?.join(format!("{hash}.arrow")))
-}
-
-/// Write a RecordBatch as a content-addressed blob. Returns `(sha256_hex, row_count)`.
-///
-/// The batch is serialized to an in-memory buffer, hashed, then atomically
-/// written to `<blobs_dir>/<hash>.arrow`. Skips the write if the blob already
-/// exists (deduplication by content hash).
-pub(crate) fn write_blob(app: &tauri::AppHandle, batch: &arrow::array::RecordBatch) -> Result<(String, usize), String> {
-    let mut buf = Vec::new();
-    {
-        let cursor = std::io::Cursor::new(&mut buf);
-        let mut writer = arrow::ipc::writer::FileWriter::try_new(cursor, &batch.schema())
-            .map_err(|e| e.to_string())?;
-        writer.write(batch).map_err(|e| e.to_string())?;
-        writer.finish().map_err(|e| e.to_string())?;
-    }
-    let hash = sha256_hex(&buf);
-    let path = blob_path(app, &hash)?;
-    if !path.exists() {
-        atomic_write(&path, |mut file| {
-            use std::io::Write;
-            file.write_all(&buf).map_err(|e| e.to_string())
-        })?;
-    }
-    let rows = batch.num_rows();
-    Ok((hash, rows))
-}
-
-/// Read a content-addressed blob back into a RecordBatch.
-pub(crate) fn read_blob(app: &tauri::AppHandle, hash: &str) -> Result<arrow::array::RecordBatch, String> {
-    let path = blob_path(app, hash)?;
-    read_arrow_ipc(&path)
+/// Path to a single commit's Arrow delta file: `<arrow_dir>/commits/<map_id>/<commit_id>.arrow`.
+pub(crate) fn commit_delta_path(app: &tauri::AppHandle, map_id: &str, commit_id: &str) -> Result<std::path::PathBuf, String> {
+    Ok(commit_dir(app, map_id)?.join(format!("{commit_id}.arrow")))
 }
 
 /// Atomically write a RecordBatch to an Arrow IPC file.

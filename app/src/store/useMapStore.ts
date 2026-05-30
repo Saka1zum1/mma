@@ -1128,17 +1128,19 @@ function formatDiffMessage(diff: {
 	return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
-/** Bake overlay, snapshot Arrow file, create a VCS commit. Resets undo stack. */
+/** Bake overlay, write the commit delta, create a VCS commit. Resets undo stack. */
 export async function commitMap(message?: string): Promise<string> {
 	if (!currentMapId) throw new Error("No map open");
 	const t = trace("commit");
-	await cmd.storeBakeAndSave();
-	t.step("bake_and_save");
+	// Commit reads the overlay (the in-memory changeset) to build the delta, so it must
+	// run BEFORE the bake folds the overlay into the base and clears it.
 	const diff = await computeCommitDiff();
 	t.step("computeCommitDiff");
 	const autoMessage = message ?? formatDiffMessage(diff);
-	const id = await cmd.storeCreateCommit(currentMapId, autoMessage ?? null, diff ?? null);
+	const id = await cmd.storeCreateCommit(currentMapId, autoMessage ?? null);
 	t.step("createCommit");
+	await cmd.storeBakeAndSave();
+	t.step("bake_and_save");
 	await cmd.storeResetUndo();
 	t.step("reset_undo");
 	t.end();
@@ -1158,7 +1160,7 @@ export async function checkoutCommit(commitId: string) {
 		await cmd.storeOpenMap(currentMapId);
 		await cmd.storeResetUndo();
 		const msg = `Revert to ${commitId.slice(0, 7)}`;
-		await cmd.storeCreateCommit(currentMapId, msg, null);
+		await cmd.storeCreateCommit(currentMapId, msg);
 	} catch (e) {
 		log.error("[checkout] restore failed:", e);
 		throw e;

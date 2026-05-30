@@ -1342,12 +1342,9 @@ describe("LocationPreview — settings toggles", () => {
 			},
 			{ timeout: PANO_TIMEOUT },
 		);
-		// We can't easily assert the exact UTC vs local time difference,
-		// but if it renders without crashing, the timezone path works.
-		// Reset
 		await withApi(async (api) => {
 			api.setSetting("exactDateFormat", "date");
-			api.setSetting("dateTimezone", "local");
+			api.setSetting("dateTimezone", "location");
 		});
 	});
 

@@ -416,30 +416,6 @@ fn finish_mutation_reports_correct_state() {
 }
 
 // -----------------------------------------------------------------------
-// Geohash
-// -----------------------------------------------------------------------
-
-#[test]
-fn geohash_deterministic() {
-    let a = encode_geohash(51.5, -0.1);
-    let b = encode_geohash(51.5, -0.1);
-    assert_eq!(a, b);
-}
-
-#[test]
-fn geohash_different_for_distant_points() {
-    let a = encode_geohash(51.5, -0.1);
-    let b = encode_geohash(-33.9, 151.2);
-    assert_ne!(a, b);
-}
-
-#[test]
-fn geohash_length_matches_precision() {
-    let gh = encode_geohash(0.0, 0.0);
-    assert_eq!(gh.len(), GEOHASH_PRECISION);
-}
-
-// -----------------------------------------------------------------------
 // Render cell tracking
 // -----------------------------------------------------------------------
 

@@ -405,7 +405,7 @@ pub fn store_create_map(
 }
 
 /// Delete a map and all associated data: SQLite rows (maps, edit_history,
-/// commits, orphaned commit_trees) and Arrow IPC files on disk.
+/// commits) and Arrow base/delta/commit files on disk.
 #[tauri::command]
 #[specta::specta]
 pub fn store_delete_map(app: tauri::AppHandle, id: String) -> Result<(), String> {
@@ -416,17 +416,16 @@ pub fn store_delete_map(app: tauri::AppHandle, id: String) -> Result<(), String>
         .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM commits WHERE map_id = ?1", params![id])
         .map_err(|e| e.to_string())?;
-    conn.execute(
-        "DELETE FROM commit_trees WHERE commit_id NOT IN (SELECT id FROM commits)",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
 
     if let Ok(path) = fast_io::arrow_path(&app, &id) {
         let _ = std::fs::remove_file(path);
     }
     if let Ok(path) = fast_io::arrow_delta_path(&app, &id) {
         let _ = std::fs::remove_file(path);
+    }
+    // Remove the map's per-commit VCS delta files.
+    if let Ok(dir) = fast_io::arrow_dir(&app) {
+        let _ = std::fs::remove_dir_all(dir.join("commits").join(&id));
     }
     Ok(())
 }

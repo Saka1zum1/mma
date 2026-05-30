@@ -1,16 +1,20 @@
-//! Git-like version control for map snapshots.
+//! Delta-chain version control for map snapshots.
 //!
-//! Each commit captures a content-addressed tree of geohash-bucketed Arrow blobs.
-//! Commit IDs are derived from the tree hash + parent + timestamp (deterministic,
-//! like git). Checkout restores a map to any prior commit's state by reassembling
-//! blobs from the blob store.
+//! Each commit records a single Arrow delta file on disk
+//! (`arrow/commits/<map_id>/<commit_id>.arrow`) holding the locations created and
+//! removed relative to its parent; SQL's `commits` table only tracks the commit
+//! graph. A commit's full state is materialized by replaying its ancestor deltas
+//! from genesis forward (see [`crate::vcs_delta`]).
 
 use rusqlite::params;
 use tauri::State;
 
+use crate::arrow_bridge;
 use crate::fast_io;
-use crate::location_store::{self, CommitBlobEntry, StoreState};
+use crate::location_store::StoreState;
+use crate::types::Location;
 use crate::util::{now_iso, sha256_hex};
+use crate::vcs_delta;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,21 +36,13 @@ pub struct CommitInfo {
     pub created_at: String,
 }
 
-/// Diff statistics passed from the frontend at commit time.
-/// The frontend tracks add/remove/modify counts through the undo stack
-/// and provides them here so the commit can store them without recomputing.
-#[derive(serde::Deserialize, specta::Type)]
-#[serde(default)]
-pub struct CommitDiff {
-    pub added: u32,
-    pub removed: u32,
-    pub modified: u32,
-}
-
-impl Default for CommitDiff {
-    fn default() -> Self {
-        Self { added: 0, removed: 0, modified: 0 }
-    }
+/// A commit's delta, returned to the frontend for the per-commit diff viewer.
+/// An updated location appears in both `created` (new) and `removed` (old).
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDelta {
+    pub created: Vec<Location>,
+    pub removed: Vec<Location>,
 }
 
 // ---------------------------------------------------------------------------
@@ -56,10 +52,9 @@ impl Default for CommitDiff {
 /// Create a new commit for a map.
 ///
 /// 1. Finds the current HEAD commit (parent).
-/// 2. Bakes the overlay and snapshots all geohash blobs to the blob store.
-/// 3. Computes a SHA-256 tree hash over sorted `(geohash, blob_hash)` pairs.
-/// 4. Derives the commit ID from `tree_hash + parent + timestamp`.
-/// 5. Batch-inserts `commit_trees` entries (200 per INSERT for SQLite perf).
+/// 2. Collects the current location state (overlay already baked by the caller).
+/// 3. Diffs it against the materialized parent state to produce the delta.
+/// 4. Writes the delta as an Arrow file, then records the commit row.
 ///
 /// Returns the new commit ID.
 #[tauri::command]
@@ -69,12 +64,11 @@ pub fn store_create_commit(
     state: State<'_, StoreState>,
     map_id: String,
     message: Option<String>,
-    diff: Option<CommitDiff>,
 ) -> Result<String, String> {
     let _t = std::time::Instant::now();
     let conn = fast_io::open_db(&app)?;
 
-    // 1. Find parent commit
+    // 1. Parent = current HEAD commit.
     let parent_id: Option<String> = conn
         .query_row(
             "SELECT id FROM commits WHERE map_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
@@ -83,73 +77,65 @@ pub fn store_create_commit(
         )
         .ok();
 
-    // 2. Snapshot blobs via the store
-    let entries = location_store::snapshot_inner(&app, &state, &map_id)?;
-
-    // 3. Compute tree hash
-    let mut sorted = entries.clone();
-    sorted.sort_by(|a, b| a.geohash.cmp(&b.geohash));
-    let hash_content: String = sorted
-        .iter()
-        .map(|e| format!("{} {}", e.geohash, e.blob_hash))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let tree_hash = sha256_hex(hash_content.as_bytes());
-
-    // 4. Compute commit id
-    let now = now_iso();
-    let commit_input = format!(
-        "tree {tree_hash}\nparent {}\ndate {now}",
-        parent_id.as_deref().unwrap_or("")
-    );
-    let id = sha256_hex(commit_input.as_bytes());
-
-    // 5. Compute location count
-    let location_count: u32 = sorted.iter().map(|e| e.location_count).sum();
-
-    // 6. Diff stats
-    let (added, removed, modified) = match diff {
-        Some(d) => (d.added, d.removed, d.modified),
-        None => (0, 0, 0),
+    // 2. Build the delta. Fast path: read it straight from the overlay -- the in-memory
+    //    changeset since the last commit -- in O(changeset), no history replay. Fall back
+    //    to a full parent-vs-current diff only when the overlay is clean (a post-checkout
+    //    revert commit, or an empty no-op commit), which is rare and off the hot path.
+    // The overlay fast path is only valid when the base file equals the parent commit's
+    // state -- i.e. a parent exists. For genesis (no parent, e.g. an old map with
+    // pre-existing data and no commits yet) the base is NOT a committed baseline, so we
+    // must capture the full current state, not just the overlay changeset.
+    let mut overlay_delta: Option<(Vec<Location>, Vec<Location>, u32, u32, u32)> = None;
+    let mut current_fallback: Vec<Location> = Vec::new();
+    let location_count: u32;
+    {
+        let mut mgr = state.lock().map_err(|e| e.to_string())?;
+        let store = mgr.store_for_map(&map_id)?;
+        location_count = store.alive_count as u32;
+        if parent_id.is_some() && store.overlay.dirty {
+            overlay_delta = Some(store.build_overlay_delta());
+        } else {
+            current_fallback = store.collect_all_locations();
+        }
+    }
+    let (created, removed, added, removed_n, modified) = match overlay_delta {
+        Some(d) => d,
+        None => {
+            let parent_state = match &parent_id {
+                Some(p) => vcs_delta::materialize_commit(&app, &conn, &map_id, p)?,
+                None => std::collections::BTreeMap::new(),
+            };
+            vcs_delta::diff_states(&parent_state, &current_fallback)
+        }
     };
 
-    // 7. INSERT commit
-    conn.execute(
-        "INSERT INTO commits (id, map_id, parent_id, message, location_count, created_at, tree_hash, added, removed, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        params![id, map_id, parent_id, message, location_count, now, tree_hash, added, removed, modified],
-    ).map_err(|e| e.to_string())?;
-
-    // 8. Batch INSERT commit_trees
-    const BATCH_SIZE: usize = 200;
-    for chunk in sorted.chunks(BATCH_SIZE) {
-        let placeholders: String = chunk
-            .iter()
-            .map(|_| "(?, ?, ?, ?)")
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "INSERT INTO commit_trees (commit_id, geohash, blob_hash, location_count) VALUES {placeholders}"
-        );
-        let mut flat_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::with_capacity(chunk.len() * 4);
-        for entry in chunk {
-            flat_params.push(Box::new(id.clone()));
-            flat_params.push(Box::new(entry.geohash.clone()));
-            flat_params.push(Box::new(entry.blob_hash.clone()));
-            flat_params.push(Box::new(entry.location_count));
-        }
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = flat_params.iter().map(|p| p.as_ref()).collect();
-        conn.execute(&sql, param_refs.as_slice())
-            .map_err(|e| e.to_string())?;
-    }
-
-    log::info!(
-        "[vcs] commit {} locs={} blobs={} in {}ms",
-        &id[..7],
-        location_count,
-        sorted.len(),
-        _t.elapsed().as_millis()
+    // 4. Commit id. A random nonce keeps empty/rapid commits sharing a parent and
+    //    millisecond timestamp from colliding on the primary key.
+    let now = now_iso();
+    let nonce = uuid::Uuid::new_v4();
+    let id = sha256_hex(
+        format!("{}\n{}\n{}", parent_id.as_deref().unwrap_or(""), now, nonce).as_bytes(),
     );
 
+    // 5. Write the delta file, then record the commit row.
+    let batch = arrow_bridge::delta_to_batch(&created, &removed);
+    let path = fast_io::commit_delta_path(&app, &map_id, &id)?;
+    fast_io::write_arrow_ipc(&path, &batch)?;
+
+    conn.execute(
+        "INSERT INTO commits (id, map_id, parent_id, message, location_count, created_at, tree_hash, added, removed, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![id, map_id, parent_id, message, location_count, now, Option::<String>::None, added, removed_n, modified],
+    ).map_err(|e| e.to_string())?;
+
+    log::info!(
+        "[vcs] commit {} locs={} +{} -{} ~{} in {}ms",
+        &id[..7],
+        location_count,
+        added,
+        removed_n,
+        modified,
+        _t.elapsed().as_millis()
+    );
     Ok(id)
 }
 
@@ -193,9 +179,9 @@ pub fn store_list_commits(
 
 /// Restore a map to the state captured by a previous commit.
 ///
-/// Reads the commit's blob entries from `commit_trees`, then delegates to
-/// `location_store::restore_inner` which reassembles the Arrow base batch
-/// from the blob store and resets the overlay. Clears undo/redo history.
+/// Materializes the commit's full state by replaying its ancestor deltas, writes
+/// it as the map's base Arrow file, and clears the uncommitted delta. The caller
+/// (`checkoutCommit` in JS) reopens the map and clears undo/redo.
 #[tauri::command]
 #[specta::specta]
 pub fn store_checkout_commit(
@@ -204,24 +190,36 @@ pub fn store_checkout_commit(
     commit_id: String,
 ) -> Result<(), String> {
     let conn = fast_io::open_db(&app)?;
-    let mut stmt = conn
-        .prepare("SELECT geohash, blob_hash, location_count FROM commit_trees WHERE commit_id = ?1")
-        .map_err(|e| e.to_string())?;
+    let materialized = vcs_delta::materialize_commit(&app, &conn, &map_id, &commit_id)?;
+    // BTreeMap yields ascending id order, satisfying the sorted-id invariant the
+    // base batch requires.
+    let locs: Vec<Location> = materialized.into_values().collect();
+    let batch = arrow_bridge::locations_to_batch(&locs);
 
-    let blobs: Vec<CommitBlobEntry> = stmt
-        .query_map(params![commit_id], |row| {
-            Ok(CommitBlobEntry {
-                geohash: row.get(0)?,
-                blob_hash: row.get(1)?,
-                location_count: row.get(2)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+    let path = fast_io::arrow_path(&app, &map_id)?;
+    fast_io::write_arrow_ipc(&path, &batch)?;
+    let delta = fast_io::arrow_delta_path(&app, &map_id)?;
+    let _ = std::fs::remove_file(delta);
 
-    location_store::restore_inner(&app, &map_id, blobs)?;
-
-    log::info!("[vcs] checkout {} on map {}", &commit_id[..7.min(commit_id.len())], map_id);
+    log::info!(
+        "[vcs] checkout {} on map {} ({} locs)",
+        &commit_id[..7.min(commit_id.len())],
+        map_id,
+        locs.len()
+    );
     Ok(())
+}
+
+/// Read a single commit's delta (created/removed locations) for the diff viewer.
+#[tauri::command]
+#[specta::specta]
+pub fn store_get_commit_delta(
+    app: tauri::AppHandle,
+    map_id: String,
+    commit_id: String,
+) -> Result<CommitDelta, String> {
+    let path = fast_io::commit_delta_path(&app, &map_id, &commit_id)?;
+    let batch = fast_io::read_arrow_ipc(&path)?;
+    let (created, removed) = arrow_bridge::batch_to_delta(&batch);
+    Ok(CommitDelta { created, removed })
 }

@@ -97,6 +97,9 @@ describe("Dirty state isolation across maps", () => {
 
 		mapBId = await createAndOpenMap("E2E DirtyIso B");
 		await addLocs([createLocation({ lat: 2, lng: 2 })]);
+		// Commit so B starts clean: uncommitted edits now persist across reopen, so without
+		// this B would reopen dirty from its own setup and mask the isolation check.
+		await withApi(async (api) => api.commitMap());
 		await flushAndWait();
 		await closeMap();
 	});

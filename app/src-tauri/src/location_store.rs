@@ -11,10 +11,9 @@ use std::sync::{Arc, Mutex};
 use roaring::RoaringBitmap;
 
 use arrow::array::{
-    Array, ArrayRef, Float64Array, ListArray, RecordBatch,
+    Array, Float64Array, ListArray, RecordBatch,
     StringArray, UInt32Array,
 };
-use arrow::compute::concat_batches;
 use arrow::datatypes::SchemaRef;
 use rayon::prelude::*;
 use tauri::Manager;
@@ -26,37 +25,13 @@ use crate::types::{Location, Tag};
 use crate::util;
 use crate::selections::{self, SelectionProps, Selection};
 
-/// Full geohash precision used for dirty-tracking and VCS snapshots.
-const GEOHASH_PRECISION: usize = 2;
 const MAX_UNDO_ENTRIES: usize = 1000;
-/// Standard base-32 alphabet for geohash encoding (Gustavo Niemeyer variant).
+/// Standard base-32 alphabet (Gustavo Niemeyer geohash variant); render cells are
+/// keyed by its first character.
 const BASE32: &[u8] = b"0123456789bcdefghjkmnpqrstuvwxyz";
 
-/// Encode (lat, lng) into a base-32 geohash string. O(GEOHASH_PRECISION) — constant.
-pub(crate) fn encode_geohash(lat: f64, lng: f64) -> String {
-    let (mut min_lat, mut max_lat) = (-90.0, 90.0);
-    let (mut min_lng, mut max_lng) = (-180.0, 180.0);
-    let mut hash = String::with_capacity(GEOHASH_PRECISION);
-    let mut bits = 0u8;
-    let mut ch = 0u8;
-    let mut even = true;
-    while hash.len() < GEOHASH_PRECISION {
-        if even {
-            let mid = (min_lng + max_lng) / 2.0;
-            if lng >= mid { ch = (ch << 1) | 1; min_lng = mid; } else { ch <<= 1; max_lng = mid; }
-        } else {
-            let mid = (min_lat + max_lat) / 2.0;
-            if lat >= mid { ch = (ch << 1) | 1; min_lat = mid; } else { ch <<= 1; max_lat = mid; }
-        }
-        even = !even;
-        bits += 1;
-        if bits == 5 { hash.push(BASE32[ch as usize] as char); bits = 0; ch = 0; }
-    }
-    hash
-}
-
-/// Compute the render cell index (0-31) directly from coordinates without allocating
-/// a geohash string. Equivalent to `BASE32.position(encode_geohash(lat, lng)[0])`.
+/// Compute the render cell index (0-31) directly from coordinates. This is the
+/// first base-32 character of the point's geohash, computed without allocating.
 pub(crate) fn render_cell_idx(lat: f64, lng: f64) -> u8 {
     let (mut min_lat, mut max_lat) = (-90.0, 90.0);
     let (mut min_lng, mut max_lng) = (-180.0, 180.0);
@@ -163,7 +138,6 @@ pub(crate) struct Overlay {
     pub adds: Vec<Location>,
     pub dead: HashSet<u32>,
     pub patches: HashMap<u32, Location>,
-    pub dirty_geohashes: HashSet<String>,
     pub dirty: bool,
 }
 
@@ -211,11 +185,9 @@ pub struct Store {
     // batch is declared before mmap_handle so it drops first (columns reference the mmap).
     pub(crate) batch: Option<RecordBatch>,
     mmap_handle: Option<fast_io::MmapHandle>,
-    pub(crate) geohash_index: HashMap<String, Vec<usize>>,
     next_id: u32,
     version: u64,
     pub(crate) alive_count: usize,
-    committed_blobs: HashMap<String, (String, u32)>,
     pub(crate) known_field_keys: HashSet<String>,
 
     pub(crate) overlay: Overlay,
@@ -245,17 +217,14 @@ impl Store {
             map_id: None,
             batch: None,
             mmap_handle: None,
-            geohash_index: HashMap::new(),
             next_id: 1,
             version: 0,
             alive_count: 0,
-            committed_blobs: HashMap::new(),
             known_field_keys: HashSet::new(),
             overlay: Overlay {
                 adds: Vec::new(),
                 dead: HashSet::new(),
                 patches: HashMap::new(),
-                dirty_geohashes: HashSet::new(),
                 dirty: false,
             },
             render: RenderState {
@@ -657,12 +626,6 @@ impl Store {
         SelectionSync { counts, patch_file, selected_count }
     }
 
-    /// Record that the geohash cell containing `(lat, lng)` has been modified.
-    /// Used by VCS snapshot to determine which cells need re-serialization.
-    pub(crate) fn mark_dirty(&mut self, lat: f64, lng: f64) {
-        self.overlay.dirty_geohashes.insert(encode_geohash(lat, lng));
-    }
-
     /// Adjust tag counts by `delta` (+1 for adds, -1 for removes). O(L * T) where L = locs, T = avg tags per loc.
     pub(crate) fn update_tag_counts(&mut self, locs: &[Location], delta: isize) {
         for loc in locs {
@@ -811,6 +774,48 @@ impl Store {
         locs
     }
 
+    /// Read a single location from the committed base batch by id (ignores the
+    /// overlay). O(log n). Used to recover the pre-edit version of a row.
+    fn base_loc_by_id(&self, id: u32) -> Option<Location> {
+        let b = self.batch.as_ref()?;
+        let idx = batch_row_for_id(b, id)?;
+        Some(arrow_bridge::row_to_location(b, idx))
+    }
+
+    /// Build a commit delta directly from the overlay — the in-memory changeset
+    /// since the last commit. O(changeset), no history replay. Old versions of
+    /// modified/removed rows come from the committed base batch, so this is only
+    /// valid while the base still holds the parent state (i.e. before `bake_overlay`).
+    /// Returns `(created, removed, added, removed, modified)`.
+    pub(crate) fn build_overlay_delta(&self) -> (Vec<Location>, Vec<Location>, u32, u32, u32) {
+        let mut created: Vec<Location> = self.overlay.adds.clone();
+        let mut removed: Vec<Location> = Vec::new();
+        let added = self.overlay.adds.len() as u32;
+
+        let mut modified = 0u32;
+        for (id, new) in &self.overlay.patches {
+            match self.base_loc_by_id(*id) {
+                Some(old) => {
+                    removed.push(old);
+                    created.push(new.clone());
+                    modified += 1;
+                }
+                None => created.push(new.clone()), // not in base: a net add
+            }
+        }
+
+        let mut removed_n = 0u32;
+        for id in &self.overlay.dead {
+            // A dead id absent from the base was added-then-removed this session: a no-op.
+            if let Some(old) = self.base_loc_by_id(*id) {
+                removed.push(old);
+                removed_n += 1;
+            }
+        }
+
+        (created, removed, added, removed_n, modified)
+    }
+
     /// Construct a read-only view over all alive locations for selection resolution.
     fn loc_view(&self) -> selections::LocView<'_> {
         selections::LocView::new(
@@ -823,7 +828,6 @@ impl Store {
 
     /// Insert or restore a location in the overlay. O(1) amortized.
     pub(crate) fn overlay_add(&mut self, loc: Location) {
-        self.mark_dirty(loc.lat, loc.lng);
         self.overlay.dirty = true;
         self.alive_count += 1;
         let in_batch = self.batch.as_ref().and_then(|b| batch_row_for_id(b, loc.id)).is_some();
@@ -844,7 +848,6 @@ impl Store {
     fn overlay_remove(&mut self, locs: &[Location]) {
         let remove_set: HashSet<u32> = locs.iter().map(|l| l.id).collect();
         for loc in locs {
-            self.mark_dirty(loc.lat, loc.lng);
             self.alive_count -= 1;
             self.overlay.patches.remove(&loc.id);
         }
@@ -860,7 +863,6 @@ impl Store {
             Some(l) => l,
             None => return,
         };
-        self.mark_dirty(loc.lat, loc.lng);
         if let Some(v) = patch.lat { loc.lat = v; }
         if let Some(v) = patch.lng { loc.lng = v; }
         if let Some(v) = patch.heading { loc.heading = v; }
@@ -872,7 +874,6 @@ impl Store {
         if let Some(ref v) = patch.extra { loc.extra = v.clone(); }
         if let Some(ref v) = patch.created_at { loc.created_at = v.clone(); }
         if let Some(ref v) = patch.modified_at { loc.modified_at = v.clone(); }
-        self.mark_dirty(loc.lat, loc.lng);
         // If it's in overlay_adds, update in place
         if let Ok(pos) = self.overlay.adds.binary_search_by_key(&id, |l| l.id) {
             self.overlay.adds[pos] = loc;
@@ -903,7 +904,6 @@ impl Store {
                 let b = arrow_bridge::locations_to_batch(&self.overlay.adds);
                 self.clear_overlay();
                 self.batch = Some(b);
-                self.rebuild_index();
                 return;
             }
         };
@@ -957,20 +957,6 @@ impl Store {
         }, "batch IDs must be strictly sorted after bake");
         self.batch = Some(batch);
         self.clear_overlay();
-        self.rebuild_index();
-    }
-
-    /// Rebuild geohash_index from the batch. O(N).
-    pub(crate) fn rebuild_index(&mut self) {
-        self.geohash_index.clear();
-        if let Some(ref b) = self.batch {
-            let lats = col_lat(b);
-            let lngs = col_lng(b);
-            for i in 0..b.num_rows() {
-                let gh = encode_geohash(lats.value(i), lngs.value(i));
-                self.geohash_index.entry(gh).or_default().push(i);
-            }
-        }
     }
 }
 
@@ -1212,76 +1198,35 @@ pub async fn store_open_map(
         use std::time::Instant;
         let t_total = Instant::now();
 
-        let (batch, mmap_handle) = {
+        let (batch, mmap_handle, delta) = {
             let t0 = Instant::now();
             let path = fast_io::arrow_path(&app2, &map_id2)?;
             let delta_path = fast_io::arrow_delta_path(&app2, &map_id2)?;
-            let has_delta = delta_path.exists();
 
-            if !path.exists() {
-                log::debug!("[store_open] no arrow file, empty batch");
-                (RecordBatch::new_empty(schema()), None)
-            } else if !has_delta {
-                // Fast path: mmap directly, no copying
-                let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
-                log::debug!("[store_open] mmap_read={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
-                (batch, Some(handle))
+            // The base file holds the last committed state -- it may not exist at all for a
+            // map with no commits, whose data then lives entirely in the delta sidecar. Mmap
+            // the base zero-copy and leave it untouched; load the delta into the overlay
+            // regardless of whether a base file exists (never folded into the base).
+            let (batch, handle) = if path.exists() {
+                let (b, h) = fast_io::read_arrow_ipc_mmap(&path)?;
+                log::debug!("[store_open] mmap_read={}ms rows={}", t0.elapsed().as_millis(), b.num_rows());
+                (b, Some(h))
             } else {
-                // Delta exists: heap read + merge + checkpoint, then mmap the result
-                let mut batch = fast_io::read_arrow_ipc(&path)?;
-                log::debug!("[store_open] arrow_read={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
-
-                let t_d = Instant::now();
-                if let Ok(data) = std::fs::read(&delta_path) {
-                    if let Ok(delta) = rmp_serde::from_slice::<DeltaOverlay>(&data) {
-                        if !delta.dead_ids.is_empty() {
-                            let dead_set: HashSet<u32> = delta.dead_ids.into_iter().collect();
-                            let ids_col = col_id(&batch);
-                            let keep: Vec<u32> = (0..batch.num_rows())
-                                .filter(|&i| !dead_set.contains(&ids_col.value(i)))
-                                .map(|i| i as u32)
-                                .collect();
-                            if keep.len() < batch.num_rows() {
-                                let take_idx = UInt32Array::from(keep);
-                                batch = RecordBatch::try_new(
-                                    batch.schema(),
-                                    batch.columns().iter().map(|col| {
-                                        arrow::compute::take(col.as_ref(), &take_idx, None).unwrap()
-                                    }).collect(),
-                                ).unwrap();
-                            }
-                        }
-                        if !delta.patches.is_empty() {
-                            let patch_map: HashMap<u32, &Location> = delta.patches.iter().map(|l| (l.id, l)).collect();
-                            let all: Vec<Location> = {
-                                let ids_col = col_id(&batch);
-                                (0..batch.num_rows()).map(|i| {
-                                    let id = ids_col.value(i);
-                                    if let Some(&patched) = patch_map.get(&id) { patched.clone() }
-                                    else { arrow_bridge::row_to_location(&batch, i) }
-                                }).collect()
-                            };
-                            batch = arrow_bridge::locations_to_batch(&all);
-                        }
-                        if !delta.adds.is_empty() {
-                            let add_batch = arrow_bridge::locations_to_batch(&delta.adds);
-                            batch = concat_batches(&schema(), &[batch, add_batch]).map_err(|e| e.to_string())?;
-                        }
-                        fast_io::write_arrow_ipc(&path, &batch)?;
-                        let _ = std::fs::remove_file(&delta_path);
-                        log::debug!("[store_open] delta checkpointed to Arrow IPC");
-                    } else {
-                        log::warn!("[store_open] delta deserialization failed, delta file preserved");
-                    }
+                log::debug!("[store_open] no base file, empty batch");
+                (RecordBatch::new_empty(schema()), None)
+            };
+            let delta = if delta_path.exists() {
+                match std::fs::read(&delta_path) {
+                    Ok(d) => match rmp_serde::from_slice::<DeltaOverlay>(&d) {
+                        Ok(parsed) => Some(parsed),
+                        Err(e) => { log::warn!("[store_open] delta parse failed, ignoring: {e}"); None }
+                    },
+                    Err(e) => { log::warn!("[store_open] delta read failed, ignoring: {e}"); None }
                 }
-                log::debug!("[store_open] delta_merge={}ms rows={}", t_d.elapsed().as_millis(), batch.num_rows());
-
-                // Drop the heap batch and mmap the checkpointed file instead
-                drop(batch);
-                let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
-                log::debug!("[store_open] post-delta mmap={}ms rows={}", t0.elapsed().as_millis(), batch.num_rows());
-                (batch, Some(handle))
-            }
+            } else {
+                None
+            };
+            (batch, handle, delta)
         };
 
         // Ensure sorted ID invariant (one-time migration for pre-Phase2 files)
@@ -1311,35 +1256,43 @@ pub async fn store_open_map(
             }
         };
 
-        let t3 = Instant::now();
-        let lats = col_lat(&batch);
-        let lngs = col_lng(&batch);
         let n = batch.num_rows();
-        let mut geohash_index: HashMap<String, Vec<usize>> = HashMap::new();
         let max_id = if n > 0 { col_id(&batch).value(n - 1) } else { 0 };
-        for i in 0..n {
-            let gh = encode_geohash(lats.value(i), lngs.value(i));
-            geohash_index.entry(gh).or_default().push(i);
-        }
-        log::debug!("[store_open] index_build={}ms", t3.elapsed().as_millis());
 
         let (undo, redo) = load_edit_history_inner(&app2, &map_id2)?;
 
         log::debug!("[store_open] TOTAL={}ms", t_total.elapsed().as_millis());
-        Ok::<_, String>((batch, mmap_handle, geohash_index, max_id, undo, redo))
+        Ok::<_, String>((batch, mmap_handle, max_id, undo, redo, delta))
     })
     .await
     .map_err(|e| e.to_string())??;
 
-    let (batch, mmap_handle, geohash_index, max_id, undo, redo) = result;
+    let (batch, mmap_handle, max_id, undo, redo, delta) = result;
 
-    let count = batch.num_rows();
     let mut store = Store::new();
     store.bump();
     store.map_id = Some(map_id.clone());
     store.next_id = max_id + 1;
     store.batch = Some(batch);
     store.mmap_handle = mmap_handle;
+
+    // Load uncommitted edits into the overlay; the base batch stays at the last commit.
+    if let Some(d) = delta {
+        store.overlay.dead = d.dead_ids.into_iter().collect();
+        for p in d.patches { store.overlay.patches.insert(p.id, p); }
+        let max_add = d.adds.iter().map(|l| l.id).max().unwrap_or(0);
+        store.overlay.adds = d.adds; // persisted in sorted-id order
+        store.overlay.dirty = true;
+        store.next_id = store.next_id.max(max_add + 1);
+    }
+
+    // Alive count + tag counts come from the full state (base + overlay). With no
+    // uncommitted edits that's just the base batch, so we avoid cloning it.
+    let overlay_locs = if store.overlay.dirty { Some(store.collect_all_locations()) } else { None };
+    let count = match &overlay_locs {
+        Some(all) => all.len(),
+        None => store.batch.as_ref().map_or(0, |b| b.num_rows()),
+    };
     store.alive_count = count;
     {
         let conn = fast_io::open_db(&app)?;
@@ -1348,18 +1301,12 @@ pub async fn store_open_map(
         let mut tags = read_tags_json(&conn, &map_id);
         for tag in tags.values_mut() { tag.count = 0; }
         let mut max_tag_id: u32 = tags.keys().max().copied().unwrap_or(0);
-        {
-            let b = store.batch.as_ref().unwrap();
-            let tags_col = col_tags(b);
-            for i in 0..b.num_rows() {
-                let list = tags_col.value(i);
-                let ids = list.as_any().downcast_ref::<UInt32Array>().unwrap();
-                for j in 0..ids.len() {
-                    let tid = ids.value(j);
-                    if tid > max_tag_id { max_tag_id = tid; }
-                    if let Some(tag) = tags.get_mut(&tid) {
-                        tag.count += 1;
-                    } else {
+        let process_tags = |slice: &[u32], tags: &mut HashMap<u32, Tag>, max_tag_id: &mut u32| {
+            for &tid in slice {
+                if tid > *max_tag_id { *max_tag_id = tid; }
+                match tags.get_mut(&tid) {
+                    Some(tag) => tag.count += 1,
+                    None => {
                         tags.insert(tid, Tag {
                             id: tid,
                             name: format!("Tag {}", tid),
@@ -1369,6 +1316,21 @@ pub async fn store_open_map(
                             count: 1,
                         });
                     }
+                }
+            }
+        };
+        match &overlay_locs {
+            Some(all) => {
+                for loc in all { process_tags(&loc.tags, &mut tags, &mut max_tag_id); }
+            }
+            None => {
+                let b = store.batch.as_ref().unwrap();
+                let tags_col = col_tags(b);
+                for i in 0..b.num_rows() {
+                    let list = tags_col.value(i);
+                    let ids = list.as_any().downcast_ref::<UInt32Array>().unwrap();
+                    let slice: Vec<u32> = (0..ids.len()).map(|j| ids.value(j)).collect();
+                    process_tags(&slice, &mut tags, &mut max_tag_id);
                 }
             }
         }
@@ -1385,7 +1347,6 @@ pub async fn store_open_map(
             .map(|f| f.keys().cloned().collect())
             .unwrap_or_default();
     }
-    store.geohash_index = geohash_index;
     store.edits.undo = undo;
     store.edits.redo = redo;
 
@@ -1415,16 +1376,17 @@ pub fn store_close_map(
     if still_open {
         return Ok(());
     }
-    if let Some(mut store) = mgr.stores.remove(&map_id) {
+    if let Some(store) = mgr.stores.remove(&map_id) {
         if store.overlay.dirty {
-            store.bake_overlay();
-            store.mmap_handle = None;
-            if let Some(ref batch) = store.batch {
-                let path = fast_io::arrow_path(&app, &map_id)?;
-                fast_io::write_arrow_ipc(&path, batch)?;
-            }
-            let delta_path = fast_io::arrow_delta_path(&app, &map_id)?;
-            let _ = std::fs::remove_file(delta_path);
+            // Persist uncommitted edits to the delta sidecar. The base file stays pinned
+            // at the last committed state -- it only advances on commit/checkout -- so the
+            // overlay remains a faithful changeset-since-last-commit for the next commit.
+            let bytes = overlay_delta_bytes(&store)?;
+            let path = fast_io::arrow_delta_path(&app, &map_id)?;
+            fast_io::atomic_write(&path, |mut file| {
+                use std::io::Write;
+                file.write_all(&bytes).map_err(|e| e.to_string())
+            })?;
         }
         let count = store.alive_count;
         let conn = fast_io::open_db(&app)?;
@@ -1481,9 +1443,6 @@ pub fn store_add_locations(
         }
         store.push_undo(EditEntry { created: locations.clone(), removed: Vec::new() });
         store.edits.redo.clear();
-        for loc in &locations {
-            store.mark_dirty(loc.lat, loc.lng);
-        }
         store.add_tag_counts(&locations);
         let added = locations.clone();
         for loc in locations {
@@ -1790,6 +1749,50 @@ struct DeltaOverlay {
     patches: Vec<Location>,
 }
 
+/// Serialize the overlay (uncommitted changes) as a `DeltaOverlay` msgpack blob.
+/// This is the sidecar that lets the base file stay pinned at the last commit.
+fn overlay_delta_bytes(store: &Store) -> Result<Vec<u8>, String> {
+    let overlay = DeltaOverlay {
+        adds: store.overlay.adds.clone(),
+        dead_ids: store.overlay.dead.iter().cloned().collect(),
+        patches: store.overlay.patches.values().cloned().collect(),
+    };
+    rmp_serde::to_vec_named(&overlay).map_err(|e| e.to_string())
+}
+
+/// Read a map's full current state from disk = base file + uncommitted delta sidecar.
+/// Use this for consumers (e.g. export) that read a map's locations directly off disk,
+/// since the base file alone is only the last committed state.
+pub(crate) fn read_full_state_from_disk(app: &tauri::AppHandle, map_id: &str) -> Result<Vec<Location>, String> {
+    let path = fast_io::arrow_path(app, map_id)?;
+    // The base file may not exist for a map with no commits -- its data then lives entirely
+    // in the delta sidecar, so always apply the delta below regardless.
+    let mut locs = if path.exists() {
+        arrow_bridge::batch_to_locations(&fast_io::read_arrow_ipc(&path)?)
+    } else {
+        Vec::new()
+    };
+
+    let delta_path = fast_io::arrow_delta_path(app, map_id)?;
+    if delta_path.exists() {
+        if let Ok(data) = std::fs::read(&delta_path) {
+            if let Ok(delta) = rmp_serde::from_slice::<DeltaOverlay>(&data) {
+                let dead: HashSet<u32> = delta.dead_ids.into_iter().collect();
+                let patches: HashMap<u32, Location> =
+                    delta.patches.into_iter().map(|l| (l.id, l)).collect();
+                locs.retain(|l| !dead.contains(&l.id));
+                for l in locs.iter_mut() {
+                    if let Some(p) = patches.get(&l.id) {
+                        *l = p.clone();
+                    }
+                }
+                locs.extend(delta.adds);
+            }
+        }
+    }
+    Ok(locs)
+}
+
 /// Delta-only autosave: writes only dirty geohash chunks to disk (~17ms).
 /// Does NOT bake the overlay — call `store_bake_and_save` for a full merge.
 #[tauri::command]
@@ -1951,152 +1954,6 @@ pub fn store_bake_and_save(
         }
         Ok(())
     })
-}
-
-/// One geohash cell's content-addressed blob in a VCS commit.
-/// The blob hash is a SHA-256 of the Arrow IPC bytes for that cell.
-#[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitBlobEntry {
-    pub geohash: String,
-    pub blob_hash: String,
-    pub location_count: u32,
-}
-
-/// Create a VCS snapshot: partition batch by geohash, write each cell as a content-addressed
-/// blob. First commit writes all cells; subsequent commits only write dirty cells.
-/// Returns the full manifest of blob entries for the commit record.
-pub(crate) fn snapshot_inner(
-    app: &tauri::AppHandle,
-    state: &StoreState,
-    map_id: &str,
-) -> Result<Vec<CommitBlobEntry>, String> {
-    let _t = std::time::Instant::now();
-    let mut mgr = state.lock().map_err(|e| e.to_string())?;
-    let store = mgr.store_for_map(map_id)?;
-    let batch = store.batch.as_ref().ok_or("no data loaded")?;
-    if batch.num_rows() == 0 {
-        store.committed_blobs.clear();
-        store.overlay.dirty_geohashes.clear();
-        return Ok(Vec::new());
-    }
-
-    let first_commit = store.committed_blobs.is_empty();
-    let dirty = &store.overlay.dirty_geohashes;
-    let stale_count: u32 = store.committed_blobs.values().map(|(_, c)| c).sum();
-    log::debug!("[snapshot] first_commit={} batch_rows={} committed_blobs_count={} stale_loc_count={}",
-        first_commit, batch.num_rows(), store.committed_blobs.len(), stale_count);
-
-    if first_commit {
-        let lats = col_lat(batch);
-        let lngs = col_lng(batch);
-        let schema = batch.schema();
-
-        let mut gh_indices: HashMap<String, Vec<u32>> = HashMap::new();
-        for i in 0..batch.num_rows() {
-            let gh = encode_geohash(lats.value(i), lngs.value(i));
-            gh_indices.entry(gh).or_default().push(i as u32);
-        }
-
-        let mut entries = Vec::with_capacity(gh_indices.len());
-        for (gh, indices) in &gh_indices {
-            let take_idx = arrow::array::UInt32Array::from(indices.clone());
-            let columns: Vec<ArrayRef> = batch.columns().iter().map(|col| {
-                arrow::compute::take(col.as_ref(), &take_idx, None).unwrap()
-            }).collect();
-            let cell_batch = RecordBatch::try_new(schema.clone(), columns).unwrap();
-            let (hash, count) = fast_io::write_blob(app, &cell_batch)
-                .expect("blob write failed");
-            entries.push(CommitBlobEntry {
-                geohash: gh.clone(),
-                blob_hash: hash,
-                location_count: count as u32,
-            });
-        }
-
-        store.committed_blobs = entries.iter()
-            .map(|e| (e.geohash.clone(), (e.blob_hash.clone(), e.location_count)))
-            .collect();
-        store.overlay.dirty_geohashes.clear();
-        log::debug!("[cmd] snapshot_inner (full) total={}ms cells={}", _t.elapsed().as_millis(), entries.len());
-        Ok(entries)
-    } else {
-        let dirty_cells: Vec<String> = dirty.iter().cloned().collect();
-        let schema = batch.schema();
-
-        let mut dirty_entries = Vec::new();
-        for gh in &dirty_cells {
-            let indices: Vec<u32> = match store.geohash_index.get(gh) {
-                Some(v) => v.iter().map(|&i| i as u32).collect(),
-                None => continue,
-            };
-            if indices.is_empty() { continue; }
-            let take_idx = arrow::array::UInt32Array::from(indices);
-            let columns: Vec<ArrayRef> = batch.columns().iter().map(|col| {
-                arrow::compute::take(col.as_ref(), &take_idx, None).unwrap()
-            }).collect();
-            let cell_batch = RecordBatch::try_new(schema.clone(), columns).unwrap();
-            let (hash, count) = fast_io::write_blob(app, &cell_batch)
-                .expect("blob write failed");
-            dirty_entries.push(CommitBlobEntry {
-                geohash: gh.clone(),
-                blob_hash: hash,
-                location_count: count as u32,
-            });
-        }
-
-        for entry in &dirty_entries {
-            store.committed_blobs.insert(
-                entry.geohash.clone(),
-                (entry.blob_hash.clone(), entry.location_count),
-            );
-        }
-        for gh in &dirty_cells {
-            if !store.geohash_index.contains_key(gh) {
-                store.committed_blobs.remove(gh);
-            }
-        }
-        store.overlay.dirty_geohashes.clear();
-
-        let entries: Vec<CommitBlobEntry> = store.committed_blobs.iter()
-            .map(|(gh, (hash, count))| CommitBlobEntry {
-                geohash: gh.clone(),
-                blob_hash: hash.clone(),
-                location_count: *count,
-            })
-            .collect();
-
-        log::debug!("[cmd] snapshot_inner (incremental) total={}ms dirty={} total_cells={}",
-            _t.elapsed().as_millis(), dirty_cells.len(), entries.len());
-        Ok(entries)
-    }
-}
-
-/// Restore a VCS snapshot: read blobs in parallel, concatenate into a single batch,
-/// and write the Arrow IPC file. The caller (`store_checkout_commit`) reopens the map.
-pub(crate) fn restore_inner(
-    app: &tauri::AppHandle,
-    map_id: &str,
-    blobs: Vec<CommitBlobEntry>,
-) -> Result<(), String> {
-    let _t = std::time::Instant::now();
-    let s = schema();
-    let batches: Result<Vec<RecordBatch>, String> = blobs
-        .par_iter()
-        .map(|entry| fast_io::read_blob(app, &entry.blob_hash))
-        .collect();
-    let batches = batches?;
-    let batch = if batches.is_empty() {
-        RecordBatch::new_empty(s)
-    } else {
-        concat_batches(&s, &batches).map_err(|e| e.to_string())?
-    };
-    let path = fast_io::arrow_path(app, map_id)?;
-    fast_io::write_arrow_ipc(&path, &batch)?;
-    let delta = fast_io::arrow_delta_path(app, map_id)?;
-    let _ = std::fs::remove_file(delta);
-    log::debug!("[cmd] restore_inner total={}ms rows={}", _t.elapsed().as_millis(), batch.num_rows());
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------

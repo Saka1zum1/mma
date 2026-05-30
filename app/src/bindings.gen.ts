@@ -78,7 +78,7 @@ export const commands = {
 	storeCreateMap: (name: string, folder: string | null) => typedError<MapData, string>(__TAURI_INVOKE("store_create_map", { name, folder })),
 	/**
 	 *  Delete a map and all associated data: SQLite rows (maps, edit_history,
-	 *  commits, orphaned commit_trees) and Arrow IPC files on disk.
+	 *  commits) and Arrow base/delta/commit files on disk.
 	 */
 	storeDeleteMap: (id: string) => typedError<null, string>(__TAURI_INVOKE("store_delete_map", { id })),
 	/**
@@ -334,28 +334,25 @@ export const commands = {
 	 *  Create a new commit for a map.
 	 * 
 	 *  1. Finds the current HEAD commit (parent).
-	 *  2. Bakes the overlay and snapshots all geohash blobs to the blob store.
-	 *  3. Computes a SHA-256 tree hash over sorted `(geohash, blob_hash)` pairs.
-	 *  4. Derives the commit ID from `tree_hash + parent + timestamp`.
-	 *  5. Batch-inserts `commit_trees` entries (200 per INSERT for SQLite perf).
+	 *  2. Collects the current location state (overlay already baked by the caller).
+	 *  3. Diffs it against the materialized parent state to produce the delta.
+	 *  4. Writes the delta as an Arrow file, then records the commit row.
 	 * 
 	 *  Returns the new commit ID.
 	 */
-	storeCreateCommit: (mapId: string, message: string | null, diff: {
-	added?: number,
-	removed?: number,
-	modified?: number,
-} | null) => typedError<string, string>(__TAURI_INVOKE("store_create_commit", { mapId, message, diff })),
+	storeCreateCommit: (mapId: string, message: string | null) => typedError<string, string>(__TAURI_INVOKE("store_create_commit", { mapId, message })),
 	/**  List all commits for a map, newest first. */
 	storeListCommits: (mapId: string) => typedError<CommitInfo[], string>(__TAURI_INVOKE("store_list_commits", { mapId })),
 	/**
 	 *  Restore a map to the state captured by a previous commit.
 	 * 
-	 *  Reads the commit's blob entries from `commit_trees`, then delegates to
-	 *  `location_store::restore_inner` which reassembles the Arrow base batch
-	 *  from the blob store and resets the overlay. Clears undo/redo history.
+	 *  Materializes the commit's full state by replaying its ancestor deltas, writes
+	 *  it as the map's base Arrow file, and clears the uncommitted delta. The caller
+	 *  (`checkoutCommit` in JS) reopens the map and clears undo/redo.
 	 */
 	storeCheckoutCommit: (mapId: string, commitId: string) => typedError<null, string>(__TAURI_INVOKE("store_checkout_commit", { mapId, commitId })),
+	/**  Read a single commit's delta (created/removed locations) for the diff viewer. */
+	storeGetCommitDelta: (mapId: string, commitId: string) => typedError<CommitDelta_Serialize, string>(__TAURI_INVOKE("store_get_commit_delta", { mapId, commitId })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,created:v.data.created.map(i=>i),removed:v.data.removed.map(i=>i)}) } : v) as typeof v)),
 };
 
 /* Types */
@@ -383,14 +380,27 @@ export type ColorPatchEntry = {
 };
 
 /**
- *  Diff statistics passed from the frontend at commit time.
- *  The frontend tracks add/remove/modify counts through the undo stack
- *  and provides them here so the commit can store them without recomputing.
+ *  A commit's delta, returned to the frontend for the per-commit diff viewer.
+ *  An updated location appears in both `created` (new) and `removed` (old).
  */
-export type CommitDiff = {
-	added?: number,
-	removed?: number,
-	modified?: number,
+export type CommitDelta = CommitDelta_Serialize | CommitDelta_Deserialize;
+
+/**
+ *  A commit's delta, returned to the frontend for the per-commit diff viewer.
+ *  An updated location appears in both `created` (new) and `removed` (old).
+ */
+export type CommitDelta_Deserialize = {
+	created: Location_Deserialize[],
+	removed: Location_Deserialize[],
+};
+
+/**
+ *  A commit's delta, returned to the frontend for the per-commit diff viewer.
+ *  An updated location appears in both `created` (new) and `removed` (old).
+ */
+export type CommitDelta_Serialize = {
+	created: Location_Serialize[],
+	removed: Location_Serialize[],
 };
 
 /**  Metadata for a single commit, returned to the frontend for the commit history UI. */

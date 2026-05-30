@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayRef, Float64Array, GenericListBuilder, ListArray, RecordBatch,
-    StringArray, UInt32Array, UInt32Builder,
+    StringArray, UInt32Array, UInt32Builder, UInt8Array,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 
@@ -34,6 +34,9 @@ pub fn location_schema() -> Schema {
             false,
         ),
         Field::new("extra", DataType::Utf8, true),
+        // TODO: migrate ISO-string timestamps to integer epoch (~28B -> 4-8B/row, keeps mmap
+        // zero-copy, drops iso_to_unix parsing in date filters). i64 millis (Timestamp convention)
+        // or u32 seconds if second precision suffices. Touches LocView downcast + import/export.
         Field::new("created_at", DataType::Utf8, false),
         Field::new("modified_at", DataType::Utf8, true),
     ])
@@ -160,6 +163,58 @@ pub fn row_to_location(batch: &RecordBatch, idx: usize) -> Location {
 /// Materialize every row of a batch into a `Vec<Location>`.
 pub fn batch_to_locations(batch: &RecordBatch) -> Vec<Location> {
     (0..batch.num_rows()).map(|i| row_to_location(batch, i)).collect()
+}
+
+// ---------------------------------------------------------------------------
+// VCS delta batches
+// ---------------------------------------------------------------------------
+
+/// `op` column code for a location removed by a commit.
+pub const OP_REMOVED: u8 = 0;
+/// `op` column code for a location created (or updated) by a commit.
+pub const OP_CREATED: u8 = 1;
+
+/// Schema for a VCS delta file: the location columns plus a trailing `op` column
+/// (`OP_REMOVED`/`OP_CREATED`) distinguishing the two sides of the delta.
+pub fn delta_schema() -> Schema {
+    let mut fields: Vec<arrow::datatypes::FieldRef> = location_schema().fields().iter().cloned().collect();
+    fields.push(Arc::new(Field::new("op", DataType::UInt8, false)));
+    Schema::new(fields)
+}
+
+/// Serialize a commit delta (`created` + `removed` locations) into one delta batch.
+/// Removed rows come first, then created; the `op` column tags each.
+pub fn delta_to_batch(created: &[Location], removed: &[Location]) -> RecordBatch {
+    let mut all = Vec::with_capacity(created.len() + removed.len());
+    all.extend_from_slice(removed);
+    all.extend_from_slice(created);
+
+    let base = locations_to_batch(&all);
+    let mut ops: Vec<u8> = Vec::with_capacity(all.len());
+    ops.resize(removed.len(), OP_REMOVED);
+    ops.resize(removed.len() + created.len(), OP_CREATED);
+
+    let mut columns: Vec<ArrayRef> = base.columns().to_vec();
+    columns.push(Arc::new(UInt8Array::from(ops)));
+    RecordBatch::try_new(Arc::new(delta_schema()), columns).expect("delta schema matches columns")
+}
+
+/// Split a delta batch back into `(created, removed)` location vectors.
+pub fn batch_to_delta(batch: &RecordBatch) -> (Vec<Location>, Vec<Location>) {
+    let ops = batch
+        .column(batch.num_columns() - 1)
+        .as_any()
+        .downcast_ref::<UInt8Array>();
+    let mut created = Vec::new();
+    let mut removed = Vec::new();
+    for i in 0..batch.num_rows() {
+        let loc = row_to_location(batch, i);
+        match ops.map(|a| a.value(i)).unwrap_or(OP_CREATED) {
+            OP_REMOVED => removed.push(loc),
+            _ => created.push(loc),
+        }
+    }
+    (created, removed)
 }
 
 #[cfg(test)]

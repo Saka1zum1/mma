@@ -20,6 +20,7 @@ mod borders;
 mod geocoder;
 mod seen;
 mod vcs;
+mod vcs_delta;
 
 /// Write arbitrary text content to a named temp file (`mma_{name}`). Returns the path.
 /// Used by JS to pass large payloads via file instead of IPC serialization.
@@ -475,6 +476,7 @@ pub fn run() {
                     vcs::store_create_commit,
                     vcs::store_list_commits,
                     vcs::store_checkout_commit,
+                    vcs::store_get_commit_delta,
                 ]);
 
             #[cfg(debug_assertions)]

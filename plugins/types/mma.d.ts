@@ -54,6 +54,14 @@ export type ColorPatchEntry = {
 	b: number;
 	a: number;
 };
+/**
+ *  A commit's delta, returned to the frontend for the per-commit diff viewer.
+ *  An updated location appears in both `created` (new) and `removed` (old).
+ */
+export type CommitDelta_Serialize = {
+	created: Location_Serialize[];
+	removed: Location_Serialize[];
+};
 /**  Metadata for a single commit, returned to the frontend for the commit history UI. */
 export type CommitInfo = {
 	id: string;
@@ -1305,13 +1313,10 @@ declare const mma: {
 		storeSeenCountries: () => Promise<string[]>;
 		storeSeenMaps: () => Promise<SeenMapInfo[]>;
 		storeSeenClear: () => Promise<null>;
-		storeCreateCommit: (mapId: string, message: string | null, diff: {
-			added?: number;
-			removed?: number;
-			modified?: number;
-		} | null) => Promise<string>;
+		storeCreateCommit: (mapId: string, message: string | null) => Promise<string>;
 		storeListCommits: (mapId: string) => Promise<CommitInfo[]>;
 		storeCheckoutCommit: (mapId: string, commitId: string) => Promise<null>;
+		storeGetCommitDelta: (mapId: string, commitId: string) => Promise<CommitDelta_Serialize>;
 	};
 	invoke: typeof invoke;
 	shell: {

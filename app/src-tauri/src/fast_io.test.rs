@@ -1,6 +1,7 @@
 use super::*;
 use crate::arrow_bridge;
 use crate::types::Location;
+use crate::util::sha256_hex;
 
 fn sample_loc() -> Location {
     Location {

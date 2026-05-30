@@ -574,7 +574,7 @@ describe("Dirty tracking accuracy", () => {
 		await deleteMap(mapId);
 	});
 
-	it("mutation marks dirty, close/reopen clears it", async () => {
+	it("mutation marks dirty, close/reopen preserves the pending state", async () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [api.createLocation({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
 			await api.addLocations(locs);
@@ -593,7 +593,9 @@ describe("Dirty tracking accuracy", () => {
 		const afterReopen = await withApi(async (api) => {
 			return await api.getDirtyCount();
 		});
-		expect(afterReopen).toBe(0);
+		// Uncommitted edits persist in the delta sidecar and restore on reopen, so the map
+		// reopens dirty (a pending commit) rather than being silently baked into the base.
+		expect(afterReopen).toBeGreaterThan(0);
 	});
 
 	it("mutation after reopen marks dirty again", async () => {

@@ -3,7 +3,6 @@
 //! triggers a native save dialog to move the file to its final destination.
 
 use std::io::Write;
-use crate::arrow_bridge;
 use crate::fast_io;
 use crate::location_store::StoreState;
 use crate::types::LOAD_AS_PANO_ID;
@@ -261,13 +260,8 @@ pub async fn store_export_bulk_zip(
             let mut used_names = std::collections::HashSet::new();
 
             for (map_id, name, _folder, tags_json, extra_json) in &maps {
-                let arrow_path = fast_io::arrow_path(&app2, map_id)?;
-                let locs = if arrow_path.exists() {
-                    let batch = fast_io::read_arrow_ipc(&arrow_path)?;
-                    arrow_bridge::batch_to_locations(&batch)
-                } else {
-                    Vec::new()
-                };
+                // Base file + uncommitted delta sidecar = the map's full current state.
+                let locs = crate::location_store::read_full_state_from_disk(&app2, map_id)?;
 
                 let tag_defs: std::collections::HashMap<String, serde_json::Value> =
                     serde_json::from_str(tags_json).unwrap_or_default();

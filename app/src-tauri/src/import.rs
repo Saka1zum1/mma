@@ -957,7 +957,6 @@ fn add_parsed_to_store(
         store.alive_count += parsed.locations.len();
 
         store.batch = Some(new_batch);
-        store.rebuild_index();
 
         if let Ok(delta_path) = fast_io::arrow_delta_path(app, &map_id) {
             let _ = std::fs::remove_file(delta_path);
