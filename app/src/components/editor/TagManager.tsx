@@ -160,6 +160,7 @@ export function TagManager() {
 						tags={tags}
 						selectedTagIds={selectedTagIds}
 						tagCounts={tagCounts}
+						sortMode={sortMode}
 						onEditTag={setEditingTagId}
 						onRenameTag={setRenamingTag}
 						filterText={filterText}
