@@ -1,5 +1,6 @@
 /** Pure selection transforms. These only manipulate the JS selection tree; Rust resolves the actual bitmasks. */
 
+import { match, P } from "ts-pattern";
 import type { MapData } from "@/types";
 import { hslToRgb } from "@/lib/util/color";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
@@ -44,55 +45,34 @@ function locationsKey(ids: number[]): string {
 }
 
 export function resolveLocations(_map: MapData, props: SelectionProps): number[] {
-	switch (props.type) {
-		case "Locations":
-		case "Manual":
-			return [...props.locations];
-		case "ValidationState":
-			return [...props.locations];
-		case "Intersection":
-		case "Union":
-		case "Invert":
-			return [];
-		default:
-			return [];
-	}
+	return match(props)
+		.with({ type: P.union("Locations", "Manual", "ValidationState") }, (p) => [...p.locations])
+		.otherwise(() => []);
 }
 
 function keyForProps(_map: MapData, props: SelectionProps, locations: number[]): string {
-	switch (props.type) {
-		case "Locations":
-			return locationsKey(locations);
-		case "Everything":
-			return "everything";
-		case "Polygon":
-			// polygon keys are unique per draw; use a generated id stored on first init
-			return `polygon:${crypto.randomUUID()}`;
-		case "Tag":
-			return `tag:${props.tagId}`;
-		case "Untagged":
-			return "untagged";
-		case "Unpanned":
-			return "unpanned";
-		case "PanoIds":
-			return "panoids";
-		case "NotPanoIds":
-			return "notpanoids";
-		case "Duplicates":
-			return `duplicates:${props.distance}`;
-		case "Manual":
-			return "manual";
-		case "ValidationState":
-			return `validation:${props.state}`;
-		case "Intersection":
-			return props.selections.map((s) => `(${s.key})`).join("^");
-		case "Union":
-			return props.selections.map((s) => `(${s.key})`).join("|");
-		case "Invert":
-			return `!${props.selections[0].key}`;
-		case "Filter":
-			return `filter:${props.field}:${props.op}:${String(props.value)}${props.value2 != null ? `:${String(props.value2)}` : ""}`;
-	}
+	return match(props)
+		.with({ type: "Locations" }, () => locationsKey(locations))
+		.with({ type: "Everything" }, () => "everything")
+		// polygon keys are unique per draw; use a generated id stored on first init
+		.with({ type: "Polygon" }, () => `polygon:${crypto.randomUUID()}`)
+		.with({ type: "Tag" }, (p) => `tag:${p.tagId}`)
+		.with({ type: "Untagged" }, () => "untagged")
+		.with({ type: "Unpanned" }, () => "unpanned")
+		.with({ type: "PanoIds" }, () => "panoids")
+		.with({ type: "NotPanoIds" }, () => "notpanoids")
+		.with({ type: "Duplicates" }, (p) => `duplicates:${p.distance}`)
+		.with({ type: "Manual" }, () => "manual")
+		.with({ type: "ValidationState" }, (p) => `validation:${p.state}`)
+		.with({ type: "Intersection" }, (p) => p.selections.map((s) => `(${s.key})`).join("^"))
+		.with({ type: "Union" }, (p) => p.selections.map((s) => `(${s.key})`).join("|"))
+		.with({ type: "Invert" }, (p) => `!${p.selections[0].key}`)
+		.with(
+			{ type: "Filter" },
+			(p) =>
+				`filter:${p.field}:${p.op}:${String(p.value)}${p.value2 != null ? `:${String(p.value2)}` : ""}`,
+		)
+		.exhaustive();
 }
 
 /** Create a Selection with a deterministic key and hashed color from its props. */
@@ -384,37 +364,24 @@ export function composeWithChild(
 
 /** Human-readable label for a selection, resolving tag names and filter ops. */
 export function selectionDisplayName(map: MapData, sel: Selection): string {
-	const p = sel.props;
-	switch (p.type) {
-		case "Locations":
-			return p.name ?? "Selection";
-		case "Everything":
-			return "Everything";
-		case "Polygon":
-			return p.polygon.properties?.name ? `Polygon: ${p.polygon.properties.name}` : "Polygon";
-		case "Tag":
-			return `Tag: ${tagDisplayName(map, p.tagId)}`;
-		case "Untagged":
-			return "Untagged";
-		case "Unpanned":
-			return "Unpanned";
-		case "PanoIds":
-			return "Pano ID locations";
-		case "NotPanoIds":
-			return "Coordinate locations";
-		case "Duplicates":
-			return `Duplicates (${p.distance}m)`;
-		case "Manual":
-			return "Manual selection";
-		case "ValidationState":
-			return validationStateLabel(p.state);
-		case "Intersection":
-			return "Intersection";
-		case "Union":
-			return "Union";
-		case "Invert":
-			return `Invert: ${selectionDisplayName(map, p.selections[0])}`;
-		case "Filter": {
+	return match(sel.props)
+		.with({ type: "Locations" }, (p) => p.name ?? "Selection")
+		.with({ type: "Everything" }, () => "Everything")
+		.with({ type: "Polygon" }, (p) =>
+			p.polygon.properties?.name ? `Polygon: ${p.polygon.properties.name}` : "Polygon",
+		)
+		.with({ type: "Tag" }, (p) => `Tag: ${tagDisplayName(map, p.tagId)}`)
+		.with({ type: "Untagged" }, () => "Untagged")
+		.with({ type: "Unpanned" }, () => "Unpanned")
+		.with({ type: "PanoIds" }, () => "Pano ID locations")
+		.with({ type: "NotPanoIds" }, () => "Coordinate locations")
+		.with({ type: "Duplicates" }, (p) => `Duplicates (${p.distance}m)`)
+		.with({ type: "Manual" }, () => "Manual selection")
+		.with({ type: "ValidationState" }, (p) => validationStateLabel(p.state))
+		.with({ type: "Intersection" }, () => "Intersection")
+		.with({ type: "Union" }, () => "Union")
+		.with({ type: "Invert" }, (p) => `Invert: ${selectionDisplayName(map, p.selections[0])}`)
+		.with({ type: "Filter" }, (p) => {
 			const OP_LABELS: Record<FilterOp, string> = {
 				eq: "=",
 				neq: "!=",
@@ -457,8 +424,8 @@ export function selectionDisplayName(map: MapData, sel: Selection): string {
 			if (p.op === "between")
 				return `${fieldLabel} ${OP_LABELS[p.op as FilterOp]} ${fmtVal(p.value)}..${fmtVal(p.value2)}`;
 			return `${fieldLabel} ${OP_LABELS[p.op as FilterOp]} ${fmtVal(p.value)}`;
-		}
-	}
+		})
+		.exhaustive();
 }
 
 function tagDisplayName(map: MapData, tagId: number): string {

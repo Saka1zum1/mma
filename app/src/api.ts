@@ -21,7 +21,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { getGoogleMap, waitForGoogleMap } from "@/lib/map/mapState";
-import { subscribe, type EditorEvent } from "@/lib/events";
+import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings.add";
 import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen.add";
 import { loadSeenPano } from "@/components/editor/location/LocationPreview";
@@ -44,16 +44,15 @@ async function createLocationStore(): Promise<LocationStore> {
 	const notify = () => { for (const cb of listeners) cb(); };
 
 	const unsubs = [
-		subscribe("location:add", (...args: unknown[]) => {
-			for (const l of args[0] as Location[]) locs.set(l.id, l);
+		subscribe("location:add", (added) => {
+			for (const l of added) locs.set(l.id, l);
 			notify();
 		}),
-		subscribe("location:remove", (...args: unknown[]) => {
-			for (const id of args[0] as number[]) locs.delete(id);
+		subscribe("location:remove", (ids) => {
+			for (const id of ids) locs.delete(id);
 			notify();
 		}),
-		subscribe("location:update", (...args: unknown[]) => {
-			const p = args[0] as Partial<Location> & { id: number };
+		subscribe("location:update", (p) => {
 			const existing = locs.get(p.id);
 			if (existing) locs.set(p.id, { ...existing, ...p });
 			notify();
@@ -73,8 +72,6 @@ async function createLocationStore(): Promise<LocationStore> {
 		},
 	};
 }
-
-type Handler = (...args: unknown[]) => void;
 
 const mma = {
 	ready: false as boolean,
@@ -114,7 +111,7 @@ const mma = {
 	getSettings: () => ({ ...getSettings() }),
 
 	// --- Events (for plugins) ---
-	on(event: EditorEvent, handler: Handler) {
+	on<E extends EditorEvent>(event: E, handler: EventHandler<E>) {
 		const unsub = subscribe(event, handler);
 		trackDisposable(unsub); // auto-removed on plugin deactivation
 		return unsub;

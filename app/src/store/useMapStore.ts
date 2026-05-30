@@ -67,6 +67,14 @@ const storeBus = createBus<() => void>();
 const subscribe = storeBus.on;
 const notify = storeBus.emit;
 
+/** Build a reactive store hook: subscribe to the bus, return the latest value. */
+function makeStoreHook<T>(getValue: () => T, snapshot: () => number = getMapSnapshot): () => T {
+	return function useStoreValue(): T {
+		useSyncExternalStore(subscribe, snapshot);
+		return getValue();
+	};
+}
+
 // --- Map list state ---
 let mapListVersion = 0;
 function getMapListSnapshot() {
@@ -74,10 +82,7 @@ function getMapListSnapshot() {
 }
 
 let cachedMapList: MapMeta[] = [];
-export function useMapList() {
-	useSyncExternalStore(subscribe, getMapListSnapshot);
-	return cachedMapList;
-}
+export const useMapList = makeStoreHook(() => cachedMapList, getMapListSnapshot);
 
 async function reloadMapList() {
 	cachedMapList = await cmd.storeListMaps();
@@ -110,10 +115,7 @@ let undoRedoState = { canUndo: false, canRedo: false };
  *  incrementally via `MutationResult.newFieldKeys`. */
 let knownFieldKeys = new Set<string>();
 
-export function useTagCounts(): Record<number, number> {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return tagCounts;
-}
+export const useTagCounts = makeStoreHook(() => tagCounts);
 
 export function getTagCounts() {
 	return tagCounts;
@@ -141,10 +143,7 @@ export function refreshAfterMutation() {
 	notify();
 }
 
-export function useCurrentMap() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return currentMap;
-}
+export const useCurrentMap = makeStoreHook(() => currentMap);
 
 export function getVisibleTags(): Tag[] {
 	if (!currentMap) return [];
@@ -152,37 +151,19 @@ export function getVisibleTags(): Tag[] {
 }
 
 /** Reactive map version counter. Bumps on every mutation. */
-export function useMapVersion(): number {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return mapVersion;
-}
+export const useMapVersion = makeStoreHook(() => mapVersion);
 
-export function useSelectedLocationIds() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return selectedLocationIds;
-}
+export const useSelectedLocationIds = makeStoreHook(() => selectedLocationIds);
 
 let cachedActiveLocation: Location | null = null;
 
-export function useActiveLocation(): Location | null {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return cachedActiveLocation;
-}
+export const useActiveLocation = makeStoreHook((): Location | null => cachedActiveLocation);
 
-export function useDuplicateLocations(): Location[] {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return duplicateLocations;
-}
+export const useDuplicateLocations = makeStoreHook(() => duplicateLocations);
 
-export function useWorkArea() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return workArea;
-}
+export const useWorkArea = makeStoreHook(() => workArea);
 
-export function useReview() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return review;
-}
+export const useReview = makeStoreHook(() => review);
 
 let cachedCommitDiff = { added: 0, removed: 0, modified: 0 };
 
@@ -301,7 +282,7 @@ export async function openMap(id: string, pushHistory = true) {
 	notify();
 	t.end();
 	if (pushHistory) history.pushState({ mapId: id }, "", `#map/${id}`);
-	emitEvent("map:open", currentMap);
+	if (currentMap) emitEvent("map:open", currentMap);
 }
 
 export async function closeMap(pushHistory = true) {
@@ -341,10 +322,7 @@ export function getKnownFieldKeys(): ReadonlySet<string> {
 }
 
 /** Reactive hook for `knownFieldKeys`. Re-renders when keys are added. */
-export function useKnownFieldKeys(): ReadonlySet<string> {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return knownFieldKeys;
-}
+export const useKnownFieldKeys = makeStoreHook((): ReadonlySet<string> => knownFieldKeys);
 
 export function getActiveLocation(): Location | null {
 	return cachedActiveLocation;
@@ -675,10 +653,7 @@ export async function patchLocationExtra(
 
 // --- Selections ---
 
-export function useSelections() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return selections;
-}
+export const useSelections = makeStoreHook(() => selections);
 
 /** Apply a pure selection transform, then IPC to Rust to resolve bitmasks and sync the overlay. */
 async function applySelectionUpdate(updater: (m: MapData, sels: Selection[]) => Selection[]) {
@@ -939,10 +914,7 @@ export function setWorkArea(area: WorkArea) {
 
 // --- Plugin mode ---
 
-export function useActivePluginId() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return activePluginId;
-}
+export const useActivePluginId = makeStoreHook(() => activePluginId);
 
 export function getWorkArea() {
 	return workArea;
@@ -1139,10 +1111,7 @@ export function getUndoRedoState() {
 	return undoRedoState;
 }
 
-export function useUndoRedo() {
-	useSyncExternalStore(subscribe, getMapSnapshot);
-	return undoRedoState;
-}
+export const useUndoRedo = makeStoreHook(() => undoRedoState);
 
 // --- Version control ---
 
