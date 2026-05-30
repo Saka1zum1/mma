@@ -47,6 +47,7 @@ import {
 	type Selection,
 	type SelectionProps,
 	type PolygonGeometry,
+	type GroupType,
 	addSelection as addSel,
 	removeSelection as removeSel,
 	intersectSelections,
@@ -802,7 +803,7 @@ export function reorderSelection(fromKey: string, toKey: string, position: "befo
 export function composeSelections(
 	dragKey: string,
 	dropKey: string,
-	mode: "intersection" | "union",
+	mode: GroupType,
 	dragParent: string | null,
 	dropParent: string | null,
 ) {

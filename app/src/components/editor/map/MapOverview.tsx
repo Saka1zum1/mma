@@ -226,7 +226,7 @@ function SelectionRow({
 			composeSelections(
 				drag.key,
 				selection.key,
-				drag.altKey ? "union" : "intersection",
+				drag.altKey ? "Union" : "Intersection",
 				drag.parentKey,
 				parentKey ?? null,
 			);

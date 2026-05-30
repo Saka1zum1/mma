@@ -57,7 +57,7 @@ describe("Selection composition", () => {
 			const sels = api.getSelections();
 			const key1 = sels[0].key;
 			const key2 = sels[1].key;
-			api.composeSelections(key1, key2, "intersection", null, null);
+			api.composeSelections(key1, key2, "Intersection", null, null);
 			const after = api.getSelections();
 			return {
 				selCount: after.length,
@@ -75,7 +75,7 @@ describe("Selection composition", () => {
 			await api.selectPanoIds(); // 30
 			await api.selectTag(tagId); // 30 (indices 50-79)
 			const sels = api.getSelections();
-			api.composeSelections(sels[0].key, sels[1].key, "union", null, null);
+			api.composeSelections(sels[0].key, sels[1].key, "Union", null, null);
 			const after = api.getSelections();
 			return {
 				selCount: after.length,
@@ -93,7 +93,7 @@ describe("Selection composition", () => {
 			await api.selectPanoIds();
 			await api.selectTag(tagId);
 			const sels = api.getSelections();
-			api.composeSelections(sels[0].key, sels[1].key, "union", null, null);
+			api.composeSelections(sels[0].key, sels[1].key, "Union", null, null);
 
 			const composite = api.getSelections()[0];
 			const childKey = "selections" in composite.props ? composite.props.selections[0].key : "";
@@ -118,13 +118,13 @@ describe("Selection composition", () => {
 			const sels = api.getSelections();
 
 			// Compose first two
-			api.composeSelections(sels[0].key, sels[1].key, "union", null, null);
+			api.composeSelections(sels[0].key, sels[1].key, "Union", null, null);
 			const compositeKey = api.getSelections()[0].key;
 
 			// Now compose the third into the union
 			const third = api.getSelections().find((s) => s.props.type === "Untagged");
 			if (third) {
-				api.composeSelections(third.key, compositeKey, "union", null, compositeKey);
+				api.composeSelections(third.key, compositeKey, "Union", null, compositeKey);
 			}
 
 			// Remove one child from composite

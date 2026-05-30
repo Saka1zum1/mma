@@ -4,9 +4,18 @@ import { match, P } from "ts-pattern";
 import type { MapData } from "@/types";
 import { hslToRgb } from "@/lib/util/color";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { isVariant, unionTuple, type Variant } from "@/lib/util/union";
 
 export type { Selection, SelectionProps, PolygonGeometry } from "@/bindings.gen";
 import type { Selection, SelectionProps } from "@/bindings.gen";
+
+/** Variants that wrap children — derived as exactly those carrying a `selections` array. */
+export type CompositeType = Extract<SelectionProps, { selections: Selection[] }>["type"];
+/** Composite variants that are flat groups (no negation). */
+export type GroupType = Exclude<CompositeType, "Invert">;
+
+const COMPOSITE_TYPES = unionTuple<CompositeType>()(["Intersection", "Union", "Invert"]);
+const GROUP_TYPES = unionTuple<GroupType>()(["Intersection", "Union"]);
 
 export enum ValidationState {
 	Ok = 0,
@@ -101,8 +110,7 @@ export function addSelection(
 export function removeSelection(current: Selection[], key: string): Selection[] {
 	return current.flatMap((s) => {
 		if (s.key !== key) return [s];
-		if (s.props.type === "Invert" || s.props.type === "Intersection" || s.props.type === "Union")
-			return s.props.selections;
+		if (isVariant(s.props, COMPOSITE_TYPES)) return s.props.selections;
 		return [];
 	});
 }
@@ -163,7 +171,7 @@ export function toggleManualSelection(
 	if (idx === -1)
 		return [...current, buildSelection(map, { type: "Manual", locations: [locationId] })];
 	const sel = current[idx];
-	const ids = (sel.props as Extract<SelectionProps, { type: "Manual" }>).locations.slice();
+	const ids = (sel.props as Variant<SelectionProps, "Manual">).locations.slice();
 	const at = ids.indexOf(locationId);
 	if (at === -1) ids.push(locationId);
 	else ids.splice(at, 1);
@@ -194,7 +202,7 @@ export function composeSelections(
 	current: Selection[],
 	dragKey: string,
 	dropKey: string,
-	mode: "intersection" | "union",
+	mode: GroupType,
 ): Selection[] {
 	const dragIdx = current.findIndex((s) => s.key === dragKey);
 	const dropIdx = current.findIndex((s) => s.key === dropKey);
@@ -202,14 +210,13 @@ export function composeSelections(
 	const drag = current[dragIdx];
 	const drop = current[dropIdx];
 
-	const matchType = mode === "intersection" ? "Intersection" : "Union";
 	let children: Selection[];
-	if (drop.props.type === matchType) {
-		children = [...(drop.props as { selections: Selection[] }).selections, drag];
+	if (isVariant(drop.props, mode)) {
+		children = [...drop.props.selections, drag];
 	} else {
 		children = [drop, drag];
 	}
-	const composite = buildSelection(map, { type: matchType, selections: dedupe(children) });
+	const composite = buildSelection(map, { type: mode, selections: dedupe(children) });
 
 	return current.filter((_, i) => i !== dragIdx).map((s) => (s.key === dropKey ? composite : s));
 }
@@ -220,18 +227,15 @@ function removeChildFromComposite(
 	parentKey: string,
 	childKey: string,
 ): { updated: Selection; removed: Selection } | null {
-	const compositeProps = sel.props.type === "Invert" ? sel.props.selections[0].props : sel.props;
-	if (compositeProps.type !== "Intersection" && compositeProps.type !== "Union") return null;
-	const children = (compositeProps as { selections: Selection[] }).selections;
+	const compositeProps = isVariant(sel.props, "Invert") ? sel.props.selections[0].props : sel.props;
+	if (!isVariant(compositeProps, GROUP_TYPES)) return null;
+	const children = compositeProps.selections;
 
 	if (sel.key === parentKey) {
 		const childIdx = children.findIndex((s) => s.key === childKey);
 		if (childIdx === -1) return null;
 		const child = children[childIdx];
-		const unwrapped =
-			child.props.type === "Intersection" || child.props.type === "Union"
-				? (child.props as { selections: Selection[] }).selections
-				: [];
+		const unwrapped = isVariant(child.props, GROUP_TYPES) ? child.props.selections : [];
 		const remaining = [
 			...children.slice(0, childIdx),
 			...unwrapped,
@@ -309,22 +313,22 @@ export function composeSiblings(
 	parentKey: string,
 	dragKey: string,
 	dropKey: string,
-	mode: "intersection" | "union",
+	mode: GroupType,
 ): Selection[] {
 	const parentIdx = current.findIndex((s) => s.key === parentKey);
 	if (parentIdx === -1) return current;
 	const parent = current[parentIdx];
-	const compositeProps =
-		parent.props.type === "Invert" ? parent.props.selections[0].props : parent.props;
-	if (compositeProps.type !== "Intersection" && compositeProps.type !== "Union") return current;
+	const compositeProps = isVariant(parent.props, "Invert")
+		? parent.props.selections[0].props
+		: parent.props;
+	if (!isVariant(compositeProps, GROUP_TYPES)) return current;
 
-	const children = (compositeProps as { selections: Selection[] }).selections;
+	const children = compositeProps.selections;
 	const dragChild = children.find((s) => s.key === dragKey);
 	const dropChild = children.find((s) => s.key === dropKey);
 	if (!dragChild || !dropChild) return current;
 
-	const matchType = mode === "intersection" ? "Intersection" : "Union";
-	const nested = buildSelection(map, { type: matchType, selections: [dropChild, dragChild] });
+	const nested = buildSelection(map, { type: mode, selections: [dropChild, dragChild] });
 	const newChildren = children
 		.filter((s) => s.key !== dragKey)
 		.map((s) => (s.key === dropKey ? nested : s));
@@ -338,24 +342,24 @@ export function composeWithChild(
 	dragKey: string,
 	parentKey: string,
 	childKey: string,
-	mode: "intersection" | "union",
+	mode: GroupType,
 ): Selection[] {
 	const parentIdx = current.findIndex((s) => s.key === parentKey);
 	const dragIdx = current.findIndex((s) => s.key === dragKey);
 	if (parentIdx === -1 || dragIdx === -1) return current;
 	const parent = current[parentIdx];
 	const drag = current[dragIdx];
-	const compositeProps =
-		parent.props.type === "Invert" ? parent.props.selections[0].props : parent.props;
-	if (compositeProps.type !== "Intersection" && compositeProps.type !== "Union") return current;
+	const compositeProps = isVariant(parent.props, "Invert")
+		? parent.props.selections[0].props
+		: parent.props;
+	if (!isVariant(compositeProps, GROUP_TYPES)) return current;
 
-	const children = (compositeProps as { selections: Selection[] }).selections;
+	const children = compositeProps.selections;
 	const childIdx = children.findIndex((s) => s.key === childKey);
 	if (childIdx === -1) return current;
 	const child = children[childIdx];
 
-	const matchType = mode === "intersection" ? "Intersection" : "Union";
-	const nested = buildSelection(map, { type: matchType, selections: [child, drag] });
+	const nested = buildSelection(map, { type: mode, selections: [child, drag] });
 	const newChildren = children.with(childIdx, nested);
 	const newParent = buildSelection(map, { type: compositeProps.type, selections: newChildren });
 

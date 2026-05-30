@@ -635,7 +635,7 @@ describe("composeSelections", () => {
 	it("drag onto drop creates intersection", () => {
 		const s1 = buildSelection(map, { type: "PanoIds" });
 		const s2 = buildSelection(map, { type: "Untagged" });
-		const result = composeSelections(map, [s1, s2], s2.key, s1.key, "intersection");
+		const result = composeSelections(map, [s1, s2], s2.key, s1.key, "Intersection");
 		expect(result).toHaveLength(1);
 		expect(result[0].props.type).toBe("Intersection");
 	});
@@ -643,7 +643,7 @@ describe("composeSelections", () => {
 	it("drag onto drop creates union", () => {
 		const s1 = buildSelection(map, { type: "PanoIds" });
 		const s2 = buildSelection(map, { type: "Untagged" });
-		const result = composeSelections(map, [s1, s2], s2.key, s1.key, "union");
+		const result = composeSelections(map, [s1, s2], s2.key, s1.key, "Union");
 		expect(result).toHaveLength(1);
 		expect(result[0].props.type).toBe("Union");
 	});
@@ -651,14 +651,14 @@ describe("composeSelections", () => {
 	it("drag onto existing composite adds as child", () => {
 		const s1 = buildSelection(map, { type: "PanoIds" });
 		const s2 = buildSelection(map, { type: "Untagged" });
-		const composed = composeSelections(map, [s1, s2], s2.key, s1.key, "intersection");
+		const composed = composeSelections(map, [s1, s2], s2.key, s1.key, "Intersection");
 		const s3 = buildSelection(map, { type: "Unpanned" });
 		const result = composeSelections(
 			map,
 			[...composed, s3],
 			s3.key,
 			composed[0].key,
-			"intersection",
+			"Intersection",
 		);
 		expect(result).toHaveLength(1);
 		const children = (result[0].props as { selections: any[] }).selections;
@@ -667,13 +667,13 @@ describe("composeSelections", () => {
 
 	it("returns unchanged if drag equals drop", () => {
 		const s1 = buildSelection(map, { type: "PanoIds" });
-		const result = composeSelections(map, [s1], s1.key, s1.key, "intersection");
+		const result = composeSelections(map, [s1], s1.key, s1.key, "Intersection");
 		expect(result).toEqual([s1]);
 	});
 
 	it("returns unchanged if key not found", () => {
 		const s1 = buildSelection(map, { type: "PanoIds" });
-		const result = composeSelections(map, [s1], "nonexistent", s1.key, "intersection");
+		const result = composeSelections(map, [s1], "nonexistent", s1.key, "Intersection");
 		expect(result).toEqual([s1]);
 	});
 });
@@ -687,10 +687,10 @@ describe("decomposeChild", () => {
 		const s3 = buildSelection(map, { type: "Unpanned" });
 		const composed = composeSelections(
 			map,
-			composeSelections(map, [s1, s2], s2.key, s1.key, "intersection").concat(s3),
+			composeSelections(map, [s1, s2], s2.key, s1.key, "Intersection").concat(s3),
 			s3.key,
-			composeSelections(map, [s1, s2], s2.key, s1.key, "intersection")[0].key,
-			"intersection",
+			composeSelections(map, [s1, s2], s2.key, s1.key, "Intersection")[0].key,
+			"Intersection",
 		);
 		const parentKey = composed[0].key;
 		const result = decomposeChild(map, composed, parentKey, s2.key);
@@ -706,8 +706,8 @@ describe("removeFromComposite", () => {
 		const s2 = buildSelection(map, { type: "Untagged" });
 		const s3 = buildSelection(map, { type: "Unpanned" });
 		let sels = [s1, s2, s3];
-		sels = composeSelections(map, sels, s2.key, s1.key, "intersection");
-		sels = composeSelections(map, [...sels, s3], s3.key, sels[0].key, "intersection");
+		sels = composeSelections(map, sels, s2.key, s1.key, "Intersection");
+		sels = composeSelections(map, [...sels, s3], s3.key, sels[0].key, "Intersection");
 		const parentKey = sels[0].key;
 		const result = removeFromComposite(map, sels, parentKey, s2.key);
 		expect(result).toHaveLength(sels.length);
