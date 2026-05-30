@@ -4,6 +4,7 @@ import { google } from "@/lib/sv/opensv";
 import { cameraTypeFromHeight, fetchSvMetadata } from "@/lib/sv/svMeta";
 import { LocationFlag, hasLoadAsPanoId, createLocation } from "@/types";
 import type { Location } from "@/types";
+import { toast } from "@/lib/util/toast.add";
 
 export const SV_SEARCH_RADIUS = 50;
 
@@ -424,45 +425,102 @@ export function showToast(container: HTMLElement, message: string, timeout = 150
 	setTimeout(() => el.remove(), timeout);
 }
 
-export async function downloadPanoTile(panoId: string, zoom = 3): Promise<void> {
-	const cols = 2 ** zoom;
-	const rows = 2 ** (zoom - 1);
-	const tileSize = 512;
-	const canvas = document.createElement("canvas");
-	canvas.width = cols * tileSize;
-	canvas.height = rows * tileSize;
-	const ctx = canvas.getContext("2d")!;
+/** Street View tiles are a fixed 512px pitch in `worldSize` space (e.g. a Gen 3
+ *  pano is 6656 = 13 x 512 wide). */
+const SV_TILE = 512;
 
-	const loads: Promise<void>[] = [];
-	for (let y = 0; y < rows; y++) {
-		for (let x = 0; x < cols; x++) {
-			loads.push(
-				(async () => {
-					const url = `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=${panoId}&x=${x}&y=${y}&zoom=${zoom}&nbt=1&fover=2`;
-					const resp = await fetch(url);
-					if (!resp.ok) return;
-					const blob = await resp.blob();
-					const bmp = await createImageBitmap(blob);
-					ctx.drawImage(bmp, x * tileSize, y * tileSize);
-					bmp.close();
-				})(),
-			);
+/** Number of tiles and the cropped content size for a pano at a given zoom.
+ *  The tile grid rounds up to a power of two; the real image only spans
+ *  `worldSize`. Scale the content down to the requested zoom and crop to it.
+ *  Zoom is clamped to the pano's max (derived from its real width). Falls back
+ *  to the full grid when metadata is unavailable. */
+export function panoTileLayout(
+	zoom: number,
+	worldSize?: { width: number; height: number },
+): { zoom: number; cols: number; rows: number; width: number; height: number; tile: number } {
+	let z = zoom;
+	let width: number;
+	let height: number;
+	if (worldSize?.width && worldSize?.height) {
+		const maxZoom = Math.ceil(Math.log2(worldSize.width / SV_TILE));
+		z = Math.min(Math.max(zoom, 0), maxZoom);
+		const scale = 2 ** (maxZoom - z);
+		width = Math.round(worldSize.width / scale);
+		height = Math.round(worldSize.height / scale);
+	} else {
+		width = 2 ** zoom * SV_TILE;
+		height = 2 ** (zoom - 1) * SV_TILE;
+	}
+	return {
+		zoom: z,
+		cols: Math.ceil(width / SV_TILE),
+		rows: Math.ceil(height / SV_TILE),
+		width,
+		height,
+		tile: SV_TILE,
+	};
+}
+
+async function fetchPanoTile(panoId: string, x: number, y: number, z: number): Promise<ImageBitmap | null> {
+	const url = `https://geo0.ggpht.com/cbk?cb_client=apiv3&panoid=${panoId}&output=tile&zoom=${z}&x=${x}&y=${y}`;
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const resp = await fetch(url);
+			if (!resp.ok) continue;
+			return await createImageBitmap(await resp.blob());
+		} catch {
+			// retry
 		}
 	}
-	await Promise.all(loads);
+	return null;
+}
 
-	canvas.toBlob(
-		(blob) => {
-			if (!blob) return;
-			const a = document.createElement("a");
-			a.href = URL.createObjectURL(blob);
-			a.download = `${panoId}.jpg`;
-			a.click();
-			URL.revokeObjectURL(a.href);
-		},
-		"image/jpeg",
-		0.95,
-	);
+/** Download the full panorama as a single stitched JPEG at max quality. Toasts on success/failure. */
+export async function downloadPano(panoId: string, zoom = 5): Promise<void> {
+	try {
+		const [meta] = await fetchSvMetadata([panoId]);
+		const { zoom: z, cols, rows, width, height, tile } = panoTileLayout(
+			zoom,
+			meta?.tiles?.worldSize,
+		);
+
+		const canvas = document.createElement("canvas");
+		canvas.width = width;
+		canvas.height = height;
+		const ctx = canvas.getContext("2d")!;
+
+		let loaded = 0;
+		const loads: Promise<void>[] = [];
+		for (let y = 0; y < rows; y++) {
+			for (let x = 0; x < cols; x++) {
+				loads.push(
+					(async () => {
+						const bmp = await fetchPanoTile(panoId, x, y, z);
+						if (!bmp) return;
+						ctx.drawImage(bmp, x * tile, y * tile);
+						bmp.close();
+						loaded++;
+					})(),
+				);
+			}
+		}
+		await Promise.all(loads);
+		if (loaded === 0) throw new Error("no tiles loaded");
+
+		const blob = await new Promise<Blob | null>((res) =>
+			canvas.toBlob(res, "image/jpeg", 0.95),
+		);
+		if (!blob) throw new Error("encode failed");
+
+		const a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = `${panoId}.jpg`;
+		a.click();
+		URL.revokeObjectURL(a.href);
+		toast("Panorama downloaded");
+	} catch {
+		toast("Panorama download failed");
+	}
 }
 
 export function svThumbnailUrl(panoId: string, heading: number, width = 320, height = 180): string {

@@ -47,7 +47,7 @@ import {
 	resolvePano,
 	fetchPanoData,
 	followLinkedPanos,
-	downloadPanoTile,
+	downloadPano,
 	showToast,
 	nearestLinkHeading,
 } from "@/lib/sv/lookup.add";
@@ -1032,7 +1032,7 @@ function LocationPreviewInner() {
 
 	useHotkey(useBinding("downloadPanoTile"), () => {
 		const panoId = singletonPano?.getPano();
-		if (panoId) downloadPanoTile(panoId);
+		if (panoId) downloadPano(panoId);
 	});
 	useHotkey(useBinding("nextPanoDate"), () => {
 		if (!panoDates.length) return;

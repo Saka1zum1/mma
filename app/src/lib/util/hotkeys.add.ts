@@ -164,7 +164,7 @@ const RAW_HOTKEY_DEFS: HotkeyDef[] = [
 	},
 	{
 		action: "downloadPanoTile",
-		label: "Download panorama tile",
+		label: "Download panorama",
 		group: "Location Editor",
 		defaultBinding: "Mod+Shift+s",
 	},
