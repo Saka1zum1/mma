@@ -652,7 +652,16 @@ export function MapList() {
 	const listRef = useRef<HTMLUListElement>(null);
 	const filterRef = useRef("");
 	const filterInputRef = useRef<HTMLInputElement>(null);
+	const [hasFilter, setHasFilter] = useState(false);
 	const mapListFields = useSetting("mapListFields");
+
+	const clearFilter = useCallback(() => {
+		if (filterInputRef.current) filterInputRef.current.value = "";
+		filterRef.current = "";
+		setHasFilter(false);
+		applyFilter(listRef.current, "");
+		filterInputRef.current?.focus();
+	}, []);
 
 	useEffect(() => {
 		if (filterRef.current) applyFilter(listRef.current, filterRef.current);
@@ -764,34 +773,64 @@ export function MapList() {
 					>
 						<Icon path={mdiTextSearch} />
 					</span>
-					<input
-						defaultValue=""
-						ref={filterInputRef}
-						onChange={(e) => {
-							filterRef.current = e.target.value.toLowerCase();
-							applyFilter(listRef.current, filterRef.current);
-						}}
-						onKeyDown={(e) => {
-							if (e.key !== "Enter") return;
-							e.preventDefault();
-							const first = listRef.current?.querySelector<HTMLAnchorElement>(
-								"[data-filter-name]:not([hidden]) .map-link",
-							);
-							if (first) {
-								first.click();
-								return;
-							}
-							const name = filterInputRef.current?.value.trim();
-							if (name) {
-								createMap(name).then((m) => openMapWindow(m.id, m.name));
-							}
-						}}
-						className="input"
-						type="text"
-						placeholder="Search maps..."
-						style={{ flexGrow: 1 }}
-						autoFocus
-					/>
+					<span style={{ position: "relative", flexGrow: 1, display: "flex" }}>
+						<input
+							defaultValue=""
+							ref={filterInputRef}
+							onChange={(e) => {
+								filterRef.current = e.target.value.toLowerCase();
+								setHasFilter(e.target.value.length > 0);
+								applyFilter(listRef.current, filterRef.current);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Escape" && filterInputRef.current?.value) {
+									e.preventDefault();
+									clearFilter();
+									return;
+								}
+								if (e.key !== "Enter") return;
+								e.preventDefault();
+								const first = listRef.current?.querySelector<HTMLAnchorElement>(
+									"[data-filter-name]:not([hidden]) .map-link",
+								);
+								if (first) {
+									first.click();
+									return;
+								}
+								const name = filterInputRef.current?.value.trim();
+								if (name) {
+									createMap(name).then((m) => openMapWindow(m.id, m.name));
+								}
+							}}
+							className="input"
+							type="text"
+							placeholder="Search maps..."
+							style={{ flexGrow: 1, paddingRight: hasFilter ? "1.75rem" : undefined }}
+							autoFocus
+						/>
+						{hasFilter && (
+							<button
+								type="button"
+								className="icon-button"
+								aria-label="Clear search"
+								onClick={clearFilter}
+								style={{
+									position: "absolute",
+									right: "0.25rem",
+									top: "50%",
+									transform: "translateY(-50%)",
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									lineHeight: 0,
+									padding: 2,
+									color: "#888",
+								}}
+							>
+								<Icon path={mdiClose} size={16} />
+							</button>
+						)}
+					</span>
 					<select
 						className="nselect map-list__sort"
 						value={sortMode}
