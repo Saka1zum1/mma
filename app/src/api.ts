@@ -13,6 +13,7 @@ import { cmd as commands } from "@/lib/commands";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
 import { registerPlugin } from "@/plugins/registry";
+import { trackDisposable } from "@/plugins/scope";
 import { preloadModules, getAvailableExternals } from "@/plugins/externals";
 import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs.add";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
@@ -114,7 +115,9 @@ const mma = {
 
 	// --- Events (for plugins) ---
 	on(event: EditorEvent, handler: Handler) {
-		return subscribe(event, handler);
+		const unsub = subscribe(event, handler);
+		trackDisposable(unsub); // auto-removed on plugin deactivation
+		return unsub;
 	},
 
 	// --- Seen ---

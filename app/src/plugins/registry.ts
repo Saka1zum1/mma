@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { createSyncStore } from "@/lib/util/syncStore";
+import { runAsPlugin, disposePlugin } from "@/plugins/scope";
 
 export interface PluginSettingDef {
 	key: string;
@@ -45,7 +46,6 @@ export function setPendingManifest(manifest: PluginManifest | null) {
 }
 
 const ENABLED_KEY = "mma_plugins_enabled";
-
 function loadEnabled(): Set<string> {
 	try {
 		return new Set(JSON.parse(localStorage.getItem(ENABLED_KEY) || "[]"));
@@ -110,7 +110,7 @@ export function getEnabledPlugins(): Plugin[] {
 export function activatePlugins() {
 	for (const plugin of getEnabledPlugins()) {
 		if (!cleanups.has(plugin.id)) {
-			const cleanup = plugin.activate();
+			const cleanup = runAsPlugin(plugin.id, () => plugin.activate());
 			if (cleanup) cleanups.set(plugin.id, cleanup);
 		}
 	}
@@ -127,7 +127,7 @@ export function deactivatePlugins() {
 export function activatePlugin(id: string) {
 	const plugin = plugins.get(id);
 	if (!plugin || cleanups.has(id)) return;
-	const cleanup = plugin.activate();
+	const cleanup = runAsPlugin(id, () => plugin.activate());
 	if (cleanup) cleanups.set(id, cleanup);
 }
 
@@ -137,6 +137,9 @@ export function deactivatePlugin(id: string) {
 		cleanup();
 		cleanups.delete(id);
 	}
+	// Reverse every host registration the plugin made during activation, even when it
+	// returned no cleanup — so a disabled plugin's providers/fields/listeners stop.
+	disposePlugin(id);
 }
 
 // --- React subscription for registry changes ---

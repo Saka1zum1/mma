@@ -16,6 +16,13 @@ import {
 	setPendingManifest,
 	getRegistrySnapshot,
 } from "@/plugins/registry";
+import {
+	registerEnrichmentProvider,
+	getEnrichmentProviders,
+	registerEnrichFields,
+	getEnrichFieldOptions,
+} from "@/lib/data/fieldDefs.add";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 
 function makePlugin(id: string, name: string, activate = vi.fn()): Plugin {
 	return { id, name, icon: "test", activate };
@@ -235,5 +242,38 @@ describe("registrySnapshot", () => {
 		setPluginEnabled("s2", false);
 		const v5 = getRegistrySnapshot();
 		expect(v5).toBeGreaterThan(v4);
+	});
+});
+
+describe("plugin deactivation tears down enrichment registrations", () => {
+	it("removes provider, enrich field, and field def on deactivate (no plugin cleanup needed)", () => {
+		const sfx = Math.random().toString(36).slice(2);
+		const pid = "enrich-plugin-" + sfx;
+		const provId = "prov-" + sfx;
+		const fieldKey = "wx_" + sfx;
+
+		// activate() returns nothing — teardown must still happen via the registry.
+		registerPlugin(
+			makePlugin(pid, "Enrich " + sfx, () => {
+				registerEnrichFields([{ key: fieldKey, label: "WX", defaultOff: true }]);
+				registerEnrichmentProvider({
+					id: provId,
+					enrich: async () => new Map(),
+					fieldDefs: { [fieldKey]: { type: "number" as const, label: "WX" } },
+				});
+			}),
+		);
+		setPluginEnabled(pid, true);
+		activatePlugin(pid);
+
+		expect(getEnrichmentProviders().some((p) => p.id === provId)).toBe(true);
+		expect(getEnrichFieldOptions().some((o) => o.key === fieldKey)).toBe(true);
+		expect(getFieldDef(fieldKey)).toBeDefined();
+
+		deactivatePlugin(pid);
+
+		expect(getEnrichmentProviders().some((p) => p.id === provId)).toBe(false);
+		expect(getEnrichFieldOptions().some((o) => o.key === fieldKey)).toBe(false);
+		expect(getFieldDef(fieldKey)).toBeUndefined();
 	});
 });

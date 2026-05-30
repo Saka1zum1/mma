@@ -46,6 +46,14 @@ export function registerPluginFieldDefs(defs: Record<string, ExtraFieldDef>) {
 	pluginDefs = { ...pluginDefs, ...defs };
 }
 
+/** Remove plugin field definitions by key (called when a plugin is deactivated). */
+export function unregisterPluginFieldDefs(keys: string[]) {
+	if (keys.length === 0) return;
+	const next = { ...pluginDefs };
+	for (const k of keys) delete next[k];
+	pluginDefs = next;
+}
+
 /** Load user-customized field definitions from `MapMeta.extra.fields` (called on map open). */
 export function setUserFieldDefs(defs: Record<string, ExtraFieldDef>) {
 	userDefs = defs;

@@ -1,7 +1,8 @@
 import type { ExtraFieldDef } from "@/types";
 import type { Location } from "@/types";
 import { getSettings } from "@/store/settings.add";
-import { registerPluginFieldDefs } from "@/lib/data/fieldDefRegistry";
+import { registerPluginFieldDefs, unregisterPluginFieldDefs } from "@/lib/data/fieldDefRegistry";
+import { trackDisposable } from "@/plugins/scope";
 
 export interface EnrichFieldOption {
 	key: string;
@@ -29,7 +30,13 @@ export function getEnrichFieldOptions(): EnrichFieldOption[] {
 
 export function registerEnrichFields(fields: EnrichFieldOption[]) {
 	for (const f of fields) {
-		if (!pluginFieldOptions.some((e) => e.key === f.key)) pluginFieldOptions.push(f);
+		if (!pluginFieldOptions.some((e) => e.key === f.key)) {
+			pluginFieldOptions.push(f);
+			trackDisposable(() => {
+				const i = pluginFieldOptions.findIndex((e) => e.key === f.key);
+				if (i >= 0) pluginFieldOptions.splice(i, 1);
+			});
+		}
 	}
 }
 
@@ -57,6 +64,12 @@ export function registerEnrichmentProvider(provider: EnrichmentProvider) {
 	if (!providers.some((p) => p.id === provider.id)) {
 		providers.push(provider);
 		registerPluginFieldDefs(provider.fieldDefs);
+		const defKeys = Object.keys(provider.fieldDefs);
+		trackDisposable(() => {
+			const i = providers.findIndex((p) => p.id === provider.id);
+			if (i >= 0) providers.splice(i, 1);
+			unregisterPluginFieldDefs(defKeys);
+		});
 	}
 }
 
