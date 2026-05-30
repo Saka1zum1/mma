@@ -1256,6 +1256,8 @@ declare const mma: {
 		storeSyncSelections: (sels: SelectionInput[]) => Promise<SyncSelectionsResult>;
 		storeGetSelectedIdsList: () => Promise<number[]>;
 		storeResolveSelection: (props: SelectionProps) => Promise<number[]>;
+		storeDuplicateGroups: (distance: number) => Promise<number[][]>;
+		storeMergeDuplicates: (distance: number) => Promise<MutationResult_Serialize>;
 		storeFillRenderFile: (req: RenderRequest) => Promise<string>;
 		storeResolvePick: (cell: string, cellIndex: number) => Promise<number | null>;
 		bulkImportPreview: (path: string) => Promise<ImportPreviewEntry[]>;
@@ -1407,7 +1409,7 @@ declare const mma: {
 	syncSelections(): Promise<{
 		ids: number[];
 	}>;
-	createMap(name: string, folder?: string | null): Promise<void>;
+	createMap(name: string, folder?: string | null): Promise<MapMeta>;
 	deleteMap(id: string): Promise<void>;
 	renameFolder(from: string, to: string): Promise<void>;
 	moveMapToFolder(mapId: string, folder: string | null): Promise<void>;
@@ -1443,6 +1445,8 @@ declare const mma: {
 	selectPanoIds(): Promise<void>;
 	selectNotPanoIds(): Promise<void>;
 	selectDuplicates(distance: number): Promise<void>;
+	previewDuplicateGroups(distance: number): Promise<number[][]>;
+	mergeDuplicates(distance: number): Promise<void>;
 	selectTag(tagId: number): Promise<void>;
 	selectPolygon(polygon: PolygonGeometry, includeInformational?: boolean): Promise<void>;
 	selectFilter(field: string, op: FilterOp, value: unknown, value2?: unknown): Promise<void>;
