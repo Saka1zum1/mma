@@ -164,6 +164,11 @@ export async function enrichAll(
 		const dateTotal = datePending.length;
 		const grandTotal = metaDone + dateTotal;
 
+		// Emit immediately so the bar resets to the date phase before the first
+		// (slow, multi-RPC) resolveExactTimestamp lands — otherwise it sits at a
+		// false 100% until the first location fully resolves.
+		onProgress?.(metaDone, grandTotal);
+
 		let next = 0;
 		async function dateWorker() {
 			while (next < datePending.length) {
