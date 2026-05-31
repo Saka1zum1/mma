@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isFiniteNumber, fovToZoom } from "@/lib/util/util";
+import { isFiniteNumber, fovToZoom, compareNatural } from "@/lib/util/util";
 import { relativeTime } from "@/lib/util/format";
 
 describe("isFiniteNumber", () => {
@@ -47,6 +47,20 @@ describe("fovToZoom", () => {
 		for (let i = 1; i < zooms.length; i++) {
 			expect(zooms[i]).toBeLessThan(zooms[i - 1]);
 		}
+	});
+});
+
+describe("compareNatural", () => {
+	it("orders numeric strings by value, not lexically", () => {
+		expect(["300", "80", "1000", "9"].sort(compareNatural)).toEqual(["9", "80", "300", "1000"]);
+	});
+
+	it("orders embedded-number strings naturally", () => {
+		expect(["80 m", "300 m", "9 m"].sort(compareNatural)).toEqual(["9 m", "80 m", "300 m"]);
+	});
+
+	it("orders plain strings lexically", () => {
+		expect(["gen4", "gen2", "gen1"].sort(compareNatural)).toEqual(["gen1", "gen2", "gen4"]);
 	});
 });
 

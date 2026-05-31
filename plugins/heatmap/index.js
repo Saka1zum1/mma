@@ -924,6 +924,7 @@ var heatmap_layer_default = HeatmapLayer;
 
 // src/heatmap.ts
 var DEFAULT_SETTINGS = {
+  visible: true,
   intensity: 1,
   radiusPixels: 30,
   opacity: 0.6,
@@ -964,6 +965,10 @@ function filterLocations(locs) {
 }
 function rebuild() {
   if (!overlay) return;
+  if (!settings.visible) {
+    overlay.setProps({ layers: [] });
+    return;
+  }
   const data = filterLocations(allLocations());
   const layer = new heatmap_layer_default({
     id: "mma-heatmap",
@@ -1123,6 +1128,18 @@ function HeatmapSidebar({ onClose }) {
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: reset, children: "Reset" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__body", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__control", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { htmlFor: "heatmap-visible", children: "Show heatmap" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "input",
+          {
+            id: "heatmap-visible",
+            type: "checkbox",
+            checked: s.visible,
+            onChange: (e) => updateSettings({ visible: e.target.checked })
+          }
+        )
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__count", children: [
         count.toLocaleString(),
         " location",

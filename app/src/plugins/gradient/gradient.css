@@ -103,7 +103,8 @@
 }
 
 .gradient-sidebar__apply {
-	margin-top: 4px;
+	align-self: flex-start;
+	margin-top: 8px;
 }
 
 .gradient-sidebar__hint {

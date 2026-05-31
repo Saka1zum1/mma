@@ -149,6 +149,16 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 			</header>
 
 			<div className="heatmap-sidebar__body">
+				<div className="heatmap-sidebar__control">
+					<label htmlFor="heatmap-visible">Show heatmap</label>
+					<input
+						id="heatmap-visible"
+						type="checkbox"
+						checked={s.visible}
+						onChange={(e) => updateSettings({ visible: e.target.checked })}
+					/>
+				</div>
+
 				<div className="heatmap-sidebar__count">
 					{count.toLocaleString()} location{count !== 1 ? "s" : ""}
 				</div>

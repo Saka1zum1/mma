@@ -10,6 +10,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import type { ExtraFieldDef } from "@/types";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { compareNatural } from "@/lib/util/util";
 import type { LocationStore } from "@/api";
 import "./pivot.css";
 
@@ -118,7 +119,7 @@ async function computePivot(
 				if (vals) for (const v of vals) seen.add(v);
 			}
 		}
-		columns = [...seen].sort();
+		columns = [...seen].sort(compareNatural);
 	}
 
 	let hasNa = false;

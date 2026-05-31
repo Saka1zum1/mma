@@ -2,6 +2,7 @@ import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 
 export interface HeatmapSettings {
+	visible: boolean;
 	intensity: number;
 	radiusPixels: number;
 	opacity: number;
@@ -10,6 +11,7 @@ export interface HeatmapSettings {
 }
 
 export const DEFAULT_SETTINGS: HeatmapSettings = {
+	visible: true,
 	intensity: 1,
 	radiusPixels: 30,
 	opacity: 0.6,
@@ -64,6 +66,10 @@ function filterLocations(locs: LocPoint[]): LocPoint[] {
 
 function rebuild() {
 	if (!overlay) return;
+	if (!settings.visible) {
+		overlay.setProps({ layers: [] });
+		return;
+	}
 	const data = filterLocations(allLocations());
 
 	const layer = new HeatmapLayer({
