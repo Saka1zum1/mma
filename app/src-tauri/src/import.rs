@@ -788,21 +788,26 @@ pub struct EditorImportPreview {
     pub tags: Vec<Tag>,
     pub fields: Vec<FieldCount>,
     pub warnings: Vec<String>,
+    /// Temp-file path to preview positions: interleaved LE f32 `[lng, lat]` pairs.
+    pub preview_positions_path: String,
+    /// `[west, south, east, north]` bounding box of the import, for map auto-focus.
+    pub bounds: Option<[f64; 4]>,
 }
 
-static EDITOR_IMPORT_CACHE: Mutex<Option<ParsedMap>> = Mutex::new(None);
+/// Write interleaved LE f32 `[lng, lat]` for every location to a temp file.
+fn write_preview_positions(locs: &[Location]) -> Result<String, String> {
+    let mut buf: Vec<u8> = Vec::with_capacity(locs.len() * 8);
+    for l in locs {
+        buf.extend_from_slice(&(l.lng as f32).to_le_bytes());
+        buf.extend_from_slice(&(l.lat as f32).to_le_bytes());
+    }
+    let path = std::env::temp_dir().join("mma_import_preview.bin");
+    std::fs::write(&path, &buf).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
 
-/// Parse a file and return field-level statistics for the editor import dialog.
-/// Caches the parse result for `store_import_file` to consume.
-#[tauri::command]
-#[specta::specta]
-pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String> {
-    let t0 = std::time::Instant::now();
-    let mut buf = std::fs::read(&path).map_err(|e| e.to_string())?;
-    let t_read = t0.elapsed();
-    let parsed = parse_file(&mut buf);
-    log::debug!("[import-preview] read={:.0}ms parse={:.0}ms locs={}", t_read.as_millis(), t0.elapsed().as_millis(), parsed.locations.len());
-
+/// Build preview stats from a parsed map and cache the parse for commit.
+fn build_preview(parsed: ParsedMap) -> Result<EditorImportPreview, String> {
     let mut field_counts: HashMap<String, u32> = HashMap::new();
     for loc in &parsed.locations {
         if loc.heading != 0.0 { *field_counts.entry("heading".into()).or_default() += 1; }
@@ -821,15 +826,49 @@ pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String>
         .map(|(key, count)| FieldCount { key, count })
         .collect();
 
+    let preview_positions_path = write_preview_positions(&parsed.locations)?;
+
     let preview = EditorImportPreview {
         location_count: parsed.locations.len() as u32,
         tags: parsed.tags.clone(),
         fields,
         warnings: parsed.warnings.clone(),
+        preview_positions_path,
+        bounds: compute_bounds(&parsed.locations),
     };
 
     *EDITOR_IMPORT_CACHE.lock().unwrap() = Some(parsed);
     Ok(preview)
+}
+
+static EDITOR_IMPORT_CACHE: Mutex<Option<ParsedMap>> = Mutex::new(None);
+
+/// Parse a file and return field-level statistics + preview positions for the editor
+/// import sidebar. Caches the parse result for `store_import_file` to consume on commit.
+#[tauri::command]
+#[specta::specta]
+pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String> {
+    let t0 = std::time::Instant::now();
+    let mut buf = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let t_read = t0.elapsed();
+    let parsed = parse_file(&mut buf);
+    log::debug!("[import-preview] read={:.0}ms parse={:.0}ms locs={}", t_read.as_millis(), t0.elapsed().as_millis(), parsed.locations.len());
+    build_preview(parsed)
+}
+
+/// Parse pasted text (JSON or CSV) and stage it for preview, exactly like
+/// `store_import_preview` does for a file. Caches the parse for `store_import_file`.
+#[tauri::command]
+#[specta::specta]
+pub fn store_import_paste_preview(text: String) -> Result<EditorImportPreview, String> {
+    let t0 = std::time::Instant::now();
+    let mut buf = text.into_bytes();
+    let parsed = parse_file(&mut buf);
+    if parsed.locations.is_empty() {
+        return Err("no locations found".into());
+    }
+    log::debug!("[paste-preview] parse={:.0}ms locs={}", t0.elapsed().as_millis(), parsed.locations.len());
+    build_preview(parsed)
 }
 
 /// Combined result of an editor import: the mutation delta (for render pipeline)
@@ -841,7 +880,6 @@ pub struct EditorImportResult {
     pub mutation: location_store::MutationResult,
     pub imported_count: u32,
     pub warnings: Vec<String>,
-    pub bounds: Option<[f64; 4]>,
 }
 
 fn compute_bounds(locs: &[Location]) -> Option<[f64; 4]> {
@@ -902,6 +940,7 @@ fn add_parsed_to_store(
     app: &tauri::AppHandle,
     store: &mut location_store::Store,
     parsed: &mut ParsedMap,
+    bulk_tag: Option<&str>,
 ) -> Result<location_store::MutationResult, String> {
     let existing_tags = store.tags.all.clone();
 
@@ -917,6 +956,29 @@ fn add_parsed_to_store(
     for loc in &mut parsed.locations {
         loc.id = store.alloc_id();
         loc.tags = loc.tags.iter().filter_map(|&old| tag_id_remap.get(&old).copied()).collect();
+    }
+
+    // Find-or-create the bulk tag (case-insensitive) and apply it to every location.
+    if let Some(name) = bulk_tag.map(str::trim).filter(|n| !n.is_empty()) {
+        let tag_id = store.tags.all.values()
+            .find(|t| t.name.eq_ignore_ascii_case(name))
+            .map(|t| t.id)
+            .unwrap_or_else(|| {
+                let id = store.alloc_tag_id();
+                store.tags.all.insert(id, Tag {
+                    id,
+                    name: name.to_string(),
+                    color: crate::util::color_for_name(name),
+                    visible: true,
+                    order: None,
+                    count: 0,
+                });
+                store.tags.dirty = true;
+                id
+            });
+        for loc in &mut parsed.locations {
+            if !loc.tags.contains(&tag_id) { loc.tags.push(tag_id); }
+        }
     }
 
     if parsed.locations.len() <= 100_000 {
@@ -982,9 +1044,10 @@ fn add_parsed_to_store(
     Ok(result)
 }
 
-/// Commit a previously previewed editor import, optionally dropping fields.
-/// Consumes the cached parse from `store_import_preview`. Fields in
-/// `dropped_fields` (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
+/// Commit a previously previewed editor import, optionally dropping fields and/or
+/// applying a bulk tag to every imported location. Consumes the cached parse from
+/// `store_import_preview`/`store_import_paste_preview`. Fields in `dropped_fields`
+/// (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 #[tauri::command]
 #[specta::specta]
 pub fn store_import_file(
@@ -992,6 +1055,7 @@ pub fn store_import_file(
     webview: tauri::Webview,
     state: tauri::State<'_, location_store::StoreState>,
     dropped_fields: Vec<String>,
+    tag_name: Option<String>,
 ) -> Result<EditorImportResult, String> {
     let t0 = std::time::Instant::now();
     let mut parsed = EDITOR_IMPORT_CACHE.lock().unwrap().take()
@@ -1015,50 +1079,15 @@ pub fn store_import_file(
     log::debug!("[import] parse=cached locs={}", parsed.locations.len());
 
     with_store!(webview, state, |store| {
-        let mutation = add_parsed_to_store(&app, store, &mut parsed)?;
+        let mutation = add_parsed_to_store(&app, store, &mut parsed, tag_name.as_deref())?;
 
         log::debug!("[import] total={:.0}ms locs={}", t0.elapsed().as_millis(), parsed.locations.len());
 
         Ok(EditorImportResult {
             imported_count: parsed.locations.len() as u32,
-            bounds: compute_bounds(&parsed.locations),
             warnings: parsed.warnings,
             mutation,
         })
-    })
-}
-
-/// Parse raw text (JSON or CSV) as locations and import into the open map.
-/// Handles tag reconciliation, ID allocation, and render delta in one shot.
-#[tauri::command]
-#[specta::specta]
-pub fn store_import_paste(
-    app: tauri::AppHandle,
-    webview: tauri::Webview,
-    state: tauri::State<'_, location_store::StoreState>,
-    text: String,
-) -> Result<(EditorImportResult, Option<u32>), String> {
-    let t0 = std::time::Instant::now();
-    let mut buf = text.into_bytes();
-    let mut parsed = parse_file(&mut buf);
-    if parsed.locations.is_empty() {
-        return Err("no locations found".into());
-    }
-    log::debug!("[paste-import] parse={:.0}ms locs={}", t0.elapsed().as_millis(), parsed.locations.len());
-
-    with_store!(webview, state, |store| {
-        let mutation = add_parsed_to_store(&app, store, &mut parsed)?;
-
-        log::debug!("[paste-import] total={:.0}ms locs={}", t0.elapsed().as_millis(), parsed.locations.len());
-
-        let single_id = if parsed.locations.len() == 1 { parsed.locations.first().map(|l| l.id) } else { None };
-
-        Ok((EditorImportResult {
-            imported_count: parsed.locations.len() as u32,
-            bounds: compute_bounds(&parsed.locations),
-            warnings: parsed.warnings,
-            mutation,
-        }, single_id))
     })
 }
 

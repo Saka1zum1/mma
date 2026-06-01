@@ -247,21 +247,22 @@ export const commands = {
 	 */
 	bulkImportConfirm: (path: string, selectedIndices: number[]) => typedError<ImportedMapInfo[], string>(__TAURI_INVOKE("bulk_import_confirm", { path, selectedIndices })),
 	/**
-	 *  Parse a file and return field-level statistics for the editor import dialog.
-	 *  Caches the parse result for `store_import_file` to consume.
+	 *  Parse a file and return field-level statistics + preview positions for the editor
+	 *  import sidebar. Caches the parse result for `store_import_file` to consume on commit.
 	 */
-	storeImportPreview: (path: string) => typedError<EditorImportPreview, string>(__TAURI_INVOKE("store_import_preview", { path })),
+	storeImportPreview: (path: string) => typedError<EditorImportPreview, string>(__TAURI_INVOKE("store_import_preview", { path })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,bounds:v.data.bounds==null?v.data.bounds:v.data.bounds.map(i=>i)}) } : v) as typeof v)),
 	/**
-	 *  Commit a previously previewed editor import, optionally dropping fields.
-	 *  Consumes the cached parse from `store_import_preview`. Fields in
-	 *  `dropped_fields` (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
+	 *  Parse pasted text (JSON or CSV) and stage it for preview, exactly like
+	 *  `store_import_preview` does for a file. Caches the parse for `store_import_file`.
 	 */
-	storeImportFile: (droppedFields: string[]) => typedError<EditorImportResult_Serialize, string>(__TAURI_INVOKE("store_import_file", { droppedFields })).then((v) => ((v.status === "ok" ? { ...v, data: ({...({...v.data,bounds:v.data.bounds==null?v.data.bounds:v.data.bounds.map(i=>i)}),...({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})})}) } : v) as typeof v)),
+	storeImportPastePreview: (text: string) => typedError<EditorImportPreview, string>(__TAURI_INVOKE("store_import_paste_preview", { text })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,bounds:v.data.bounds==null?v.data.bounds:v.data.bounds.map(i=>i)}) } : v) as typeof v)),
 	/**
-	 *  Parse raw text (JSON or CSV) as locations and import into the open map.
-	 *  Handles tag reconciliation, ID allocation, and render delta in one shot.
+	 *  Commit a previously previewed editor import, optionally dropping fields and/or
+	 *  applying a bulk tag to every imported location. Consumes the cached parse from
+	 *  `store_import_preview`/`store_import_paste_preview`. Fields in `dropped_fields`
+	 *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
-	storeImportPaste: (text: string) => typedError<[EditorImportResult_Serialize, number | null], string>(__TAURI_INVOKE("store_import_paste", { text })).then((v) => ((v.status === "ok" ? { ...v, data: ([({...({...v.data[0],bounds:v.data[0].bounds==null?v.data[0].bounds:v.data[0].bounds.map(i=>i)}),...({...v.data[0],delta:({...v.data[0].delta,added:v.data[0].delta.added.map(i=>i),updated:v.data[0].delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})})}),v.data[1]]) } : v) as typeof v)),
+	storeImportFile: (droppedFields: string[], tagName: string | null) => typedError<EditorImportResult_Serialize, string>(__TAURI_INVOKE("store_import_file", { droppedFields, tagName })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))})}) } : v) as typeof v)),
 	/**
 	 *  Export locations as a map-making.app-compatible JSON file.
 	 * 
@@ -444,6 +445,10 @@ export type EditorImportPreview = {
 	tags: Tag[],
 	fields: FieldCount[],
 	warnings: string[],
+	/**  Temp-file path to preview positions: interleaved LE f32 `[lng, lat]` pairs. */
+	previewPositionsPath: string,
+	/**  `[west, south, east, north]` bounding box of the import, for map auto-focus. */
+	bounds: [number, number, number, number] | null,
 };
 
 /**
@@ -459,7 +464,6 @@ export type EditorImportResult = EditorImportResult_Serialize | EditorImportResu
 export type EditorImportResult_Deserialize = {
 	importedCount: number,
 	warnings: string[],
-	bounds: [number, number, number, number] | null,
 } & MutationResult_Deserialize;
 
 /**
@@ -469,7 +473,6 @@ export type EditorImportResult_Deserialize = {
 export type EditorImportResult_Serialize = {
 	importedCount: number,
 	warnings: string[],
-	bounds: [number, number, number, number] | null,
 } & MutationResult_Serialize;
 
 /**

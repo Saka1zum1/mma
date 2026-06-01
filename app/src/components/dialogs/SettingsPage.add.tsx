@@ -589,10 +589,10 @@ function MapNavigationSection() {
 			<label className="settings-popup__item">
 				<input
 					type="checkbox"
-					checked={s.panOnPaste}
-					onChange={(e) => setSetting("panOnPaste", e.target.checked)}
+					checked={s.panToImported}
+					onChange={(e) => setSetting("panToImported", e.target.checked)}
 				/>
-				Pan to pasted locations
+				Pan to imported locations
 			</label>
 		</fieldset>
 	);

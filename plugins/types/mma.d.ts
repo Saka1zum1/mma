@@ -100,6 +100,14 @@ export type EditorImportPreview = {
 	tags: Tag[];
 	fields: FieldCount[];
 	warnings: string[];
+	/**
+	 *  `[lng, lat]` pairs for staged preview markers, capped at `PREVIEW_POS_CAP`.
+	 *  Truncated for very large imports to bound the render/IPC cost.
+	 */
+	previewPositions: ([
+		number,
+		number
+	])[];
 };
 /**
  *  Combined result of an editor import: the mutation delta (for render pipeline)
@@ -635,11 +643,36 @@ export type Tag = {
 };
 type Location$1 = Location_Serialize;
 type Tag$1 = Tag;
+export type ImportPreview = EditorImportPreview;
 declare function createLocation(partial: Partial<Location$1> & {
 	lat: number;
 	lng: number;
 }): Location$1;
 export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin";
+export type RenderDelta = RenderDelta_Serialize;
+/** Variants that wrap children — derived as exactly those carrying a `selections` array. */
+export type CompositeType = Extract<SelectionProps, {
+	selections: Selection$1[];
+}>["type"];
+/** Composite variants that are flat groups (no negation). */
+export type GroupType = Exclude<CompositeType, "Invert">;
+declare enum ValidationState {
+	Ok = 0,
+	UpdateAvailable = 1,
+	UpdateApplied = 2,
+	NotFound = 3,
+	PanoIdBroke = 4,
+	Unofficial = 5,
+	GoodcamAvailable = 6
+}
+export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas";
+/** Staged (parsed-but-not-committed) import. Set while `workArea === "import"`.
+ *  The parse itself lives in Rust's EDITOR_IMPORT_CACHE; this is the preview the
+ *  sidebar renders + the positions the map draws as green markers. */
+export interface ImportStaging {
+	preview: ImportPreview;
+	source: "file" | "paste";
+}
 export interface EnrichFieldOption {
 	key: string;
 	label: string;
@@ -1031,22 +1064,6 @@ export type FileAccessMode = "copy" | "scoped";
 export type OpenDialogReturn<T extends OpenDialogOptions> = T["directory"] extends true ? T["multiple"] extends true ? string[] | null : string | null : T["multiple"] extends true ? string[] | null : string | null;
 declare function open$1<T extends OpenDialogOptions>(options?: T): Promise<OpenDialogReturn<T>>;
 declare function save(options?: SaveDialogOptions): Promise<string | null>;
-/** Variants that wrap children — derived as exactly those carrying a `selections` array. */
-export type CompositeType = Extract<SelectionProps, {
-	selections: Selection$1[];
-}>["type"];
-/** Composite variants that are flat groups (no negation). */
-export type GroupType = Exclude<CompositeType, "Invert">;
-declare enum ValidationState {
-	Ok = 0,
-	UpdateAvailable = 1,
-	UpdateApplied = 2,
-	NotFound = 3,
-	PanoIdBroke = 4,
-	Unofficial = 5,
-	GoodcamAvailable = 6
-}
-export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas";
 /** Payload type for each editor event. `void` means the event carries no payload. */
 export interface EditorEventMap {
 	"location:add": Location$1[];
@@ -1179,7 +1196,6 @@ export interface EnrichResult {
 	dateSuccess: number[];
 	dateFailed: number[];
 }
-export type RenderDelta = RenderDelta_Serialize;
 export interface LocationStore {
 	locations: Map<number, Location$1>;
 	onChange(cb: () => void): () => void;
@@ -1290,7 +1306,8 @@ declare const mma: {
 		bulkImportPreview: (path: string) => Promise<ImportPreviewEntry[]>;
 		bulkImportConfirm: (path: string, selectedIndices: number[]) => Promise<ImportedMapInfo[]>;
 		storeImportPreview: (path: string) => Promise<EditorImportPreview>;
-		storeImportFile: (droppedFields: string[]) => Promise<EditorImportResult_Serialize>;
+		storeImportPastePreview: (text: string) => Promise<EditorImportPreview>;
+		storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<EditorImportResult_Serialize>;
 		storeImportPaste: (text: string) => Promise<[
 			EditorImportResult_Serialize,
 			number | null
@@ -1395,6 +1412,10 @@ declare const mma: {
 	getTagCounts(): Record<number, number>;
 	refreshAfterMutation(): void;
 	getVisibleTags(): Tag$1[];
+	getImportPreviewPositions(): [
+		number,
+		number
+	][];
 	hasCommitDiff(): boolean;
 	useCommitDiff(): {
 		added: number;
@@ -1492,11 +1513,10 @@ declare const mma: {
 	addTagToLocations(tagId: number, locationIds: number[]): Promise<void>;
 	removeTagFromLocations(tagId: number, locationIds: number[]): Promise<void>;
 	removeTagFromAllLocations(tagId: number): Promise<void>;
-	importFile(droppedFields: string[]): Promise<EditorImportResult_Serialize>;
-	importPaste(text: string): Promise<readonly [
-		EditorImportResult_Serialize,
-		number | null
-	]>;
+	beginImportFile(): Promise<void>;
+	beginImportPaste(text: string): Promise<void>;
+	confirmImport(droppedFields: string[], tagName?: string): Promise<EditorImportResult_Serialize | null>;
+	cancelImport(): void;
 	beginReview(locationIds: number[]): Promise<void>;
 	cancelReview(): void;
 	reviewNext(): Promise<void>;
@@ -1542,6 +1562,8 @@ declare const mma: {
 	useActiveLocation: () => Location_Serialize | null;
 	useDuplicateLocations: () => Location_Serialize[];
 	useWorkArea: () => WorkArea;
+	useImportStaging: () => ImportStaging | null;
+	useImportMarkerVersion: () => number;
 	useReview: () => {
 		locations: number[];
 		index: number;

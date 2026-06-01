@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
-import type { MapData, MapMeta, Location, Tag, WorkArea, ExtraFieldDef } from "@/types";
+import type { MapData, MapMeta, Location, Tag, WorkArea, ExtraFieldDef, ImportPreview } from "@/types";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { emit as tauriEmit, listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
@@ -12,6 +13,8 @@ import { emit as emitEvent } from "@/lib/events";
 import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
 import { mmaBufUrl } from "@/lib/util/util";
+import { fitMapToBounds } from "@/lib/map/mapState";
+import { getSettings } from "@/store/settings.add";
 import { getTriggeredProviders } from "@/lib/data/fieldDefs.add";
 import { setUserFieldDefs, mergeUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 import type { RenderDelta } from "@/lib/render/CellManager";
@@ -116,6 +119,16 @@ let undoRedoState = { canUndo: false, canRedo: false };
  *  incrementally via `MutationResult.newFieldDefs`. */
 let knownFieldKeys = new Set<string>();
 
+/** Parsed-but-not-committed import shown while `workArea === "import"`. */
+export interface ImportStaging {
+	preview: ImportPreview;
+	source: "file" | "paste";
+}
+let importStaging: ImportStaging | null = null;
+/** Interleaved `[lng, lat]` f32 preview-marker positions; `importMarkerVersion` bumps to rebuild the layer. */
+let importPreviewPositions = new Float32Array(0);
+let importMarkerVersion = 0;
+
 export const useTagCounts = makeStoreHook(() => tagCounts);
 
 export function getTagCounts() {
@@ -163,6 +176,15 @@ export const useActiveLocation = makeStoreHook((): Location | null => cachedActi
 export const useDuplicateLocations = makeStoreHook(() => duplicateLocations);
 
 export const useWorkArea = makeStoreHook(() => workArea);
+
+export const useImportStaging = makeStoreHook(() => importStaging);
+
+/** Reactive counter for the staged import preview markers. */
+export const useImportMarkerVersion = makeStoreHook(() => importMarkerVersion);
+
+export function getImportPreviewPositions() {
+	return importPreviewPositions;
+}
 
 export const useReview = makeStoreHook(() => review);
 
@@ -278,6 +300,8 @@ export async function openMap(id: string, pushHistory = true) {
 	activeLocationId = null;
 	review = null;
 	workArea = "overview";
+	importStaging = null;
+	importPreviewPositions = new Float32Array(0);
 
 	mapVersion++;
 	notify();
@@ -297,6 +321,8 @@ export async function closeMap(pushHistory = true) {
 	activeLocationId = null;
 	review = null;
 	workArea = "overview";
+	importStaging = null;
+	importPreviewPositions = new Float32Array(0);
 	knownFieldKeys = new Set();
 	resetForMapChange();
 
@@ -1008,20 +1034,57 @@ export async function removeTagFromAllLocations(tagId: number) {
 
 // --- Import ---
 
-/** Import a file (previously previewed via storeImportPreview). Syncs all
- *  state (tags, counts, render) via mutate. */
-export async function importFile(droppedFields: string[]) {
-	const r = await cmd.storeImportFile(droppedFields);
+async function setImportStaging(preview: ImportPreview, source: "file" | "paste") {
+	let positions = new Float32Array(0);
+	try {
+		const resp = await fetch(mmaBufUrl(preview.previewPositionsPath));
+		positions = new Float32Array(await resp.arrayBuffer());
+	} catch (e) {
+		log.error("[import] preview positions fetch failed:", e);
+	}
+	importStaging = { preview, source };
+	importPreviewPositions = positions;
+	importMarkerVersion++;
+	workArea = "import";
+	mapVersion++;
+	notify();
+	if (getSettings().panToImported) fitMapToBounds(preview.bounds, 100);
+}
+
+/** Pick a file, stage it for preview. No-op if the picker is cancelled. */
+export async function beginImportFile() {
+	const path = await openFileDialog({
+		multiple: false,
+		filters: [{ name: "Map data", extensions: ["json", "csv"] }],
+	});
+	if (!path || typeof path !== "string") return;
+	const preview = await cmd.storeImportPreview(path);
+	await setImportStaging(preview, "file");
+}
+
+/** Stage pasted text for preview. Throws if no locations are found. */
+export async function beginImportPaste(text: string) {
+	const preview = await cmd.storeImportPastePreview(text);
+	await setImportStaging(preview, "paste");
+}
+
+/** Commit the staged import, optionally dropping fields and applying a bulk tag. */
+export async function confirmImport(droppedFields: string[], tagName?: string) {
+	if (!importStaging) return null;
+	const r = await cmd.storeImportFile(droppedFields, tagName?.trim() || null);
+	cancelImport();
 	await mutate(Promise.resolve(r));
 	return r;
 }
 
-/** Import locations from pasted text (JSON or CSV). Returns the import
- *  result and the single location ID if exactly one was pasted. */
-export async function importPaste(text: string) {
-	const [r, singleId] = await cmd.storeImportPaste(text);
-	await mutate(Promise.resolve(r));
-	return [r, singleId] as const;
+/** Discard the staged import without committing. */
+export function cancelImport() {
+	importStaging = null;
+	importPreviewPositions = new Float32Array(0);
+	importMarkerVersion++;
+	if (workArea === "import") workArea = "overview";
+	mapVersion++;
+	notify();
 }
 
 // --- Review ---

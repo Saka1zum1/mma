@@ -34,6 +34,8 @@ import {
 	addLocations,
 	getWorkArea,
 	getSelectedLocationIds,
+	useImportMarkerVersion,
+	getImportPreviewPositions,
 	renderDeltaBus,
 	selBitmaskBus,
 } from "@/store/useMapStore";
@@ -298,6 +300,7 @@ export function MapEmbed() {
 	const allSelections = useSelections();
 	const activeLocation = useActiveLocation();
 	const trailVersion = useTrailVersion();
+	const importMarkerVersion = useImportMarkerVersion();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const cellMgrRef = useRef(new CellManager());
 	const [renderTick, setRenderTick] = useState(0);
@@ -752,6 +755,26 @@ export function MapEmbed() {
 			);
 		}
 
+		// Staged import preview markers (green), non-pickable so they don't intercept clicks.
+		if (getWorkArea() === "import") {
+			const previewPos = getImportPreviewPositions();
+			const previewCount = previewPos.length / 2;
+			if (previewCount > 0) {
+				layers.push(
+					new ScatterplotLayer({
+						id: "import-preview",
+						data: { length: previewCount, attributes: { getPosition: { value: previewPos, size: 2 } } },
+						getRadius: 4,
+						radiusUnits: "pixels",
+						radiusMinPixels: 2,
+						getFillColor: [34, 197, 94, 200],
+						stroked: false,
+						pickable: false,
+					}),
+				);
+			}
+		}
+
 		return layers;
 	}, [
 		markerVisibility,
@@ -763,6 +786,7 @@ export function MapEmbed() {
 		latLngAnchor,
 		renderTick,
 		trailVersion,
+		importMarkerVersion,
 	]);
 
 	const dispatchContextMenu = useCallback((clientX: number, clientY: number) => {
@@ -839,6 +863,7 @@ export function MapEmbed() {
 				const [lng, lat] = info.coordinate;
 				if (tryInterceptClick(lat, lng)) return;
 				if (getWorkArea() === "plugin") return;
+				if (getWorkArea() === "import") return;
 				const g = gRef.current;
 				if (!g) return;
 				const currentZoom = gMapRef.current?.getZoom() ?? 2;
@@ -1359,6 +1384,7 @@ export function MapEmbed() {
 		isMeasuring,
 		latLngAnchor,
 		trailVersion,
+		importMarkerVersion,
 	]);
 
 	useEffect(() => {

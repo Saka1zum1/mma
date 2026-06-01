@@ -8,14 +8,15 @@ import {
 	setActiveLocation,
 	getActiveLocation,
 	createTags,
-	importPaste,
+	beginImportPaste,
 } from "@/store/useMapStore";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
-import { getGoogleMap as getGoogleMapInstance, waitForGoogleMap } from "@/lib/map/mapState";
+import { getGoogleMap as getGoogleMapInstance, waitForGoogleMap, fitMapToBounds } from "@/lib/map/mapState";
 import { pluginsReady } from "@/plugins";
 import { MapEmbed } from "@/components/editor/map/MapEmbed";
 import { MapMetaBar } from "@/components/editor/map/MapMetaBar";
 import { MapOverview } from "@/components/editor/map/MapOverview";
+import { ImportSidebar } from "@/components/editor/ImportSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
@@ -33,11 +34,8 @@ import { log } from "@/lib/util/log"
 import { useCountrySelect } from "@/lib/map/useCountrySelect.add";
 
 function zoomToPasted(bounds: [number, number, number, number] | null, padding = 0) {
-	if (!bounds || !getSettings().panOnPaste) return;
-	const gm = getGoogleMapInstance();
-	if (!gm) return;
-	const [west, south, east, north] = bounds;
-	gm.fitBounds({ west, south, east, north }, padding);
+	if (!getSettings().panToImported) return;
+	fitMapToBounds(bounds, padding);
 }
 
 function usePasteHandler() {
@@ -68,13 +66,9 @@ function usePasteHandler() {
 			}
 
 			try {
-				const [r, singleId] = await importPaste(text);
-				if (r.importedCount > 0) {
-					if (singleId != null) setActiveLocation(singleId);
-					zoomToPasted(r.bounds, 100);
-				}
+				await beginImportPaste(text);
 			} catch {
-				log.warn('Couldn\'t import locations via paste.')
+				log.warn("Couldn't import locations via paste.");
 			}
 		}
 		document.body.addEventListener("paste", onPaste);
@@ -271,6 +265,7 @@ export function MapEditor() {
 			{workArea === "overview" && <MapOverview />}
 			{workArea === "location" && <LocationPreview />}
 			{workArea === "duplicates" && <SameLocation />}
+			{workArea === "import" && <ImportSidebar />}
 			{workArea === "plugin" && <PluginSidebarHost />}
 			<CommandPalette />
 		</div>

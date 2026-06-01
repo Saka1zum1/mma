@@ -25,6 +25,15 @@ export function waitForGoogleMap(): Promise<google.maps.Map> {
 	return mapReadyPromise;
 }
 
+/** fitBounds the map to a `[west, south, east, north]` box. No-op if no map or no bounds. */
+export function fitMapToBounds(bounds: [number, number, number, number] | null | undefined, padding = 0) {
+	if (!bounds) return;
+	const gm = googleMap;
+	if (!gm) return;
+	const [west, south, east, north] = bounds;
+	gm.fitBounds({ west, south, east, north }, padding);
+}
+
 type ClickInterceptor = (lat: number, lng: number) => boolean;
 let clickInterceptor: ClickInterceptor | null = null;
 
