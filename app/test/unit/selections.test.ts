@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
 	colorForKey,
 	buildSelection,
@@ -280,6 +280,22 @@ describe("reorderSelections", () => {
 });
 
 describe("selectionDisplayName", () => {
+	// Core field defs live in Rust now, not in a JS table, so seed fake fields covering
+	// each type. These exercise the display mechanics (label, op symbol, enum/date/month
+	// formatting) without depending on any specific real field's catalog entry.
+	beforeEach(() => {
+		setUserFieldDefs({
+			label: { type: "string", label: "Country code" },
+			height: { type: "number", label: "Altitude" },
+			cam: { type: "enum", label: "Camera type", values: ["gen4"], labels: { gen4: "Gen 4" } },
+			month: { type: "month", label: "Image date" },
+			exact: { type: "date", label: "Exact date" },
+		});
+	});
+	afterEach(() => {
+		resetForMapChange();
+	});
+
 	it("returns type name for simple types", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, { type: "Everything" });
@@ -302,7 +318,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "countryCode",
+			field: "label",
 			op: "eq",
 			value: "BR",
 		});
@@ -313,7 +329,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "between",
 			value: 0,
 			value2: 3000,
@@ -321,15 +337,11 @@ describe("selectionDisplayName", () => {
 		expect(selectionDisplayName(map, sel)).toBe("Altitude between 0..3000");
 	});
 
-	afterEach(() => {
-		resetForMapChange();
-	});
-
 	it("display name for Filter neq", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "countryCode",
+			field: "label",
 			op: "neq",
 			value: "BR",
 		});
@@ -340,7 +352,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "gt",
 			value: 500,
 		});
@@ -351,7 +363,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "lt",
 			value: 100,
 		});
@@ -362,7 +374,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "gte",
 			value: 200,
 		});
@@ -373,7 +385,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "lte",
 			value: 300,
 		});
@@ -384,7 +396,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "has",
 			value: null,
 		});
@@ -395,7 +407,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "altitude",
+			field: "height",
 			op: "nothas",
 			value: null,
 		});
@@ -406,7 +418,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "imageDate",
+			field: "month",
 			op: "between_anyyear",
 			value: "01-15",
 			value2: "03-20",
@@ -418,7 +430,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "imageDate",
+			field: "month",
 			op: "between_anytime",
 			value: "08:00",
 			value2: "16:00",
@@ -430,7 +442,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "cameraType",
+			field: "cam",
 			op: "eq",
 			value: "gen4",
 		});
@@ -441,7 +453,7 @@ describe("selectionDisplayName", () => {
 		const map = makeMap();
 		const sel = buildSelection(map, {
 			type: "Filter",
-			field: "datetime",
+			field: "exact",
 			op: "gt",
 			value: 1700000000,
 		});

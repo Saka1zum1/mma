@@ -12,31 +12,14 @@ beforeEach(() => {
 	resetForMapChange();
 });
 
-describe("core defs", () => {
-	it("returns curated defs for known SV metadata keys", () => {
-		const alt = getFieldDef("altitude");
-		expect(alt).toBeDefined();
-		expect(alt!.type).toBe("number");
-		expect(alt!.label).toBe("Altitude");
-	});
+// Core field defs live in Rust (`known_field_def`) and reach the registry only via
+// the user layer (persisted into a map's `extra.fields`). The JS registry itself has
+// no hardcoded core layer — it resolves user > plugin only.
 
-	it("returns enum values for cameraType", () => {
-		const cam = getFieldDef("cameraType");
-		expect(cam).toBeDefined();
-		expect(cam!.type).toBe("enum");
-		expect(cam!.values).toContain("gen1");
-		expect(cam!.values).toContain("tripod");
-		expect(cam!.labels!["gen1"]).toBe("Gen 1");
-	});
-
-	it("returns undefined for unknown keys", () => {
+describe("lookup", () => {
+	it("returns undefined for keys with no def in any layer", () => {
 		expect(getFieldDef("plumbus")).toBeUndefined();
-	});
-
-	it("covers all 7 core SV metadata keys", () => {
-		for (const key of ["altitude", "countryCode", "cameraType", "panoType", "imageDate", "datetime", "timezone"]) {
-			expect(getFieldDef(key)).toBeDefined();
-		}
+		expect(getFieldDef("altitude")).toBeUndefined();
 	});
 });
 
@@ -57,27 +40,9 @@ describe("plugin defs", () => {
 		resetForMapChange();
 		expect(getFieldDef("sunAzimuth")).toBeDefined();
 	});
-
-	it("plugin defs do not override core defs", () => {
-		registerPluginFieldDefs({
-			altitude: { type: "string", label: "Wrong" },
-		});
-		// core wins in getFieldDef because user > plugin > core,
-		// but plugin shouldn't override core -- actually plugin does override core
-		// in the current priority: user > plugin > core
-		const def = getFieldDef("altitude");
-		expect(def!.label).toBe("Wrong");
-	});
 });
 
 describe("user defs (highest priority)", () => {
-	it("overrides core defs", () => {
-		setUserFieldDefs({
-			altitude: { type: "number", label: "Elevation (m)" },
-		});
-		expect(getFieldDef("altitude")!.label).toBe("Elevation (m)");
-	});
-
 	it("overrides plugin defs", () => {
 		registerPluginFieldDefs({
 			sunAzimuth: { type: "number", label: "Sun azimuth" },
@@ -100,7 +65,7 @@ describe("user defs (highest priority)", () => {
 });
 
 describe("getAllFieldDefs", () => {
-	it("merges all layers", () => {
+	it("merges user and plugin layers", () => {
 		registerPluginFieldDefs({
 			sunAzimuth: { type: "number", label: "Sun azimuth" },
 		});
@@ -111,20 +76,19 @@ describe("getAllFieldDefs", () => {
 		const all = getAllFieldDefs();
 		expect(all.altitude.label).toBe("Custom alt");
 		expect(all.sunAzimuth.label).toBe("Sun azimuth");
-		expect(all.countryCode.label).toBe("Country code");
 		expect(all.userField.label).toBe("Custom");
 	});
 
-	it("returns core defs when no other layers are set", () => {
-		const all = getAllFieldDefs();
-		expect(Object.keys(all).length).toBeGreaterThanOrEqual(7);
-		expect(all.altitude).toBeDefined();
-		expect(all.datetime).toBeDefined();
+	it("drops user defs after resetForMapChange", () => {
+		setUserFieldDefs({ onlyUser: { type: "string", label: "User" } });
+		expect(getAllFieldDefs().onlyUser).toBeDefined();
+		resetForMapChange();
+		expect(getAllFieldDefs().onlyUser).toBeUndefined();
 	});
 });
 
 describe("priority order", () => {
-	it("user > plugin > core", () => {
+	it("user > plugin", () => {
 		registerPluginFieldDefs({
 			altitude: { type: "number", label: "Plugin alt" },
 		});
