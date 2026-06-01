@@ -14,9 +14,16 @@ import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
 import { mmaBufUrl } from "@/lib/util/util";
 import { fitMapToBounds } from "@/lib/map/mapState";
-import { getSettings } from "@/store/settings.add";
+import { getSettings, setSetting } from "@/store/settings.add";
 import { getTriggeredProviders } from "@/lib/data/fieldDefs.add";
 import { setUserFieldDefs, mergeUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
+import {
+	planFieldMove,
+	planFieldDelete,
+	rewriteSelectionFields,
+	type MergeWinner,
+} from "@/lib/data/fieldOps.add";
+import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections.add";
 import type { RenderDelta } from "@/lib/render/CellManager";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */
@@ -646,6 +653,57 @@ export function batchUpdateLocations(updates: { id: number; patch: Partial<Locat
 	return mutate(cmd.storeUpdateLocations(buildUpdates(updates), true)).catch((e) =>
 		log.error("[batchUpdate] store_update_locations failed:", e),
 	);
+}
+
+// Like batchUpdateLocations but records no undo entry. Used by bulk field ops whose
+// definition/selection migration isn't part of the undo system — an undoable data
+// change there would half-revert and leave the map inconsistent.
+function batchUpdateLocationsNoUndo(updates: { id: number; patch: Partial<Location> }[]) {
+	if (!currentMap || updates.length === 0) return Promise.resolve();
+	return mutate(cmd.storeUpdateLocations(buildUpdates(updates), false)).catch((e) =>
+		log.error("[batchUpdateNoUndo] store_update_locations failed:", e),
+	);
+}
+
+// --- Bulk metadata-field operations (rare; intentionally NOT undoable, since the
+//     definition/selection migration below isn't part of the undo system) ---
+
+/** Rename or merge extra-field `from` into `to` across all locations, then migrate
+ *  its definition and every selection that references it. Merge ≡ rename; `winner`
+ *  decides the survivor only where a location already holds `to`. */
+export async function renameField(from: string, to: string, winner: MergeWinner = "from") {
+	if (!currentMap || from === to || !to) return;
+	const updates = planFieldMove(await fetchAllLocations(), from, to, winner);
+	if (updates.length) {
+		await batchUpdateLocationsNoUndo(updates.map((u) => ({ id: u.id, patch: { extra: u.extra } })));
+		knownFieldKeys.add(to);
+	}
+	knownFieldKeys.delete(from);
+	await migrateFieldReferences(from, to);
+}
+
+/** Delete extra-field `key` from every location, its definition, and references. */
+export async function deleteField(key: string) {
+	if (!currentMap) return;
+	const updates = planFieldDelete(await fetchAllLocations(), key);
+	if (updates.length) {
+		await batchUpdateLocationsNoUndo(updates.map((u) => ({ id: u.id, patch: { extra: u.extra } })));
+	}
+	knownFieldKeys.delete(key);
+	await migrateFieldReferences(key, null);
+}
+
+/** Migrate field definition + active/saved selection references after a data move. */
+async function migrateFieldReferences(from: string, to: string | null) {
+	if (!currentMap) return;
+	const defs = { ...(currentMap.meta.extra?.fields ?? {}) };
+	if (defs[from]) {
+		if (to && !defs[to]) defs[to] = defs[from];
+		delete defs[from];
+		await setMapExtraFields(defs);
+	}
+	setSetting("savedSelections", rewriteSavedSelectionFields(getSavedSelections(), from, to));
+	await applySelectionUpdate((m, sels) => rewriteSelectionFields(m, sels, from, to));
 }
 
 export async function patchLocationExtra(
