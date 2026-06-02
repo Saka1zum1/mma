@@ -363,6 +363,34 @@ pub fn resolve_bitmask(view: &LocView, props: &SelectionProps) -> Vec<bool> {
             let inner = resolve_bitmask(view, &selections[0].props);
             return view.resolve_mask(|i| !inner[i], |j, _| !inner[view.batch_rows + j]);
         }
+        SelectionProps::Polygon { polygon, include_informational } => {
+            // Broad-phase: a point outside the geometry's bbox can't be inside any ring,
+            // so reject it with 4 compares before the full crossing-number test. Bbox is
+            // computed once here, not per point.
+            let inc = *include_informational;
+            match geometry_bbox(polygon) {
+                None => return vec![false; n],
+                Some(bb) => {
+                    return view.resolve_mask(
+                        |i| {
+                            if let Some(p) = view.patch_at(i) {
+                                if !inc && (p.flags & INFORMATIONAL != 0) { return false; }
+                                in_bbox(p.lng, p.lat, &bb) && point_in_geometry(p.lng, p.lat, polygon)
+                            } else {
+                                if !inc && (view.flags.unwrap().value(i) & INFORMATIONAL != 0) { return false; }
+                                let lng = view.lngs.unwrap().value(i);
+                                let lat = view.lats.unwrap().value(i);
+                                in_bbox(lng, lat, &bb) && point_in_geometry(lng, lat, polygon)
+                            }
+                        },
+                        |_, loc| {
+                            if !inc && (loc.flags & INFORMATIONAL != 0) { return false; }
+                            in_bbox(loc.lng, loc.lat, &bb) && point_in_geometry(loc.lng, loc.lat, polygon)
+                        },
+                    );
+                }
+            }
+        }
         _ => {}
     }
 
@@ -430,6 +458,36 @@ pub(crate) fn point_in_geometry(lng: f64, lat: f64, geom: &PolygonGeometry) -> b
         }
     }
     false
+}
+
+/// Axis-aligned bounding box `[min_lng, min_lat, max_lng, max_lat]` over every ring of
+/// a geometry (outer + holes + extra polygons). Used as a cheap broad-phase reject
+/// before the full crossing-number test in polygon selections. `None` if no coords.
+pub(crate) fn geometry_bbox(geom: &PolygonGeometry) -> Option<[f64; 4]> {
+    let mut bb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    let mut any = false;
+    let mut fold = |rings: &[Vec<[f64; 2]>]| {
+        for ring in rings {
+            for &[lng, lat] in ring {
+                if lng < bb[0] { bb[0] = lng; }
+                if lat < bb[1] { bb[1] = lat; }
+                if lng > bb[2] { bb[2] = lng; }
+                if lat > bb[3] { bb[3] = lat; }
+                any = true;
+            }
+        }
+    };
+    fold(&geom.coordinates);
+    if let Some(extras) = &geom.extra_polygons {
+        for poly in extras { fold(poly); }
+    }
+    if any { Some(bb) } else { None }
+}
+
+/// `bb` is `[min_lng, min_lat, max_lng, max_lat]`.
+#[inline]
+fn in_bbox(lng: f64, lat: f64, bb: &[f64; 4]) -> bool {
+    lng >= bb[0] && lng <= bb[2] && lat >= bb[1] && lat <= bb[3]
 }
 
 // --- Duplicates (bitmask version) ---

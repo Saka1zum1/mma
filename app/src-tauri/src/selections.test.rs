@@ -59,6 +59,68 @@ fn point_in_geometry_extra_polygons() {
 }
 
 // -----------------------------------------------------------------------
+// Polygon bbox broad-phase reject
+// -----------------------------------------------------------------------
+
+#[test]
+fn geometry_bbox_spans_all_rings() {
+    // Outer [0..10] plus an extra polygon [20..30] -> bbox covers both.
+    let main = vec![vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]];
+    let extra = vec![vec![[20.0, 20.0], [30.0, 20.0], [30.0, 30.0], [20.0, 30.0], [20.0, 20.0]]];
+    let geom = PolygonGeometry { coordinates: main, extra_polygons: Some(vec![extra]), properties: None };
+    // [min_lng, min_lat, max_lng, max_lat]
+    assert_eq!(geometry_bbox(&geom), Some([0.0, 0.0, 30.0, 30.0]));
+    assert_eq!(geometry_bbox(&PolygonGeometry { coordinates: vec![], extra_polygons: None, properties: None }), None);
+}
+
+#[test]
+fn in_bbox_edges_and_outside() {
+    let bb = [0.0, 0.0, 10.0, 10.0]; // min_lng, min_lat, max_lng, max_lat
+    assert!(in_bbox(5.0, 5.0, &bb));
+    assert!(in_bbox(0.0, 0.0, &bb)); // corner inclusive
+    assert!(in_bbox(10.0, 10.0, &bb));
+    assert!(!in_bbox(-0.1, 5.0, &bb));
+    assert!(!in_bbox(5.0, 10.1, &bb));
+}
+
+// The bbox reject must not change WHICH points a polygon selection returns. The
+// tricky case is a point inside the bbox but outside the (concave) polygon: the
+// broad-phase lets it through, the full crossing test must still exclude it.
+#[test]
+fn polygon_resolve_matches_full_test_with_bbox_reject() {
+    // L-shaped (concave) polygon: covers bbox [0..10]x[0..10] but the top-right
+    // quadrant (>5,>5) is carved out.
+    let l_shape = vec![vec![
+        [0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [5.0, 5.0], [5.0, 10.0], [0.0, 10.0], [0.0, 0.0],
+    ]];
+    let geom = PolygonGeometry { coordinates: l_shape, extra_polygons: None, properties: None };
+
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let adds = vec![
+        loc(1, 1.0, 1.0),   // inside L  -> selected
+        loc(2, 8.0, 8.0),   // inside bbox, in the carved-out notch -> NOT selected
+        loc(3, 50.0, 50.0), // outside bbox -> rejected by broad-phase
+        loc(4, 1.0, 8.0),   // inside L (left column) -> selected
+    ];
+    let view = make_view(None, &dead, &patches, &adds);
+    let ids = resolve(&view, &SelectionProps::Polygon {
+        polygon: geom.clone(),
+        include_informational: true,
+    });
+    assert!(ids.contains(&1));
+    assert!(!ids.contains(&2)); // bbox would include it; full test must exclude
+    assert!(!ids.contains(&3));
+    assert!(ids.contains(&4));
+
+    // Cross-check: resolve agrees with point_in_geometry applied directly.
+    for l in &adds {
+        let want = point_in_geometry(l.lng, l.lat, &geom);
+        assert_eq!(ids.contains(&l.id), want, "mismatch for loc {}", l.id);
+    }
+}
+
+// -----------------------------------------------------------------------
 // Haversine
 // -----------------------------------------------------------------------
 
