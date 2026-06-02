@@ -10,6 +10,7 @@ mod fast_io;
 mod types;
 mod util;
 mod arrow_bridge;
+mod arrow_migrate;
 mod selections;
 #[macro_use]
 mod location_store;

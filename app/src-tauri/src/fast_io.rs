@@ -348,7 +348,7 @@ pub(crate) fn read_arrow_ipc(path: &std::path::Path) -> Result<arrow::array::Rec
         .map_err(|e| e.to_string())?;
     let mut batches = Vec::new();
     for batch in reader {
-        batches.push(batch.map_err(|e| e.to_string())?);
+        batches.push(crate::arrow_migrate::migrate(batch.map_err(|e| e.to_string())?)?);
     }
     if batches.is_empty() {
         return Ok(arrow::array::RecordBatch::new_empty(std::sync::Arc::new(
@@ -426,7 +426,7 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
         let batch = decoder.read_record_batch(&block, &data)
             .map_err(|e| e.to_string())?
             .unwrap_or_else(|| arrow::array::RecordBatch::new_empty(schema));
-        Ok((batch, MmapHandle { _buffer: buffer }))
+        Ok((crate::arrow_migrate::migrate(batch)?, MmapHandle { _buffer: buffer }))
     } else {
         let mut batches = Vec::with_capacity(blocks.len());
         for i in 0..blocks.len() {
@@ -440,7 +440,7 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
         }
         let merged = arrow::compute::concat_batches(&schema, &batches)
             .map_err(|e| e.to_string())?;
-        Ok((merged, MmapHandle { _buffer: buffer }))
+        Ok((crate::arrow_migrate::migrate(merged)?, MmapHandle { _buffer: buffer }))
     }
 }
 

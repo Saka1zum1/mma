@@ -13,7 +13,7 @@ fn loc(id: u32, lat: f64, lng: f64) -> Location {
         flags: 0,
         tags: vec![],
         extra: None,
-        created_at: String::new(),
+        created_at: "2024-01-01T00:00:00Z".into(),
         modified_at: None,
     }
 }
@@ -94,7 +94,7 @@ fn empty_commit_yields_empty_delta() {
 fn delta_batch_round_trip_preserves_all_fields() {
     let mut l = loc(7, 12.5, -3.25);
     l.pano_id = Some("PANO123".into());
-    l.modified_at = Some("2026-01-02T03:04:05.000Z".into());
+    l.modified_at = Some("2026-01-02T03:04:05Z".into());
     l.tags = vec![1, 5, 9];
     let mut extra = serde_json::Map::new();
     extra.insert("note".into(), serde_json::Value::String("hi".into()));

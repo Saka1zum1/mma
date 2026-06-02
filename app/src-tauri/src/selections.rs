@@ -87,8 +87,8 @@ pub struct LocView<'a> {
     flags: Option<&'a UInt32Array>,
     tags: Option<&'a ListArray>,
     extras: Option<&'a StringArray>,
-    created_ats: Option<&'a StringArray>,
-    modified_ats: Option<&'a StringArray>,
+    created_ats: Option<&'a UInt32Array>,
+    modified_ats: Option<&'a UInt32Array>,
     batch_rows: usize,
     has_dead: bool,
     has_patches: bool,
@@ -125,8 +125,8 @@ impl<'a> LocView<'a> {
         let flags = batch.map(|b| b.column(7).as_any().downcast_ref::<UInt32Array>().unwrap());
         let tags = batch.map(|b| b.column(8).as_any().downcast_ref::<ListArray>().unwrap());
         let extras = batch.map(|b| b.column(9).as_any().downcast_ref::<StringArray>().unwrap());
-        let created_ats = batch.map(|b| b.column(10).as_any().downcast_ref::<StringArray>().unwrap());
-        let modified_ats = batch.map(|b| b.column(11).as_any().downcast_ref::<StringArray>().unwrap());
+        let created_ats = batch.map(|b| b.column(10).as_any().downcast_ref::<UInt32Array>().unwrap());
+        let modified_ats = batch.map(|b| b.column(11).as_any().downcast_ref::<UInt32Array>().unwrap());
         let has_dead = !dead.is_empty();
         let has_patches = !patches.is_empty();
         Self { batch, dead, patches, adds, ids, lats, lngs, headings, pitches, zooms, flags, tags, extras, created_ats, modified_ats, batch_rows, has_dead, has_patches, tag_sets }
@@ -753,11 +753,11 @@ fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_
         "pitch" => view.pitches.map(|c| serde_json::json!(c.value(idx))),
         "zoom" => view.zooms.map(|c| serde_json::json!(c.value(idx))),
         "id" => view.ids.map(|c| serde_json::json!(c.value(idx))),
-        "createdAt" => view.created_ats.and_then(|c| iso_to_unix(c.value(idx))).map(|ts| serde_json::json!(ts)),
+        "createdAt" => view.created_ats.map(|c| serde_json::json!(c.value(idx) as f64)),
         "modifiedAt" => view.modified_ats.and_then(|c| {
             if c.is_null(idx) { return None; }
-            iso_to_unix(c.value(idx))
-        }).map(|ts| serde_json::json!(ts)),
+            Some(serde_json::json!(c.value(idx) as f64))
+        }),
         _ => {
             let extras = view.extras?;
             if extras.is_null(idx) { return None; }

@@ -21,6 +21,15 @@ pub fn iso_to_unix(s: &str) -> Option<f64> {
         .map(|dt| dt.and_utc().timestamp() as f64)
 }
 
+/// Formats a Unix timestamp (seconds) as an ISO 8601 string at second precision.
+/// Inverse of [`iso_to_unix`] (sub-second precision is not representable).
+pub fn unix_to_iso(secs: u32) -> String {
+    DateTime::<Utc>::from_timestamp(secs as i64, 0)
+        .unwrap_or_default()
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
+}
+
 /// Extracts (month, day) from a Unix timestamp in seconds.
 pub fn unix_to_month_day(ts: f64) -> (u32, u32) {
     let dt = DateTime::<Utc>::from_timestamp(ts as i64, 0).unwrap_or_default();

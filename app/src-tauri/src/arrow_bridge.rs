@@ -17,29 +17,31 @@ use crate::types::Location;
 /// the positional indices used by [`row_to_location`] and must stay in sync.
 ///
 /// `tags` is a `List<UInt32>` (variable-length per row). `extra` and `pano_id`
-/// are nullable UTF-8; all other columns are non-nullable.
+/// are nullable UTF-8; all other columns are non-nullable. Timestamps are
+/// `UInt32` epoch seconds (second resolution). Schema metadata carries the
+/// format version stamp (see [`crate::arrow_migrate`]).
 pub fn location_schema() -> Schema {
-    Schema::new(vec![
-        Field::new("id", DataType::UInt32, false),
-        Field::new("lat", DataType::Float64, false),
-        Field::new("lng", DataType::Float64, false),
-        Field::new("heading", DataType::Float64, false),
-        Field::new("pitch", DataType::Float64, false),
-        Field::new("zoom", DataType::Float64, false),
-        Field::new("pano_id", DataType::Utf8, true),
-        Field::new("flags", DataType::UInt32, false),
-        Field::new(
-            "tags",
-            DataType::List(Arc::new(Field::new("item", DataType::UInt32, true))),
-            false,
-        ),
-        Field::new("extra", DataType::Utf8, true),
-        // TODO: migrate ISO-string timestamps to integer epoch (~28B -> 4-8B/row, keeps mmap
-        // zero-copy, drops iso_to_unix parsing in date filters). i64 millis (Timestamp convention)
-        // or u32 seconds if second precision suffices. Touches LocView downcast + import/export.
-        Field::new("created_at", DataType::Utf8, false),
-        Field::new("modified_at", DataType::Utf8, true),
-    ])
+    Schema::new_with_metadata(
+        vec![
+            Field::new("id", DataType::UInt32, false),
+            Field::new("lat", DataType::Float64, false),
+            Field::new("lng", DataType::Float64, false),
+            Field::new("heading", DataType::Float64, false),
+            Field::new("pitch", DataType::Float64, false),
+            Field::new("zoom", DataType::Float64, false),
+            Field::new("pano_id", DataType::Utf8, true),
+            Field::new("flags", DataType::UInt32, false),
+            Field::new(
+                "tags",
+                DataType::List(Arc::new(Field::new("item", DataType::UInt32, true))),
+                false,
+            ),
+            Field::new("extra", DataType::Utf8, true),
+            Field::new("created_at", DataType::UInt32, false),
+            Field::new("modified_at", DataType::UInt32, true),
+        ],
+        crate::arrow_migrate::version_metadata(),
+    )
 }
 
 /// Serialize a slice of [`Location`]s into a single Arrow [`RecordBatch`].
@@ -77,8 +79,15 @@ pub fn locations_to_batch(locs: &[Location]) -> RecordBatch {
         .map(|l| l.extra.as_ref().map(|e| serde_json::to_string(e).unwrap()))
         .collect();
 
-    let created_ats: StringArray = locs.iter().map(|l| Some(l.created_at.as_str())).collect();
-    let modified_ats: StringArray = locs.iter().map(|l| l.modified_at.as_deref()).collect();
+    let created_ats = UInt32Array::from(
+        locs.iter()
+            .map(|l| crate::util::iso_to_unix(&l.created_at).map(|s| s as u32).unwrap_or(0))
+            .collect::<Vec<_>>(),
+    );
+    let modified_ats: UInt32Array = locs
+        .iter()
+        .map(|l| l.modified_at.as_deref().and_then(crate::util::iso_to_unix).map(|s| s as u32))
+        .collect();
 
     let schema = Arc::new(location_schema());
     let columns: Vec<ArrayRef> = vec![
@@ -132,16 +141,12 @@ pub fn row_to_location(batch: &RecordBatch, idx: usize) -> Location {
     } else {
         serde_json::from_str(extra_col.value(idx)).ok()
     };
-    let created_at = batch
-        .column(10)
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap()
-        .value(idx)
-        .to_string();
+    let created_at = crate::util::unix_to_iso(
+        batch.column(10).as_any().downcast_ref::<UInt32Array>().unwrap().value(idx),
+    );
     let modified_at = {
-        let col = batch.column(11).as_any().downcast_ref::<StringArray>().unwrap();
-        if col.is_null(idx) { None } else { Some(col.value(idx).to_string()) }
+        let col = batch.column(11).as_any().downcast_ref::<UInt32Array>().unwrap();
+        if col.is_null(idx) { None } else { Some(crate::util::unix_to_iso(col.value(idx))) }
     };
 
     Location {
@@ -179,7 +184,7 @@ pub const OP_CREATED: u8 = 1;
 pub fn delta_schema() -> Schema {
     let mut fields: Vec<arrow::datatypes::FieldRef> = location_schema().fields().iter().cloned().collect();
     fields.push(Arc::new(Field::new("op", DataType::UInt8, false)));
-    Schema::new(fields)
+    Schema::new_with_metadata(fields, crate::arrow_migrate::version_metadata())
 }
 
 /// Serialize a commit delta (`created` + `removed` locations) into one delta batch.
