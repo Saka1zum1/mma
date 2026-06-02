@@ -4751,9 +4751,47 @@ body {
 		height 0.2s;
 	overflow: hidden;
 }
-.fullscreen-minimap:hover {
-	width: 800px;
-	height: 600px;
+.fullscreen-minimap.is-expanded {
+	width: var(--fs-minimap-w, 800px);
+	height: var(--fs-minimap-h, 600px);
+}
+.fullscreen-minimap__map {
+	position: absolute;
+	inset: 0;
+}
+.fullscreen-minimap__size {
+	position: absolute;
+	top: 6px;
+	left: 6px;
+	z-index: 1;
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.fullscreen-minimap.is-expanded .fullscreen-minimap__size {
+	opacity: 1;
+}
+.fullscreen-minimap__size-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: rgba(30, 30, 30, 0.75);
+	color: #fff;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.fullscreen-minimap__size-btn:hover {
+	background: rgba(30, 30, 30, 0.95);
+}
+.fullscreen-minimap__size-btn:disabled {
+	opacity: 0.4;
+	cursor: default;
 }
 .fullscreen-minimap__marker {
 	position: absolute;

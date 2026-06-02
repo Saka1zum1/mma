@@ -37,6 +37,7 @@ export interface AppSettings {
 	hidePanoUI: boolean;
 	fullscreenMap: boolean;
 	showFullscreenMinimap: boolean;
+	fullscreenMinimapScale: number;
 	showFullscreenTagbar: boolean;
 	customCss: string;
 	enableSeen: boolean;
@@ -79,6 +80,7 @@ const DEFAULTS: AppSettings = {
 	hidePanoUI: false,
 	fullscreenMap: false,
 	showFullscreenMinimap: true,
+	fullscreenMinimapScale: 1,
 	showFullscreenTagbar: true,
 	customCss: "",
 	enableSeen: true,

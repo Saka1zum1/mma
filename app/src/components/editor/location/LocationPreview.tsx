@@ -62,11 +62,7 @@ import {
 	createTerrainBasemapTileConfig,
 	type MapStyle,
 } from "@/lib/geo/tiles";
-import {
-	PanoControls,
-	CrosshairOverlay,
-	sendHideCar,
-} from "./PanoControls";
+import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
 import { tweenPov } from "@/lib/sv/tweenPov";
 import {
 	seenPanoChanged,
@@ -134,7 +130,9 @@ function PanoDatePicker({
 			? (defaultEntry ?? resolvedEntry)
 			: sorted.find((d) => d.pano === selectedPanoId);
 	const isDefault = selectedPanoId == null;
-	const displayDate = currentEntry?.date ?? (isDefault && currentPano?.imageDate ? parsePanoDate(currentPano.imageDate) : null);
+	const displayDate =
+		currentEntry?.date ??
+		(isDefault && currentPano?.imageDate ? parsePanoDate(currentPano.imageDate) : null);
 	const prevLabelRef = useRef("");
 	const displayLabel = displayDate
 		? isDefault
@@ -153,11 +151,17 @@ function PanoDatePicker({
 
 	const showBadges = useSetting("showCameraBadges");
 	const currentMap = useCurrentMap();
-	const datetimeEnabled = isFieldEnabled(currentMap?.meta.settings.enrichFields ?? null, "datetime");
+	const datetimeEnabled = isFieldEnabled(
+		currentMap?.meta.settings.enrichFields ?? null,
+		"datetime",
+	);
 	const exactDateFormat = useSetting("exactDateFormat");
 	const dateTimezone = useSetting("dateTimezone");
 	const triggerPanoId =
-		currentEntry?.pano ?? currentPano?.location?.pano ?? sorted[sorted.length - 1]?.pano ?? defaultPanoId;
+		currentEntry?.pano ??
+		currentPano?.location?.pano ??
+		sorted[sorted.length - 1]?.pano ??
+		defaultPanoId;
 	const triggerCameraType = useCameraType(triggerPanoId);
 
 	const newestPano = sorted.length > 0 ? sorted[sorted.length - 1] : null;
@@ -382,6 +386,13 @@ function createDotOverlay(map: google.maps.Map, pos: { lat: number; lng: number 
 	};
 }
 
+const MINIMAP_SCALE_MIN = 0.5;
+const MINIMAP_SCALE_MAX = 2;
+const MINIMAP_SCALE_STEP = 0.5;
+const MINIMAP_BASE_W = 800;
+const MINIMAP_BASE_H = 600;
+const MINIMAP_CLOSE_DELAY = 500;
+
 function FullscreenMiniMap({
 	lat,
 	lng,
@@ -392,6 +403,35 @@ function FullscreenMiniMap({
 	panorama: google.maps.StreetViewPanorama | null;
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
+	const scale = useSetting("fullscreenMinimapScale");
+	const [expanded, setExpanded] = useState(false);
+	const closeTimer = useRef<number | null>(null);
+
+	const setScale = (next: number) => {
+		const clamped = Math.min(MINIMAP_SCALE_MAX, Math.max(MINIMAP_SCALE_MIN, next));
+		setSetting("fullscreenMinimapScale", Math.round(clamped * 100) / 100);
+	};
+
+	const open = () => {
+		if (closeTimer.current !== null) {
+			clearTimeout(closeTimer.current);
+			closeTimer.current = null;
+		}
+		setExpanded(true);
+	};
+	const scheduleClose = () => {
+		if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+		closeTimer.current = window.setTimeout(() => {
+			setExpanded(false);
+			closeTimer.current = null;
+		}, MINIMAP_CLOSE_DELAY);
+	};
+
+	useEffect(() => {
+		return () => {
+			if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+		};
+	}, []);
 	const mapRef = useRef<google.maps.Map | null>(null);
 	const dotRef = useRef<{
 		setPosition: (p: { lat: number; lng: number }) => void;
@@ -439,7 +479,45 @@ function FullscreenMiniMap({
 		dotRef.current?.setPosition({ lat, lng });
 	}, [lat, lng]);
 
-	return <div ref={containerRef} className="fullscreen-minimap" />;
+	const sizeVars = {
+		"--fs-minimap-w": `${Math.round(MINIMAP_BASE_W * scale)}px`,
+		"--fs-minimap-h": `${Math.round(MINIMAP_BASE_H * scale)}px`,
+	} as React.CSSProperties;
+
+	return (
+		<div
+			className={`fullscreen-minimap${expanded ? " is-expanded" : ""}`}
+			style={sizeVars}
+			onMouseEnter={open}
+			onMouseLeave={scheduleClose}
+		>
+			<div ref={containerRef} className="fullscreen-minimap__map" />
+			<div className="fullscreen-minimap__size">
+				<button
+					type="button"
+					className="fullscreen-minimap__size-btn"
+					aria-label="Smaller minimap"
+					disabled={scale <= MINIMAP_SCALE_MIN}
+					onClick={() => setScale(scale - MINIMAP_SCALE_STEP)}
+				>
+					<svg height="16" width="16" viewBox="0 0 24 24" fill="currentColor">
+						<path d="M19,13H5V11H19V13Z" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					className="fullscreen-minimap__size-btn"
+					aria-label="Larger minimap"
+					disabled={scale >= MINIMAP_SCALE_MAX}
+					onClick={() => setScale(scale + MINIMAP_SCALE_STEP)}
+				>
+					<svg height="16" width="16" viewBox="0 0 24 24" fill="currentColor">
+						<path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+					</svg>
+				</button>
+			</div>
+		</div>
+	);
 }
 
 function FullscreenTagBar({
@@ -475,7 +553,9 @@ function FullscreenTagBar({
 	};
 
 	const locTags = pendingTags.map((id) => tags.find((t) => t.id === id)).filter(Boolean) as Tag[];
-	const sorted = [...tags].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+	const sorted = [...tags].sort(
+		(a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name),
+	);
 	const available = sorted.filter((t) => !pendingTags.includes(t.id));
 	const filtered = input.trim()
 		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase()))
@@ -658,11 +738,16 @@ function LocationPreviewInner() {
 	const panoContainerRef = useRef<HTMLDivElement>(null);
 	const fullscreenContainerRef = useRef<HTMLDivElement>(null);
 	const {
-		currentPano, setCurrentPano,
-		panoDates, setPanoDates,
-		isFullscreen, setIsFullscreen,
-		panoReady, setPanoReady,
-		altitude, setAltitude,
+		currentPano,
+		setCurrentPano,
+		panoDates,
+		setPanoDates,
+		isFullscreen,
+		setIsFullscreen,
+		panoReady,
+		setPanoReady,
+		altitude,
+		setAltitude,
 		selectedPanoId,
 	} = usePanoViewer();
 	const [tagInput, setTagInput] = useState("");
@@ -828,7 +913,7 @@ function LocationPreviewInner() {
 		let cancelled = false;
 
 		function extractTimes(data: google.maps.StreetViewPanoramaData | null): PanoReference[] {
-			const raw = ((data as unknown as { time?: { pano: string; AA?: Date }[] })?.time) ?? [];
+			const raw = (data as unknown as { time?: { pano: string; AA?: Date }[] })?.time ?? [];
 			return raw.flatMap((t) =>
 				t.pano && t.AA instanceof Date ? [{ pano: t.pano, date: t.AA }] : [],
 			);
@@ -871,7 +956,9 @@ function LocationPreviewInner() {
 			if (loc) enrich(loc, data);
 		});
 
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, [location?.id, currentPano?.location?.pano]);
 
 	useEffect(() => {
@@ -1003,7 +1090,10 @@ function LocationPreviewInner() {
 		if (singletonPano) {
 			cancelTweenRef.current?.();
 			const pov = singletonPano.getPov();
-			cancelTweenRef.current = tweenPov(singletonPano, { heading: (pov.heading + 180) % 360, pitch: pov.pitch });
+			cancelTweenRef.current = tweenPov(singletonPano, {
+				heading: (pov.heading + 180) % 360,
+				pitch: pov.pitch,
+			});
 		}
 	});
 	useHotkey(useBinding("zoomIn"), () => {
