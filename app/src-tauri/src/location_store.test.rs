@@ -34,8 +34,9 @@ fn patch() -> LocationPatch {
 }
 
 fn setup_store_with(locs: &[Location]) -> Store {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut store = Store::new();
-    store.map_id = Some("test".into());
+    store.map_id = Some(format!("test-{}", SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     store.batch = Some(empty_batch());
     for l in locs {
         store.add_tag_counts(std::slice::from_ref(l));
