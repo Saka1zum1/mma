@@ -16,6 +16,8 @@ import {
 	type HotkeyDef,
 	type HotkeyGroup,
 } from "@/lib/util/hotkeys.add";
+import { Icon } from "@/components/primitives/Icon";
+import { mdiAlertCircleOutline } from "@mdi/js";
 import {
 	useSettings,
 	setSetting,
@@ -155,11 +157,12 @@ function HotkeyRow({
 	}, [action, pending, cancel]);
 
 	const conflicts = getConflicts(action, binding);
+	const hasConflict = conflicts.length > 0;
 
 	return (
 		<tr
 			id={`hotkey-row-${action}`}
-			className={`${custom ? "hotkey-row--custom" : ""}${flash ? " hotkey-row--flash" : ""}`}
+			className={`${custom ? "hotkey-row--custom" : ""}${flash ? " hotkey-row--flash" : ""}${hasConflict ? " hotkey-row--conflict" : ""}`}
 		>
 			<td>{label}</td>
 			<td>
@@ -209,9 +212,10 @@ function HotkeyRow({
 							key={c.action}
 							className="hotkey-conflict"
 							onClick={() => onJump(c.action)}
-							title={`Shared with "${c.label}" — click to jump`}
+							title={`Also bound to "${c.label}" — click to jump there`}
 						>
-							also: {c.label}
+							<Icon path={mdiAlertCircleOutline} className="hotkey-conflict__icon" />
+							{c.label}
 						</button>
 					))}
 			</td>
@@ -230,7 +234,14 @@ function HotkeyRow({
 	);
 }
 
-const GROUPS: HotkeyGroup[] = ["Commands", "Global", "Map Navigation", "Location Editor", "Review"];
+const GROUPS: HotkeyGroup[] = [
+	"Commands",
+	"Global",
+	"Map Navigation",
+	"Location Editor",
+	"Quicktag",
+	"Review",
+];
 
 function KeyboardShortcutsSection() {
 	const [filter, setFilter] = useState("");

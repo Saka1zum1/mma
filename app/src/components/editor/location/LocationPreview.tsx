@@ -1093,19 +1093,28 @@ function LocationPreviewInner() {
 		if (singletonPano) toggleViewportLock(singletonPano);
 	});
 
-	// Number keys 1-9: toggle tag by position
+	// Quicktag slots 1-9: toggle the Nth visible tag. Bindings are rebindable
+	// (registered as quicktag1..9 hotkey actions), defaulting to keys 1-9.
 	const pendingTagsRef = useRef(pendingTags);
 	pendingTagsRef.current = pendingTags;
-	useHotkey("1,2,3,4,5,6,7,8,9", (e) => {
+	const quicktagSlot = (idx: number) => {
 		if (!location || !map) return;
-		const idx = parseInt(e.key) - 1;
 		const tags = getVisibleTags();
 		if (idx >= tags.length) return;
 		const tag = tags[idx];
 		const cur = pendingTagsRef.current;
 		const has = cur.includes(tag.id);
 		setPendingTags(has ? cur.filter((t) => t !== tag.id) : [...cur, tag.id]);
-	});
+	};
+	useHotkey(useBinding("quicktag1"), () => quicktagSlot(0));
+	useHotkey(useBinding("quicktag2"), () => quicktagSlot(1));
+	useHotkey(useBinding("quicktag3"), () => quicktagSlot(2));
+	useHotkey(useBinding("quicktag4"), () => quicktagSlot(3));
+	useHotkey(useBinding("quicktag5"), () => quicktagSlot(4));
+	useHotkey(useBinding("quicktag6"), () => quicktagSlot(5));
+	useHotkey(useBinding("quicktag7"), () => quicktagSlot(6));
+	useHotkey(useBinding("quicktag8"), () => quicktagSlot(7));
+	useHotkey(useBinding("quicktag9"), () => quicktagSlot(8));
 
 	const panoNavRef = useRef({ held: new Set<string>(), rafId: 0, alt: false, lastTime: 0 });
 	const appSettingsRef = useRef(appSettings);

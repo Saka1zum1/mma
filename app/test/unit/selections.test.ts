@@ -14,6 +14,7 @@ import {
 	composeSelections,
 	decomposeChild,
 	removeFromComposite,
+	replaceSelection,
 	ValidationState,
 } from "@/store/selections";
 import { setUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
@@ -725,5 +726,44 @@ describe("removeFromComposite", () => {
 		expect(result).toHaveLength(sels.length);
 		const children = (result[0].props as { selections: any[] }).selections;
 		expect(children.every((c: any) => c.key !== s2.key)).toBe(true);
+	});
+});
+
+describe("replaceSelection", () => {
+	const map = makeMap();
+	const filterA = { type: "Filter" as const, field: "year", op: "between", value: 2010, value2: 2015 };
+	const filterAEdited = { ...filterA, value: 2012, value2: 2020 };
+
+	it("replaces a top-level selection and updates its key", () => {
+		const sel = buildSelection(map, filterA);
+		const result = replaceSelection(map, [sel], sel.key, filterAEdited);
+		expect(result).toHaveLength(1);
+		expect(result[0].key).toBe(buildSelection(map, filterAEdited).key);
+		expect(result[0].key).not.toBe(sel.key);
+		expect((result[0].props as typeof filterAEdited).value).toBe(2012);
+	});
+
+	it("replaces a child inside a composite and rebuilds the parent key", () => {
+		const a = buildSelection(map, filterA);
+		const b = buildSelection(map, { type: "Untagged" });
+		const composed = intersectSelections(map, [a, b], null); // [Intersection(a,b)]
+		const parent = composed[0];
+		const result = replaceSelection(map, composed, a.key, filterAEdited);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].key).not.toBe(parent.key); // parent key rebuilt
+		const children = (result[0].props as { selections: any[] }).selections;
+		expect(children).toHaveLength(2);
+		expect(children.some((c: any) => c.key === buildSelection(map, filterAEdited).key)).toBe(true);
+		expect(children.some((c: any) => c.key === b.key)).toBe(true); // sibling preserved
+		expect(children.some((c: any) => c.key === a.key)).toBe(false); // old child gone
+	});
+
+	it("is a no-op when the key is not found", () => {
+		const sel = buildSelection(map, filterA);
+		const input = [sel];
+		const result = replaceSelection(map, input, "nonexistent", filterAEdited);
+		expect(result).toBe(input); // unchanged reference
+		expect(result[0].key).toBe(sel.key);
 	});
 });

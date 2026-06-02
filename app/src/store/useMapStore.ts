@@ -72,6 +72,7 @@ import {
 	decomposeChild as decomposeChildSel,
 	removeFromComposite as removeFromCompositeSel,
 	composeSiblings as composeSiblingsSel,
+	replaceSelection as replaceSel,
 } from "./selections";
 
 const storeBus = createBus<() => void>();
@@ -112,6 +113,9 @@ let currentMap: MapData | null = null;
 /** Persisted bitmasks per selection key. Updated incrementally on each
  *  mutation (delta refresh) when the column store is available. */
 let selections: Selection[] = [];
+/** Keys of selections that are "ghosted": kept in the list but excluded from the
+ *  Rust sync, so they neither render nor count toward the selected set. Ephemeral. */
+const ghostedSelections = new Set<string>();
 let selectedLocationIds = new Set<number>();
 let activeLocationId: number | null = null;
 let duplicateLocations: Location[] = [];
@@ -549,9 +553,7 @@ async function applySelectionSync(sync: {
 	patchFile: string | null;
 	selectedCount: number;
 }) {
-	for (let i = 0; i < selections.length; i++) {
-		selections[i] = { ...selections[i], count: sync.counts[i] ?? 0 };
-	}
+	assignCounts(sync.counts);
 	if (sync.patchFile) await emitBitmaskFile(sync.patchFile);
 
 	mapVersion++;
@@ -741,24 +743,49 @@ export async function patchLocationExtra(
 
 export const useSelections = makeStoreHook(() => selections);
 
+/** Resolve a selection's overlay color, substituting the live tag color for Tag selections. */
+function selectionSyncColor(s: Selection): [number, number, number] {
+	if (s.props.type === "Tag" && currentMap) {
+		const tag = currentMap.meta.tags[s.props.tagId];
+		if (tag) {
+			return [
+				parseInt(tag.color.slice(1, 3), 16),
+				parseInt(tag.color.slice(3, 5), 16),
+				parseInt(tag.color.slice(5, 7), 16),
+			];
+		}
+	}
+	return s.color;
+}
+
+/** Inputs sent to Rust, excluding ghosted selections. Order matches the non-ghosted
+ *  subsequence of `selections`, which is how Rust returns counts. */
+function buildSyncInputs() {
+	return selections
+		.filter((s) => !ghostedSelections.has(s.key))
+		.map((s) => ({ props: s.props, color: selectionSyncColor(s) }));
+}
+
+/** Map a Rust counts array (non-ghosted order) back onto `selections`, preserving
+ *  the prior count for ghosted entries so the UI can still show what they'd select. */
+function assignCounts(counts: number[]) {
+	let j = 0;
+	for (let i = 0; i < selections.length; i++) {
+		if (ghostedSelections.has(selections[i].key)) {
+			selections[i] = { ...selections[i], count: selections[i].count ?? 0 };
+		} else {
+			selections[i] = { ...selections[i], count: counts[j++] ?? 0 };
+		}
+	}
+}
+
 /** Apply a pure selection transform, then IPC to Rust to resolve bitmasks and sync the overlay. */
 async function applySelectionUpdate(updater: (m: MapData, sels: Selection[]) => Selection[]) {
 	if (!currentMap) return;
 	const t = trace("selection", { summary: true });
 	selections = updater(currentMap, selections);
-	const sels = selections.map((s) => {
-		let color = s.color;
-		if (s.props.type === "Tag" && currentMap) {
-			const tag = currentMap.meta.tags[s.props.tagId];
-			if (tag) {
-				const r = parseInt(tag.color.slice(1, 3), 16);
-				const g = parseInt(tag.color.slice(3, 5), 16);
-				const b = parseInt(tag.color.slice(5, 7), 16);
-				color = [r, g, b];
-			}
-		}
-		return { props: s.props, color };
-	});
+	pruneGhosted();
+	const sels = buildSyncInputs();
 	let result: SyncSelectionsResult;
 	try {
 		result = await cmd.storeSyncSelections(sels);
@@ -767,9 +794,7 @@ async function applySelectionUpdate(updater: (m: MapData, sels: Selection[]) => 
 		return;
 	}
 	t.step("ipc");
-	for (let i = 0; i < selections.length; i++) {
-		selections[i] = { ...selections[i], count: result.counts[i] ?? 0 };
-	}
+	assignCounts(result.counts);
 	if (result.patchFile) await emitBitmaskFile(result.patchFile);
 	t.step("apply");
 	t.end({ selected: result.selectedCount });
@@ -777,6 +802,35 @@ async function applySelectionUpdate(updater: (m: MapData, sels: Selection[]) => 
 	mapVersion++;
 	notify();
 	emitEvent("selection:change", selections);
+}
+
+/** Drop ghosted keys that no longer correspond to a live selection. */
+function pruneGhosted() {
+	if (ghostedSelections.size === 0) return;
+	const live = new Set(selections.map((s) => s.key));
+	for (const k of ghostedSelections) if (!live.has(k)) ghostedSelections.delete(k);
+}
+
+export const useGhostedSelections = makeStoreHook(() => ghostedSelections);
+
+export function isSelectionGhosted(key: string): boolean {
+	return ghostedSelections.has(key);
+}
+
+/** Toggle a selection's ghosted state and re-sync (excludes/includes it from the overlay). */
+export function toggleGhostSelection(key: string) {
+	if (ghostedSelections.has(key)) ghostedSelections.delete(key);
+	else ghostedSelections.add(key);
+	return applySelectionUpdate((_m, sels) => sels);
+}
+
+/** Ghost every top-level selection; if all are already ghosted, un-ghost them all. */
+export function toggleGhostAllSelections() {
+	const keys = selections.map((s) => s.key);
+	const allGhosted = keys.length > 0 && keys.every((k) => ghostedSelections.has(k));
+	if (allGhosted) ghostedSelections.clear();
+	else for (const k of keys) ghostedSelections.add(k);
+	return applySelectionUpdate((_m, sels) => sels);
 }
 
 export function addSelections(props: SelectionProps[]) {
@@ -865,6 +919,23 @@ export function selectFilter(
 	value2?: unknown,
 ) {
 	return addSelections([{ type: "Filter", field, op, value, value2 }]);
+}
+
+/** Edit an existing filter (or any selection) in place by key, preserving its
+ *  position inside any AND/OR/Invert composite. Carries ghost state to the new key. */
+export function updateFilterSelection(oldKey: string, props: SelectionProps) {
+	return applySelectionUpdate((m, sels) => {
+		const next = replaceSel(m, sels, oldKey, props);
+		// Editing rebuilds the affected top-level entry (and its key). Migrate any
+		// ghost flag from the old key to the new one at the same index.
+		for (let i = 0; i < sels.length; i++) {
+			if (next[i] && next[i].key !== sels[i].key && ghostedSelections.has(sels[i].key)) {
+				ghostedSelections.delete(sels[i].key);
+				ghostedSelections.add(next[i].key);
+			}
+		}
+		return next;
+	});
 }
 
 export function setPolygonName(key: string, name: string) {

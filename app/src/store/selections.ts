@@ -381,6 +381,41 @@ export function composeWithChild(
 	return current.filter((_, i) => i !== dragIdx).map((s) => (s.key === parentKey ? newParent : s));
 }
 
+function replaceInTree(
+	map: MapData,
+	sel: Selection,
+	oldKey: string,
+	props: SelectionProps,
+): Selection | null {
+	if (sel.key === oldKey) return buildSelection(map, props);
+	if (!isVariant(sel.props, COMPOSITE_TYPES)) return null;
+	const children = sel.props.selections;
+	for (let i = 0; i < children.length; i++) {
+		const replaced = replaceInTree(map, children[i], oldKey, props);
+		if (replaced) {
+			const newChildren = children.with(i, replaced);
+			return buildSelection(map, { type: sel.props.type, selections: newChildren });
+		}
+	}
+	return null;
+}
+
+/** Replace the selection identified by `oldKey` (at any depth) with one built from
+ *  `props`, rebuilding the keys of every composite on the path so identity stays
+ *  consistent. Used to edit a filter in place without dropping it from its AND/OR group. */
+export function replaceSelection(
+	map: MapData,
+	current: Selection[],
+	oldKey: string,
+	props: SelectionProps,
+): Selection[] {
+	for (let i = 0; i < current.length; i++) {
+		const replaced = replaceInTree(map, current[i], oldKey, props);
+		if (replaced) return current.with(i, replaced);
+	}
+	return current;
+}
+
 /** Human-readable label for a selection, resolving tag names and filter ops. */
 export function selectionDisplayName(map: MapData, sel: Selection): string {
 	return match(sel.props)

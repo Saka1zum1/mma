@@ -21,6 +21,7 @@ import {
 	mdiDatabaseRemoveOutline,
 	mdiDatabaseEditOutline,
 	mdiFindReplace,
+	mdiGhostOutline,
 } from "@mdi/js";
 import { registerCommand } from "./commands.add";
 import {
@@ -46,6 +47,7 @@ import {
 	removeLocations,
 	getTagCounts,
 	hasCommitDiff,
+	toggleGhostAllSelections,
 } from "./useMapStore";
 import { loadGeoJSON } from "@/lib/util/loadGeoJSON.add";
 
@@ -163,6 +165,15 @@ registerCommand({
 	group: "Selections",
 	defaultBinding: "Mod+d",
 	execute: resetSelections,
+});
+
+registerCommand({
+	id: "ghost-selections",
+	label: "Ghost selections",
+	icon: mdiGhostOutline,
+	group: "Selections",
+	execute: () => toggleGhostAllSelections(),
+	enabled: () => getSelections().length > 0,
 });
 
 registerCommand({

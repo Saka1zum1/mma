@@ -55,9 +55,24 @@ export type HotkeyAction =
 	| "jumpBackward"
 	| "panToLocation"
 	| "viewportLock"
-	| "countrySelect";
+	| "countrySelect"
+	| "quicktag1"
+	| "quicktag2"
+	| "quicktag3"
+	| "quicktag4"
+	| "quicktag5"
+	| "quicktag6"
+	| "quicktag7"
+	| "quicktag8"
+	| "quicktag9";
 
-export type HotkeyGroup = "Commands" | "Global" | "Map Navigation" | "Location Editor" | "Review";
+export type HotkeyGroup =
+	| "Commands"
+	| "Global"
+	| "Map Navigation"
+	| "Location Editor"
+	| "Quicktag"
+	| "Review";
 
 export interface HotkeyDef {
 	action: HotkeyAction;
@@ -285,6 +300,12 @@ const RAW_HOTKEY_DEFS: HotkeyDef[] = [
 		group: "Map Navigation",
 		defaultBinding: "Shift+e",
 	},
+	...Array.from({ length: 9 }, (_, i): HotkeyDef => ({
+		action: `quicktag${i + 1}` as HotkeyAction,
+		label: `Quick-tag slot ${i + 1}`,
+		group: "Quicktag",
+		defaultBinding: String(i + 1),
+	})),
 ];
 
 // Unified view: raw defs + command-derived defs. This is what the shortcuts UI iterates.

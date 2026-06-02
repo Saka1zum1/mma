@@ -3343,6 +3343,17 @@ summary.button {
 .selection-row.is-dragging {
 	opacity: 0.4;
 }
+.selection-row.is-ghosted .selection-row__label,
+.selection-row.is-ghosted .selection-row__size {
+	opacity: 0.4;
+	font-style: italic;
+}
+.selection-row.is-ghosted .color-block {
+	background: transparent !important;
+	outline: 1px dashed currentColor;
+	outline-offset: -1px;
+	opacity: 0.6;
+}
 .selection-row[data-drop="before"]::before {
 	content: "";
 	position: absolute;
@@ -4461,8 +4472,11 @@ body {
 	}
 }
 .hotkey-conflict {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
 	margin-left: 0.4rem;
-	padding: 1px 6px;
+	padding: 1px 6px 1px 4px;
 	border: 1px solid #e53e3e80;
 	border-radius: 10px;
 	background: #e53e3e1a;
@@ -4473,6 +4487,14 @@ body {
 }
 .hotkey-conflict:hover {
 	background: #e53e3e33;
+}
+.hotkey-conflict__icon {
+	width: 0.85rem;
+	height: 0.85rem;
+}
+/* Row styling for shortcut conflicts */
+.hotkey-row--conflict td {
+	box-shadow: inset 2px 0 0 #e53e3e;
 }
 .hotkey-reassign {
 	display: flex;

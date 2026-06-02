@@ -28,6 +28,9 @@ import {
 	updateTags,
 	getVisibleTags,
 	useKnownFieldKeys,
+	toggleGhostSelection,
+	useGhostedSelections,
+	updateFilterSelection,
 } from "@/store/useMapStore";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { cmd } from "@/lib/commands";
@@ -97,15 +100,21 @@ function SelectionRow({
 	depth = 0,
 	parentKey,
 	onRemove,
+	inheritedGhost = false,
 }: {
 	selection: Selection;
 	depth?: number;
 	parentKey?: string | null;
 	onRemove?: () => void;
+	inheritedGhost?: boolean;
 }) {
 	const map = useCurrentMap();
+	const ghostedKeys = useGhostedSelections();
+	const isTopLevel = depth === 0;
+	const ghosted = inheritedGhost || (isTopLevel && ghostedKeys.has(selection.key));
 	const [view, setView] = useState<"contextmenu" | "color">("contextmenu");
 	const [dropZone, setDropZone] = useState<"before" | "on" | "after" | null>(null);
+	const [editingFilter, setEditingFilter] = useState(false);
 	const rowRef = useRef<HTMLDivElement>(null);
 	const drag = useDragState();
 	const isDragging = drag?.key === selection.key;
@@ -241,7 +250,7 @@ function SelectionRow({
 		<>
 			<div
 				ref={rowRef}
-				className={`selection-row${isDragging ? " is-dragging" : ""}`}
+				className={`selection-row${isDragging ? " is-dragging" : ""}${ghosted ? " is-ghosted" : ""}`}
 				data-drop={isDropTarget ? (dropZone ?? undefined) : undefined}
 				onMouseDown={handleMouseDown}
 				onMouseMove={handleMouseMove}
@@ -296,6 +305,22 @@ function SelectionRow({
 										>
 											Invert selection
 										</DropdownMenu.Item>
+										{isTopLevel && (
+											<DropdownMenu.Item
+												className="context-menu__item"
+												onSelect={() => toggleGhostSelection(selection.key)}
+											>
+												{ghosted ? "Un-ghost selection" : "Ghost selection"}
+											</DropdownMenu.Item>
+										)}
+										{selection.props.type === "Filter" && (
+											<DropdownMenu.Item
+												className="context-menu__item"
+												onSelect={() => setEditingFilter(true)}
+											>
+												Edit filter
+											</DropdownMenu.Item>
+										)}
 										<DropdownMenu.Item
 											className="context-menu__item"
 											disabled={(selection.count ?? 0) === 0}
@@ -355,6 +380,16 @@ function SelectionRow({
 					)}
 				</span>
 			</div>
+			{editingFilter && selection.props.type === "Filter" && (
+				<FilterForm
+					initial={filterPropsToSeed(selection.props)}
+					submitLabel="Update filter"
+					onSubmit={(field, op, value, value2) =>
+						updateFilterSelection(selection.key, { type: "Filter", field, op, value, value2 })
+					}
+					onClose={() => setEditingFilter(false)}
+				/>
+			)}
 			{showChildren &&
 				(
 					inner.props as Extract<Selection["props"], { type: "Intersection" | "Union" }>
@@ -364,6 +399,7 @@ function SelectionRow({
 						selection={child}
 						depth={depth + 1}
 						parentKey={selection.key}
+						inheritedGhost={ghosted}
 						onRemove={() => removeChildFromSelection(selection.key, child.key)}
 					/>
 				))}
@@ -527,9 +563,59 @@ function FilterValueInput({
 	);
 }
 
-function FilterBuilder({ mapId }: { mapId: string }) {
+type FilterFormSeed = {
+	field: string;
+	op: FilterOp;
+	value: string;
+	value2: string;
+	anyYear?: boolean;
+	anyTime?: boolean;
+};
+
+/** Reverse of FilterForm.handleAdd: turn a stored Filter selection back into editable form state. */
+function filterPropsToSeed(p: Extract<Selection["props"], { type: "Filter" }>): FilterFormSeed {
+	let op = p.op as FilterOp;
+	let anyYear = false;
+	let anyTime = false;
+	if (op === "between_anyyear") {
+		op = "between";
+		anyYear = true;
+	} else if (op === "between_anytime") {
+		op = "between";
+		anyTime = true;
+	}
+	return {
+		field: p.field,
+		op,
+		value: p.value == null ? "" : String(p.value),
+		value2: p.value2 == null ? "" : String(p.value2),
+		anyYear,
+		anyTime,
+	};
+}
+
+/** Shared field/op/value editor. `onSubmit` receives parsed pieces; create mode persists
+ *  draft state under `persistKey`, edit mode seeds from `initial` and shows Cancel. */
+function FilterForm({
+	initial,
+	persistKey,
+	submitLabel,
+	onSubmit,
+	onClose,
+}: {
+	initial?: FilterFormSeed;
+	persistKey?: string;
+	submitLabel: string;
+	onSubmit: (
+		field: string,
+		op: FilterOp,
+		value: string | number | null,
+		value2: string | number | undefined,
+	) => void;
+	onClose?: () => void;
+}) {
 	const fields = useExtraFieldKeys();
-	const saved = filterBuilderState.get(mapId);
+	const saved = initial ?? (persistKey ? filterBuilderState.get(persistKey) : undefined);
 	const [field, setField] = useState(saved?.field ?? "");
 	const [op, setOp] = useState<FilterOp>(saved?.op ?? "eq");
 	const [value, setValue] = useState(saved?.value ?? "");
@@ -541,8 +627,8 @@ function FilterBuilder({ mapId }: { mapId: string }) {
 	}, [field, fields]);
 
 	useEffect(() => {
-		filterBuilderState.set(mapId, { field, op, value, value2, anyYear, anyTime });
-	}, [mapId, field, op, value, value2, anyYear, anyTime]);
+		if (persistKey) filterBuilderState.set(persistKey, { field, op, value, value2, anyYear, anyTime });
+	}, [persistKey, field, op, value, value2, anyYear, anyTime]);
 
 	const fieldEntry = fields.find((f) => f.key === field);
 	const isNumeric = fieldEntry?.fieldType === "number" || fieldEntry?.fieldType === "date";
@@ -670,10 +756,11 @@ function FilterBuilder({ mapId }: { mapId: string }) {
 			parsed2 != null &&
 			Number(parsed) > Number(parsed2)
 		) {
-			selectFilter(field, finalOp, parsed2, parsed);
+			onSubmit(field, finalOp, parsed2, parsed);
 		} else {
-			selectFilter(field, finalOp, parsed, parsed2);
+			onSubmit(field, finalOp, parsed, parsed2);
 		}
+		onClose?.();
 	};
 
 	const showAnyYear = isBetween && isDateLike;
@@ -733,9 +820,24 @@ function FilterBuilder({ mapId }: { mapId: string }) {
 				/>
 			)}
 			<button className="button" type="button" onClick={handleAdd}>
-				Add filter
+				{submitLabel}
 			</button>
+			{onClose && (
+				<button className="button" type="button" onClick={onClose}>
+					Cancel
+				</button>
+			)}
 		</div>
+	);
+}
+
+function FilterBuilder({ mapId }: { mapId: string }) {
+	return (
+		<FilterForm
+			persistKey={mapId}
+			submitLabel="Add filter"
+			onSubmit={(field, op, value, value2) => selectFilter(field, op, value, value2)}
+		/>
 	);
 }
 
