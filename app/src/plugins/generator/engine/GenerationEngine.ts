@@ -116,12 +116,18 @@ export class GenerationEngine {
 			region.isProcessing = true;
 			const n = Math.min(region.target * 100, 1000);
 			const randomCoords: { lat: number; lng: number }[] = [];
-			while (randomCoords.length < n) {
+			// Cap attempts so a degenerate/near-zero-area polygon can never spin forever.
+			// The bbox reject in pointInGeoJsonGeometry keeps each attempt cheap.
+			let attempts = 0;
+			const maxAttempts = n * 200;
+			while (randomCoords.length < n && attempts < maxAttempts) {
+				attempts++;
 				const pt = randomPointInBounds(south, north, west, east);
 				if (pointInGeoJsonGeometry(pt.lng, pt.lat, region.feature.geometry)) {
 					randomCoords.push(pt);
 				}
 			}
+			if (randomCoords.length === 0) break;
 
 			const batchSize = this.settings.findRegions ? 1 : 75;
 			for (const batch of chunk(randomCoords, batchSize)) {

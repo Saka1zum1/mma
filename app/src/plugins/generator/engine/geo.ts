@@ -37,16 +37,44 @@ export function getBoundingBox(
 	return [west, south, east, north];
 }
 
+interface CompiledPart {
+	w: number;
+	s: number;
+	e: number;
+	n: number;
+	rings: number[][][];
+}
+const compiledCache = new WeakMap<object, CompiledPart[]>();
+
+function compileParts(geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon): CompiledPart[] {
+	const cached = compiledCache.get(geometry);
+	if (cached) return cached;
+	const polys = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+	const parts: CompiledPart[] = polys.map((rings) => {
+		let w = Infinity,
+			s = Infinity,
+			e = -Infinity,
+			n = -Infinity;
+		for (const [lng, lat] of rings[0]) {
+			if (lng < w) w = lng;
+			if (lng > e) e = lng;
+			if (lat < s) s = lat;
+			if (lat > n) n = lat;
+		}
+		return { w, s, e, n, rings };
+	});
+	compiledCache.set(geometry, parts);
+	return parts;
+}
+
 export function pointInGeoJsonGeometry(
 	lng: number,
 	lat: number,
 	geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
 ): boolean {
-	if (geometry.type === "Polygon") {
-		return pointInPolygon(lng, lat, geometry.coordinates);
-	}
-	for (const poly of geometry.coordinates) {
-		if (pointInPolygon(lng, lat, poly)) return true;
+	for (const part of compileParts(geometry)) {
+		if (lng < part.w || lng > part.e || lat < part.s || lat > part.n) continue;
+		if (pointInPolygon(lng, lat, part.rings)) return true;
 	}
 	return false;
 }
