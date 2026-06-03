@@ -662,7 +662,7 @@ declare function createLocation(partial: Partial<Location$1> & {
 	lat: number;
 	lng: number;
 }): Location$1;
-export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin";
+export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin" | "diff";
 /** Variants that wrap children — derived as exactly those carrying a `selections` array. */
 export type CompositeType = Extract<SelectionProps, {
 	selections: Selection$1[];
@@ -686,6 +686,20 @@ export type RenderDelta = RenderDelta_Serialize;
 export interface ImportStaging {
 	preview: ImportPreview;
 	source: "file" | "paste";
+}
+/** Ephemeral commit-diff overlay shown while `workArea === "diff"`. Position arrays are
+ *  interleaved `[lng, lat]` f32; `diffMarkerVersion` bumps to rebuild the layers. */
+export interface CommitDiffPreview {
+	commitId: string;
+	hash: string;
+	counts: {
+		added: number;
+		removed: number;
+		modified: number;
+	};
+	added: Float32Array;
+	removed: Float32Array;
+	modified: Float32Array;
 }
 export interface EnrichFieldOption {
 	key: string;
@@ -1425,6 +1439,7 @@ declare const mma: {
 	refreshAfterMutation(): void;
 	getVisibleTags(): Tag$1[];
 	getImportPreviewPositions(): Float32Array<ArrayBuffer>;
+	getCommitDiffPreview(): CommitDiffPreview | null;
 	hasCommitDiff(): boolean;
 	useCommitDiff(): {
 		added: number;
@@ -1544,6 +1559,22 @@ declare const mma: {
 		canRedo: boolean;
 	};
 	commitMap(message?: string): Promise<string>;
+	diffPositions(locs: {
+		lat: number;
+		lng: number;
+	}[]): Float32Array;
+	categorizeCommitDelta<T extends {
+		id: number;
+	}>(delta: {
+		created: T[];
+		removed: T[];
+	}): {
+		added: T[];
+		removed: T[];
+		modified: T[];
+	};
+	beginCommitDiffPreview(commit: CommitInfo): Promise<void>;
+	endCommitDiffPreview(): void;
 	checkoutCommit(commitId: string): Promise<void>;
 	renderDeltaBus: {
 		on: (fn: (delta: RenderDelta) => void) => () => void;
@@ -1579,6 +1610,8 @@ declare const mma: {
 	useWorkArea: () => WorkArea;
 	useImportStaging: () => ImportStaging | null;
 	useImportMarkerVersion: () => number;
+	useCommitDiffPreview: () => CommitDiffPreview | null;
+	useDiffMarkerVersion: () => number;
 	useReview: () => {
 		locations: number[];
 		index: number;

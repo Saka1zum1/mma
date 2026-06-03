@@ -63,7 +63,7 @@ export type { ExtraFieldDef, MapSettings, MapMeta, MapData, MapExtra, ScoreBound
 export type SortMode = "name" | "created" | "opened" | "amount";
 export type TagSortMode = "default" | "name" | "amount";
 
-export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin";
+export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin" | "diff";
 
 export interface DuplicateGroup {
 	distance: number;

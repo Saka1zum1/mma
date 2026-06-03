@@ -17,6 +17,7 @@ import { MapEmbed } from "@/components/editor/map/MapEmbed";
 import { MapMetaBar } from "@/components/editor/map/MapMetaBar";
 import { MapOverview } from "@/components/editor/map/MapOverview";
 import { ImportSidebar } from "@/components/editor/ImportSidebar";
+import { DiffSidebar } from "@/components/editor/DiffSidebar.add";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
@@ -266,6 +267,7 @@ export function MapEditor() {
 			{workArea === "location" && <LocationPreview />}
 			{workArea === "duplicates" && <SameLocation />}
 			{workArea === "import" && <ImportSidebar />}
+			{workArea === "diff" && <DiffSidebar />}
 			{workArea === "plugin" && <PluginSidebarHost />}
 			<CommandPalette />
 		</div>

@@ -37,6 +37,8 @@ import {
 	getSelectedLocationIds,
 	useImportMarkerVersion,
 	getImportPreviewPositions,
+	useDiffMarkerVersion,
+	getCommitDiffPreview,
 	renderDeltaBus,
 	selBitmaskBus,
 } from "@/store/useMapStore";
@@ -300,6 +302,7 @@ export function MapEmbed() {
 	const activeLocation = useActiveLocation();
 	const trailVersion = useTrailVersion();
 	const importMarkerVersion = useImportMarkerVersion();
+	const diffMarkerVersion = useDiffMarkerVersion();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const cellMgrRef = useRef(new CellManager());
 	const [renderTick, setRenderTick] = useState(0);
@@ -414,6 +417,29 @@ export function MapEmbed() {
 		}
 
 		const layers: Layer[] = [];
+
+		// Commit-diff overlay temporarily replaces the regular markers.
+		if (getWorkArea() === "diff") {
+			const diff = getCommitDiffPreview();
+			if (diff) {
+				const diffLayer = (id: string, pos: Float32Array, color: [number, number, number, number]) =>
+					new ScatterplotLayer({
+						id,
+						data: { length: pos.length / 2, attributes: { getPosition: { value: pos, size: 2 } } },
+						getRadius: 5,
+						radiusUnits: "pixels" as const,
+						radiusMinPixels: 3,
+						getFillColor: color,
+						stroked: false,
+						pickable: false,
+					});
+				if (diff.removed.length) layers.push(diffLayer("diff-removed", diff.removed, [239, 68, 68, 210]));
+				if (diff.added.length) layers.push(diffLayer("diff-added", diff.added, [34, 197, 94, 210]));
+				if (diff.modified.length)
+					layers.push(diffLayer("diff-modified", diff.modified, [245, 158, 11, 220]));
+			}
+			return layers;
+		}
 
 		const polygonSels = allSelections.flatMap((sel) =>
 			sel.props.type === "Intersection" ? sel.props.selections : [sel],
@@ -794,6 +820,7 @@ export function MapEmbed() {
 		renderTick,
 		trailVersion,
 		importMarkerVersion,
+		diffMarkerVersion,
 	]);
 
 	const dispatchContextMenu = useCallback((clientX: number, clientY: number) => {
@@ -871,6 +898,7 @@ export function MapEmbed() {
 				if (tryInterceptClick(lat, lng)) return;
 				if (getWorkArea() === "plugin") return;
 				if (getWorkArea() === "import") return;
+				if (getWorkArea() === "diff") return;
 				const g = gRef.current;
 				if (!g) return;
 				const currentZoom = gMapRef.current?.getZoom() ?? 2;
@@ -1392,6 +1420,7 @@ export function MapEmbed() {
 		latLngAnchor,
 		trailVersion,
 		importMarkerVersion,
+		diffMarkerVersion,
 	]);
 
 	useEffect(() => {
