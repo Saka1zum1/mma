@@ -35,6 +35,7 @@ export function buildPatch(
 		cameraType: data.extra.cameraType ?? null,
 		panoType: data.extra.panoType ?? null,
 		drivingDirection: data.extra.drivingDirection ?? null,
+		uploaderName: data.extra.uploaderName ?? null,
 		imageDate: data.imageDate || null,
 	};
 	const filtered = filterEnrichPatch(fullPatch, enrichFields);

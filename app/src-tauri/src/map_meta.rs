@@ -202,6 +202,13 @@ pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
             labels: None,
             comparison: Some(ComparisonType::Circular { period: 360.0 }),
         }),
+        "uploaderName" => Some(ExtraFieldDef {
+            field_type: ExtraFieldType::String,
+            label: Some("Uploader".into()),
+            values: None,
+            labels: None,
+            comparison: None,
+        }),
         _ => None,
     }
 }
@@ -721,6 +728,8 @@ mod tests {
         assert!(known_field_def("imageDate").is_some());
         assert!(known_field_def("datetime").is_some());
         assert!(known_field_def("timezone").is_some());
+        assert!(known_field_def("drivingDirection").is_some());
+        assert!(known_field_def("uploaderName").is_some());
         assert!(known_field_def("plumbus").is_none());
     }
 

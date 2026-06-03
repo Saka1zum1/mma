@@ -19,6 +19,7 @@ const coreFieldOptions: EnrichFieldOption[] = [
 	{ key: "datetime", label: "Exact date", defaultOff: true },
 	{ key: "timezone", label: "Timezone", defaultOff: true },
 	{ key: "drivingDirection", label: "Driving direction", defaultOff: true },
+	{ key: "uploaderName", label: "Uploader", defaultOff: true },
 ];
 
 const pluginFieldOptions: EnrichFieldOption[] = [];
