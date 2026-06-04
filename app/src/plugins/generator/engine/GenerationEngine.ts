@@ -80,6 +80,7 @@ export class GenerationEngine {
 			this.pauseResolve();
 			this.pauseResolve = null;
 		}
+		this.flushBatch(); // flush any locations held back while paused
 	}
 
 	stop(): void {
@@ -151,6 +152,11 @@ export class GenerationEngine {
 			this.sv.getPanorama(
 				{ location: { lat: coord.lat, lng: coord.lng }, sources: [source], radius: s.radius },
 				(data: google.maps.StreetViewPanoramaData | null, status: string) => {
+					// Paused/stopped while this request was in flight: drop the result.
+					if (!this.running || this.paused) {
+						resolve();
+						return;
+					}
 					if (status !== "OK" || !data) {
 						resolve();
 						return;
@@ -219,6 +225,7 @@ export class GenerationEngine {
 	}
 
 	private getPanoDeep(id: string, region: GeneratorRegion, depth: number): void {
+		if (!this.running || this.paused) return;
 		const s = this.settings;
 		if (depth > s.linksDepth) return;
 		if (region.checkedPanos.has(id)) return;
@@ -228,7 +235,7 @@ export class GenerationEngine {
 		this.sv.getPanorama(
 			{ pano: id },
 			(data: google.maps.StreetViewPanoramaData | null, status: string) => {
-				if (!this.running) return;
+				if (!this.running || this.paused) return;
 				if (status === "UNKNOWN_ERROR") {
 					region.checkedPanos.delete(id);
 					this.getPanoDeep(id, region, depth);
@@ -278,7 +285,7 @@ export class GenerationEngine {
 		pano: google.maps.StreetViewResolvedPanoramaData,
 		region: GeneratorRegion,
 	): void {
-		if (!this.running) return;
+		if (!this.running || this.paused) return;
 		const s = this.settings;
 		const panoId: string = pano.location.pano;
 
@@ -312,7 +319,7 @@ export class GenerationEngine {
 			clearTimeout(this.flushTimer);
 			this.flushTimer = null;
 		}
-		if (this.pendingBatch.length === 0 || !this.running) return;
+		if (this.pendingBatch.length === 0 || !this.running || this.paused) return;
 		const batch = this.pendingBatch.splice(0);
 		this.callbacks.onLocationsFound(batch);
 	}
