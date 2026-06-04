@@ -4,6 +4,7 @@
 //! corruption on crash. Arrow IPC writes go through [`BufWriter`](std::io::BufWriter)
 //! because unbuffered `File` writes are ~15x slower.
 
+use crate::types::{AppError, AppResult};
 use rusqlite::Connection;
 use tauri::ipc::InvokeBody;
 use tauri::Manager;
@@ -22,20 +23,20 @@ pub fn db_filename() -> &'static str {
 }
 
 /// Resolve the full path to the SQLite database inside the app data directory.
-pub(crate) fn db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+pub(crate) fn db_path(app: &tauri::AppHandle) -> AppResult<std::path::PathBuf> {
     app.path()
         .app_data_dir()
         .map(|p| p.join(db_filename()))
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 /// Open (or create) the SQLite database, ensuring the parent directory exists.
-pub(crate) fn open_db(app: &tauri::AppHandle) -> Result<Connection, String> {
+pub(crate) fn open_db(app: &tauri::AppHandle) -> AppResult<Connection> {
     let path = db_path(app)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("failed to create app data dir: {e}"))?;
     }
-    Connection::open(path).map_err(|e| e.to_string())
+    Connection::open(path).map_err(AppError::from)
 }
 
 /// Apply all pending schema migrations from [`MIGRATIONS`] in order.
@@ -43,18 +44,18 @@ pub(crate) fn open_db(app: &tauri::AppHandle) -> Result<Connection, String> {
 /// On first run after migrating from the old `tauri-plugin-sql` system, seeds
 /// already-applied versions from `_sqlx_migrations` so they aren't replayed.
 /// Sets WAL mode and foreign keys as part of the connection setup.
-pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn run_migrations(app: &tauri::AppHandle) -> AppResult<()> {
     let conn = open_db(app)?;
     conn.execute_batch("
         PRAGMA foreign_keys = ON;
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
-    ").map_err(|e| e.to_string())?;
+    ")?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS _mma_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
         [],
-    ).map_err(|e| e.to_string())?;
+    )?;
 
     // Seed from tauri-plugin-sql's migration table if upgrading from old system
     let sqlx_exists: bool = conn.query_row(
@@ -69,10 +70,8 @@ pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
     }
 
     let applied: std::collections::HashSet<u32> = conn
-        .prepare("SELECT version FROM _mma_migrations")
-        .map_err(|e| e.to_string())?
-        .query_map([], |row| row.get(0))
-        .map_err(|e| e.to_string())?
+        .prepare("SELECT version FROM _mma_migrations")?
+        .query_map([], |row| row.get(0))?
         .filter_map(|r| r.ok())
         .collect();
 
@@ -84,7 +83,7 @@ pub(crate) fn run_migrations(app: &tauri::AppHandle) -> Result<(), String> {
         conn.execute(
             "INSERT INTO _mma_migrations (version, applied_at) VALUES (?1, datetime('now'))",
             rusqlite::params![version],
-        ).map_err(|e| e.to_string())?;
+        )?;
         if *version == 16 { wiped_blobs = true; }
     }
 
@@ -289,37 +288,37 @@ const MIGRATIONS: &[(u32, &str)] = &[
 
 /// Root directory for all Arrow IPC files (`arrow/` or `arrow_test/`).
 /// Created on first access.
-pub(crate) fn arrow_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+pub(crate) fn arrow_dir(app: &tauri::AppHandle) -> AppResult<std::path::PathBuf> {
     let subdir = if is_test_mode() { "arrow_test" } else { "arrow" };
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(subdir);
+    let dir = app.path().app_data_dir()?.join(subdir);
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir)?;
     }
     Ok(dir)
 }
 
 /// Path to a map's base Arrow IPC snapshot: `<arrow_dir>/<map_id>.arrow`.
-pub(crate) fn arrow_path(app: &tauri::AppHandle, map_id: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn arrow_path(app: &tauri::AppHandle, map_id: &str) -> AppResult<std::path::PathBuf> {
     Ok(arrow_dir(app)?.join(format!("{map_id}.arrow")))
 }
 
 /// Path to a map's uncommitted delta file: `<arrow_dir>/<map_id>_delta.arrow`.
 /// Contains overlay mutations not yet baked into the base snapshot.
-pub(crate) fn arrow_delta_path(app: &tauri::AppHandle, map_id: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn arrow_delta_path(app: &tauri::AppHandle, map_id: &str) -> AppResult<std::path::PathBuf> {
     Ok(arrow_dir(app)?.join(format!("{map_id}_delta.arrow")))
 }
 
 /// Directory holding a map's per-commit VCS delta files. Created on first access.
-pub(crate) fn commit_dir(app: &tauri::AppHandle, map_id: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn commit_dir(app: &tauri::AppHandle, map_id: &str) -> AppResult<std::path::PathBuf> {
     let dir = arrow_dir(app)?.join("commits").join(map_id);
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir)?;
     }
     Ok(dir)
 }
 
 /// Path to a single commit's Arrow delta file: `<arrow_dir>/commits/<map_id>/<commit_id>.arrow`.
-pub(crate) fn commit_delta_path(app: &tauri::AppHandle, map_id: &str, commit_id: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn commit_delta_path(app: &tauri::AppHandle, map_id: &str, commit_id: &str) -> AppResult<std::path::PathBuf> {
     Ok(commit_dir(app, map_id)?.join(format!("{commit_id}.arrow")))
 }
 
@@ -328,24 +327,23 @@ pub(crate) fn commit_delta_path(app: &tauri::AppHandle, map_id: &str, commit_id:
 /// Uses a 1 MB `BufWriter` (unbuffered writes are ~15x slower on Windows).
 /// The write targets a `.tmp` sibling then renames, so readers never see
 /// a partial file.
-pub(crate) fn write_arrow_ipc(path: &std::path::Path, batch: &arrow::array::RecordBatch) -> Result<(), String> {
+pub(crate) fn write_arrow_ipc(path: &std::path::Path, batch: &arrow::array::RecordBatch) -> AppResult<()> {
     atomic_write(path, |file| {
         let buf = std::io::BufWriter::with_capacity(1 << 20, file);
-        let mut writer = arrow::ipc::writer::FileWriter::try_new(buf, &batch.schema())
-            .map_err(|e| e.to_string())?;
-        writer.write(batch).map_err(|e| e.to_string())?;
-        writer.finish().map_err(|e| e.to_string())?;
+        let mut writer = arrow::ipc::writer::FileWriter::try_new(buf, &batch.schema())?;
+        writer.write(batch)?;
+        writer.finish()?;
         Ok(())
     })
 }
 
 /// Write to `path` via a temporary `.tmp` sibling, then atomically rename.
 /// Guarantees readers never observe a partially-written file.
-pub(crate) fn atomic_write(path: &std::path::Path, write_fn: impl FnOnce(std::fs::File) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn atomic_write(path: &std::path::Path, write_fn: impl FnOnce(std::fs::File) -> AppResult<()>) -> AppResult<()> {
     let tmp = path.with_extension("tmp");
-    let file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    let file = std::fs::File::create(&tmp)?;
     write_fn(file)?;
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -353,13 +351,12 @@ pub(crate) fn atomic_write(path: &std::path::Path, write_fn: impl FnOnce(std::fs
 ///
 /// If the file contains multiple batches they are concatenated. An empty or
 /// missing-batch file returns an empty batch with the location schema.
-pub(crate) fn read_arrow_ipc(path: &std::path::Path) -> Result<arrow::array::RecordBatch, String> {
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let reader = arrow::ipc::reader::FileReader::try_new(file, None)
-        .map_err(|e| e.to_string())?;
+pub(crate) fn read_arrow_ipc(path: &std::path::Path) -> AppResult<arrow::array::RecordBatch> {
+    let file = std::fs::File::open(path)?;
+    let reader = arrow::ipc::reader::FileReader::try_new(file, None)?;
     let mut batches = Vec::new();
     for batch in reader {
-        batches.push(crate::arrow_migrate::migrate(batch.map_err(|e| e.to_string())?)?);
+        batches.push(crate::arrow_migrate::migrate(batch?)?);
     }
     if batches.is_empty() {
         return Ok(arrow::array::RecordBatch::new_empty(std::sync::Arc::new(
@@ -370,7 +367,7 @@ pub(crate) fn read_arrow_ipc(path: &std::path::Path) -> Result<arrow::array::Rec
         return Ok(batches.into_iter().next().unwrap());
     }
     let schema = std::sync::Arc::new(arrow_bridge::location_schema());
-    arrow::compute::concat_batches(&schema, &batches).map_err(|e| e.to_string())
+    arrow::compute::concat_batches(&schema, &batches).map_err(AppError::from)
 }
 
 /// Keeps the mmap alive for as long as the RecordBatch references it.
@@ -384,16 +381,16 @@ pub(crate) struct MmapHandle {
 /// as long as any array data from the batch is referenced. Parses the IPC
 /// footer and record-batch blocks directly from the mmap buffer, avoiding
 /// any heap allocation for the raw column data.
-pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::array::RecordBatch, MmapHandle), String> {
+pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> AppResult<(arrow::array::RecordBatch, MmapHandle)> {
     use arrow::buffer::Buffer;
     use arrow::ipc::reader::{FileDecoder, read_footer_length};
     use arrow::ipc::{root_as_footer, convert::fb_to_schema};
     use std::sync::Arc;
 
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let file = std::fs::File::open(path)?;
     // SAFETY: we own the file exclusively; no other process modifies it while mapped.
     // On Windows, the mmap holds an exclusive lock preventing external modification.
-    let mmap = unsafe { memmap2::Mmap::map(&file) }.map_err(|e| e.to_string())?;
+    let mmap = unsafe { memmap2::Mmap::map(&file) }?;
     let buffer = Buffer::from(bytes::Bytes::from_owner(mmap));
 
     let buf_len = buffer.len();
@@ -406,10 +403,8 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
     }
 
     let trailer: [u8; 10] = buffer[buf_len - 10..].try_into().unwrap();
-    let footer_len = read_footer_length(trailer)
-        .map_err(|e| e.to_string())?;
-    let footer = root_as_footer(&buffer[buf_len - 10 - footer_len..buf_len - 10])
-        .map_err(|e| e.to_string())?;
+    let footer_len = read_footer_length(trailer)?;
+    let footer = root_as_footer(&buffer[buf_len - 10 - footer_len..buf_len - 10]).map_err(|e| AppError(e.to_string()))?;
     let schema = Arc::new(fb_to_schema(footer.schema().unwrap()));
     let mut decoder = FileDecoder::new(schema.clone(), footer.version());
 
@@ -417,7 +412,7 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
     for block in footer.dictionaries().iter().flatten() {
         let block_len = block.bodyLength() as usize + block.metaDataLength() as usize;
         let data = buffer.slice_with_length(block.offset() as usize, block_len);
-        decoder.read_dictionary(&block, &data).map_err(|e| e.to_string())?;
+        decoder.read_dictionary(&block, &data)?;
     }
 
     let blocks = footer.recordBatches();
@@ -434,8 +429,7 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
         let block = blocks.get(0);
         let block_len = block.bodyLength() as usize + block.metaDataLength() as usize;
         let data = buffer.slice_with_length(block.offset() as usize, block_len);
-        let batch = decoder.read_record_batch(&block, &data)
-            .map_err(|e| e.to_string())?
+        let batch = decoder.read_record_batch(&block, &data)?
             .unwrap_or_else(|| arrow::array::RecordBatch::new_empty(schema));
         Ok((crate::arrow_migrate::migrate(batch)?, MmapHandle { _buffer: buffer }))
     } else {
@@ -444,13 +438,11 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
             let block = blocks.get(i);
             let block_len = block.bodyLength() as usize + block.metaDataLength() as usize;
             let data = buffer.slice_with_length(block.offset() as usize, block_len);
-            if let Some(batch) = decoder.read_record_batch(&block, &data)
-                .map_err(|e| e.to_string())? {
+            if let Some(batch) = decoder.read_record_batch(&block, &data)? {
                 batches.push(batch);
             }
         }
-        let merged = arrow::compute::concat_batches(&schema, &batches)
-            .map_err(|e| e.to_string())?;
+        let merged = arrow::compute::concat_batches(&schema, &batches)?;
         Ok((crate::arrow_migrate::migrate(merged)?, MmapHandle { _buffer: buffer }))
     }
 }
@@ -461,7 +453,7 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> Result<(arrow::arra
 
 /// Extract the raw binary body from a Tauri IPC request, or error if the
 /// body is JSON rather than binary.
-fn raw_body<'a>(req: &'a tauri::ipc::Request<'a>) -> Result<&'a [u8], String> {
+fn raw_body<'a>(req: &'a tauri::ipc::Request<'a>) -> AppResult<&'a [u8]> {
     match req.body() {
         InvokeBody::Raw(b) => Ok(b),
         _ => Err("expected binary request body".into()),

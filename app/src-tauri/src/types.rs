@@ -68,3 +68,64 @@ pub struct Location {
 // TODO: consider bitflags! crate so these compose into a typed LocationFlags instead of raw u32
 pub const LOAD_AS_PANO_ID: u32 = 1;
 pub const INFORMATIONAL: u32 = 2;
+
+/// Error type for every fallible backend operation and Tauri command.
+#[derive(Debug, Clone)]
+pub struct AppError(pub String);
+
+/// Result alias for backend operations and commands.
+pub type AppResult<T> = Result<T, AppError>;
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for AppError {}
+
+impl serde::Serialize for AppError {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl specta::Type for AppError {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        <String as specta::Type>::definition(types)
+    }
+}
+
+impl From<String> for AppError {
+    fn from(s: String) -> Self { AppError(s) }
+}
+
+impl From<&str> for AppError {
+    fn from(s: &str) -> Self { AppError(s.to_string()) }
+}
+
+macro_rules! impl_app_error_from {
+    ($($t:ty),* $(,)?) => {$(
+        impl From<$t> for AppError {
+            fn from(e: $t) -> Self { AppError(e.to_string()) }
+        }
+    )*};
+}
+
+impl_app_error_from!(
+    std::io::Error,
+    rusqlite::Error,
+    serde_json::Error,
+    arrow::error::ArrowError,
+    rmp_serde::encode::Error,
+    rmp_serde::decode::Error,
+    tauri::Error,
+    tokio::task::JoinError,
+    zip::result::ZipError,
+    reqwest::Error,
+);
+
+// `PoisonError<T>` is generic; Display is unconditional, so one blanket covers all lock types.
+impl<T> From<std::sync::PoisonError<T>> for AppError {
+    fn from(e: std::sync::PoisonError<T>) -> Self { AppError(e.to_string()) }
+}

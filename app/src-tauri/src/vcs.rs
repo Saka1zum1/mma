@@ -6,6 +6,7 @@
 //! graph. A commit's full state is materialized by replaying its ancestor deltas
 //! from genesis forward (see [`crate::vcs_delta`]).
 
+use crate::types::AppResult;
 use rusqlite::params;
 use tauri::State;
 
@@ -64,7 +65,7 @@ pub fn store_create_commit(
     state: State<'_, StoreState>,
     map_id: String,
     message: Option<String>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let _t = std::time::Instant::now();
     let conn = fast_io::open_db(&app)?;
 
@@ -89,7 +90,7 @@ pub fn store_create_commit(
     let mut current_fallback: Vec<Location> = Vec::new();
     let location_count: u32;
     {
-        let mut mgr = state.lock().map_err(|e| e.to_string())?;
+        let mut mgr = state.lock()?;
         let store = mgr.store_for_map(&map_id)?;
         location_count = store.alive_count as u32;
         if parent_id.is_some() && store.overlay.dirty {
@@ -125,7 +126,7 @@ pub fn store_create_commit(
     conn.execute(
         "INSERT INTO commits (id, map_id, parent_id, message, location_count, created_at, tree_hash, added, removed, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![id, map_id, parent_id, message, location_count, now, Option::<String>::None, added, removed_n, modified],
-    ).map_err(|e| e.to_string())?;
+    )?;
 
     log::info!(
         "[vcs] commit {} locs={} +{} -{} ~{} in {}ms",
@@ -145,13 +146,12 @@ pub fn store_create_commit(
 pub fn store_list_commits(
     app: tauri::AppHandle,
     map_id: String,
-) -> Result<Vec<CommitInfo>, String> {
+) -> AppResult<Vec<CommitInfo>> {
     let conn = fast_io::open_db(&app)?;
     let mut stmt = conn
         .prepare(
             "SELECT id, map_id, parent_id, message, tree_hash, added, removed, modified, location_count, created_at FROM commits WHERE map_id = ?1 ORDER BY created_at DESC, rowid DESC",
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
     let rows = stmt
         .query_map(params![map_id], |row| {
@@ -167,12 +167,11 @@ pub fn store_list_commits(
                 location_count: row.get(8)?,
                 created_at: row.get(9)?,
             })
-        })
-        .map_err(|e| e.to_string())?;
+        })?;
 
     let mut commits = Vec::new();
     for row in rows {
-        commits.push(row.map_err(|e| e.to_string())?);
+        commits.push(row?);
     }
     Ok(commits)
 }
@@ -188,7 +187,7 @@ pub fn store_checkout_commit(
     app: tauri::AppHandle,
     map_id: String,
     commit_id: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let conn = fast_io::open_db(&app)?;
     let materialized = vcs_delta::materialize_commit(&app, &conn, &map_id, &commit_id)?;
     // BTreeMap yields ascending id order, satisfying the sorted-id invariant the
@@ -217,7 +216,7 @@ pub fn store_get_commit_delta(
     app: tauri::AppHandle,
     map_id: String,
     commit_id: String,
-) -> Result<CommitDelta, String> {
+) -> AppResult<CommitDelta> {
     let path = fast_io::commit_delta_path(&app, &map_id, &commit_id)?;
     let batch = fast_io::read_arrow_ipc(&path)?;
     let (created, removed) = arrow_bridge::batch_to_delta(&batch);

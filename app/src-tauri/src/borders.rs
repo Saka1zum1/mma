@@ -8,6 +8,7 @@
 //! TODO: binary format for border data (mmap + typed arrays) to eliminate
 //! the 1-2s JSON parse on first use of heavy datasets.
 
+use crate::types::{AppError, AppResult};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -353,19 +354,18 @@ fn convert_feature(gj: GeoJsonFeature) -> Option<BorderFeature> {
     Some(BorderFeature { name, code, geometry })
 }
 
-fn parse_geojson(data: &str) -> Result<BorderDataset, String> {
+fn parse_geojson(data: &str) -> AppResult<BorderDataset> {
     let collection: GeoJsonCollection =
         serde_json::from_str(data).map_err(|e| format!("Failed to parse border GeoJSON: {e}"))?;
     let features = collection.features.into_iter().filter_map(convert_feature).collect();
     Ok(BorderDataset { features })
 }
 
-fn load_dataset(app: &tauri::AppHandle, level: &str) -> Result<(), String> {
+fn load_dataset(app: &tauri::AppHandle, level: &str) -> AppResult<()> {
     let data = if level == "light" {
         include_str!("../../public/borders.json").to_string()
     } else {
-        let path = app.path().app_data_dir()
-            .map_err(|e| e.to_string())?
+        let path = app.path().app_data_dir()?
             .join("borders")
             .join(format!("borders-{level}.json"));
         std::fs::read_to_string(&path)
@@ -381,20 +381,19 @@ fn load_dataset(app: &tauri::AppHandle, level: &str) -> Result<(), String> {
 
 // --- IPC commands ---
 
-fn validate_border_level(level: &str) -> Result<(), String> {
+fn validate_border_level(level: &str) -> AppResult<()> {
     if !matches!(level, "light" | "medium" | "heavy") {
-        return Err(format!("Invalid border level: {level}"));
+        return Err(AppError(format!("Invalid border level: {level}")));
     }
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn check_border_file(app: tauri::AppHandle, level: String) -> Result<bool, String> {
+pub fn check_border_file(app: tauri::AppHandle, level: String) -> AppResult<bool> {
     if level == "light" { return Ok(true); }
     validate_border_level(&level)?;
-    let path = app.path().app_data_dir()
-        .map_err(|e| e.to_string())?
+    let path = app.path().app_data_dir()?
         .join("borders")
         .join(format!("borders-{level}.json"));
     Ok(path.exists())
@@ -402,27 +401,24 @@ pub fn check_border_file(app: tauri::AppHandle, level: String) -> Result<bool, S
 
 #[tauri::command]
 #[specta::specta]
-pub fn download_border_file(app: tauri::AppHandle, level: String) -> Result<(), String> {
+pub fn download_border_file(app: tauri::AppHandle, level: String) -> AppResult<()> {
     validate_border_level(&level)?;
     if level == "light" { return Ok(()); }
-    let dir = app.path().app_data_dir()
-        .map_err(|e| e.to_string())?
+    let dir = app.path().app_data_dir()?
         .join("borders");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir)?;
     let url = format!(
         "https://raw.githubusercontent.com/ccmdi/mma/master/data/borders/borders-{level}.json"
     );
     let client = reqwest::blocking::Client::builder()
         .use_rustls_tls()
         .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| e.to_string())?;
+        .build()?;
     let bytes = client.get(&url).send()
         .and_then(|r| r.error_for_status())
         .map_err(|e| format!("Failed to download borders-{level}.json: {e}"))?
-        .bytes().map_err(|e| e.to_string())?;
-    std::fs::write(dir.join(format!("borders-{level}.json")), &bytes)
-        .map_err(|e| e.to_string())?;
+        .bytes()?;
+    std::fs::write(dir.join(format!("borders-{level}.json")), &bytes)?;
     // Invalidate cache so next lookup reloads
     cache().lock().unwrap().remove(&level);
     Ok(())
@@ -430,7 +426,7 @@ pub fn download_border_file(app: tauri::AppHandle, level: String) -> Result<(), 
 
 #[tauri::command]
 #[specta::specta]
-pub fn border_lookup(app: tauri::AppHandle, lat: f64, lng: f64, level: String) -> Result<Option<PolygonGeometry>, String> {
+pub fn border_lookup(app: tauri::AppHandle, lat: f64, lng: f64, level: String) -> AppResult<Option<PolygonGeometry>> {
     validate_border_level(&level)?;
 
     {
@@ -459,7 +455,7 @@ pub fn border_lookup(app: tauri::AppHandle, lat: f64, lng: f64, level: String) -
 }
 
 /// Ensure a dataset level is loaded into the in-memory cache.
-fn ensure_loaded(app: &tauri::AppHandle, level: &str) -> Result<(), String> {
+fn ensure_loaded(app: &tauri::AppHandle, level: &str) -> AppResult<()> {
     if cache().lock().unwrap().contains_key(level) {
         return Ok(());
     }
@@ -476,7 +472,7 @@ pub fn tally_countries(
     app: &tauri::AppHandle,
     level: &str,
     coords: &[(f64, f64)],
-) -> Result<Vec<(String, u32)>, String> {
+) -> AppResult<Vec<(String, u32)>> {
     use rayon::prelude::*;
 
     let level = if validate_border_level(level).is_ok() && ensure_loaded(app, level).is_ok() {

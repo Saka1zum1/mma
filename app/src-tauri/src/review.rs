@@ -9,6 +9,7 @@
 //! Command wrappers (`store_review_*`) open the DB and delegate to the `&Connection` core
 //! functions below, which carry all the behavior and are unit-tested directly.
 
+use crate::types::AppResult;
 use rusqlite::Connection;
 use crate::fast_io;
 use crate::util::now_iso;
@@ -84,21 +85,21 @@ fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<ReviewSession> {
 // --- Core (testable against any Connection) ---
 
 /// Creates a review session over `order` (frozen worklist). Cursor starts at the first id.
-pub(crate) fn create(conn: &Connection, session: ReviewCreate) -> Result<ReviewSession, String> {
+pub(crate) fn create(conn: &Connection, session: ReviewCreate) -> AppResult<ReviewSession> {
     if session.order.is_empty() {
         return Err("cannot create a review session with an empty worklist".into());
     }
     let id = uuid::Uuid::new_v4().to_string();
     let now = now_iso();
     let cursor_id = session.order[0];
-    let source_props = serde_json::to_string(&session.source_props).map_err(|e| e.to_string())?;
-    let ordering = serde_json::to_string(&session.order).map_err(|e| e.to_string())?;
+    let source_props = serde_json::to_string(&session.source_props)?;
+    let ordering = serde_json::to_string(&session.order)?;
 
     conn.execute(
         "INSERT INTO review_sessions (id, map_id, name, source_key, source_props, ordering, reviewed, cursor_id, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, '[]', ?, 'active', ?, ?)",
         rusqlite::params![id, session.map_id, session.name, session.source_key, source_props, ordering, cursor_id, now, now],
-    ).map_err(|e| e.to_string())?;
+    )?;
 
     Ok(ReviewSession {
         id,
@@ -116,22 +117,21 @@ pub(crate) fn create(conn: &Connection, session: ReviewCreate) -> Result<ReviewS
 }
 
 /// Resume lookup: the most recent active session for `map_id` matching `source_key`, if any.
-pub(crate) fn get(conn: &Connection, map_id: &str, source_key: &str) -> Result<Option<ReviewSession>, String> {
+pub(crate) fn get(conn: &Connection, map_id: &str, source_key: &str) -> AppResult<Option<ReviewSession>> {
     let sql = format!(
         "SELECT {COLS} FROM review_sessions WHERE map_id = ? AND source_key = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1"
     );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt
-        .query_map(rusqlite::params![map_id, source_key], row_to_session)
-        .map_err(|e| e.to_string())?;
+        .query_map(rusqlite::params![map_id, source_key], row_to_session)?;
     match rows.next() {
-        Some(r) => Ok(Some(r.map_err(|e| e.to_string())?)),
+        Some(r) => Ok(Some(r?)),
         None => Ok(None),
     }
 }
 
 /// Lists a map's sessions, newest-first. Optional `status` filter (e.g. "active" / "done").
-pub(crate) fn list(conn: &Connection, map_id: &str, status: Option<&str>) -> Result<Vec<ReviewSession>, String> {
+pub(crate) fn list(conn: &Connection, map_id: &str, status: Option<&str>) -> AppResult<Vec<ReviewSession>> {
     let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match status {
         Some(s) => (
             format!("SELECT {COLS} FROM review_sessions WHERE map_id = ? AND status = ? ORDER BY updated_at DESC"),
@@ -142,19 +142,18 @@ pub(crate) fn list(conn: &Connection, map_id: &str, status: Option<&str>) -> Res
             vec![Box::new(map_id.to_string())],
         ),
     };
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), row_to_session)
-        .map_err(|e| e.to_string())?;
+        .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), row_to_session)?;
     let mut out = Vec::new();
     for row in rows {
-        out.push(row.map_err(|e| e.to_string())?);
+        out.push(row?);
     }
     Ok(out)
 }
 
 /// Applies a partial update. Only `Some` fields are written. Always bumps `updated_at`.
-pub(crate) fn update(conn: &Connection, update: ReviewUpdate) -> Result<(), String> {
+pub(crate) fn update(conn: &Connection, update: ReviewUpdate) -> AppResult<()> {
     let mut sets: Vec<&str> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -164,11 +163,11 @@ pub(crate) fn update(conn: &Connection, update: ReviewUpdate) -> Result<(), Stri
     }
     if let Some(reviewed) = &update.reviewed {
         sets.push("reviewed = ?");
-        params.push(Box::new(serde_json::to_string(reviewed).map_err(|e| e.to_string())?));
+        params.push(Box::new(serde_json::to_string(reviewed)?));
     }
     if let Some(ordering) = &update.ordering {
         sets.push("ordering = ?");
-        params.push(Box::new(serde_json::to_string(ordering).map_err(|e| e.to_string())?));
+        params.push(Box::new(serde_json::to_string(ordering)?));
     }
     if let Some(status) = &update.status {
         sets.push("status = ?");
@@ -182,15 +181,13 @@ pub(crate) fn update(conn: &Connection, update: ReviewUpdate) -> Result<(), Stri
     params.push(Box::new(update.id));
 
     let sql = format!("UPDATE review_sessions SET {} WHERE id = ?", sets.join(", "));
-    conn.execute(&sql, rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())))
-        .map_err(|e| e.to_string())?;
+    conn.execute(&sql, rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())))?;
     Ok(())
 }
 
 /// Deletes a session.
-pub(crate) fn delete(conn: &Connection, id: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM review_sessions WHERE id = ?", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+pub(crate) fn delete(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM review_sessions WHERE id = ?", rusqlite::params![id])?;
     Ok(())
 }
 
@@ -198,31 +195,31 @@ pub(crate) fn delete(conn: &Connection, id: &str) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn store_review_create(app: tauri::AppHandle, session: ReviewCreate) -> Result<ReviewSession, String> {
+pub fn store_review_create(app: tauri::AppHandle, session: ReviewCreate) -> AppResult<ReviewSession> {
     create(&fast_io::open_db(&app)?, session)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn store_review_get(app: tauri::AppHandle, map_id: String, source_key: String) -> Result<Option<ReviewSession>, String> {
+pub fn store_review_get(app: tauri::AppHandle, map_id: String, source_key: String) -> AppResult<Option<ReviewSession>> {
     get(&fast_io::open_db(&app)?, &map_id, &source_key)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn store_review_list(app: tauri::AppHandle, map_id: String, status: Option<String>) -> Result<Vec<ReviewSession>, String> {
+pub fn store_review_list(app: tauri::AppHandle, map_id: String, status: Option<String>) -> AppResult<Vec<ReviewSession>> {
     list(&fast_io::open_db(&app)?, &map_id, status.as_deref())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn store_review_update(app: tauri::AppHandle, update: ReviewUpdate) -> Result<(), String> {
+pub fn store_review_update(app: tauri::AppHandle, update: ReviewUpdate) -> AppResult<()> {
     self::update(&fast_io::open_db(&app)?, update)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn store_review_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn store_review_delete(app: tauri::AppHandle, id: String) -> AppResult<()> {
     delete(&fast_io::open_db(&app)?, &id)
 }
 

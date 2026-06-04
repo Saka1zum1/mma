@@ -12,6 +12,7 @@
 //! Steps operate by column *name*, so the same step handles both the base schema
 //! and the delta schema (which appends a trailing `op` column).
 
+use crate::types::{AppError, AppResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -39,7 +40,7 @@ pub fn batch_version(metadata: &HashMap<String, String>) -> u32 {
         .unwrap_or(1)
 }
 
-type MigrationStep = fn(RecordBatch) -> Result<RecordBatch, String>;
+type MigrationStep = fn(RecordBatch) -> AppResult<RecordBatch>;
 
 /// Ordered `(from_version, step)` registry. Each step migrates `from_version` ->
 /// `from_version + 1`. Steps must be contiguous and end at `CURRENT_VERSION - 1`.
@@ -47,7 +48,7 @@ const MIGRATIONS: &[(u32, MigrationStep)] = &[(1, v1_to_v2_timestamps)];
 
 /// Bring a batch up to [`CURRENT_VERSION`], applying each registered step in order.
 /// A no-op for batches already at (or beyond) the current version.
-pub fn migrate(batch: RecordBatch) -> Result<RecordBatch, String> {
+pub fn migrate(batch: RecordBatch) -> AppResult<RecordBatch> {
     let mut version = batch_version(batch.schema().metadata());
     if version >= CURRENT_VERSION {
         return Ok(batch);
@@ -69,7 +70,7 @@ pub fn migrate(batch: RecordBatch) -> Result<RecordBatch, String> {
 /// v1 -> v2: `created_at`/`modified_at` columns change from ISO-string `Utf8`
 /// to `UInt32` epoch seconds. Non-nullable columns fall back to 0 on parse
 /// failure (the schema forbids nulls there).
-fn v1_to_v2_timestamps(batch: RecordBatch) -> Result<RecordBatch, String> {
+fn v1_to_v2_timestamps(batch: RecordBatch) -> AppResult<RecordBatch> {
     let schema = batch.schema();
     let mut fields: Vec<Arc<Field>> = Vec::with_capacity(schema.fields().len());
     let mut columns: Vec<ArrayRef> = Vec::with_capacity(batch.num_columns());
@@ -98,7 +99,7 @@ fn v1_to_v2_timestamps(batch: RecordBatch) -> Result<RecordBatch, String> {
     }
 
     let schema = Arc::new(Schema::new_with_metadata(fields, version_metadata()));
-    RecordBatch::try_new(schema, columns).map_err(|e| e.to_string())
+    RecordBatch::try_new(schema, columns).map_err(AppError::from)
 }
 
 #[cfg(test)]

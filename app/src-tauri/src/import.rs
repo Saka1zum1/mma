@@ -5,6 +5,7 @@
 //! simd_json with parallel object deserialization via rayon. A two-phase
 //! preview/confirm flow lets the user inspect data before committing.
 
+use crate::types::AppResult;
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Mutex;
@@ -577,24 +578,24 @@ fn get_str<'a>(obj: &'a serde_json::Map<String, Value>, keys: &[&str]) -> Option
 // Zip orchestration
 // ---------------------------------------------------------------------------
 
-fn read_zip_entries(path: &str) -> Result<Vec<(String, String)>, String> {
+fn read_zip_entries(path: &str) -> AppResult<Vec<(String, String)>> {
     let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip: {}", e))?;
 
     let mut entries = Vec::new();
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let mut entry = archive.by_index(i)?;
         if entry.is_dir() || !entry.name().ends_with(".json") { continue; }
         let name = entry.name().to_string();
         let mut text = String::new();
-        entry.read_to_string(&mut text).map_err(|e| e.to_string())?;
+        entry.read_to_string(&mut text)?;
         entries.push((name, text));
     }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(entries)
 }
 
-fn read_single_json(path: &str) -> Result<Vec<(String, String)>, String> {
+fn read_single_json(path: &str) -> AppResult<Vec<(String, String)>> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read file: {}", e))?;
     let filename = std::path::Path::new(path)
@@ -610,7 +611,7 @@ fn read_single_json(path: &str) -> Result<Vec<(String, String)>, String> {
 
 /// Persist a parsed map as a new database entry + Arrow IPC file.
 /// Assigns sequential u32 location IDs starting at 1.
-fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap) -> Result<ImportedMapInfo, String> {
+fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap) -> AppResult<ImportedMapInfo> {
     let map_id = Uuid::new_v4().to_string();
     let now = now_iso();
     let loc_count = map.locations.len() as u32;
@@ -632,7 +633,7 @@ fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap
     let arrow_path = fast_io::arrow_path(app, &map_id)?;
     fast_io::write_arrow_ipc(&arrow_path, &batch)?;
 
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction()?;
 
     // Build tags JSON for the maps row
     let tags_json = {
@@ -647,9 +648,9 @@ fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap
     tx.execute(
         "INSERT INTO maps (id, name, description, folder, settings, score_bounds, extra, tags, location_count, created_at, updated_at) VALUES (?1, ?2, '', ?3, ?4, '\"auto\"', ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![map_id, map.name, map.folder, crate::map_meta::default_settings_json(), extra_json, tags_json, loc_count, now, now],
-    ).map_err(|e| e.to_string())?;
+    )?;
 
-    tx.commit().map_err(|e| e.to_string())?;
+    tx.commit()?;
 
     Ok(ImportedMapInfo {
         id: map_id,
@@ -668,7 +669,7 @@ fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap
 /// ZIP files have each `.json` entry parsed in parallel via rayon.
 #[tauri::command]
 #[specta::specta]
-pub async fn bulk_import_preview(path: String) -> Result<Vec<ImportPreviewEntry>, String> {
+pub async fn bulk_import_preview(path: String) -> AppResult<Vec<ImportPreviewEntry>> {
     tokio::task::spawn_blocking(move || {
         let entries = if path.ends_with(".zip") {
             read_zip_entries(&path)?
@@ -692,7 +693,7 @@ pub async fn bulk_import_preview(path: String) -> Result<Vec<ImportPreviewEntry>
         *CACHED_PARSE.lock().unwrap() = Some(CachedImport { path, maps });
 
         Ok(results)
-    }).await.map_err(|e| e.to_string())?
+    }).await?
 }
 
 /// Progress event emitted per-map during bulk import, consumed by the frontend
@@ -715,7 +716,7 @@ pub async fn bulk_import_confirm(
     app: tauri::AppHandle,
     path: String,
     selected_indices: Vec<u32>,
-) -> Result<Vec<ImportedMapInfo>, String> {
+) -> AppResult<Vec<ImportedMapInfo>> {
     let main_path = fast_io::db_path(&app)?;
     let app_handle = app.clone();
 
@@ -744,9 +745,8 @@ pub async fn bulk_import_confirm(
         let total = parsed_maps.len() as u32;
 
         // Open DB once for all maps
-        let conn = Connection::open(&main_path).map_err(|e| e.to_string())?;
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
-            .map_err(|e| e.to_string())?;
+        let conn = Connection::open(&main_path)?;
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
 
         let mut results = Vec::with_capacity(parsed_maps.len());
         for (i, map) in parsed_maps.into_iter().enumerate() {
@@ -761,7 +761,7 @@ pub async fn bulk_import_confirm(
         }
 
         Ok(results)
-    }).await.map_err(|e| e.to_string())?
+    }).await?
 }
 
 // ---------------------------------------------------------------------------
@@ -795,19 +795,19 @@ pub struct EditorImportPreview {
 }
 
 /// Write interleaved LE f32 `[lng, lat]` for every location to a temp file.
-fn write_preview_positions(locs: &[Location]) -> Result<String, String> {
+fn write_preview_positions(locs: &[Location]) -> AppResult<String> {
     let mut buf: Vec<u8> = Vec::with_capacity(locs.len() * 8);
     for l in locs {
         buf.extend_from_slice(&(l.lng as f32).to_le_bytes());
         buf.extend_from_slice(&(l.lat as f32).to_le_bytes());
     }
     let path = std::env::temp_dir().join("mma_import_preview.bin");
-    std::fs::write(&path, &buf).map_err(|e| e.to_string())?;
+    std::fs::write(&path, &buf)?;
     Ok(path.to_string_lossy().into_owned())
 }
 
 /// Build preview stats from a parsed map and cache the parse for commit.
-fn build_preview(parsed: ParsedMap) -> Result<EditorImportPreview, String> {
+fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
     let mut field_counts: HashMap<String, u32> = HashMap::new();
     for loc in &parsed.locations {
         if loc.heading != 0.0 { *field_counts.entry("heading".into()).or_default() += 1; }
@@ -847,9 +847,9 @@ static EDITOR_IMPORT_CACHE: Mutex<Option<ParsedMap>> = Mutex::new(None);
 /// import sidebar. Caches the parse result for `store_import_file` to consume on commit.
 #[tauri::command]
 #[specta::specta]
-pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String> {
+pub fn store_import_preview(path: String) -> AppResult<EditorImportPreview> {
     let t0 = std::time::Instant::now();
-    let mut buf = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let mut buf = std::fs::read(&path)?;
     let t_read = t0.elapsed();
     let parsed = parse_file(&mut buf);
     log::debug!("[import-preview] read={:.0}ms parse={:.0}ms locs={}", t_read.as_millis(), t0.elapsed().as_millis(), parsed.locations.len());
@@ -860,7 +860,7 @@ pub fn store_import_preview(path: String) -> Result<EditorImportPreview, String>
 /// `store_import_preview` does for a file. Caches the parse for `store_import_file`.
 #[tauri::command]
 #[specta::specta]
-pub fn store_import_paste_preview(text: String) -> Result<EditorImportPreview, String> {
+pub fn store_import_paste_preview(text: String) -> AppResult<EditorImportPreview> {
     let t0 = std::time::Instant::now();
     let mut buf = text.into_bytes();
     let parsed = parse_file(&mut buf);
@@ -941,7 +941,7 @@ fn add_parsed_to_store(
     store: &mut location_store::Store,
     parsed: &mut ParsedMap,
     bulk_tag: Option<&str>,
-) -> Result<location_store::MutationResult, String> {
+) -> AppResult<location_store::MutationResult> {
     let existing_tags = store.tags.all.clone();
 
     let tag_id_remap = reconcile_tags(store, parsed, &existing_tags);
@@ -1000,8 +1000,7 @@ fn add_parsed_to_store(
                 import_batch
             } else {
                 let s = std::sync::Arc::new(arrow_bridge::location_schema());
-                arrow::compute::concat_batches(&s, &[existing, import_batch])
-                    .map_err(|e| e.to_string())?
+                arrow::compute::concat_batches(&s, &[existing, import_batch])?
             }
         } else {
             import_batch
@@ -1025,7 +1024,7 @@ fn add_parsed_to_store(
         }
         let conn = fast_io::open_db(app)?;
         conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2",
-            rusqlite::params![store.alive_count, map_id]).map_err(|e| e.to_string())?;
+            rusqlite::params![store.alive_count, map_id])?;
         store.overlay.dirty = false;
 
         store.edits.undo.clear();
@@ -1056,7 +1055,7 @@ pub fn store_import_file(
     state: tauri::State<'_, location_store::StoreState>,
     dropped_fields: Vec<String>,
     tag_name: Option<String>,
-) -> Result<EditorImportResult, String> {
+) -> AppResult<EditorImportResult> {
     let t0 = std::time::Instant::now();
     let mut parsed = EDITOR_IMPORT_CACHE.lock().unwrap().take()
         .ok_or("no cached import — call store_import_preview first")?;

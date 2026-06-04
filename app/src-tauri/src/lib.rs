@@ -4,6 +4,7 @@
 //! custom URI scheme handlers (svtile, gmaps, googl, mma-buf, mma-plugin), and Tauri plugins.
 //! No business logic lives here -- commands delegate to `location_store`, `map_meta`, `import`, etc.
 
+use crate::types::{AppError, AppResult};
 use tauri::Manager;
 
 mod fast_io;
@@ -31,39 +32,39 @@ pub mod serve;
 /// Used by JS to pass large payloads via file instead of IPC serialization.
 #[tauri::command]
 #[specta::specta]
-fn write_temp_file(name: String, content: String) -> Result<String, String> {
+fn write_temp_file(name: String, content: String) -> AppResult<String> {
     let path = std::env::temp_dir().join(format!("mma_{name}"));
-    std::fs::write(&path, &content).map_err(|e| e.to_string())?;
+    std::fs::write(&path, &content)?;
     Ok(path.to_string_lossy().to_string())
 }
 
 /// Read a file from disk as UTF-8 text. Used by JS to read temp files and plugin sources.
 #[tauri::command]
 #[specta::specta]
-fn read_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+fn read_file(path: String) -> AppResult<String> {
+    std::fs::read_to_string(&path).map_err(AppError::from)
 }
 
 /// Return the platform-specific app data directory path (e.g., `%LOCALAPPDATA%/app.map-making.local`).
 #[tauri::command]
 #[specta::specta]
-fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+fn get_app_data_dir(app: tauri::AppHandle) -> AppResult<String> {
     app.path().app_data_dir()
         .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| e.to_string())
+        .map_err(AppError::from)
 }
 
 /// Open the app data directory in the OS file explorer.
 #[tauri::command]
 #[specta::specta]
-fn open_data_folder(app: tauri::AppHandle) -> Result<(), String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+fn open_data_folder(app: tauri::AppHandle) -> AppResult<()> {
+    let dir = app.path().app_data_dir()?;
     #[cfg(target_os = "windows")]
-    { std::process::Command::new("explorer").arg(&dir).spawn().map_err(|e| e.to_string())?; }
+    { std::process::Command::new("explorer").arg(&dir).spawn()?; }
     #[cfg(target_os = "macos")]
-    { std::process::Command::new("open").arg(&dir).spawn().map_err(|e| e.to_string())?; }
+    { std::process::Command::new("open").arg(&dir).spawn()?; }
     #[cfg(target_os = "linux")]
-    { std::process::Command::new("xdg-open").arg(&dir).spawn().map_err(|e| e.to_string())?; }
+    { std::process::Command::new("xdg-open").arg(&dir).spawn()?; }
     Ok(())
 }
 
@@ -119,9 +120,9 @@ fn list_user_plugins(app: tauri::AppHandle) -> Vec<PluginManifest> {
 const PLUGIN_REPO_BASE: &str =
     "https://raw.githubusercontent.com/ccmdi/mma/master/plugins";
 
-fn validate_plugin_id(id: &str) -> Result<(), String> {
+fn validate_plugin_id(id: &str) -> AppResult<()> {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err(format!("Invalid plugin id: {id}"));
+        return Err(AppError(format!("Invalid plugin id: {id}")));
     }
     Ok(())
 }
@@ -130,31 +131,31 @@ fn validate_plugin_id(id: &str) -> Result<(), String> {
 /// Fetches `manifest.json` and the main JS file specified in the manifest.
 #[tauri::command]
 #[specta::specta]
-fn install_plugin(app: tauri::AppHandle, id: String) -> Result<PluginManifest, String> {
+fn install_plugin(app: tauri::AppHandle, id: String) -> AppResult<PluginManifest> {
     validate_plugin_id(&id)?;
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("plugins").join(&id);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir = app.path().app_data_dir()?.join("plugins").join(&id);
+    std::fs::create_dir_all(&dir)?;
 
     let manifest_url = format!("{PLUGIN_REPO_BASE}/{id}/manifest.json");
     let manifest_bytes = proxy_client().get(&manifest_url).send()
         .and_then(|r| r.error_for_status())
         .map_err(|e| format!("Failed to fetch manifest: {e}"))?
-        .bytes().map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("manifest.json"), &manifest_bytes).map_err(|e| e.to_string())?;
+        .bytes()?;
+    std::fs::write(dir.join("manifest.json"), &manifest_bytes)?;
 
     let val: serde_json::Value = serde_json::from_slice(&manifest_bytes)
         .map_err(|e| format!("Invalid manifest JSON: {e}"))?;
     let main = val.get("main").and_then(|v| v.as_str()).unwrap_or("index.js");
     if main.contains("..") || main.contains('/') || main.contains('\\') {
-        return Err(format!("Invalid main field in manifest: {main}"));
+        return Err(AppError(format!("Invalid main field in manifest: {main}")));
     }
 
     let main_url = format!("{PLUGIN_REPO_BASE}/{id}/{main}");
     let main_bytes = proxy_client().get(&main_url).send()
         .and_then(|r| r.error_for_status())
         .map_err(|e| format!("Failed to fetch {main}: {e}"))?
-        .bytes().map_err(|e| e.to_string())?;
-    std::fs::write(dir.join(main), &main_bytes).map_err(|e| e.to_string())?;
+        .bytes()?;
+    std::fs::write(dir.join(main), &main_bytes)?;
 
     let name = val.get("name").and_then(|v| v.as_str())
         .unwrap_or(&id).to_string();
@@ -169,11 +170,11 @@ fn install_plugin(app: tauri::AppHandle, id: String) -> Result<PluginManifest, S
 /// Remove a plugin by deleting its directory from the local plugins folder.
 #[tauri::command]
 #[specta::specta]
-fn uninstall_plugin(app: tauri::AppHandle, id: String) -> Result<(), String> {
+fn uninstall_plugin(app: tauri::AppHandle, id: String) -> AppResult<()> {
     validate_plugin_id(&id)?;
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("plugins").join(&id);
+    let dir = app.path().app_data_dir()?.join("plugins").join(&id);
     if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::remove_dir_all(&dir)?;
     }
     Ok(())
 }

@@ -2,6 +2,7 @@
 //! All exports write to temp files and return the path -- the frontend
 //! triggers a native save dialog to move the file to its final destination.
 
+use crate::types::{AppError, AppResult};
 use std::io::Write;
 use crate::fast_io;
 use crate::location_store::StoreState;
@@ -41,7 +42,7 @@ pub fn store_export_json(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     opts: ExportOpts,
-) -> Result<String, String> {
+) -> AppResult<String> {
     with_store!(webview, state, |store| {
         let tag_defs: std::collections::HashMap<String, serde_json::Value> =
             serde_json::from_str(&opts.tags_json).unwrap_or_default();
@@ -132,10 +133,10 @@ pub fn store_export_json(
             }
         }
 
-        let json = serde_json::to_string(&serde_json::Value::Object(parts)).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string(&serde_json::Value::Object(parts))?;
 
         let path = std::env::temp_dir().join(format!("mma_export_{}.json", std::process::id()));
-        std::fs::write(&path, &json).map_err(|e| e.to_string())?;
+        std::fs::write(&path, &json)?;
         Ok(path.to_string_lossy().into_owned())
     })
 }
@@ -147,7 +148,7 @@ pub fn store_export_csv(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     scope: Option<Vec<u32>>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     with_store!(webview, state, |store| {
         let locs = match &scope {
             Some(ids) => {
@@ -164,7 +165,7 @@ pub fn store_export_csv(
         }
 
         let path = std::env::temp_dir().join(format!("mma_export_{}.csv", std::process::id()));
-        std::fs::write(&path, &buf).map_err(|e| e.to_string())?;
+        std::fs::write(&path, &buf)?;
         Ok(path.to_string_lossy().into_owned())
     })
 }
@@ -178,7 +179,7 @@ pub fn store_export_geojson(
     state: tauri::State<'_, StoreState>,
     scope: Option<Vec<u32>>,
     tags_json: String,
-) -> Result<String, String> {
+) -> AppResult<String> {
     with_store!(webview, state, |store| {
 
     let tag_defs: std::collections::HashMap<String, serde_json::Value> =
@@ -211,10 +212,10 @@ pub fn store_export_geojson(
     }).collect();
 
     let geojson = serde_json::json!({ "type": "FeatureCollection", "features": features });
-    let json = serde_json::to_string(&geojson).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&geojson)?;
 
     let path = std::env::temp_dir().join(format!("mma_export_{}.geojson", std::process::id()));
-    std::fs::write(&path, &json).map_err(|e| e.to_string())?;
+    std::fs::write(&path, &json)?;
     Ok(path.to_string_lossy().into_owned())
 
     })
@@ -230,14 +231,13 @@ pub fn store_export_geojson(
 #[specta::specta]
 pub async fn store_export_bulk_zip(
     app: tauri::AppHandle,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let app2 = app.clone();
     let path = tokio::task::spawn_blocking(move || {
         use std::io::Cursor;
 
         let conn = fast_io::open_db(&app2)?;
-        let mut stmt = conn.prepare("SELECT id, name, folder, tags, extra FROM maps")
-            .map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT id, name, folder, tags, extra FROM maps")?;
         let maps: Vec<(String, String, Option<String>, String, String)> = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -246,7 +246,7 @@ pub async fn store_export_bulk_zip(
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
             ))
-        }).map_err(|e| e.to_string())?
+        })?
         .filter_map(|r| r.ok())
         .collect();
         drop(stmt);
@@ -326,8 +326,7 @@ pub async fn store_export_bulk_zip(
                     entry.insert("extra".into(), serde_json::Value::Object(extra_meta));
                 }
 
-                let json = serde_json::to_string_pretty(&serde_json::Value::Object(entry))
-                    .map_err(|e| e.to_string())?;
+                let json = serde_json::to_string_pretty(&serde_json::Value::Object(entry))?;
 
                 let base = name.replace(|c: char| "<>:\"/\\|?*".contains(c), "_");
                 let mut file_name = base.clone();
@@ -338,18 +337,17 @@ pub async fn store_export_bulk_zip(
                 }
                 used_names.insert(file_name.to_lowercase());
 
-                zip.start_file(format!("{file_name}.json"), options).map_err(|e| e.to_string())?;
-                zip.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+                zip.start_file(format!("{file_name}.json"), options)?;
+                zip.write_all(json.as_bytes())?;
             }
-            zip.finish().map_err(|e| e.to_string())?;
+            zip.finish()?;
         }
 
         let path = std::env::temp_dir().join(format!("mma_backup_{}.zip", std::process::id()));
-        std::fs::write(&path, buf.into_inner()).map_err(|e| e.to_string())?;
-        Ok::<_, String>(path.to_string_lossy().into_owned())
+        std::fs::write(&path, buf.into_inner())?;
+        Ok::<_, AppError>(path.to_string_lossy().into_owned())
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await??;
 
     Ok(path)
 }
