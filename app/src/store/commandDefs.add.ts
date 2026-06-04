@@ -16,7 +16,6 @@ import {
 	mdiHistory,
 	mdiEye,
 	mdiTagRemove,
-	mdiTagPlus,
 	mdiTrashCanOutline,
 	mdiDatabaseRemoveOutline,
 	mdiDatabaseEditOutline,
@@ -42,8 +41,6 @@ import {
 	deleteTags,
 	getSelections,
 	getSelectedLocationIds,
-	createTags,
-	addTagToLocations,
 	removeLocations,
 	getTagCounts,
 	hasCommitDiff,
@@ -174,22 +171,6 @@ registerCommand({
 	group: "Selections",
 	execute: () => toggleGhostAllSelections(),
 	enabled: () => getSelections().length > 0,
-});
-
-registerCommand({
-	id: "selection-save-as-tag",
-	label: "Save selection as tag",
-	icon: mdiTagPlus,
-	group: "Selections",
-	enabled: () => getSelectedLocationIds().size > 0,
-	execute: async () => {
-		const ids = getSelectedLocationIds();
-		if (ids.size === 0) return;
-		const name = window.prompt("Tag name")?.trim();
-		if (!name) return;
-		const [tag] = await createTags([name]);
-		await addTagToLocations(tag.id, [...ids]);
-	},
 });
 
 registerCommand({

@@ -786,10 +786,6 @@ const CHAPTERS: Chapter[] = [
 				<h2>Tag tools</h2>
 				<ul>
 					<li>
-						<strong>Save selection as tag.</strong> Turn the current selection into a new tag
-						(command palette).
-					</li>
-					<li>
 						<strong>Find and replace in tag names.</strong> Bulk-rename across tags (command
 						palette).
 					</li>
@@ -866,6 +862,10 @@ const CHAPTERS: Chapter[] = [
 						<strong>Review selection.</strong> Step through its locations in the panorama viewer.
 					</li>
 					<li>
+						<strong>Save as tag.</strong> Snapshot just this selection into a new tag, without
+						disturbing the rest of your selection setup.
+					</li>
+					<li>
 						<strong>Change color.</strong> Recolor the selection (any non-Tag selection; Tag
 						selections use the tag's color).
 					</li>
@@ -877,8 +877,8 @@ const CHAPTERS: Chapter[] = [
 					</li>
 				</ul>
 				<p>
-					Two related actions live in the command palette: <strong>Save selection as tag</strong>{" "}
-					(turn the current selection into a tag) and <strong>Delete selected locations</strong>.
+					<strong>Delete selected locations</strong> also lives in the command palette. To tag the
+					whole selection at once, use <strong>Bulk add tags</strong>.
 				</p>
 			</>
 		),

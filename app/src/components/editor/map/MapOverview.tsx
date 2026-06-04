@@ -115,6 +115,8 @@ function SelectionRow({
 	const [view, setView] = useState<"contextmenu" | "color">("contextmenu");
 	const [dropZone, setDropZone] = useState<"before" | "on" | "after" | null>(null);
 	const [editingFilter, setEditingFilter] = useState(false);
+	const [savingTag, setSavingTag] = useState(false);
+	const [tagName, setTagName] = useState("");
 	const rowRef = useRef<HTMLDivElement>(null);
 	const drag = useDragState();
 	const isDragging = drag?.key === selection.key;
@@ -140,6 +142,17 @@ function SelectionRow({
 		const current = selection.props.polygon.properties?.name ?? "";
 		const next = window.prompt("Polygon name", current);
 		if (next != null) setPolygonName(selection.key, next);
+	};
+
+	const handleSaveAsTag = async () => {
+		const name = tagName.trim();
+		if (!name) return;
+		const ids = await cmd.storeResolveSelection(selection.props);
+		if (ids.length === 0) return;
+		const [tag] = await createTags([name]);
+		await addTagToLocations(tag.id, ids);
+		setSavingTag(false);
+		setTagName("");
 	};
 
 	const handleDownloadGeoJSON = () => {
@@ -331,6 +344,13 @@ function SelectionRow({
 										>
 											Review selection
 										</DropdownMenu.Item>
+										<DropdownMenu.Item
+											className="context-menu__item"
+											disabled={(selection.count ?? 0) === 0}
+											onSelect={() => setSavingTag(true)}
+										>
+											Save as tag
+										</DropdownMenu.Item>
 										{selection.props.type !== "Tag" && (
 											<DropdownMenu.Item
 												className="context-menu__item"
@@ -390,6 +410,46 @@ function SelectionRow({
 					onClose={() => setEditingFilter(false)}
 				/>
 			)}
+			<Dialog
+				open={savingTag}
+				onOpenChange={(v) => {
+					setSavingTag(v);
+					if (!v) setTagName("");
+				}}
+			>
+				<DialogContent title="Save selection as tag">
+					<form
+						onSubmit={(e) => {
+							e.preventDefault();
+							handleSaveAsTag();
+						}}
+						style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}
+					>
+						<input
+							className="input"
+							value={tagName}
+							onChange={(e) => setTagName(e.target.value)}
+							placeholder="Tag name..."
+							autoFocus
+						/>
+						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+							<button
+								className="button"
+								type="button"
+								onClick={() => {
+									setSavingTag(false);
+									setTagName("");
+								}}
+							>
+								Cancel
+							</button>
+							<button className="button button--primary" type="submit" disabled={!tagName.trim()}>
+								Create tag
+							</button>
+						</div>
+					</form>
+				</DialogContent>
+			</Dialog>
 			{showChildren &&
 				(
 					inner.props as Extract<Selection["props"], { type: "Intersection" | "Union" }>
