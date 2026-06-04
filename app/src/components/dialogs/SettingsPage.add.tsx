@@ -33,6 +33,7 @@ import {
 	GEOCODE_PROVIDERS,
 	TAG_VIEW_MODES,
 	BORDER_DETAILS,
+	PREVIEW_ASPECT_RATIOS,
 } from "@/store/settings.add";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 
@@ -404,6 +405,10 @@ function StreetViewSection() {
 			<label className="settings-popup__item">
 				Default movement mode
 				<SettingSelect setting="defaultMovementMode" options={MOVEMENT_MODES} />
+			</label>
+			<label className="settings-popup__item">
+				Preview aspect ratio
+				<SettingSelect setting="previewAspectRatio" options={PREVIEW_ASPECT_RATIOS} />
 			</label>
 		</fieldset>
 	);

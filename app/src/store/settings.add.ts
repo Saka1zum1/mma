@@ -38,6 +38,13 @@ export const BORDER_DETAILS = {
 	medium: "High (~10MB)",
 	heavy: "Ultra (~46MB)",
 } as const;
+export const PREVIEW_ASPECT_RATIOS = {
+	"4 / 3": "4:3",
+	"16 / 10": "16:10",
+	"16 / 9": "16:9",
+	"21 / 9": "21:9",
+	"32 / 9": "32:9",
+} as const;
 
 export type MovementMode = keyof typeof MOVEMENT_MODES;
 export type ExactDateFormat = keyof typeof EXACT_DATE_FORMATS;
@@ -48,6 +55,7 @@ export type MapListField = keyof typeof MAP_LIST_FIELDS;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
+export type PreviewAspectRatio = keyof typeof PREVIEW_ASPECT_RATIOS;
 
 const DEFAULTS = {
 	showCameraBadges: true,
@@ -89,6 +97,7 @@ const DEFAULTS = {
 	panToImported: true,
 	tagViewMode: "flat" as TagViewMode,
 	borderDetail: "light" as BorderDetail,
+	previewAspectRatio: "16 / 9" as PreviewAspectRatio,
 	savedSelections: [] as SavedSelection[],
 };
 export type AppSettings = typeof DEFAULTS;

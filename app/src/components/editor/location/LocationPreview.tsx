@@ -1047,6 +1047,11 @@ function LocationPreviewInner() {
 		setIsFullscreen((v) => !v);
 	}, []);
 
+	// Reflow the pano (and its FOV) when the preview aspect ratio changes.
+	useEffect(() => {
+		if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
+	}, [appSettings.previewAspectRatio]);
+
 	useHotkey(useBinding("locationSave"), () => {
 		if (location) handleSave();
 	});
@@ -1378,7 +1383,11 @@ function LocationPreviewInner() {
 		<>
 			<ReviewBar />
 			<section className="location-preview">
-				<div className="location-preview__panorama" ref={fullscreenContainerRef}>
+				<div
+					className="location-preview__panorama"
+					ref={fullscreenContainerRef}
+					style={isFullscreen ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
+				>
 					<div
 						className={`location-preview__embed${appSettings.hidePanoUI ? " hide-pano-ui" : ""}`}
 					>
