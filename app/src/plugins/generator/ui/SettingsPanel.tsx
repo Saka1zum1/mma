@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { GeneratorSettings } from "../engine/types";
+import { DatePicker } from "@/components/primitives/DatePicker";
 
 function Section({
 	title,
@@ -305,21 +306,18 @@ export function SettingsPanel({
 					<div className="generator-settings__date-range">
 						<label className="generator-settings__date-label">
 							From{" "}
-							<input
-								type="month"
-								className="input"
+							<DatePicker
+								mode="month"
 								value={settings.fromDate}
-								onChange={(e) => set("fromDate", e.target.value)}
-								min="2007-01"
+								onChange={(v) => set("fromDate", v)}
 							/>
 						</label>
 						<label className="generator-settings__date-label">
 							To{" "}
-							<input
-								type="month"
-								className="input"
+							<DatePicker
+								mode="month"
 								value={settings.toDate}
-								onChange={(e) => set("toDate", e.target.value)}
+								onChange={(v) => set("toDate", v)}
 							/>
 						</label>
 					</div>
