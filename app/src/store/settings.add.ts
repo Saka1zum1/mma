@@ -1,62 +1,55 @@
 import { useSyncExternalStore } from "react";
 import { createSyncStore } from "@/lib/util/syncStore";
-
-export type MovementMode = "moving" | "no-move" | "nmpz";
-export type ExactDateFormat = "date" | "datetime";
-export type DateTimezone = "location" | "utc";
-export type SeenResolution = "low" | "medium" | "high";
-
-export type MapListField = "locationCount" | "lastOpened" | "created";
-export type GeocodeProvider = "local" | "nominatim";
-export type TagViewMode = "flat" | "tree";
-export type BorderDetail = "light" | "medium" | "heavy";
-
 import type { SavedSelection } from "./savedSelections.add";
 
-export interface AppSettings {
-	showCameraBadges: boolean;
-	showLinksControl: boolean;
-	clickToGo: boolean;
-	showRoadLabels: boolean;
-	defaultMovementMode: MovementMode;
-	showCar: boolean;
-	showCrosshair: boolean;
-	showCompass: boolean;
-	showCompassTape: boolean;
-	showZoom: boolean;
-	showReturnToSpawn: boolean;
-	showJumpButtons: boolean;
-	showMapLinks: boolean;
-	showCoordinateDisplay: boolean;
-	showFullscreenButton: boolean;
-	showPanoMetadata: boolean;
-	exactDateFormat: ExactDateFormat;
-	dateTimezone: DateTimezone;
-	showNavArrow: boolean;
-	showGroundArrow: boolean;
-	hidePanoUI: boolean;
-	fullscreenMap: boolean;
-	showFullscreenMinimap: boolean;
-	fullscreenMinimapScale: number;
-	showFullscreenTagbar: boolean;
-	customCss: string;
-	enableSeen: boolean;
-	enableSeenThumbnails: boolean;
-	seenResolution: SeenResolution;
-	mapPanSpeed: number;
-	panoLookSpeed: number;
-	slowModifier: number;
-	showFps: boolean;
-	mapListFields: MapListField[];
-	geocodeProvider: GeocodeProvider;
-	nominatimApiKey: string;
-	tagViewMode: TagViewMode;
-	panToImported: boolean;
-	borderDetail: BorderDetail;
-	savedSelections: SavedSelection[];
-}
+export const MOVEMENT_MODES = {
+	moving: "Moving",
+	"no-move": "No Move",
+	nmpz: "NMPZ",
+} as const;
+export const SEEN_RESOLUTIONS = {
+	low: "Low (160x90)",
+	medium: "Medium (320x180)",
+	high: "High (640x360)",
+} as const;
+export const EXACT_DATE_FORMATS = {
+	date: "Date only",
+	datetime: "Date + time",
+} as const;
+export const DATE_TIMEZONES = {
+	location: "Location timezone",
+	utc: "UTC",
+} as const;
+export const MAP_LIST_FIELDS = {
+	locationCount: "Location count",
+	lastOpened: "Last opened",
+	created: "Date created",
+} as const;
+export const GEOCODE_PROVIDERS = {
+	local: "Local (offline)",
+	nominatim: "Nominatim (online)",
+} as const;
+export const TAG_VIEW_MODES = {
+	flat: "Flat",
+	tree: "Tree",
+} as const;
+export const BORDER_DETAILS = {
+	light: "Standard (bundled)",
+	medium: "High (~10MB)",
+	heavy: "Ultra (~46MB)",
+} as const;
 
-const DEFAULTS: AppSettings = {
+export type MovementMode = keyof typeof MOVEMENT_MODES;
+export type ExactDateFormat = keyof typeof EXACT_DATE_FORMATS;
+export type DateTimezone = keyof typeof DATE_TIMEZONES;
+export type SeenResolution = keyof typeof SEEN_RESOLUTIONS;
+
+export type MapListField = keyof typeof MAP_LIST_FIELDS;
+export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
+export type TagViewMode = keyof typeof TAG_VIEW_MODES;
+export type BorderDetail = keyof typeof BORDER_DETAILS;
+
+const DEFAULTS = {
 	showCameraBadges: true,
 	showLinksControl: true,
 	clickToGo: true,
@@ -90,7 +83,7 @@ const DEFAULTS: AppSettings = {
 	panoLookSpeed: 3,
 	slowModifier: 4,
 	showFps: false,
-	mapListFields: ["locationCount"],
+	mapListFields: ["locationCount"] as MapListField[],
 	geocodeProvider: "local" as GeocodeProvider,
 	nominatimApiKey: "",
 	panToImported: true,
@@ -98,6 +91,8 @@ const DEFAULTS: AppSettings = {
 	borderDetail: "light" as BorderDetail,
 	savedSelections: [] as SavedSelection[],
 };
+export type AppSettings = typeof DEFAULTS;
+
 
 const STORAGE_KEY = "appSettings";
 

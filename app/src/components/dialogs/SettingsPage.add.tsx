@@ -20,17 +20,41 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiAlertCircleOutline } from "@mdi/js";
 import {
 	useSettings,
+	useSetting,
 	setSetting,
-	type MovementMode,
-	type ExactDateFormat,
-	type DateTimezone,
-	type SeenResolution,
+	type AppSettings,
 	type MapListField,
-	type GeocodeProvider,
-	type TagViewMode,
 	type BorderDetail,
+	MOVEMENT_MODES,
+	SEEN_RESOLUTIONS,
+	EXACT_DATE_FORMATS,
+	DATE_TIMEZONES,
+	MAP_LIST_FIELDS,
+	GEOCODE_PROVIDERS,
+	TAG_VIEW_MODES,
+	BORDER_DETAILS,
 } from "@/store/settings.add";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
+
+function SettingSelect<K extends keyof AppSettings>({
+	setting,
+	options,
+}: {
+	setting: K;
+	options: Record<AppSettings[K] & string, string>;
+}) {
+	const value = useSetting(setting);
+	return (
+		<select
+			value={value as string}
+			onChange={(e) => setSetting(setting, e.target.value as AppSettings[K])}
+		>
+			{Object.entries(options).map(([v, label]) => (
+				<option key={v} value={v}>{label as string}</option>
+			))}
+		</select>
+	);
+}
 
 const IS_MAC = /Mac|iPod|iPhone|iPad/i.test(navigator.platform);
 
@@ -379,14 +403,7 @@ function StreetViewSection() {
 			</label>
 			<label className="settings-popup__item">
 				Default movement mode
-				<select
-					value={s.defaultMovementMode}
-					onChange={(e) => setSetting("defaultMovementMode", e.target.value as MovementMode)}
-				>
-					<option value="moving">Moving</option>
-					<option value="no-move">No Move</option>
-					<option value="nmpz">NMPZ</option>
-				</select>
+				<SettingSelect setting="defaultMovementMode" options={MOVEMENT_MODES} />
 			</label>
 		</fieldset>
 	);
@@ -470,23 +487,11 @@ function DatePickerSection() {
 			</label>
 			<label className="settings-popup__item">
 				Exact date format
-				<select
-					value={s.exactDateFormat}
-					onChange={(e) => setSetting("exactDateFormat", e.target.value as ExactDateFormat)}
-				>
-					<option value="date">Date only</option>
-					<option value="datetime">Date + time</option>
-				</select>
+				<SettingSelect setting="exactDateFormat" options={EXACT_DATE_FORMATS} />
 			</label>
 			<label className="settings-popup__item">
 				Exact date timezone
-				<select
-					value={s.dateTimezone}
-					onChange={(e) => setSetting("dateTimezone", e.target.value as DateTimezone)}
-				>
-					<option value="location">Location timezone</option>
-					<option value="utc">UTC</option>
-				</select>
+				<SettingSelect setting="dateTimezone" options={DATE_TIMEZONES} />
 			</label>
 		</fieldset>
 	);
@@ -520,14 +525,7 @@ function SeenSection() {
 					{s.enableSeenThumbnails && (
 						<label className="settings-popup__item">
 							Thumbnail resolution
-							<select
-								value={s.seenResolution}
-								onChange={(e) => setSetting("seenResolution", e.target.value as SeenResolution)}
-							>
-								<option value="low">Low (160x90)</option>
-								<option value="medium">Medium (320x180)</option>
-								<option value="high">High (640x360)</option>
-							</select>
+							<SettingSelect setting="seenResolution" options={SEEN_RESOLUTIONS} />
 						</label>
 					)}
 				</>
@@ -609,12 +607,6 @@ function MapNavigationSection() {
 	);
 }
 
-const MAP_LIST_FIELD_OPTIONS: { value: MapListField; label: string }[] = [
-	{ value: "locationCount", label: "Location count" },
-	{ value: "lastOpened", label: "Last opened" },
-	{ value: "created", label: "Date created" },
-];
-
 function MapListSection() {
 	const s = useSettings();
 	const fields = s.mapListFields;
@@ -638,9 +630,13 @@ function MapListSection() {
 			<p style={{ margin: "0 0 0.25rem", fontSize: "0.85rem", color: "#888" }}>
 				Fields shown on each map row (labels are always shown)
 			</p>
-			{MAP_LIST_FIELD_OPTIONS.map(({ value, label }) => (
+			{Object.entries(MAP_LIST_FIELDS).map(([value, label]) => (
 				<label key={value} className="settings-popup__item">
-					<input type="checkbox" checked={fields.includes(value)} onChange={() => toggle(value)} />
+					<input
+						type="checkbox"
+						checked={fields.includes(value as MapListField)}
+						onChange={() => toggle(value as MapListField)}
+					/>
 					{label}
 				</label>
 			))}
@@ -693,13 +689,7 @@ function GeocodingSection() {
 			</legend>
 			<label className="settings-popup__item">
 				Provider
-				<select
-					value={s.geocodeProvider}
-					onChange={(e) => setSetting("geocodeProvider", e.target.value as GeocodeProvider)}
-				>
-					<option value="local">Local (offline)</option>
-					<option value="nominatim">Nominatim (online)</option>
-				</select>
+				<SettingSelect setting="geocodeProvider" options={GEOCODE_PROVIDERS} />
 			</label>
 			{s.geocodeProvider === "nominatim" && (
 				<>
@@ -723,7 +713,6 @@ function GeocodingSection() {
 }
 
 function TagsSection() {
-	const s = useSettings();
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
@@ -731,13 +720,7 @@ function TagsSection() {
 			</legend>
 			<label className="settings-popup__item">
 				View mode
-				<select
-					value={s.tagViewMode}
-					onChange={(e) => setSetting("tagViewMode", e.target.value as TagViewMode)}
-				>
-					<option value="flat">Flat</option>
-					<option value="tree">Tree</option>
-				</select>
+				<SettingSelect setting="tagViewMode" options={TAG_VIEW_MODES} />
 			</label>
 		</fieldset>
 	);
@@ -810,9 +793,12 @@ function BorderDetailSection() {
 					onChange={(e) => handleChange(e.target.value as BorderDetail)}
 					disabled={downloading !== null}
 				>
-					<option value="light">Standard (bundled)</option>
-					<option value="medium">High (~10MB){statusLabel("medium")}</option>
-					<option value="heavy">Ultra (~46MB){statusLabel("heavy")}</option>
+					{Object.entries(BORDER_DETAILS).map(([value, label]) => (
+						<option key={value} value={value}>
+							{label}
+							{value !== "light" && statusLabel(value as "medium" | "heavy")}
+						</option>
+					))}
 				</select>
 			</label>
 			{downloading && (
