@@ -24,6 +24,7 @@ function Img({ name, caption }: { name: string; caption: string }) {
 	return (
 		<figure className="manual-figure">
 			<img
+				key={name}
 				className="manual-figure__img"
 				src={MANUAL_IMG_BASE + name}
 				alt={caption}
