@@ -23,6 +23,9 @@ mod seen;
 mod vcs;
 mod vcs_delta;
 
+#[cfg(feature = "web-serve")]
+pub mod serve;
+
 /// Write arbitrary text content to a named temp file (`mma_{name}`). Returns the path.
 /// Used by JS to pass large payloads via file instead of IPC serialization.
 #[tauri::command]
@@ -234,7 +237,7 @@ fn relay(resp: reqwest::blocking::Response, default_ct: &str) -> tauri::http::Re
 }
 
 /// svtile: StreetView photosphere tiles via lh3.ggpht.com.
-fn fetch_svtile(url: &str) -> tauri::http::Response<Vec<u8>> {
+pub(crate) fn fetch_svtile(url: &str) -> tauri::http::Response<Vec<u8>> {
     match proxy_client().get(url).send() {
         Ok(resp) => {
             let mut out = relay(resp, "image/jpeg");
@@ -248,7 +251,7 @@ fn fetch_svtile(url: &str) -> tauri::http::Response<Vec<u8>> {
 }
 
 /// gmaps: forward a request (POST batchexecute etc.) to www.google.com.
-fn proxy_gmaps(
+pub(crate) fn proxy_gmaps(
     method: reqwest::Method,
     url: &str,
     content_type: String,
@@ -269,7 +272,7 @@ fn proxy_gmaps(
 
 /// googl: resolve a goo.gl / maps.app.goo.gl short link by reading its redirect
 /// `Location` header; returns the target URL as a JSON string.
-fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
+pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
     let url = if mapsapp {
         format!("https://maps.app.goo.gl/{id}")
     } else {
@@ -311,6 +314,101 @@ fn app_ready() -> u32 {
         log::info!("[startup] app ready in {ms}ms");
         ms
     })
+}
+
+/// Single source of truth for the IPC command surface. Used by both the desktop
+/// app (`run`) and the web sidecar (`serve`), so adding a command here wires it
+/// for both transports automatically — no second list.
+pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
+    tauri_specta::Builder::<tauri::Wry>::new()
+        .dangerously_cast_bigints_to_number()
+        .semantic_types(specta_typescript::semantic::Configuration::default().enable_lossless_floats())
+        .commands(tauri_specta::collect_commands![
+            write_temp_file,
+            read_file,
+            // --- Utility ---
+            app_ready,
+            get_app_data_dir,
+            open_data_folder,
+            list_user_plugins,
+            install_plugin,
+            uninstall_plugin,
+            borders::check_border_file,
+            borders::download_border_file,
+            borders::border_lookup,
+            geocoder::reverse_geocode,
+            // --- Map lifecycle ---
+            location_store::store_open_map,
+            location_store::store_close_map,
+            location_store::store_save_dirty,
+            location_store::store_bake_and_save,
+            location_store::store_get_summary,
+            // --- Map metadata ---
+            map_meta::store_list_maps,
+            map_meta::store_get_map,
+            map_meta::store_create_map,
+            map_meta::store_delete_map,
+            map_meta::store_update_map_meta,
+            map_meta::store_touch_map_opened,
+            map_meta::store_rename_folder,
+            map_meta::store_delete_folder,
+            map_meta::store_db_table_info,
+            // --- Location CRUD ---
+            location_store::store_add_locations,
+            location_store::store_remove_locations,
+            location_store::store_update_locations,
+            location_store::store_set_active,
+            location_store::store_get_location,
+            location_store::store_get_locations_by_ids,
+            location_store::store_get_all_locations,
+            location_store::store_location_count,
+            location_store::store_bounds,
+            location_store::store_selection_bounds,
+            location_store::store_find_nearby,
+            location_store::store_extra_field_values,
+            // --- Tag CRUD ---
+            location_store::store_create_tags,
+            location_store::store_update_tag,
+            location_store::store_delete_tags,
+            location_store::store_reorder_tags,
+            // --- Undo / redo ---
+            location_store::store_undo,
+            location_store::store_redo,
+            location_store::store_reset_undo,
+            location_store::store_commit_diff,
+            // --- Selections ---
+            location_store::store_sync_selections,
+            location_store::store_get_selected_ids_list,
+            location_store::store_resolve_selection,
+            location_store::store_duplicate_groups,
+            location_store::store_merge_duplicates,
+            // --- Render ---
+            location_store::store_fill_render_file,
+            location_store::store_resolve_pick,
+            // --- Import / export ---
+            import::bulk_import_preview,
+            import::bulk_import_confirm,
+            import::store_import_preview,
+            import::store_import_paste_preview,
+            import::store_import_file,
+            export::store_export_json,
+            export::store_export_csv,
+            export::store_export_geojson,
+            export::store_export_bulk_zip,
+            // --- Version control ---
+            map_meta::store_db_clear_table,
+            map_meta::store_db_stats,
+            seen::store_seen_write,
+            seen::store_seen_list,
+            seen::store_seen_count,
+            seen::store_seen_countries,
+            seen::store_seen_maps,
+            seen::store_seen_clear,
+            vcs::store_create_commit,
+            vcs::store_list_commits,
+            vcs::store_checkout_commit,
+            vcs::store_get_commit_delta,
+        ])
 }
 
 pub fn run() {
@@ -405,95 +503,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(location_store::StoreState::new(location_store::StoreManager::new()))
         .invoke_handler({
-            let mut specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
-                .dangerously_cast_bigints_to_number()
-                .semantic_types(specta_typescript::semantic::Configuration::default().enable_lossless_floats())
-                .commands(tauri_specta::collect_commands![
-                    write_temp_file,
-                    read_file,
-                    // --- Utility ---
-                    app_ready,
-                    get_app_data_dir,
-                    open_data_folder,
-                    list_user_plugins,
-                    install_plugin,
-                    uninstall_plugin,
-                    borders::check_border_file,
-                    borders::download_border_file,
-                    borders::border_lookup,
-                    geocoder::reverse_geocode,
-                    // --- Map lifecycle ---
-                    location_store::store_open_map,
-                    location_store::store_close_map,
-                    location_store::store_save_dirty,
-                    location_store::store_bake_and_save,
-                    location_store::store_get_summary,
-                    // --- Map metadata ---
-                    map_meta::store_list_maps,
-                    map_meta::store_get_map,
-                    map_meta::store_create_map,
-                    map_meta::store_delete_map,
-                    map_meta::store_update_map_meta,
-                    map_meta::store_touch_map_opened,
-                    map_meta::store_rename_folder,
-                    map_meta::store_delete_folder,
-                    map_meta::store_db_table_info,
-                    // --- Location CRUD ---
-                    location_store::store_add_locations,
-                    location_store::store_remove_locations,
-                    location_store::store_update_locations,
-                    location_store::store_set_active,
-                    location_store::store_get_location,
-                    location_store::store_get_locations_by_ids,
-                    location_store::store_get_all_locations,
-                    location_store::store_location_count,
-                    location_store::store_bounds,
-                    location_store::store_selection_bounds,
-                    location_store::store_find_nearby,
-                    location_store::store_extra_field_values,
-                    // --- Tag CRUD ---
-                    location_store::store_create_tags,
-                    location_store::store_update_tag,
-                    location_store::store_delete_tags,
-                    location_store::store_reorder_tags,
-                    // --- Undo / redo ---
-                    location_store::store_undo,
-                    location_store::store_redo,
-                    location_store::store_reset_undo,
-                    location_store::store_commit_diff,
-                    // --- Selections ---
-                    location_store::store_sync_selections,
-                    location_store::store_get_selected_ids_list,
-                    location_store::store_resolve_selection,
-                    location_store::store_duplicate_groups,
-                    location_store::store_merge_duplicates,
-                    // --- Render ---
-                    location_store::store_fill_render_file,
-                    location_store::store_resolve_pick,
-                    // --- Import / export ---
-                    import::bulk_import_preview,
-                    import::bulk_import_confirm,
-                    import::store_import_preview,
-                    import::store_import_paste_preview,
-                    import::store_import_file,
-                    export::store_export_json,
-                    export::store_export_csv,
-                    export::store_export_geojson,
-                    export::store_export_bulk_zip,
-                    // --- Version control ---
-                    map_meta::store_db_clear_table,
-                    map_meta::store_db_stats,
-                    seen::store_seen_write,
-                    seen::store_seen_list,
-                    seen::store_seen_count,
-                    seen::store_seen_countries,
-                    seen::store_seen_maps,
-                    seen::store_seen_clear,
-                    vcs::store_create_commit,
-                    vcs::store_list_commits,
-                    vcs::store_checkout_commit,
-                    vcs::store_get_commit_delta,
-                ]);
+            let specta_builder = specta_builder();
 
             #[cfg(debug_assertions)]
             {

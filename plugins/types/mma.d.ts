@@ -4,8 +4,6 @@
 
 import { ComponentType } from 'react';
 
-declare function preloadModules(ids: string[]): Promise<void>;
-declare function getAvailableExternals(): string[];
 export interface PluginSettingDef {
 	key: string;
 	label: string;
@@ -701,6 +699,8 @@ export interface CommitDiffPreview {
 	removed: Float32Array;
 	modified: Float32Array;
 }
+declare function preloadModules(ids: string[]): Promise<void>;
+declare function getAvailableExternals(): string[];
 export interface EnrichFieldOption {
 	key: string;
 	label: string;
@@ -1451,8 +1451,9 @@ declare const mma: {
 	scheduleSave(): void;
 	flushSave(): Promise<void>;
 	initStore(): Promise<void>;
-	openMap(id: string, pushHistory?: boolean): Promise<void>;
-	closeMap(pushHistory?: boolean): Promise<void>;
+	mapOpenMark(phase: string): void;
+	openMap(id: string): Promise<void>;
+	closeMap(): Promise<void>;
 	getCurrentMapId(): string | null;
 	getCurrentMap(): MapData | null;
 	getKnownFieldKeys(): ReadonlySet<string>;

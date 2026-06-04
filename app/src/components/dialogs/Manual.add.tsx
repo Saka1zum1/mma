@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, createContext, useContext, isValidElement, type ReactNode } from "react";
+import { useEffect, useRef, createContext, useContext, isValidElement, type ReactNode } from "react";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiClose, mdiChevronLeft, mdiChevronRight } from "@mdi/js";
 import { MANUAL_IMG_DIMS } from "@/components/dialogs/manual-img-dims.gen";
@@ -1844,14 +1844,17 @@ export function searchManual(query: string, limit = 8): ManualHit[] {
 
 // --- Manual view ---
 
-export function Manual({ onClose, initialChapterId }: { onClose: () => void; initialChapterId?: string }) {
-	const [index, setIndex] = useState(() => {
-		if (initialChapterId) {
-			const i = CHAPTERS.findIndex((c) => c.id === initialChapterId);
-			if (i >= 0) return i;
-		}
-		return 0;
-	});
+export function Manual({
+	chapterId,
+	onNavigate,
+	onClose,
+}: {
+	chapterId: string;
+	onNavigate: (id: string) => void;
+	onClose: () => void;
+}) {
+	const found = CHAPTERS.findIndex((c) => c.id === chapterId);
+	const index = found >= 0 ? found : 0;
 	const contentRef = useRef<HTMLDivElement>(null);
 	const chapter = CHAPTERS[index];
 
@@ -1865,19 +1868,14 @@ export function Manual({ onClose, initialChapterId }: { onClose: () => void; ini
 
 	useEffect(() => {
 		contentRef.current?.scrollTo(0, 0);
-	}, [index]);
+	}, [chapterId]);
 
 	const go = (i: number) => {
-		if (i >= 0 && i < CHAPTERS.length) setIndex(i);
-	};
-
-	const goById = (id: string) => {
-		const i = CHAPTERS.findIndex((c) => c.id === id);
-		if (i >= 0) setIndex(i);
+		if (i >= 0 && i < CHAPTERS.length) onNavigate(CHAPTERS[i].id);
 	};
 
 	return (
-		<ManualNav.Provider value={goById}>
+		<ManualNav.Provider value={onNavigate}>
 		<div className="manual">
 			<aside className="manual__sidebar">
 				<div className="manual__sidebar-head">

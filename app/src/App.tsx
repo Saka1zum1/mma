@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { listen } from "@tauri-apps/api/event";
-import { useCurrentMap, openMap, closeMap, getCurrentMapId } from "@/store/useMapStore";
+import { useCurrentMap } from "@/store/useMapStore";
+import { useTargetMapId, useManualChapter, closeManual, gotoManualChapter } from "@/store/router";
 import { MapList, BulkActions } from "@/components/map-list/MapList";
 import { StatsForNerds } from "@/components/dialogs/StatsForNerds.add";
 import { SettingsPage } from "@/components/dialogs/SettingsPage.add";
@@ -35,28 +35,19 @@ export default function App() {
 	const [showStats, setShowStats] = useState(false);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showPlugins, setShowPlugins] = useState(false);
-	const [manualOpen, setManualOpen] = useState(false);
-	const [manualChapterId, setManualChapterId] = useState<string | undefined>(undefined);
 	const [manualSearchOpen, setManualSearchOpen] = useState(false);
+	const targetMapId = useTargetMapId();
+	const manualChapter = useManualChapter();
 	const customCss = useSetting("customCss");
 	const update = useUpdateState();
 
 	useHotkey(useBinding("toggleStats"), () => setShowStats((s) => !s));
 	useHotkey(useBinding("openManualSearch"), () => setManualSearchOpen((v) => !v));
 
-	// The manual only ever lives in the main window. Editor windows route their
-	// requests here via emitTo("main", ...) in openManualInMain.
 	useEffect(() => {
-		if (isEditorWindow) return;
-		const unlisten = listen<string | null>("open-manual", (e) => {
-			setManualChapterId(e.payload ?? undefined);
-			setManualOpen(true);
-		});
-		return () => void unlisten.then((f) => f());
-	}, []);
-
-	useEffect(() => {
-		if (isEditorWindow && !map) {
+		// Only self-destruct when no map is *targeted* by the URL (the user closed
+		// it) — not while a map is still loading on boot (URL has a map, data null).
+		if (isEditorWindow && !targetMapId) {
 			WebviewWindow.getByLabel("main").then(async (main) => {
 				await main?.unminimize();
 				await main?.setFocus();
@@ -65,20 +56,8 @@ export default function App() {
 			});
 			return;
 		}
-	}, [map]);
+	}, [targetMapId]);
 
-	useEffect(() => {
-		const onPopState = (e: PopStateEvent) => {
-			const targetId = e.state?.mapId ?? null;
-			if (targetId && targetId !== getCurrentMapId()) {
-				openMap(targetId, false);
-			} else if (!targetId && getCurrentMapId()) {
-				closeMap(false);
-			}
-		};
-		window.addEventListener("popstate", onPopState);
-		return () => window.removeEventListener("popstate", onPopState);
-	}, []);
 
 	useEffect(() => {
 		let el = document.getElementById("mma-custom-css") as HTMLStyleElement | null;
@@ -95,7 +74,11 @@ export default function App() {
 
 	return (
 		<>
-			{map ? MapEditor ? <MapEditor /> : null : <MapList />}
+			{targetMapId ? (
+				map && MapEditor ? <MapEditor /> : <div style={{ position: "fixed", inset: 0, background: "#252521" }} />
+			) : (
+				<MapList />
+			)}
 			{!showSettings && !showPlugins && (
 				<div
 					className="bottom-bar"
@@ -146,8 +129,12 @@ export default function App() {
 			<SettingsPage open={showSettings} onOpenChange={setShowSettings} />
 			<PluginMarketplace open={showPlugins} onOpenChange={setShowPlugins} />
 			<ManualSearch open={manualSearchOpen} onOpenChange={setManualSearchOpen} />
-			{!isEditorWindow && manualOpen && (
-				<Manual initialChapterId={manualChapterId} onClose={() => setManualOpen(false)} />
+			{manualChapter !== null && (
+				<Manual
+					chapterId={manualChapter}
+					onNavigate={gotoManualChapter}
+					onClose={closeManual}
+				/>
 			)}
 			<ToastContainer />
 		</>

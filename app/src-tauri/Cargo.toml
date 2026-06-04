@@ -47,6 +47,7 @@ specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "0.0.12"
 csv = "1"
+tauri-plugin-webserve = { path = "crates/tauri-plugin-webserve", optional = true }
 
 [profile.dev]
 opt-level = 1
@@ -56,6 +57,12 @@ opt-level = 2
 
 [features]
 e2e = ["tauri-plugin-webdriver"]
+web-serve = ["dep:tauri-plugin-webserve"]
+
+[[bin]]
+name = "mma-serve"
+path = "src/bin/mma_serve.rs"
+required-features = ["web-serve"]
 
 [dependencies.tauri-plugin-webdriver]
 version = "0.2"

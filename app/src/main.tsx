@@ -5,7 +5,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "@/styles.css";
 import App from "@/App.tsx";
 import { initLogging, log } from "@/lib/util/log";
-import { initStore, openMap, flushSave } from "@/store/useMapStore";
+import { initStore, flushSave } from "@/store/useMapStore";
+import { initRouter } from "@/store/router";
 import { cmd } from "@/lib/commands";
 import { checkForUpdate } from "@/lib/util/updateCheck";
 import "@/api";
@@ -25,11 +26,8 @@ async function boot() {
 	await initStore();
 	mark("initStore");
 
-	const hashMatch = location.hash.match(/^#map\/(.+)$/);
-	if (hashMatch) {
-		await openMap(hashMatch[1], false);
-		mark("openMap");
-	}
+	initRouter();
+	mark("initRouter");
 
 	if (window.MMA) window.MMA.ready = true;
 	log.info("App booted");

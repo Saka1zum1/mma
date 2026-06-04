@@ -1,17 +1,5 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { emitTo } from "@tauri-apps/api/event";
 import { log } from "@/lib/util/log";
-
-// The manual always lives in the main window, never the editor window that asked
-// for it. Focus main and tell it to open (optionally at a specific chapter).
-export async function openManualInMain(chapterId?: string): Promise<void> {
-	const main = await WebviewWindow.getByLabel("main");
-	if (main) {
-		if (await main.isMinimized()) await main.unminimize();
-		await main.setFocus();
-	}
-	await emitTo("main", "open-manual", chapterId ?? null);
-}
 
 export async function openMapWindow(id: string, name: string): Promise<void> {
 	const label = `map-${id}`;

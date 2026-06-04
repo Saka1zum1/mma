@@ -308,7 +308,7 @@ export function mapOpenMark(phase: string) {
 }
 
 // --- Actions ---
-export async function openMap(id: string, pushHistory = true) {
+export async function openMap(id: string) {
 	mapOpenT0 = performance.now();
 	mapOpenSeen = new Set();
 	if (autosaveTimer) {
@@ -352,11 +352,10 @@ export async function openMap(id: string, pushHistory = true) {
 	mapVersion++;
 	notify();
 	t.end();
-	if (pushHistory) history.pushState({ mapId: id }, "", `#map/${id}`);
 	if (currentMap) emitEvent("map:open", currentMap);
 }
 
-export async function closeMap(pushHistory = true) {
+export async function closeMap() {
 	await flushSave();
 	emitEvent("map:close");
 	currentMapId = null;
@@ -378,7 +377,6 @@ export async function closeMap(pushHistory = true) {
 	tagCounts = {};
 	mapVersion++;
 	notify();
-	if (pushHistory) history.pushState({ mapId: null }, "", "#");
 }
 
 export function getCurrentMapId() {

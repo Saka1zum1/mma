@@ -10,7 +10,8 @@ import {
 	invalidateMapList,
 	updateMapLabels,
 } from "@/store/useMapStore";
-import { openMapWindow, openManualInMain } from "@/lib/window.add";
+import { openMapWindow } from "@/lib/window.add";
+import { openManual } from "@/store/router";
 import { log } from "@/lib/util/log";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "@/lib/commands";
@@ -924,7 +925,7 @@ export function MapList() {
 								href="#"
 								onClick={(e) => {
 									e.preventDefault();
-									void openManualInMain();
+									openManual();
 								}}
 							>
 								Open the manual

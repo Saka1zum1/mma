@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { searchManual } from "@/components/dialogs/Manual.add";
-import { openManualInMain } from "@/lib/window.add";
+import { openManual } from "@/store/router";
 import "@/components/dialogs/manual.add.css";
 
 export function ManualSearch({
@@ -30,7 +30,7 @@ export function ManualSearch({
 
 	const choose = (id: string) => {
 		onOpenChange(false);
-		void openManualInMain(id);
+		openManual(id);
 	};
 
 	const onKeyDown = (e: React.KeyboardEvent) => {

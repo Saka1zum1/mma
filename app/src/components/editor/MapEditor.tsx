@@ -3,13 +3,13 @@ import { createLocation } from "@/types";
 import {
 	useCurrentMap,
 	useWorkArea,
-	closeMap,
 	addLocations,
 	setActiveLocation,
 	getActiveLocation,
 	createTags,
 	beginImportPaste,
 } from "@/store/useMapStore";
+import { goToList } from "@/store/router";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
 import { getGoogleMap as getGoogleMapInstance, waitForGoogleMap, fitMapToBounds } from "@/lib/map/mapState";
 import { pluginsReady } from "@/plugins";
@@ -232,7 +232,7 @@ export function MapEditor() {
 					aria-label="Back to map list"
 					onClick={(e) => {
 						e.preventDefault();
-						closeMap();
+						goToList();
 					}}
 				>
 					<Icon path={mdiBackburger} />
