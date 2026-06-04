@@ -31,7 +31,7 @@ Requires: Rust toolchain, Node.js, npm.
 Serve the app locally and open it in any browser:
 
 ```bash
-cd app && npm run build
+cd app && npm install && npm run build
 cargo run --manifest-path src-tauri/Cargo.toml --bin mma-serve --features web-serve
 ```
 

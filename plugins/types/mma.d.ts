@@ -234,7 +234,7 @@ export type Location_Deserialize = {
 	/**  Street View zoom level (0-5), not map zoom. */
 	zoom: number;
 	panoId: string | null;
-	/**  Bitfield: see [`LOAD_AS_PANO_ID`] and [`INFORMATIONAL`]. */
+	/**  See [`LocationFlags`]. */
 	flags: number;
 	/**  Tag IDs applied to this location. References `Tag.id`. */
 	tags: number[];
@@ -264,7 +264,7 @@ export type Location_Serialize = {
 	/**  Street View zoom level (0-5), not map zoom. */
 	zoom: number;
 	panoId: string | null;
-	/**  Bitfield: see [`LOAD_AS_PANO_ID`] and [`INFORMATIONAL`]. */
+	/**  See [`LocationFlags`]. */
 	flags: number;
 	/**  Tag IDs applied to this location. References `Tag.id`. */
 	tags: number[];
