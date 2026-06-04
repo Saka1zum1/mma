@@ -664,7 +664,7 @@ export type SummaryResult = {
 	version: number;
 	dirtyCount: number;
 };
-/**  Result of `store_sync_selections`: per-selection counts and the bitmask patch file path. */
+/**  Result of `store_sync_selections`: per-selection counts and the inline bitmask bytes. */
 export type SyncSelectionsResult = {
 	counts: number[];
 	bitmask: number[] | null;

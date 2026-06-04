@@ -315,18 +315,21 @@ export async function openMap(id: string) {
 	if (inflightSave) await inflightSave;
 	const t = trace("openMap");
 	currentMapId = id;
-	currentMap = await cmd.storeGetMap(id);
+	currentMap = null;
+	notify();
+	const meta = await cmd.storeGetMap(id);
 	t.step("getMap");
 
-	if (currentMap) {
+	if (meta) {
 		try {
 			const openResult = await cmd.storeOpenMap(id);
 			t.step("store_open_map");
 			mapOpenMark("data");
+			currentMap = meta;
 			tagCounts = openResult.tagCounts;
 			undoRedoState = { canUndo: openResult.canUndo, canRedo: openResult.canRedo };
 			knownFieldKeys = new Set(openResult.knownFieldKeys);
-			setUserFieldDefs(currentMap!.meta.extra?.fields ?? {});
+			setUserFieldDefs(meta.meta.extra?.fields ?? {});
 		} catch (e) {
 			log.error("[openMap] store_open_map failed:", e);
 			currentMap = null;
