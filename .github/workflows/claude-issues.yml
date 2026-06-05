@@ -1,0 +1,78 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Allowlist gate
+        id: gate
+        env:
+          ACTOR: ${{ github.event_name == 'issues' && github.event.issue.user.login || github.event.comment.user.login }}
+          BODY: ${{ github.event_name == 'issue_comment' && github.event.comment.body || '' }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          # Comment triggers also require an explicit @claude mention.
+          if [ "$EVENT" = "issue_comment" ] && ! printf '%s' "$BODY" | grep -q '@claude'; then
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "Comment without @claude -- skipping."; exit 0
+          fi
+          if grep -qxF "$ACTOR" .github/triage-allowlist.txt; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+            echo "$ACTOR is allowlisted."
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "$ACTOR is not on .github/triage-allowlist.txt -- skipping."
+          fi
+
+      - name: Checkout private reference
+        if: steps.gate.outputs.allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ccmdi/mma-reference
+          token: ${{ secrets.DOCS_TOKEN }}
+          path: docs
+      - name: Place reference at local paths
+        if: steps.gate.outputs.allowed == 'true'
+        run: |
+          cp docs/CLAUDE.md ./CLAUDE.md
+          cp -r docs/mma-source ./mma-source
+
+      - name: Triage
+        if: steps.gate.outputs.allowed == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are triaging activity on the public repo ccmdi/mma. Project guidance and
+            private reference docs are at ./CLAUDE.md and ./docs. These are reference-only: do not quote, paste, or
+            reproduce their contents into any PR, comment, branch, or commit message.
+
+            If this was triggered by a NEW ISSUE:
+              Assess whether it is a self-contained, unambiguous fix where the correct change
+              is obvious from the code (typo, off-by-one, clearly-broken conditional, missing
+              null check with a stack trace, etc.).
+              - If YES: implement it on a new branch and open a DRAFT pull request referencing
+                the issue.
+              - If it needs maintainer judgment -- a feature request, a design decision,
+                ambiguity, a large refactor, or anything that might be a platform/browser
+                constraint rather than a bug -- do NOT write code. Post a concise comment
+                summarizing the issue and your assessment, and tag @ccmdi to review.
+              When in doubt, prefer commenting over opening a PR.
+
+            If this was triggered by a COMMENT mentioning @claude:
+              Address the specific request in that comment.
