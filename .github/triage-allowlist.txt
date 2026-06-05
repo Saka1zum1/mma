@@ -1,6 +1,0 @@
-# GitHub usernames allowed to trigger automatic issue triage. One per line.
-ccmdi
-wayfu
-njacked
-iggedi-ig-ig
-VehicleRonald

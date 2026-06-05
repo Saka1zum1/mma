@@ -1,8 +1,8 @@
-name: Claude Issue Triage
+name: Claude
 
+# Pinged by an @claude mention on an issue/PR. The Claude GitHub App path only runs for
+# write-access users, so the ping is always the maintainer directing it -- no allowlist needed.
 on:
-  issues:
-    types: [opened]
   issue_comment:
     types: [created]
 
@@ -13,48 +13,27 @@ permissions:
   id-token: write
 
 jobs:
-  triage:
+  build:
+    if: contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Allowlist gate
-        id: gate
-        env:
-          ACTOR: ${{ github.event_name == 'issues' && github.event.issue.user.login || github.event.comment.user.login }}
-          BODY: ${{ github.event_name == 'issue_comment' && github.event.comment.body || '' }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          # Comment triggers also require an explicit @claude mention.
-          if [ "$EVENT" = "issue_comment" ] && ! printf '%s' "$BODY" | grep -q '@claude'; then
-            echo "allowed=false" >> "$GITHUB_OUTPUT"
-            echo "Comment without @claude -- skipping."; exit 0
-          fi
-          if grep -qxF "$ACTOR" .github/triage-allowlist.txt; then
-            echo "allowed=true" >> "$GITHUB_OUTPUT"
-            echo "$ACTOR is allowlisted."
-          else
-            echo "allowed=false" >> "$GITHUB_OUTPUT"
-            echo "$ACTOR is not on .github/triage-allowlist.txt -- skipping."
-          fi
 
       - name: Checkout private reference
-        if: steps.gate.outputs.allowed == 'true'
         uses: actions/checkout@v4
         with:
           repository: ccmdi/mma-reference
           token: ${{ secrets.DOCS_TOKEN }}
           path: docs
       - name: Place reference at local paths
-        if: steps.gate.outputs.allowed == 'true'
         run: |
           cp docs/CLAUDE.md ./CLAUDE.md
           cp -r docs/mma-source ./mma-source
 
-      - name: Triage
-        if: steps.gate.outputs.allowed == 'true'
+      - name: Build
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -62,36 +41,13 @@ jobs:
             --model claude-opus-4-6
             --dangerously-skip-permissions
           prompt: |
-            You are triaging activity on the public repo ccmdi/mma. Project guidance and
-            private reference docs are at ./CLAUDE.md and ./docs. These are reference-only: do not quote, paste, or
-            reproduce their contents into any PR, comment, branch, or commit message.
+            You have been pinged with @claude on an issue (or PR) in the public repo
+            ccmdi/mma by a maintainer. Project guidance and private reference docs are at
+            ./CLAUDE.md and ./docs -- read ./CLAUDE.md first, then consult ./docs as needed.
+            These are reference-only: never quote, paste, or reproduce their contents into
+            any PR, comment, branch, or commit message.
 
-            You MUST always post a visible response on the issue before finishing —
-            either a pull request that references it, or a comment. Never finish silently.
-
-            Keep comments short and skimmable: a one-line verdict, then only the essential
-            open questions as a brief bullet list. No code tours, file inventories, or
-            restating the issue back. Aim for a few sentences, not an essay.
-
-            You are usually engaging with USERS -- issue reporters and community members,
-            not the maintainer. Be user-facing: write for them, drive toward clarity, and ask
-            focused questions rather than presuming intent. Deciding what actually gets built
-            is the maintainer's (@ccmdi) call -- never a reporter's, and not yours.
-
-            If this was triggered by a NEW ISSUE:
-              Assess whether it is a self-contained, unambiguous fix where the correct change
-              is obvious from the code.
-              - If YES: implement it on a new branch and open a DRAFT pull request. Put
-                "Closes #<issue number>" in the PR description so GitHub links and auto-closes
-                the issue on merge. Then post a brief comment on the issue linking the PR.
-              - If it needs maintainer judgment -- a feature request, a design decision,
-                ambiguity, a large refactor, or anything that might be a platform/browser
-                constraint rather than a bug -- do NOT write code. Post a concise comment
-                summarizing the issue and your assessment, and tag @ccmdi to review.
-              When in doubt, prefer commenting over opening a PR.
-
-            If this was triggered by a COMMENT mentioning @claude:
-              If @ccmdi authorizes a build and the decisions are settled,
-              implement on a branch and open a draft PR with "Closes #<issue number>". If the
-              commenter is anyone else, stay in the user-facing, clarify-first mode above and
-              defer the build decision to @ccmdi. When unsure, ask.
+            Do what the comment asks. Implement it on a branch and open a DRAFT pull request
+            with a brief description of the change and "Closes #<issue number>" so it links
+            and auto-closes on merge. Only if the request genuinely cannot be done as a code
+            change, leave one short comment explaining why. Keep everything concise.
