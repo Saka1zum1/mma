@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Icon } from "@/components/primitives/Icon";
+import { mdiCheckCircleOutline, mdiCircleOutline } from "@mdi/js";
 import {
 	listSessions,
 	resumeReview,
 	deleteSession,
+	selectReviewSet,
 	type ReviewSession,
 } from "@/lib/review/review.add";
 
@@ -58,9 +61,14 @@ export function ReviewSessionsModal({
 		reload();
 	};
 
+	const handleSelect = (s: ReviewSession, mode: "reviewed" | "unreviewed") => {
+		selectReviewSet(s, mode);
+		onOpenChange(false);
+	};
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Review sessions">
+			<DialogContent title="Review sessions" className="review-sessions-modal">
 				<div style={{ display: "flex", gap: ".5rem", marginBottom: ".75rem" }}>
 					<button
 						className={`button ${filter === "active" ? "button--primary" : ""}`}
@@ -112,6 +120,26 @@ export function ReviewSessionsModal({
 									</div>
 									<ProgressBar done={s.reviewed.length} total={s.order.length} />
 								</div>
+								<button
+									className="icon-button"
+									style={{ color: "#666" }}
+									title="Select reviewed"
+									aria-label="Select reviewed"
+									onClick={() => handleSelect(s, "reviewed")}
+									data-qa="review-select-reviewed"
+								>
+									<Icon path={mdiCheckCircleOutline} size={20} />
+								</button>
+								<button
+									className="icon-button"
+									style={{ color: "#666" }}
+									title="Select unreviewed"
+									aria-label="Select unreviewed"
+									onClick={() => handleSelect(s, "unreviewed")}
+									data-qa="review-select-unreviewed"
+								>
+									<Icon path={mdiCircleOutline} size={20} />
+								</button>
 								{filter === "active" && (
 									<button
 										className="button button--primary"

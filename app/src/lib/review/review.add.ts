@@ -276,6 +276,14 @@ export function listSessions(status?: "active" | "done"): Promise<ReviewSession[
 	return cmd.storeReviewList(mapId, status ?? null);
 }
 
+/** Add a reviewed/unreviewed overlay selection for an arbitrary session (resume modal). Mirrors
+ *  refreshProjection's props so the key and color match an in-progress projection. */
+export function selectReviewSet(s: ReviewSession, mode: "reviewed" | "unreviewed") {
+	const reviewedSet = new Set(s.reviewed);
+	const locations = mode === "reviewed" ? [...s.reviewed] : s.order.filter((id) => !reviewedSet.has(id));
+	return addSelections([{ type: "Reviewed", locations, sessionId: s.id, mode }]);
+}
+
 // --- Selection projection (auto, debounced) ---
 //
 // While a review is active, two overlay selections mirror its progress: "reviewed" and

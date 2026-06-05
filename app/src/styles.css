@@ -3835,6 +3835,10 @@ summary.button {
 #coverage-type-select {
 	width: 260px;
 }
+.review-sessions-modal {
+	width: 38rem;
+	max-width: 95vw;
+}
 .review-header {
 	background: var(--indigo-10);
 	border-radius: 0.25rem;
