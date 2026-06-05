@@ -58,17 +58,24 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-opus-4-8
+            --dangerously-skip-permissions
           prompt: |
             You are triaging activity on the public repo ccmdi/mma. Project guidance and
             private reference docs are at ./CLAUDE.md and ./docs. These are reference-only: do not quote, paste, or
             reproduce their contents into any PR, comment, branch, or commit message.
 
+            You MUST always post a visible response on the issue before finishing —
+            either a pull request that references it, or a comment. Never finish silently.
+
             If this was triggered by a NEW ISSUE:
               Assess whether it is a self-contained, unambiguous fix where the correct change
               is obvious from the code (typo, off-by-one, clearly-broken conditional, missing
               null check with a stack trace, etc.).
-              - If YES: implement it on a new branch and open a DRAFT pull request referencing
-                the issue.
+              - If YES: implement it on a new branch and open a DRAFT pull request. Put
+                "Closes #<issue number>" in the PR description so GitHub links and auto-closes
+                the issue on merge. Then post a brief comment on the issue linking the PR.
               - If it needs maintainer judgment -- a feature request, a design decision,
                 ambiguity, a large refactor, or anything that might be a platform/browser
                 constraint rather than a bug -- do NOT write code. Post a concise comment
