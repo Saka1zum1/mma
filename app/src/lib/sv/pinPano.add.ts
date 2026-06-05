@@ -1,7 +1,20 @@
-import { getCurrentMap, batchUpdateLocations } from "@/store/useMapStore";
 import { LocationFlag, isPinnedToPano } from "@/types";
 import type { Location } from "@/types";
-import { resolvePanoIds } from "./lookup.add";
+import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner.add";
+
+/** Pin to pano ID: resolve the pano from coords, then set the LoadAsPanoId flag.
+ *  Flags only panos resolved this run, matching the original bulk behavior. */
+export const pinPanoResolver: SvResolver = {
+	id: "pinPano",
+	label: "Pin to pano ID",
+	pending: (loc, force) => force || !isPinnedToPano(loc),
+	needsPanoResolve: () => true,
+	needsMetadata: false,
+	resolve: (loc, _data, ctx) =>
+		ctx.resolvedPanoId ? { flags: loc.flags | LocationFlag.LoadAsPanoId } : null,
+};
+
+registerSvResolver(pinPanoResolver);
 
 export async function bulkPinToPano(
 	locations: Location[],
@@ -11,23 +24,6 @@ export async function bulkPinToPano(
 		onProgress?: (done: number, total: number) => void;
 	} = {},
 ): Promise<number> {
-	const { signal, force, onProgress } = opts;
-	const map = getCurrentMap();
-	if (!map) return 0;
-
-	const pending: Location[] = locations.filter((l) => force || !isPinnedToPano(l));
-	if (pending.length === 0) return 0;
-
-	const panoResult = await resolvePanoIds(pending, {
-		signal,
-		onProgress,
-	});
-
-	const flagUpdates = panoResult.resolved.map((r) => {
-		const loc = pending.find((l) => l.id === r.id)!;
-		return { id: r.id, patch: { flags: loc.flags | LocationFlag.LoadAsPanoId } };
-	});
-	if (flagUpdates.length > 0) batchUpdateLocations(flagUpdates);
-
-	return panoResult.resolved.length;
+	const result = await runResolvers(locations, [{ id: "pinPano" }], opts);
+	return result.pinPano?.success.length ?? 0;
 }

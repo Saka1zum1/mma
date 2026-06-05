@@ -22,6 +22,7 @@ import {
 	mdiDatabaseEditOutline,
 	mdiFindReplace,
 	mdiGhostOutline,
+	mdiCompassOutline,
 } from "@mdi/js";
 import { registerCommand } from "./commands.add";
 import {
@@ -224,6 +225,14 @@ registerCommand({
 	icon: mdiMapMarkerCheck,
 	group: "Bulk Operations",
 	execute: () => document.dispatchEvent(new CustomEvent("open-bulk-op", { detail: "pinPano" })),
+});
+
+registerCommand({
+	id: "bulk-heading-road",
+	label: "Pan headings along road",
+	icon: mdiCompassOutline,
+	group: "Bulk Operations",
+	execute: () => document.dispatchEvent(new CustomEvent("open-bulk-op", { detail: "headingRoad" })),
 });
 
 registerCommand({

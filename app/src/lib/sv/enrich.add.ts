@@ -1,23 +1,21 @@
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { resolveExactTimestamp } from "@/lib/sv/exactDate.add";
 import { resolveTimezone } from "@/lib/util/timezone.add";
-import {
-	getCurrentMap,
-	fetchLocationsByIds,
-	batchUpdateLocations,
-	patchLocationExtra,
-} from "@/store/useMapStore";
+import { getCurrentMap, patchLocationExtra } from "@/store/useMapStore";
 import {
 	filterEnrichPatch,
 	isFieldEnabled,
 	getEnrichmentProviders,
 	getDefaultEnrichKeys,
 } from "@/lib/data/fieldDefs.add";
-import { resolvePanoIds } from "@/lib/sv/lookup.add";
+import {
+	registerSvResolver,
+	runResolvers,
+	type SvResolver,
+	type ResolverOutcome,
+} from "@/lib/sv/svRunner.add";
 import { log } from "@/lib/util/log";
 import type { Location } from "@/types";
-
-const BATCH_SIZE = 200;
 
 export function needsEnrichment(loc: Location): boolean {
 	return loc.extra?.countryCode == null;
@@ -48,6 +46,7 @@ export function buildPatch(
 	return filtered;
 }
 
+/** Enrich a single location (used on pano load). */
 export async function enrich(
 	loc: Location,
 	data?: google.maps.StreetViewPanoramaData | null,
@@ -75,6 +74,67 @@ export async function enrich(
 	return true;
 }
 
+// --- Resolvers ---
+
+/** Core metadata enrichment: pano data -> `extra` fields. Drives the provider pass. */
+export const enrichMetaResolver: SvResolver = {
+	id: "enrichMeta",
+	label: "Enrich metadata",
+	pending: (loc, force) => force || needsEnrichment(loc),
+	needsPanoResolve: (loc) => !loc.panoId,
+	needsMetadata: true,
+	runsProviders: true,
+	resolve: (loc, data, ctx) => {
+		if (!data) return null;
+		const patch = buildPatch(data, loc, (ctx.config as string[] | null) ?? null);
+		return patch ? { extra: patch } : null;
+	},
+};
+
+/** Exact capture timestamp: binary-searches Google's SingleImageSearch per location.
+ *  Self-contained post phase -- runs after `imageDate` is populated, with its own
+ *  concurrency, on fresh store data. */
+export const exactDateResolver: SvResolver = {
+	id: "exactDate",
+	label: "Resolve exact dates",
+	pending: (loc, force) => !!loc.extra?.imageDate && (force || loc.extra?.datetime == null),
+	postUnits: (locs, force) =>
+		locs.filter((l) => l.extra?.imageDate && (force || l.extra?.datetime == null)).length,
+	post: async (locations, { signal, force, config, onUnit }) => {
+		const out: ResolverOutcome = { success: [], failed: [] };
+		const enrichFields = (config as string[] | null) ?? getDefaultEnrichKeys();
+		const datePending = locations.filter(
+			(l) => l.extra?.imageDate && (force || l.extra?.datetime == null),
+		);
+		let next = 0;
+		async function worker() {
+			while (next < datePending.length) {
+				signal?.throwIfAborted();
+				const loc = datePending[next++];
+				try {
+					const ts = await resolveExactTimestamp(loc.lat, loc.lng, loc.extra!.imageDate as string);
+					const tz = resolveTimezone(loc.lat, loc.lng);
+					const patch = filterEnrichPatch({ datetime: ts, timezone: tz }, enrichFields);
+					if (Object.keys(patch).length > 0) patchLocationExtra(loc, patch);
+					out.success.push(loc.id);
+				} catch (e) {
+					log.warn(
+						`[exactDate] failed for ${loc.id} (${loc.lat},${loc.lng} ${loc.extra!.imageDate}):`,
+						e,
+					);
+					out.failed.push(loc.id);
+				}
+				onUnit();
+			}
+		}
+		await Promise.all(Array.from({ length: Math.min(1000, datePending.length) }, () => worker()));
+		return out;
+	},
+};
+
+registerSvResolver(enrichMetaResolver);
+registerSvResolver(exactDateResolver);
+
 export interface EnrichResult {
 	metaSuccess: number[];
 	metaFailed: number[];
@@ -82,6 +142,8 @@ export interface EnrichResult {
 	dateFailed: number[];
 }
 
+/** Bulk enrich: selector over the resolver engine. Runs `enrichMeta` (+ providers),
+ *  and `exactDate` when the datetime field is enabled. */
 export async function enrichAll(
 	locations: Location[],
 	opts: {
@@ -90,147 +152,20 @@ export async function enrichAll(
 		onProgress?: (done: number, total: number) => void;
 	} = {},
 ): Promise<EnrichResult> {
-	const { signal, force, onProgress } = opts;
-	const result: EnrichResult = { metaSuccess: [], metaFailed: [], dateSuccess: [], dateFailed: [] };
+	const empty: EnrichResult = { metaSuccess: [], metaFailed: [], dateSuccess: [], dateFailed: [] };
 	const map = getCurrentMap();
-	if (!map) return result;
+	if (!map) return empty;
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 	const exactDates = isFieldEnabled(enrichFields, "datetime");
 
-	const scopeIds = locations.map((l) => l.id);
-	const pending: Location[] = locations.filter((l) => force || needsEnrichment(l));
+	const selected: { id: string; config?: unknown }[] = [{ id: "enrichMeta", config: enrichFields }];
+	if (exactDates) selected.push({ id: "exactDate", config: enrichFields });
 
-	if (pending.length === 0 && !exactDates) return result;
-
-	let resolvedPanoIds: Map<number, string> | undefined;
-	const noPano = pending.filter((l) => !l.panoId);
-	if (noPano.length > 0) {
-		const panoResult = await resolvePanoIds(noPano, {
-			signal,
-			onProgress,
-		});
-		result.metaFailed.push(...panoResult.failed);
-		resolvedPanoIds = new Map(panoResult.resolved.map((r) => [r.id, r.panoId]));
-	}
-
-	const enrichable = pending.filter((l) => l.panoId || resolvedPanoIds?.has(l.id));
-	const skipped = pending.length - enrichable.length;
-
-	async function enrichBatch(
-		batch: Location[],
-		panoIds: string[],
-	): Promise<{ id: number; patch: { extra: Record<string, unknown> } }[]> {
-		signal?.throwIfAborted();
-		const results = await fetchSvMetadata(panoIds);
-		signal?.throwIfAborted();
-
-		const allNull = results.every((r) => r == null);
-		if (allNull && batch.length > 1) {
-			const mid = Math.ceil(batch.length / 2);
-			const left = await enrichBatch(batch.slice(0, mid), panoIds.slice(0, mid));
-			const right = await enrichBatch(batch.slice(mid), panoIds.slice(mid));
-			return [...left, ...right];
-		}
-
-		const updates: { id: number; patch: { extra: Record<string, unknown> } }[] = [];
-		for (let j = 0; j < batch.length; j++) {
-			const data = results[j];
-			const loc = batch[j];
-			if (!data) {
-				result.metaFailed.push(loc.id);
-				continue;
-			}
-			result.metaSuccess.push(loc.id);
-			const patch = buildPatch(data, loc, enrichFields);
-			if (!patch) continue;
-			updates.push({ id: loc.id, patch: { extra: { ...loc.extra, ...patch } } });
-		}
-		return updates;
-	}
-
-	for (let i = 0; i < enrichable.length; i += BATCH_SIZE) {
-		signal?.throwIfAborted();
-		const batch = enrichable.slice(i, i + BATCH_SIZE);
-		const panoIds = batch.map((l) => l.panoId ?? resolvedPanoIds!.get(l.id)!);
-
-		const updates = await enrichBatch(batch, panoIds);
-		if (updates.length > 0) batchUpdateLocations(updates);
-
-		onProgress?.(skipped + Math.min(i + batch.length, enrichable.length), pending.length);
-	}
-
-	if (exactDates) {
-		const freshMap = getCurrentMap();
-		if (!freshMap) return result;
-		const freshLocs = await fetchLocationsByIds(scopeIds);
-		const datePending = freshLocs.filter(
-			(l) => l.extra?.imageDate && (force || l.extra?.datetime == null),
-		);
-		const metaDone = pending.length;
-		let dateDone = 0;
-		const dateTotal = datePending.length;
-		const grandTotal = metaDone + dateTotal;
-
-		// Emit immediately so the bar resets to the date phase before the first
-		// (slow, multi-RPC) resolveExactTimestamp lands — otherwise it sits at a
-		// false 100% until the first location fully resolves.
-		onProgress?.(metaDone, grandTotal);
-
-		let next = 0;
-		async function dateWorker() {
-			while (next < datePending.length) {
-				signal?.throwIfAborted();
-				const idx = next++;
-				const loc = datePending[idx];
-				try {
-					const ts = await resolveExactTimestamp(loc.lat, loc.lng, loc.extra!.imageDate as string);
-					const tz = resolveTimezone(loc.lat, loc.lng);
-					const datePatch = filterEnrichPatch(
-						{ datetime: ts, timezone: tz },
-						freshMap!.meta.settings.enrichFields ?? getDefaultEnrichKeys(),
-					);
-					if (Object.keys(datePatch).length > 0) patchLocationExtra(loc, datePatch);
-					result.dateSuccess.push(loc.id);
-				} catch (e) {
-					log.warn(
-						`[enrichAll] exact date failed for ${loc.id} (${loc.lat},${loc.lng} ${loc.extra!.imageDate}):`,
-						e,
-					);
-					result.dateFailed.push(loc.id);
-				}
-				dateDone++;
-				onProgress?.(metaDone + dateDone, grandTotal);
-			}
-		}
-		await Promise.all(Array.from({ length: Math.min(1000, dateTotal) }, () => dateWorker()));
-	}
-
-	// Run plugin enrichment providers in a single merged pass. Per-provider writes would
-	// each rebuild extra from the same stale snapshot and overwrite the previous
-	// provider's keys; merging all providers' patches first avoids that clobber.
-	const providers = getEnrichmentProviders();
-	if (providers.length > 0) {
-		signal?.throwIfAborted();
-		const pluginLocs = await fetchLocationsByIds(scopeIds);
-		const providerResults = await Promise.all(
-			providers.map((provider) => provider.enrich(pluginLocs, enrichFields)),
-		);
-		signal?.throwIfAborted();
-		const mergedById = new Map<number, Record<string, unknown>>();
-		for (const result of providerResults) {
-			for (const [id, patch] of result) {
-				mergedById.set(id, { ...mergedById.get(id), ...patch });
-			}
-		}
-		if (mergedById.size > 0) {
-			const byId = new Map(pluginLocs.map((l) => [l.id, l]));
-			const updates = [...mergedById.entries()].map(([id, patch]) => ({
-				id,
-				patch: { extra: { ...byId.get(id)?.extra, ...patch } },
-			}));
-			batchUpdateLocations(updates);
-		}
-	}
-
-	return result;
+	const run = await runResolvers(locations, selected, opts);
+	return {
+		metaSuccess: run.enrichMeta?.success ?? [],
+		metaFailed: run.enrichMeta?.failed ?? [],
+		dateSuccess: run.exactDate?.success ?? [],
+		dateFailed: run.exactDate?.failed ?? [],
+	};
 }

@@ -16,9 +16,16 @@ import { ValidationState } from "@/store/selections";
 import { validateLocations } from "@/lib/sv/validate";
 import { enrichAll, needsEnrichment, type EnrichResult } from "@/lib/sv/enrich.add";
 import { bulkPinToPano } from "@/lib/sv/pinPano.add";
+import { bulkPanHeading, type RoadDirection } from "@/lib/sv/headingRoad.add";
 import { fmt } from "@/lib/util/format";
 
-export type BulkOperation = "validate" | "enrich" | "pinPano" | "clearFields" | "setField";
+export type BulkOperation =
+	| "validate"
+	| "enrich"
+	| "pinPano"
+	| "clearFields"
+	| "setField"
+	| "headingRoad";
 
 interface Props {
 	operation: BulkOperation;
@@ -31,6 +38,7 @@ const TITLES: Record<BulkOperation, string> = {
 	pinPano: "Pin to Pano ID",
 	clearFields: "Clear metadata fields",
 	setField: "Set metadata field",
+	headingRoad: "Pan headings along road",
 };
 
 type Scope = "all" | "selection";
@@ -85,6 +93,7 @@ function BulkSetup({
 		scope: Scope;
 		clearKeys?: string[];
 		setField?: Partial<Location>;
+		headingDirection?: RoadDirection;
 	}) => void;
 }) {
 	const [force, setForce] = useState(false);
@@ -148,8 +157,7 @@ function BulkSetup({
 					selectionCount={selectionCount}
 				/>
 				<div className="bulk-operation__status">
-					{fmt.format(scopedLocs.length)} locations in scope. {fmt.format(unpinned)} not pinned to a
-					pano ID.
+					{fmt.format(unpinned)} locations not pinned to a pano ID.
 				</div>
 				<label className="bulk-operation__option">
 					<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
@@ -192,6 +200,18 @@ function BulkSetup({
 				allCount={total}
 				selectionCount={selectionCount}
 				onStart={(patch) => onStart({ force: false, scope, setField: patch })}
+			/>
+		);
+	}
+
+	if (operation === "headingRoad") {
+		return (
+			<HeadingRoadSetup
+				scope={scope}
+				onScopeChange={setScope}
+				allCount={total}
+				selectionCount={selectionCount}
+				onStart={(direction) => onStart({ force: false, scope, headingDirection: direction })}
 			/>
 		);
 	}
@@ -413,6 +433,58 @@ function SetFieldSetup({
 	);
 }
 
+function HeadingRoadSetup({
+	scope,
+	onScopeChange,
+	allCount,
+	selectionCount,
+	onStart,
+}: {
+	scope: Scope;
+	onScopeChange: (s: Scope) => void;
+	allCount: number;
+	selectionCount: number;
+	onStart: (direction: RoadDirection) => void;
+}) {
+	const [direction, setDirection] = useState<RoadDirection>("forwards");
+
+	return (
+		<div className="bulk-operation">
+			<ScopeToggle
+				scope={scope}
+				onScopeChange={onScopeChange}
+				allCount={allCount}
+				selectionCount={selectionCount}
+			/>
+			<div className="bulk-operation__fieldset">
+				<label>
+					<input
+						type="radio"
+						name="direction"
+						checked={direction === "forwards"}
+						onChange={() => setDirection("forwards")}
+					/>
+					Forwards (along driving direction)
+				</label>
+				<label>
+					<input
+						type="radio"
+						name="direction"
+						checked={direction === "backwards"}
+						onChange={() => setDirection("backwards")}
+					/>
+					Backwards
+				</label>
+			</div>
+			<div className="bulk-operation__actions">
+				<button className="button button--primary" type="button" onClick={() => onStart(direction)}>
+					Start
+				</button>
+			</div>
+		</div>
+	);
+}
+
 function EnrichSummary({
 	result,
 	onSelect,
@@ -469,6 +541,7 @@ function BulkProgress({
 	selectedIds,
 	clearKeys,
 	setField,
+	headingDirection,
 	onClose,
 }: {
 	operation: BulkOperation;
@@ -477,6 +550,7 @@ function BulkProgress({
 	selectedIds: Set<number>;
 	clearKeys?: string[];
 	setField?: Partial<Location>;
+	headingDirection?: RoadDirection;
 	onClose: () => void;
 }) {
 	const [progress, setProgress] = useState(0);
@@ -572,6 +646,12 @@ function BulkProgress({
 				}
 				setDone(updates.length);
 				setClearCount(updates.length);
+			} else if (operation === "headingRoad") {
+				const count = await bulkPanHeading(locations, headingDirection ?? "forwards", {
+					signal: controller.signal,
+					onProgress,
+				});
+				setClearCount(count);
 			}
 			setProgress(1);
 			setStatus("done");
@@ -583,7 +663,7 @@ function BulkProgress({
 				setStatus("error");
 			}
 		}
-	}, [operation, force, clearKeys, setField]);
+	}, [operation, force, clearKeys, setField, headingDirection]);
 
 	useEffect(() => {
 		run();
@@ -609,6 +689,8 @@ function BulkProgress({
 					`Cleared fields from ${fmt.format(clearCount)} locations.`
 				) : status === "done" && operation === "setField" ? (
 					`Set field on ${fmt.format(clearCount)} locations.`
+				) : status === "done" && operation === "headingRoad" ? (
+					`Panned ${fmt.format(clearCount)} headings.`
 				) : (
 					status === "done" && `Done -- ${fmt.format(total)} locations processed.`
 				)}
@@ -641,6 +723,7 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 	const [scope, setScope] = useState<Scope>("all");
 	const [clearKeys, setClearKeys] = useState<string[]>([]);
 	const [setField, setSetField] = useState<Partial<Location> | undefined>(undefined);
+	const [headingDirection, setHeadingDirection] = useState<RoadDirection | undefined>(undefined);
 	const selectedIds = useSelectedLocationIds();
 
 	return (
@@ -659,6 +742,7 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 							setScope(opts.scope);
 							if (opts.clearKeys) setClearKeys(opts.clearKeys);
 							if (opts.setField) setSetField(opts.setField);
+							if (opts.headingDirection) setHeadingDirection(opts.headingDirection);
 							setStarted(true);
 						}}
 					/>
@@ -670,6 +754,7 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 						selectedIds={selectedIds}
 						clearKeys={clearKeys}
 						setField={setField}
+						headingDirection={headingDirection}
 						onClose={onClose}
 					/>
 				)}
