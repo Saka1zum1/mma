@@ -1,6 +1,6 @@
 [package]
 name = "map-making-app"
-version = "0.5.1"
+version = "0.5.2"
 description = "Local map-making.app clone"
 authors = ["ccmdi"]
 license = ""
@@ -63,11 +63,6 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 [features]
 e2e = ["tauri-plugin-webdriver"]
 web-serve = ["dep:tauri-plugin-webserve"]
-
-[[bin]]
-name = "mma-serve"
-path = "src/bin/mma_serve.rs"
-required-features = ["web-serve"]
 
 [dependencies.tauri-plugin-webdriver]
 version = "0.2"

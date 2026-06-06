@@ -32,7 +32,7 @@ Serve the app locally and open it in any browser:
 
 ```bash
 cd app && npm install && npm run build
-cargo run --manifest-path src-tauri/Cargo.toml --bin mma-serve --features web-serve
+cargo run --manifest-path src-tauri/Cargo.toml --features web-serve -- --serve
 ```
 
 Then open the printed `http://127.0.0.1:1430`.
