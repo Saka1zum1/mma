@@ -8,7 +8,9 @@ import {
 	getActiveLocation,
 	createTags,
 	beginImportPaste,
+	beginImportFromPath,
 } from "@/store/useMapStore";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { goToList } from "@/store/router";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
 import { getGoogleMap as getGoogleMapInstance, waitForGoogleMap, fitMapToBounds } from "@/lib/map/mapState";
@@ -75,6 +77,43 @@ function usePasteHandler() {
 		document.body.addEventListener("paste", onPaste);
 		return () => document.body.removeEventListener("paste", onPaste);
 	}, []);
+}
+
+const IMPORT_EXTENSIONS = new Set(["json", "csv"]);
+
+function useFileDrop() {
+	const [dragging, setDragging] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+		const webview = getCurrentWebview();
+		const unlistenPromise = webview.onDragDropEvent((event) => {
+			if (cancelled) return;
+			if (event.payload.type === "enter" || event.payload.type === "over") {
+				setDragging(true);
+			} else if (event.payload.type === "leave") {
+				setDragging(false);
+			} else if (event.payload.type === "drop") {
+				setDragging(false);
+				const path = event.payload.paths[0];
+				if (!path) return;
+				const ext = path.split(".").pop()?.toLowerCase() ?? "";
+				if (!IMPORT_EXTENSIONS.has(ext)) {
+					log.warn(`Unsupported file type: .${ext}`);
+					return;
+				}
+				beginImportFromPath(path).catch((e) => {
+					log.error("File drop import failed:", e);
+				});
+			}
+		});
+		return () => {
+			cancelled = true;
+			unlistenPromise.then((unlisten) => unlisten());
+		};
+	}, []);
+
+	return dragging;
 }
 
 function SplitHandle({ onSplitChange }: { onSplitChange: (v: number) => void }) {
@@ -151,6 +190,7 @@ export function MapEditor() {
 
 	const appSettings = useSettings();
 	usePasteHandler();
+	const fileDragging = useFileDrop();
 	useCommandHotkeys();
 	useCountrySelect();
 	useHotkey(useBinding("toggleFullscreenMap"), () => {
@@ -270,6 +310,11 @@ export function MapEditor() {
 			{workArea === "diff" && <DiffSidebar />}
 			{workArea === "plugin" && <PluginSidebarHost />}
 			<CommandPalette />
+			{fileDragging && (
+				<div className="file-drop-overlay">
+					<div className="file-drop-overlay__content">Drop file to import</div>
+				</div>
+			)}
 		</div>
 	);
 }

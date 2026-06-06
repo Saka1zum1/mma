@@ -1203,6 +1203,12 @@ async function setImportStaging(preview: ImportPreview, source: "file" | "paste"
 	if (getSettings().panToImported) fitMapToBounds(preview.bounds, 100);
 }
 
+/** Import from a known file path. Used by file picker and drag-and-drop. */
+export async function beginImportFromPath(path: string) {
+	const preview = await cmd.storeImportPreview(path);
+	await setImportStaging(preview, "file");
+}
+
 /** Pick a file, stage it for preview. No-op if the picker is cancelled. */
 export async function beginImportFile() {
 	const path = await openFileDialog({
@@ -1210,8 +1216,7 @@ export async function beginImportFile() {
 		filters: [{ name: "Map data", extensions: ["json", "csv"] }],
 	});
 	if (!path || typeof path !== "string") return;
-	const preview = await cmd.storeImportPreview(path);
-	await setImportStaging(preview, "file");
+	await beginImportFromPath(path);
 }
 
 /** Stage pasted text for preview. Throws if no locations are found. */

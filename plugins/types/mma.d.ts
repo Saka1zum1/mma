@@ -1399,13 +1399,7 @@ declare const mma: {
 			number
 		][]>;
 		storeLocationCount: () => Promise<number>;
-		storeBounds: () => Promise<[
-			number,
-			number,
-			number,
-			number
-		] | null>;
-		storeSelectionBounds: () => Promise<[
+		storeBounds: (selectedOnly: boolean) => Promise<[
 			number,
 			number,
 			number,
@@ -1683,6 +1677,7 @@ declare const mma: {
 	addTagToLocations(tagId: number, locationIds: number[]): Promise<void>;
 	removeTagFromLocations(tagId: number, locationIds: number[]): Promise<void>;
 	removeTagFromAllLocations(tagId: number): Promise<void>;
+	beginImportFromPath(path: string): Promise<void>;
 	beginImportFile(): Promise<void>;
 	beginImportPaste(text: string): Promise<void>;
 	confirmImport(droppedFields: string[], tagName?: string): Promise<EditorImportResult_Serialize | null>;

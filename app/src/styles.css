@@ -4788,6 +4788,25 @@ body {
 	display: none;
 }
 
+.file-drop-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 9999;
+	background: rgba(0, 0, 0, 0.45);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
+}
+.file-drop-overlay__content {
+	border: 2px dashed rgba(255, 255, 255, 0.6);
+	border-radius: 12px;
+	padding: 2rem 3rem;
+	color: #fff;
+	font-size: 1.25rem;
+	font-weight: 500;
+}
+
 /* Fullscreen minimap */
 .fullscreen-minimap {
 	position: absolute;
