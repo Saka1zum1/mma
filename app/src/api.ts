@@ -11,6 +11,7 @@
 import * as store from "@/store/useMapStore";
 import * as review from "@/lib/review/review.add";
 import { cmd as commands } from "@/lib/commands";
+import { goToMap, goToList } from "@/store/router";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
 import { registerPlugin } from "@/plugins/registry";
@@ -80,6 +81,12 @@ const mma = {
 	// --- Store ---
 	...store,
 
+	openMap: async (id: string) => {
+		goToMap(id);
+		while (!store.getCurrentMap()) await new Promise((r) => setTimeout(r, 16));
+	},
+	closeMap: () => { goToList(); return store.closeMap(); },
+
 	// --- Review sessions ---
 	...review,
 
@@ -132,6 +139,19 @@ const mma = {
 	bulkPinToPano: async (opts?: Record<string, unknown>) => bulkPinToPano(await store.fetchAllLocations(), opts),
 	validateLocations,
 	needsEnrichment: (loc: Pick<Location, "extra">) => needsEnrichment(loc as Location),
+
+	// --- Import (test convenience) ---
+	importPaste: async (text: string) => {
+		await commands.storeImportPastePreview(text);
+		const r = await commands.storeImportFile([], null);
+		await store.mutate(Promise.resolve(r));
+		return [r];
+	},
+	importFile: async (droppedFields: string[], tagName?: string) => {
+		const r = await commands.storeImportFile(droppedFields, tagName ?? null);
+		await store.mutate(Promise.resolve(r));
+		return r;
+	},
 
 	// --- Util ---
 	mmaBufUrl,

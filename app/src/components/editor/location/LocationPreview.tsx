@@ -646,7 +646,8 @@ export async function loadSeenPano(entry: SeenEntry) {
 			panoId: entry.panoId,
 			extra: entry.countryCode ? { countryCode: entry.countryCode } : undefined,
 		});
-		addLocations([loc]).then(() => setActiveLocation(loc.id));
+		await addLocations([loc]);
+		await setActiveLocation(loc.id, false);
 		return;
 	}
 

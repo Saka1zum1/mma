@@ -1546,6 +1546,8 @@ declare const mma: {
 	bulkPinToPano: (opts?: Record<string, unknown>) => Promise<number>;
 	validateLocations: typeof validateLocations;
 	needsEnrichment: (loc: Pick<Location$1, "extra">) => boolean;
+	importPaste: (text: string) => Promise<EditorImportResult_Serialize[]>;
+	importFile: (droppedFields: string[], tagName?: string) => Promise<EditorImportResult_Serialize>;
 	mmaBufUrl: typeof mmaBufUrl;
 	pruneSession(s: ReviewSession, removed: Set<number>): PruneResult;
 	advance(s: ReviewSession): {
@@ -1567,6 +1569,8 @@ declare const mma: {
 	deleteSession(id: string): Promise<void>;
 	listSessions(status?: "active" | "done"): Promise<ReviewSession[]>;
 	selectReviewSet(s: ReviewSession, mode: "reviewed" | "unreviewed"): Promise<void>;
+	openMap: (id: string) => Promise<void>;
+	closeMap: () => Promise<void>;
 	invalidateMapList(): Promise<void>;
 	getTagCounts(): Record<number, number>;
 	refreshAfterMutation(): void;
@@ -1584,8 +1588,6 @@ declare const mma: {
 	flushSave(): Promise<void>;
 	initStore(): Promise<void>;
 	mapOpenMark(phase: string): void;
-	openMap(id: string): Promise<void>;
-	closeMap(): Promise<void>;
 	getCurrentMapId(): string | null;
 	getCurrentMap(): MapData | null;
 	getKnownFieldKeys(): ReadonlySet<string>;

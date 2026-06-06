@@ -19,11 +19,12 @@ export async function withApi<A extends unknown[], R>(
 ): Promise<Awaited<R>> {
 	const wrapped = new Function(
 		"...___a",
-		`const api = window.MMA;
-     return (async () => { try { return await (${fn.toString()})(api, ...___a); } catch(e) { return { __withApiError: e.message }; } })();`,
+		`const ___d = ___a.pop();
+     const api = window.MMA;
+     (async () => { try { ___d(await (${fn.toString()})(api, ...___a)); } catch(e) { ___d({ __withApiError: e.message }); } })();`,
 	);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- callback is serialized and re-evaluated in the browser; this bridge can't be statically typed
-	const result = (await browser.execute(wrapped as any, ...args)) as unknown;
+	const result = (await browser.executeAsync(wrapped as any, ...args)) as unknown;
 	if (result !== null && typeof result === "object" && "__withApiError" in result) {
 		throw new Error(String((result as { __withApiError: unknown }).__withApiError));
 	}

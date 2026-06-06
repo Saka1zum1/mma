@@ -266,8 +266,8 @@ describe("Seen -- loadSeenPano opens location viewer", () => {
 
 		// Use a numeric ID that doesn't exist (seen table location_id for a nonexistent location)
 		await withApi(
-			(api, pano, lat, lng) => {
-				api.loadSeenPano({
+			async (api, pano, lat, lng) => {
+				return api.loadSeenPano({
 					id: 998,
 					panoId: pano,
 					lat,
