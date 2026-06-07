@@ -548,7 +548,7 @@ function syncMutationResult(r: MutationResult) {
 }
 
 /** Decode the inline bitmask bytes from Rust and emit to selBitmaskBus. */
-function emitBitmask(bytes: number[]) {
+export function emitBitmask(bytes: number[]) {
 	const buf = new Uint8Array(bytes).buffer;
 	const dv = new DataView(buf);
 	let off = 0;

@@ -1809,3 +1809,35 @@ fn merge_group_applies_and_undo_restores() {
     assert_eq!(store.get_loc_by_id(1).unwrap().tags, vec![10]);
     assert_eq!(store.get_loc_by_id(2).unwrap().tags, vec![20]);
 }
+
+#[test]
+fn serialize_cell_bitmask_adapts_format() {
+    use roaring::RoaringBitmap;
+    use std::collections::HashMap;
+
+    // N large enough that a one-element index-list (8 bytes) beats the dense mask.
+    let n = 800usize;
+    let cr = CellRender {
+        id_order: (0..n as u32).collect(),
+        id_to_index: HashMap::new(),
+    };
+    // header = 1 base32 byte + 4-byte loc count; per selection a format byte follows.
+    let parse_header = |seg: &[u8]| u32::from_le_bytes(seg[1..5].try_into().unwrap());
+
+    // Sparse (one selected id) -> index-list (format byte 1).
+    let mut sparse = RoaringBitmap::new();
+    sparse.insert(5);
+    let seg = serialize_cell_bitmask(0, &cr, &[sparse]);
+    assert_eq!(parse_header(&seg), n as u32);
+    assert_eq!(seg[5], 1, "sparse selection should use the index-list format");
+    assert_eq!(u32::from_le_bytes(seg[6..10].try_into().unwrap()), 1, "one selected index");
+    assert_eq!(u32::from_le_bytes(seg[10..14].try_into().unwrap()), 5, "local index of id 5");
+
+    // Dense (select all) -> bitmask (format byte 0), all bits set.
+    let dense: RoaringBitmap = (0..n as u32).collect();
+    let seg = serialize_cell_bitmask(0, &cr, &[dense]);
+    let mask_bytes = n.div_ceil(8);
+    assert_eq!(seg[5], 0, "select-all should use the dense bitmask format");
+    assert_eq!(seg.len(), 5 + 1 + mask_bytes);
+    assert!(seg[6..].iter().all(|&b| b == 0xFF), "every bit set");
+}

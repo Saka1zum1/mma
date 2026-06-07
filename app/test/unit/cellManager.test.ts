@@ -450,6 +450,23 @@ describe("applySelectionBitmasks", () => {
 		expect(maskIds).toEqual(idxIds);
 	});
 
+	it("idx-format ignores indices past the cell's count", () => {
+		mgr.applyDelta({
+			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
+			updated: [],
+			removed: [],
+			colorPatches: [],
+		});
+
+		// Index 5 is out of bounds for a 2-location cell -> clamped, only index 0 (id 10) selected.
+		const ids = mgr.applySelectionBitmasks(
+			[[0, 255, 0]],
+			[{ cellChar: "s", locCount: 2, sels: [{ kind: "idx", indices: new Uint32Array([0, 5]) }] }],
+		);
+		expect(ids).toEqual(new Set([10]));
+		expect(mgr.selOverlayCount).toBe(1);
+	});
+
 	it("bitmask after swap-remove still maps to correct IDs", () => {
 		mgr.applyDelta({
 			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
