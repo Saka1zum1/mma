@@ -34,18 +34,18 @@ describe("createLocation", () => {
 		expect(loc.tags).toEqual([5, 6]);
 	});
 
-	it("generates a createdAt ISO string by default", () => {
-		const before = new Date().toISOString();
+	it("generates a createdAt Unix timestamp (seconds) by default", () => {
+		const before = Math.floor(Date.now() / 1000);
 		const loc = createLocation({ lat: 0, lng: 0 });
-		const after = new Date().toISOString();
-		expect(loc.createdAt >= before).toBe(true);
-		expect(loc.createdAt <= after).toBe(true);
+		const after = Math.floor(Date.now() / 1000);
+		expect(loc.createdAt).toBeGreaterThanOrEqual(before);
+		expect(loc.createdAt).toBeLessThanOrEqual(after);
 	});
 
 	it("allows overriding createdAt", () => {
-		const date = "2024-01-01T00:00:00.000Z";
-		const loc = createLocation({ lat: 0, lng: 0, createdAt: date });
-		expect(loc.createdAt).toBe(date);
+		const ts = Math.floor(Date.UTC(2024, 0, 1) / 1000);
+		const loc = createLocation({ lat: 0, lng: 0, createdAt: ts });
+		expect(loc.createdAt).toBe(ts);
 	});
 
 	it("preserves negative coordinates", () => {
