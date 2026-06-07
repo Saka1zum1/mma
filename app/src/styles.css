@@ -2831,6 +2831,13 @@ summary.button {
 	gap: 0.5rem;
 	margin-top: auto;
 }
+.import-sidebar__ack {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.75rem 0;
+	font-size: 0.9em;
+}
 .importer__error {
 	color: var(--red-11);
 	font-size: 0.85em;

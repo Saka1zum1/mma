@@ -9,8 +9,14 @@ import { fmt } from "@/lib/util/format";
 import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
 import { textColorFor } from "@/lib/util/color";
+import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 
 const FIELD_PREFS_KEY = "import-field-prefs";
+const AUTOCOMMIT_ACK_KEY = "import-autocommit-ack";
+
+function autoCommitAcked(): boolean {
+	return localStorage.getItem(AUTOCOMMIT_ACK_KEY) === "1";
+}
 
 function loadDroppedFields(): Set<string> {
 	try {
@@ -37,6 +43,8 @@ export function ImportSidebar() {
 	const [tagInput, setTagInput] = useState("");
 	const [importing, setImporting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [confirmAutoCommit, setConfirmAutoCommit] = useState(false);
+	const [dontWarnAgain, setDontWarnAgain] = useState(false);
 
 	if (!staging) return null;
 	const { preview } = staging;
@@ -57,6 +65,21 @@ export function ImportSidebar() {
 		if (!name) return;
 		setBulkTag(name);
 		setTagInput("");
+	};
+
+	// Large imports autocommit (not undoable) -- warn first unless the user opted out.
+	const requestImport = () => {
+		if (preview.willAutoCommit && !autoCommitAcked()) {
+			setConfirmAutoCommit(true);
+			return;
+		}
+		handleImport();
+	};
+
+	const proceedAutoCommit = () => {
+		if (dontWarnAgain) localStorage.setItem(AUTOCOMMIT_ACK_KEY, "1");
+		setConfirmAutoCommit(false);
+		handleImport();
 	};
 
 	const handleImport = async () => {
@@ -175,13 +198,39 @@ export function ImportSidebar() {
 			{error && <p className="importer__error">Error: {error}</p>}
 
 			<div className="import-sidebar__actions">
-				<button className="button button--primary" onClick={handleImport} disabled={importing}>
+				<button className="button button--primary" onClick={requestImport} disabled={importing}>
 					{importing ? "Importing…" : "Import"}
 				</button>
 				<button className="button" onClick={cancelImport} disabled={importing}>
 					Discard
 				</button>
 			</div>
+
+			<Dialog open={confirmAutoCommit} onOpenChange={setConfirmAutoCommit}>
+				<DialogContent title="Large import">
+					<p>
+						This import has {fmt.format(preview.locationCount)} locations, which is too many to
+						keep as an undoable change. It will be committed automatically and cannot be
+						undone afterward. You can still restore it later from history.
+					</p>
+					<label className="import-sidebar__ack">
+						<input
+							type="checkbox"
+							checked={dontWarnAgain}
+							onChange={(e) => setDontWarnAgain(e.target.checked)}
+						/>
+						Don't warn me again
+					</label>
+					<div className="import-sidebar__actions">
+						<button className="button button--primary" onClick={proceedAutoCommit}>
+							Import and commit
+						</button>
+						<button className="button" onClick={() => setConfirmAutoCommit(false)}>
+							Cancel
+						</button>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</section>
 	);
 }

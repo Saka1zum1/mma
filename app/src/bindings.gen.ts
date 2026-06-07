@@ -488,6 +488,11 @@ export type EditorImportPreview = {
 	previewPositionsPath: string,
 	/**  `[west, south, east, north]` bounding box of the import, for map auto-focus. */
 	bounds: [number, number, number, number] | null,
+	/**
+	 *  True when this import exceeds `IMPORT_AUTOCOMMIT_THRESHOLD` and will be
+	 *  committed automatically (not undoable). Drives the import warning modal.
+	 */
+	willAutoCommit: boolean,
 };
 
 /**
@@ -503,6 +508,8 @@ export type EditorImportResult = EditorImportResult_Serialize | EditorImportResu
 export type EditorImportResult_Deserialize = {
 	importedCount: number,
 	warnings: string[],
+	/**  True when the import was large enough to autocommit; the caller commits it. */
+	autoCommit: boolean,
 } & MutationResult_Deserialize;
 
 /**
@@ -512,6 +519,8 @@ export type EditorImportResult_Deserialize = {
 export type EditorImportResult_Serialize = {
 	importedCount: number,
 	warnings: string[],
+	/**  True when the import was large enough to autocommit; the caller commits it. */
+	autoCommit: boolean,
 } & MutationResult_Serialize;
 
 /**

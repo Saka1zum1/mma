@@ -1243,6 +1243,9 @@ export async function confirmImport(droppedFields: string[], tagName?: string) {
 	const r = await cmd.storeImportFile(droppedFields, tagName?.trim() || null);
 	cancelImport();
 	await mutate(Promise.resolve(r));
+	// Large imports skip the undo stack (Rust); commit them so the baseline advances
+	// with a recorded history entry instead of silently diverging from HEAD.
+	if (r.autoCommit) await commitMap(`Import ${r.importedCount} locations`);
 	return r;
 }
 
@@ -1304,6 +1307,14 @@ function formatDiffMessage(diff: {
 export async function commitMap(message?: string): Promise<string> {
 	if (!currentMapId) throw new Error("No map open");
 	const t = trace("commit");
+	// A pending/inflight autosave would write a delta sidecar the bake immediately deletes
+	// -- wasted I/O, and its async write can race the delete and leave a stale sidecar.
+	// The commit persists everything, so cancel the autosave first.
+	if (autosaveTimer) {
+		clearTimeout(autosaveTimer);
+		autosaveTimer = null;
+	}
+	if (inflightSave) await inflightSave;
 	// Commit reads the overlay (the in-memory changeset) to build the delta, so it must
 	// run BEFORE the bake folds the overlay into the base and clears it.
 	const diff = await computeCommitDiff();

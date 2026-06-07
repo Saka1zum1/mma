@@ -121,6 +121,7 @@ export type EditorImportPreview = {
 		number,
 		number
 	] | null;
+	willAutoCommit: boolean;
 };
 /**
  *  Combined result of an editor import: the mutation delta (for render pipeline)
@@ -128,6 +129,7 @@ export type EditorImportPreview = {
  */
 export type EditorImportResult_Serialize = {
 	importedCount: number;
+	autoCommit: boolean;
 	warnings: string[];
 } & MutationResult_Serialize;
 /**

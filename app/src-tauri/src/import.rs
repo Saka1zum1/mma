@@ -686,6 +686,11 @@ pub async fn bulk_import_confirm(
 // ---------------------------------------------------------------------------
 
 
+/// Imports larger than this are committed automatically instead of kept as a
+/// reversible undo diff (the undo entry would clone every imported location and
+/// bloat the persisted edit history). Raise to keep bigger imports undoable.
+pub const IMPORT_AUTOCOMMIT_THRESHOLD: usize = 500_000;
+
 /// Field presence count for the editor import preview dialog, letting
 /// the user see which optional fields exist and decide which to keep/drop.
 #[derive(serde::Serialize, specta::Type)]
@@ -709,6 +714,9 @@ pub struct EditorImportPreview {
     pub preview_positions_path: String,
     /// `[west, south, east, north]` bounding box of the import, for map auto-focus.
     pub bounds: Option<[f64; 4]>,
+    /// True when this import exceeds `IMPORT_AUTOCOMMIT_THRESHOLD` and will be
+    /// committed automatically (not undoable). Drives the import warning modal.
+    pub will_auto_commit: bool,
 }
 
 /// Write interleaved LE f32 `[lng, lat]` for every location to a temp file.
@@ -752,6 +760,7 @@ fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
         warnings: parsed.warnings.clone(),
         preview_positions_path,
         bounds: crate::util::compute_bounds(parsed.locations.iter().map(|l| (l.lat, l.lng))),
+        will_auto_commit: parsed.locations.len() > IMPORT_AUTOCOMMIT_THRESHOLD,
     };
 
     *EDITOR_IMPORT_CACHE.lock().unwrap() = Some(parsed);
@@ -797,6 +806,8 @@ pub struct EditorImportResult {
     pub mutation: location_store::MutationResult,
     pub imported_count: u32,
     pub warnings: Vec<String>,
+    /// True when the import was large enough to autocommit; the caller commits it.
+    pub auto_commit: bool,
 }
 
 
@@ -830,15 +841,14 @@ fn reconcile_tags(
     remap
 }
 
-/// Insert parsed locations into the open map's store.
+/// Insert parsed locations into the open map's store via the overlay.
 ///
-/// Small imports (<=100K) go through the overlay with a single undo entry.
-/// Large imports (>100K) bypass the overlay: bake, concat Arrow batches,
-/// write directly to disk, rebuild the index, and clear the undo stack
-/// (the batch concat is not reversible through the normal undo mechanism).
+/// Imports up to `IMPORT_AUTOCOMMIT_THRESHOLD` get a single undo entry (reversible).
+/// Larger imports skip the undo entry; the caller autocommits them instead, so the
+/// baseline advances through the normal commit path rather than diverging silently.
 ///
-/// In both paths, tag reconciliation, render cell registration, and
-/// extra-field auto-registration happen.
+/// Tag reconciliation, render cell registration, and extra-field auto-registration
+/// happen regardless of size.
 fn add_parsed_to_store(
     app: &tauri::AppHandle,
     store: &mut location_store::Store,
@@ -884,53 +894,21 @@ fn add_parsed_to_store(
         }
     }
 
-    if parsed.locations.len() <= 100_000 {
-        for loc in &parsed.locations {
-            let ci = location_store::render_cell_idx(loc.lat, loc.lng);
-            store.cell_add_render(ci, loc.id);
-            store.overlay_add(loc.clone());
-            store.add_tag_counts(&[loc.clone()]);
-        }
+    // Always insert through the overlay. Small imports stay a reversible undo diff;
+    // large ones (caller autocommits) skip the undo entry, which would otherwise
+    // clone every imported location and bloat the persisted edit history.
+    for loc in &parsed.locations {
+        let ci = location_store::render_cell_idx(loc.lat, loc.lng);
+        store.cell_add_render(ci, loc.id);
+        store.overlay_add(loc.clone());
+    }
+    store.add_tag_counts(&parsed.locations);
+
+    if parsed.locations.len() <= IMPORT_AUTOCOMMIT_THRESHOLD {
         store.push_undo(location_store::EditEntry {
             created: parsed.locations.clone(),
             removed: Vec::new(),
         });
-    } else {
-        store.bake_overlay();
-        let import_batch = arrow_bridge::locations_to_batch(&parsed.locations);
-        let new_batch = if let Some(existing) = store.batch.take() {
-            if existing.num_rows() == 0 {
-                import_batch
-            } else {
-                let s = std::sync::Arc::new(arrow_bridge::location_schema());
-                arrow::compute::concat_batches(&s, &[existing, import_batch])?
-            }
-        } else {
-            import_batch
-        };
-
-        let map_id = store.map_id.as_ref().ok_or("no map open")?.clone();
-        let path = fast_io::arrow_path(app, &map_id)?;
-        fast_io::write_arrow_ipc(&path, &new_batch)?;
-
-        for loc in &parsed.locations {
-            store.add_tag_counts(&[loc.clone()]);
-            let ci = location_store::render_cell_idx(loc.lat, loc.lng);
-            store.cell_add_render(ci, loc.id);
-        }
-        store.alive_count += parsed.locations.len();
-
-        store.batch = Some(new_batch);
-
-        if let Ok(delta_path) = fast_io::arrow_delta_path(app, &map_id) {
-            let _ = std::fs::remove_file(delta_path);
-        }
-        let conn = fast_io::open_db(app)?;
-        conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2",
-            rusqlite::params![store.alive_count, map_id])?;
-        store.overlay.dirty = false;
-
-        store.edits.undo.clear();
     }
     store.edits.redo.clear();
 
@@ -987,6 +965,7 @@ pub fn store_import_file(
 
         Ok(EditorImportResult {
             imported_count: parsed.locations.len() as u32,
+            auto_commit: parsed.locations.len() > IMPORT_AUTOCOMMIT_THRESHOLD,
             warnings: parsed.warnings,
             mutation,
         })
