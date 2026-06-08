@@ -1,6 +1,6 @@
 import { LocationFlag, isPinnedToPano } from "@/types";
 import type { Location } from "@/types";
-import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner.add";
+import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 
 /** Pin to pano ID: resolve the pano from coords, then set the LoadAsPanoId flag.
  *  Flags only panos resolved this run, matching the original bulk behavior. */

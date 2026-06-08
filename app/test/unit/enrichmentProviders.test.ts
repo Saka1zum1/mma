@@ -9,7 +9,7 @@ import {
 	getDefaultEnrichKeys,
 	isFieldEnabled,
 	filterEnrichPatch,
-} from "@/lib/data/fieldDefs.add";
+} from "@/lib/data/fieldDefs";
 import { getFieldDef, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 
 // The providers array is module-level and accumulates, so tests see

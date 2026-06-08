@@ -5,7 +5,7 @@ import {
 	savedToSelectionProps,
 	describeRule,
 	type SavedSelection,
-} from "@/store/savedSelections.add";
+} from "@/store/savedSelections";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import type { ExtraFieldDef } from "@/types";

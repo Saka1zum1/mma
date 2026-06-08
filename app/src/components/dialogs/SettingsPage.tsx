@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
-import { DatabaseManager } from "@/components/dialogs/DatabaseManager.add";
+import { DatabaseManager } from "@/components/dialogs/DatabaseManager";
 import {
 	getAllBindings,
 	useBinding,
@@ -15,7 +15,7 @@ import {
 	type HotkeyAction,
 	type HotkeyDef,
 	type HotkeyGroup,
-} from "@/lib/util/hotkeys.add";
+} from "@/lib/util/hotkeys";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiAlertCircleOutline } from "@mdi/js";
 import {
@@ -34,7 +34,7 @@ import {
 	TAG_VIEW_MODES,
 	BORDER_DETAILS,
 	PREVIEW_ASPECT_RATIOS,
-} from "@/store/settings.add";
+} from "@/store/settings";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 
 function SettingSelect<K extends keyof AppSettings>({

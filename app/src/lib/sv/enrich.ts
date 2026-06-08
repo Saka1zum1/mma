@@ -1,19 +1,19 @@
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { resolveExactTimestamp } from "@/lib/sv/exactDate.add";
-import { resolveTimezone } from "@/lib/util/timezone.add";
+import { resolveExactTimestamp } from "@/lib/sv/exactDate";
+import { resolveTimezone } from "@/lib/util/timezone";
 import { getCurrentMap, patchLocationExtra } from "@/store/useMapStore";
 import {
 	filterEnrichPatch,
 	isFieldEnabled,
 	getEnrichmentProviders,
 	getDefaultEnrichKeys,
-} from "@/lib/data/fieldDefs.add";
+} from "@/lib/data/fieldDefs";
 import {
 	registerSvResolver,
 	runResolvers,
 	type SvResolver,
 	type ResolverOutcome,
-} from "@/lib/sv/svRunner.add";
+} from "@/lib/sv/svRunner";
 import { log } from "@/lib/util/log";
 import type { Location } from "@/types";
 

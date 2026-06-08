@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
-import { getSettings } from "@/store/settings.add";
+import { getSettings } from "@/store/settings";
 import { log } from "@/lib/util/log";
 
 interface GeoResult {

@@ -4,7 +4,7 @@ import { google } from "@/lib/sv/opensv";
 import { cameraTypeFromHeight, fetchSvMetadata } from "@/lib/sv/svMeta";
 import { LocationFlag, hasLoadAsPanoId, createLocation } from "@/types";
 import type { Location } from "@/types";
-import { toast } from "@/lib/util/toast.add";
+import { toast } from "@/lib/util/toast";
 
 export const SV_SEARCH_RADIUS = 50;
 

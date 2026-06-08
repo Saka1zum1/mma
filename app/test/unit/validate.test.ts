@@ -5,14 +5,14 @@ import type { Location } from "@/types";
 import { ValidationState } from "@/store/selections";
 
 vi.mock("@/lib/sv/svMeta", () => ({ fetchSvMetadata: vi.fn() }));
-vi.mock("@/lib/sv/lookup.add", async () => {
-	const actual = await vi.importActual<typeof import("@/lib/sv/lookup.add")>("@/lib/sv/lookup.add");
+vi.mock("@/lib/sv/lookup", async () => {
+	const actual = await vi.importActual<typeof import("@/lib/sv/lookup")>("@/lib/sv/lookup");
 	return { ...actual, getPanoAtCoords: vi.fn() };
 });
 
 import { validateOne } from "@/lib/sv/validate";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { getPanoAtCoords } from "@/lib/sv/lookup.add";
+import { getPanoAtCoords } from "@/lib/sv/lookup";
 
 const mockFetch = vi.mocked(fetchSvMetadata);
 const mockCoords = vi.mocked(getPanoAtCoords);

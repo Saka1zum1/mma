@@ -3,7 +3,7 @@ import type { Location } from "@/types";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import { cmd } from "@/lib/commands";
-import { getSettings } from "@/store/settings.add";
+import { getSettings } from "@/store/settings";
 import "./distribution.css";
 
 type Source = "coords" | "metadata";

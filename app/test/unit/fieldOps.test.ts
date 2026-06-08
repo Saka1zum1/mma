@@ -6,7 +6,7 @@ import {
 	fieldPatch,
 	groupByField,
 	rewriteSelectionFields,
-} from "@/lib/data/fieldOps.add";
+} from "@/lib/data/fieldOps";
 import { buildSelection } from "@/store/selections";
 import type { Location, MapData } from "@/types";
 

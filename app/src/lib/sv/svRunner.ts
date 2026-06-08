@@ -13,8 +13,8 @@
 import type { Location, ExtraFieldDef } from "@/types";
 import { batchUpdateLocations, fetchLocationsByIds } from "@/store/useMapStore";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { resolvePanoIds } from "@/lib/sv/lookup.add";
-import { getEnrichmentProviders } from "@/lib/data/fieldDefs.add";
+import { resolvePanoIds } from "@/lib/sv/lookup";
+import { getEnrichmentProviders } from "@/lib/data/fieldDefs";
 
 const BATCH_SIZE = 200;
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, createContext, useContext, isValidElement, type Reac
 import { Icon } from "@/components/primitives/Icon";
 import { mdiClose, mdiChevronLeft, mdiChevronRight } from "@mdi/js";
 import { MANUAL_IMG_DIMS } from "@/components/dialogs/manual-img-dims.gen";
-import "@/components/dialogs/manual.add.css";
+import "@/components/dialogs/manual.css";
 
 // --- Reusable content primitives ---
 

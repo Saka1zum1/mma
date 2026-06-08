@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
-import { getCommands } from "@/store/commands.add";
-import { getBinding } from "@/lib/util/hotkeys.add";
+import { getCommands } from "@/store/commands";
+import { getBinding } from "@/lib/util/hotkeys";
 
 const IS_MAC = /Mac|iPod|iPhone|iPad/i.test(navigator.platform);
 

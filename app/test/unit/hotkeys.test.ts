@@ -8,7 +8,7 @@ import {
 	setBinding,
 	reassignBinding,
 	resetAllBindings,
-} from "@/lib/util/hotkeys.add";
+} from "@/lib/util/hotkeys";
 
 describe("parseHotkey", () => {
 	it("parses single key", () => {

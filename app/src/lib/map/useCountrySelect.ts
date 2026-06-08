@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { setClickInterceptor } from "@/lib/map/mapState";
 import { selectPolygon } from "@/store/useMapStore";
-import { getBinding } from "@/lib/util/hotkeys.add";
+import { getBinding } from "@/lib/util/hotkeys";
 import { parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
-import { getSettings } from "@/store/settings.add";
+import { getSettings } from "@/store/settings";
 
 export function useCountrySelect() {
 	useEffect(() => {

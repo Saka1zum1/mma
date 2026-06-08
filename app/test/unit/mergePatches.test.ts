@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { mergePatches } from "@/lib/sv/svRunner.add";
+import { mergePatches } from "@/lib/sv/svRunner";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
 

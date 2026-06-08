@@ -6,7 +6,7 @@ import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
 import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { fmt } from "@/lib/util/format";
-import { toast } from "@/lib/util/toast.add";
+import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
 
 interface Props {

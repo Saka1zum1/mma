@@ -23,12 +23,12 @@ function normalizeRing<T extends number[]>(ring: T[]): T[] {
 function normalizePolygonCoords<T extends number[]>(coords: T[][]): T[][] {
 	return coords.map(normalizeRing);
 }
-import { lookupStreetView, svThumbnailUrl, showToast, svSearchRadius } from "@/lib/sv/lookup.add";
+import { lookupStreetView, svThumbnailUrl, showToast, svSearchRadius } from "@/lib/sv/lookup";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
 import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
-import { useSetting } from "@/store/settings.add";
+import { useSetting } from "@/store/settings";
 import { CellManager } from "@/lib/render/CellManager";
 import {
 	useMeasure,
@@ -61,7 +61,7 @@ import {
 	mapOpenMark,
 } from "@/store/useMapStore";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
-import { useTrailVersion, getTrail } from "@/lib/sv/svTrail.add";
+import { useTrailVersion, getTrail } from "@/lib/sv/svTrail";
 import {
 	setGoogleMap as setGoogleMapInstance,
 	getGoogleMap as getGoogleMapInstance,
@@ -69,8 +69,8 @@ import {
 	tryInterceptDraw,
 } from "@/lib/map/mapState";
 import { useHotkey, parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
-import { useBinding, getBinding } from "@/lib/util/hotkeys.add";
-import { useSettings } from "@/store/settings.add";
+import { useBinding, getBinding } from "@/lib/util/hotkeys";
+import { useSettings } from "@/store/settings";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { PolygonTools } from "@/components/editor/PolygonTools";

@@ -10,12 +10,12 @@ vi.mock("@/store/useMapStore", () => ({
 	patchLocationExtra: async () => {},
 }));
 vi.mock("@/lib/sv/svMeta", () => ({ fetchSvMetadata: async () => [] }));
-vi.mock("@/lib/sv/exactDate.add", () => ({ resolveExactTimestamp: async () => null }));
-vi.mock("@/lib/util/timezone.add", () => ({ resolveTimezone: () => null }));
-vi.mock("@/lib/sv/lookup.add", () => ({ resolvePanoIds: async () => [] }));
+vi.mock("@/lib/sv/exactDate", () => ({ resolveExactTimestamp: async () => null }));
+vi.mock("@/lib/util/timezone", () => ({ resolveTimezone: () => null }));
+vi.mock("@/lib/sv/lookup", () => ({ resolvePanoIds: async () => [] }));
 
-import { buildPatch } from "@/lib/sv/enrich.add";
-import { getDefaultEnrichKeys } from "@/lib/data/fieldDefs.add";
+import { buildPatch } from "@/lib/sv/enrich";
+import { getDefaultEnrichKeys } from "@/lib/data/fieldDefs";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
 

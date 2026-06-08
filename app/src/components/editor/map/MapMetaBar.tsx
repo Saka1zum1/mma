@@ -10,8 +10,8 @@ import {
 	beginImportFile,
 } from "@/store/useMapStore";
 import { ExportDialog } from "@/components/dialogs/ExportDialog";
-import { VersionHistory } from "@/components/dialogs/VersionHistory.add";
-import { SeenDialog } from "@/components/dialogs/SeenDialog.add";
+import { VersionHistory } from "@/components/dialogs/VersionHistory";
+import { SeenDialog } from "@/components/dialogs/SeenDialog";
 import { loadSeenPano } from "@/components/editor/location/LocationPreview";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiUndo, mdiRedo } from "@mdi/js";

@@ -10,7 +10,7 @@ import {
 	invalidateMapList,
 	updateMapLabels,
 } from "@/store/useMapStore";
-import { openMapWindow } from "@/lib/window.add";
+import { openMapWindow } from "@/lib/window";
 import { openManual } from "@/store/router";
 import { log } from "@/lib/util/log";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -37,8 +37,8 @@ import {
 import clsx from "clsx";
 import type { MapMeta, SortMode } from "@/types";
 import { fmt, relativeTime, shortDateFmt } from "@/lib/util/format";
-import { useSetting, type MapListField } from "@/store/settings.add";
-import { toast } from "@/lib/util/toast.add";
+import { useSetting, type MapListField } from "@/store/settings";
+import { toast } from "@/lib/util/toast";
 
 // --- Drag types ---
 

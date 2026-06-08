@@ -25,7 +25,7 @@ import {
 	isAtStart,
 	isCurrentReviewed,
 	type ReviewSession,
-} from "@/lib/review/review.add";
+} from "@/lib/review/review";
 
 function mk(order: number[], cursorId: number, reviewed: number[] = []): ReviewSession {
 	return {

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from "vitest";
-import { headingRoadResolver } from "@/lib/sv/headingRoad.add";
-import { pinPanoResolver } from "@/lib/sv/pinPano.add";
+import { headingRoadResolver } from "@/lib/sv/headingRoad";
+import { pinPanoResolver } from "@/lib/sv/pinPano";
 import { createLocation, LocationFlag } from "@/types";
 import type { Location } from "@/types";
 

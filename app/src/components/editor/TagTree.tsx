@@ -6,7 +6,7 @@ import { textColorFor } from "@/lib/util/color";
 import { fmt } from "@/lib/util/format";
 import { toggleTagSelections, reorderTags } from "@/store/useMapStore";
 import { TagContextMenuContent } from "./TagManager";
-import { rangeToggleTagIds, reorderSiblingsFlatOrder } from "./tagTreeRange.add";
+import { rangeToggleTagIds, reorderSiblingsFlatOrder } from "./tagTreeRange";
 import type { Tag, TagSortMode } from "@/types";
 
 interface TreeDrag {

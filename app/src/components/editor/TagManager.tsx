@@ -23,8 +23,8 @@ import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { fmt } from "@/lib/util/format";
 import { textColorFor, hexToHsl, hslToHex } from "@/lib/util/color";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
-import { useSetting } from "@/store/settings.add";
-import { TagTreeView } from "./TagTree.add";
+import { useSetting } from "@/store/settings";
+import { TagTreeView } from "./TagTree";
 
 export function TagManager() {
 	const map = useCurrentMap();

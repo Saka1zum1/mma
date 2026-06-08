@@ -1,6 +1,6 @@
 import type { Location } from "@/types";
-import { normalizeHeading } from "@/lib/sv/lookup.add";
-import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner.add";
+import { normalizeHeading } from "@/lib/sv/lookup";
+import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 
 export type RoadDirection = "forwards" | "backwards";
 

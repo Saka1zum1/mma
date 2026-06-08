@@ -9,7 +9,7 @@
  */
 
 import * as store from "@/store/useMapStore";
-import * as review from "@/lib/review/review.add";
+import * as review from "@/lib/review/review";
 import { cmd as commands } from "@/lib/commands";
 import { goToMap, goToList } from "@/store/router";
 import { createLocation } from "@/types";
@@ -17,18 +17,18 @@ import type { Location } from "@/types";
 import { registerPlugin } from "@/plugins/registry";
 import { trackDisposable } from "@/plugins/scope";
 import { preloadModules, getAvailableExternals } from "@/plugins/externals";
-import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs.add";
+import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { getGoogleMap, waitForGoogleMap } from "@/lib/map/mapState";
 import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
-import { setSetting, getSettings } from "@/store/settings.add";
-import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen.add";
+import { setSetting, getSettings } from "@/store/settings";
+import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen";
 import { loadSeenPano } from "@/components/editor/location/LocationPreview";
-import { enrichAll, needsEnrichment } from "@/lib/sv/enrich.add";
-import { bulkPinToPano } from "@/lib/sv/pinPano.add";
+import { enrichAll, needsEnrichment } from "@/lib/sv/enrich";
+import { bulkPinToPano } from "@/lib/sv/pinPano";
 import { validateLocations } from "@/lib/sv/validate";
 import { mmaBufUrl } from "@/lib/util/util";
 

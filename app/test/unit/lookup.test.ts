@@ -11,7 +11,7 @@ import {
 	samePano,
 	isUnofficial,
 	svThumbnailUrl,
-} from "@/lib/sv/lookup.add";
+} from "@/lib/sv/lookup";
 
 describe("parsePanoDate", () => {
 	it("passes through a valid Date", () => {

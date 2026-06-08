@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { ManageFieldsModal } from "@/components/dialogs/ManageFieldsModal.add";
-import { getEnrichFieldOptions, getDefaultEnrichKeys } from "@/lib/data/fieldDefs.add";
+import { ManageFieldsModal } from "@/components/dialogs/ManageFieldsModal";
+import { getEnrichFieldOptions, getDefaultEnrichKeys } from "@/lib/data/fieldDefs";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import type { MapStyle } from "@/lib/geo/tiles";
 import { EnrichInfoButton } from "@/components/editor/map/EnrichInfoButton";

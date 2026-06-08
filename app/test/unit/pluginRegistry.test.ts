@@ -21,7 +21,7 @@ import {
 	getEnrichmentProviders,
 	registerEnrichFields,
 	getEnrichFieldOptions,
-} from "@/lib/data/fieldDefs.add";
+} from "@/lib/data/fieldDefs";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 
 function makePlugin(id: string, name: string, activate = vi.fn()): Plugin {

@@ -3,7 +3,7 @@ import {
 	reviewIndex,
 	isCurrentReviewed,
 	cancelReview,
-} from "@/lib/review/review.add";
+} from "@/lib/review/review";
 
 /** Header shown above the pano during a review pass. Single point of review-UI in the
  *  preview; the rest of LocationPreview only calls reviewNext/Prev/Delete. */

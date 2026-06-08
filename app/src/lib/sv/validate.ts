@@ -3,7 +3,7 @@ import type { Location } from "@/types";
 import { ValidationState } from "@/store/selections";
 import { fetchSvMetadata } from "./svMeta";
 import { isOfficialPano } from "./panoId";
-import { getPanoAtCoords, isUnofficial } from "./lookup.add";
+import { getPanoAtCoords, isUnofficial } from "./lookup";
 import { runConcurrent } from "@/lib/util/concurrent";
 
 const GOOD_CAM_TYPES = new Set(["gen4", "gen2"]);

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { createSyncStore } from "@/lib/util/syncStore";
-import type { SavedSelection } from "./savedSelections.add";
+import type { SavedSelection } from "./savedSelections";
 
 export const MOVEMENT_MODES = {
 	moving: "Moving",

@@ -7,7 +7,7 @@ import {
 	rewriteSavedSelectionFields,
 	type SavedSelection,
 	type SavedSelectionProps,
-} from "@/store/savedSelections.add";
+} from "@/store/savedSelections";
 import type { MapData, Tag } from "@/types";
 import type { Selection } from "@/store/selections";
 

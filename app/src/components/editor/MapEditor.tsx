@@ -21,22 +21,22 @@ import { MapEmbed } from "@/components/editor/map/MapEmbed";
 import { MapMetaBar } from "@/components/editor/map/MapMetaBar";
 import { MapOverview } from "@/components/editor/map/MapOverview";
 import { ImportSidebar } from "@/components/editor/ImportSidebar";
-import { DiffSidebar } from "@/components/editor/DiffSidebar.add";
+import { DiffSidebar } from "@/components/editor/DiffSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/primitives/Dialog";
 import { useHotkey, useCommandHotkeys, isEditableElement } from "@/lib/hooks/useHotkey";
-import { useBinding } from "@/lib/util/hotkeys.add";
+import { useBinding } from "@/lib/util/hotkeys";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
-import { useSettings, setSetting, getSettings } from "@/store/settings.add";
+import { useSettings, setSetting, getSettings } from "@/store/settings";
 import { parseMapsUrl, parseCoordinates } from "@/lib/data/importExport";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiBackburger, mdiPencil } from "@mdi/js";
 import { PluginSidebarHost } from "@/components/editor/PluginSidebarHost";
-import SameLocation from "@/components/editor/SameLocation.add";
+import SameLocation from "@/components/editor/SameLocation";
 import { log } from "@/lib/util/log"
-import { useCountrySelect } from "@/lib/map/useCountrySelect.add";
+import { useCountrySelect } from "@/lib/map/useCountrySelect";
 
 function zoomToPasted(bounds: [number, number, number, number] | null, padding = 0) {
 	if (!getSettings().panToImported) return;

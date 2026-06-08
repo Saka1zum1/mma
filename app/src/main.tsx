@@ -10,7 +10,7 @@ import { initRouter } from "@/store/router";
 import { cmd } from "@/lib/commands";
 import { checkForUpdate } from "@/lib/util/updateCheck";
 import "@/api";
-import "@/store/commandDefs.add";
+import "@/store/commandDefs";
 
 async function boot() {
 	const t0 = performance.now();

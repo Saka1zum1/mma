@@ -5,19 +5,19 @@ import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiUndo, mdiBookmarkOutline, mdiBookmarkCheckOutline } from "@mdi/js";
 import { BulkOperationModal, type BulkOperation } from "@/components/dialogs/BulkOperationModal";
-import { RandomPickModal } from "@/components/dialogs/RandomPickModal.add";
+import { RandomPickModal } from "@/components/dialogs/RandomPickModal";
 import { useSelections, useCurrentMap, getSelectedLocationIds } from "@/store/useMapStore";
-import { getCommands, type CommandGroup } from "@/store/commands.add";
+import { getCommands, type CommandGroup } from "@/store/commands";
 import {
 	saveCurrentSelections,
 	deleteSavedSelection,
 	applySavedSelection,
 	selectionToSaved,
 	describeRule,
-} from "@/store/savedSelections.add";
-import { useSetting } from "@/store/settings.add";
+} from "@/store/savedSelections";
+import { useSetting } from "@/store/settings";
 import { useHotkey } from "@/lib/hooks/useHotkey";
-import { getBinding, useBinding } from "@/lib/util/hotkeys.add";
+import { getBinding, useBinding } from "@/lib/util/hotkeys";
 
 interface PaletteContext {
 	close: () => void;

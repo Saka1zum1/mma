@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { resolveExactTimestamp } from "@/lib/sv/exactDate.add";
+import { resolveExactTimestamp } from "@/lib/sv/exactDate";
 import { useActiveLocation } from "@/store/useMapStore";
 
 export function useExactDate(

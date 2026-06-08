@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rangeToggleTagIds, reorderSiblingsFlatOrder } from "@/components/editor/tagTreeRange.add";
+import { rangeToggleTagIds, reorderSiblingsFlatOrder } from "@/components/editor/tagTreeRange";
 
 interface N {
 	fullPath: string;

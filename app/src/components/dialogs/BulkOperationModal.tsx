@@ -11,12 +11,12 @@ import {
 import type { Location } from "@/types";
 import { isPinnedToPano } from "@/types";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
-import { planFieldSet, fieldPatch, TOP_LEVEL_SET_FIELDS } from "@/lib/data/fieldOps.add";
+import { planFieldSet, fieldPatch, TOP_LEVEL_SET_FIELDS } from "@/lib/data/fieldOps";
 import { ValidationState } from "@/store/selections";
 import { validateLocations } from "@/lib/sv/validate";
-import { enrichAll, needsEnrichment, type EnrichResult } from "@/lib/sv/enrich.add";
-import { bulkPinToPano } from "@/lib/sv/pinPano.add";
-import { bulkPanHeading, type RoadDirection } from "@/lib/sv/headingRoad.add";
+import { enrichAll, needsEnrichment, type EnrichResult } from "@/lib/sv/enrich";
+import { bulkPinToPano } from "@/lib/sv/pinPano";
+import { bulkPanHeading, type RoadDirection } from "@/lib/sv/headingRoad";
 import { fmt } from "@/lib/util/format";
 
 export type BulkOperation =

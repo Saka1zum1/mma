@@ -25,24 +25,24 @@ import {
 	setActiveLocation,
 	getVisibleTags,
 } from "@/store/useMapStore";
-import { ReviewBar } from "@/components/editor/location/ReviewBar.add";
+import { ReviewBar } from "@/components/editor/location/ReviewBar";
 import {
 	useReviewSession,
 	reviewNext,
 	reviewPrev,
 	reviewDelete,
 	isAtStart,
-} from "@/lib/review/review.add";
+} from "@/lib/review/review";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { useHotkey, parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
-import { useBinding, getBinding } from "@/lib/util/hotkeys.add";
-import { useSettings, useSetting, setSetting, getSettings } from "@/store/settings.add";
-import { useTimezone } from "@/lib/util/timezone.add";
-import { isFieldEnabled } from "@/lib/data/fieldDefs.add";
+import { useBinding, getBinding } from "@/lib/util/hotkeys";
+import { useSettings, useSetting, setSetting, getSettings } from "@/store/settings";
+import { useTimezone } from "@/lib/util/timezone";
+import { isFieldEnabled } from "@/lib/data/fieldDefs";
 import * as Select from "@radix-ui/react-select";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
-import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch.add";
+import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch";
 import { dateFmt } from "@/lib/util/format";
 import { textColorFor } from "@/lib/util/color";
 import {
@@ -55,9 +55,9 @@ import {
 	downloadPano,
 	showToast,
 	nearestLinkHeading,
-} from "@/lib/sv/lookup.add";
+} from "@/lib/sv/lookup";
 import { isOfficialPano } from "@/lib/sv/panoId";
-import { enrich } from "@/lib/sv/enrich.add";
+import { enrich } from "@/lib/sv/enrich";
 import {
 	buildTileUrl,
 	createRoadmapTileConfig,
@@ -74,7 +74,7 @@ import {
 	seenSkipNext,
 	seenUpdateGeo,
 	type SeenEntry,
-} from "@/lib/seen/seen.add";
+} from "@/lib/seen/seen";
 import { useReverseGeocode } from "@/components/editor/location/useReverseGeocode";
 import { useCameraType } from "@/components/editor/location/useCameraType";
 import { useExactDate } from "@/components/editor/location/useExactDate";
@@ -85,8 +85,8 @@ import {
 	getViewportLockInfo,
 	subscribeViewportLock,
 	getViewportLockSnapshot,
-} from "@/lib/sv/viewportLock.add";
-import { resetTrail, pushTrail, clearTrail } from "@/lib/sv/svTrail.add";
+} from "@/lib/sv/viewportLock";
+import { resetTrail, pushTrail, clearTrail } from "@/lib/sv/svTrail";
 
 function PanoBadge({ cameraType }: { cameraType: FullCameraType | null }) {
 	switch (cameraType) {

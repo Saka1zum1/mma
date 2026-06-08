@@ -8,7 +8,7 @@ import {
 	removeDuplicate,
 	removeLocations,
 } from "@/store/useMapStore";
-import { svThumbnailUrl } from "@/lib/sv/lookup.add";
+import { svThumbnailUrl } from "@/lib/sv/lookup";
 import { textColorFor } from "@/lib/util/color";
 
 function DuplicateItem({

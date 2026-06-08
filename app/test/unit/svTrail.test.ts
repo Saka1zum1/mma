@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { resetTrail, pushTrail, clearTrail, getTrail } from "@/lib/sv/svTrail.add";
+import { resetTrail, pushTrail, clearTrail, getTrail } from "@/lib/sv/svTrail";
 
 beforeEach(() => {
 	clearTrail();

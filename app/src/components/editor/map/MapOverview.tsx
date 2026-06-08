@@ -32,16 +32,16 @@ import {
 	updateFilterSelection,
 } from "@/store/useMapStore";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
-import { groupByField } from "@/lib/data/fieldOps.add";
+import { groupByField } from "@/lib/data/fieldOps";
 import { cmd } from "@/lib/commands";
 
 import { RgbColorPicker } from "react-colorful";
 import type { Selection, FilterOp } from "@/store/selections";
 import { selectionDisplayName, OP_LABELS } from "@/store/selections";
 import { TagManager } from "@/components/editor/TagManager";
-import { MergeDuplicatesModal } from "@/components/dialogs/MergeDuplicatesModal.add";
-import { ReviewSessionsModal } from "@/components/dialogs/ReviewSessions.add";
-import { beginReview } from "@/lib/review/review.add";
+import { MergeDuplicatesModal } from "@/components/dialogs/MergeDuplicatesModal";
+import { ReviewSessionsModal } from "@/components/dialogs/ReviewSessions";
+import { beginReview } from "@/lib/review/review";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { Icon } from "@/components/primitives/Icon";
@@ -51,7 +51,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fmt } from "@/lib/util/format";
 import { rgbCss, textColorFor } from "@/lib/util/color";
 import { getGoogleMap as getGoogleMapInstance } from "@/lib/map/mapState";
-import { loadGeoJSON } from "@/lib/util/loadGeoJSON.add";
+import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
 
 async function fitSelectionBounds(map: google.maps.Map, selection: Selection) {
 	if (selection.props.type === "Polygon") {

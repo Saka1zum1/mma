@@ -8,7 +8,7 @@ import {
 	fetchAllLocations,
 } from "@/store/useMapStore";
 import type { ExtraFieldDef } from "@/types";
-import type { MergeWinner } from "@/lib/data/fieldOps.add";
+import type { MergeWinner } from "@/lib/data/fieldOps";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 
 type Comparison = NonNullable<ExtraFieldDef["comparison"]>;

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getSettings } from "@/store/settings.add";
+import { getSettings } from "@/store/settings";
 
 /**
  * Runtime patches for opensv (patched Google Maps JS API v3.63).

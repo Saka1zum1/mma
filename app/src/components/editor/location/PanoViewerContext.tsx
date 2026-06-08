@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useActiveLocation } from "@/store/useMapStore";
 import { hasLoadAsPanoId } from "@/types";
-import type { PanoReference } from "@/lib/sv/lookup.add";
+import type { PanoReference } from "@/lib/sv/lookup";
 
 interface PanoViewerContextValue {
 	currentPano: Pick<google.maps.StreetViewPanoramaData, "location" | "imageDate"> | null;

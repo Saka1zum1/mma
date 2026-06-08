@@ -25,7 +25,7 @@ import {
 	mdiCompassOutline,
 	mdiDiceMultiple,
 } from "@mdi/js";
-import { registerCommand } from "./commands.add";
+import { registerCommand } from "./commands";
 import {
 	undo,
 	redo,
@@ -49,7 +49,7 @@ import {
 	hasCommitDiff,
 	toggleGhostAllSelections,
 } from "./useMapStore";
-import { loadGeoJSON } from "@/lib/util/loadGeoJSON.add";
+import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
 
 registerCommand({
 	id: "save",

@@ -8,7 +8,7 @@ import {
 	getSeenMaps,
 	type SeenEntry,
 	type SeenFilter,
-} from "@/lib/seen/seen.add";
+} from "@/lib/seen/seen";
 
 const PAGE_SIZE = 9;
 

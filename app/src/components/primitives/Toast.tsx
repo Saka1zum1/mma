@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { subscribeToasts, getToasts } from "@/lib/util/toast.add";
+import { subscribeToasts, getToasts } from "@/lib/util/toast";
 
 export function ToastContainer() {
 	const entries = useSyncExternalStore(subscribeToasts, getToasts);

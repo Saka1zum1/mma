@@ -1,5 +1,5 @@
 import { cmd } from "@/lib/commands";
-import { getSettings } from "@/store/settings.add";
+import { getSettings } from "@/store/settings";
 import { getCurrentMapId } from "@/store/useMapStore";
 import { log } from "@/lib/util/log";
 

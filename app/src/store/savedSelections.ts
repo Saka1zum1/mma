@@ -1,7 +1,7 @@
 import type { MapData } from "@/types";
 import type { Selection, SelectionProps, PolygonGeometry, FilterOp } from "./selections";
 import { buildSelection } from "./selections";
-import { getSettings, setSetting } from "./settings.add";
+import { getSettings, setSetting } from "./settings";
 import { addSelections } from "./useMapStore";
 
 export interface SavedSelectionItem {

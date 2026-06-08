@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { getCommands, getCommand } from "@/store/commands.add";
+import { getCommands, getCommand } from "@/store/commands";
 import { createSyncStore } from "@/lib/util/syncStore";
 
 export type HotkeyAction =

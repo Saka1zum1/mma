@@ -16,16 +16,16 @@ import { trace } from "@/lib/util/debug";
 import { nowUnix } from "@/lib/util/format";
 import { mmaBufUrl } from "@/lib/util/util";
 import { fitMapToBounds } from "@/lib/map/mapState";
-import { getSettings, setSetting } from "@/store/settings.add";
-import { getTriggeredProviders } from "@/lib/data/fieldDefs.add";
+import { getSettings, setSetting } from "@/store/settings";
+import { getTriggeredProviders } from "@/lib/data/fieldDefs";
 import { setUserFieldDefs, mergeUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 import {
 	planFieldMove,
 	planFieldDelete,
 	rewriteSelectionFields,
 	type MergeWinner,
-} from "@/lib/data/fieldOps.add";
-import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections.add";
+} from "@/lib/data/fieldOps";
+import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections";
 import { SelectedIds, type ReadonlyIdSet, type RenderDelta, type SelEntry, type SelCellEntry } from "@/lib/render/CellManager";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { selectRandomFromSelection } from "@/store/useMapStore";
-import { toast } from "@/lib/util/toast.add";
+import { toast } from "@/lib/util/toast";
 import { fmt } from "@/lib/util/format";
 
 interface Props {
