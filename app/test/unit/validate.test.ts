@@ -12,13 +12,17 @@ vi.mock("@/lib/sv/lookup.add", async () => {
 
 import { validateOne } from "@/lib/sv/validate";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
+import { getPanoAtCoords } from "@/lib/sv/lookup.add";
 
 const mockFetch = vi.mocked(fetchSvMetadata);
+const mockCoords = vi.mocked(getPanoAtCoords);
 
 // 22-char official ids per OFFICIAL_PANO_RE: 21 of [-_A-Za-z0-9] then [AQgw].
 const OFFICIAL_OLD = "AAAAAAAAAAAAAAAAAAAAAA"; // ends 'A'
 const OFFICIAL_NEW = "BBBBBBBBBBBBBBBBBBBBBQ"; // ends 'Q'
 const UNOFFICIAL = "U".repeat(30); // length > 22 -> isUnofficial heuristic
+const BADCAM = "C".repeat(21) + "Q"; // official-shaped id, low-quality camera
+const GOODCAM = "D".repeat(21) + "A"; // official-shaped id, gen4
 
 type Pano = google.maps.StreetViewResolvedPanoramaData;
 
@@ -41,7 +45,20 @@ function pinned(panoId: string): Location {
 	return { id: 1, lat: 0, lng: 0, flags: LocationFlag.LoadAsPanoId, panoId } as Location;
 }
 
-beforeEach(() => mockFetch.mockReset());
+// Coord-based (not Load-as-pano-ID). May still record the pano it resolved to.
+function coord(panoId: string | null = null): Location {
+	return { id: 1, lat: 0, lng: 0, flags: LocationFlag.None, panoId } as Location;
+}
+
+// Resolve fetchSvMetadata from a fixture map; unknown ids resolve to null (broken pano).
+function byId(map: Record<string, Pano>) {
+	mockFetch.mockImplementation(async (ids: string[]) => ids.map((id) => map[id] ?? null));
+}
+
+beforeEach(() => {
+	mockFetch.mockReset();
+	mockCoords.mockReset();
+});
 
 describe("timeline check scans official coverage (fix #1)", () => {
 	it("pinned official pano with newer OFFICIAL coverage in timeline -> UpdateAvailable", async () => {
@@ -82,5 +99,70 @@ describe("Unofficial reuses the app-wide isUnofficial heuristic (fix #2)", () =>
 		const result = await validateOne(pinned(OFFICIAL_OLD));
 		expect(result).not.toBe(ValidationState.Unofficial);
 		expect(result).toBe(ValidationState.Ok);
+	});
+});
+
+describe("coord-based locations (not pinned): UpdateApplied vs Ok", () => {
+	it("coverage at the coordinate changed since the stored pano -> UpdateApplied", async () => {
+		// Records OLD, but the coordinate now resolves to a different pano (NEW).
+		mockCoords.mockResolvedValue(OFFICIAL_NEW);
+		byId({
+			[OFFICIAL_OLD]: pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] }),
+			[OFFICIAL_NEW]: pano({ pano: OFFICIAL_NEW, time: [{ pano: OFFICIAL_NEW }] }),
+		});
+		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.UpdateApplied);
+	});
+
+	it("stored pano not newest in its own timeline -> UpdateApplied", async () => {
+		// Coordinate still resolves to OLD, but OLD's timeline has a newer official pano.
+		mockCoords.mockResolvedValue(OFFICIAL_OLD);
+		byId({
+			[OFFICIAL_OLD]: pano({
+				pano: OFFICIAL_OLD,
+				time: [
+					{ pano: OFFICIAL_OLD, date: new Date(2020, 0) },
+					{ pano: OFFICIAL_NEW, date: new Date(2023, 0) },
+				],
+			}),
+		});
+		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.UpdateApplied);
+	});
+
+	it("current and newest at the coordinate -> Ok", async () => {
+		mockCoords.mockResolvedValue(OFFICIAL_OLD);
+		byId({ [OFFICIAL_OLD]: pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] }) });
+		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.Ok);
+	});
+});
+
+describe("pinned pano resolution failures", () => {
+	it("pinned pano fails to resolve but the coordinate still has coverage -> PanoIdBroke", async () => {
+		mockCoords.mockResolvedValue(OFFICIAL_NEW);
+		// OFFICIAL_OLD absent from the fixture, so its fetch resolves null (broken).
+		byId({ [OFFICIAL_NEW]: pano({ pano: OFFICIAL_NEW, time: [{ pano: OFFICIAL_NEW }] }) });
+		expect(await validateOne(pinned(OFFICIAL_OLD))).toBe(ValidationState.PanoIdBroke);
+	});
+
+	it("pinned pano fails and the coordinate has no coverage -> NotFound (beats PanoIdBroke)", async () => {
+		mockCoords.mockResolvedValue(null);
+		byId({});
+		expect(await validateOne(pinned(OFFICIAL_OLD))).toBe(ValidationState.NotFound);
+	});
+});
+
+describe("NotFound and GoodcamAvailable", () => {
+	it("bare coord location with no coverage -> NotFound", async () => {
+		mockCoords.mockResolvedValue(null);
+		byId({});
+		expect(await validateOne(coord())).toBe(ValidationState.NotFound);
+	});
+
+	it("coord resolves to badcam with a better camera in the timeline -> GoodcamAvailable", async () => {
+		mockCoords.mockResolvedValue(BADCAM);
+		byId({
+			[BADCAM]: pano({ pano: BADCAM, cameraType: "badcam", time: [{ pano: BADCAM }, { pano: GOODCAM }] }),
+			[GOODCAM]: pano({ pano: GOODCAM, cameraType: "gen4" }),
+		});
+		expect(await validateOne(coord())).toBe(ValidationState.GoodcamAvailable);
 	});
 });
