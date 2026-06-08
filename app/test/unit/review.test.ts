@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-// review.add.ts pulls in the store graph for its side-effectful API; stub it so the
+// review.ts pulls in the store graph for its side-effectful API; stub it so the
 // pure helpers (the part under test) load in isolation.
 vi.mock("@/store/useMapStore", () => ({
 	getCurrentMapId: () => null,
