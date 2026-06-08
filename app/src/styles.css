@@ -3833,11 +3833,30 @@ summary.button {
 	display: none;
 }
 .sv-opacity-control {
-	align-content: center;
+	align-items: center;
 	display: flex;
+	gap: 0.5rem;
+	padding: 0 0.75rem 0 0;
 }
 .sv-opacity-control__slider {
 	width: 6rem;
+}
+.opacity-target-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	align-self: stretch;
+	width: 40px;
+	border: none;
+	background: transparent;
+	padding: 0;
+	cursor: pointer;
+	color: #666;
+	border-radius: 2px;
+}
+.opacity-target-toggle:hover {
+	background: #ebebeb;
+	color: #000;
 }
 .sv-preview-control {
 	height: auto;

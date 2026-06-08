@@ -5,7 +5,9 @@ import type { GoogleMapsOverlayProps } from "@deck.gl/google-maps";
 import type { PickingInfo, Layer, Position } from "@deck.gl/core";
 type OverlayEvent = { srcEvent?: { domEvent?: Event } };
 import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
+import { mdiGoogleStreetView, mdiMapMarker } from "@mdi/js";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
+import { Icon } from "@/components/primitives/Icon";
 
 function normalizeRing<T extends number[]>(ring: T[]): T[] {
 	const crosses = ring.some((p) => p[0] > 180 || p[0] < -180) ||
@@ -247,6 +249,7 @@ interface MapEmbedPrefs {
 	mapStyleName: string;
 	mapType: MapTypeKey;
 	markerStyle: MarkerStyle;
+	markerOpacity: number;
 	showPerfectScoreCircle: boolean;
 	showPreviews: boolean;
 }
@@ -265,6 +268,7 @@ const DEFAULT_PREFS: MapEmbedPrefs = {
 	mapStyleName: "default",
 	mapType: "map",
 	markerStyle: "pin",
+	markerOpacity: 1,
 	showPerfectScoreCircle: true,
 	showPreviews: false,
 };
@@ -363,10 +367,12 @@ export function MapEmbed() {
 		mapStyleName,
 		mapType,
 		markerStyle,
+		markerOpacity,
 		showPerfectScoreCircle,
 		showPreviews,
 	} = prefs;
 	const setSvOpacity = pref("svOpacity");
+	const setMarkerOpacity = pref("markerOpacity");
 	const setSvColor = pref("svColor");
 	const setShowLabels = pref("showLabels");
 	const setShowTerrain = pref("showTerrain");
@@ -406,9 +412,7 @@ export function MapEmbed() {
 	} | null>(null);
 	const previewAbortRef = useRef<AbortController | null>(null);
 	const [panoDots, setPanoDots] = useState<PanoDot[]>([]);
-	const [markerVisibility, setMarkerVisibility] = useState<"opaque" | "transparent" | "hidden">(
-		"opaque",
-	);
+	const [opacityTarget, setOpacityTarget] = useState<"sv" | "markers">("sv");
 	const [mapReady, setMapReady] = useState(false);
 	const freehandPathRef = useRef<number[][] | null>(null);
 	const contextTriggerRef = useRef<HTMLSpanElement>(null);
@@ -516,7 +520,7 @@ export function MapEmbed() {
 				}
 			}
 		}
-		if (markerVisibility !== "hidden" && cm.totalCount > 0) {
+		if (markerOpacity > 0 && cm.totalCount > 0) {
 			for (const [cellKey, cell] of cm.cells) {
 				if (cell.count === 0) continue;
 				if (markerStyle === "circle") {
@@ -533,10 +537,10 @@ export function MapEmbed() {
 							getRadius: 6,
 							radiusUnits: "pixels",
 							radiusMinPixels: 3,
-							opacity: markerVisibility === "transparent" ? 0.3 : 1,
+							opacity: markerOpacity,
 							pickable: true,
 							updateTriggers: {
-								opacity: [markerVisibility],
+								opacity: [markerOpacity],
 								getFillColor: [cell.colorVersion],
 								getPosition: [cell.positionVersion],
 							},
@@ -556,10 +560,10 @@ export function MapEmbed() {
 							},
 							shape: "arrow",
 							radiusPixels: 12,
-							opacity: markerVisibility === "transparent" ? 0.3 : 1,
+							opacity: markerOpacity,
 							pickable: true,
 							updateTriggers: {
-								opacity: [markerVisibility],
+								opacity: [markerOpacity],
 								getFillColor: [cell.colorVersion],
 								getPosition: [cell.positionVersion],
 								getAngle: [cell.positionVersion],
@@ -579,10 +583,10 @@ export function MapEmbed() {
 							},
 							shape: "pin",
 							radiusPixels: 16,
-							opacity: markerVisibility === "transparent" ? 0.3 : 1,
+							opacity: markerOpacity,
 							pickable: true,
 							updateTriggers: {
-								opacity: [markerVisibility],
+								opacity: [markerOpacity],
 								getFillColor: [cell.colorVersion],
 								getPosition: [cell.positionVersion],
 							},
@@ -825,7 +829,7 @@ export function MapEmbed() {
 
 		return layers;
 	}, [
-		markerVisibility,
+		markerOpacity,
 		markerStyle,
 		showPerfectScoreCircle,
 		scoreMaxError,
@@ -1435,7 +1439,7 @@ export function MapEmbed() {
 		selected,
 		selectedTags,
 		activeLocation?.id,
-		markerVisibility,
+		markerOpacity,
 		markerStyle,
 		showPerfectScoreCircle,
 		svPanoramas,
@@ -1462,14 +1466,6 @@ export function MapEmbed() {
 			{ lat: lat + 0.003, lng: lng + 0.003 },
 		);
 		gMapRef.current.fitBounds(bounds);
-	}, []);
-
-	const cycleMarkerVisibility = useCallback(() => {
-		setMarkerVisibility((v) => {
-			if (v === "opaque") return "transparent";
-			if (v === "transparent") return "hidden";
-			return "opaque";
-		});
 	}, []);
 
 	const zoomIn = useCallback(() => {
@@ -1712,37 +1708,29 @@ export function MapEmbed() {
 						}}
 					/>
 					<div className="map-control sv-opacity-control">
+						<button
+							className="opacity-target-toggle"
+							onClick={() => setOpacityTarget((t) => (t === "sv" ? "markers" : "sv"))}
+							role="tooltip"
+							aria-label={
+								opacityTarget === "sv" ? "Adjusting Street View opacity" : "Adjusting marker opacity"
+							}
+							data-microtip-position="left"
+						>
+							<Icon path={opacityTarget === "sv" ? mdiGoogleStreetView : mdiMapMarker} size={20} />
+						</button>
 						<input
 							className="sv-opacity-control__slider"
 							type="range"
 							min={0}
 							max={1}
-							step={0.25}
-							value={svOpacity}
-							onChange={(e) => setSvOpacity(Number(e.target.value))}
-							title="Adjust visibility of blue lines"
+							step={0.05}
+							value={opacityTarget === "sv" ? svOpacity : markerOpacity}
+							onChange={(e) =>
+								(opacityTarget === "sv" ? setSvOpacity : setMarkerOpacity)(Number(e.target.value))
+							}
+							title={opacityTarget === "sv" ? "Street View layer opacity" : "Marker layer opacity"}
 						/>
-					</div>
-				</div>
-				{/* RightTop: marker visibility */}
-				<div className="embed-controls__control" style={{ right: 0, top: "52px" }}>
-					<div className="map-control map-control--button white">
-						<button
-							onClick={cycleMarkerVisibility}
-							role="tooltip"
-							aria-label={`Marker visibility: ${markerVisibility}`}
-							data-microtip-position="left"
-						>
-							<svg height="24" width="24" viewBox="0 0 24 24" fill="currentColor">
-								{markerVisibility === "opaque" ? (
-									<path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" />
-								) : markerVisibility === "transparent" ? (
-									<path d="M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z" />
-								) : (
-									<path d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.08L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.74,7.13 11.35,7 12,7Z" />
-								)}
-							</svg>
-						</button>
 					</div>
 				</div>
 				<div className="embed-controls__control" style={{ right: 0, bottom: 0 }}>
