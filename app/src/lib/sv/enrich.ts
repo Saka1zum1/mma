@@ -7,13 +7,10 @@ import {
 	isFieldEnabled,
 	getEnrichmentProviders,
 	getDefaultEnrichKeys,
+	registerEnrichmentProvider,
+	type EnrichmentProvider,
 } from "@/lib/data/fieldDefs";
-import {
-	registerSvResolver,
-	runResolvers,
-	type SvResolver,
-	type ResolverOutcome,
-} from "@/lib/sv/svRunner";
+import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 import { log } from "@/lib/util/log";
 import type { Location } from "@/types";
 
@@ -92,80 +89,93 @@ export const enrichMetaResolver: SvResolver = {
 };
 
 /** Exact capture timestamp: binary-searches Google's SingleImageSearch per location.
- *  Self-contained post phase -- runs after `imageDate` is populated, with its own
- *  concurrency, on fresh store data. */
-export const exactDateResolver: SvResolver = {
+ *  A slow enrichment provider -- `requires: ["imageDate"]` chains it after the core
+ *  metadata pass (bulk dependency waves) and re-resolves on imageDate writes
+ *  (single-location trigger). */
+export const exactDateProvider: EnrichmentProvider = {
 	id: "exactDate",
-	label: "Resolve exact dates",
-	pending: (loc, force) => !!loc.extra?.imageDate && (force || loc.extra?.datetime == null),
-	postUnits: (locs, force) =>
-		locs.filter((l) => l.extra?.imageDate && (force || l.extra?.datetime == null)).length,
-	post: async (locations, { signal, force, config, onUnit }) => {
-		const out: ResolverOutcome = { success: [], failed: [] };
-		const enrichFields = (config as string[] | null) ?? getDefaultEnrichKeys();
-		const datePending = locations.filter(
-			(l) => l.extra?.imageDate && (force || l.extra?.datetime == null),
+	label: "Exact dates",
+	requires: ["imageDate"],
+	fieldDefs: {
+		datetime: { type: "date", label: "Exact date" },
+		timezone: { type: "enum", label: "Timezone" },
+	},
+	units: (locations, enrichFields, force) =>
+		isFieldEnabled(enrichFields, "datetime")
+			? locations.filter((l) => l.extra?.imageDate && (force || l.extra?.datetime == null)).length
+			: 0,
+	async enrich(locations, enrichFields, ctx) {
+		const out = new Map<number, Record<string, unknown>>();
+		if (!isFieldEnabled(enrichFields, "datetime")) return out;
+		const pending = locations.filter(
+			(l) => l.extra?.imageDate && (ctx?.force || l.extra?.datetime == null),
 		);
 		let next = 0;
 		async function worker() {
-			while (next < datePending.length) {
-				signal?.throwIfAborted();
-				const loc = datePending[next++];
+			// On abort, stop early and return what resolved so far -- the runner
+			// persists partial results before propagating the abort.
+			while (next < pending.length && !ctx?.signal?.aborted) {
+				const loc = pending[next++];
 				try {
-					const ts = await resolveExactTimestamp(loc.lat, loc.lng, loc.extra!.imageDate as string);
+					const ts = await resolveExactTimestamp(
+						loc.lat,
+						loc.lng,
+						loc.extra!.imageDate as string,
+						ctx?.signal,
+					);
 					const tz = resolveTimezone(loc.lat, loc.lng);
 					const patch = filterEnrichPatch({ datetime: ts, timezone: tz }, enrichFields);
-					if (Object.keys(patch).length > 0) patchLocationExtra(loc, patch);
-					out.success.push(loc.id);
+					if (Object.keys(patch).length > 0) out.set(loc.id, patch);
 				} catch (e) {
+					// An abort mid-search is not a failure -- bail without recording one.
+					if (ctx?.signal?.aborted) return;
 					log.warn(
 						`[exactDate] failed for ${loc.id} (${loc.lat},${loc.lng} ${loc.extra!.imageDate}):`,
 						e,
 					);
-					out.failed.push(loc.id);
+					ctx?.onFail?.(loc.id);
 				}
-				onUnit();
+				ctx?.onUnit?.();
 			}
 		}
-		await Promise.all(Array.from({ length: Math.min(1000, datePending.length) }, () => worker()));
+		await Promise.all(Array.from({ length: Math.min(1000, pending.length) }, () => worker()));
 		return out;
 	},
 };
 
 registerSvResolver(enrichMetaResolver);
-registerSvResolver(exactDateResolver);
+registerEnrichmentProvider(exactDateProvider);
 
-export interface EnrichResult {
-	metaSuccess: number[];
-	metaFailed: number[];
-	dateSuccess: number[];
-	dateFailed: number[];
+/** One summary row per pass that did work: the core metadata pass, then every
+ *  provider that updated or failed at least one location. */
+export interface EnrichOutcome {
+	id: string;
+	label: string;
+	success: number[];
+	failed: number[];
 }
+export type EnrichResult = EnrichOutcome[];
 
-/** Bulk enrich: selector over the resolver engine. Runs `enrichMeta` (+ providers),
- *  and `exactDate` when the datetime field is enabled. */
+/** Bulk enrich: selector over the resolver engine. Runs `enrichMeta`, then the
+ *  enrichment providers (exact date among them) in dependency waves. */
 export async function enrichAll(
 	locations: Location[],
 	opts: {
 		signal?: AbortSignal;
 		force?: boolean;
-		onProgress?: (done: number, total: number) => void;
+		onProgress?: (done: number, total: number, label?: string) => void;
 	} = {},
 ): Promise<EnrichResult> {
-	const empty: EnrichResult = { metaSuccess: [], metaFailed: [], dateSuccess: [], dateFailed: [] };
 	const map = getCurrentMap();
-	if (!map) return empty;
+	if (!map) return [];
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
-	const exactDates = isFieldEnabled(enrichFields, "datetime");
 
-	const selected: { id: string; config?: unknown }[] = [{ id: "enrichMeta", config: enrichFields }];
-	if (exactDates) selected.push({ id: "exactDate", config: enrichFields });
-
-	const run = await runResolvers(locations, selected, opts);
-	return {
-		metaSuccess: run.enrichMeta?.success ?? [],
-		metaFailed: run.enrichMeta?.failed ?? [],
-		dateSuccess: run.exactDate?.success ?? [],
-		dateFailed: run.exactDate?.failed ?? [],
-	};
+	const run = await runResolvers(locations, [{ id: "enrichMeta", config: enrichFields }], opts);
+	const labelOf = (id: string) =>
+		id === "enrichMeta"
+			? "Metadata"
+			: (getEnrichmentProviders().find((p) => p.id === id)?.label ?? id);
+	return Object.entries(run)
+		.filter(([, o]) => o.success.length > 0 || o.failed.length > 0)
+		.map(([id, o]) => ({ id, label: labelOf(id), ...o }));
 }

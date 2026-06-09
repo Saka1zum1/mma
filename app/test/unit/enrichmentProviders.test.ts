@@ -9,6 +9,7 @@ import {
 	getDefaultEnrichKeys,
 	isFieldEnabled,
 	filterEnrichPatch,
+	providerWaves,
 } from "@/lib/data/fieldDefs";
 import { getFieldDef, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 
@@ -151,6 +152,45 @@ describe("isFieldEnabled", () => {
 	it("respects an explicit enrichFields list", () => {
 		expect(isFieldEnabled(["datetime"], "datetime")).toBe(true);
 		expect(isFieldEnabled(["altitude"], "datetime")).toBe(false);
+	});
+});
+
+describe("providerWaves", () => {
+	const p = (id: string, produces: string[], requires?: string[]) => ({
+		id,
+		enrich: async () => new Map(),
+		fieldDefs: Object.fromEntries(produces.map((k) => [k, { type: "number" as const, label: k }])),
+		requires,
+	});
+
+	it("runs independent providers in a single wave", () => {
+		const a = p("a", ["x"]);
+		const b = p("b", ["y"]);
+		expect(providerWaves([a, b])).toEqual([[a, b]]);
+	});
+
+	it("schedules a provider after the provider that produces its requirement", () => {
+		const producer = p("producer", ["datetime"], ["imageDate"]);
+		const consumer = p("consumer", ["sunAzimuth"], ["datetime"]);
+		expect(providerWaves([consumer, producer])).toEqual([[producer], [consumer]]);
+	});
+
+	it("handles chains of arbitrary depth", () => {
+		const a = p("a", ["f1"]);
+		const b = p("b", ["f2"], ["f1"]);
+		const c = p("c", ["f3"], ["f2"]);
+		expect(providerWaves([c, a, b])).toEqual([[a], [b], [c]]);
+	});
+
+	it("does not delay on requirements no provider produces (core-pass fields)", () => {
+		const a = p("a", ["x"], ["imageDate"]);
+		expect(providerWaves([a])).toEqual([[a]]);
+	});
+
+	it("falls back to a single wave on a dependency cycle", () => {
+		const a = p("a", ["x"], ["y"]);
+		const b = p("b", ["y"], ["x"]);
+		expect(providerWaves([a, b])).toEqual([[a, b]]);
 	});
 });
 

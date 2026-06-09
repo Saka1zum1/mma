@@ -1487,6 +1487,9 @@ pub fn store_update_locations(
         let mut updated: Vec<(Location, Location)> = Vec::new();
         let any_tags = updates.iter().any(|(_, p)| p.tags.is_some());
         let any_extras = updates.iter().any(|(_, p)| p.extra.is_some());
+        // TODO: overlay_update re-fetches internally; returning (old, new) would drop 2 of the
+        // 3 lookups+clones per id, and the any_tags/undo blocks below re-clone the pairs again.
+        // Only matters for 100k+ bulk edits.
         for (id, patch) in &updates {
             if let Some(old) = store.get_loc_by_id(*id) {
                 store.overlay_update(*id, patch);

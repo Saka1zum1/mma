@@ -10,11 +10,17 @@ vi.mock("@/store/useMapStore", () => ({
 	patchLocationExtra: async () => {},
 }));
 vi.mock("@/lib/sv/svMeta", () => ({ fetchSvMetadata: async () => [] }));
-vi.mock("@/lib/sv/exactDate", () => ({ resolveExactTimestamp: async () => null }));
+const resolveExactTimestampMock = vi.hoisted(() =>
+	vi.fn(async (): Promise<number | null> => null),
+);
+vi.mock("@/lib/sv/exactDate", () => ({ resolveExactTimestamp: resolveExactTimestampMock }));
 vi.mock("@/lib/util/timezone", () => ({ resolveTimezone: () => null }));
 vi.mock("@/lib/sv/lookup", () => ({ resolvePanoIds: async () => [] }));
+vi.mock("@/lib/util/log", () => ({
+	log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {} },
+}));
 
-import { buildPatch } from "@/lib/sv/enrich";
+import { buildPatch, exactDateProvider } from "@/lib/sv/enrich";
 import { getDefaultEnrichKeys } from "@/lib/data/fieldDefs";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
@@ -72,5 +78,43 @@ describe("buildPatch — stale datetime/timezone clearing", () => {
 		const patch = buildPatch(svData("2023-03"), loc({ imageDate: "2023-03" }), ["altitude"])!;
 		expect(patch.altitude).toBe(10);
 		expect("countryCode" in patch).toBe(false); // filtered out
+	});
+});
+
+describe("exactDateProvider", () => {
+	it("requires imageDate, so bulk waves run it after the core metadata pass", () => {
+		expect(exactDateProvider.requires).toContain("imageDate");
+	});
+
+	it("is inert when the datetime field is not enabled", async () => {
+		const l = loc({ imageDate: "2023-03" });
+		expect(exactDateProvider.units!([l], ["altitude"], false)).toBe(0);
+		expect((await exactDateProvider.enrich([l], ["altitude"])).size).toBe(0);
+	});
+
+	it("resolves only locations with imageDate and no datetime; force re-resolves", async () => {
+		resolveExactTimestampMock.mockResolvedValue(1700000000);
+		const target = loc({ imageDate: "2023-03" });
+		const already = loc({ imageDate: "2023-03", datetime: 1 });
+		const noDate = loc({});
+		const fields = ["datetime", "timezone"];
+
+		expect(exactDateProvider.units!([target, already, noDate], fields, false)).toBe(1);
+		expect(exactDateProvider.units!([target, already, noDate], fields, true)).toBe(2);
+
+		const out = await exactDateProvider.enrich([target, already, noDate], fields);
+		expect(out.size).toBe(1);
+		expect(out.get(target.id)).toMatchObject({ datetime: 1700000000 });
+	});
+
+	it("reports failures through ctx.onFail and keeps going", async () => {
+		resolveExactTimestampMock.mockRejectedValueOnce(new Error("boom"));
+		const target = loc({ imageDate: "2023-03" });
+		const failed: number[] = [];
+		const out = await exactDateProvider.enrich([target], ["datetime"], {
+			onFail: (id) => failed.push(id),
+		});
+		expect(out.size).toBe(0);
+		expect(failed).toEqual([target.id]);
 	});
 });

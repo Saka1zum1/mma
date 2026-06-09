@@ -117,7 +117,7 @@ function ApplyFieldAsTagsDialog({
 
 	const handleApply = async () => {
 		if (!field) return;
-		const { fetchLocationsByIds, createTags, addTagToLocations } = await import(
+		const { fetchLocationsByIds, createTags, batchUpdateLocations } = await import(
 			"@/store/useMapStore"
 		);
 		const ids = await cmd.storeResolveSelection({ type: "Everything" });
@@ -125,14 +125,19 @@ function ApplyFieldAsTagsDialog({
 		const locs = await fetchLocationsByIds(ids);
 		const groups = groupByField(locs, field);
 		if (groups.size === 0) return;
-		const names = [...groups.keys()];
-		const created = await createTags(names);
-		const lowerGroups = new Map<string, number[]>();
-		for (const [k, v] of groups) lowerGroups.set(k.toLowerCase(), v);
-		for (const tag of created) {
-			const locIds = lowerGroups.get(tag.name.toLowerCase());
-			if (locIds) await addTagToLocations(tag.id, locIds);
+		const created = await createTags([...groups.keys()]);
+		const tagIdByName = new Map(created.map((t) => [t.name.toLowerCase(), t.id]));
+		const locById = new Map(locs.map((l) => [l.id, l]));
+		const updates: { id: number; patch: { tags: number[] } }[] = [];
+		for (const [name, locIds] of groups) {
+			const tagId = tagIdByName.get(name.toLowerCase());
+			if (tagId == null) continue;
+			for (const id of locIds) {
+				const l = locById.get(id);
+				if (l && !l.tags.includes(tagId)) updates.push({ id, patch: { tags: [...l.tags, tagId] } });
+			}
 		}
+		if (updates.length > 0) await batchUpdateLocations(updates);
 		onOpenChange(false);
 	};
 

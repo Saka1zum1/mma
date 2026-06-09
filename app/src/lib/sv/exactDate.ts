@@ -3,12 +3,13 @@ const RPC_URL =
 
 const MAX_RETRIES = 3;
 
-async function singleImageSearch(body: string): Promise<string> {
+async function singleImageSearch(body: string, signal?: AbortSignal): Promise<string> {
 	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 		const res = await fetch(RPC_URL, {
 			method: "POST",
 			headers: { "content-type": "application/json+protobuf" },
 			body,
+			signal,
 		});
 		if (res.status === 501 || res.status === 503 || res.status === 429) {
 			if (attempt < MAX_RETRIES) {
@@ -29,9 +30,10 @@ async function checkTimestamp(
 	start: number,
 	end: number,
 	radius: number,
+	signal?: AbortSignal,
 ): Promise<boolean> {
 	const data = `[["apiv3"],[[null,null,${lat},${lng}],${radius}],[[null,null,null,null,null,null,null,null,null,null,[${start},${end}]],null,null,null,null,null,null,null,[1],null,[[[2,true,2]]]],[[2,6]]]`;
-	const text = await singleImageSearch(data);
+	const text = await singleImageSearch(data, signal);
 	return !text.includes("Search returned no images.");
 }
 
@@ -39,6 +41,7 @@ export async function resolveExactTimestamp(
 	lat: number,
 	lng: number,
 	yearMonth: string,
+	signal?: AbortSignal,
 	radius = 50,
 	accuracy = 1,
 ): Promise<number> {
@@ -63,7 +66,7 @@ export async function resolveExactTimestamp(
 			return mid;
 		}
 
-		if (await checkTimestamp(lat, lng, lo, mid, radius)) {
+		if (await checkTimestamp(lat, lng, lo, mid, radius, signal)) {
 			hi = mid;
 		} else {
 			lo = mid;

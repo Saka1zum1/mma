@@ -50,12 +50,47 @@ export function getDefaultEnrichKeys(): string[] {
 }
 
 
+/** Optional context passed by the bulk runner. Cheap providers can ignore it. */
+export interface EnrichCtx {
+	signal?: AbortSignal;
+	force?: boolean;
+	/** Advance the bulk progress bar by one unit. */
+	onUnit?: () => void;
+	/** Report a location that errored (surfaced as failed in the bulk summary). */
+	onFail?: (id: number) => void;
+}
+
 export interface EnrichmentProvider {
 	id: string;
-	enrich(locations: Location[], enrichFields: string[] | null): Promise<Map<number, Record<string, unknown>>>;
+	/** Bulk progress label for slow providers; omit for instant ones. */
+	label?: string;
+	enrich(
+		locations: Location[],
+		enrichFields: string[] | null,
+		ctx?: EnrichCtx,
+	): Promise<Map<number, Record<string, unknown>>>;
 	fieldDefs: Record<string, ExtraFieldDef>;
 	/** When set, this provider is auto-invoked after patchLocationExtra writes any of these fields. */
 	requires?: string[];
+	/** Progress units this provider would contribute in bulk (absent = instant). */
+	units?(locations: Location[], enrichFields: string[] | null, force?: boolean): number;
+}
+
+/** Schedule providers into dependency waves: a provider runs once no other
+ *  unscheduled provider produces (via `fieldDefs`) a field it `requires`.
+ *  A dependency cycle falls back to running the remainder as one wave. */
+export function providerWaves(list: EnrichmentProvider[]): EnrichmentProvider[][] {
+	const waves: EnrichmentProvider[][] = [];
+	let remaining = [...list];
+	while (remaining.length > 0) {
+		let wave = remaining.filter(
+			(p) => !p.requires?.some((r) => remaining.some((q) => q !== p && r in q.fieldDefs)),
+		);
+		if (wave.length === 0) wave = remaining;
+		waves.push(wave);
+		remaining = remaining.filter((p) => !wave.includes(p));
+	}
+	return waves;
 }
 
 const providers: EnrichmentProvider[] = [];

@@ -129,7 +129,9 @@ let tagCounts: Record<number, number> = {};
 let undoRedoState = { canUndo: false, canRedo: false };
 /** Extra-field keys known to exist in location data on the current map.
  *  Populated from `StoreStatus.knownFieldKeys` on map open, extended
- *  incrementally via `MutationResult.newFieldDefs`. */
+ *  incrementally via `MutationResult.newFieldDefs`.
+ *  Treat as immutable -- reassign, never mutate in place: consumers memo on
+ *  the Set's reference identity (`useMemo(..., [keys])`). */
 let knownFieldKeys = new Set<string>();
 
 /** Parsed-but-not-committed import shown while `workArea === "import"`. */
@@ -514,6 +516,7 @@ function syncMutationResult(r: MutationResult) {
 		hasNewDefs ||
 		r.tags != null;
 	if (hasNewDefs) {
+		knownFieldKeys = new Set(knownFieldKeys);
 		for (const key of Object.keys(r.newFieldDefs!)) knownFieldKeys.add(key);
 		mergeUserFieldDefs(r.newFieldDefs!);
 	}
@@ -674,11 +677,13 @@ function batchUpdateLocationsNoUndo(updates: { id: number; patch: Partial<Locati
 export async function renameField(from: string, to: string, winner: MergeWinner = "from") {
 	if (!currentMap || from === to || !to) return;
 	const updates = planFieldMove(await fetchAllLocations(), from, to, winner);
+	const nextKeys = new Set(knownFieldKeys);
 	if (updates.length) {
 		await batchUpdateLocationsNoUndo(updates);
-		knownFieldKeys.add(to);
+		nextKeys.add(to);
 	}
-	knownFieldKeys.delete(from);
+	nextKeys.delete(from);
+	knownFieldKeys = nextKeys;
 	await migrateFieldReferences(from, to);
 }
 
@@ -689,6 +694,7 @@ export async function deleteField(key: string) {
 	if (updates.length) {
 		await batchUpdateLocationsNoUndo(updates);
 	}
+	knownFieldKeys = new Set(knownFieldKeys);
 	knownFieldKeys.delete(key);
 	await migrateFieldReferences(key, null);
 }

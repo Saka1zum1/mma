@@ -3,8 +3,7 @@
  * a `Partial<Location>` from a location's pano data; each is a `SvResolver`. The
  * runner does the shared work once -- resolve missing pano IDs, fetch metadata in
  * batches (with all-null bisection), merge every selected resolver's patch per
- * location, write once -- then runs any self-contained post phases (e.g. exact date)
- * and the enrichment providers.
+ * location, write once -- then runs the enrichment providers in dependency waves.
  *
  * `enrichAll` and `bulkPinToPano` are thin selectors over this engine; the modal's
  * "Street View" operation runs an arbitrary set of resolvers.
@@ -14,19 +13,11 @@ import type { Location, ExtraFieldDef } from "@/types";
 import { batchUpdateLocations, fetchLocationsByIds } from "@/store/useMapStore";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { resolvePanoIds } from "@/lib/sv/lookup";
-import { getEnrichmentProviders } from "@/lib/data/fieldDefs";
+import { getEnrichmentProviders, providerWaves } from "@/lib/data/fieldDefs";
 
 const BATCH_SIZE = 200;
 
 export type PanoData = google.maps.StreetViewResolvedPanoramaData;
-
-export interface PostCtx {
-	signal?: AbortSignal;
-	force: boolean;
-	config: unknown;
-	/** Call once per unit of work completed, to advance the progress bar. */
-	onUnit: () => void;
-}
 
 export interface SvResolver {
 	id: string;
@@ -45,10 +36,6 @@ export interface SvResolver {
 		data: PanoData | null,
 		ctx: { config: unknown; resolvedPanoId?: string },
 	): Partial<Location> | null;
-	/** Progress units this resolver's post phase contributes. */
-	postUnits?(locations: Location[], force: boolean): number;
-	/** Self-contained second phase using fresh store data (e.g. exact-date RPCs). */
-	post?(locations: Location[], ctx: PostCtx): Promise<ResolverOutcome>;
 	/** When set, the runner also runs the registered enrichment providers. */
 	runsProviders?: boolean;
 	fieldDefs?: Record<string, ExtraFieldDef>;
@@ -89,7 +76,9 @@ export function mergePatches(loc: Location, patches: Partial<Location>[]): Parti
 export interface RunOpts {
 	signal?: AbortSignal;
 	force?: boolean;
-	onProgress?: (done: number, total: number) => void;
+	/** `label` names the current phase (set by slow provider waves; undefined = main pass).
+	 *  `done`/`total` are per-phase -- they reset when the label changes. */
+	onProgress?: (done: number, total: number, label?: string) => void;
 }
 
 export async function runResolvers(
@@ -109,33 +98,26 @@ export async function runResolvers(
 	const scopeIds = locations.map((l) => l.id);
 	const configOf = (id: string) => chosen.find((c) => c.r.id === id)?.config;
 
-	// --- Progress budget: prelude + metadata-phase units + each resolver's post units. ---
+	// --- Progress: each pass reports as its own labeled phase (per-phase done/total) --
+	//     pano-resolve prelude, metadata, then the provider waves. ---
 	const metaResolvers = chosen.filter(({ r }) => r.needsMetadata);
 	const metaPending = locations.filter((l) => metaResolvers.some(({ r }) => r.pending(l, force)));
 	const needResolve = locations.filter((l) =>
 		chosen.some(({ r }) => r.pending(l, force) && r.needsPanoResolve?.(l, force)),
 	);
-	const postTotal = chosen.reduce(
-		(sum, { r }) => sum + (r.post ? (r.postUnits?.(locations, force) ?? 0) : 0),
-		0,
-	);
-	const grandTotal = needResolve.length + metaPending.length + postTotal;
 	let done = 0;
 	const tick = (n = 1) => {
 		done += n;
-		onProgress?.(done, grandTotal);
+		onProgress?.(done, metaPending.length);
 	};
 
 	// --- Phase 0: resolve missing pano IDs for the union that needs them. ---
 	let resolvedPanoIds: Map<number, string> | undefined;
 	if (needResolve.length > 0) {
-		let lastDone = 0;
+		onProgress?.(0, needResolve.length, "Resolving panoramas");
 		const pr = await resolvePanoIds(needResolve, {
 			signal,
-			onProgress: (d) => {
-				tick(d - lastDone);
-				lastDone = d;
-			},
+			onProgress: (d) => onProgress?.(d, needResolve.length, "Resolving panoramas"),
 		});
 		resolvedPanoIds = new Map(pr.resolved.map((x) => [x.id, x.panoId]));
 	}
@@ -184,6 +166,7 @@ export async function runResolvers(
 		if (updates.length > 0) batchUpdateLocations(updates);
 	}
 
+	if (metaPending.length > 0) onProgress?.(0, metaPending.length);
 	for (let i = 0; i < metaLocs.length; i += BATCH_SIZE) {
 		signal?.throwIfAborted();
 		const batch = metaLocs.slice(i, i + BATCH_SIZE);
@@ -216,38 +199,51 @@ export async function runResolvers(
 		if (updates.length > 0) batchUpdateLocations(updates);
 	}
 
-	// --- Phase 2: post phases (exact date) on fresh store data. ---
-	for (const { r, config } of chosen) {
-		if (!r.post) continue;
-		signal?.throwIfAborted();
-		const fresh = await fetchLocationsByIds(scopeIds);
-		const outcome = await r.post(fresh, { signal, force, config, onUnit: () => tick(1) });
-		result[r.id].success.push(...outcome.success);
-		result[r.id].failed.push(...outcome.failed);
-	}
-
-	// --- Phase 3: enrichment providers (when an enrich-style resolver ran). ---
+	// --- Phase 2: enrichment providers (when an enrich-style resolver ran), in
+	//     dependency waves -- a provider runs once no other provider still produces
+	//     a field it requires, against fresh store data re-fetched per wave.
+	//     Slow waves (units > 0) report as their own labeled progress phase. ---
 	if (chosen.some(({ r }) => r.runsProviders)) {
-		const providers = getEnrichmentProviders();
-		if (providers.length > 0) {
+		const enrichFields = (configOf("enrichMeta") as string[] | null | undefined) ?? null;
+		for (const wave of providerWaves(getEnrichmentProviders())) {
 			signal?.throwIfAborted();
-			const enrichFields = configOf("enrichMeta") as string[] | null | undefined;
 			const pluginLocs = await fetchLocationsByIds(scopeIds);
-			const results = await Promise.all(
-				providers.map((p) => p.enrich(pluginLocs, enrichFields ?? null)),
-			);
-			signal?.throwIfAborted();
 			const byId = new Map(pluginLocs.map((l) => [l.id, l]));
+			const units = wave.map((p) => p.units?.(pluginLocs, enrichFields, force) ?? 0);
+			const waveTotal = units.reduce((a, b) => a + b, 0);
+			const slow = wave.filter((p, i) => units[i] > 0 && p.label);
+			const label = slow.length === 1 ? slow[0].label : slow.length > 1 ? "Enriching fields" : undefined;
+			let waveDone = 0;
+			if (waveTotal > 0) onProgress?.(0, waveTotal, label);
+			const outcomeOf = (id: string) => (result[id] ??= { success: [], failed: [] });
+			const results = await Promise.all(
+				wave.map((p) =>
+					p.enrich(pluginLocs, enrichFields, {
+						signal,
+						force,
+						onUnit: () => onProgress?.(++waveDone, waveTotal, label),
+						onFail: (id) => outcomeOf(p.id).failed.push(id),
+					}),
+				),
+			);
 			const mergedById = new Map<number, Record<string, unknown>>();
-			for (const res of results)
-				for (const [id, patch] of res) mergedById.set(id, { ...mergedById.get(id), ...patch });
+			results.forEach((res, i) => {
+				const outcome = outcomeOf(wave[i].id);
+				for (const [id, patch] of res) {
+					outcome.success.push(id);
+					mergedById.set(id, { ...mergedById.get(id), ...patch });
+				}
+			});
+			// Write before honoring an abort, so partial provider results persist.
 			if (mergedById.size > 0) {
-				const updates = [...mergedById.entries()].map(([id, patch]) => ({
-					id,
-					patch: { extra: { ...byId.get(id)?.extra, ...patch } },
-				}));
-				batchUpdateLocations(updates);
+				await batchUpdateLocations(
+					[...mergedById.entries()].map(([id, patch]) => ({
+						id,
+						patch: { extra: { ...byId.get(id)?.extra, ...patch } },
+					})),
+				);
 			}
+			signal?.throwIfAborted();
 		}
 	}
 

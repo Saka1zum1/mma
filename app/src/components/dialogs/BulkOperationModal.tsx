@@ -494,44 +494,31 @@ function EnrichSummary({
 	result: EnrichResult;
 	onSelect: (ids: number[], label: string) => void;
 }) {
+	if (result.length === 0) {
+		return (
+			<div className="enrich-summary">
+				<div>Nothing to process.</div>
+			</div>
+		);
+	}
 	return (
 		<div className="enrich-summary">
-			{(result.metaSuccess.length > 0 || result.metaFailed.length > 0) && (
-				<div>
-					Metadata: {fmt.format(result.metaSuccess.length)} enriched
-					{result.metaFailed.length > 0 && <>, {fmt.format(result.metaFailed.length)} failed</>}
-					{result.metaFailed.length > 0 && (
+			{result.map((r) => (
+				<div key={r.id}>
+					{r.label}: {fmt.format(r.success.length)} updated
+					{r.failed.length > 0 && <>, {fmt.format(r.failed.length)} failed</>}
+					{r.failed.length > 0 && (
 						<button
 							className="button"
 							type="button"
 							style={{ marginLeft: 8 }}
-							onClick={() => onSelect(result.metaFailed, "Metadata failed")}
+							onClick={() => onSelect(r.failed, `${r.label} failed`)}
 						>
 							Select failed
 						</button>
 					)}
 				</div>
-			)}
-			{(result.dateSuccess.length > 0 || result.dateFailed.length > 0) && (
-				<div>
-					Exact dates: {fmt.format(result.dateSuccess.length)} resolved
-					{result.dateFailed.length > 0 && <>, {fmt.format(result.dateFailed.length)} failed</>}
-					{result.dateFailed.length > 0 && (
-						<button
-							className="button"
-							type="button"
-							style={{ marginLeft: 8 }}
-							onClick={() => onSelect(result.dateFailed, "Date resolution failed")}
-						>
-							Select failed
-						</button>
-					)}
-				</div>
-			)}
-			{result.metaSuccess.length === 0 &&
-				result.metaFailed.length === 0 &&
-				result.dateSuccess.length === 0 &&
-				result.dateFailed.length === 0 && <div>Nothing to process.</div>}
+			))}
 		</div>
 	);
 }
@@ -558,6 +545,7 @@ function BulkProgress({
 	const [progress, setProgress] = useState(0);
 	const [total, setTotal] = useState(0);
 	const [done, setDone] = useState(0);
+	const [phaseLabel, setPhaseLabel] = useState<string | null>(null);
 	const [status, setStatus] = useState<"running" | "done" | "cancelled" | "error">("running");
 	const [error, setError] = useState<string | null>(null);
 	const [enrichResult, setEnrichResult] = useState<EnrichResult | null>(null);
@@ -578,7 +566,8 @@ function BulkProgress({
 			? await fetchLocationsByIds(locationIds)
 			: await fetchAllLocations();
 
-		const onProgress = (d: number, t: number) => {
+		const onProgress = (d: number, t: number, label?: string) => {
+			setPhaseLabel(label ?? null);
 			setTotal(t);
 			setDone(d);
 			setProgress(t > 0 ? d / t : 1);
@@ -679,7 +668,8 @@ function BulkProgress({
 	return (
 		<div className="bulk-operation">
 			<div className="bulk-operation__status">
-				{status === "running" && `${fmt.format(done)} / ${fmt.format(total)} (${pct}%)`}
+				{status === "running" &&
+					`${phaseLabel ? `${phaseLabel}: ` : ""}${fmt.format(done)} / ${fmt.format(total)} (${pct}%)`}
 				{status === "done" && enrichResult ? (
 					<EnrichSummary
 						result={enrichResult}

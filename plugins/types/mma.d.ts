@@ -727,7 +727,7 @@ declare enum ValidationState {
 	Unofficial = 5,
 	GoodcamAvailable = 6
 }
-export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas";
+export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "between_local" | "has" | "nothas";
 /** When a move target already holds a value, which field's value survives. */
 export type MergeWinner = "from" | "to";
 export type RenderDelta = RenderDelta_Serialize;
@@ -798,12 +798,25 @@ export interface EnrichFieldOption {
 	defaultOff?: boolean;
 }
 declare function registerEnrichFields(fields: EnrichFieldOption[]): void;
+/** Optional context passed by the bulk runner. Cheap providers can ignore it. */
+export interface EnrichCtx {
+	signal?: AbortSignal;
+	force?: boolean;
+	/** Advance the bulk progress bar by one unit. */
+	onUnit?: () => void;
+	/** Report a location that errored (surfaced as failed in the bulk summary). */
+	onFail?: (id: number) => void;
+}
 export interface EnrichmentProvider {
 	id: string;
-	enrich(locations: Location$1[], enrichFields: string[] | null): Promise<Map<number, Record<string, unknown>>>;
+	/** Bulk progress label for slow providers; omit for instant ones. */
+	label?: string;
+	enrich(locations: Location$1[], enrichFields: string[] | null, ctx?: EnrichCtx): Promise<Map<number, Record<string, unknown>>>;
 	fieldDefs: Record<string, ExtraFieldDef>;
 	/** When set, this provider is auto-invoked after patchLocationExtra writes any of these fields. */
 	requires?: string[];
+	/** Progress units this provider would contribute in bulk (absent = instant). */
+	units?(locations: Location$1[], enrichFields: string[] | null, force?: boolean): number;
 }
 declare function registerEnrichmentProvider(provider: EnrichmentProvider): void;
 declare function getFieldDef(key: string): ExtraFieldDef | undefined;
@@ -1362,12 +1375,15 @@ declare function validateLocations(locations: Location$1[], opts?: {
 	onProgress?: (p: ValidationProgress) => void;
 }): Promise<Map<ValidationState, Location$1[]>>;
 declare function mmaBufUrl(path: string): string;
-export interface EnrichResult {
-	metaSuccess: number[];
-	metaFailed: number[];
-	dateSuccess: number[];
-	dateFailed: number[];
+/** One summary row per pass that did work: the core metadata pass, then every
+ *  provider that updated or failed at least one location. */
+export interface EnrichOutcome {
+	id: string;
+	label: string;
+	success: number[];
+	failed: number[];
 }
+export type EnrichResult = EnrichOutcome[];
 export interface LocationStore {
 	locations: Map<number, Location$1>;
 	onChange(cb: () => void): () => void;
