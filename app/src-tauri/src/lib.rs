@@ -430,7 +430,8 @@ pub fn run() {
     }));
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("mma-buf", |_ctx, req| {
-            let raw = req.uri().path().replace("%20", " ").replace("%3A", ":");
+            let raw = percent_encoding::percent_decode_str(req.uri().path())
+                .decode_utf8_lossy().into_owned();
             let trimmed = raw.trim_start_matches('/');
             let clean = if trimmed.starts_with(|c: char| c.is_ascii_alphabetic())
                 && trimmed.as_bytes().get(1) == Some(&b':') { trimmed } else { &raw };
@@ -450,8 +451,9 @@ pub fn run() {
         .register_uri_scheme_protocol("mma-plugin", |ctx, req| {
             let plugins_dir = ctx.app_handle().path().app_data_dir()
                 .unwrap_or_default().join("plugins");
-            let path = req.uri().path().trim_start_matches('/');
-            let resolved = plugins_dir.join(path);
+            let path = percent_encoding::percent_decode_str(req.uri().path())
+                .decode_utf8_lossy();
+            let resolved = plugins_dir.join(path.trim_start_matches('/'));
             let canonical = resolved.canonicalize().unwrap_or_default();
             if !canonical.starts_with(&plugins_dir) {
                 return tauri::http::Response::builder()

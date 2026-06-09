@@ -1279,6 +1279,7 @@ export function MapEmbed() {
 				});
 				t.step("fill");
 				const resp = await fetch(mmaBufUrl(filePath));
+				if (!resp.ok) throw new Error(`render fetch ${resp.status}: ${await resp.text()}`);
 				const buf = await resp.arrayBuffer();
 				t.step("fetch");
 				if (cancelled) return;

@@ -2850,6 +2850,7 @@ dependencies = [
  "csv",
  "log",
  "memmap2",
+ "percent-encoding",
  "rayon",
  "reqwest",
  "reverse_geocoder",

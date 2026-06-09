@@ -1216,6 +1216,7 @@ async function setImportStaging(preview: ImportPreview, source: "file" | "paste"
 	let positions = new Float32Array(0);
 	try {
 		const resp = await fetch(mmaBufUrl(preview.previewPositionsPath));
+		if (!resp.ok) throw new Error(`preview fetch ${resp.status}: ${await resp.text()}`);
 		positions = new Float32Array(await resp.arrayBuffer());
 	} catch (e) {
 		log.error("[import] preview positions fetch failed:", e);

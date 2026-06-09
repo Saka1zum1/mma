@@ -62,7 +62,8 @@ fn qs(query: &str) -> String {
 /// plugin (same logic the desktop `register_uri_scheme_protocol` handlers use).
 fn register_web_schemes() {
     register_scheme("mma-buf", |req: SchemeRequest| {
-        let path = req.path.replace("%3A", ":").replace("%20", " ");
+        let path = percent_encoding::percent_decode_str(&req.path)
+            .decode_utf8_lossy().into_owned();
         match std::fs::read(&path) {
             Ok(data) => SchemeResponse::ok("application/octet-stream", data),
             Err(e) => SchemeResponse::not_found(format!("file not found: {path} — {e}")),
