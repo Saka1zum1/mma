@@ -366,6 +366,65 @@ export function hasTimeOfDay(v: number, wallClock: boolean): boolean {
 		: d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0;
 }
 
+function addDays(v: number, days: number, wallClock: boolean): number {
+	const d = new Date(v * 1000);
+	return wallClock
+		? Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + days) / 1000)
+		: Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days).getTime() / 1000);
+}
+
+/** A between filter is a window; stepping translates the window by its own span
+ *  (tiling — the next window starts where this one ends, no overlap). Returns the
+ *  shifted bounds, or null when the filter isn't a bounded window (gt/has/enum eq,
+ *  anyYear/anyTime shapes). Day windows are calendar-aware (DST-safe); month windows
+ *  shift the "YYYY-MM" strings; numeric windows translate by span (shared edge). */
+export function stepFilterWindow(
+	fieldType: string | undefined,
+	op: string,
+	value: unknown,
+	value2: unknown,
+	dir: 1 | -1,
+): { value: number | string; value2?: number | string } | null {
+	const MONTH = /^(\d{4})-(\d{2})$/;
+	if (fieldType === "month" && typeof value === "string") {
+		const lo = MONTH.exec(value);
+		if (!lo) return null;
+		const idx = (m: RegExpExecArray) => Number(m[1]) * 12 + (Number(m[2]) - 1);
+		const fmt = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+		if (op === "eq") return { value: fmt(idx(lo) + dir) };
+		if (op === "between" && typeof value2 === "string") {
+			const hi = MONTH.exec(value2);
+			if (!hi) return null;
+			const span = idx(hi) - idx(lo) + 1;
+			if (span < 1) return null;
+			return { value: fmt(idx(lo) + dir * span), value2: fmt(idx(hi) + dir * span) };
+		}
+		return null;
+	}
+	if (fieldType === "date" && (op === "between" || op === "between_local")) {
+		const lo = Number(value);
+		const hi = Number(value2);
+		if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return null;
+		const wallClock = op === "between_local";
+		if (!hasTimeOfDay(lo, wallClock) && !hasTimeOfDay(hi + 1, wallClock)) {
+			// Day-grain window: [midnight, day-end]. Shift by its day count.
+			const days = Math.round((hi + 1 - lo) / 86400);
+			const newLo = addDays(lo, dir * days, wallClock);
+			return { value: newLo, value2: pickPeriodEnd(addDays(newLo, days - 1, wallClock), "day", wallClock) };
+		}
+		const span = hi - lo + 1;
+		return { value: lo + dir * span, value2: hi + dir * span };
+	}
+	if (fieldType === "number" && op === "between") {
+		const lo = Number(value);
+		const hi = Number(value2);
+		if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return null;
+		const span = hi - lo;
+		return { value: lo + dir * span, value2: hi + dir * span };
+	}
+	return null;
+}
+
 /** Group locations by the string value of `field` in their `extra`. Skips null/empty.
  *  Returns a map from field-value to the location ids that carry it. */
 export function groupByField(locations: Location[], field: string): Map<string, number[]> {

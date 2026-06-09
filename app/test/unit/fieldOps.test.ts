@@ -12,6 +12,7 @@ import {
 	rewriteSelectionFields,
 	pickPeriodEnd,
 	hasTimeOfDay,
+	stepFilterWindow,
 } from "@/lib/data/fieldOps";
 import { buildSelection } from "@/store/selections";
 import type { Location, MapData } from "@/types";
@@ -324,5 +325,66 @@ describe("hasTimeOfDay", () => {
 		// not midnight -> minute grain on resubmit -> floor+59 -> unchanged
 		expect(hasTimeOfDay(end, false)).toBe(true);
 		expect(pickPeriodEnd(end, "minute", false)).toBe(end);
+	});
+});
+
+describe("stepFilterWindow", () => {
+	const dayStart = (y: number, m: number, d: number) =>
+		Math.floor(new Date(y, m, d).getTime() / 1000);
+
+	it("steps a single-day window to the next day", () => {
+		const lo = dayStart(2024, 5, 3);
+		const hi = pickPeriodEnd(lo, "day", false);
+		expect(stepFilterWindow("date", "between", lo, hi, 1)).toEqual({
+			value: dayStart(2024, 5, 4),
+			value2: pickPeriodEnd(dayStart(2024, 5, 4), "day", false),
+		});
+	});
+
+	it("tiles a multi-day window by its span", () => {
+		const lo = dayStart(2024, 5, 1);
+		const hi = pickPeriodEnd(dayStart(2024, 5, 3), "day", false); // 3-day window
+		expect(stepFilterWindow("date", "between", lo, hi, 1)).toEqual({
+			value: dayStart(2024, 5, 4),
+			value2: pickPeriodEnd(dayStart(2024, 5, 6), "day", false),
+		});
+	});
+
+	it("forward then back is identity for every day of the year (DST-safe)", () => {
+		for (let day = 1; day <= 366; day++) {
+			const lo = dayStart(2024, 0, day);
+			const hi = pickPeriodEnd(lo, "day", false);
+			const fwd = stepFilterWindow("date", "between", lo, hi, 1)!;
+			const back = stepFilterWindow("date", "between", fwd.value, fwd.value2, -1);
+			expect(back).toEqual({ value: lo, value2: hi });
+		}
+	});
+
+	it("steps an instant (minute-grain) window by its second span", () => {
+		const lo = Math.floor(Date.UTC(2024, 5, 3, 14, 5) / 1000);
+		const hi = lo + 59;
+		expect(stepFilterWindow("date", "between", lo, hi, 1)).toEqual({
+			value: lo + 60,
+			value2: hi + 60,
+		});
+	});
+
+	it("steps month eq and between windows, wrapping years", () => {
+		expect(stepFilterWindow("month", "eq", "2019-12", undefined, 1)).toEqual({ value: "2020-01" });
+		expect(stepFilterWindow("month", "between", "2019-06", "2019-08", 1)).toEqual({
+			value: "2019-09",
+			value2: "2019-11",
+		});
+	});
+
+	it("translates numeric windows by span", () => {
+		expect(stepFilterWindow("number", "between", 0, 100, 1)).toEqual({ value: 100, value2: 200 });
+	});
+
+	it("returns null for non-window shapes", () => {
+		expect(stepFilterWindow("date", "gt", dayStart(2024, 5, 3), undefined, 1)).toBeNull();
+		expect(stepFilterWindow("enum", "eq", "US", undefined, 1)).toBeNull();
+		expect(stepFilterWindow("date", "between_anyyear", "06-01", "06-03", 1)).toBeNull();
+		expect(stepFilterWindow("string", "between", "a", "b", 1)).toBeNull();
 	});
 });

@@ -34,7 +34,7 @@ import {
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
-import { groupByField, pickPeriodEnd, hasTimeOfDay } from "@/lib/data/fieldOps";
+import { groupByField, pickPeriodEnd, hasTimeOfDay, stepFilterWindow } from "@/lib/data/fieldOps";
 import { useSetting } from "@/store/settings";
 import { cmd } from "@/lib/commands";
 
@@ -48,7 +48,7 @@ import { beginReview } from "@/lib/review/review";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiClose, mdiChevronRight, mdiDotsVertical, mdiArrowRight, mdiArrowLeft } from "@mdi/js";
+import { mdiClose, mdiChevronLeft, mdiChevronRight, mdiDotsVertical, mdiArrowRight, mdiArrowLeft } from "@mdi/js";
 import { PluginToolbar } from "@/plugins/PluginPanels";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fmt } from "@/lib/util/format";
@@ -241,8 +241,29 @@ function SelectionRow({
 		[selection.key],
 	);
 
+	const fieldEntries = useExtraFieldKeys();
+
 	if (!map) return null;
 	const inner = selection.props.type === "Invert" ? selection.props.selections[0] : selection;
+	// Window filters (between on date/month/number) step inline by their own span.
+	const stepFilter = (() => {
+		const p = selection.props;
+		if (p.type !== "Filter") return null;
+		const ft = fieldEntries.find((f) => f.key === p.field)?.fieldType;
+		if (stepFilterWindow(ft, p.op, p.value, p.value2, 1) == null) return null;
+		return (dir: 1 | -1) => {
+			const next = stepFilterWindow(ft, p.op, p.value, p.value2, dir);
+			if (next) {
+				updateFilterSelection(selection.key, {
+					type: "Filter",
+					field: p.field,
+					op: p.op,
+					value: next.value,
+					value2: next.value2,
+				});
+			}
+		};
+	})();
 	const showChildren = inner.props.type === "Intersection" || inner.props.type === "Union";
 	const isPoly = selection.props.type === "Polygon";
 	const colorBlockCss =
@@ -400,6 +421,26 @@ function SelectionRow({
 				)}
 				<span className="selection-row__size">{fmt.format(selection.count ?? 0)}</span>
 				<span className="selection-row__actions">
+					{stepFilter && (
+						<>
+							<button
+								className="icon-button"
+								type="button"
+								aria-label="Previous period"
+								onClick={() => stepFilter(-1)}
+							>
+								<Icon path={mdiChevronLeft} size={18} />
+							</button>
+							<button
+								className="icon-button"
+								type="button"
+								aria-label="Next period"
+								onClick={() => stepFilter(1)}
+							>
+								<Icon path={mdiChevronRight} size={18} />
+							</button>
+						</>
+					)}
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger asChild>
 							<button className="icon-button" type="button" aria-label="Selection options">
