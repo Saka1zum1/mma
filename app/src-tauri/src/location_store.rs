@@ -2678,6 +2678,41 @@ pub fn store_merge_duplicates(
     })
 }
 
+/// Prune duplicates among `ids` (a resolved selection) within `distance` metres, matching
+/// the original app: <= 25m keeps the best-scored location per cluster (`keep_tag_ids`
+/// score +5, see selections::prune_score); > 25m thins greedily so no two survivors remain
+/// in range. Informational locations are never pruned. One undoable edit.
+#[tauri::command]
+#[specta::specta]
+pub fn store_prune_duplicates(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    ids: Vec<u32>,
+    distance: f64,
+    keep_tag_ids: Vec<u32>,
+) -> AppResult<MutationResult> {
+    let _t = std::time::Instant::now();
+    with_store!(webview, state, |store| {
+        let locs: Vec<Location> = ids.iter().filter_map(|&id| store.get_loc_by_id(id)).collect();
+        let keep: HashSet<u32> = keep_tag_ids.into_iter().collect();
+        let prune_ids: HashSet<u32> =
+            selections::prune_duplicates(&locs, distance, &keep).into_iter().collect();
+        let remove: Vec<Location> = locs.into_iter().filter(|l| prune_ids.contains(&l.id)).collect();
+
+        let result = if remove.is_empty() {
+            store.finish_mutation(ChangeSet::default())
+        } else {
+            let changes = apply_edit(store, &remove, &[]);
+            store.push_undo(EditEntry { created: Vec::new(), removed: remove });
+            store.edits.redo.clear();
+            log::debug!("[cmd] store_prune_duplicates pruned={} of {} total={}ms",
+                prune_ids.len(), ids.len(), _t.elapsed().as_millis());
+            store.finish_mutation(changes)
+        };
+        Ok(result)
+    })
+}
+
 /// Find all locations within `radius_m` metres of (`lat`, `lng`).
 ///
 /// O(n) linear scan with a cheap bounding-box pre-filter (degree margin)

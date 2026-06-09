@@ -385,6 +385,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_resolve_selection,
             location_store::store_duplicate_groups,
             location_store::store_merge_duplicates,
+            location_store::store_prune_duplicates,
             // --- Render ---
             location_store::store_fill_render_file,
             location_store::store_resolve_pick,

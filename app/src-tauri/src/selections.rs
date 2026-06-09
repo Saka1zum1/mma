@@ -616,11 +616,54 @@ impl SpatialHash {
     }
 }
 
-/// Grid-accelerated spatial duplicate detection. O(N) average with uniform distribution,
-/// O(N^2) worst case if all points fall in one grid cell.
-fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
+/// Grid broad-phase pair sweep shared by the duplicate bitmask/groups/prune paths.
+/// Calls `pair(state, pi, pj)` (pi < pj) for every index pair within `distance_m` metres.
+/// `skip_anchor(state, pi)` short-circuits a whole anchor scan — the bitmask path relies
+/// on it to stay near-linear when many points share one cell. O(N) average with uniform
+/// distribution, O(N^2) worst case if all points fall in one grid cell.
+fn for_pairs_within<S>(
+    n: usize,
+    pos: impl Fn(usize) -> (f64, f64),
+    distance_m: f64,
+    state: &mut S,
+    skip_anchor: impl Fn(&S, usize) -> bool,
+    mut pair: impl FnMut(&mut S, usize, usize),
+) {
+    if n < 2 { return; }
     let cell_deg = distance_m / 111_000.0 * 1.5;
+    let cells: Vec<(i32, i32)> = (0..n)
+        .map(|i| {
+            let (lat, lng) = pos(i);
+            ((lng / cell_deg).floor() as i32, (lat / cell_deg).floor() as i32)
+        })
+        .collect();
+    let grid = SpatialHash::build(&cells);
+    let thresh_m2 = distance_m * distance_m;
+    for pi in 0..n {
+        if skip_anchor(state, pi) { continue; }
+        let (lat, lng) = pos(pi);
+        let (cx, cy) = cells[pi];
+        let cos_lat = lat.to_radians().cos();
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for &pj in grid.bucket(cx + dx, cy + dy) {
+                    let pj = pj as usize;
+                    if pj <= pi { continue; }
+                    // Bucket may hold points from collided cells; the cell-coord check
+                    // keeps us to the true 3x3 neighborhood. Then the distance test.
+                    if cells[pj] != (cx + dx, cy + dy) { continue; }
+                    let (plat, plng) = pos(pj);
+                    if equirect_m2(lat, lng, plat, plng, cos_lat) <= thresh_m2 {
+                        pair(state, pi, pj);
+                    }
+                }
+            }
+        }
+    }
+}
 
+/// Grid-accelerated spatial duplicate detection.
+fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
     struct Pt { lat: f64, lng: f64, global_idx: usize }
     let mut points = Vec::new();
 
@@ -637,39 +680,20 @@ fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
     }
 
     let n = points.len();
-    if n < 2 { return; }
-
-    let cells: Vec<(i32, i32)> = points.iter()
-        .map(|pt| ((pt.lng / cell_deg).floor() as i32, (pt.lat / cell_deg).floor() as i32))
-        .collect();
-    let grid = SpatialHash::build(&cells);
-
-    let thresh_m2 = distance_m * distance_m;
-    let mut in_group = vec![false; n];
-    for pi in 0..n {
-        if in_group[pi] { continue; }
-        let pt = &points[pi];
-        let (cx, cy) = cells[pi];
-        let cos_lat = pt.lat.to_radians().cos();
-        let mut found_dup = false;
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for &pj in grid.bucket(cx + dx, cy + dy) {
-                    let pj = pj as usize;
-                    // Bucket may hold points from collided cells; the cell-coord check
-                    // keeps us to the true 3x3 neighborhood. Then the distance test.
-                    if pj <= pi || in_group[pj] { continue; }
-                    if cells[pj] != (cx + dx, cy + dy) { continue; }
-                    if equirect_m2(pt.lat, pt.lng, points[pj].lat, points[pj].lng, cos_lat) <= thresh_m2 {
-                        in_group[pj] = true;
-                        mask[points[pj].global_idx] = true;
-                        found_dup = true;
-                    }
-                }
-            }
-        }
-        if found_dup { mask[pt.global_idx] = true; }
-    }
+    let mut state = (vec![false; n], mask); // (in_group, mask)
+    for_pairs_within(
+        n,
+        |i| (points[i].lat, points[i].lng),
+        distance_m,
+        &mut state,
+        |s, pi| s.0[pi],
+        |s, pi, pj| {
+            if s.0[pj] { return; }
+            s.0[pj] = true;
+            s.1[points[pj].global_idx] = true;
+            s.1[points[pi].global_idx] = true;
+        },
+    );
 }
 
 /// Transitive (connected-component) spatial grouping. Two locations are linked when within
@@ -679,8 +703,6 @@ fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
 /// if A and C are out of range. Output is deterministic: ids ascending within each group,
 /// groups ordered by first id.
 pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
-    let cell_deg = distance_m / 111_000.0 * 1.5;
-
     struct Pt { lat: f64, lng: f64, id: u32 }
     let mut points: Vec<Pt> = Vec::new();
     view.for_each(|row| points.push(Pt { lat: row.lat(), lng: row.lng(), id: row.id() }));
@@ -698,31 +720,18 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
     }
     let mut parent: Vec<usize> = (0..n).collect();
 
-    let cells: Vec<(i32, i32)> = points.iter()
-        .map(|pt| ((pt.lng / cell_deg).floor() as i32, (pt.lat / cell_deg).floor() as i32))
-        .collect();
-    let grid = SpatialHash::build(&cells);
-
-    let thresh_m2 = distance_m * distance_m;
-    for pi in 0..n {
-        let (lat, lng) = (points[pi].lat, points[pi].lng);
-        let (cx, cy) = cells[pi];
-        let cos_lat = lat.to_radians().cos();
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for &pj in grid.bucket(cx + dx, cy + dy) {
-                    let pj = pj as usize;
-                    if pj <= pi { continue; }
-                    if cells[pj] != (cx + dx, cy + dy) { continue; }
-                    if equirect_m2(lat, lng, points[pj].lat, points[pj].lng, cos_lat) <= thresh_m2 {
-                        let ra = find(&mut parent, pi);
-                        let rb = find(&mut parent, pj);
-                        if ra != rb { parent[ra] = rb; }
-                    }
-                }
-            }
-        }
-    }
+    for_pairs_within(
+        n,
+        |i| (points[i].lat, points[i].lng),
+        distance_m,
+        &mut parent,
+        |_, _| false,
+        |parent, pi, pj| {
+            let ra = find(parent, pi);
+            let rb = find(parent, pj);
+            if ra != rb { parent[ra] = rb; }
+        },
+    );
 
     let mut comps: HashMap<usize, Vec<u32>> = HashMap::new();
     for pi in 0..n {
@@ -736,6 +745,114 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
         .collect();
     groups.sort_unstable_by_key(|g| g[0]);
     groups
+}
+
+/// Prune duplicates, faithful to the original app's `pruneDuplicates`. `locs` is the
+/// resolved selection; informational locations are never pruned and never count as
+/// neighbours. Returns ids to remove.
+/// - <= 25 m: relevance prune — each radius cluster keeps its best-scored location
+///   (see [`prune_score`]; tie: oldest `created_at`, then lowest id), rest pruned.
+/// - > 25 m: greedy max-thinning — repeatedly drop the location with the most in-range
+///   neighbours until no two survivors are within `distance_m`.
+pub fn prune_duplicates(locs: &[Location], distance_m: f64, keep_tag_ids: &HashSet<u32>) -> Vec<u32> {
+    let locs: Vec<&Location> = locs.iter()
+        .filter(|l| !l.flags.contains(LocationFlags::INFORMATIONAL))
+        .collect();
+    if locs.len() < 2 { return Vec::new(); }
+    if distance_m > 25.0 {
+        prune_thinning(&locs, distance_m)
+    } else {
+        prune_relevance(&locs, distance_m, keep_tag_ids)
+    }
+}
+
+/// Original relevance score: +1 pano, +1 per tag, +1 LoadAsPanoId, +5 keep-tag, +1 nonzero heading.
+fn prune_score(l: &Location, keep_tag_ids: &HashSet<u32>) -> i64 {
+    let mut s = l.tags.len() as i64;
+    if l.pano_id.is_some() { s += 1; }
+    if l.flags.contains(LocationFlags::LOAD_AS_PANO_ID) { s += 1; }
+    if l.tags.iter().any(|t| keep_tag_ids.contains(t)) { s += 5; }
+    if l.heading != 0.0 { s += 1; }
+    s
+}
+
+/// Symmetric within-distance neighbour lists (indices into `locs`).
+fn neighbor_lists(locs: &[&Location], distance_m: f64) -> Vec<Vec<usize>> {
+    let mut out: Vec<Vec<usize>> = vec![Vec::new(); locs.len()];
+    for_pairs_within(
+        locs.len(),
+        |i| (locs[i].lat, locs[i].lng),
+        distance_m,
+        &mut out,
+        |_, _| false,
+        |out, pi, pj| {
+            out[pi].push(pj);
+            out[pj].push(pi);
+        },
+    );
+    out
+}
+
+fn prune_relevance(locs: &[&Location], distance_m: f64, keep_tag_ids: &HashSet<u32>) -> Vec<u32> {
+    let neighbors = neighbor_lists(locs, distance_m);
+    let mut pruned = vec![false; locs.len()];
+    let mut out = Vec::new();
+    for i in 0..locs.len() {
+        if pruned[i] { continue; }
+        let mut cluster: Vec<usize> = vec![i];
+        cluster.extend(neighbors[i].iter().copied().filter(|&j| !pruned[j]));
+        if cluster.len() < 2 { continue; }
+        let survivor = *cluster.iter().max_by(|&&a, &&b| {
+            prune_score(locs[a], keep_tag_ids).cmp(&prune_score(locs[b], keep_tag_ids))
+                .then_with(|| locs[b].created_at.cmp(&locs[a].created_at)) // older wins ties
+                .then_with(|| locs[b].id.cmp(&locs[a].id))
+        }).unwrap();
+        for &j in &cluster {
+            if j != survivor {
+                pruned[j] = true;
+                out.push(locs[j].id);
+            }
+        }
+    }
+    out
+}
+
+fn prune_thinning(locs: &[&Location], distance_m: f64) -> Vec<u32> {
+    let n = locs.len();
+    let neighbors = neighbor_lists(locs, distance_m);
+    let mut deg: Vec<u32> = neighbors.iter().map(|v| v.len() as u32).collect();
+    let mut removed = vec![false; n];
+    // Stack with O(1) membership removal, mirroring the original's structure: all nodes
+    // at the current max degree are processed before recounting; a neighbour of a removed
+    // node leaves the stack even if it still sits at max degree.
+    let mut stack: Vec<usize> = Vec::new();
+    let mut pos: HashMap<usize, usize> = HashMap::new();
+    loop {
+        let max = deg.iter().copied().max().unwrap_or(0);
+        if max == 0 { break; }
+        for i in 0..n {
+            if deg[i] == max {
+                pos.insert(i, stack.len());
+                stack.push(i);
+            }
+        }
+        while let Some(t) = stack.pop() {
+            pos.remove(&t);
+            deg[t] = 0;
+            removed[t] = true;
+            for &u in &neighbors[t] {
+                if deg[u] > 0 { deg[u] -= 1; }
+                if let Some(p) = pos.remove(&u) {
+                    let last = stack.pop().unwrap();
+                    if p < stack.len() {
+                        stack[p] = last;
+                        pos.insert(last, p);
+                    }
+                }
+            }
+        }
+    }
+    (0..n).filter(|&i| removed[i]).map(|i| locs[i].id).collect()
 }
 
 /// Great-circle distance in metres using the haversine formula. Assumes spherical Earth (R = 6371 km).

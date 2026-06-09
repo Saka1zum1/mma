@@ -925,6 +925,22 @@ export async function mergeDuplicates(distance: number) {
 	await mutate(cmd.storeMergeDuplicates(distance));
 }
 
+/**
+ * Prune duplicates within a resolved selection (original-app behavior): keeps the most
+ * relevant location per cluster (<= 25m) or thins to enforce spacing (> 25m). Locations
+ * tagged "keep pano" get the original's +5 score bonus. Returns the number pruned.
+ */
+export async function pruneDuplicates(props: SelectionProps, distance: number): Promise<number> {
+	if (!currentMap) return 0;
+	const ids = await cmd.storeResolveSelection(props);
+	if (ids.length === 0) return 0;
+	const keepTagIds = Object.entries(currentMap.meta.tags)
+		.filter(([, t]) => t.name === "keep pano")
+		.map(([id]) => Number(id));
+	const r = await mutate(cmd.storePruneDuplicates(ids, distance, keepTagIds));
+	return r.delta.removed.length;
+}
+
 export function selectTag(tagId: number) {
 	return addSelections([{ type: "Tag", tagId }]);
 }

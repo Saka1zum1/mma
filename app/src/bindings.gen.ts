@@ -233,6 +233,13 @@ export const commands = {
 	 */
 	storeMergeDuplicates: (distance: number) => typedError<MutationResult_Serialize, string>(__TAURI_INVOKE("store_merge_duplicates", { distance })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
 	/**
+	 *  Prune duplicates among `ids` (a resolved selection) within `distance` metres, matching
+	 *  the original app: <= 25m keeps the best-scored location per cluster (`keep_tag_ids`
+	 *  score +5, see selections::prune_score); > 25m thins greedily so no two survivors remain
+	 *  in range. Informational locations are never pruned. One undoable edit.
+	 */
+	storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => typedError<MutationResult_Serialize, string>(__TAURI_INVOKE("store_prune_duplicates", { ids, distance, keepTagIds })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
+	/**
 	 *  Full render rebuild: single-pass over all alive locations, writes binary to a temp file.
 	 *  Returns the file path for JS to fetch via `mma-buf://`. Only called on map open or full reset.
 	 */

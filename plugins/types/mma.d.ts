@@ -1488,6 +1488,7 @@ declare const mma: {
 		storeResolveSelection: (props: SelectionProps) => Promise<number[]>;
 		storeDuplicateGroups: (distance: number) => Promise<number[][]>;
 		storeMergeDuplicates: (distance: number) => Promise<MutationResult_Serialize>;
+		storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => Promise<MutationResult_Serialize>;
 		storeFillRenderFile: (req: RenderRequest) => Promise<string>;
 		storeResolvePick: (cell: string, cellIndex: number) => Promise<number | null>;
 		bulkImportPreview: (path: string) => Promise<ImportPreviewEntry[]>;
@@ -1700,7 +1701,7 @@ declare const mma: {
 	toggleGhostSelection(key: string): Promise<void>;
 	toggleGhostAllSelections(): Promise<void>;
 	addSelections(props: SelectionProps[]): Promise<void>;
-	removeSelections(keys: string[]): Promise<void>;
+	removeSelections(keys: string[]): Promise<void> | undefined;
 	resetSelections(): Promise<void>;
 	selectIntersection(keys?: string[] | null): Promise<void>;
 	selectUnion(keys?: string[] | null): Promise<void>;
@@ -1715,6 +1716,7 @@ declare const mma: {
 	selectDuplicates(distance: number): Promise<void>;
 	previewDuplicateGroups(distance: number): Promise<number[][]>;
 	mergeDuplicates(distance: number): Promise<void>;
+	pruneDuplicates(props: SelectionProps, distance: number): Promise<number>;
 	selectTag(tagId: number): Promise<void>;
 	selectPolygon(polygon: PolygonGeometry, includeInformational?: boolean): Promise<void>;
 	selectFilter(field: string, op: FilterOp, value: unknown, value2?: unknown): Promise<void>;

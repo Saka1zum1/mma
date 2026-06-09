@@ -30,7 +30,9 @@ import {
 	toggleGhostSelection,
 	useGhostedSelections,
 	updateFilterSelection,
+	pruneDuplicates,
 } from "@/store/useMapStore";
+import { toast } from "@/lib/util/toast";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { groupByField } from "@/lib/data/fieldOps";
 import { cmd } from "@/lib/commands";
@@ -77,6 +79,19 @@ function uniqueTagName(base: string, existing: Set<string>): string {
 		const candidate = `${base} (${i})`;
 		if (!existing.has(candidate)) return candidate;
 	}
+}
+
+// Distance for "Prune duplicates": on a Duplicates selection directly, or an
+// Intersection containing one (original supports both; prune then runs on the
+// intersection's resolved locations).
+function pruneDistance(selection: Selection): number | null {
+	if (selection.props.type === "Duplicates") return selection.props.distance;
+	if (selection.props.type === "Intersection") {
+		for (const child of selection.props.selections) {
+			if (child.props.type === "Duplicates") return child.props.distance;
+		}
+	}
+	return null;
 }
 
 // --- Mouse-based drag system (HTML5 DnD is broken in Tauri webview) ---
@@ -452,6 +467,18 @@ function SelectionRow({
 										>
 											Save as tag
 										</DropdownMenu.Item>
+										{pruneDistance(selection) != null && (
+											<DropdownMenu.Item
+												className="context-menu__item"
+												disabled={(selection.count ?? 0) === 0}
+												onSelect={async () => {
+													const n = await pruneDuplicates(selection.props, pruneDistance(selection)!);
+													toast(`Pruned ${fmt.format(n)} duplicate${n === 1 ? "" : "s"}`);
+												}}
+											>
+												Prune duplicates
+											</DropdownMenu.Item>
+										)}
 										{selection.props.type !== "Tag" && (
 											<DropdownMenu.Item
 												className="context-menu__item"
