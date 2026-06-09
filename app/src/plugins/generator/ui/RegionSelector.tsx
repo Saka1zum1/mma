@@ -88,7 +88,7 @@ export function RegionSelector({
 						min={1}
 						value={defaultTarget}
 						onChange={(e) => onDefaultTargetChange(Number(e.target.value) || 10)}
-						style={{ width: "4rem" }}
+						style={{ width: "5.5rem" }}
 					/>
 				</label>
 				<button
@@ -130,7 +130,7 @@ export function RegionSelector({
 										min={found || 1}
 										value={target}
 										onChange={(e) => setTarget(sel.key, Number(e.target.value) || 1)}
-										style={{ width: "3.5rem", fontSize: "inherit" }}
+										style={{ width: "5rem", fontSize: "inherit" }}
 									/>
 								</div>
 							</div>
