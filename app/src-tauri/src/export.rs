@@ -30,6 +30,49 @@ pub struct ExportOpts {
 #[path = "export.test.rs"]
 mod tests;
 
+/// Unique temp path for an export file. A process-wide counter disambiguates
+/// concurrent exports (PID alone collides).
+fn export_temp_path(stem: &str, ext: &str) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("{stem}_{}_{n}.{ext}", std::process::id()))
+}
+
+/// Parse `{id: {name, color}}` tag definitions JSON into the raw defs map plus an id -> name lookup.
+fn parse_tag_defs(tags_json: &str) -> (
+    std::collections::HashMap<String, serde_json::Value>,
+    std::collections::HashMap<u32, String>,
+) {
+    let tag_defs: std::collections::HashMap<String, serde_json::Value> =
+        serde_json::from_str(tags_json).unwrap_or_default();
+    let id_to_name = tag_defs.iter()
+        .filter_map(|(k, v)| {
+            let id = k.parse::<u32>().ok()?;
+            let name = v.get("name")?.as_str()?.to_string();
+            Some((id, name))
+        })
+        .collect();
+    (tag_defs, id_to_name)
+}
+
+/// Convert tag defs to the export metadata shape `{name: {color: [r,g,b]}}`.
+fn tag_color_meta(
+    tag_defs: &std::collections::HashMap<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut converted = serde_json::Map::new();
+    for v in tag_defs.values() {
+        if let (Some(name), Some(color)) = (v.get("name").and_then(|n| n.as_str()), v.get("color").and_then(|c| c.as_str())) {
+            let mut entry = serde_json::Map::new();
+            if let Some(rgb) = hex_to_rgb(color) {
+                entry.insert("color".into(), serde_json::json!([rgb[0], rgb[1], rgb[2]]));
+            }
+            converted.insert(name.to_string(), serde_json::Value::Object(entry));
+        }
+    }
+    converted
+}
+
 /// Export locations as a map-making.app-compatible JSON file.
 ///
 /// Produces `{name, customCoordinates: [...]}` with optional `extra` block
@@ -44,23 +87,8 @@ pub fn store_export_json(
     opts: ExportOpts,
 ) -> AppResult<String> {
     with_store!(webview, state, |store| {
-        let tag_defs: std::collections::HashMap<String, serde_json::Value> =
-            serde_json::from_str(&opts.tags_json).unwrap_or_default();
-        let id_to_name: std::collections::HashMap<u32, String> = tag_defs.iter()
-            .filter_map(|(k, v)| {
-                let id = k.parse::<u32>().ok()?;
-                let name = v.get("name")?.as_str()?.to_string();
-                Some((id, name))
-            })
-            .collect();
-
-        let locs = match &opts.scope {
-            Some(ids) => {
-                let set: std::collections::HashSet<u32> = ids.iter().copied().collect();
-                store.collect_all_locations().into_iter().filter(|l| set.contains(&l.id)).collect::<Vec<_>>()
-            }
-            None => store.collect_all_locations(),
-        };
+        let (tag_defs, id_to_name) = parse_tag_defs(&opts.tags_json);
+        let locs = store.collect_scoped(opts.scope.as_deref());
 
         let mut coords = Vec::with_capacity(locs.len());
         for loc in &locs {
@@ -109,16 +137,7 @@ pub fn store_export_json(
         if opts.export_extras {
             let mut extra = serde_json::Map::new();
             if !tag_defs.is_empty() {
-                let mut converted = serde_json::Map::new();
-                for v in tag_defs.values() {
-                    if let (Some(name), Some(color)) = (v.get("name").and_then(|n| n.as_str()), v.get("color").and_then(|c| c.as_str())) {
-                        let mut entry = serde_json::Map::new();
-                        if let Some(rgb) = hex_to_rgb(color) {
-                            entry.insert("color".into(), serde_json::json!([rgb[0], rgb[1], rgb[2]]));
-                        }
-                        converted.insert(name.to_string(), serde_json::Value::Object(entry));
-                    }
-                }
+                let converted = tag_color_meta(&tag_defs);
                 if !converted.is_empty() {
                     extra.insert("tags".into(), serde_json::Value::Object(converted));
                 }
@@ -135,7 +154,7 @@ pub fn store_export_json(
 
         let json = serde_json::to_string(&serde_json::Value::Object(parts))?;
 
-        let path = std::env::temp_dir().join(format!("mma_export_{}.json", std::process::id()));
+        let path = export_temp_path("mma_export", "json");
         std::fs::write(&path, &json)?;
         Ok(path.to_string_lossy().into_owned())
     })
@@ -150,13 +169,7 @@ pub fn store_export_csv(
     scope: Option<Vec<u32>>,
 ) -> AppResult<String> {
     with_store!(webview, state, |store| {
-        let locs = match &scope {
-            Some(ids) => {
-                let set: std::collections::HashSet<u32> = ids.iter().copied().collect();
-                store.collect_all_locations().into_iter().filter(|l| set.contains(&l.id)).collect::<Vec<_>>()
-            }
-            None => store.collect_all_locations(),
-        };
+        let locs = store.collect_scoped(scope.as_deref());
 
         let mut buf = String::with_capacity(locs.len() * 30);
         buf.push_str("lat,lng\n");
@@ -164,7 +177,7 @@ pub fn store_export_csv(
             buf.push_str(&format!("{},{}\n", loc.lat, loc.lng));
         }
 
-        let path = std::env::temp_dir().join(format!("mma_export_{}.csv", std::process::id()));
+        let path = export_temp_path("mma_export", "csv");
         std::fs::write(&path, &buf)?;
         Ok(path.to_string_lossy().into_owned())
     })
@@ -182,23 +195,8 @@ pub fn store_export_geojson(
 ) -> AppResult<String> {
     with_store!(webview, state, |store| {
 
-    let tag_defs: std::collections::HashMap<String, serde_json::Value> =
-        serde_json::from_str(&tags_json).unwrap_or_default();
-    let id_to_name: std::collections::HashMap<u32, String> = tag_defs.iter()
-        .filter_map(|(k, v)| {
-            let id = k.parse::<u32>().ok()?;
-            let name = v.get("name")?.as_str()?.to_string();
-            Some((id, name))
-        })
-        .collect();
-
-    let locs = match &scope {
-        Some(ids) => {
-            let set: std::collections::HashSet<u32> = ids.iter().copied().collect();
-            store.collect_all_locations().into_iter().filter(|l| set.contains(&l.id)).collect::<Vec<_>>()
-        }
-        None => store.collect_all_locations(),
-    };
+    let (_, id_to_name) = parse_tag_defs(&tags_json);
+    let locs = store.collect_scoped(scope.as_deref());
 
     let features: Vec<serde_json::Value> = locs.iter().map(|l| {
         let tag_names: Vec<String> = l.tags.iter()
@@ -214,7 +212,7 @@ pub fn store_export_geojson(
     let geojson = serde_json::json!({ "type": "FeatureCollection", "features": features });
     let json = serde_json::to_string(&geojson)?;
 
-    let path = std::env::temp_dir().join(format!("mma_export_{}.geojson", std::process::id()));
+    let path = export_temp_path("mma_export", "geojson");
     std::fs::write(&path, &json)?;
     Ok(path.to_string_lossy().into_owned())
 
@@ -273,15 +271,7 @@ pub async fn store_export_bulk_zip(
                 // Base file + uncommitted delta sidecar = the map's full current state.
                 let locs = crate::location_store::read_full_state_from_disk(&app2, map_id)?;
 
-                let tag_defs: std::collections::HashMap<String, serde_json::Value> =
-                    serde_json::from_str(tags_json).unwrap_or_default();
-                let id_to_name: std::collections::HashMap<u32, String> = tag_defs.iter()
-                    .filter_map(|(k, v)| {
-                        let id = k.parse::<u32>().ok()?;
-                        let n = v.get("name")?.as_str()?.to_string();
-                        Some((id, n))
-                    })
-                    .collect();
+                let (tag_defs, id_to_name) = parse_tag_defs(tags_json);
 
                 let coords: Vec<serde_json::Value> = locs.iter().map(|loc| {
                     let pinned = loc.flags.contains(LocationFlags::LOAD_AS_PANO_ID);
@@ -316,16 +306,7 @@ pub async fn store_export_bulk_zip(
 
                 // Tag color metadata
                 if !tag_defs.is_empty() {
-                    let mut converted = serde_json::Map::new();
-                    for v in tag_defs.values() {
-                        if let (Some(n), Some(color)) = (v.get("name").and_then(|n| n.as_str()), v.get("color").and_then(|c| c.as_str())) {
-                            let mut e = serde_json::Map::new();
-                            if let Some(rgb) = hex_to_rgb(color) {
-                                e.insert("color".into(), serde_json::json!([rgb[0], rgb[1], rgb[2]]));
-                            }
-                            converted.insert(n.to_string(), serde_json::Value::Object(e));
-                        }
-                    }
+                    let converted = tag_color_meta(&tag_defs);
                     let mut extra_meta = serde_json::Map::new();
                     extra_meta.insert("tags".into(), serde_json::Value::Object(converted));
                     if let Ok(fields) = serde_json::from_str::<serde_json::Value>(extra_json) {
@@ -353,7 +334,7 @@ pub async fn store_export_bulk_zip(
             zip.finish()?;
         }
 
-        let path = std::env::temp_dir().join(format!("mma_backup_{}.zip", std::process::id()));
+        let path = export_temp_path("mma_backup", "zip");
         std::fs::write(&path, buf.into_inner())?;
         Ok::<_, AppError>(path.to_string_lossy().into_owned())
     })

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
 	CellBuffer,
 	CellManager,
+	decodeSelectionBitmask,
 	type CellRenderEntry,
 	type CellDelta,
 	type SelEntry,
@@ -886,5 +887,73 @@ describe("applySelectionBitmasks", () => {
 
 		expect(ids.size).toBe(2);
 		expect(ids.has(10)).toBe(false);
+	});
+});
+
+describe("decodeSelectionBitmask", () => {
+	// Wire format produced by Rust serialize_cell_bitmask (location_store.rs):
+	// u8 numSels; numSels*[r,g,b]; u8 numCells; per cell: u8 cellChar, u32le locCount,
+	// per sel: u8 fmt (1 = u32le count + count*u32le indices, 0 = ceil(locCount/8) mask bytes).
+	it("decodes colors, idx entries, and mask entries", () => {
+		const bytes = [
+			2, // numSels
+			255, 0, 0, // sel 0 color
+			0, 128, 255, // sel 1 color
+			2, // numCells
+			// cell "s", locCount=10
+			115, 10, 0, 0, 0,
+			// sel 0: idx [2, 7]
+			1, 2, 0, 0, 0, 2, 0, 0, 0, 7, 0, 0, 0,
+			// sel 1: mask (2 bytes), bits 0 and 9
+			0, 0b00000001, 0b00000010,
+			// cell "t", locCount=3
+			116, 3, 0, 0, 0,
+			// sel 0: mask (1 byte), bit 1
+			0, 0b00000010,
+			// sel 1: empty idx
+			1, 0, 0, 0, 0,
+		];
+
+		const { selColors, cellEntries } = decodeSelectionBitmask(bytes);
+
+		expect(selColors).toEqual([
+			[255, 0, 0],
+			[0, 128, 255],
+		]);
+		expect(cellEntries).toHaveLength(2);
+
+		const [s, t] = cellEntries;
+		expect(s.cellChar).toBe("s");
+		expect(s.locCount).toBe(10);
+		expect(s.sels[0]).toEqual({ kind: "idx", indices: new Uint32Array([2, 7]) });
+		expect(s.sels[1].kind).toBe("mask");
+		if (s.sels[1].kind === "mask") {
+			expect(Array.from(s.sels[1].mask)).toEqual([0b00000001, 0b00000010]);
+		}
+
+		expect(t.cellChar).toBe("t");
+		expect(t.locCount).toBe(3);
+		expect(t.sels[0]).toEqual({ kind: "mask", mask: new Uint8Array([0b00000010]) });
+		expect(t.sels[1]).toEqual({ kind: "idx", indices: new Uint32Array(0) });
+	});
+
+	it("decoded entries drive applySelectionBitmasks", () => {
+		const mgr = new CellManager();
+		mgr.applyDelta({
+			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			updated: [],
+			removed: [],
+			colorPatches: [],
+		});
+
+		// 1 selection (red), cell "s" locCount=3, idx list [0, 2] -> ids 10 and 30
+		const bytes = [1, 255, 0, 0, 1, 115, 3, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0];
+		const { selColors, cellEntries } = decodeSelectionBitmask(bytes);
+		const ids = mgr.applySelectionBitmasks(selColors, cellEntries);
+
+		expect(ids.size).toBe(2);
+		expect(ids.has(10)).toBe(true);
+		expect(ids.has(20)).toBe(false);
+		expect(ids.has(30)).toBe(true);
 	});
 });

@@ -26,7 +26,7 @@ import {
 	type MergeWinner,
 } from "@/lib/data/fieldOps";
 import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections";
-import { SelectedIds, type ReadonlyIdSet, type RenderDelta, type SelEntry, type SelCellEntry } from "@/lib/render/CellManager";
+import { SelectedIds, decodeSelectionBitmask, type ReadonlyIdSet, type RenderDelta, type SelCellEntry } from "@/lib/render/CellManager";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */
 function createBus<T extends (...args: never[]) => void>() {
@@ -549,45 +549,7 @@ function syncMutationResult(r: MutationResult) {
 
 /** Decode the inline bitmask bytes from Rust and emit to selBitmaskBus. */
 export function emitBitmask(bytes: number[]) {
-	const buf = new Uint8Array(bytes).buffer;
-	const dv = new DataView(buf);
-	let off = 0;
-	const numSels = dv.getUint8(off);
-	off += 1;
-	const selColors: [number, number, number][] = [];
-	for (let i = 0; i < numSels; i++) {
-		selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);
-		off += 3;
-	}
-	const numCells = dv.getUint8(off);
-	off += 1;
-	const cellEntries: { cellChar: string; locCount: number; sels: SelEntry[] }[] = [];
-	for (let ci = 0; ci < numCells; ci++) {
-		const cellChar = String.fromCharCode(dv.getUint8(off));
-		off += 1;
-		const locCount = dv.getUint32(off, true);
-		off += 4;
-		const maskBytes = Math.ceil(locCount / 8);
-		const sels: SelEntry[] = [];
-		for (let si = 0; si < numSels; si++) {
-			const fmt = dv.getUint8(off);
-			off += 1;
-			if (fmt === 1) {
-				const count = dv.getUint32(off, true);
-				off += 4;
-				const indices = new Uint32Array(count);
-				for (let k = 0; k < count; k++) {
-					indices[k] = dv.getUint32(off, true);
-					off += 4;
-				}
-				sels.push({ kind: "idx", indices });
-			} else {
-				sels.push({ kind: "mask", mask: new Uint8Array(buf, off, maskBytes) });
-				off += maskBytes;
-			}
-		}
-		cellEntries.push({ cellChar, locCount, sels });
-	}
+	const { selColors, cellEntries } = decodeSelectionBitmask(bytes);
 	selBitmaskBus.emit(selColors, cellEntries, (ids) => {
 		selectedLocationIds = ids;
 	});

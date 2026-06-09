@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import {
 	getCurrentMap,
@@ -333,14 +333,16 @@ function SetFieldSetup({
 	selectionCount: number;
 	onStart: (patch: Partial<Location>) => void;
 }) {
-	const knownKeys = new Set<string>([
-		...Object.keys(TOP_LEVEL_SET_FIELDS),
-		...Object.keys(getAllFieldDefs()),
-	]);
-	for (const loc of locs) {
-		if (loc.extra) for (const k of Object.keys(loc.extra)) knownKeys.add(k);
-	}
-	const sortedKeys = [...knownKeys].sort();
+	const sortedKeys = useMemo(() => {
+		const known = new Set<string>([
+			...Object.keys(TOP_LEVEL_SET_FIELDS),
+			...Object.keys(getAllFieldDefs()),
+		]);
+		for (const loc of locs) {
+			if (loc.extra) for (const k of Object.keys(loc.extra)) known.add(k);
+		}
+		return [...known].sort();
+	}, [locs]);
 
 	const [key, setKey] = useState("");
 	const [creatingNew, setCreatingNew] = useState(false);

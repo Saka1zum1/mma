@@ -24,6 +24,9 @@ mma.html
 .claude/
 .mcp.json
 
+# Secrets
+.env
+
 # e2e tooling output (scripts/e2e.sh --shard, scripts/e2e-build.sh)
 shard-*.log
 build-e2e.log

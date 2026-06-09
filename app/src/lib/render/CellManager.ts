@@ -17,6 +17,57 @@ export interface SelCellEntry {
 	sels: SelEntry[];
 }
 
+/**
+ * Decode the inline selection-bitmask bytes written by Rust's `serialize_cell_bitmask`
+ * (location_store.rs). Sole reader of that wire format — all format knowledge lives here
+ * and in `applySelectionBitmasks`, which consumes the decoded entries.
+ */
+export function decodeSelectionBitmask(bytes: number[]): {
+	selColors: [number, number, number][];
+	cellEntries: SelCellEntry[];
+} {
+	const buf = new Uint8Array(bytes).buffer;
+	const dv = new DataView(buf);
+	let off = 0;
+	const numSels = dv.getUint8(off);
+	off += 1;
+	const selColors: [number, number, number][] = [];
+	for (let i = 0; i < numSels; i++) {
+		selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);
+		off += 3;
+	}
+	const numCells = dv.getUint8(off);
+	off += 1;
+	const cellEntries: SelCellEntry[] = [];
+	for (let ci = 0; ci < numCells; ci++) {
+		const cellChar = String.fromCharCode(dv.getUint8(off));
+		off += 1;
+		const locCount = dv.getUint32(off, true);
+		off += 4;
+		const maskBytes = Math.ceil(locCount / 8);
+		const sels: SelEntry[] = [];
+		for (let si = 0; si < numSels; si++) {
+			const fmt = dv.getUint8(off);
+			off += 1;
+			if (fmt === 1) {
+				const count = dv.getUint32(off, true);
+				off += 4;
+				const indices = new Uint32Array(count);
+				for (let k = 0; k < count; k++) {
+					indices[k] = dv.getUint32(off, true);
+					off += 4;
+				}
+				sels.push({ kind: "idx", indices });
+			} else {
+				sels.push({ kind: "mask", mask: new Uint8Array(buf, off, maskBytes) });
+				off += maskBytes;
+			}
+		}
+		cellEntries.push({ cellChar, locCount, sels });
+	}
+	return { selColors, cellEntries };
+}
+
 /** The read-only id-membership surface shared by `Set<number>` and `SelectedIds`, for code
  *  that only needs `size` / `has` / iteration over either. */
 export interface ReadonlyIdSet extends Iterable<number> {
@@ -513,8 +564,9 @@ export class CellManager {
 		}
 
 		// Write the new overlay entries. Hot path at scale (select-all hides ~N markers), so
-		// the inner work is inlined (no per-marker closure) and reads/writes go through hoisted
-		// local refs to the typed arrays rather than repeated `this.`/`cb.` property chains.
+		// reads/writes go through hoisted local refs to the typed arrays rather than repeated
+		// `this.`/`cb.` property chains. The idx/mask branches share `write` — a local closure
+		// V8 inlines (per SharedFunctionInfo), with the loop-variant values passed as args.
 		const sp = this.selOverlayPositions;
 		const sc = this.selOverlayColors;
 		const sa = this.selOverlayAngles;
@@ -529,40 +581,29 @@ export class CellManager {
 				const cc = cb.colors, cpos = cb.positions, cang = cb.angles, cids = cb.ids;
 				// Sets the base color transparent (the overlay draws it in the selection color)
 				// and appends an overlay entry, advancing `oi`.
+				const write = (li: number) => {
+					const locId = cids[li];
+					const bw = locId >>> 3, bm = 1 << (locId & 7);
+					if ((bits[bw] & bm) === 0) selCount++;
+					bits[bw] |= bm;
+					const c4 = li * 4;
+					cc[c4] = 0; cc[c4 + 1] = 0; cc[c4 + 2] = 0; cc[c4 + 3] = 0;
+					sp[oi * 2] = cpos[li * 2]; sp[oi * 2 + 1] = cpos[li * 2 + 1];
+					const o4 = oi * 4;
+					sc[o4] = r; sc[o4 + 1] = g; sc[o4 + 2] = b; sc[o4 + 3] = 255;
+					sa[oi] = cang[li];
+					sid[oi] = locId;
+					oi++;
+				};
 				if (sel.kind === "idx") {
 					const idx = sel.indices;
 					for (let k = 0; k < idx.length; k++) {
-						const li = idx[k];
-						if (li >= n) continue;
-						const locId = cids[li];
-						const bw = locId >>> 3, bm = 1 << (locId & 7);
-						if ((bits[bw] & bm) === 0) selCount++;
-						bits[bw] |= bm;
-						const c4 = li * 4;
-						cc[c4] = 0; cc[c4 + 1] = 0; cc[c4 + 2] = 0; cc[c4 + 3] = 0;
-						sp[oi * 2] = cpos[li * 2]; sp[oi * 2 + 1] = cpos[li * 2 + 1];
-						const o4 = oi * 4;
-						sc[o4] = r; sc[o4 + 1] = g; sc[o4 + 2] = b; sc[o4 + 3] = 255;
-						sa[oi] = cang[li];
-						sid[oi] = locId;
-						oi++;
+						if (idx[k] < n) write(idx[k]);
 					}
 				} else {
 					const m = sel.mask;
 					for (let li = 0; li < n; li++) {
-						if (!(m[li >> 3] & (1 << (li & 7)))) continue;
-						const locId = cids[li];
-						const bw = locId >>> 3, bm = 1 << (locId & 7);
-						if ((bits[bw] & bm) === 0) selCount++;
-						bits[bw] |= bm;
-						const c4 = li * 4;
-						cc[c4] = 0; cc[c4 + 1] = 0; cc[c4 + 2] = 0; cc[c4 + 3] = 0;
-						sp[oi * 2] = cpos[li * 2]; sp[oi * 2 + 1] = cpos[li * 2 + 1];
-						const o4 = oi * 4;
-						sc[o4] = r; sc[o4 + 1] = g; sc[o4 + 2] = b; sc[o4 + 3] = 255;
-						sa[oi] = cang[li];
-						sid[oi] = locId;
-						oi++;
+						if (m[li >> 3] & (1 << (li & 7))) write(li);
 					}
 				}
 			}

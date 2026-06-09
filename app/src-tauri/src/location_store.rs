@@ -731,6 +731,17 @@ impl Store {
         locs
     }
 
+    /// Like `collect_all_locations`, optionally restricted to a set of ids.
+    pub(crate) fn collect_scoped(&self, scope: Option<&[u32]>) -> Vec<Location> {
+        match scope {
+            Some(ids) => {
+                let set: std::collections::HashSet<u32> = ids.iter().copied().collect();
+                self.collect_all_locations().into_iter().filter(|l| set.contains(&l.id)).collect()
+            }
+            None => self.collect_all_locations(),
+        }
+    }
+
     fn compute_bounds(&self, scope: Option<&RoaringBitmap>) -> Option<[f64; 4]> {
         let view = self.loc_view();
         let (mut w, mut s, mut e, mut n) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
