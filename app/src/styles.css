@@ -3110,6 +3110,29 @@ summary.button {
 	min-width: 6rem;
 	height: 36px;
 }
+.extra-filter-builder__copy {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.extra-filter-builder__copy button {
+	display: flex;
+	border: none;
+	background: none;
+	padding: 0;
+	cursor: pointer;
+	color: #868e96;
+}
+.extra-filter-builder__copy button:hover:not(:disabled) {
+	color: #343a40;
+}
+.extra-filter-builder__copy button:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.extra-filter-builder__copy svg {
+	fill: currentColor;
+}
 .date-picker__trigger {
 	font: inherit;
 	cursor: pointer;

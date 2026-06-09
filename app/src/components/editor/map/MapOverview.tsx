@@ -45,7 +45,7 @@ import { beginReview } from "@/lib/review/review";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiClose, mdiChevronRight, mdiDotsVertical } from "@mdi/js";
+import { mdiClose, mdiChevronRight, mdiDotsVertical, mdiArrowRight, mdiArrowLeft } from "@mdi/js";
 import { PluginToolbar } from "@/plugins/PluginPanels";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fmt } from "@/lib/util/format";
@@ -1018,6 +1018,26 @@ function FilterForm({
 					showTzLocal={showTzLocal}
 					onYearSelect={handleYearSelect}
 				/>
+			)}
+			{needsValue && isBetween && (
+				<span className="extra-filter-builder__copy">
+					<button
+						type="button"
+						title="Copy to max"
+						disabled={!value}
+						onClick={() => setValue2(value)}
+					>
+						<Icon path={mdiArrowRight} size={12} />
+					</button>
+					<button
+						type="button"
+						title="Copy to min"
+						disabled={!value2}
+						onClick={() => setValue(value2)}
+					>
+						<Icon path={mdiArrowLeft} size={12} />
+					</button>
+				</span>
 			)}
 			{isBetween && (
 				<FilterValueInput
