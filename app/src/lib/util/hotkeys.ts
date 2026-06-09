@@ -57,6 +57,7 @@ export type HotkeyAction =
 	| "panToLocation"
 	| "viewportLock"
 	| "countrySelect"
+	| "toggleSelectOnly"
 	| "quicktag1"
 	| "quicktag2"
 	| "quicktag3"
@@ -306,6 +307,12 @@ const RAW_HOTKEY_DEFS: HotkeyDef[] = [
 		label: "Zoom to selection bounds",
 		group: "Map Navigation",
 		defaultBinding: "Shift+e",
+	},
+	{
+		action: "toggleSelectOnly",
+		label: "Toggle select-only mode (block new locations)",
+		group: "Map Navigation",
+		defaultBinding: "v",
 	},
 	...Array.from({ length: 9 }, (_, i): HotkeyDef => ({
 		action: `quicktag${i + 1}` as HotkeyAction,

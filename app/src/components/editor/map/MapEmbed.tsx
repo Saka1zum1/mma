@@ -252,6 +252,7 @@ interface MapEmbedPrefs {
 	markerOpacity: number;
 	showPerfectScoreCircle: boolean;
 	showPreviews: boolean;
+	selectOnly: boolean;
 }
 
 const DEFAULT_PREFS: MapEmbedPrefs = {
@@ -271,6 +272,7 @@ const DEFAULT_PREFS: MapEmbedPrefs = {
 	markerOpacity: 1,
 	showPerfectScoreCircle: true,
 	showPreviews: false,
+	selectOnly: false,
 };
 
 function FpsCounter() {
@@ -370,6 +372,7 @@ export function MapEmbed() {
 		markerOpacity,
 		showPerfectScoreCircle,
 		showPreviews,
+		selectOnly,
 	} = prefs;
 	const setSvOpacity = pref("svOpacity");
 	const setMarkerOpacity = pref("markerOpacity");
@@ -387,6 +390,9 @@ export function MapEmbed() {
 	const setMarkerStyle = pref("markerStyle");
 	const setShowPerfectScoreCircle = pref("showPerfectScoreCircle");
 	const setShowPreviews = pref("showPreviews");
+	const setSelectOnly = pref("selectOnly");
+	const selectOnlyRef = useRef(selectOnly);
+	selectOnlyRef.current = selectOnly;
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
 	const [mapZoom, setMapZoom] = useState(2);
 	const scoreMaxError = useScoreMaxError();
@@ -945,6 +951,12 @@ export function MapEmbed() {
 				if (getWorkArea() === "plugin") return;
 				if (getWorkArea() === "import") return;
 				if (getWorkArea() === "diff") return;
+				if (selectOnlyRef.current) {
+					if (containerRef.current) {
+						showToast(containerRef.current, "Select-only mode is on.");
+					}
+					return;
+				}
 				const g = gRef.current;
 				if (!g) return;
 				const currentZoom = gMapRef.current?.getZoom() ?? 2;
@@ -1521,6 +1533,9 @@ export function MapEmbed() {
 		if (gm) gm.moveCamera({ zoom: 1 });
 	});
 
+	useHotkey(useBinding("toggleSelectOnly"), () => {
+		setPrefs((p) => ({ ...p, selectOnly: !p.selectOnly }));
+	});
 	useHotkey(useBinding("mapZoomBounds"), () => {
 		cmd.storeBounds(false).then((bounds) => {
 			const gm = gMapRef.current;
@@ -1732,6 +1747,8 @@ export function MapEmbed() {
 							setShowPerfectScoreCircle,
 							showPreviews,
 							setShowPreviews,
+							selectOnly,
+							setSelectOnly,
 						}}
 					/>
 					<div className="map-control sv-opacity-control">

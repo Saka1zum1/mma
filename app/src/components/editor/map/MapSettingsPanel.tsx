@@ -59,6 +59,8 @@ export interface MapSettingsDropdownProps {
 	setShowPerfectScoreCircle: (v: boolean) => void;
 	showPreviews: boolean;
 	setShowPreviews: (v: boolean) => void;
+	selectOnly: boolean;
+	setSelectOnly: (v: boolean) => void;
 }
 
 function SearchRadiusSlider({
@@ -447,6 +449,14 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 								onChange={(e) => s.setShowPreviews(e.target.checked)}
 							/>
 							Show location previews when hovering the map
+						</label>
+						<label className="settings-popup__item">
+							<input
+								type="checkbox"
+								checked={s.selectOnly}
+								onChange={(e) => s.setSelectOnly(e.target.checked)}
+							/>
+							Select-only mode (map clicks never add locations)
 						</label>
 						<label className="settings-popup__item">
 							<input
