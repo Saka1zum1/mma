@@ -29,8 +29,8 @@ export function decodeSelectionBitmask(bytes: number[]): {
 	const buf = new Uint8Array(bytes).buffer;
 	const dv = new DataView(buf);
 	let off = 0;
-	const numSels = dv.getUint8(off);
-	off += 1;
+	const numSels = dv.getUint32(off, true);
+	off += 4;
 	const selColors: [number, number, number][] = [];
 	for (let i = 0; i < numSels; i++) {
 		selColors.push([dv.getUint8(off), dv.getUint8(off + 1), dv.getUint8(off + 2)]);

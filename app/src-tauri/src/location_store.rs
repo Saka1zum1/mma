@@ -60,11 +60,69 @@ fn cell_idx_from_key(key: &str) -> Option<u8> {
     BASE32.iter().position(|&c| c == b).map(|i| i as u8)
 }
 
-/// Serialize one render cell's per-selection bitmasks into a self-describing segment:
-/// `[cellChar:1][locCount:u32 le][ per selection: ceil(n/8) mask bytes ]`.
-/// Bits are indexed by render position within the cell. Pure/read-only, so the
-/// 32 cells can be serialized in parallel.
-fn serialize_cell_bitmask(ci: usize, cr: &CellRender, loc_sets: &[RoaringBitmap]) -> Vec<u8> {
+/// Assemble the selection-bitmask wire buffer shared by sync/delta/rebuild:
+/// `[numSels: u32 le][numSels * RGB][numCells: u8][segments...]`.
+/// The count is u32 so thousands of selections (e.g. shift-selecting many tags)
+/// don't wrap the header and desync the JS parser.
+fn assemble_selection_bitmask<'a>(
+    colors: impl ExactSizeIterator<Item = &'a [u8; 3]>,
+    segments: &[Vec<u8>],
+) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::new();
+    buf.extend_from_slice(&(colors.len() as u32).to_le_bytes());
+    for c in colors {
+        buf.extend_from_slice(c);
+    }
+    buf.push(segments.len() as u8);
+    for seg in segments {
+        buf.extend_from_slice(seg);
+    }
+    buf
+}
+
+/// Route one selection's id-set to per-cell local render indices. Adaptive so the cost
+/// is O(min(set size, render size in scope)) rather than O(render size) per selection:
+/// sparse sets walk their members and probe `id_to_cell_idx`/`id_to_index`; dense sets
+/// (where member-walking would do the same work anyway) scan the cell arrays directly.
+/// `affected` limits the scope to those cells (delta path); `None` = all cells.
+fn selection_cell_indices(
+    render: &RenderState,
+    set: &RoaringBitmap,
+    affected: Option<&HashSet<u8>>,
+) -> [Vec<u32>; 32] {
+    let mut out: [Vec<u32>; 32] = std::array::from_fn(|_| Vec::new());
+    let in_scope = |ci: u8| affected.map_or(true, |a| a.contains(&ci));
+    let scope_size: usize = render.cells.iter().enumerate()
+        .filter(|(ci, _)| in_scope(*ci as u8))
+        .filter_map(|(_, o)| o.as_ref())
+        .map(|cr| cr.id_order.len())
+        .sum();
+    if (set.len() as usize) <= scope_size {
+        for id in set {
+            let Some(&ci) = render.id_to_cell_idx.get(id as usize) else { continue };
+            if ci == 255 || !in_scope(ci) { continue; }
+            let Some(cr) = render.cells[ci as usize].as_ref() else { continue };
+            if let Some(&li) = cr.id_to_index.get(&id) {
+                out[ci as usize].push(li as u32);
+            }
+        }
+        for v in &mut out { v.sort_unstable(); }
+    } else {
+        for (ci, opt) in render.cells.iter().enumerate() {
+            if !in_scope(ci as u8) { continue; }
+            let Some(cr) = opt.as_ref() else { continue };
+            for (li, &id) in cr.id_order.iter().enumerate() {
+                if set.contains(id) { out[ci].push(li as u32); }
+            }
+        }
+    }
+    out
+}
+
+/// Serialize one render cell's segment from pre-routed per-selection indices:
+/// `[cellChar:1][locCount:u32 le][ per selection: fmt byte + payload ]`.
+/// Pure/read-only, so the 32 cells can be serialized in parallel.
+fn serialize_cell_segment(ci: usize, cr: &CellRender, per_sel: &[[Vec<u32>; 32]]) -> Vec<u8> {
     let n = cr.id_order.len();
     let mask_bytes = n.div_ceil(8);
     let mut seg = Vec::new();
@@ -74,19 +132,16 @@ fn serialize_cell_bitmask(ci: usize, cr: &CellRender, loc_sets: &[RoaringBitmap]
     //   1 = index-list: u32 count + count*u32 selected local indices (sparse → O(selected))
     //   0 = bitmask:    mask_bytes raw bits (dense → smaller than an index list)
     // The index-list lets JS rebuild the overlay in O(selected) instead of scanning N bits.
-    for set in loc_sets {
-        let mut indices: Vec<u32> = Vec::new();
-        for (li, &id) in cr.id_order.iter().enumerate() {
-            if set.contains(id) { indices.push(li as u32); }
-        }
+    for sel_cells in per_sel {
+        let indices = &sel_cells[ci];
         if indices.len() * 4 + 4 < mask_bytes {
             seg.push(1u8);
             seg.extend_from_slice(&(indices.len() as u32).to_le_bytes());
-            for idx in &indices { seg.extend_from_slice(&idx.to_le_bytes()); }
+            for idx in indices { seg.extend_from_slice(&idx.to_le_bytes()); }
         } else {
             seg.push(0u8);
             let mut bitmask = vec![0u8; mask_bytes];
-            for &li in &indices { bitmask[li as usize / 8] |= 1 << (li % 8); }
+            for &li in indices { bitmask[li as usize / 8] |= 1 << (li % 8); }
             seg.extend_from_slice(&bitmask);
         }
     }
@@ -512,24 +567,21 @@ impl Store {
         }
 
         let num_sels = self.selections.all.len();
-        // Serialize affected cells in parallel; segments are self-describing so order is irrelevant.
+        // Route selections to per-cell indices (parallel over selections, O(selected)),
+        // then serialize affected cells in parallel; segments are self-describing so
+        // order is irrelevant.
+        let routed: Vec<[Vec<u32>; 32]> = self.selections.loc_sets.par_iter()
+            .map(|set| selection_cell_indices(&self.render, set, Some(affected)))
+            .collect();
         let segments: Vec<Vec<u8>> = self.render.cells.par_iter().enumerate()
             .filter_map(|(ci, opt)| {
                 if !affected.contains(&(ci as u8)) { return None; }
                 let cr = opt.as_ref()?;
-                Some(serialize_cell_bitmask(ci, cr, &self.selections.loc_sets))
+                Some(serialize_cell_segment(ci, cr, &routed))
             })
             .collect();
 
-        let mut buf: Vec<u8> = Vec::new();
-        buf.push(num_sels as u8);
-        for sel in &self.selections.all {
-            buf.extend_from_slice(&sel.color);
-        }
-        buf.push(segments.len() as u8);
-        for seg in &segments {
-            buf.extend_from_slice(seg);
-        }
+        let buf = assemble_selection_bitmask(self.selections.all.iter().map(|s| &s.color), &segments);
 
         log::debug!("[sel-incr] sels={} selected={} affected={} buf={}",
             num_sels, selected_count, affected.len(), buf.len());
@@ -561,24 +613,19 @@ impl Store {
         let selected_count = self.selections.ids.len() as usize;
 
         let num_sels = self.selections.all.len();
-        // Serialize all populated cells in parallel.
+        // Route selections to per-cell indices, then serialize all populated cells in parallel.
+        let routed: Vec<[Vec<u32>; 32]> = self.selections.loc_sets.par_iter()
+            .map(|set| selection_cell_indices(&self.render, set, None))
+            .collect();
         let segments: Vec<Vec<u8>> = self.render.cells.par_iter().enumerate()
             .filter_map(|(ci, opt)| {
                 let cr = opt.as_ref()?;
-                Some(serialize_cell_bitmask(ci, cr, &self.selections.loc_sets))
+                Some(serialize_cell_segment(ci, cr, &routed))
             })
             .collect();
         let num_cells = segments.len();
 
-        let mut buf: Vec<u8> = Vec::new();
-        buf.push(num_sels as u8);
-        for sel in &self.selections.all {
-            buf.extend_from_slice(&sel.color);
-        }
-        buf.push(num_cells as u8);
-        for seg in &segments {
-            buf.extend_from_slice(seg);
-        }
+        let buf = assemble_selection_bitmask(self.selections.all.iter().map(|s| &s.color), &segments);
 
         let bitmask = if num_cells > 0 { Some(buf) } else { None };
 
@@ -2495,8 +2542,6 @@ pub async fn store_sync_selections(
         let mut mgr = state.lock()?;
     let store = mgr.store_for_window(webview.label())?;
 
-        let num_sels = sels.len();
-
         // 1. Resolve each selection directly to a Roaring id-set. Tag leaves hit the
         //    membership index; composites combine natively. (Geometric leaves still scan.)
         let view = store.loc_view();
@@ -2511,24 +2556,20 @@ pub async fn store_sync_selections(
         let counts: Vec<usize> = sel_sets.iter().map(|s| s.len() as usize).collect();
         let selected_count = all_selected.len() as usize;
 
-        // 3. Serialize the per-cell bitmask binary. Cells are independent → parallel.
+        // 3. Route selections to per-cell indices (O(selected), not O(S*N)), then
+        //    serialize the per-cell bitmask binary. Cells are independent → parallel.
+        let routed: Vec<[Vec<u32>; 32]> = sel_sets.par_iter()
+            .map(|set| selection_cell_indices(&store.render, set, None))
+            .collect();
         let segments: Vec<Vec<u8>> = store.render.cells.par_iter().enumerate()
             .filter_map(|(ci, opt)| {
                 let cr = opt.as_ref()?;
-                Some(serialize_cell_bitmask(ci, cr, &sel_sets))
+                Some(serialize_cell_segment(ci, cr, &routed))
             })
             .collect();
         let num_cells = segments.len();
 
-        let mut buf: Vec<u8> = Vec::new();
-        buf.push(num_sels as u8);
-        for sel in &sels {
-            buf.extend_from_slice(&sel.color);
-        }
-        buf.push(num_cells as u8);
-        for seg in &segments {
-            buf.extend_from_slice(seg);
-        }
+        let buf = assemble_selection_bitmask(sels.iter().map(|s| &s.color), &segments);
 
         store.selections.ids = all_selected;
         store.selections.all = sels.iter().enumerate().map(|(i, sel)| {

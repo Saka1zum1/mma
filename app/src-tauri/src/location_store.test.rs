@@ -1630,8 +1630,8 @@ fn add_tag_selection(store: &mut Store, tag_id: u32, color: [u8; 3]) {
 /// Parse the binary bitmask and return the cell chars it contains.
 fn bitmask_cell_chars(buf: &[u8]) -> Vec<char> {
     if buf.is_empty() { return vec![]; }
-    let num_sels = buf[0] as usize;
-    let mut off = 1 + num_sels * 3;
+    let num_sels = u32::from_le_bytes(buf[0..4].try_into().unwrap()) as usize;
+    let mut off = 4 + num_sels * 3;
     let num_cells = buf[off] as usize;
     off += 1;
     let mut chars = Vec::new();
@@ -1641,7 +1641,16 @@ fn bitmask_cell_chars(buf: &[u8]) -> Vec<char> {
         let loc_count = u32::from_le_bytes(buf[off..off+4].try_into().unwrap()) as usize;
         off += 4;
         let mask_bytes = loc_count.div_ceil(8);
-        off += mask_bytes * num_sels;
+        for _ in 0..num_sels {
+            let fmt = buf[off];
+            off += 1;
+            if fmt == 1 {
+                let count = u32::from_le_bytes(buf[off..off+4].try_into().unwrap()) as usize;
+                off += 4 + count * 4;
+            } else {
+                off += mask_bytes;
+            }
+        }
     }
     chars
 }
@@ -1811,33 +1820,44 @@ fn merge_group_applies_and_undo_restores() {
 }
 
 #[test]
-fn serialize_cell_bitmask_adapts_format() {
+fn selection_cell_segment_adapts_format() {
     use roaring::RoaringBitmap;
     use std::collections::HashMap;
 
     // N large enough that a one-element index-list (8 bytes) beats the dense mask.
     let n = 800usize;
-    let cr = CellRender {
+    let mut cells: [Option<CellRender>; 32] = std::array::from_fn(|_| None);
+    cells[0] = Some(CellRender {
         id_order: (0..n as u32).collect(),
-        id_to_index: HashMap::new(),
-    };
+        id_to_index: (0..n as u32).map(|i| (i, i as usize)).collect::<HashMap<_, _>>(),
+    });
+    let render = RenderState { cells, id_to_cell_idx: vec![0u8; n], arrow_style: false };
+    let cr = render.cells[0].as_ref().unwrap();
     // header = 1 base32 byte + 4-byte loc count; per selection a format byte follows.
     let parse_header = |seg: &[u8]| u32::from_le_bytes(seg[1..5].try_into().unwrap());
 
-    // Sparse (one selected id) -> index-list (format byte 1).
+    // Sparse (one selected id) -> routed member-walk -> index-list (format byte 1).
     let mut sparse = RoaringBitmap::new();
     sparse.insert(5);
-    let seg = serialize_cell_bitmask(0, &cr, &[sparse]);
+    let routed = vec![selection_cell_indices(&render, &sparse, None)];
+    let seg = serialize_cell_segment(0, cr, &routed);
     assert_eq!(parse_header(&seg), n as u32);
     assert_eq!(seg[5], 1, "sparse selection should use the index-list format");
     assert_eq!(u32::from_le_bytes(seg[6..10].try_into().unwrap()), 1, "one selected index");
     assert_eq!(u32::from_le_bytes(seg[10..14].try_into().unwrap()), 5, "local index of id 5");
 
-    // Dense (select all) -> bitmask (format byte 0), all bits set.
+    // Dense (select all) -> cell scan -> bitmask (format byte 0), all bits set.
     let dense: RoaringBitmap = (0..n as u32).collect();
-    let seg = serialize_cell_bitmask(0, &cr, &[dense]);
+    let routed = vec![selection_cell_indices(&render, &dense, None)];
+    let seg = serialize_cell_segment(0, cr, &routed);
     let mask_bytes = n.div_ceil(8);
     assert_eq!(seg[5], 0, "select-all should use the dense bitmask format");
     assert_eq!(seg.len(), 5 + 1 + mask_bytes);
     assert!(seg[6..].iter().all(|&b| b == 0xFF), "every bit set");
+
+    // Affected-scope filter: routing for a cell outside the scope yields nothing.
+    let mut other_cell_only = std::collections::HashSet::new();
+    other_cell_only.insert(1u8);
+    let routed = selection_cell_indices(&render, &sparse, Some(&other_cell_only));
+    assert!(routed[0].is_empty(), "out-of-scope cells must not be routed");
 }

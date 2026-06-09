@@ -892,11 +892,11 @@ describe("applySelectionBitmasks", () => {
 
 describe("decodeSelectionBitmask", () => {
 	// Wire format produced by Rust serialize_cell_bitmask (location_store.rs):
-	// u8 numSels; numSels*[r,g,b]; u8 numCells; per cell: u8 cellChar, u32le locCount,
+	// u32le numSels; numSels*[r,g,b]; u8 numCells; per cell: u8 cellChar, u32le locCount,
 	// per sel: u8 fmt (1 = u32le count + count*u32le indices, 0 = ceil(locCount/8) mask bytes).
 	it("decodes colors, idx entries, and mask entries", () => {
 		const bytes = [
-			2, // numSels
+			2, 0, 0, 0, // numSels
 			255, 0, 0, // sel 0 color
 			0, 128, 255, // sel 1 color
 			2, // numCells
@@ -947,7 +947,7 @@ describe("decodeSelectionBitmask", () => {
 		});
 
 		// 1 selection (red), cell "s" locCount=3, idx list [0, 2] -> ids 10 and 30
-		const bytes = [1, 255, 0, 0, 1, 115, 3, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0];
+		const bytes = [1, 0, 0, 0, 255, 0, 0, 1, 115, 3, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0];
 		const { selColors, cellEntries } = decodeSelectionBitmask(bytes);
 		const ids = mgr.applySelectionBitmasks(selColors, cellEntries);
 
