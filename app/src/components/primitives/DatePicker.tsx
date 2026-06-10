@@ -4,6 +4,7 @@ import "react-day-picker/style.css";
 import * as Popover from "@radix-ui/react-popover";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiClose } from "@mdi/js";
+import { dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 
 interface DatePickerProps {
 	mode: "date" | "month";
@@ -59,13 +60,13 @@ function parseToDate(value: string, wallClock?: boolean): Date | null {
 	// unix timestamp
 	const n = Number(value);
 	if (isNaN(n) || value === "") return null;
-	const d = new Date(n * 1000);
 	// In wall-clock mode the epoch encodes the picked numbers as UTC; re-home them
 	// onto a local Date so every local getter below reads the wall-clock value.
 	if (wallClock) {
-		return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes());
+		const p = dateParts(n, true);
+		return new Date(p.y, p.mo, p.d, p.h, p.mi);
 	}
-	return d;
+	return new Date(n * 1000);
 }
 
 function formatDisplay(
@@ -205,7 +206,7 @@ export function DatePicker({
 	// the numbers as a UTC epoch; otherwise as the local-time instant.
 	const encode = useCallback(
 		(y: number, mo: number, da: number, h: number, mi: number) =>
-			Math.floor((wallClock ? Date.UTC(y, mo, da, h, mi) : new Date(y, mo, da, h, mi).getTime()) / 1000),
+			partsToEpoch({ y, mo, d: da, h, mi }, wallClock ?? false),
 		[wallClock],
 	);
 

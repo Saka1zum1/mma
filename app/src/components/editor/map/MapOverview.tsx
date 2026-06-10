@@ -34,7 +34,7 @@ import {
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
-import { groupByField, pickPeriodEnd, hasTimeOfDay, stepFilterWindow } from "@/lib/data/fieldOps";
+import { groupByField, pickPeriodEnd, hasTimeOfDay, stepFilterWindow, dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { useSetting } from "@/store/settings";
 import { cmd } from "@/lib/commands";
 
@@ -926,11 +926,7 @@ function FilterForm({
 		const convert = (v: string): string => {
 			const n = Number(v);
 			if (!v || isNaN(n)) return v;
-			const d = new Date(n * 1000);
-			const ts = checked
-				? Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes())
-				: new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes()).getTime();
-			return String(Math.floor(ts / 1000));
+			return String(partsToEpoch(dateParts(n, !checked), checked));
 		};
 		setValue(convert(value));
 		setValue2(convert(value2));
@@ -945,10 +941,8 @@ function FilterForm({
 				if (isExactDate) {
 					const n = Number(v);
 					if (!isNaN(n) && v !== "") {
-						const d = new Date(n * 1000);
-						return tzLocal
-							? `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
-							: `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+						const p = dateParts(n, tzLocal);
+						return `${String(p.mo + 1).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
 					}
 				}
 				const ym = /^\d{4}-(\d{2})$/.exec(v);
@@ -965,10 +959,7 @@ function FilterForm({
 				if (isExactDate) {
 					const md = /^(\d{2})-(\d{2})$/.exec(v);
 					if (md) {
-						const ts = tzLocal
-							? Date.UTC(yr, Number(md[1]) - 1, Number(md[2]))
-							: new Date(yr, Number(md[1]) - 1, Number(md[2])).getTime();
-						return String(Math.floor(ts / 1000));
+						return String(partsToEpoch({ y: yr, mo: Number(md[1]) - 1, d: Number(md[2]) }, tzLocal));
 					}
 				}
 				if (/^\d{2}$/.test(v)) return `${yr}-${v}`;
@@ -987,10 +978,8 @@ function FilterForm({
 				if (!v) return "";
 				const n = Number(v);
 				if (!isNaN(n) && v !== "") {
-					const d = new Date(n * 1000);
-					return tzLocal
-						? `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`
-						: `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+					const p = dateParts(n, tzLocal);
+					return `${String(p.h).padStart(2, "0")}:${String(p.mi).padStart(2, "0")}`;
 				}
 				return "";
 			};

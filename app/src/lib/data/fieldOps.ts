@@ -339,20 +339,49 @@ function rewriteSelection(
 	return sel;
 }
 
+/** Calendar digits of a timestamp in a clock frame. */
+export interface DateParts {
+	y: number;
+	mo: number; // 0-based, as Date
+	d: number;
+	h: number;
+	mi: number;
+	s: number;
+}
+
+/** Read a Unix-seconds timestamp as calendar digits. `wallClock` = location-timezone
+ *  mode, where the digits are encoded in a UTC frame so they survive unshifted by the
+ *  viewer's timezone; otherwise the viewer's local frame. This pair is the ONLY place
+ *  the frame fork (UTC vs local getters) may exist — never branch on getters elsewhere:
+ *  one wrong getter shifts bounds silently and is invisible on UTC-running CI. */
+export function dateParts(v: number, wallClock: boolean): DateParts {
+	const dt = new Date(v * 1000);
+	return wallClock
+		? { y: dt.getUTCFullYear(), mo: dt.getUTCMonth(), d: dt.getUTCDate(), h: dt.getUTCHours(), mi: dt.getUTCMinutes(), s: dt.getUTCSeconds() }
+		: { y: dt.getFullYear(), mo: dt.getMonth(), d: dt.getDate(), h: dt.getHours(), mi: dt.getMinutes(), s: dt.getSeconds() };
+}
+
+/** Encode calendar digits back to Unix seconds in the given frame. Out-of-range fields
+ *  roll over calendar-aware (e.g. `d + 1` past month end), same as `Date`. */
+export function partsToEpoch(
+	p: { y: number; mo: number; d: number; h?: number; mi?: number; s?: number },
+	wallClock: boolean,
+): number {
+	const { y, mo, d, h = 0, mi = 0, s = 0 } = p;
+	const ms = wallClock ? Date.UTC(y, mo, d, h, mi, s) : new Date(y, mo, d, h, mi, s).getTime();
+	return Math.floor(ms / 1000);
+}
+
 /** A date pick denotes a period, not an instant: a day in date-only mode, a minute in
  *  datetime mode (the picker can't express seconds). Used as an upper bound (or gt/lte
  *  operand) the pick means the period's END, computed calendar-aware (next period start
  *  - 1s) rather than by adding a constant: +86399 is wrong on DST-transition days, and
  *  flooring first makes the expansion idempotent so re-submitting an edited filter
- *  doesn't drift. `wallClock` = location-timezone mode, where the value encodes
- *  wall-clock numbers in a UTC frame (no DST). */
+ *  doesn't drift. */
 export function pickPeriodEnd(v: number, granularity: "day" | "minute", wallClock: boolean): number {
 	if (granularity === "minute") return v - (v % 60) + 59;
-	const d = new Date(v * 1000);
-	const nextDay = wallClock
-		? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)
-		: new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
-	return Math.floor(nextDay / 1000) - 1;
+	const p = dateParts(v, wallClock);
+	return partsToEpoch({ y: p.y, mo: p.mo, d: p.d + 1 }, wallClock) - 1;
 }
 
 /** True when the timestamp carries a time-of-day (is not exactly midnight). A midnight
@@ -360,17 +389,13 @@ export function pickPeriodEnd(v: number, granularity: "day" | "minute", wallCloc
  *  the picker's cleared-time state encodes midnight — so period expansion treats
  *  midnight as "the day" and anything else as "the minute". */
 export function hasTimeOfDay(v: number, wallClock: boolean): boolean {
-	const d = new Date(v * 1000);
-	return wallClock
-		? d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0 || d.getUTCSeconds() !== 0
-		: d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0;
+	const p = dateParts(v, wallClock);
+	return p.h !== 0 || p.mi !== 0 || p.s !== 0;
 }
 
 function addDays(v: number, days: number, wallClock: boolean): number {
-	const d = new Date(v * 1000);
-	return wallClock
-		? Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + days) / 1000)
-		: Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days).getTime() / 1000);
+	const p = dateParts(v, wallClock);
+	return partsToEpoch({ y: p.y, mo: p.mo, d: p.d + days }, wallClock);
 }
 
 /** A between filter is a window; stepping translates the window by its own span

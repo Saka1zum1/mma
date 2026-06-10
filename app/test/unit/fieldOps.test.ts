@@ -13,6 +13,8 @@ import {
 	pickPeriodEnd,
 	hasTimeOfDay,
 	stepFilterWindow,
+	dateParts,
+	partsToEpoch,
 } from "@/lib/data/fieldOps";
 import { buildSelection } from "@/store/selections";
 import type { Location, MapData } from "@/types";
@@ -325,6 +327,26 @@ describe("hasTimeOfDay", () => {
 		// not midnight -> minute grain on resubmit -> floor+59 -> unchanged
 		expect(hasTimeOfDay(end, false)).toBe(true);
 		expect(pickPeriodEnd(end, "minute", false)).toBe(end);
+	});
+});
+
+describe("dateParts / partsToEpoch (wall-clock codec)", () => {
+	it("round-trips whole-second timestamps in both frames", () => {
+		for (const wallClock of [false, true]) {
+			for (const v of [
+				Math.floor(new Date(2024, 5, 3, 14, 5, 7).getTime() / 1000),
+				Math.floor(Date.UTC(2019, 11, 31, 23, 59, 59) / 1000),
+				Math.floor(new Date(2024, 0, 1).getTime() / 1000),
+			]) {
+				expect(partsToEpoch(dateParts(v, wallClock), wallClock)).toBe(v);
+			}
+		}
+	});
+
+	it("wall-clock frame reads the same digits regardless of viewer timezone semantics", () => {
+		const v = Math.floor(Date.UTC(2020, 2, 1, 9, 30) / 1000);
+		const p = dateParts(v, true);
+		expect([p.y, p.mo, p.d, p.h, p.mi]).toEqual([2020, 2, 1, 9, 30]);
 	});
 });
 
