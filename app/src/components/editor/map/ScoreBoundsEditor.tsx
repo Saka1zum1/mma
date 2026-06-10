@@ -17,7 +17,7 @@ function modeOf(bounds: ScoreBounds): Mode {
 	return isWorldBounds(bounds) ? "world" : "fixed";
 }
 
-/** Mirrors original map-making.app "Scoring" section (edit-map modal). */
+/** "Scoring" section of the edit-map modal. */
 export function ScoreBoundsEditor() {
 	const map = useCurrentMap();
 	const bounds: ScoreBounds = map?.meta.scoreBounds ?? "auto";

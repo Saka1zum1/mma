@@ -83,8 +83,8 @@ function uniqueTagName(base: string, existing: Set<string>): string {
 }
 
 // Distance for "Prune duplicates": on a Duplicates selection directly, or an
-// Intersection containing one (original supports both; prune then runs on the
-// intersection's resolved locations).
+// Intersection containing one (prune then runs on the intersection's resolved
+// locations).
 function pruneDistance(selection: Selection): number | null {
 	if (selection.props.type === "Duplicates") return selection.props.distance;
 	if (selection.props.type === "Intersection") {

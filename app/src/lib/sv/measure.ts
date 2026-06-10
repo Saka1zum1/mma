@@ -127,7 +127,7 @@ export function computeScore(
 	return Math.round(5000 * SCORE_BASE ** (distanceMeters / scale));
 }
 
-// --- Score bounds resolution (mirrors original map-making.app score_bounds module) ---
+// --- Score bounds resolution ---
 
 // World bounds constant (ACW): the resolved max-error for the whole world.
 export const WORLD_MAX_ERROR = DEFAULT_MAX_ERROR;
@@ -147,7 +147,7 @@ function haversineKm(a: [number, number], b: [number, number]): number {
 
 /**
  * Resolve a bounding box to its max-error distance, the value fed to `computeScore`.
- * `bbox` is `[minLng, minLat, maxLng, maxLat]` (GeoJSON order). Mirrors original `rd()`.
+ * `bbox` is `[minLng, minLat, maxLng, maxLat]` (GeoJSON order).
  */
 export function bboxToMaxError(bbox: [number, number, number, number]): number {
 	const diagonalKm = haversineKm([bbox[0], bbox[1]], [bbox[2], bbox[3]]);
@@ -156,7 +156,6 @@ export function bboxToMaxError(bbox: [number, number, number, number]): number {
 
 /**
  * Pad a `[minLng, minLat, maxLng, maxLat]` box so it is never degenerate.
- * Mirrors the padding step of the original `Li()`.
  */
 export function padBbox(bbox: [number, number, number, number]): [number, number, number, number] {
 	const pad = 0.01;
@@ -171,7 +170,7 @@ export function padBbox(bbox: [number, number, number, number]): [number, number
 }
 
 /**
- * Bounding box of locations, padded so it is never degenerate. Mirrors original `Li()`.
+ * Bounding box of locations, padded so it is never degenerate.
  * Returns `[minLng, minLat, maxLng, maxLat]`.
  */
 export function locationsBbox(
@@ -202,7 +201,7 @@ export function resolveScoreMaxError(
 	if (bounds === "auto") {
 		return locations.length > 1 ? bboxToMaxError(locationsBbox(locations)) : 25;
 	}
-	// The world map uses the exact ACW constant, mirroring the original's `acw` mode.
+	// The world map uses the exact ACW constant.
 	if (isWorldBounds(bounds)) return WORLD_MAX_ERROR;
 	// Stored bounds are [south, west, north, east] (lat-first); convert to GeoJSON order.
 	const [south, west, north, east] = bounds;

@@ -3,7 +3,7 @@ import type { Location } from "@/types";
 import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 
 /** Pin to pano ID: resolve the pano from coords, then set the LoadAsPanoId flag.
- *  Flags only panos resolved this run, matching the original bulk behavior. */
+ *  Flags only panos resolved this run. */
 export const pinPanoResolver: SvResolver = {
 	id: "pinPano",
 	label: "Pin to pano ID",

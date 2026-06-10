@@ -926,9 +926,9 @@ export async function mergeDuplicates(distance: number) {
 }
 
 /**
- * Prune duplicates within a resolved selection (original-app behavior): keeps the most
- * relevant location per cluster (<= 25m) or thins to enforce spacing (> 25m). Locations
- * tagged "keep pano" get the original's +5 score bonus. Returns the number pruned.
+ * Prune duplicates within a resolved selection: keeps the most relevant location per
+ * cluster (<= 25m) or thins to enforce spacing (> 25m). Locations tagged "keep pano"
+ * get a +5 score bonus. Returns the number pruned.
  */
 export async function pruneDuplicates(props: SelectionProps, distance: number): Promise<number> {
 	if (!currentMap) return 0;

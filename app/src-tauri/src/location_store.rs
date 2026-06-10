@@ -2678,10 +2678,10 @@ pub fn store_merge_duplicates(
     })
 }
 
-/// Prune duplicates among `ids` (a resolved selection) within `distance` metres, matching
-/// the original app: <= 25m keeps the best-scored location per cluster (`keep_tag_ids`
-/// score +5, see selections::prune_score); > 25m thins greedily so no two survivors remain
-/// in range. Informational locations are never pruned. One undoable edit.
+/// Prune duplicates among `ids` (a resolved selection) within `distance` metres:
+/// <= 25m keeps the best-scored location per cluster (`keep_tag_ids` score +5, see
+/// selections::prune_score); > 25m thins greedily so no two survivors remain in
+/// range. Informational locations are never pruned. One undoable edit.
 #[tauri::command]
 #[specta::specta]
 pub fn store_prune_duplicates(

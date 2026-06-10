@@ -73,12 +73,12 @@ fn tag_color_meta(
     converted
 }
 
-/// Export locations as a map-making.app-compatible JSON file.
+/// Export locations as a JSON file.
 ///
 /// Produces `{name, customCoordinates: [...]}` with optional `extra` block
 /// containing tags (with colors as RGB arrays) and field definitions.
 /// Heading of exactly 0 is written as 0.001 when `export_unpanned` is set,
-/// matching the original app's convention for "no heading specified".
+/// the convention for "no heading specified".
 #[tauri::command]
 #[specta::specta]
 pub fn store_export_json(

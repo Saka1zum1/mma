@@ -763,7 +763,7 @@ fn duplicate_groups_empty_when_all_far() {
 }
 
 // -----------------------------------------------------------------------
-// prune_duplicates (original-app semantics)
+// prune_duplicates
 // -----------------------------------------------------------------------
 
 fn no_keep() -> HashSet<u32> { HashSet::new() }

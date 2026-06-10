@@ -747,9 +747,8 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
     groups
 }
 
-/// Prune duplicates, faithful to the original app's `pruneDuplicates`. `locs` is the
-/// resolved selection; informational locations are never pruned and never count as
-/// neighbours. Returns ids to remove.
+/// Prune duplicates. `locs` is the resolved selection; informational locations are
+/// never pruned and never count as neighbours. Returns ids to remove.
 /// - <= 25 m: relevance prune — each radius cluster keeps its best-scored location
 ///   (see [`prune_score`]; tie: oldest `created_at`, then lowest id), rest pruned.
 /// - > 25 m: greedy max-thinning — repeatedly drop the location with the most in-range
@@ -766,7 +765,7 @@ pub fn prune_duplicates(locs: &[Location], distance_m: f64, keep_tag_ids: &HashS
     }
 }
 
-/// Original relevance score: +1 pano, +1 per tag, +1 LoadAsPanoId, +5 keep-tag, +1 nonzero heading.
+/// Relevance score: +1 pano, +1 per tag, +1 LoadAsPanoId, +5 keep-tag, +1 nonzero heading.
 fn prune_score(l: &Location, keep_tag_ids: &HashSet<u32>) -> i64 {
     let mut s = l.tags.len() as i64;
     if l.pano_id.is_some() { s += 1; }
@@ -822,9 +821,9 @@ fn prune_thinning(locs: &[&Location], distance_m: f64) -> Vec<u32> {
     let neighbors = neighbor_lists(locs, distance_m);
     let mut deg: Vec<u32> = neighbors.iter().map(|v| v.len() as u32).collect();
     let mut removed = vec![false; n];
-    // Stack with O(1) membership removal, mirroring the original's structure: all nodes
-    // at the current max degree are processed before recounting; a neighbour of a removed
-    // node leaves the stack even if it still sits at max degree.
+    // Stack with O(1) membership removal: all nodes at the current max degree are
+    // processed before recounting; a neighbour of a removed node leaves the stack
+    // even if it still sits at max degree.
     let mut stack: Vec<usize> = Vec::new();
     let mut pos: HashMap<usize, usize> = HashMap::new();
     loop {
