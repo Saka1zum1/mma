@@ -538,8 +538,14 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info })
+                // updater dumps full release manifests at debug
+                .level_for("tauri_plugin_updater", log::LevelFilter::Info)
                 .max_file_size(2_000_000)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                // default targets include LogDir{None} ("Map Making App.log"); .target()
+                // appends, so without clearing, every line is written to two files
+                .clear_targets()
+                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::LogDir { file_name: Some("mma".to_string()) },
                 ))
