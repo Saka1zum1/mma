@@ -49,7 +49,6 @@ pub(crate) fn replay_deltas(deltas: &[(Vec<Location>, Vec<Location>)]) -> BTreeM
 /// ancestor delta files from genesis forward. Locations are keyed (and thus
 /// returned sorted) by id.
 pub(crate) fn materialize_commit(
-    app: &tauri::AppHandle,
     conn: &Connection,
     map_id: &str,
     commit_id: &str,
@@ -57,7 +56,7 @@ pub(crate) fn materialize_commit(
     let chain = commit_chain(conn, commit_id)?;
     let mut deltas = Vec::with_capacity(chain.len());
     for id in &chain {
-        let path = fast_io::commit_delta_path(app, map_id, id)?;
+        let path = fast_io::commit_delta_path(map_id, id)?;
         let batch = fast_io::read_arrow_ipc(&path)?;
         deltas.push(arrow_bridge::batch_to_delta(&batch));
     }

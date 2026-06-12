@@ -14,7 +14,6 @@ use roaring::RoaringBitmap;
 use arrow::array::RecordBatch;
 use arrow::datatypes::SchemaRef;
 use rayon::prelude::*;
-use tauri::Manager;
 
 use crate::arrow_bridge;
 use crate::arrow_bridge::{col_id, col_lat, col_lng, col_heading};
@@ -1223,12 +1222,10 @@ pub struct LocationPatch {
 #[tauri::command]
 #[specta::specta]
 pub async fn store_open_map(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     map_id: String,
 ) -> AppResult<StoreStatus> {
-    let app2 = app.clone();
     let map_id2 = map_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -1237,8 +1234,8 @@ pub async fn store_open_map(
 
         let (batch, mmap_handle, delta) = {
             let t0 = Instant::now();
-            let path = fast_io::arrow_path(&app2, &map_id2)?;
-            let delta_path = fast_io::arrow_delta_path(&app2, &map_id2)?;
+            let path = fast_io::arrow_path(&map_id2)?;
+            let delta_path = fast_io::arrow_delta_path(&map_id2)?;
 
             // The base file holds the last committed state -- it may not exist at all for a
             // map with no commits, whose data then lives entirely in the delta sidecar. Mmap
@@ -1283,7 +1280,7 @@ pub async fn store_open_map(
                 ).unwrap();
                 drop(batch);
                 drop(mmap_handle);
-                let path = fast_io::arrow_path(&app2, &map_id2)?;
+                let path = fast_io::arrow_path(&map_id2)?;
                 fast_io::write_arrow_ipc(&path, &sorted_batch)?;
                 drop(sorted_batch);
                 let (b, h) = fast_io::read_arrow_ipc_mmap(&path)?;
@@ -1373,7 +1370,6 @@ pub async fn store_open_map(
 #[tauri::command]
 #[specta::specta]
 pub fn store_close_map(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
 ) -> AppResult<()> {
@@ -1397,7 +1393,7 @@ pub fn store_close_map(
             // at the last committed state -- it only advances on commit/checkout -- so the
             // overlay remains a faithful changeset-since-last-commit for the next commit.
             let bytes = overlay_delta_bytes(&store)?;
-            let path = fast_io::arrow_delta_path(&app, &map_id)?;
+            let path = fast_io::arrow_delta_path(&map_id)?;
             fast_io::atomic_write(&path, |mut file| {
                 use std::io::Write;
                 file.write_all(&bytes).map_err(AppError::from)
@@ -1750,7 +1746,6 @@ pub fn store_get_locations_by_ids(
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_all_locations(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
 ) -> AppResult<String> {
@@ -1758,7 +1753,7 @@ pub fn store_get_all_locations(
         let locs = store.collect_all_locations();
         let map_id_str = store.map_id.as_deref().unwrap_or("default");
         let json = serde_json::to_vec(&locs)?;
-        let path = app.path().temp_dir()?
+        let path = fast_io::temp_dir()?
             .join(format!("mma_all_{map_id_str}.json"));
         std::fs::write(&path, &json)?;
         Ok(path.to_string_lossy().into_owned())
@@ -1772,7 +1767,6 @@ pub fn store_get_all_locations(
 #[tauri::command]
 #[specta::specta]
 pub fn store_country_distribution(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     level: String,
@@ -1783,7 +1777,7 @@ pub fn store_country_distribution(
         view.for_each(|row| v.push((row.lat(), row.lng())));
         v
     });
-    crate::borders::tally_countries(&app, &level, &coords)
+    crate::borders::tally_countries(&level, &coords)
 }
 
 /// Msgpack-serialized overlay state written to the `.delta` file on autosave.
@@ -1809,8 +1803,8 @@ fn overlay_delta_bytes(store: &Store) -> AppResult<Vec<u8>> {
 /// Read a map's full current state from disk = base file + uncommitted delta sidecar.
 /// Use this for consumers (e.g. export) that read a map's locations directly off disk,
 /// since the base file alone is only the last committed state.
-pub(crate) fn read_full_state_from_disk(app: &tauri::AppHandle, map_id: &str) -> AppResult<Vec<Location>> {
-    let path = fast_io::arrow_path(app, map_id)?;
+pub(crate) fn read_full_state_from_disk(map_id: &str) -> AppResult<Vec<Location>> {
+    let path = fast_io::arrow_path(map_id)?;
     // The base file may not exist for a map with no commits -- its data then lives entirely
     // in the delta sidecar, so always apply the delta below regardless.
     let mut locs = if path.exists() {
@@ -1819,7 +1813,7 @@ pub(crate) fn read_full_state_from_disk(app: &tauri::AppHandle, map_id: &str) ->
         Vec::new()
     };
 
-    let delta_path = fast_io::arrow_delta_path(app, map_id)?;
+    let delta_path = fast_io::arrow_delta_path(map_id)?;
     if delta_path.exists() {
         if let Ok(data) = std::fs::read(&delta_path) {
             if let Ok(delta) = rmp_serde::from_slice::<DeltaOverlay>(&data) {
@@ -1918,13 +1912,11 @@ pub(crate) fn reconcile_tags_by_name(
 #[tauri::command]
 #[specta::specta]
 pub fn store_copy_locations_to_map(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     target_map_id: String,
     ids: Vec<u32>,
 ) -> AppResult<CopyToMapResult> {
-    use tauri::Emitter;
     let _t = std::time::Instant::now();
     let conn = fast_io::open_db()?;
     let target_name: String = conn.query_row(
@@ -1986,7 +1978,6 @@ pub fn store_copy_locations_to_map(
             target.tags.dirty = false;
             let t_save = std::time::Instant::now();
             persist_dirty_inner(
-                &app,
                 &target_map_id,
                 Some(overlay_delta_bytes(target)?),
                 target.alive_count,
@@ -1994,14 +1985,14 @@ pub fn store_copy_locations_to_map(
             )?;
             log::debug!("[cmd] store_copy_locations_to_map open-target scan={}ms add={}ms save={}ms total={}ms",
                 scan_ms, add_ms, t_save.elapsed().as_millis(), _t.elapsed().as_millis());
-            let _ = app.emit("store-external-mutation", &target_map_id);
+            crate::emit_event("store-external-mutation", &target_map_id);
         }
         return Ok(CopyToMapResult { copied, skipped, target_name });
     }
 
     // Target closed: append to the uncommitted delta sidecar (what autosave writes).
     let t_read = std::time::Instant::now();
-    let existing = read_full_state_from_disk(&app, &target_map_id)?;
+    let existing = read_full_state_from_disk(&target_map_id)?;
     let read_ms = t_read.elapsed().as_millis();
     let (mut fresh, skipped) = split_new_locations(sources, &existing);
     let copied = fresh.len() as u32;
@@ -2037,7 +2028,7 @@ pub fn store_copy_locations_to_map(
             loc.id = id;
         }
         let t_save = std::time::Instant::now();
-        let delta_path = fast_io::arrow_delta_path(&app, &target_map_id)?;
+        let delta_path = fast_io::arrow_delta_path(&target_map_id)?;
         let mut delta: DeltaOverlay = if delta_path.exists() {
             rmp_serde::from_slice(&std::fs::read(&delta_path)?)?
         } else {
@@ -2047,7 +2038,6 @@ pub fn store_copy_locations_to_map(
         let bytes = rmp_serde::to_vec_named(&delta)?;
         let alive = existing.len() + copied as usize;
         persist_dirty_inner(
-            &app,
             &target_map_id,
             Some(bytes),
             alive,
@@ -2062,14 +2052,13 @@ pub fn store_copy_locations_to_map(
 /// Write a map's dirty state: delta sidecar (if any), location count, and tags
 /// JSON (if any). Sync core shared by `store_save_dirty` and cross-map copy.
 pub(crate) fn persist_dirty_inner(
-    app: &tauri::AppHandle,
     map_id: &str,
     delta_data: Option<Vec<u8>>,
     alive: usize,
     tags_json: Option<String>,
 ) -> AppResult<()> {
     if let Some(delta_data) = delta_data {
-        let path = fast_io::arrow_delta_path(app, map_id)?;
+        let path = fast_io::arrow_delta_path(map_id)?;
         fast_io::atomic_write(&path, |mut file| {
             use std::io::Write;
             file.write_all(&delta_data).map_err(AppError::from)
@@ -2090,7 +2079,6 @@ pub(crate) fn persist_dirty_inner(
 #[tauri::command]
 #[specta::specta]
 pub async fn store_save_dirty(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
 ) -> AppResult<SaveResult> {
@@ -2123,9 +2111,8 @@ pub async fn store_save_dirty(
     };
 
     let size = delta_data.as_ref().map_or(0, |d| d.len());
-    let app2 = app.clone();
     let map_id2 = map_id.clone();
-    tokio::task::spawn_blocking(move || persist_dirty_inner(&app2, &map_id2, delta_data, alive, tags_json))
+    tokio::task::spawn_blocking(move || persist_dirty_inner(&map_id2, delta_data, alive, tags_json))
         .await??;
 
     log::debug!("[cmd] store_save_dirty total={}ms size={}", _t.elapsed().as_millis(), size);
@@ -2214,11 +2201,11 @@ fn load_edit_history_inner(map_id: &str) -> AppResult<(Vec<EditEntry>, Vec<EditE
 }
 
 /// Write the current batch to disk as Arrow IPC and remove any stale delta file.
-pub(crate) fn save_arrow_inner(store: &Store, app: &tauri::AppHandle, map_id: &str) -> AppResult<()> {
+pub(crate) fn save_arrow_inner(store: &Store, map_id: &str) -> AppResult<()> {
     if let Some(ref batch) = store.batch {
-        let path = fast_io::arrow_path(app, map_id)?;
+        let path = fast_io::arrow_path(map_id)?;
         fast_io::write_arrow_ipc(&path, batch)?;
-        let delta = fast_io::arrow_delta_path(app, map_id)?;
+        let delta = fast_io::arrow_delta_path(map_id)?;
         let _ = std::fs::remove_file(delta);
     }
     Ok(())
@@ -2233,24 +2220,23 @@ pub(crate) fn save_arrow_inner(store: &Store, app: &tauri::AppHandle, map_id: &s
 #[tauri::command]
 #[specta::specta]
 pub fn store_bake_and_save(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
 ) -> AppResult<()> {
     with_store!(webview, state, |store| {
         let map_id = store.map_id.clone().ok_or("no map open")?;
-        bake_and_save_inner(store, &app, &map_id)
+        bake_and_save_inner(store, &map_id)
     })
 }
 
 /// Bake the overlay into the base batch, write it to disk, re-mmap, and flush
 /// location count + dirty tags. The reusable core of `store_bake_and_save`, also
 /// used by `store_commit_and_bake` so a commit builds the batch only once.
-pub(crate) fn bake_and_save_inner(store: &mut Store, app: &tauri::AppHandle, map_id: &str) -> AppResult<()> {
+pub(crate) fn bake_and_save_inner(store: &mut Store, map_id: &str) -> AppResult<()> {
     store.bake_overlay();
     store.mmap_handle = None;
-    save_arrow_inner(store, app, map_id)?;
-    let path = fast_io::arrow_path(app, map_id)?;
+    save_arrow_inner(store, map_id)?;
+    let path = fast_io::arrow_path(map_id)?;
     if path.exists() {
         let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
         store.batch = Some(batch);
@@ -2428,7 +2414,6 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
 #[tauri::command]
 #[specta::specta]
 pub async fn store_fill_render_file(
-    app: tauri::AppHandle,
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     req: RenderRequest,
@@ -2441,7 +2426,7 @@ pub async fn store_fill_render_file(
         let mid = store.map_id.clone().unwrap_or_default();
         (build_cell_render_buffers(store, &req), mid)
     };
-    let path = app.path().temp_dir()?
+    let path = fast_io::temp_dir()?
         .join(format!("mma_render_{map_id_str}.bin"));
     tokio::task::spawn_blocking(move || {
         std::fs::write(&path, &buf)?;

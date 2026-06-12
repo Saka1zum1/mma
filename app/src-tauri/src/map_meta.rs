@@ -444,20 +444,20 @@ pub fn store_create_map(
 /// commits) and Arrow base/delta/commit files on disk.
 #[tauri::command]
 #[specta::specta]
-pub fn store_delete_map(app: tauri::AppHandle, id: String) -> AppResult<()> {
+pub fn store_delete_map(id: String) -> AppResult<()> {
     let conn = fast_io::open_db()?;
     conn.execute("DELETE FROM maps WHERE id = ?1", params![id])?;
     conn.execute("DELETE FROM edit_history WHERE map_id = ?1", params![id])?;
     conn.execute("DELETE FROM commits WHERE map_id = ?1", params![id])?;
 
-    if let Ok(path) = fast_io::arrow_path(&app, &id) {
+    if let Ok(path) = fast_io::arrow_path(&id) {
         let _ = std::fs::remove_file(path);
     }
-    if let Ok(path) = fast_io::arrow_delta_path(&app, &id) {
+    if let Ok(path) = fast_io::arrow_delta_path(&id) {
         let _ = std::fs::remove_file(path);
     }
     // Remove the map's per-commit VCS delta files.
-    if let Ok(dir) = fast_io::arrow_dir(&app) {
+    if let Ok(dir) = fast_io::arrow_dir() {
         let _ = std::fs::remove_dir_all(dir.join("commits").join(&id));
     }
     Ok(())

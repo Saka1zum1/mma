@@ -16,7 +16,6 @@ use serde_json::Value;
 use uuid::Uuid;
 use crate::util::{now_iso, now_unix};
 
-use tauri::Emitter;
 use crate::arrow_bridge;
 use crate::fast_io;
 use crate::location_store;
@@ -530,7 +529,7 @@ fn read_single_json(path: &str) -> AppResult<Vec<(String, String)>> {
 
 /// Persist a parsed map as a new database entry + Arrow IPC file.
 /// Assigns sequential u32 location IDs starting at 1.
-fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap) -> AppResult<ImportedMapInfo> {
+fn write_map_to_db(conn: &Connection, mut map: ParsedMap) -> AppResult<ImportedMapInfo> {
     let map_id = Uuid::new_v4().to_string();
     let now = now_iso();
     let loc_count = map.locations.len() as u32;
@@ -548,7 +547,7 @@ fn write_map_to_db(conn: &Connection, app: &tauri::AppHandle, mut map: ParsedMap
     }
 
     let batch = arrow_bridge::locations_to_batch(&map.locations);
-    let arrow_path = fast_io::arrow_path(app, &map_id)?;
+    let arrow_path = fast_io::arrow_path(&map_id)?;
     fast_io::write_arrow_ipc(&arrow_path, &batch)?;
 
     let tx = conn.unchecked_transaction()?;
@@ -630,12 +629,10 @@ pub struct ImportProgress {
 #[tauri::command]
 #[specta::specta]
 pub async fn bulk_import_confirm(
-    app: tauri::AppHandle,
     path: String,
     selected_indices: Vec<u32>,
 ) -> AppResult<Vec<ImportedMapInfo>> {
     let main_path = fast_io::db_path()?;
-    let app_handle = app.clone();
 
     tokio::task::spawn_blocking(move || {
         let all_maps = {
@@ -668,8 +665,8 @@ pub async fn bulk_import_confirm(
         let mut results = Vec::with_capacity(parsed_maps.len());
         for (i, map) in parsed_maps.into_iter().enumerate() {
             let map_name = map.name.clone();
-            let info = write_map_to_db(&conn, &app_handle, map)?;
-            let _ = app_handle.emit("bulk-import-progress", ImportProgress {
+            let info = write_map_to_db(&conn, map)?;
+            crate::emit_event("bulk-import-progress", ImportProgress {
                 current: (i + 1) as u32,
                 total,
                 map_name,

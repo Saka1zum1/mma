@@ -61,7 +61,6 @@ pub struct CommitDelta {
 #[tauri::command]
 #[specta::specta]
 pub fn store_create_commit(
-    app: tauri::AppHandle,
     state: State<'_, StoreState>,
     map_id: String,
     message: Option<String>,
@@ -103,7 +102,7 @@ pub fn store_create_commit(
         Some(d) => d,
         None => {
             let parent_state = match &parent_id {
-                Some(p) => vcs_delta::materialize_commit(&app, &conn, &map_id, p)?,
+                Some(p) => vcs_delta::materialize_commit(&conn, &map_id, p)?,
                 None => std::collections::BTreeMap::new(),
             };
             vcs_delta::diff_states(&parent_state, &current_fallback)
@@ -120,7 +119,7 @@ pub fn store_create_commit(
 
     // 5. Write the delta file, then record the commit row.
     let batch = arrow_bridge::delta_to_batch(&created, &removed);
-    let path = fast_io::commit_delta_path(&app, &map_id, &id)?;
+    let path = fast_io::commit_delta_path(&map_id, &id)?;
     fast_io::write_arrow_ipc(&path, &batch)?;
 
     conn.execute(
@@ -151,7 +150,6 @@ pub fn store_create_commit(
 #[tauri::command]
 #[specta::specta]
 pub fn store_commit_and_bake(
-    app: tauri::AppHandle,
     state: State<'_, StoreState>,
     map_id: String,
     message: Option<String>,
@@ -183,7 +181,7 @@ pub fn store_commit_and_bake(
         };
 
         // Build the canonical full batch ONCE (bake), write the base, re-mmap, flush tags.
-        crate::location_store::bake_and_save_inner(store, &app, &map_id)?;
+        crate::location_store::bake_and_save_inner(store, &map_id)?;
 
         store.edits.undo.clear();
         store.edits.redo.clear();
@@ -197,7 +195,7 @@ pub fn store_commit_and_bake(
         format!("{}\n{}\n{}", parent_id.as_deref().unwrap_or(""), now, nonce).as_bytes(),
     );
 
-    let path = fast_io::commit_delta_path(&app, &map_id, &id)?;
+    let path = fast_io::commit_delta_path(&map_id, &id)?;
     let (added, removed_n, modified) = match pre_bake {
         Some((created, removed, a, r, m)) => {
             fast_io::write_arrow_ipc(&path, &arrow_bridge::delta_to_batch(&created, &removed))?;
@@ -207,7 +205,7 @@ pub fn store_commit_and_bake(
             // Genesis: the commit's full state == the base file we just wrote. Store the
             // delta as a snapshot by copying the base (one serialization, not two);
             // batch_to_delta reads a 12-column snapshot as all-created.
-            let base_path = fast_io::arrow_path(&app, &map_id)?;
+            let base_path = fast_io::arrow_path(&map_id)?;
             std::fs::copy(&base_path, &path)?;
             (location_count, 0, 0)
         }
@@ -272,20 +270,19 @@ pub fn store_list_commits(
 #[tauri::command]
 #[specta::specta]
 pub fn store_checkout_commit(
-    app: tauri::AppHandle,
     map_id: String,
     commit_id: String,
 ) -> AppResult<()> {
     let conn = fast_io::open_db()?;
-    let materialized = vcs_delta::materialize_commit(&app, &conn, &map_id, &commit_id)?;
+    let materialized = vcs_delta::materialize_commit(&conn, &map_id, &commit_id)?;
     // BTreeMap yields ascending id order, satisfying the sorted-id invariant the
     // base batch requires.
     let locs: Vec<Location> = materialized.into_values().collect();
     let batch = arrow_bridge::locations_to_batch(&locs);
 
-    let path = fast_io::arrow_path(&app, &map_id)?;
+    let path = fast_io::arrow_path(&map_id)?;
     fast_io::write_arrow_ipc(&path, &batch)?;
-    let delta = fast_io::arrow_delta_path(&app, &map_id)?;
+    let delta = fast_io::arrow_delta_path(&map_id)?;
     let _ = std::fs::remove_file(delta);
 
     log::info!(
@@ -301,11 +298,10 @@ pub fn store_checkout_commit(
 #[tauri::command]
 #[specta::specta]
 pub fn store_get_commit_delta(
-    app: tauri::AppHandle,
     map_id: String,
     commit_id: String,
 ) -> AppResult<CommitDelta> {
-    let path = fast_io::commit_delta_path(&app, &map_id, &commit_id)?;
+    let path = fast_io::commit_delta_path(&map_id, &commit_id)?;
     let batch = fast_io::read_arrow_ipc(&path)?;
     let (created, removed) = arrow_bridge::batch_to_delta(&batch);
     Ok(CommitDelta { created, removed })

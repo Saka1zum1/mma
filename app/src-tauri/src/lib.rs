@@ -29,6 +29,19 @@ mod vcs_delta;
 #[cfg(feature = "web-serve")]
 pub mod serve;
 
+/// App handle, captured once in `setup()`. Private: the only capability exposed is
+/// event emission via [`emit_event`], so commands don't carry an `AppHandle`
+/// parameter just to emit.
+static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// Emit an app-wide event to all windows. No-op before setup completes.
+pub(crate) fn emit_event(event: &str, payload: impl serde::Serialize + Clone) {
+    use tauri::Emitter;
+    if let Some(app) = APP_HANDLE.get() {
+        let _ = app.emit(event, payload);
+    }
+}
+
 /// Write arbitrary text content to a named temp file (`mma_{name}`). Returns the path.
 /// Used by JS to pass large payloads via file instead of IPC serialization.
 #[tauri::command]
@@ -49,17 +62,15 @@ fn read_file(path: String) -> AppResult<String> {
 /// Return the platform-specific app data directory path (e.g., `%LOCALAPPDATA%/app.map-making.local`).
 #[tauri::command]
 #[specta::specta]
-fn get_app_data_dir(app: tauri::AppHandle) -> AppResult<String> {
-    app.path().app_data_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .map_err(AppError::from)
+fn get_app_data_dir() -> AppResult<String> {
+    fast_io::app_data_dir().map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Open the app data directory in the OS file explorer.
 #[tauri::command]
 #[specta::specta]
-fn open_data_folder(app: tauri::AppHandle) -> AppResult<()> {
-    let dir = app.path().app_data_dir()?;
+fn open_data_folder() -> AppResult<()> {
+    let dir = fast_io::app_data_dir()?;
     #[cfg(target_os = "windows")]
     { std::process::Command::new("explorer").arg(&dir).spawn()?; }
     #[cfg(target_os = "macos")]
@@ -82,8 +93,8 @@ struct PluginManifest {
 /// Scan the `plugins/` directory under app data and return manifests for all installed plugins.
 #[tauri::command]
 #[specta::specta]
-fn list_user_plugins(app: tauri::AppHandle) -> Vec<PluginManifest> {
-    let dir = match app.path().app_data_dir() {
+fn list_user_plugins() -> Vec<PluginManifest> {
+    let dir = match fast_io::app_data_dir() {
         Ok(d) => d.join("plugins"),
         Err(_) => return vec![],
     };
@@ -132,9 +143,9 @@ fn validate_plugin_id(id: &str) -> AppResult<()> {
 /// Fetches `manifest.json` and the main JS file specified in the manifest.
 #[tauri::command]
 #[specta::specta]
-fn install_plugin(app: tauri::AppHandle, id: String) -> AppResult<PluginManifest> {
+fn install_plugin(id: String) -> AppResult<PluginManifest> {
     validate_plugin_id(&id)?;
-    let dir = app.path().app_data_dir()?.join("plugins").join(&id);
+    let dir = fast_io::app_data_dir()?.join("plugins").join(&id);
     std::fs::create_dir_all(&dir)?;
 
     let manifest_url = format!("{PLUGIN_REPO_BASE}/{id}/manifest.json");
@@ -171,9 +182,9 @@ fn install_plugin(app: tauri::AppHandle, id: String) -> AppResult<PluginManifest
 /// Remove a plugin by deleting its directory from the local plugins folder.
 #[tauri::command]
 #[specta::specta]
-fn uninstall_plugin(app: tauri::AppHandle, id: String) -> AppResult<()> {
+fn uninstall_plugin(id: String) -> AppResult<()> {
     validate_plugin_id(&id)?;
-    let dir = app.path().app_data_dir()?.join("plugins").join(&id);
+    let dir = fast_io::app_data_dir()?.join("plugins").join(&id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
     }
@@ -555,8 +566,9 @@ pub fn run() {
         .plugin(iframe_theme::plugin())
         .setup(|app| {
             let t = std::time::Instant::now();
-            fast_io::init_db_path(app.handle())?;
-            fast_io::run_migrations(app.handle())?;
+            let _ = APP_HANDLE.set(app.handle().clone());
+            fast_io::init_paths(app.handle())?;
+            fast_io::run_migrations()?;
             log::info!("[startup] migrations: {}ms", t.elapsed().as_millis());
 
             #[cfg(desktop)]
