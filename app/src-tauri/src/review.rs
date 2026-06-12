@@ -11,7 +11,7 @@
 
 use crate::types::AppResult;
 use rusqlite::Connection;
-use crate::fast_io;
+use crate::storage;
 use crate::util::now_iso;
 
 /// A review session as returned to the frontend. `order`/`reviewed` are decoded from the
@@ -196,31 +196,31 @@ pub(crate) fn delete(conn: &Connection, id: &str) -> AppResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub fn store_review_create(session: ReviewCreate) -> AppResult<ReviewSession> {
-    create(&fast_io::open_db()?, session)
+    create(&storage::open_db()?, session)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn store_review_get(map_id: String, source_key: String) -> AppResult<Option<ReviewSession>> {
-    get(&fast_io::open_db()?, &map_id, &source_key)
+    get(&storage::open_db()?, &map_id, &source_key)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn store_review_list(map_id: String, status: Option<String>) -> AppResult<Vec<ReviewSession>> {
-    list(&fast_io::open_db()?, &map_id, status.as_deref())
+    list(&storage::open_db()?, &map_id, status.as_deref())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn store_review_update(update: ReviewUpdate) -> AppResult<()> {
-    self::update(&fast_io::open_db()?, update)
+    self::update(&storage::open_db()?, update)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn store_review_delete(id: String) -> AppResult<()> {
-    delete(&fast_io::open_db()?, &id)
+    delete(&storage::open_db()?, &id)
 }
 
 #[cfg(test)]

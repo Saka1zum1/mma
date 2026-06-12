@@ -364,7 +364,7 @@ fn load_dataset(level: &str) -> AppResult<()> {
     let data = if level == "light" {
         include_str!("../../public/borders.json").to_string()
     } else {
-        let path = crate::fast_io::app_data_dir()?
+        let path = crate::storage::app_data_dir()?
             .join("borders")
             .join(format!("borders-{level}.json"));
         std::fs::read_to_string(&path)
@@ -392,7 +392,7 @@ fn validate_border_level(level: &str) -> AppResult<()> {
 pub fn check_border_file(level: String) -> AppResult<bool> {
     if level == "light" { return Ok(true); }
     validate_border_level(&level)?;
-    let path = crate::fast_io::app_data_dir()?
+    let path = crate::storage::app_data_dir()?
         .join("borders")
         .join(format!("borders-{level}.json"));
     Ok(path.exists())
@@ -403,7 +403,7 @@ pub fn check_border_file(level: String) -> AppResult<bool> {
 pub fn download_border_file(level: String) -> AppResult<()> {
     validate_border_level(&level)?;
     if level == "light" { return Ok(()); }
-    let dir = crate::fast_io::app_data_dir()?
+    let dir = crate::storage::app_data_dir()?
         .join("borders");
     std::fs::create_dir_all(&dir)?;
     let url = format!(

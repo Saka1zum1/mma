@@ -7,7 +7,7 @@
 use crate::types::{AppError, AppResult};
 use tauri::Manager;
 
-mod fast_io;
+mod storage;
 mod iframe_theme;
 mod types;
 mod util;
@@ -63,14 +63,14 @@ fn read_file(path: String) -> AppResult<String> {
 #[tauri::command]
 #[specta::specta]
 fn get_app_data_dir() -> AppResult<String> {
-    fast_io::app_data_dir().map(|p| p.to_string_lossy().into_owned())
+    storage::app_data_dir().map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Open the app data directory in the OS file explorer.
 #[tauri::command]
 #[specta::specta]
 fn open_data_folder() -> AppResult<()> {
-    let dir = fast_io::app_data_dir()?;
+    let dir = storage::app_data_dir()?;
     #[cfg(target_os = "windows")]
     { std::process::Command::new("explorer").arg(&dir).spawn()?; }
     #[cfg(target_os = "macos")]
@@ -94,7 +94,7 @@ struct PluginManifest {
 #[tauri::command]
 #[specta::specta]
 fn list_user_plugins() -> Vec<PluginManifest> {
-    let dir = match fast_io::app_data_dir() {
+    let dir = match storage::app_data_dir() {
         Ok(d) => d.join("plugins"),
         Err(_) => return vec![],
     };
@@ -145,7 +145,7 @@ fn validate_plugin_id(id: &str) -> AppResult<()> {
 #[specta::specta]
 fn install_plugin(id: String) -> AppResult<PluginManifest> {
     validate_plugin_id(&id)?;
-    let dir = fast_io::app_data_dir()?.join("plugins").join(&id);
+    let dir = storage::app_data_dir()?.join("plugins").join(&id);
     std::fs::create_dir_all(&dir)?;
 
     let manifest_url = format!("{PLUGIN_REPO_BASE}/{id}/manifest.json");
@@ -184,7 +184,7 @@ fn install_plugin(id: String) -> AppResult<PluginManifest> {
 #[specta::specta]
 fn uninstall_plugin(id: String) -> AppResult<()> {
     validate_plugin_id(&id)?;
-    let dir = fast_io::app_data_dir()?.join("plugins").join(&id);
+    let dir = storage::app_data_dir()?.join("plugins").join(&id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
     }
@@ -567,8 +567,8 @@ pub fn run() {
         .setup(|app| {
             let t = std::time::Instant::now();
             let _ = APP_HANDLE.set(app.handle().clone());
-            fast_io::init_paths(app.handle())?;
-            fast_io::run_migrations()?;
+            storage::init_paths(app.handle())?;
+            storage::run_migrations()?;
             log::info!("[startup] migrations: {}ms", t.elapsed().as_millis());
 
             #[cfg(desktop)]

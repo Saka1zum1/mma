@@ -11,7 +11,7 @@ use rusqlite::params;
 use tauri::State;
 
 use crate::arrow_bridge;
-use crate::fast_io;
+use crate::storage;
 use crate::location_store::StoreState;
 use crate::types::Location;
 use crate::util::{now_iso, sha256_hex};
@@ -66,7 +66,7 @@ pub fn store_create_commit(
     message: Option<String>,
 ) -> AppResult<String> {
     let _t = std::time::Instant::now();
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
 
     // 1. Parent = current HEAD commit.
     let parent_id: Option<String> = conn
@@ -119,8 +119,8 @@ pub fn store_create_commit(
 
     // 5. Write the delta file, then record the commit row.
     let batch = arrow_bridge::delta_to_batch(&created, &removed);
-    let path = fast_io::commit_delta_path(&map_id, &id)?;
-    fast_io::write_arrow_ipc(&path, &batch)?;
+    let path = storage::commit_delta_path(&map_id, &id)?;
+    storage::write_arrow_ipc(&path, &batch)?;
 
     conn.execute(
         "INSERT INTO commits (id, map_id, parent_id, message, location_count, created_at, tree_hash, added, removed, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -155,7 +155,7 @@ pub fn store_commit_and_bake(
     message: Option<String>,
 ) -> AppResult<String> {
     let _t = std::time::Instant::now();
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
 
     let parent_id: Option<String> = conn
         .query_row(
@@ -195,17 +195,17 @@ pub fn store_commit_and_bake(
         format!("{}\n{}\n{}", parent_id.as_deref().unwrap_or(""), now, nonce).as_bytes(),
     );
 
-    let path = fast_io::commit_delta_path(&map_id, &id)?;
+    let path = storage::commit_delta_path(&map_id, &id)?;
     let (added, removed_n, modified) = match pre_bake {
         Some((created, removed, a, r, m)) => {
-            fast_io::write_arrow_ipc(&path, &arrow_bridge::delta_to_batch(&created, &removed))?;
+            storage::write_arrow_ipc(&path, &arrow_bridge::delta_to_batch(&created, &removed))?;
             (a, r, m)
         }
         None => {
             // Genesis: the commit's full state == the base file we just wrote. Store the
             // delta as a snapshot by copying the base (one serialization, not two);
             // batch_to_delta reads a 12-column snapshot as all-created.
-            let base_path = fast_io::arrow_path(&map_id)?;
+            let base_path = storage::arrow_path(&map_id)?;
             std::fs::copy(&base_path, &path)?;
             (location_count, 0, 0)
         }
@@ -233,7 +233,7 @@ pub fn store_commit_and_bake(
 pub fn store_list_commits(
     map_id: String,
 ) -> AppResult<Vec<CommitInfo>> {
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     let mut stmt = conn
         .prepare(
             "SELECT id, map_id, parent_id, message, tree_hash, added, removed, modified, location_count, created_at FROM commits WHERE map_id = ?1 ORDER BY created_at DESC, rowid DESC",
@@ -273,16 +273,16 @@ pub fn store_checkout_commit(
     map_id: String,
     commit_id: String,
 ) -> AppResult<()> {
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     let materialized = vcs_delta::materialize_commit(&conn, &map_id, &commit_id)?;
     // BTreeMap yields ascending id order, satisfying the sorted-id invariant the
     // base batch requires.
     let locs: Vec<Location> = materialized.into_values().collect();
     let batch = arrow_bridge::locations_to_batch(&locs);
 
-    let path = fast_io::arrow_path(&map_id)?;
-    fast_io::write_arrow_ipc(&path, &batch)?;
-    let delta = fast_io::arrow_delta_path(&map_id)?;
+    let path = storage::arrow_path(&map_id)?;
+    storage::write_arrow_ipc(&path, &batch)?;
+    let delta = storage::arrow_delta_path(&map_id)?;
     let _ = std::fs::remove_file(delta);
 
     log::info!(
@@ -301,8 +301,8 @@ pub fn store_get_commit_delta(
     map_id: String,
     commit_id: String,
 ) -> AppResult<CommitDelta> {
-    let path = fast_io::commit_delta_path(&map_id, &commit_id)?;
-    let batch = fast_io::read_arrow_ipc(&path)?;
+    let path = storage::commit_delta_path(&map_id, &commit_id)?;
+    let batch = storage::read_arrow_ipc(&path)?;
     let (created, removed) = arrow_bridge::batch_to_delta(&batch);
     Ok(CommitDelta { created, removed })
 }

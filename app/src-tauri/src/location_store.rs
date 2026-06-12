@@ -17,7 +17,7 @@ use rayon::prelude::*;
 
 use crate::arrow_bridge;
 use crate::arrow_bridge::{col_id, col_lat, col_lng, col_heading};
-use crate::fast_io;
+use crate::storage;
 use crate::map_meta;
 use crate::types::{Location, Tag, LocationFlags};
 use crate::util;
@@ -240,7 +240,7 @@ pub struct Store {
     pub(crate) map_id: Option<String>,
     // batch is declared before mmap_handle so it drops first (columns reference the mmap).
     pub(crate) batch: Option<RecordBatch>,
-    mmap_handle: Option<fast_io::MmapHandle>,
+    mmap_handle: Option<storage::MmapHandle>,
     next_id: u32,
     version: u64,
     pub(crate) alive_count: usize,
@@ -1234,15 +1234,15 @@ pub async fn store_open_map(
 
         let (batch, mmap_handle, delta) = {
             let t0 = Instant::now();
-            let path = fast_io::arrow_path(&map_id2)?;
-            let delta_path = fast_io::arrow_delta_path(&map_id2)?;
+            let path = storage::arrow_path(&map_id2)?;
+            let delta_path = storage::arrow_delta_path(&map_id2)?;
 
             // The base file holds the last committed state -- it may not exist at all for a
             // map with no commits, whose data then lives entirely in the delta sidecar. Mmap
             // the base zero-copy and leave it untouched; load the delta into the overlay
             // regardless of whether a base file exists (never folded into the base).
             let (batch, handle) = if path.exists() {
-                let (b, h) = fast_io::read_arrow_ipc_mmap(&path)?;
+                let (b, h) = storage::read_arrow_ipc_mmap(&path)?;
                 log::debug!("[store_open] mmap_read={}ms rows={}", t0.elapsed().as_millis(), b.num_rows());
                 (b, Some(h))
             } else {
@@ -1280,10 +1280,10 @@ pub async fn store_open_map(
                 ).unwrap();
                 drop(batch);
                 drop(mmap_handle);
-                let path = fast_io::arrow_path(&map_id2)?;
-                fast_io::write_arrow_ipc(&path, &sorted_batch)?;
+                let path = storage::arrow_path(&map_id2)?;
+                storage::write_arrow_ipc(&path, &sorted_batch)?;
                 drop(sorted_batch);
-                let (b, h) = fast_io::read_arrow_ipc_mmap(&path)?;
+                let (b, h) = storage::read_arrow_ipc_mmap(&path)?;
                 log::info!("[store_open] migration complete, re-mmap'd sorted file");
                 (b, Some(h))
             }
@@ -1319,7 +1319,7 @@ pub async fn store_open_map(
     let (alive, tag_counts) = store.count_tags();
     store.alive_count = alive;
     {
-        let conn = fast_io::open_db()?;
+        let conn = storage::open_db()?;
         conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2",
             rusqlite::params![alive, map_id])?;
         let mut tags = read_tags_json(&conn, &map_id);
@@ -1393,14 +1393,14 @@ pub fn store_close_map(
             // at the last committed state -- it only advances on commit/checkout -- so the
             // overlay remains a faithful changeset-since-last-commit for the next commit.
             let bytes = overlay_delta_bytes(&store)?;
-            let path = fast_io::arrow_delta_path(&map_id)?;
-            fast_io::atomic_write(&path, |mut file| {
+            let path = storage::arrow_delta_path(&map_id)?;
+            storage::atomic_write(&path, |mut file| {
                 use std::io::Write;
                 file.write_all(&bytes).map_err(AppError::from)
             })?;
         }
         let count = store.alive_count;
-        let conn = fast_io::open_db()?;
+        let conn = storage::open_db()?;
         conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2", rusqlite::params![count, map_id])?;
         if store.tags.dirty {
             write_tags_json(&conn, &map_id, &store.tags.all)?;
@@ -1435,7 +1435,7 @@ pub(crate) fn apply_field_defs(
     result: &mut MutationResult,
 ) {
     if let Some(map_id) = &store.map_id {
-        if let Ok(conn) = fast_io::open_db() {
+        if let Ok(conn) = storage::open_db() {
             let _ = map_meta::persist_field_defs(&conn, map_id, &new_defs);
         }
     }
@@ -1753,7 +1753,7 @@ pub fn store_get_all_locations(
         let locs = store.collect_all_locations();
         let map_id_str = store.map_id.as_deref().unwrap_or("default");
         let json = serde_json::to_vec(&locs)?;
-        let path = fast_io::temp_dir()?
+        let path = storage::temp_dir()?
             .join(format!("mma_all_{map_id_str}.json"));
         std::fs::write(&path, &json)?;
         Ok(path.to_string_lossy().into_owned())
@@ -1804,16 +1804,16 @@ fn overlay_delta_bytes(store: &Store) -> AppResult<Vec<u8>> {
 /// Use this for consumers (e.g. export) that read a map's locations directly off disk,
 /// since the base file alone is only the last committed state.
 pub(crate) fn read_full_state_from_disk(map_id: &str) -> AppResult<Vec<Location>> {
-    let path = fast_io::arrow_path(map_id)?;
+    let path = storage::arrow_path(map_id)?;
     // The base file may not exist for a map with no commits -- its data then lives entirely
     // in the delta sidecar, so always apply the delta below regardless.
     let mut locs = if path.exists() {
-        arrow_bridge::batch_to_locations(&fast_io::read_arrow_ipc(&path)?)
+        arrow_bridge::batch_to_locations(&storage::read_arrow_ipc(&path)?)
     } else {
         Vec::new()
     };
 
-    let delta_path = fast_io::arrow_delta_path(map_id)?;
+    let delta_path = storage::arrow_delta_path(map_id)?;
     if delta_path.exists() {
         if let Ok(data) = std::fs::read(&delta_path) {
             if let Ok(delta) = rmp_serde::from_slice::<DeltaOverlay>(&data) {
@@ -1918,7 +1918,7 @@ pub fn store_copy_locations_to_map(
     ids: Vec<u32>,
 ) -> AppResult<CopyToMapResult> {
     let _t = std::time::Instant::now();
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     let target_name: String = conn.query_row(
         "SELECT name FROM maps WHERE id = ?1",
         [&target_map_id],
@@ -2028,7 +2028,7 @@ pub fn store_copy_locations_to_map(
             loc.id = id;
         }
         let t_save = std::time::Instant::now();
-        let delta_path = fast_io::arrow_delta_path(&target_map_id)?;
+        let delta_path = storage::arrow_delta_path(&target_map_id)?;
         let mut delta: DeltaOverlay = if delta_path.exists() {
             rmp_serde::from_slice(&std::fs::read(&delta_path)?)?
         } else {
@@ -2058,13 +2058,13 @@ pub(crate) fn persist_dirty_inner(
     tags_json: Option<String>,
 ) -> AppResult<()> {
     if let Some(delta_data) = delta_data {
-        let path = fast_io::arrow_delta_path(map_id)?;
-        fast_io::atomic_write(&path, |mut file| {
+        let path = storage::arrow_delta_path(map_id)?;
+        storage::atomic_write(&path, |mut file| {
             use std::io::Write;
             file.write_all(&delta_data).map_err(AppError::from)
         })?;
     }
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2",
         rusqlite::params![alive, map_id])?;
     if let Some(tags_json) = tags_json {
@@ -2140,7 +2140,7 @@ pub fn store_get_summary(
 
 /// Persist undo/redo stacks to SQLite as msgpack blobs, capped at MAX_UNDO_ENTRIES.
 fn save_edit_history_inner(map_id: &str, undo: &[EditEntry], redo: &[EditEntry]) -> AppResult<()> {
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     let undo_capped = if undo.len() > MAX_UNDO_ENTRIES { &undo[undo.len() - MAX_UNDO_ENTRIES..] } else { undo };
     let redo_capped = if redo.len() > MAX_UNDO_ENTRIES { &redo[redo.len() - MAX_UNDO_ENTRIES..] } else { redo };
     let undo_bytes = rmp_serde::to_vec_named(undo_capped)?;
@@ -2173,7 +2173,7 @@ pub(crate) fn seed_next_id(base_max: u32, adds: &[Location], undo: &[EditEntry],
 
 /// Load undo/redo stacks from SQLite. Returns empty stacks if no history exists.
 fn load_edit_history_inner(map_id: &str) -> AppResult<(Vec<EditEntry>, Vec<EditEntry>)> {
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     let result = conn.query_row(
         "SELECT undo_stack, redo_stack FROM edit_history WHERE map_id = ?1",
         [map_id],
@@ -2203,9 +2203,9 @@ fn load_edit_history_inner(map_id: &str) -> AppResult<(Vec<EditEntry>, Vec<EditE
 /// Write the current batch to disk as Arrow IPC and remove any stale delta file.
 pub(crate) fn save_arrow_inner(store: &Store, map_id: &str) -> AppResult<()> {
     if let Some(ref batch) = store.batch {
-        let path = fast_io::arrow_path(map_id)?;
-        fast_io::write_arrow_ipc(&path, batch)?;
-        let delta = fast_io::arrow_delta_path(map_id)?;
+        let path = storage::arrow_path(map_id)?;
+        storage::write_arrow_ipc(&path, batch)?;
+        let delta = storage::arrow_delta_path(map_id)?;
         let _ = std::fs::remove_file(delta);
     }
     Ok(())
@@ -2236,14 +2236,14 @@ pub(crate) fn bake_and_save_inner(store: &mut Store, map_id: &str) -> AppResult<
     store.bake_overlay();
     store.mmap_handle = None;
     save_arrow_inner(store, map_id)?;
-    let path = fast_io::arrow_path(map_id)?;
+    let path = storage::arrow_path(map_id)?;
     if path.exists() {
-        let (batch, handle) = fast_io::read_arrow_ipc_mmap(&path)?;
+        let (batch, handle) = storage::read_arrow_ipc_mmap(&path)?;
         store.batch = Some(batch);
         store.mmap_handle = Some(handle);
     }
     let count = store.batch.as_ref().map_or(0, |b| b.num_rows());
-    let conn = fast_io::open_db()?;
+    let conn = storage::open_db()?;
     conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2", rusqlite::params![count, map_id])?;
     if store.tags.dirty {
         write_tags_json(&conn, map_id, &store.tags.all)?;
@@ -2426,7 +2426,7 @@ pub async fn store_fill_render_file(
         let mid = store.map_id.clone().unwrap_or_default();
         (build_cell_render_buffers(store, &req), mid)
     };
-    let path = fast_io::temp_dir()?
+    let path = storage::temp_dir()?
         .join(format!("mma_render_{map_id_str}.bin"));
     tokio::task::spawn_blocking(move || {
         std::fs::write(&path, &buf)?;

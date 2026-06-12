@@ -6,7 +6,7 @@
 
 use crate::types::AppResult;
 use rusqlite::params_from_iter;
-use crate::fast_io;
+use crate::storage;
 
 /// A panorama visit record as returned to the frontend.
 #[derive(serde::Serialize, specta::Type)]
@@ -111,7 +111,7 @@ const MAX_SEEN: i64 = 10_000;
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_write(entry: SeenWriteEntry) -> AppResult<()> {
-    let db = fast_io::open_db()?;
+    let db = storage::open_db()?;
 
     db.execute(
         "INSERT INTO seen (pano_id, lat, lng, heading, pitch, zoom, entered_at, map_id, location_id, country_code, address, thumbnail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -143,7 +143,7 @@ pub fn store_seen_list(
     offset: u32,
     filter: Option<SeenFilter>,
 ) -> AppResult<Vec<SeenEntry>> {
-    let db = fast_io::open_db()?;
+    let db = storage::open_db()?;
     let (where_clause, mut params) = build_where_clause(&filter);
 
     let sql = format!(
@@ -185,7 +185,7 @@ pub fn store_seen_list(
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_count(filter: Option<SeenFilter>) -> AppResult<u32> {
-    let db = fast_io::open_db()?;
+    let db = storage::open_db()?;
     let (where_clause, params) = build_where_clause(&filter);
 
     let sql = format!("SELECT COUNT(*) FROM seen{}", where_clause);
@@ -202,7 +202,7 @@ pub fn store_seen_count(filter: Option<SeenFilter>) -> AppResult<u32> {
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_countries() -> AppResult<Vec<String>> {
-    let db = fast_io::open_db()?;
+    let db = storage::open_db()?;
     let mut stmt = db
         .prepare("SELECT DISTINCT country_code FROM seen WHERE country_code IS NOT NULL ORDER BY country_code")?;
 
@@ -222,7 +222,7 @@ pub fn store_seen_countries() -> AppResult<Vec<String>> {
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_maps() -> AppResult<Vec<SeenMapInfo>> {
-    let db = fast_io::open_db()?;
+    let db = storage::open_db()?;
     let mut stmt = db
         .prepare(
             "SELECT DISTINCT s.map_id AS id, COALESCE(m.name, s.map_id) AS name \
@@ -249,7 +249,7 @@ pub fn store_seen_maps() -> AppResult<Vec<SeenMapInfo>> {
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_clear() -> AppResult<()> {
-    let db = fast_io::open_db()?;
+    let db = storage::open_db()?;
     db.execute("DELETE FROM seen", [])?;
     Ok(())
 }

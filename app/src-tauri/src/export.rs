@@ -4,7 +4,7 @@
 
 use crate::types::{AppError, AppResult};
 use std::io::Write;
-use crate::fast_io;
+use crate::storage;
 use crate::location_store::StoreState;
 use crate::types::LocationFlags;
 use crate::util::hex_to_rgb;
@@ -241,7 +241,7 @@ pub async fn store_export_bulk_zip() -> AppResult<String> {
     let path = tokio::task::spawn_blocking(move || {
         use std::io::Cursor;
 
-        let conn = fast_io::open_db()?;
+        let conn = storage::open_db()?;
         let mut stmt = conn.prepare("SELECT id, name, folder, tags, extra FROM maps")?;
         let maps: Vec<(String, String, Option<String>, String, String)> = stmt.query_map([], |row| {
             Ok((

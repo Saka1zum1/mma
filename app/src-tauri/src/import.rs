@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::util::{now_iso, now_unix};
 
 use crate::arrow_bridge;
-use crate::fast_io;
+use crate::storage;
 use crate::location_store;
 use crate::types::{Tag, Location, LocationFlags};
 
@@ -547,8 +547,8 @@ fn write_map_to_db(conn: &Connection, mut map: ParsedMap) -> AppResult<ImportedM
     }
 
     let batch = arrow_bridge::locations_to_batch(&map.locations);
-    let arrow_path = fast_io::arrow_path(&map_id)?;
-    fast_io::write_arrow_ipc(&arrow_path, &batch)?;
+    let arrow_path = storage::arrow_path(&map_id)?;
+    storage::write_arrow_ipc(&arrow_path, &batch)?;
 
     let tx = conn.unchecked_transaction()?;
 
@@ -632,7 +632,7 @@ pub async fn bulk_import_confirm(
     path: String,
     selected_indices: Vec<u32>,
 ) -> AppResult<Vec<ImportedMapInfo>> {
-    let main_path = fast_io::db_path()?;
+    let main_path = storage::db_path()?;
 
     tokio::task::spawn_blocking(move || {
         let all_maps = {

@@ -495,5 +495,5 @@ fn write_fixstr(out: &mut Vec<u8>, s: &str) {
 }
 
 #[cfg(test)]
-#[path = "fast_io.test.rs"]
+#[path = "storage.test.rs"]
 mod tests;
