@@ -4332,6 +4332,12 @@ body {
 	position: relative;
 	min-width: 0;
 }
+/* The map surface should never show a focus ring on click */
+.map-embed .gm-style:focus,
+.map-embed .gm-style *:focus,
+.map-embed canvas:focus {
+	outline: none !important;
+}
 .map-embed .loading {
 	color: #000;
 	width: max-content;
