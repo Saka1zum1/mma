@@ -5,6 +5,8 @@ import { cameraTypeFromHeight, fetchSvMetadata } from "@/lib/sv/svMeta";
 import { LocationFlag, hasLoadAsPanoId, createLocation } from "@/types";
 import type { Location } from "@/types";
 import { toast } from "@/lib/util/toast";
+import { runConcurrent } from "@/lib/util/concurrent";
+import { batchUpdateLocations } from "@/store/useMapStore";
 
 export const SV_SEARCH_RADIUS = 50;
 
@@ -94,8 +96,6 @@ export async function resolvePanoIds(
 	const { concurrency = 128, batchSize = 200, signal, onProgress } = opts;
 	const result: ResolvePanoResult = { resolved: [], failed: [] };
 	if (!google) return result;
-	const { runConcurrent } = await import("@/lib/util/concurrent");
-	const { batchUpdateLocations } = await import("@/store/useMapStore");
 
 	for (let i = 0; i < locations.length; i += batchSize) {
 		signal?.throwIfAborted();

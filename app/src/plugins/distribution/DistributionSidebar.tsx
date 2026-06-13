@@ -4,6 +4,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft } from "@mdi/js";
 import { cmd } from "@/lib/commands";
 import { getSettings } from "@/store/settings";
+import { fetchAllLocations } from "@/store/useMapStore";
 import "./distribution.css";
 
 type Source = "coords" | "metadata";
@@ -57,7 +58,6 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 	const refresh = useCallback(async () => {
 		const map = MMA.getCurrentMap();
 		if (!map) return;
-		const { fetchAllLocations } = await import("@/store/useMapStore");
 		const locs = await fetchAllLocations();
 		setTotal(locs.length);
 

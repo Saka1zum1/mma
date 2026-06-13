@@ -18,6 +18,8 @@ import {
 	setSelectionColors,
 	addTagToLocations,
 	createTags,
+	fetchLocationsByIds,
+	batchUpdateLocations,
 	selectDuplicates,
 	selectFilter,
 	reorderSelection,
@@ -70,7 +72,6 @@ async function fitSelectionBounds(map: google.maps.Map, selection: Selection) {
 	}
 	if ((selection.count ?? 0) === 0) return;
 	const ids = await cmd.storeResolveSelection(selection.props);
-	const { fetchLocationsByIds } = await import("@/store/useMapStore");
 	const locs = await fetchLocationsByIds(ids);
 	const bounds = new google.maps.LatLngBounds();
 	for (const loc of locs) bounds.extend({ lat: loc.lat, lng: loc.lng });
@@ -162,9 +163,6 @@ function ApplyFieldAsTagsDialog({
 
 	const handleApply = async () => {
 		if (!field || !projection || !widthValid) return;
-		const { fetchLocationsByIds, createTags, batchUpdateLocations } = await import(
-			"@/store/useMapStore"
-		);
 		const ids = await cmd.storeResolveSelection({ type: "Everything" });
 		if (ids.length === 0) return;
 		const locs = await fetchLocationsByIds(ids);

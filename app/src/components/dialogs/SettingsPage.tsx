@@ -36,6 +36,7 @@ import {
 	PREVIEW_ASPECT_RATIOS,
 } from "@/store/settings";
 import { formatBinding, buildComboString } from "@/lib/hooks/useHotkey";
+import { cmd } from "@/lib/commands";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
 
@@ -780,7 +781,6 @@ function BorderDetailSection() {
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
-			const { cmd } = await import("@/lib/commands");
 			const [m, h] = await Promise.all([
 				cmd.checkBorderFile("medium").catch(() => false),
 				cmd.checkBorderFile("heavy").catch(() => false),
@@ -806,7 +806,6 @@ function BorderDetailSection() {
 		}
 		setDownloading(level);
 		try {
-			const { cmd } = await import("@/lib/commands");
 			await cmd.downloadBorderFile(level);
 			if (level === "medium") setMediumReady(true);
 			else setHeavyReady(true);
@@ -949,10 +948,7 @@ function AdvancedTab() {
 					</button>
 					<button
 						className="button"
-						onClick={async () => {
-							const { cmd } = await import("@/lib/commands");
-							await cmd.openDataFolder();
-						}}
+						onClick={() => cmd.openDataFolder()}
 					>
 						Open data folder
 					</button>

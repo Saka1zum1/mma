@@ -4,6 +4,7 @@ import { selectPolygon } from "@/store/useMapStore";
 import { getBinding } from "@/lib/util/hotkeys";
 import { parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
 import { getSettings } from "@/store/settings";
+import { cmd } from "@/lib/commands";
 
 export function useCountrySelect() {
 	useEffect(() => {
@@ -48,7 +49,6 @@ export function useCountrySelect() {
 			if (!held) return false;
 			const { borderDetail } = getSettings();
 			(async () => {
-				const { cmd } = await import("@/lib/commands");
 				const geometry = await cmd.borderLookup(lat, lng, borderDetail);
 				if (geometry) selectPolygon(geometry, false);
 			})();

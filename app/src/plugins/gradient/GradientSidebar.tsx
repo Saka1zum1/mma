@@ -5,6 +5,7 @@ import type { ExtraFieldDef } from "@/bindings.gen";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { compareNatural, bucketize } from "@/lib/util/util";
 import { gradientColor, isNumericField, fieldScale } from "./gradientMath";
+import { fetchAllLocations } from "@/store/useMapStore";
 import "./gradient.css";
 
 interface GradientPreset {
@@ -98,7 +99,6 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 		if (!fieldOpt || !map) return;
 		setApplying(true);
 		try {
-			const { fetchAllLocations } = await import("@/store/useMapStore");
 			const locs = await fetchAllLocations();
 
 			// Collect values
