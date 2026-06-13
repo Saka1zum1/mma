@@ -40,7 +40,18 @@ export function SuggestInput<T>({
 	pickOnEnter?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
+	const [highlight, setHighlight] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const listRef = useRef<HTMLOListElement>(null);
+
+	useEffect(() => {
+		setHighlight(0);
+	}, [suggestions]);
+
+	useEffect(() => {
+		if (!open) return;
+		listRef.current?.children[highlight]?.scrollIntoView({ block: "nearest" });
+	}, [highlight, open]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -78,10 +89,18 @@ export function SuggestInput<T>({
 				}}
 				onFocus={() => suggestions.length > 0 && setOpen(true)}
 				onKeyDown={(e) => {
+					if (e.key === "ArrowDown" && open && suggestions.length > 0) {
+						e.preventDefault();
+						setHighlight((h) => Math.min(h + 1, suggestions.length - 1));
+					}
+					if (e.key === "ArrowUp" && open && suggestions.length > 0) {
+						e.preventDefault();
+						setHighlight((h) => Math.max(h - 1, 0));
+					}
 					if (e.key === "Enter" && open) {
 						if (pickOnEnter && suggestions.length > 0) {
 							e.preventDefault();
-							pick(suggestions[0]);
+							pick(suggestions[Math.min(highlight, suggestions.length - 1)]);
 						} else {
 							setOpen(false);
 						}
@@ -92,10 +111,15 @@ export function SuggestInput<T>({
 					}
 				}}
 			/>
-			<ol className={listClassName} hidden={!open || suggestions.length === 0} style={listStyle}>
-				{suggestions.map((item) => (
-					<li key={getKey(item)}>
-						<button type="button" className={itemClassName} onClick={() => pick(item)}>
+			<ol ref={listRef} className={listClassName} hidden={!open || suggestions.length === 0} style={listStyle}>
+				{suggestions.map((item, i) => (
+					<li key={getKey(item)} aria-selected={i === highlight}>
+						<button
+							type="button"
+							className={itemClassName}
+							onMouseMove={() => setHighlight(i)}
+							onClick={() => pick(item)}
+						>
 							{renderItem(item)}
 						</button>
 					</li>
