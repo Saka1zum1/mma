@@ -200,25 +200,7 @@ export function MapEmbed() {
 		showPreviews,
 		selectOnly,
 	} = prefs;
-	const setSvOpacity = pref("svOpacity");
-	const setMarkerOpacity = pref("markerOpacity");
-	const setSvColor = pref("svColor");
-	const setShowLabels = pref("showLabels");
-	const setShowTerrain = pref("showTerrain");
-	const setSvPanoramas = pref("svPanoramas");
-	const setSvCoverageType = pref("svCoverageType");
-	const setSvThickness = pref("svThickness");
-	const setSvBlobby = pref("svBlobby");
-	const setBoldCountryBorders = pref("boldCountryBorders");
-	const setBoldSubdivisionBorders = pref("boldSubdivisionBorders");
-	const setMapStyleName = pref("mapStyleName");
-	const setMapType = pref("mapType");
-	const setMarkerStyle = pref("markerStyle");
-	const setShowPerfectScoreCircle = pref("showPerfectScoreCircle");
-	const setShowPreviews = pref("showPreviews");
-	const setSelectOnly = pref("selectOnly");
-	// The one genuinely-local mirror: selectOnly lives in component prefs state
-	// (no store getter), but handleClick must read the live value.
+	// handleClick needs the live value; prefs state has no store getter.
 	const selectOnlyRef = useRef(selectOnly);
 	selectOnlyRef.current = selectOnly;
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
@@ -1424,29 +1406,29 @@ export function MapEmbed() {
 					<MapTypeDropdown
 						layerConfig={{
 							basemap: mapType,
-							setBasemap: setMapType,
+							setBasemap: pref("mapType"),
 							labels: showLabels,
-							setLabels: setShowLabels,
+							setLabels: pref("showLabels"),
 							supportsLabels: mapType !== "osm",
 							terrain: showTerrain,
-							setTerrain: setShowTerrain,
+							setTerrain: pref("showTerrain"),
 							supportsTerrain: mapType === "map" || mapType === "satellite",
 							streetViewPanoramas: svPanoramas,
-							setStreetViewPanoramas: setSvPanoramas,
+							setStreetViewPanoramas: pref("svPanoramas"),
 							streetViewCoverageType: svCoverageType,
-							setStreetViewCoverageType: setSvCoverageType,
+							setStreetViewCoverageType: pref("svCoverageType"),
 							svColor,
-							setSvColor,
+							setSvColor: pref("svColor"),
 							streetViewCoverageThickness: svThickness,
-							setStreetViewCoverageThickness: setSvThickness,
+							setStreetViewCoverageThickness: pref("svThickness"),
 							streetViewBlobby: svBlobby,
-							setStreetViewBlobby: setSvBlobby,
+							setStreetViewBlobby: pref("svBlobby"),
 							boldCountryBorders,
-							setBoldCountryBorders,
+							setBoldCountryBorders: pref("boldCountryBorders"),
 							boldSubdivisionBorders,
-							setBoldSubdivisionBorders,
+							setBoldSubdivisionBorders: pref("boldSubdivisionBorders"),
 							mapStyleName,
-							setMapStyleName,
+							setMapStyleName: pref("mapStyleName"),
 							customStyles,
 							onManageStyles: () => setShowStylesDialog(true),
 						}}
@@ -1481,13 +1463,13 @@ export function MapEmbed() {
 					<MapSettingsDropdown
 						settings={{
 							markerStyle,
-							setMarkerStyle,
+							setMarkerStyle: pref("markerStyle"),
 							showPerfectScoreCircle,
-							setShowPerfectScoreCircle,
+							setShowPerfectScoreCircle: pref("showPerfectScoreCircle"),
 							showPreviews,
-							setShowPreviews,
+							setShowPreviews: pref("showPreviews"),
 							selectOnly,
-							setSelectOnly,
+							setSelectOnly: pref("selectOnly"),
 						}}
 					/>
 					<div className="map-control sv-opacity-control">
@@ -1510,7 +1492,7 @@ export function MapEmbed() {
 							step={0.05}
 							value={opacityTarget === "sv" ? svOpacity : markerOpacity}
 							onChange={(e) =>
-								(opacityTarget === "sv" ? setSvOpacity : setMarkerOpacity)(Number(e.target.value))
+								pref(opacityTarget === "sv" ? "svOpacity" : "markerOpacity")(Number(e.target.value))
 							}
 							title={opacityTarget === "sv" ? "Street View layer opacity" : "Marker layer opacity"}
 						/>
@@ -1589,7 +1571,7 @@ export function MapEmbed() {
 													const next = customStyles.filter((c) => c.name !== s.name);
 													setCustomStyles(next);
 													localStorage.setItem("mma_custom_styles", JSON.stringify(next));
-													if (mapStyleName === s.name) setMapStyleName("default");
+													if (mapStyleName === s.name) pref("mapStyleName")("default");
 												}}
 												aria-label="Delete style"
 											>
