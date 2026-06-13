@@ -1480,10 +1480,10 @@ function LocationPreviewInner() {
 							</div>
 						)}
 					</div>
-					{isFullscreen && appSettings.showFullscreenMinimap && (
+					{isFullscreen && appSettings.showFullscreenMinimap && !appSettings.hidePanoUI && (
 						<FullscreenMiniMap lat={location.lat} lng={location.lng} panorama={singletonPano} />
 					)}
-					{isFullscreen && appSettings.showFullscreenTagbar && (
+					{isFullscreen && appSettings.showFullscreenTagbar && !appSettings.hidePanoUI && (
 						<FullscreenTagBar
 							pendingTags={pendingTags}
 							onChangeTags={setPendingTags}
