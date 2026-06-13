@@ -740,6 +740,8 @@ export function MapEmbed() {
 
 			if (domEvent instanceof MouseEvent && domEvent.button !== 0) return;
 
+			if (info.coordinate && tryInterceptClick(info.coordinate[1], info.coordinate[0])) return;
+
 			if (isLocationLayer(info.layer?.id)) {
 				const loc = await resolvePickedLocation();
 				if (loc) {
@@ -757,7 +759,6 @@ export function MapEmbed() {
 
 			if (info.coordinate) {
 				const [lng, lat] = info.coordinate;
-				if (tryInterceptClick(lat, lng)) return;
 				if (getWorkArea() === "plugin") return;
 				if (getWorkArea() === "import") return;
 				if (getActiveStagedIndex() !== null) return; // staged preview open
