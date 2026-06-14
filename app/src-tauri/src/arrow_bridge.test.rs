@@ -34,6 +34,31 @@ fn sample_locations() -> Vec<Location> {
 }
 
 #[test]
+fn schema_field_names_match_column_indices() {
+    // The `columns!` table generates the COL_* indices and the schema together;
+    // this pins that they agree, so a mis-expansion can't silently shift columns.
+    let schema = location_schema();
+    let expected = [
+        (COL_ID, "id"),
+        (COL_LAT, "lat"),
+        (COL_LNG, "lng"),
+        (COL_HEADING, "heading"),
+        (COL_PITCH, "pitch"),
+        (COL_ZOOM, "zoom"),
+        (COL_PANO_ID, "pano_id"),
+        (COL_FLAGS, "flags"),
+        (COL_TAGS, "tags"),
+        (COL_EXTRA, "extra"),
+        (COL_CREATED_AT, "created_at"),
+        (COL_MODIFIED_AT, "modified_at"),
+    ];
+    assert_eq!(schema.fields().len(), expected.len());
+    for (idx, name) in expected {
+        assert_eq!(schema.field(idx).name().as_str(), name, "column index {idx}");
+    }
+}
+
+#[test]
 fn round_trip() {
     let locs = sample_locations();
     let batch = locations_to_batch(&locs);

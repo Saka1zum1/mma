@@ -13,69 +13,50 @@ use arrow::datatypes::{DataType, Field, Schema};
 
 use crate::types::{Location, LocationFlags};
 
-/// The canonical Arrow schema for location data. Column order here determines
-/// the positional indices used by [`row_to_location`] and must stay in sync.
-///
-/// `tags` is a `List<UInt32>` (variable-length per row). `extra` and `pano_id`
-/// are nullable UTF-8; all other columns are non-nullable. Timestamps are
-/// `UInt32` epoch seconds (second resolution). Schema metadata carries the
-/// format version stamp (see [`crate::arrow_migrate`]).
-pub fn location_schema() -> Schema {
-    Schema::new_with_metadata(
-        vec![
-            Field::new("id", DataType::UInt32, false),
-            Field::new("lat", DataType::Float64, false),
-            Field::new("lng", DataType::Float64, false),
-            Field::new("heading", DataType::Float64, false),
-            Field::new("pitch", DataType::Float64, false),
-            Field::new("zoom", DataType::Float64, false),
-            Field::new("pano_id", DataType::Utf8, true),
-            Field::new("flags", DataType::UInt32, false),
-            Field::new(
-                "tags",
-                DataType::List(Arc::new(Field::new("item", DataType::UInt32, true))),
-                false,
-            ),
-            // TODO: extras-as-columns — promote known_field_keys to real typed columns
-            // (schema per-map), JSON only at import/export. Big project; kills the
-            // per-row JSON parse in filters/scans and the re-serialize cost in bake.
-            Field::new("extra", DataType::Utf8, true),
-            Field::new("created_at", DataType::UInt32, false),
-            Field::new("modified_at", DataType::UInt32, true),
-        ],
-        crate::arrow_migrate::version_metadata(),
-    )
+// ---------------------------------------------------------------------------
+// Column table
+// ---------------------------------------------------------------------------
+
+macro_rules! columns {
+    ($( $idx:literal $const:ident $accessor:ident $name:literal $dtype:expr, $arrow_ty:ty, $nullable:literal );+ $(;)?) => {
+        $( pub(crate) const $const: usize = $idx; )+
+
+        $(
+            pub(crate) fn $accessor(b: &RecordBatch) -> &$arrow_ty {
+                b.column($const).as_any().downcast_ref().unwrap()
+            }
+        )+
+
+        /// The canonical Arrow schema for location data. Column order is generated
+        /// from the same table as the positional `COL_*` indices, so the two cannot
+        /// desync. Metadata carries the format version stamp (see [`crate::arrow_migrate`]).
+        pub fn location_schema() -> Schema {
+            Schema::new_with_metadata(
+                vec![ $( Field::new($name, $dtype, $nullable) ),+ ],
+                crate::arrow_migrate::version_metadata(),
+            )
+        }
+    };
 }
 
-// ---------------------------------------------------------------------------
-// Column accessors
-// ---------------------------------------------------------------------------
-
-pub(crate) const COL_ID: usize = 0;
-pub(crate) const COL_LAT: usize = 1;
-pub(crate) const COL_LNG: usize = 2;
-pub(crate) const COL_HEADING: usize = 3;
-pub(crate) const COL_PITCH: usize = 4;
-pub(crate) const COL_ZOOM: usize = 5;
-pub(crate) const COL_PANO_ID: usize = 6;
-pub(crate) const COL_FLAGS: usize = 7;
-pub(crate) const COL_TAGS: usize = 8;
-pub(crate) const COL_EXTRA: usize = 9;
-pub(crate) const COL_CREATED_AT: usize = 10;
-pub(crate) const COL_MODIFIED_AT: usize = 11;
-
-pub(crate) fn col_id(b: &RecordBatch) -> &UInt32Array { b.column(COL_ID).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_lat(b: &RecordBatch) -> &Float64Array { b.column(COL_LAT).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_lng(b: &RecordBatch) -> &Float64Array { b.column(COL_LNG).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_heading(b: &RecordBatch) -> &Float64Array { b.column(COL_HEADING).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_pitch(b: &RecordBatch) -> &Float64Array { b.column(COL_PITCH).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_zoom(b: &RecordBatch) -> &Float64Array { b.column(COL_ZOOM).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_pano_id(b: &RecordBatch) -> &StringArray { b.column(COL_PANO_ID).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_flags(b: &RecordBatch) -> &UInt32Array { b.column(COL_FLAGS).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_tags(b: &RecordBatch) -> &ListArray { b.column(COL_TAGS).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_extra(b: &RecordBatch) -> &StringArray { b.column(COL_EXTRA).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_created_at(b: &RecordBatch) -> &UInt32Array { b.column(COL_CREATED_AT).as_any().downcast_ref().unwrap() }
-pub(crate) fn col_modified_at(b: &RecordBatch) -> &UInt32Array { b.column(COL_MODIFIED_AT).as_any().downcast_ref().unwrap() }
+// `tags` is a `List<UInt32>`; `pano_id`/`extra`/`modified_at` are nullable.
+// TODO: extras-as-columns — promote known_field_keys to real typed columns
+// (schema per-map), JSON only at import/export. Big project; kills the per-row
+// JSON parse in filters/scans and the re-serialize cost in bake.
+columns! {
+    0  COL_ID          col_id          "id"          DataType::UInt32,  UInt32Array,  false;
+    1  COL_LAT         col_lat         "lat"         DataType::Float64, Float64Array, false;
+    2  COL_LNG         col_lng         "lng"         DataType::Float64, Float64Array, false;
+    3  COL_HEADING     col_heading     "heading"     DataType::Float64, Float64Array, false;
+    4  COL_PITCH       col_pitch       "pitch"       DataType::Float64, Float64Array, false;
+    5  COL_ZOOM        col_zoom        "zoom"        DataType::Float64, Float64Array, false;
+    6  COL_PANO_ID     col_pano_id     "pano_id"     DataType::Utf8,    StringArray,  true;
+    7  COL_FLAGS       col_flags       "flags"       DataType::UInt32,  UInt32Array,  false;
+    8  COL_TAGS        col_tags        "tags"        DataType::List(Arc::new(Field::new("item", DataType::UInt32, true))), ListArray, false;
+    9  COL_EXTRA       col_extra       "extra"       DataType::Utf8,    StringArray,  true;
+    10 COL_CREATED_AT  col_created_at  "created_at"  DataType::UInt32,  UInt32Array,  false;
+    11 COL_MODIFIED_AT col_modified_at "modified_at" DataType::UInt32,  UInt32Array,  true;
+}
 
 /// Serialize a slice of [`Location`]s into a single Arrow [`RecordBatch`].
 ///
