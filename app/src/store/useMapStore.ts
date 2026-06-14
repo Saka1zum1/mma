@@ -1173,7 +1173,9 @@ export async function createTags(names: string[]): Promise<Tag[]> {
 	if (names.length === 0) return [];
 	await mutate(cmd.storeCreateTags(names));
 	const lower = new Set(names.map((n) => n.toLowerCase()));
-	return Object.values(currentMap!.meta.tags).filter((t) => lower.has(t.name.toLowerCase()));
+	const created = Object.values(currentMap!.meta.tags).filter((t) => lower.has(t.name.toLowerCase()));
+	emitEvent("tag:add", created);
+	return created;
 }
 
 /** Rename or recolor tags. If a rename collides with an existing tag name
@@ -1184,6 +1186,7 @@ export async function updateTags(patches: { id: number; patch: Partial<Tag> }[])
 	for (const { id, patch } of patches) {
 		await mutate(cmd.storeUpdateTag(id, patch.name ?? null, patch.color ?? null));
 	}
+	emitEvent("tag:update", patches.map(({ id, patch }) => ({ id, ...patch })));
 	if (
 		selections.some((s) => {
 			const p = s.props;
@@ -1199,6 +1202,7 @@ export async function updateTags(patches: { id: number; patch: Partial<Tag> }[])
 export async function deleteTags(tagIds: number[]) {
 	if (!currentMapId || !currentMap || tagIds.length === 0) return;
 	await mutate(cmd.storeDeleteTags(tagIds));
+	emitEvent("tag:remove", tagIds);
 }
 
 /** Persist a new tag display order. */
