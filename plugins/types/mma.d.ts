@@ -1235,18 +1235,23 @@ export type FileAccessMode = "copy" | "scoped";
 export type OpenDialogReturn<T extends OpenDialogOptions> = T["directory"] extends true ? T["multiple"] extends true ? string[] | null : string | null : T["multiple"] extends true ? string[] | null : string | null;
 declare function open$1<T extends OpenDialogOptions>(options?: T): Promise<OpenDialogReturn<T>>;
 declare function save(options?: SaveDialogOptions): Promise<string | null>;
-/** Payload type for each editor event. `void` means the event carries no payload. */
-export interface EditorEventMap {
-	"location:add": Location$1[];
+declare const EVENT_DEFS: {
+	"location:add": Location_Serialize[];
 	"location:remove": number[];
-	"location:update": Partial<Location$1> & {
+	"location:update": Partial<Location_Serialize> & {
 		id: number;
 	};
+	"tag:add": Tag[];
+	"tag:remove": number[];
+	"tag:update": (Partial<Tag> & {
+		id: number;
+	})[];
 	"selection:change": Selection$1[];
 	"active:change": number | null;
 	"map:open": MapData;
 	"map:close": void;
-}
+};
+export type EditorEventMap = typeof EVENT_DEFS;
 export type EditorEvent = keyof EditorEventMap;
 export type EventHandler<E extends EditorEvent> = (payload: EditorEventMap[E]) => void;
 export interface SavedSelectionItem {
