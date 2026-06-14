@@ -683,6 +683,33 @@ impl Store {
     /// Decrement tag counts for all tags referenced by `locs` (saturating at zero).
     pub(crate) fn remove_tag_counts(&mut self, locs: &[Location]) { self.update_tag_counts(locs, -1); }
 
+    /// Push an undo entry for the changed (old != new) pairs and clear redo.
+    fn record_update_undo(&mut self, updated: &[(Location, Location)]) {
+        let (changed_old, changed_new): (Vec<_>, Vec<_>) = updated.iter()
+            .filter(|(o, n)| o != n)
+            .map(|(o, n)| (o.clone(), n.clone()))
+            .unzip();
+        if !changed_old.is_empty() {
+            self.push_undo(EditEntry { created: changed_new, removed: changed_old });
+            self.edits.redo.clear();
+        }
+    }
+
+    /// Apply a tags-only update: adjust tag counts, write the tags patch into the
+    /// overlay, and record undo for the changed pairs. Returns the ChangeSet.
+    fn commit_tag_update(&mut self, updated: Vec<(Location, Location)>) -> ChangeSet {
+        let old_locs: Vec<Location> = updated.iter().map(|(o, _)| o.clone()).collect();
+        self.remove_tag_counts(&old_locs);
+        for (_, new_loc) in &updated {
+            let patch = LocationPatch { tags: Some(new_loc.tags.clone()), ..Default::default() };
+            self.overlay_update(new_loc.id, &patch);
+        }
+        let new_locs: Vec<Location> = updated.iter().map(|(_, n)| n.clone()).collect();
+        self.add_tag_counts(&new_locs);
+        self.record_update_undo(&updated);
+        ChangeSet { updated, ..Default::default() }
+    }
+
     /// Grow `id_to_cell_idx` so it can index `id`. Fills new slots with 255 (sentinel = unmapped).
     fn ensure_id_to_cell_capacity(&mut self, id: u32) {
         let needed = id as usize + 1;
@@ -1539,14 +1566,7 @@ pub fn store_update_locations(
             store.add_tag_counts(&new_locs);
         }
         if record_undo {
-            let (changed_old, changed_new): (Vec<_>, Vec<_>) = updated.iter()
-                .filter(|(o, n)| o != n)
-                .map(|(o, n)| (o.clone(), n.clone()))
-                .unzip();
-            if !changed_old.is_empty() {
-                store.push_undo(EditEntry { created: changed_new, removed: changed_old });
-                store.edits.redo.clear();
-            }
+            store.record_update_undo(&updated);
         }
         let mut result = store.finish_mutation(ChangeSet { updated: updated.clone(), ..Default::default() });
         if any_extras {
@@ -1604,26 +1624,8 @@ pub fn store_update_tag(
             }
         }
 
-        let old_locs: Vec<Location> = updated.iter().map(|(o, _)| o.clone()).collect();
-        store.remove_tag_counts(&old_locs);
-        for (_, new_loc) in &updated {
-            let patch = LocationPatch { tags: Some(new_loc.tags.clone()), ..Default::default() };
-            store.overlay_update(new_loc.id, &patch);
-        }
-        let new_locs: Vec<Location> = updated.iter().map(|(_, n)| n.clone()).collect();
-        store.add_tag_counts(&new_locs);
-
-        let (changed_old, changed_new): (Vec<_>, Vec<_>) = updated.iter()
-            .filter(|(o, n)| o != n)
-            .map(|(o, n)| (o.clone(), n.clone()))
-            .unzip();
-        if !changed_old.is_empty() {
-            store.push_undo(EditEntry { created: changed_new, removed: changed_old });
-            store.edits.redo.clear();
-        }
-
         log::debug!("[cmd] store_update_tag merge {}→{} locs={} total={}ms", tag_id, target_id, affected.len(), _t.elapsed().as_millis());
-        ChangeSet { updated, ..Default::default() }
+        store.commit_tag_update(updated)
     } else {
         if let Some(t) = store.tags.all.get_mut(&tag_id) {
             if let Some(n) = &name {
@@ -1671,25 +1673,9 @@ pub fn store_delete_tags(
                 updated.push((old, new_loc));
             }
         }
-        let old_locs: Vec<Location> = updated.iter().map(|(o, _)| o.clone()).collect();
-        store.remove_tag_counts(&old_locs);
-        for (_, new_loc) in &updated {
-            let patch = LocationPatch { tags: Some(new_loc.tags.clone()), ..Default::default() };
-            store.overlay_update(new_loc.id, &patch);
-        }
-        let new_locs: Vec<Location> = updated.iter().map(|(_, n)| n.clone()).collect();
-        store.add_tag_counts(&new_locs);
-        let (changed_old, changed_new): (Vec<_>, Vec<_>) = updated.iter()
-            .filter(|(o, n)| o != n)
-            .map(|(o, n)| (o.clone(), n.clone()))
-            .unzip();
-        if !changed_old.is_empty() {
-            store.push_undo(EditEntry { created: changed_new, removed: changed_old });
-            store.edits.redo.clear();
-        }
-
         log::debug!("[cmd] store_delete_tags n={} locs={} total={}ms", tag_set.len(), affected_ids.len(), _t.elapsed().as_millis());
-        Ok(store.finish_mutation(ChangeSet { updated, ..Default::default() }))
+        let changeset = store.commit_tag_update(updated);
+        Ok(store.finish_mutation(changeset))
     })
 }
 
