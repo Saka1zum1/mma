@@ -17,6 +17,7 @@ import type { Location } from "@/types";
 import { registerPlugin, createPluginStorage } from "@/plugins/registry";
 import { trackDisposable } from "@/plugins/scope";
 import { Sidebar, Section, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
+import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { toast } from "@/lib/util/toast";
 import { preloadModules, getAvailableExternals } from "@/plugins/externals";
 import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs";
@@ -36,6 +37,8 @@ import { mmaBufUrl } from "@/lib/util/util";
 
 export interface LocationStore {
 	locations: Map<number, Location>;
+	/** The materialized locations narrowed to a scope (defaults to all). */
+	get(scope?: store.Scope): Location[];
 	onChange(cb: () => void): () => void;
 	destroy(): void;
 }
@@ -65,6 +68,9 @@ async function createLocationStore(): Promise<LocationStore> {
 
 	return {
 		locations: locs,
+		get(scope = { kind: "all" }) {
+			return store.applyScope(scope, [...locs.values()]);
+		},
 		onChange(cb) {
 			listeners.add(cb);
 			return () => { listeners.delete(cb); };
@@ -103,7 +109,7 @@ const mma = {
 	createLocationStore,
 
 	// --- UI primitives (for plugins) ---
-	ui: { Sidebar, Section, Field, EmptyState, SegmentedControl },
+	ui: { Sidebar, Section, Field, EmptyState, SegmentedControl, ScopeSelector },
 
 	// --- Notifications ---
 	toast,

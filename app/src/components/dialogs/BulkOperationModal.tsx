@@ -4,10 +4,13 @@ import {
 	getCurrentMap,
 	addSelections,
 	fetchAllLocations,
-	fetchLocationsByIds,
 	batchUpdateLocations,
-	useSelectedLocationIds,
+	useScope,
+	applyScope,
+	type Scope,
+	type ScopeController,
 } from "@/store/useMapStore";
+import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import type { Location } from "@/types";
 import { isPinnedToPano } from "@/types";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
@@ -40,56 +43,15 @@ interface Props {
 	onClose: () => void;
 }
 
-type Scope = "all" | "selection";
-
-function ScopeToggle({
-	scope,
-	onScopeChange,
-	allCount,
-	selectionCount,
-}: {
-	scope: Scope;
-	onScopeChange: (s: Scope) => void;
-	allCount: number;
-	selectionCount: number;
-}) {
-	const hasSelection = selectionCount > 0;
-	return (
-		<div className="bulk-operation__scope">
-			<label className="bulk-operation__scope-option">
-				<input
-					type="radio"
-					name="scope"
-					checked={scope === "all"}
-					onChange={() => onScopeChange("all")}
-				/>
-				All locations ({fmt.format(allCount)})
-			</label>
-			<label
-				className="bulk-operation__scope-option"
-				style={!hasSelection ? { opacity: 0.5 } : undefined}
-			>
-				<input
-					type="radio"
-					name="scope"
-					checked={scope === "selection"}
-					disabled={!hasSelection}
-					onChange={() => onScopeChange("selection")}
-				/>
-				Current selection ({fmt.format(selectionCount)})
-			</label>
-		</div>
-	);
-}
-
 function BulkSetup({
 	operation,
+	scopeCtl,
 	onStart,
 }: {
 	operation: BulkOperation;
+	scopeCtl: ScopeController;
 	onStart: (opts: {
 		force: boolean;
-		scope: Scope;
 		clearKeys?: string[];
 		setField?: Partial<Location>;
 		setExpr?: { key: string; src: string };
@@ -98,9 +60,7 @@ function BulkSetup({
 }) {
 	const [force, setForce] = useState(false);
 	const [locs, setLocs] = useState<Location[]>([]);
-	const selectedIds = useSelectedLocationIds();
-	const selectionCount = selectedIds.size;
-	const [scope, setScope] = useState<Scope>(selectionCount > 0 ? "selection" : "all");
+	const { scope } = scopeCtl;
 	const map = getCurrentMap();
 
 	useEffect(() => {
@@ -108,21 +68,15 @@ function BulkSetup({
 	}, []);
 
 	if (!map) return null;
-	const total = locs.length;
 
-	const scopedLocs = scope === "selection" ? locs.filter((l) => selectedIds.has(l.id)) : locs;
+	const scopedLocs = applyScope(scope, locs);
 
 	if (operation === "enrich") {
 		const unenriched = scopedLocs.filter(needsEnrichment).length;
 		const noPano = scopedLocs.filter((l) => !l.panoId).length;
 		return (
 			<div className="bulk-operation">
-				<ScopeToggle
-					scope={scope}
-					onScopeChange={setScope}
-					allCount={total}
-					selectionCount={selectionCount}
-				/>
+				<ScopeSelector ctl={scopeCtl} />
 				<div className="bulk-operation__status">
 					{fmt.format(unenriched)} locations need enrichment.
 					{noPano > 0 &&
@@ -136,7 +90,7 @@ function BulkSetup({
 					<button
 						className="button button--primary"
 						type="button"
-						onClick={() => onStart({ force, scope })}
+						onClick={() => onStart({ force })}
 						disabled={!force && unenriched === 0}
 					>
 						Start
@@ -150,12 +104,7 @@ function BulkSetup({
 		const unpinned = scopedLocs.filter((l) => !isPinnedToPano(l)).length;
 		return (
 			<div className="bulk-operation">
-				<ScopeToggle
-					scope={scope}
-					onScopeChange={setScope}
-					allCount={total}
-					selectionCount={selectionCount}
-				/>
+				<ScopeSelector ctl={scopeCtl} />
 				<div className="bulk-operation__status">
 					{fmt.format(unpinned)} locations not pinned to a pano ID.
 				</div>
@@ -167,7 +116,7 @@ function BulkSetup({
 					<button
 						className="button button--primary"
 						type="button"
-						onClick={() => onStart({ force, scope })}
+						onClick={() => onStart({ force })}
 						disabled={!force && unpinned === 0}
 					>
 						Start
@@ -182,11 +131,8 @@ function BulkSetup({
 			<ClearFieldsSetup
 				locs={locs}
 				scopedLocs={scopedLocs}
-				scope={scope}
-				onScopeChange={setScope}
-				allCount={total}
-				selectionCount={selectionCount}
-				onStart={(keys) => onStart({ force: false, scope, clearKeys: keys })}
+				scopeCtl={scopeCtl}
+				onStart={(keys) => onStart({ force: false, clearKeys: keys })}
 			/>
 		);
 	}
@@ -195,14 +141,10 @@ function BulkSetup({
 		return (
 			<SetFieldSetup
 				locs={locs}
-				scope={scope}
-				onScopeChange={setScope}
-				allCount={total}
-				selectionCount={selectionCount}
+				scopeCtl={scopeCtl}
 				onStart={(v) =>
 					onStart({
 						force: false,
-						scope,
 						setField: v.patch,
 						setExpr: v.exprKey != null ? { key: v.exprKey, src: v.exprSrc! } : undefined,
 					})
@@ -214,11 +156,8 @@ function BulkSetup({
 	if (operation === "headingRoad") {
 		return (
 			<HeadingRoadSetup
-				scope={scope}
-				onScopeChange={setScope}
-				allCount={total}
-				selectionCount={selectionCount}
-				onStart={(direction) => onStart({ force: false, scope, headingDirection: direction })}
+				scopeCtl={scopeCtl}
+				onStart={(direction) => onStart({ force: false, headingDirection: direction })}
 			/>
 		);
 	}
@@ -226,17 +165,12 @@ function BulkSetup({
 	// validate has no setup options beyond scope
 	return (
 		<div className="bulk-operation">
-			<ScopeToggle
-				scope={scope}
-				onScopeChange={setScope}
-				allCount={total}
-				selectionCount={selectionCount}
-			/>
+			<ScopeSelector ctl={scopeCtl} />
 			<div className="bulk-operation__actions">
 				<button
 					className="button button--primary"
 					type="button"
-					onClick={() => onStart({ force: false, scope })}
+					onClick={() => onStart({ force: false })}
 				>
 					Start
 				</button>
@@ -248,18 +182,12 @@ function BulkSetup({
 function ClearFieldsSetup({
 	locs,
 	scopedLocs,
-	scope,
-	onScopeChange,
-	allCount,
-	selectionCount,
+	scopeCtl,
 	onStart,
 }: {
 	locs: Location[];
 	scopedLocs: Location[];
-	scope: Scope;
-	onScopeChange: (s: Scope) => void;
-	allCount: number;
-	selectionCount: number;
+	scopeCtl: ScopeController;
 	onStart: (keys: string[]) => void;
 }) {
 	const allKeys = new Set<string>();
@@ -283,12 +211,7 @@ function ClearFieldsSetup({
 
 	return (
 		<div className="bulk-operation">
-			<ScopeToggle
-				scope={scope}
-				onScopeChange={onScopeChange}
-				allCount={allCount}
-				selectionCount={selectionCount}
-			/>
+			<ScopeSelector ctl={scopeCtl} />
 			{sortedKeys.length === 0 ? (
 				<div className="bulk-operation__status">No metadata fields on this map.</div>
 			) : (
@@ -327,17 +250,11 @@ function ClearFieldsSetup({
 
 function SetFieldSetup({
 	locs,
-	scope,
-	onScopeChange,
-	allCount,
-	selectionCount,
+	scopeCtl,
 	onStart,
 }: {
 	locs: Location[];
-	scope: Scope;
-	onScopeChange: (s: Scope) => void;
-	allCount: number;
-	selectionCount: number;
+	scopeCtl: ScopeController;
 	onStart: (v: { patch?: Partial<Location>; exprKey?: string; exprSrc?: string }) => void;
 }) {
 	const sortedKeys = useMemo(() => {
@@ -375,12 +292,7 @@ function SetFieldSetup({
 
 	return (
 		<div className="bulk-operation">
-			<ScopeToggle
-				scope={scope}
-				onScopeChange={onScopeChange}
-				allCount={allCount}
-				selectionCount={selectionCount}
-			/>
+			<ScopeSelector ctl={scopeCtl} />
 			<label className="bulk-operation__option">
 				Field
 				<select
@@ -465,28 +377,17 @@ function SetFieldSetup({
 }
 
 function HeadingRoadSetup({
-	scope,
-	onScopeChange,
-	allCount,
-	selectionCount,
+	scopeCtl,
 	onStart,
 }: {
-	scope: Scope;
-	onScopeChange: (s: Scope) => void;
-	allCount: number;
-	selectionCount: number;
+	scopeCtl: ScopeController;
 	onStart: (direction: RoadDirection) => void;
 }) {
 	const [direction, setDirection] = useState<RoadDirection>("forwards");
 
 	return (
 		<div className="bulk-operation">
-			<ScopeToggle
-				scope={scope}
-				onScopeChange={onScopeChange}
-				allCount={allCount}
-				selectionCount={selectionCount}
-			/>
+			<ScopeSelector ctl={scopeCtl} />
 			<div className="bulk-operation__fieldset">
 				<label>
 					<input
@@ -556,7 +457,6 @@ function BulkProgress({
 	operation,
 	force,
 	scope,
-	selectedIds,
 	clearKeys,
 	setField,
 	setExpr,
@@ -566,7 +466,6 @@ function BulkProgress({
 	operation: BulkOperation;
 	force: boolean;
 	scope: Scope;
-	selectedIds: Iterable<number>;
 	clearKeys?: string[];
 	setField?: Partial<Location>;
 	setExpr?: { key: string; src: string };
@@ -584,19 +483,13 @@ function BulkProgress({
 	const [skippedCount, setSkippedCount] = useState(0);
 	const controllerRef = useRef<AbortController | null>(null);
 
-	// Stable ref -- scope and selectedIds are fixed at mount time
-	const locationIdsRef = useRef(scope === "selection" ? [...selectedIds] : null);
-
 	const run = useCallback(async () => {
 		const map = getCurrentMap();
 		if (!map) return;
 		const controller = new AbortController();
 		controllerRef.current = controller;
 
-		const locationIds = locationIdsRef.current;
-		const locations = locationIds
-			? await fetchLocationsByIds(locationIds)
-			: await fetchAllLocations();
+		const locations = applyScope(scope, await fetchAllLocations());
 
 		const onProgress = (d: number, t: number, label?: string) => {
 			setPhaseLabel(label ?? null);
@@ -699,7 +592,7 @@ function BulkProgress({
 				setStatus("error");
 			}
 		}
-	}, [operation, force, clearKeys, setField, setExpr, headingDirection]);
+	}, [operation, force, scope, clearKeys, setField, setExpr, headingDirection]);
 
 	useEffect(() => {
 		run();
@@ -759,12 +652,11 @@ function BulkProgress({
 export function BulkOperationModal({ operation, onClose }: Props) {
 	const [started, setStarted] = useState(false);
 	const [force, setForce] = useState(false);
-	const [scope, setScope] = useState<Scope>("all");
+	const scopeCtl = useScope();
 	const [clearKeys, setClearKeys] = useState<string[]>([]);
 	const [setField, setSetField] = useState<Partial<Location> | undefined>(undefined);
 	const [setExpr, setSetExpr] = useState<{ key: string; src: string } | undefined>(undefined);
 	const [headingDirection, setHeadingDirection] = useState<RoadDirection | undefined>(undefined);
-	const selectedIds = useSelectedLocationIds();
 
 	return (
 		<Dialog
@@ -777,9 +669,9 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 				{!started ? (
 					<BulkSetup
 						operation={operation}
+						scopeCtl={scopeCtl}
 						onStart={(opts) => {
 							setForce(opts.force);
-							setScope(opts.scope);
 							if (opts.clearKeys) setClearKeys(opts.clearKeys);
 							if (opts.setField) setSetField(opts.setField);
 							if (opts.setExpr) setSetExpr(opts.setExpr);
@@ -791,8 +683,7 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 					<BulkProgress
 						operation={operation}
 						force={force}
-						scope={scope}
-						selectedIds={selectedIds}
+						scope={scopeCtl.scope}
 						clearKeys={clearKeys}
 						setField={setField}
 						setExpr={setExpr}

@@ -1,5 +1,6 @@
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
+import type { Scope, LocationStore } from "mma-plugin-types";
 
 export interface HeatmapSettings {
 	visible: boolean;
@@ -78,27 +79,34 @@ interface LocPoint {
 }
 
 let overlay: GoogleMapsOverlay | null = null;
-let locStore: { locations: Map<number, unknown>; onChange(cb: () => void): () => void; destroy(): void } | null = null;
+let locStore: LocationStore | null = null;
 let settings: HeatmapSettings = loadSettings();
+let scope: Scope = { kind: "selected" };
 let onSettingsChange: (() => void) | null = null;
 
 export function getSettings(): HeatmapSettings {
 	return settings;
 }
 
-export function getLocationCount(): number {
-	return selectedLocations().length;
+export function getScope(): Scope {
+	return scope;
 }
 
-function selectedLocations(): LocPoint[] {
+export function setScope(next: Scope): void {
+	if (scope.kind === next.kind) return;
+	scope = next;
+	rebuild();
+	onSettingsChange?.();
+}
+
+export function getLocationCount(): number {
+	return scopedLocations().length;
+}
+
+// The renderer's pool is the plugin's own LocationStore; the scope just narrows it.
+function scopedLocations(): LocPoint[] {
 	if (!locStore) return [];
-	const ids = MMA.getSelectedLocationIds();
-	const out: LocPoint[] = [];
-	for (const id of ids) {
-		const loc = locStore.locations.get(id) as { lat: number; lng: number } | undefined;
-		if (loc) out.push({ lat: loc.lat, lng: loc.lng });
-	}
-	return out;
+	return locStore.get(scope).map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 
 export function setOnSettingsChange(cb: (() => void) | null) {
@@ -118,7 +126,7 @@ function rebuild() {
 		overlay.setProps({ layers: [] });
 		return;
 	}
-	const data = selectedLocations();
+	const data = scopedLocations();
 
 	const layer = new HeatmapLayer({
 		id: "mma-heatmap",
@@ -166,6 +174,7 @@ export async function init(): Promise<() => void> {
 			overlay = null;
 		}
 		settings = loadSettings();
+		scope = { kind: "selected" };
 		onSettingsChange = null;
 	};
 }

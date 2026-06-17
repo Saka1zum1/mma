@@ -2,7 +2,7 @@
 
 /// <reference types="google.maps" />
 
-import { ComponentType } from 'react';
+import { ComponentType, ReactNode } from 'react';
 
 export interface PluginSettingDef {
 	key: string;
@@ -31,6 +31,13 @@ export type PluginBehavior = Partial<Plugin$1> & {
 	activate(): void | (() => void);
 };
 declare function registerPlugin(plugin: Plugin$1 | PluginBehavior): void;
+export interface PluginStorage {
+	get<T = unknown>(key: string, fallback?: T): T;
+	set(key: string, value: unknown): void;
+	remove(key: string): void;
+	keys(): string[];
+}
+declare function createPluginStorage(id: string): PluginStorage;
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
@@ -825,10 +832,63 @@ export interface CommitDiffPreview {
 	removed: Float32Array;
 	modified: Float32Array;
 }
+export type Scope = {
+	kind: "all";
+} | {
+	kind: "selected";
+};
+export interface ScopeController {
+	scope: Scope;
+	setScope: (s: Scope) => void;
+	allCount: number;
+	selectionCount: number;
+}
 export interface PruneResult {
 	session: ReviewSession | null;
 	cursorMoved: boolean;
 }
+declare function Sidebar({ title, onBack, actions, className, flush, children, }: {
+	title: ReactNode;
+	onBack?: () => void;
+	actions?: ReactNode;
+	className?: string;
+	flush?: boolean;
+	children: ReactNode;
+}): import("react/jsx-runtime").JSX.Element;
+declare function Section({ title, defaultOpen, collapsible, addons, children, }: {
+	title: ReactNode;
+	defaultOpen?: boolean;
+	collapsible?: boolean;
+	addons?: ReactNode;
+	children: ReactNode;
+}): import("react/jsx-runtime").JSX.Element;
+declare function Field({ label, hint, row, children, }: {
+	label: ReactNode;
+	hint?: ReactNode;
+	row?: boolean;
+	children: ReactNode;
+}): import("react/jsx-runtime").JSX.Element;
+declare function EmptyState({ icon, children }: {
+	icon?: string;
+	children: ReactNode;
+}): import("react/jsx-runtime").JSX.Element;
+export interface SegmentedOption<T extends string | number> {
+	value: T;
+	label: ReactNode;
+	disabled?: boolean;
+	title?: string;
+}
+declare function SegmentedControl<T extends string | number>({ options, value, onChange, className, }: {
+	options: SegmentedOption<T>[];
+	value: T;
+	onChange: (value: T) => void;
+	className?: string;
+}): import("react/jsx-runtime").JSX.Element;
+declare function ScopeSelector({ ctl, className }: {
+	ctl: ScopeController;
+	className?: string;
+}): import("react/jsx-runtime").JSX.Element;
+declare function toast(message: string, duration?: number): void;
 declare function preloadModules(ids: string[]): Promise<void>;
 declare function getAvailableExternals(): string[];
 export interface EnrichFieldOption {
@@ -1437,6 +1497,8 @@ export interface EnrichOutcome {
 export type EnrichResult = EnrichOutcome[];
 export interface LocationStore {
 	locations: Map<number, Location$1>;
+	/** The materialized locations narrowed to a scope (defaults to all). */
+	get(scope?: Scope): Location$1[];
 	onChange(cb: () => void): () => void;
 	destroy(): void;
 }
@@ -1557,6 +1619,16 @@ declare const mma: {
 	preloadModules: typeof preloadModules;
 	getAvailableExternals: typeof getAvailableExternals;
 	createLocationStore: typeof createLocationStore;
+	ui: {
+		Sidebar: typeof Sidebar;
+		Section: typeof Section;
+		Field: typeof Field;
+		EmptyState: typeof EmptyState;
+		SegmentedControl: typeof SegmentedControl;
+		ScopeSelector: typeof ScopeSelector;
+	};
+	toast: typeof toast;
+	storage: typeof createPluginStorage;
 	getFieldDef: typeof getFieldDef;
 	getAllFieldDefs: typeof getAllFieldDefs;
 	createLocation: typeof createLocation;
@@ -1627,9 +1699,13 @@ declare const mma: {
 	bulkPinToPano: (opts?: Record<string, unknown>) => Promise<number>;
 	validateLocations: typeof validateLocations;
 	needsEnrichment: (loc: Pick<Location$1, "extra">) => boolean;
-	importPaste: (text: string) => Promise<EditorImportResult_Serialize[]>;
-	importFile: (droppedFields: string[], tagName?: string) => Promise<EditorImportResult_Serialize>;
 	mmaBufUrl: typeof mmaBufUrl;
+	_test: {
+		openMap: (id: string) => Promise<void>;
+		closeMap: () => Promise<void>;
+		importPaste: (text: string) => Promise<EditorImportResult_Serialize[]>;
+		importFile: (droppedFields: string[], tagName?: string) => Promise<EditorImportResult_Serialize>;
+	};
 	pruneSession(s: ReviewSession, removed: Set<number>): PruneResult;
 	advance(s: ReviewSession): {
 		session: ReviewSession;
@@ -1650,8 +1726,6 @@ declare const mma: {
 	deleteSession(id: string): Promise<void>;
 	listSessions(status?: "active" | "done"): Promise<ReviewSession[]>;
 	selectReviewSet(s: ReviewSession, mode: "reviewed" | "unreviewed"): Promise<void>;
-	openMap: (id: string) => Promise<void>;
-	closeMap: () => Promise<void>;
 	invalidateMapList(): Promise<void>;
 	getTagCounts(): Record<number, number>;
 	refreshAfterMutation(): void;
@@ -1670,6 +1744,8 @@ declare const mma: {
 	flushSave(): Promise<void>;
 	initStore(): Promise<void>;
 	mapOpenMark(phase: string): void;
+	openMap(id: string): Promise<void>;
+	closeMap(): Promise<void>;
 	refreshFromExternalMutation(): Promise<void>;
 	getCurrentMapId(): string | null;
 	getCurrentMap(): MapData | null;
@@ -1683,6 +1759,10 @@ declare const mma: {
 	syncSelections(): Promise<{
 		ids: number[];
 	}>;
+	applyScope<T extends {
+		id: number;
+	}>(scope: Scope, pool: T[]): T[];
+	useScope(initial?: Scope): ScopeController;
 	createMap(name: string, folder?: string | null): Promise<MapMeta>;
 	deleteMap(id: string): Promise<void>;
 	renameFolder(from: string, to: string): Promise<void>;

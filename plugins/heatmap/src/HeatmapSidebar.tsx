@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
 	getSettings,
 	updateSettings,
+	setScope,
 	getLocationCount,
 	setOnSettingsChange,
 	DEFAULT_SETTINGS,
@@ -89,6 +90,7 @@ function Icon({ path, size = 20 }: { path: string; size?: number }) {
 export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 	const [, rerender] = useState(0);
 	const s = getSettings();
+	const scopeCtl = MMA.useScope();
 
 	useEffect(() => {
 		injectCSS();
@@ -98,6 +100,11 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 			removeCSS();
 		};
 	}, []);
+
+	// Mirror the picker's choice into the renderer (module state drives rebuild()).
+	useEffect(() => {
+		setScope(scopeCtl.scope);
+	}, [scopeCtl.scope]);
 
 	const setSlider = useCallback(
 		(key: keyof HeatmapSettings, value: number) => updateSettings({ [key]: value }),
@@ -132,6 +139,11 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 						checked={s.visible}
 						onChange={(e) => updateSettings({ visible: e.target.checked })}
 					/>
+				</div>
+
+				<div className="heatmap-sidebar__section">
+					<p className="heatmap-sidebar__section-title">Apply to</p>
+					<MMA.ui.ScopeSelector ctl={scopeCtl} />
 				</div>
 
 				<div className="heatmap-sidebar__section">

@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Location, WorkArea, ImportPreview } from "@/types";
 import { isVirtualLocation, stagedIndexToVirtualId, virtualIdToStagedIndex } from "@/types";
 import type { MapData, MapMeta, Tag, ExtraFieldDef, FilterOp } from "@/bindings.gen";
@@ -448,6 +448,44 @@ export async function syncSelections(): Promise<{ ids: number[] }> {
 	await cmd.storeSyncSelections(sels);
 	const ids = await cmd.storeGetSelectedIdsList();
 	return { ids };
+}
+
+// --- Scope: a subset specification over a pool of locations. ---
+// A Scope says *how* to narrow a pool down to a subset, independent of what the pool is
+// (the whole map, a plugin's materialized LocationStore, an import preview, ...). Consumers
+// hold their own pool and apply the scope to it. "Specific named selection" is intentionally
+// deferred — it would need a Rust resolve-by-key primitive.
+export type Scope = { kind: "all" } | { kind: "selected" };
+
+export interface ScopeController {
+	scope: Scope;
+	setScope: (s: Scope) => void;
+	allCount: number;
+	selectionCount: number;
+}
+
+/** Narrow a pool of id-bearing records to the subset the scope specifies. Pure w.r.t. the
+ *  pool; the "selected" scope reads the live selection set. */
+export function applyScope<T extends { id: number }>(scope: Scope, pool: T[]): T[] {
+	if (scope.kind === "all") return pool;
+	const ids = getSelectedLocationIds();
+	return pool.filter((item) => ids.has(item.id));
+}
+
+/** Reactive scope state + live counts. Defaults to the current selection when one
+ *  exists at mount, else all locations. */
+export function useScope(initial?: Scope): ScopeController {
+	const selectedIds = useSelectedLocationIds();
+	const map = useCurrentMap();
+	const [scope, setScope] = useState<Scope>(
+		() => initial ?? (getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" }),
+	);
+	return {
+		scope,
+		setScope,
+		allCount: map?.meta.locationCount ?? 0,
+		selectionCount: selectedIds.size,
+	};
 }
 
 export async function createMap(name: string, folder: string | null = null) {

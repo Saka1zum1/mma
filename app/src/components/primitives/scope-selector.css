@@ -1,0 +1,11 @@
+.scope-selector {
+	display: flex;
+	gap: 1rem;
+	font-size: 0.875rem;
+}
+.scope-selector__option {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	cursor: pointer;
+}

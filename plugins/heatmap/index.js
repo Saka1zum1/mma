@@ -931,6 +931,18 @@ var DEFAULT_SETTINGS = {
   threshold: 0.05,
   gradientIndex: 0
 };
+var STORAGE_KEY = "mma_heatmap_settings";
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+  } catch {
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+function saveSettings(s) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+}
 var GRADIENTS = [
   // deck.gl's built-in default colorRange (6-step ColorBrewer YlOrRd) — the original look.
   { name: "Classic", stops: [[255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60], [240, 59, 32], [189, 0, 38]] },
@@ -959,29 +971,31 @@ function sampleColorRange(stops, n = 6) {
 }
 var overlay = null;
 var locStore = null;
-var settings = { ...DEFAULT_SETTINGS };
+var settings = loadSettings();
+var scope = { kind: "selected" };
 var onSettingsChange = null;
 function getSettings() {
   return settings;
 }
-function getLocationCount() {
-  return selectedLocations().length;
+function setScope(next) {
+  if (scope.kind === next.kind) return;
+  scope = next;
+  rebuild();
+  onSettingsChange?.();
 }
-function selectedLocations() {
+function getLocationCount() {
+  return scopedLocations().length;
+}
+function scopedLocations() {
   if (!locStore) return [];
-  const ids = MMA.getSelectedLocationIds();
-  const out = [];
-  for (const id of ids) {
-    const loc = locStore.locations.get(id);
-    if (loc) out.push({ lat: loc.lat, lng: loc.lng });
-  }
-  return out;
+  return locStore.get(scope).map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 function setOnSettingsChange(cb) {
   onSettingsChange = cb;
 }
 function updateSettings(patch) {
   settings = { ...settings, ...patch };
+  saveSettings(settings);
   rebuild();
   onSettingsChange?.();
 }
@@ -991,7 +1005,7 @@ function rebuild() {
     overlay.setProps({ layers: [] });
     return;
   }
-  const data = selectedLocations();
+  const data = scopedLocations();
   const layer = new heatmap_layer_default({
     id: "mma-heatmap",
     data,
@@ -1031,7 +1045,8 @@ async function init() {
       overlay.finalize();
       overlay = null;
     }
-    settings = { ...DEFAULT_SETTINGS };
+    settings = loadSettings();
+    scope = { kind: "selected" };
     onSettingsChange = null;
   };
 }
@@ -1109,6 +1124,7 @@ function Icon({ path, size = 20 }) {
 function HeatmapSidebar({ onClose }) {
   const [, rerender] = (0, import_react.useState)(0);
   const s = getSettings();
+  const scopeCtl = MMA.useScope();
   (0, import_react.useEffect)(() => {
     injectCSS();
     setOnSettingsChange(() => rerender((n) => n + 1));
@@ -1117,6 +1133,9 @@ function HeatmapSidebar({ onClose }) {
       removeCSS();
     };
   }, []);
+  (0, import_react.useEffect)(() => {
+    setScope(scopeCtl.scope);
+  }, [scopeCtl.scope]);
   const setSlider = (0, import_react.useCallback)(
     (key, value) => updateSettings({ [key]: value }),
     []
@@ -1144,6 +1163,10 @@ function HeatmapSidebar({ onClose }) {
             onChange: (e) => updateSettings({ visible: e.target.checked })
           }
         )
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", children: "Apply to" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MMA.ui.ScopeSelector, { ctl: scopeCtl })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", children: "Settings" }),
