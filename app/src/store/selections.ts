@@ -397,6 +397,18 @@ export function composeWithChild(
 	return current.filter((_, i) => i !== dragIdx).map((s) => (s.key === parentKey ? newParent : s));
 }
 
+/** Put `replaced` at `index` in `list`, enforcing unique keys at this level: if it collides
+ *  with another entry, drop the spliced (edited) one and keep the pre-existing. Index-based so
+ *  it's correct at every level — a re-key can collide with a sibling not just where the edit
+ *  happened but at any composite up the path (e.g. editing one group's child to match another
+ *  group makes the two groups identical). */
+function spliceMerging(list: Selection[], index: number, replaced: Selection): Selection[] {
+	if (list.some((s, j) => j !== index && s.key === replaced.key)) {
+		return list.filter((_, j) => j !== index);
+	}
+	return list.with(index, replaced);
+}
+
 function replaceInTree(
 	sel: Selection,
 	oldKey: string,
@@ -408,16 +420,22 @@ function replaceInTree(
 	for (let i = 0; i < children.length; i++) {
 		const replaced = replaceInTree(children[i], oldKey, props);
 		if (replaced) {
-			const newChildren = children.with(i, replaced);
+			const newChildren = spliceMerging(children, i, replaced);
+			// a group merged down to a single child is just that child
+			if (newChildren.length === 1) return newChildren[0];
 			return buildSelection({ type: sel.props.type, selections: newChildren });
 		}
 	}
 	return null;
 }
 
-/** Replace the selection identified by `oldKey` (at any depth) with one built from
- *  `props`, rebuilding the keys of every composite on the path so identity stays
- *  consistent. Used to edit a filter in place without dropping it from its AND/OR group. */
+/** Replace the selection identified by `oldKey` (at any depth) with one built from `props`,
+ *  rebuilding the keys of every composite on the path so identity stays consistent. Used to
+ *  edit a filter in place without dropping it from its AND/OR group. Enforces the unique-key
+ *  invariant recursively (via {@link spliceMerging}): if a re-key collides with an existing
+ *  selection at any level, merge into it — drop this edit, keep the existing one. A selection's
+ *  key is its identity, so a duplicate key would break every key-addressed op (recolor,
+ *  reorder, drag-highlight, remove). */
 export function replaceSelection(
 	current: Selection[],
 	oldKey: string,
@@ -425,7 +443,7 @@ export function replaceSelection(
 ): Selection[] {
 	for (let i = 0; i < current.length; i++) {
 		const replaced = replaceInTree(current[i], oldKey, props);
-		if (replaced) return current.with(i, replaced);
+		if (replaced) return spliceMerging(current, i, replaced);
 	}
 	return current;
 }

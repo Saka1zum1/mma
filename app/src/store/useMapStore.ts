@@ -980,12 +980,15 @@ export function selectFilter(
 export function updateFilterSelection(oldKey: string, props: SelectionProps) {
 	return applySelectionUpdate((sels) => {
 		const next = replaceSel(sels, oldKey, props);
-		// Editing rebuilds the affected top-level entry (and its key). Migrate any
-		// ghost flag from the old key to the new one at the same index.
-		for (let i = 0; i < sels.length; i++) {
-			if (next[i] && next[i].key !== sels[i].key && ghostedSelections.has(sels[i].key)) {
-				ghostedSelections.delete(sels[i].key);
-				ghostedSelections.add(next[i].key);
+		// Carry a ghost flag across an in-place re-key. A collision instead merges into the
+		// existing selection (shrinking the list); the survivor keeps its own ghost state and
+		// pruneGhosted clears the old key, so only migrate when nothing was merged away.
+		if (next.length === sels.length) {
+			for (let i = 0; i < sels.length; i++) {
+				if (next[i].key !== sels[i].key && ghostedSelections.has(sels[i].key)) {
+					ghostedSelections.delete(sels[i].key);
+					ghostedSelections.add(next[i].key);
+				}
 			}
 		}
 		return next;

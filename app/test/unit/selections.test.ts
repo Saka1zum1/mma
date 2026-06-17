@@ -796,6 +796,43 @@ describe("replaceSelection", () => {
 		expect(result).toBe(input); // unchanged reference
 		expect(result[0].key).toBe(sel.key);
 	});
+
+	it("merges into the existing selection when the re-key collides, keeping the existing one", () => {
+		const a = buildSelection(filterA);
+		const b = buildSelection(filterAEdited);
+		const result = replaceSelection([a, b], a.key, filterAEdited); // edit A onto B's value
+		expect(result).toHaveLength(1);
+		expect(result[0]).toBe(b); // pre-existing selection kept, untouched
+	});
+
+	it("keeps the existing selection regardless of list order (existing always wins)", () => {
+		const a = buildSelection(filterA);
+		const b = buildSelection(filterAEdited);
+		const result = replaceSelection([b, a], a.key, filterAEdited); // existing sits before the edit
+		expect(result).toHaveLength(1);
+		expect(result[0]).toBe(b);
+	});
+
+	it("merges a child onto a sibling and unwraps the collapsed group", () => {
+		const a = buildSelection(filterA);
+		const b = buildSelection(filterAEdited);
+		const group = unionSelections([a, b], null); // [Union(a, b)]
+		const result = replaceSelection(group, a.key, filterAEdited); // edit a -> b's value
+		expect(result).toHaveLength(1);
+		expect(result[0].key).toBe(b.key); // (b OR b) collapsed to just b
+		expect(result[0].props.type).toBe("Filter"); // unwrapped, no longer a Union
+	});
+
+	it("merges recursively when an edit makes two groups identical", () => {
+		const shared = buildSelection({ type: "PanoIds" });
+		const b = buildSelection(filterA);
+		const c = buildSelection(filterAEdited);
+		const g1 = intersectSelections([shared, b], null)[0]; // Intersection(shared, b)
+		const g2 = intersectSelections([shared, c], null)[0]; // Intersection(shared, c)
+		const result = replaceSelection([g1, g2], c.key, filterA); // edit c -> b's value
+		expect(result).toHaveLength(1);
+		expect(result[0].key).toBe(g1.key); // g2 became g1 -> kept the pre-existing g1
+	});
 });
 
 describe("sampleIds", () => {
