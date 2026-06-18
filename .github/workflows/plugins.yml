@@ -1,0 +1,20 @@
+name: Plugins
+
+on:
+  push:
+    branches: [master]
+    paths: ['plugins/**']
+  pull_request:
+    paths: ['plugins/**']
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node plugins/build-all.mjs
+      # Fail if the committed build artifacts (index.js, registry.json) are stale.
+      - run: git diff --exit-code -- plugins/
