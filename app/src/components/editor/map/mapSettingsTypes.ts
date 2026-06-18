@@ -16,3 +16,7 @@ export const SV_COLORS = [
 export type SvColor = (typeof SV_COLORS)[number];
 
 export type MapTypeKey = "map" | "satellite" | "osm";
+
+export type SvCoverageType = "official" | "unofficial" | "default";
+export type SvThickness = "default" | "high";
+export type MarkerStyle = "pin" | "circle" | "arrow";

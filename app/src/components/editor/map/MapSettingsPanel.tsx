@@ -6,7 +6,14 @@ import type { MapStyle } from "@/lib/geo/tiles";
 import { EnrichInfoButton } from "@/components/editor/map/EnrichInfoButton";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiCogOutline } from "@mdi/js";
-import { type SvColor, SV_COLORS, type MapTypeKey } from "./mapSettingsTypes";
+import {
+	type SvColor,
+	SV_COLORS,
+	type MapTypeKey,
+	type SvCoverageType,
+	type SvThickness,
+	type MarkerStyle,
+} from "./mapSettingsTypes";
 import { useMapSetting } from "./useMapSetting";
 import { ScoreBoundsEditor } from "./ScoreBoundsEditor";
 
@@ -15,9 +22,6 @@ const MAP_TYPE_LABELS: Record<MapTypeKey, string> = {
 	satellite: "Satellite",
 	osm: "OSM",
 };
-
-export type SvCoverageType = "official" | "unofficial" | "default";
-export type SvThickness = "default" | "high";
 
 export interface LayerConfig {
 	basemap: MapTypeKey;
@@ -47,8 +51,6 @@ export interface LayerConfig {
 	customStyles: { name: string; style: MapStyle[] }[];
 	onManageStyles: () => void;
 }
-
-export type MarkerStyle = "pin" | "circle" | "arrow";
 
 /** App-level (localStorage) prefs the panel renders. Per-map settings are read
  *  directly via `useMapSetting`, not passed in. */

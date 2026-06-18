@@ -5134,18 +5134,6 @@ body {
 	opacity: 0.4;
 	cursor: default;
 }
-.fullscreen-minimap__marker {
-	position: absolute;
-	transform: translate(-50%, -50%);
-	width: 12px;
-	height: 12px;
-	background: #e53935;
-	border: 2px solid #fff;
-	border-radius: 50%;
-	pointer-events: none;
-	box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-}
-
 /* Fullscreen tag bar */
 .fullscreen-tagbar {
 	position: absolute;

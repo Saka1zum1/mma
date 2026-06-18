@@ -1,0 +1,47 @@
+import type {
+	SvColor,
+	MapTypeKey,
+	SvCoverageType,
+	SvThickness,
+	MarkerStyle,
+} from "@/components/editor/map/mapSettingsTypes";
+
+export interface MapEmbedPrefs {
+	svOpacity: number;
+	svColor: SvColor;
+	showLabels: boolean;
+	showTerrain: boolean;
+	svPanoramas: boolean;
+	svCoverageType: SvCoverageType;
+	svThickness: SvThickness;
+	svBlobby: boolean;
+	boldCountryBorders: boolean;
+	boldSubdivisionBorders: boolean;
+	mapStyleName: string;
+	mapType: MapTypeKey;
+	markerStyle: MarkerStyle;
+	markerOpacity: number;
+	showPerfectScoreCircle: boolean;
+	showPreviews: boolean;
+	selectOnly: boolean;
+}
+
+export const DEFAULT_PREFS: MapEmbedPrefs = {
+	svOpacity: 0.5,
+	svColor: "cyan",
+	showLabels: true,
+	showTerrain: false,
+	svPanoramas: false,
+	svCoverageType: "official",
+	svThickness: "default",
+	svBlobby: false,
+	boldCountryBorders: false,
+	boldSubdivisionBorders: false,
+	mapStyleName: "default",
+	mapType: "map",
+	markerStyle: "pin",
+	markerOpacity: 1,
+	showPerfectScoreCircle: true,
+	showPreviews: false,
+	selectOnly: false,
+};

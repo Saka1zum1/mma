@@ -1,191 +1,39 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { GoogleMapsOverlay } from "@deck.gl/google-maps";
-import type { GoogleMapsOverlayProps } from "@deck.gl/google-maps";
-import type { PickingInfo, Layer, Position } from "@deck.gl/core";
-type OverlayEvent = { srcEvent?: { domEvent?: Event } };
-import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
 import { mdiGoogleStreetView, mdiMapMarker } from "@mdi/js";
-import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
+import { startSceneEngine, loadScene, clearScene } from "@/lib/render/sceneStore";
+import { useMapSurface } from "@/lib/render/useMapSurface";
 import { Icon } from "@/components/primitives/Icon";
-
-function normalizeRing<T extends number[]>(ring: T[]): T[] {
-	const crosses = ring.some((p) => p[0] > 180 || p[0] < -180) ||
-		ring.some((_, i, a) => i > 0 && Math.abs(a[i][0] - a[i - 1][0]) > 180);
-	if (!crosses) return ring;
-	return ring.map((p) => {
-		const out = [...p] as unknown as T;
-		if (out[0] < 0) out[0] += 360;
-		return out;
-	});
-}
-
-function normalizePolygonCoords<T extends number[]>(coords: T[][]): T[][] {
-	return coords.map(normalizeRing);
-}
-import { lookupStreetView, svThumbnailUrl, showToast, svSearchRadius } from "@/lib/sv/lookup";
+import { svThumbnailUrl, svSearchRadius } from "@/lib/sv/lookup";
 import { cmd } from "@/lib/commands";
-import { mmaBufUrl } from "@/lib/util/util";
 import { log } from "@/lib/util/log";
-import { trace } from "@/lib/util/debug";
 import { useSetting } from "@/store/settings";
-import { CellManager } from "@/lib/render/CellManager";
-import {
-	useMeasure,
-	useLatLngAnchor,
-	getLatLngAnchor,
-	useScoreMaxError,
-	openContextMenuLatLng,
-	openContextMenuLocation,
-} from "@/lib/sv/measure";
+import { useMeasure } from "@/lib/sv/measure";
 import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
-import {
-	useCurrentMap,
-	getCurrentMap,
-	useMapVersion,
-	useSelectedLocationIds,
-	useSelectedTagIds,
-	useSelections,
-	useActiveLocation,
-	getActiveLocation,
-	toggleManualSelection,
-	selectPolygon,
-	setActiveLocation,
-	addLocations,
-	getWorkArea,
-	getSelectedLocationIds,
-	useImportMarkerVersion,
-	getImportPreviewPositions,
-	getActiveStagedIndex,
-	openStagedLocation,
-	useDiffMarkerVersion,
-	getCommitDiffPreview,
-	renderDeltaBus,
-	selBitmaskBus,
-	mapOpenMark,
-} from "@/store/useMapStore";
+import { useCurrentMap, selectPolygon, mapOpenMark } from "@/store/useMapStore";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
-import { useTrailVersion, getTrail } from "@/lib/sv/svTrail";
-import {
-	setGoogleMap as setGoogleMapInstance,
-	tryInterceptClick,
-	tryInterceptDraw,
-} from "@/lib/map/mapState";
+import { setGoogleMap as setGoogleMapInstance, tryInterceptDraw } from "@/lib/map/mapState";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { PolygonTools } from "@/components/editor/PolygonTools";
-import { boundsToTiles, fetchPanoDots, type PanoDot } from "@/lib/geo/photometa";
 
-import {
-	buildTileUrl,
-	buildStyledTileUrl,
-	createRoadmapTileConfig,
-	createLegacyTileConfig,
-	createLabelsTileConfig,
-	createSatelliteTileConfig,
-	createSvTileConfig,
-	createSvBlobbyTileConfig,
-	createTerrainBasemapTileConfig,
-	createTerrainOverlayTileConfig,
-	LEGACY_STYLE_MAP_ID,
-	type MapStyle,
-} from "@/lib/geo/tiles";
-import type { Location } from "@/types";
-import { isVirtualLocation } from "@/types";
+import { type MapStyle } from "@/lib/geo/tiles";
 import { SearchControl } from "@/components/editor/map/SearchControl";
 import type { ParsedLocation } from "@/lib/data/importExport";
-import {
-	MapTypeDropdown,
-	MapSettingsDropdown,
-	type SvCoverageType,
-	type SvThickness,
-	type MarkerStyle,
-} from "@/components/editor/map/MapSettingsPanel";
-import type { SvColor, MapTypeKey } from "@/components/editor/map/mapSettingsTypes";
-import { DARK_MODE_STYLES } from "@/lib/geo/mapStyles";
-import { createCompositeMapType } from "@/lib/geo/stackedMapType";
+import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/MapSettingsPanel";
+import { buildMapStack, mapStackOptsFromPrefs, type MapStackOpts } from "@/lib/geo/mapStack";
+import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/components/editor/map/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
 import { useMapKeyboardNav } from "@/lib/hooks/useMapKeyboardNav";
 
-const LOCATION_LAYER_ID = "locations";
-const isLocationLayer = (id?: string) =>
-	id?.startsWith(LOCATION_LAYER_ID) ||
-	id?.startsWith("cell:") ||
-	id?.startsWith("sel-overlay:") ||
-	id === "import-preview";
-const PERFECT_SCORE_LAYER_ID = "perfect-score";
-
-type MarkerBuf = { positions: Float32Array; colors: Uint8Array; angles: Float32Array };
-
-// Per-style layer class + shape constants. `idSuffix` keeps deck.gl layer ids stable across styles.
-const MARKER_STYLE = {
-	circle: { Layer: ScatterplotLayer, idSuffix: "s", angle: false, base: { getRadius: 6, radiusUnits: "pixels", radiusMinPixels: 3 } },
-	arrow: { Layer: SDFMarkerLayer, idSuffix: "d", angle: true, base: { shape: "arrow", radiusPixels: 12 } },
-	pin: { Layer: SDFMarkerLayer, idSuffix: "d", angle: false, base: { shape: "pin", radiusPixels: 16 } },
-} as const;
-
-interface MapEmbedPrefs {
-	svOpacity: number;
-	svColor: SvColor;
-	showLabels: boolean;
-	showTerrain: boolean;
-	svPanoramas: boolean;
-	svCoverageType: SvCoverageType;
-	svThickness: SvThickness;
-	svBlobby: boolean;
-	boldCountryBorders: boolean;
-	boldSubdivisionBorders: boolean;
-	mapStyleName: string;
-	mapType: MapTypeKey;
-	markerStyle: MarkerStyle;
-	markerOpacity: number;
-	showPerfectScoreCircle: boolean;
-	showPreviews: boolean;
-	selectOnly: boolean;
-}
-
-const DEFAULT_PREFS: MapEmbedPrefs = {
-	svOpacity: 0.5,
-	svColor: "cyan",
-	showLabels: true,
-	showTerrain: false,
-	svPanoramas: false,
-	svCoverageType: "official",
-	svThickness: "default",
-	svBlobby: false,
-	boldCountryBorders: false,
-	boldSubdivisionBorders: false,
-	mapStyleName: "default",
-	mapType: "map",
-	markerStyle: "pin",
-	markerOpacity: 1,
-	showPerfectScoreCircle: true,
-	showPreviews: false,
-	selectOnly: false,
-};
-
 export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLocation) => void | Promise<void> }) {
 	const map = useCurrentMap();
-	const mapVer = useMapVersion();
-
-	const selected = useSelectedLocationIds();
-	const selectedTags = useSelectedTagIds();
-	const allSelections = useSelections();
-	const activeLocation = useActiveLocation();
-	const trailVersion = useTrailVersion();
-	const importMarkerVersion = useImportMarkerVersion();
-	const diffMarkerVersion = useDiffMarkerVersion();
 	const containerRef = useRef<HTMLDivElement>(null);
-	const cellMgrRef = useRef(new CellManager());
-	const [renderTick, setRenderTick] = useState(0);
 	const gMapRef = useRef<google.maps.Map>(null);
-	const overlayRef = useRef<GoogleMapsOverlay | null>(null);
-	const prevActiveRef = useRef<number | null>(null);
 
-	const gRef = useRef<Google>(null);
 	const [prefs, setPrefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
 	const pref =
 		<K extends keyof MapEmbedPrefs>(k: K) =>
@@ -210,13 +58,8 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		showPreviews,
 		selectOnly,
 	} = prefs;
-	const selectOnlyRef = useRef(selectOnly);
-	selectOnlyRef.current = selectOnly;
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
 	const [mapZoom, setMapZoom] = useState(2);
-	const scoreMaxError = useScoreMaxError();
-	const activeLocationColor = useSetting("activeLocationColor");
-	const importPreviewColor = useSetting("importPreviewColor");
 
 	const [customStyles, setCustomStyles] = useState<{ name: string; style: MapStyle[] }[]>(() => {
 		try {
@@ -231,366 +74,11 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		date?: string;
 	} | null>(null);
 	const previewAbortRef = useRef<AbortController | null>(null);
-	const [panoDots, setPanoDots] = useState<PanoDot[]>([]);
 	const [opacityTarget, setOpacityTarget] = useState<"sv" | "markers">("sv");
 	const [mapReady, setMapReady] = useState(false);
 	const freehandPathRef = useRef<number[][] | null>(null);
 	const contextTriggerRef = useRef<HTMLSpanElement>(null);
 	const { isMeasuring } = useMeasure();
-	const latLngAnchor = useLatLngAnchor();
-
-	// Earcut tessellation of selection polygons is expensive and runs on every
-	// buildLayers call if the data reference changes. Cache the normalized fill/stroke
-	// arrays keyed by selection, invalidating only when the geometry object changes, so
-	// deck.gl reuses the same reference and re-tessellates once per geometry, not per render.
-	const polygonGeomCache = useRef(
-		new Map<string, { poly: object; fill: Position[][][]; stroke: Position[][] }>(),
-	);
-
-	const buildLayers = useCallback(() => {
-		const m = getCurrentMap();
-		if (!m) {
-			return [];
-		}
-
-		const layers: Layer[] = [];
-
-		// Commit-diff overlay temporarily replaces the regular markers.
-		if (getWorkArea() === "diff") {
-			const diff = getCommitDiffPreview();
-			if (diff) {
-				const diffLayer = (id: string, pos: Float32Array, color: [number, number, number, number]) =>
-					new ScatterplotLayer({
-						id,
-						data: { length: pos.length / 2, attributes: { getPosition: { value: pos, size: 2 } } },
-						getRadius: 5,
-						radiusUnits: "pixels" as const,
-						radiusMinPixels: 3,
-						getFillColor: color,
-						stroked: false,
-						pickable: false,
-					});
-				if (diff.removed.length) layers.push(diffLayer("diff-removed", diff.removed, [239, 68, 68, 210]));
-				if (diff.added.length) layers.push(diffLayer("diff-added", diff.added, [34, 197, 94, 210]));
-				if (diff.modified.length)
-					layers.push(diffLayer("diff-modified", diff.modified, [245, 158, 11, 220]));
-			}
-			return layers;
-		}
-
-		const polygonSels = allSelections.flatMap((sel) =>
-			sel.props.type === "Intersection" ? sel.props.selections : [sel],
-		);
-		const livePolygonKeys = new Set<string>();
-		for (const sel of polygonSels) {
-			if (sel.props.type !== "Polygon") continue;
-			const poly = sel.props.polygon;
-			livePolygonKeys.add(sel.key);
-			let geom = polygonGeomCache.current.get(sel.key);
-			if (!geom || geom.poly !== poly) {
-				const fill = [poly.coordinates, ...(poly.extraPolygons ?? [])].map(normalizePolygonCoords);
-				geom = { poly, fill, stroke: fill.flatMap((p) => p) as Position[][] };
-				polygonGeomCache.current.set(sel.key, geom);
-			}
-			const fillColor: [number, number, number, number] = [...sel.color, 26];
-			const strokeColor: [number, number, number, number] = [...sel.color, 153];
-			layers.push(
-				new PolygonLayer<Position[][]>({
-					id: `selectionPolygonFill:${sel.key}`,
-					data: geom.fill,
-					getPolygon: (d) => d,
-					getFillColor: fillColor,
-					stroked: false,
-					pickable: false,
-					opacity: 1,
-				}),
-				new PathLayer<Position[]>({
-					id: `selectionPolygonStroke:${sel.key}`,
-					data: geom.stroke,
-					getPath: (d) => d,
-					getColor: strokeColor,
-					getWidth: 4,
-					widthUnits: "pixels",
-					jointRounded: true,
-					pickable: false,
-					opacity: 1,
-				}),
-			);
-		}
-		for (const k of polygonGeomCache.current.keys()) {
-			if (!livePolygonKeys.has(k)) polygonGeomCache.current.delete(k);
-		}
-
-		const cm = cellMgrRef.current;
-		const activeId = getActiveLocation()?.id ?? null;
-		// Sync bridge: restore old active's visibility while Rust's state catches up.
-		// store_set_active keeps Rust in sync (fire-and-forget), no full re-render.
-		if (prevActiveRef.current != null && prevActiveRef.current !== activeId) {
-			const prevId = prevActiveRef.current;
-			if (!getSelectedLocationIds().has(prevId)) {
-				for (const cb of cm.cells.values()) {
-					const idx = cb.idToIndex.get(prevId);
-					if (idx != null) {
-						cb.patchColor(idx, 42, 42, 42, 255);
-						break;
-					}
-				}
-			}
-		}
-		prevActiveRef.current = activeId;
-		if (activeId != null) {
-			for (const cb of cm.cells.values()) {
-				const idx = cb.idToIndex.get(activeId);
-				if (idx != null) {
-					cb.patchColor(idx, 0, 0, 0, 0);
-					break;
-				}
-			}
-		}
-		// Build one cell/overlay marker layer for the active style. Selection overlay must also be
-		// pickable on top — otherwise clicks fall through to the cell layer where selected markers
-		// have no z-priority, and an overlapping neighbor gets picked instead of the marker on top.
-		const markerLayer = (
-			idBase: string,
-			count: number,
-			buf: MarkerBuf,
-			colorVer: number,
-			posVer: number,
-			opacity?: number,
-		): Layer => {
-			const s = MARKER_STYLE[markerStyle];
-			const attributes: Record<string, unknown> = {
-				getPosition: { value: buf.positions, size: 2 },
-				getFillColor: { value: buf.colors, size: 4 },
-			};
-			if (s.angle) attributes.getAngle = { value: buf.angles, size: 1 };
-			const LayerClass = s.Layer as new (props: Record<string, unknown>) => Layer;
-			return new LayerClass({
-				id: `${idBase}:${s.idSuffix}`,
-				data: { length: count, attributes },
-				...s.base,
-				pickable: true,
-				...(opacity != null ? { opacity } : {}),
-				updateTriggers: {
-					...(opacity != null ? { opacity: [opacity] } : {}),
-					getFillColor: [colorVer],
-					getPosition: [posVer],
-					...(s.angle ? { getAngle: [posVer] } : {}),
-				},
-			});
-		};
-
-		if (markerOpacity > 0 && cm.totalCount > 0) {
-			for (const [cellKey, cell] of cm.cells) {
-				if (cell.count === 0) continue;
-				layers.push(
-					markerLayer(`cell:${cellKey}`, cell.count, cell, cell.colorVersion, cell.positionVersion, markerOpacity),
-				);
-			}
-		}
-
-		if (cm.selOverlayCount > 0) {
-			layers.push(
-				markerLayer(
-					"sel-overlay",
-					cm.selOverlayCount,
-					{ positions: cm.selOverlayPositions, colors: cm.selOverlayColors, angles: cm.selOverlayAngles },
-					cm.selOverlayVersion,
-					cm.selOverlayVersion,
-				),
-			);
-		}
-
-		const activeLoc = getActiveLocation();
-		if (activeLoc && cm.totalCount > 0) {
-			const activeColor: [number, number, number, number] = [
-				activeLocationColor.r,
-				activeLocationColor.g,
-				activeLocationColor.b,
-				255,
-			];
-			if (markerStyle === "arrow") {
-				layers.push(
-					new SDFMarkerLayer<Location>({
-						id: `${LOCATION_LAYER_ID}-current-sdf`,
-						data: [activeLoc],
-						getPosition: (d) => [d.lng, d.lat],
-						shape: "arrow",
-						radiusPixels: 12,
-						getFillColor: activeColor,
-						getAngle: (d: Location) => 180 - d.heading,
-						pickable: true,
-						updateTriggers: {
-							getAngle: [markerStyle],
-						},
-					}),
-				);
-			} else if (markerStyle === "circle") {
-				layers.push(
-					new ScatterplotLayer<Location>({
-						id: `${LOCATION_LAYER_ID}-current-scatter`,
-						data: [activeLoc],
-						getPosition: (d) => [d.lng, d.lat],
-						getRadius: 6,
-						radiusUnits: "pixels",
-						radiusMinPixels: 3,
-						getFillColor: activeColor,
-						pickable: true,
-					}),
-				);
-			} else {
-				layers.push(
-					new SDFMarkerLayer<Location>({
-						id: `${LOCATION_LAYER_ID}-current-sdf`,
-						data: [activeLoc],
-						getPosition: (d) => [d.lng, d.lat],
-						shape: "pin",
-						radiusPixels: 16,
-						getFillColor: activeColor,
-						pickable: true,
-					}),
-				);
-			}
-		}
-
-		const scoreLoc = getActiveLocation();
-		if (showPerfectScoreCircle && scoreLoc && cm.totalCount > 0) {
-			const loc = scoreLoc;
-			const trail = getTrail();
-			const last = trail.length ? trail[trail.length - 1] : null;
-			const center = last ? { lng: last[0], lat: last[1] } : { lat: loc.lat, lng: loc.lng };
-			layers.push(
-				new ScatterplotLayer({
-					id: PERFECT_SCORE_LAYER_ID,
-					data: [center],
-					getPosition: (d: { lat: number; lng: number }) => [d.lng, d.lat],
-					getFillColor: [200, 0, 0, 26],
-					getLineColor: [200, 0, 0, 128],
-					getRadius: Math.max(25, scoreMaxError),
-					radiusUnits: "meters" as const,
-					stroked: true,
-					filled: true,
-					lineWidthPixels: 1,
-					pickable: false,
-				}),
-			);
-		}
-
-		if (svPanoramas && panoDots.length > 0) {
-			layers.push(
-				new ScatterplotLayer<PanoDot>({
-					id: "panorama-dots",
-					data: panoDots,
-					getPosition: (d) => [d.lng, d.lat],
-					getFillColor: [255, 0, 0],
-					getRadius: 2,
-					radiusMaxPixels: 8,
-					stroked: false,
-					filled: true,
-					opacity: 0.7,
-					pickable: false,
-				}),
-			);
-		}
-
-		const anchor = getLatLngAnchor();
-		if (anchor) {
-			layers.push(
-				new LineLayer({
-					id: "lat-lng-anchor",
-					visible: true,
-					data: [
-						{ from: [anchor.lng, 90], to: [anchor.lng, -90] },
-						{ from: [-180, anchor.lat], to: [180, anchor.lat] },
-					],
-					pickable: false,
-					getWidth: 2,
-					getSourcePosition: (d) => d.from,
-					getTargetPosition: (d) => d.to,
-					getColor: [0, 0, 0],
-				}),
-			);
-		}
-
-		const freehand = freehandPathRef.current;
-		if (freehand && freehand.length >= 2) {
-			layers.push(
-				new PathLayer({
-					id: "freehand-drawing",
-					data: [normalizeRing(freehand)],
-					getPath: (d) => d,
-					getColor: [255, 255, 255, 200],
-					getWidth: 3,
-					widthUnits: "pixels" as const,
-					jointRounded: true,
-					capRounded: true,
-					pickable: false,
-				}),
-			);
-		}
-
-		const svTrail = getTrail();
-		if (svTrail.length >= 2) {
-			layers.push(
-				new PathLayer({
-					id: "sv-trail",
-					data: [svTrail],
-					getPath: (d) => d,
-					getColor: [255, 0, 0],
-					getWidth: 2,
-					widthUnits: "pixels" as const,
-					jointRounded: true,
-					capRounded: true,
-					pickable: false,
-				}),
-			);
-		}
-
-		// Staged import preview markers; clicking one opens a read-only preview.
-		if (getWorkArea() === "import" || getActiveStagedIndex() !== null) {
-			const previewPos = getImportPreviewPositions();
-			const previewCount = previewPos.length / 2;
-			const stagedIdx = getActiveStagedIndex();
-			if (previewCount > 0) {
-				layers.push(
-					new ScatterplotLayer({
-						id: "import-preview",
-						data: {
-							length: previewCount,
-							attributes: { getPosition: { value: previewPos, size: 2 } },
-						},
-						getRadius: 6,
-						radiusUnits: "pixels",
-						radiusMinPixels: 3,
-						getFillColor: (_: unknown, { index }: { index: number }) =>
-							index === stagedIdx
-								? [activeLocationColor.r, activeLocationColor.g, activeLocationColor.b, 255]
-								: [importPreviewColor.r, importPreviewColor.g, importPreviewColor.b, 200],
-						stroked: false,
-						pickable: true,
-						updateTriggers: { getFillColor: [stagedIdx, importPreviewColor, activeLocationColor] },
-					}),
-				);
-			}
-		}
-
-		return layers;
-	}, [
-		markerOpacity,
-		markerStyle,
-		activeLocationColor,
-		importPreviewColor,
-		showPerfectScoreCircle,
-		scoreMaxError,
-		svPanoramas,
-		panoDots,
-		allSelections,
-		latLngAnchor,
-		renderTick,
-		trailVersion,
-		importMarkerVersion,
-		diffMarkerVersion,
-	]);
 
 	const dispatchContextMenu = useCallback((clientX: number, clientY: number) => {
 		contextTriggerRef.current?.dispatchEvent(
@@ -598,320 +86,36 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		);
 	}, []);
 
-	const handleClick = useCallback(
-		async (info: PickingInfo, event: OverlayEvent) => {
-			const domEvent = event?.srcEvent?.domEvent;
-
-			// Staged import markers open a read-only preview; never fall through to the
-			// map-click SV lookup (which would create a new location).
-			if (info.layer?.id === "import-preview") {
-				if (typeof info.index === "number" && info.index >= 0) {
-					void openStagedLocation(info.index);
-				}
-				return;
-			}
-
-			const resolvePickedLocation = async (): Promise<Location | undefined> => {
-				if (info.object) return info.object as Location;
-				if (typeof info.index !== "number" || info.index < 0) return undefined;
-				const layerId = info.layer?.id;
-				if (layerId?.startsWith("sel-overlay:")) {
-					const id = cellMgrRef.current.selOverlayIds[info.index];
-					if (id == null) return undefined;
-					const loc = await cmd.storeGetLocation(id);
-					return loc ?? undefined;
-				}
-				if (!layerId?.startsWith("cell:")) return undefined;
-				const cellKey = layerId.split(":")[1];
-				const id = cellMgrRef.current.resolvePickFromCell(cellKey, info.index);
-				if (id == null) {
-					const rustId: number | null = await cmd.storeResolvePick(cellKey, info.index);
-					if (rustId == null) return undefined;
-					const loc = await cmd.storeGetLocation(rustId);
-					return loc ?? undefined;
-				}
-				const loc = await cmd.storeGetLocation(id);
-				return loc ?? undefined;
-			};
-
-			if (domEvent instanceof MouseEvent && domEvent.button === 2) {
-				if (isLocationLayer(info.layer?.id)) {
-					const loc = await resolvePickedLocation();
-					if (loc) {
-						openContextMenuLocation(loc);
-					} else if (info.coordinate) {
-						openContextMenuLatLng({
-							lat: info.coordinate[1],
-							lng: info.coordinate[0],
-						});
-					}
-				} else if (info.coordinate) {
-					openContextMenuLatLng({
-						lat: info.coordinate[1],
-						lng: info.coordinate[0],
-					});
-				}
-				dispatchContextMenu(domEvent.clientX, domEvent.clientY);
-				return;
-			}
-
-			if (domEvent instanceof MouseEvent && domEvent.button !== 0) return;
-
-			if (info.coordinate && tryInterceptClick(info.coordinate[1], info.coordinate[0])) return;
-
-			if (isLocationLayer(info.layer?.id)) {
-				const loc = await resolvePickedLocation();
-				if (loc) {
-					if (isVirtualLocation(loc)) return; // staged location's active pin: already open
-					if (domEvent instanceof MouseEvent && domEvent.ctrlKey) {
-						toggleManualSelection(loc.id);
-					} else {
-						setActiveLocation(loc.id);
-					}
-					return;
-				}
-			}
-
-			if (isMeasuring) return;
-
-			if (info.coordinate) {
-				const [lng, lat] = info.coordinate;
-				if (getWorkArea() === "plugin") return;
-				if (getWorkArea() === "import") return;
-				if (getActiveStagedIndex() !== null) return; // staged preview open
-				if (getWorkArea() === "diff") return;
-				if (selectOnlyRef.current) {
-					if (containerRef.current) {
-						showToast(containerRef.current, "Select-only mode is on.");
-					}
-					return;
-				}
-				const g = gRef.current;
-				if (!g) return;
-				const currentZoom = gMapRef.current?.getZoom() ?? 2;
-				const t = trace("add");
-				// Rust materializes complete per-map settings whenever a map is open.
-				const ms = getCurrentMap()?.meta.settings;
-				const loc = await lookupStreetView(lat, lng, currentZoom, {
-					preferOfficial: ms?.preferOfficial,
-					onlyOfficial: ms?.onlyOfficial,
-					pointAlongRoad: ms?.pointAlongRoad,
-					preferDirection: ms?.preferDirection,
-					defaultPanoId: ms?.defaultPanoId,
-					preferHigherQuality: ms?.preferHigherQuality,
-					minRadius: ms?.searchRadius ?? undefined,
-				});
-				if (!loc) {
-					if (containerRef.current) {
-						showToast(containerRef.current, "No coverage found at this location.");
-					}
-					return;
-				}
-				t.step("lookup");
-				await addLocations([loc], { hideInDelta: true });
-				t.step("addLocations");
-				setActiveLocation(loc.id);
-				t.step("setActive");
-				t.end();
-			}
-		},
-		[isMeasuring, dispatchContextMenu],
-	);
-
-	const handleHover = useCallback((info: PickingInfo, event: OverlayEvent) => {
-		const hasObject =
-			info.object != null ||
-			(isLocationLayer(info.layer?.id) === true &&
-				typeof info.index === "number" &&
-				info.index >= 0);
-		const domEvent = event?.srcEvent?.domEvent;
-		if (domEvent instanceof MouseEvent) {
-			const target = domEvent.target as HTMLElement | null;
-			if (target) target.style.cursor = hasObject ? "pointer" : "";
-		}
-	}, []);
+	// The editor map is a consumer of the shared surface, with the full capability set.
+	const { requestUpdate } = useMapSurface(mapReady ? gMapRef.current : null, {
+		markerStyle,
+		markerOpacity,
+		svPanoramas,
+		showPerfectScoreCircle,
+		selectOnly,
+		measuring: isMeasuring,
+		container: containerRef.current,
+		onContextMenu: dispatchContextMenu,
+		freehandPathRef,
+		onError: (e: unknown) => log.error("[deck.gl overlay error]", e),
+	});
 
 	const svLayerRef = useRef<google.maps.ImageMapType>(null);
 
-	const buildMapStack = useCallback(
-		(opts: {
-			type: MapTypeKey;
-			labels: boolean;
-			terrain: boolean;
-			color: SvColor;
-			coverageType: SvCoverageType;
-			thickness: SvThickness;
-			useBlobby: boolean;
-			boldCountry: boolean;
-			boldSubdivision: boolean;
-			style: string;
-			customStyles?: MapStyle[];
-		}) => {
-			const tileSize = new google.maps.Size(256, 256);
-			const layers: google.maps.ImageMapType[] = [];
-			const legacyBase = opts.style === "legacy" && opts.type === "map" && !opts.terrain;
-
-			const extraStyles: MapStyle[] = [];
-			if (opts.style === "darkMode") {
-				extraStyles.push(...DARK_MODE_STYLES);
-			} else if (opts.customStyles) {
-				extraStyles.push(...opts.customStyles);
-			}
-			if (opts.boldCountry) {
-				const s: Record<string, string | number> = { weight: 2 };
-				if (opts.style === "default") s.color = "#000000";
-				extraStyles.push({
-					featureType: "administrative.country",
-					elementType: "geometry.stroke",
-					stylers: [s],
-				});
-			}
-			if (opts.boldSubdivision) {
-				extraStyles.push({
-					featureType: "administrative.province",
-					elementType: "geometry.stroke",
-					stylers: [{ weight: 3 }],
-				});
-			}
-
-			if (opts.type === "satellite") {
-				const cfg = createSatelliteTileConfig();
-				layers.push(
-					new google.maps.ImageMapType({
-						getTileUrl: (coord: TileCoord, zoom: number) =>
-							buildTileUrl(cfg, coord.x, coord.y, zoom),
-						tileSize,
-						minZoom: 0,
-						maxZoom: 20,
-					}),
-				);
-				if (opts.terrain) {
-					const tcfg = createTerrainOverlayTileConfig();
-					layers.push(
-						new google.maps.ImageMapType({
-							getTileUrl: (coord: TileCoord, zoom: number) =>
-								buildTileUrl(tcfg, coord.x, coord.y, zoom),
-							tileSize,
-							minZoom: 0,
-							maxZoom: 20,
-						}),
-					);
-				}
-			} else if (opts.type === "osm") {
-				layers.push(
-					new google.maps.ImageMapType({
-						getTileUrl: (coord: TileCoord, zoom: number) =>
-							`https://tile.openstreetmap.org/${zoom}/${coord.x}/${coord.y}.png`,
-						tileSize,
-						minZoom: 0,
-						maxZoom: 19,
-					}),
-				);
-			} else {
-				if (opts.terrain) {
-					const cfg = createTerrainBasemapTileConfig([
-						{ elementType: "labels", stylers: [{ visibility: "off" }] },
-						{
-							elementType: "geometry.stroke",
-							featureType: "administrative",
-							stylers: [{ visibility: "off" }],
-						},
-						...extraStyles,
-					]);
-					layers.push(
-						new google.maps.ImageMapType({
-							getTileUrl: (coord: TileCoord, zoom: number) =>
-								buildTileUrl(cfg, coord.x, coord.y, zoom),
-							tileSize,
-							minZoom: 0,
-							maxZoom: 20,
-						}),
-					);
-				} else if (legacyBase) {
-					// Legacy style renders labels in the base tile (toggled via stylers),
-					// so the separate labels layer is skipped below.
-					const cfg = createLegacyTileConfig([
-						...(opts.labels
-							? []
-							: [{ elementType: "labels", stylers: [{ visibility: "off" }] } as MapStyle]),
-						...extraStyles,
-					]);
-					layers.push(
-						new google.maps.ImageMapType({
-							getTileUrl: (coord: TileCoord, zoom: number) =>
-								buildStyledTileUrl(cfg, LEGACY_STYLE_MAP_ID, coord.x, coord.y, zoom),
-							tileSize,
-							minZoom: 0,
-							maxZoom: 20,
-						}),
-					);
-				} else {
-					const cfg = createRoadmapTileConfig(extraStyles);
-					layers.push(
-						new google.maps.ImageMapType({
-							getTileUrl: (coord: TileCoord, zoom: number) =>
-								buildTileUrl(cfg, coord.x, coord.y, zoom),
-							tileSize,
-							minZoom: 0,
-							maxZoom: 20,
-						}),
-					);
-				}
-			}
-
-			const showOfficial = opts.coverageType === "official" || opts.coverageType === "default";
-			const showUnofficial = opts.coverageType === "unofficial" || opts.coverageType === "default";
-			const svCfg = opts.useBlobby
-				? createSvBlobbyTileConfig({
-						showOfficial,
-						showUnofficial,
-						color: opts.color,
-					})
-				: createSvTileConfig({
-						showOfficial,
-						showUnofficial,
-						color: opts.color,
-						thickness: opts.thickness,
-					});
-			const svLayer = new google.maps.ImageMapType({
-				getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(svCfg, coord.x, coord.y, zoom),
-				tileSize,
-				minZoom: 0,
-				maxZoom: 20,
-			});
-			const blobbySingleType = opts.useBlobby && !(showOfficial && showUnofficial);
-			svLayer.setOpacity(blobbySingleType ? svOpacity * 0.6 : svOpacity);
-			svLayerRef.current = svLayer;
-			layers.push(svLayer);
-
-			if (opts.labels && opts.type !== "osm" && !legacyBase) {
-				const labelCfg = createLabelsTileConfig(extraStyles);
-				layers.push(
-					new google.maps.ImageMapType({
-						getTileUrl: (coord: TileCoord, zoom: number) =>
-							buildTileUrl(labelCfg, coord.x, coord.y, zoom),
-						tileSize,
-						minZoom: 0,
-						maxZoom: 20,
-					}),
-				);
-			}
-
-			return createCompositeMapType(layers);
-		},
-		[svOpacity],
-	);
+	const makeStack = useCallback((opts: MapStackOpts) => {
+		const { mapType, svLayer } = buildMapStack(opts);
+		svLayerRef.current = svLayer;
+		return mapType;
+	}, []);
 
 	useEffect(() => {
 		if (!containerRef.current || !map) return;
 		mapOpenMark("mounted");
 		let cancelled = false;
-		let rafId: number;
 
 		loadOpenSV().then(() => {
 			if (cancelled || !containerRef.current) return;
 			if (!google?.maps) return;
-			gRef.current = google;
 
 			if (!gMapRef.current) {
 				gMapRef.current = new google.maps.Map(containerRef.current, {
@@ -932,19 +136,9 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 				});
 
 				const custom = customStyles.find((s) => s.name === mapStyleName);
-				const stack = buildMapStack({
-					type: mapType,
-					labels: showLabels,
-					terrain: showTerrain,
-					color: svColor,
-					coverageType: svCoverageType,
-					thickness: svThickness,
-					useBlobby: svBlobby,
-					boldCountry: boldCountryBorders,
-					boldSubdivision: boldSubdivisionBorders,
-					style: mapStyleName,
-					customStyles: custom?.style,
-				});
+				const stack = makeStack(
+					mapStackOptsFromPrefs(prefs, { useBlobby: svBlobby, customStyles: custom?.style }),
+				);
 				gMapRef.current.mapTypes.set("stack", stack);
 				gMapRef.current.setMapTypeId("stack");
 				setGoogleMapInstance(gMapRef.current);
@@ -965,17 +159,6 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 					mapOpenMark("tiles"),
 				);
 
-				rafId = requestAnimationFrame(() => {
-					if (cancelled) return;
-					const overlay = new GoogleMapsOverlay({
-						layers: [],
-						pickingRadius: 2,
-					});
-					overlay.setMap(gMapRef.current);
-					overlayRef.current = overlay;
-					updateOverlay();
-				});
-
 				if (map.meta.locationCount > 0) {
 					cmd.storeBounds(false).then((bounds) => {
 						if (cancelled || !gMapRef.current || !bounds) return;
@@ -992,7 +175,6 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 
 		return () => {
 			cancelled = true;
-			if (rafId) cancelAnimationFrame(rafId);
 		};
 	}, []);
 
@@ -1002,118 +184,15 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		svLayerRef.current.setOpacity(blobbySingleType ? svOpacity * 0.6 : svOpacity);
 	}, [svOpacity, svBlobby, mapZoom, svCoverageType]);
 
+
+	// The editor map drives the single scene engine (delta/selection/active subscriptions)
+	useEffect(() => startSceneEngine(), []);
+
+	// Full (re)load on open and on marker-style change; clear when the map isn't ready.
 	useEffect(() => {
-		if (!svPanoramas || !gMapRef.current || mapZoom < 15) {
-			setPanoDots([]);
-			return;
-		}
-		const map = gMapRef.current;
-		let cancelled = false;
-		const load = async () => {
-			const bounds = map.getBounds();
-			if (!bounds) return;
-			const ne = bounds.getNorthEast();
-			const sw = bounds.getSouthWest();
-			const tiles = boundsToTiles(sw.lng(), sw.lat(), ne.lng(), ne.lat());
-			const results = await Promise.all(tiles.map(fetchPanoDots));
-			if (!cancelled) setPanoDots(results.flat());
-		};
-		load();
-		const listener = map.addListener("idle", load);
-		return () => {
-			cancelled = true;
-			if (google?.maps) google.maps.event.removeListener(listener);
-		};
-	}, [svPanoramas, mapZoom]);
-
-	const [fullResetCounter, setFullResetCounter] = useState(0);
-
-	// Fetch render buffer from Rust ONLY when data changes (not on viewport pan).
-	// deck.gl handles camera transforms on the GPU — cached buffer stays valid during pan.
-	useEffect(() => {
-		if (!mapReady) {
-			cellMgrRef.current.clear();
-			return;
-		}
-
-		let cancelled = false;
-		const fetchRender = async () => {
-			const t = trace("render", { summary: true });
-			try {
-				const filePath = await cmd.storeFillRenderFile({
-					west: -180,
-					south: -90,
-					east: 180,
-					north: 90,
-					markerStyle,
-				});
-				t.step("fill");
-				const resp = await fetch(mmaBufUrl(filePath));
-				if (!resp.ok) throw new Error(`render fetch ${resp.status}: ${await resp.text()}`);
-				const buf = await resp.arrayBuffer();
-				t.step("fetch");
-				if (cancelled) return;
-
-				cellMgrRef.current.initFromBinary(buf);
-				t.step("parse");
-				mapOpenMark("markers");
-				t.end({
-					cells: cellMgrRef.current.cells.size,
-					total: cellMgrRef.current.totalCount,
-					bytes: buf.byteLength,
-				});
-				setRenderTick((t) => t + 1);
-			} catch (e) {
-				log.error("[render] fetchRender failed:", e);
-			}
-		};
-
-		fetchRender();
-		return () => {
-			cancelled = true;
-		};
-	}, [mapReady, fullResetCounter, markerStyle]);
-
-	useEffect(() => {
-		const unsub1 = renderDeltaBus.on((delta) => {
-			if (delta.fullReset) {
-				setFullResetCounter((c) => c + 1);
-				return;
-			}
-			const t = trace("delta", { summary: true });
-			const cm = cellMgrRef.current;
-			const affected = cm.applyDelta(delta);
-			const aid = getActiveLocation()?.id ?? null;
-			if (aid != null) {
-				for (const cb of cm.cells.values()) {
-					const idx = cb.idToIndex.get(aid);
-					if (idx != null) {
-						cb.patchColor(idx, 0, 0, 0, 0);
-						break;
-					}
-				}
-			}
-			if (delta.colorPatches.length > 0) {
-				const selPatches = delta.colorPatches.filter(
-					(cp) => !(cp.r === 42 && cp.g === 42 && cp.b === 42),
-				);
-				cm.appendToSelectionOverlay(selPatches);
-			}
-			t.end({ affected: affected.size, added: delta.added.length, removed: delta.removed.length });
-			if (affected.size > 0 || delta.colorPatches.length > 0) setRenderTick((t) => t + 1);
-		});
-		const unsub2 = selBitmaskBus.on((selColors, cellEntries, setIds) => {
-			const t = trace("selection", { summary: true });
-			const ids = cellMgrRef.current.applySelectionBitmasks(selColors, cellEntries);
-			setIds(ids);
-			t.end({ cells: cellEntries.length, sels: selColors.length, ids: ids.size });
-			setRenderTick((t) => t + 1);
-		});
-		return () => {
-			unsub1();
-			unsub2();
-		};
-	}, []);
+		if (mapReady) void loadScene(markerStyle);
+		else clearScene();
+	}, [mapReady, markerStyle]);
 
 	useEffect(() => {
 		if (svPreview?.url) return () => URL.revokeObjectURL(svPreview.url);
@@ -1186,74 +265,10 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		if (!gMapRef.current) return;
 		if (!google?.maps) return;
 		const custom = customStyles.find((s) => s.name === mapStyleName);
-		const stack = buildMapStack({
-			type: mapType,
-			labels: showLabels,
-			terrain: showTerrain,
-			color: svColor,
-			coverageType: svCoverageType,
-			thickness: svThickness,
-			useBlobby,
-			boldCountry: boldCountryBorders,
-			boldSubdivision: boldSubdivisionBorders,
-			style: mapStyleName,
-			customStyles: custom?.style,
-		});
+		const stack = makeStack(mapStackOptsFromPrefs(prefs, { useBlobby, customStyles: custom?.style }));
 		gMapRef.current.mapTypes.set("stack", stack);
 		gMapRef.current.setMapTypeId("stack");
-	}, [
-		mapType,
-		showLabels,
-		showTerrain,
-		svColor,
-		svCoverageType,
-		svThickness,
-		useBlobby,
-		boldCountryBorders,
-		boldSubdivisionBorders,
-		mapStyleName,
-		customStyles,
-		buildMapStack,
-	]);
-
-	const updateOverlay = useCallback(() => {
-		if (!overlayRef.current) return;
-		const layers = buildLayers();
-		overlayRef.current.setProps({
-			layers,
-			onClick: handleClick as GoogleMapsOverlayProps["onClick"],
-			onHover: handleHover as GoogleMapsOverlayProps["onHover"],
-			onError: (e: unknown) => log.error("[deck.gl overlay error]", e),
-		});
-	}, [buildLayers, handleClick, handleHover]);
-
-	useEffect(() => {
-		updateOverlay();
-	}, [
-		mapVer,
-		renderTick,
-		map?.meta.tags,
-		selected,
-		selectedTags,
-		activeLocation?.id,
-		markerOpacity,
-		markerStyle,
-		showPerfectScoreCircle,
-		svPanoramas,
-		panoDots,
-		isMeasuring,
-		latLngAnchor,
-		trailVersion,
-		importMarkerVersion,
-		diffMarkerVersion,
-	]);
-
-	useEffect(() => {
-		return () => {
-			overlayRef.current?.setMap(null);
-			overlayRef.current?.finalize();
-		};
-	}, []);
+	}, [prefs, useBlobby, customStyles, mapStyleName, makeStack]);
 
 	const handleSearchResult = useCallback((lat: number, lng: number, _name: string) => {
 		if (!gMapRef.current) return;
@@ -1364,7 +379,7 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 								selectPolygon({ coordinates: rings as [number, number][][] });
 							}}
 							freehandPathRef={freehandPathRef}
-							requestOverlayUpdate={updateOverlay}
+							requestOverlayUpdate={requestUpdate}
 						/>
 					</div>
 				)}
