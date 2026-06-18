@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { useCurrentMap, useSelectedLocationIds } from "@/store/useMapStore";
 import { cmd } from "@/lib/commands";
-import { mmaBufUrl } from "@/lib/util/util";
+import { mmaBufUrl, isWeb } from "@/lib/util/util";
 import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { fmt } from "@/lib/util/format";
 import { toast } from "@/lib/util/toast";
@@ -21,6 +21,39 @@ enum ExportScope {
 async function fetchExportFile(path: string): Promise<string> {
 	const res = await fetch(mmaBufUrl(path));
 	return res.text();
+}
+
+// In a browser (web-serve) there's no native save dialog that returns a path for the
+// backend to write to. Use the File System Access API to let the user pick a destination
+// and stream the already-built temp export straight into it (no full read into memory).
+// Falls back to a plain download where that API is unavailable. Returns false if cancelled.
+async function downloadInBrowser(srcPath: string, fileName: string): Promise<boolean> {
+	const url = mmaBufUrl(srcPath);
+	const picker = (
+		window as unknown as {
+			showSaveFilePicker?: (o: { suggestedName?: string }) => Promise<FileSystemFileHandle>;
+		}
+	).showSaveFilePicker;
+	if (picker) {
+		let handle: FileSystemFileHandle;
+		try {
+			handle = await picker({ suggestedName: fileName });
+		} catch (e) {
+			if (e instanceof DOMException && e.name === "AbortError") return false;
+			throw e;
+		}
+		const res = await fetch(url);
+		if (!res.body) throw new Error("export stream unavailable");
+		await res.body.pipeTo((await handle.createWritable()) as unknown as WritableStream<Uint8Array>);
+		return true;
+	}
+	const objUrl = URL.createObjectURL(await (await fetch(url)).blob());
+	const a = document.createElement("a");
+	a.href = objUrl;
+	a.download = fileName;
+	a.click();
+	URL.revokeObjectURL(objUrl);
+	return true;
 }
 
 export function ExportDialog({ onClose }: Props) {
@@ -59,6 +92,7 @@ export function ExportDialog({ onClose }: Props) {
 
 	// Prompt for a destination, then move the temp export there. False = cancelled.
 	const saveToFile = async (srcPath: string, ext: string): Promise<boolean> => {
+		if (isWeb()) return downloadInBrowser(srcPath, `${baseName}.${ext}`);
 		const dest = await save({
 			defaultPath: `${baseName}.${ext}`,
 			filters: [{ name: ext.toUpperCase(), extensions: [ext] }],

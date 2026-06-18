@@ -12,6 +12,13 @@ export function mmaBufUrl(path: string): string {
 	return schemeBase("mma-buf") + path.replace(/\\/g, "/");
 }
 
+/** True when running under the web-serve bridge (a plain browser, no native shell). */
+export function isWeb(): boolean {
+	return Boolean(
+		(window as { __TAURI_INTERNALS__?: { __webserve?: boolean } }).__TAURI_INTERNALS__?.__webserve,
+	);
+}
+
 export function isFiniteNumber(v: unknown): v is number {
 	return typeof v === "number" && isFinite(v);
 }
