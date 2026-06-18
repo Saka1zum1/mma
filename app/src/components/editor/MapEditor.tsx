@@ -20,7 +20,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { goToList } from "@/store/router";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
-import { getGoogleMap as getGoogleMapInstance, waitForGoogleMap, fitMapToBounds } from "@/lib/map/mapState";
+import { getGoogleMap, waitForGoogleMap, fitMapToBounds } from "@/lib/map/mapState";
 import { pluginsReady } from "@/plugins";
 import { MapEmbed } from "@/components/editor/map/MapEmbed";
 import { MapMetaBar } from "@/components/editor/map/MapMetaBar";
@@ -270,7 +270,7 @@ export function MapEditor() {
 			showMapCursorRef.current = false;
 			setShowMapCursor(false);
 			if (!wasShowing) return;
-			const gmap = getGoogleMapInstance();
+			const gmap = getGoogleMap();
 			const center = gmap?.getCenter();
 			if (!gmap || !center) return;
 			// deck.gl/google-maps picks off the Maps 'click' event (latLng), not DOM events.

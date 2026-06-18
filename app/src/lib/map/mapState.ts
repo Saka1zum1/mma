@@ -13,6 +13,9 @@ export function setGoogleMap(map: google.maps.Map | null) {
 	}
 }
 
+/**
+ * This refers to the main editor map only.
+ */
 export function getGoogleMap(): google.maps.Map | null {
 	return googleMap;
 }
