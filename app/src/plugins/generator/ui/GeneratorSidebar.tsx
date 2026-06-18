@@ -132,6 +132,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		setSettings((prev) => {
 			const next = { ...prev, ...patch };
 			saveSettings(next);
+			engineRef.current?.updateSettings(next); // apply live to a running job (#46)
 			return next;
 		});
 	}, []);

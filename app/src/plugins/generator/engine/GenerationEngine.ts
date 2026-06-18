@@ -47,6 +47,12 @@ export class GenerationEngine {
 		this.callbacks = callbacks;
 	}
 
+	// Live-apply settings mid-job. Most settings are read fresh on every probe, so they
+	// take effect immediately. numGenerators and oneCountryAtATime are fixed at start().
+	updateSettings(settings: GeneratorSettings) {
+		this.settings = settings;
+	}
+
 	async start(): Promise<void> {
 		this.running = true;
 		this.beginSearchOverlay();
