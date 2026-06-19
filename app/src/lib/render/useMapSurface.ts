@@ -56,6 +56,8 @@ export function useMapSurface(
 	const panoDots = usePanoDots(map, opts.prefs.svPanoramas);
 	const activeLocationColor = useSetting("activeLocationColor");
 	const importPreviewColor = useSetting("importPreviewColor");
+	const panoDotColor = useSetting("panoDotColor");
+	const panoDotScaled = useSetting("panoDotScaled");
 	const scoreMaxError = useScoreMaxError();
 
 	// Visual signals that should repaint the scene.
@@ -75,8 +77,7 @@ export function useMapSurface(
 		const onClick = ((info: PickingInfo, event: OverlayEvent) =>
 			handleMapClick(info, event, {
 				cm: getScene(),
-				zoom: map?.getZoom() ?? 2,
-				container: map?.getDiv() ?? null,
+				map,
 				selectOnly: opts.prefs.selectOnly,
 				measuring: opts.measuring,
 				onContextMenu: opts.onContextMenu,
@@ -88,6 +89,8 @@ export function useMapSurface(
 			scoreMaxError,
 			svPanoramas: opts.prefs.svPanoramas,
 			panoDots,
+			panoDotColor,
+			panoDotScaled,
 			activeLocationColor,
 			importPreviewColor,
 			polygonGeomCache: polygonGeomCache.current,
@@ -109,6 +112,8 @@ export function useMapSurface(
 		opts.prefs.markerOpacity,
 		opts.prefs.showPerfectScoreCircle,
 		opts.prefs.svPanoramas,
+		panoDotColor,
+		panoDotScaled,
 		opts.prefs.selectOnly,
 		opts.measuring,
 		opts.onContextMenu,

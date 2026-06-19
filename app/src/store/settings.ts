@@ -99,6 +99,8 @@ const DEFAULTS = {
 	followActiveInReview: true,
 	activeLocationColor: { r: 200, g: 0, b: 0 },
 	importPreviewColor: { r: 217, g: 70, b: 239 },
+	panoDotColor: { r: 255, g: 0, b: 0 },
+	panoDotScaled: false,
 	tagViewMode: "flat" as TagViewMode,
 	tagSortMode: "default" as TagSortMode,
 	borderDetail: "light" as BorderDetail,

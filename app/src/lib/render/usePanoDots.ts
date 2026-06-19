@@ -3,11 +3,14 @@ import { google } from "@/lib/sv/opensv";
 import { boundsToTiles, fetchPanoDots, type PanoDot } from "@/lib/geo/photometa";
 
 // Fetches discrete Street View pano dots for a map's current bounds, refetching on every idle.
-// Gated on a minimum zoom (dots are too dense to be useful zoomed out).
+// Gated on a minimum zoom, then capped at MAX_TILES: a zoomed-out viewport spans an exploding
+// number of zoom-17 tiles, so we bail rather than fire a fetch storm.
+const MAX_TILES = 96;
+
 export function usePanoDots(
 	map: google.maps.Map | null,
 	enabled: boolean,
-	minZoom = 15,
+	minZoom = 13,
 ): PanoDot[] {
 	const [dots, setDots] = useState<PanoDot[]>([]);
 
@@ -27,6 +30,10 @@ export function usePanoDots(
 			const ne = bounds.getNorthEast();
 			const sw = bounds.getSouthWest();
 			const tiles = boundsToTiles(sw.lng(), sw.lat(), ne.lng(), ne.lat());
+			if (tiles.length > MAX_TILES) {
+				setDots([]);
+				return;
+			}
 			const results = await Promise.all(tiles.map(fetchPanoDots));
 			if (!cancelled) setDots(results.flat());
 		};

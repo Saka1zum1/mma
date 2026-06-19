@@ -622,6 +622,43 @@ function ActiveLocationSection() {
 	);
 }
 
+function PanoDotsSection() {
+	const s = useSettings();
+	return (
+		<fieldset className="fieldset">
+			<legend className="fieldset__header">
+				Panorama dots <span className="fieldset__divider" />
+			</legend>
+			<div className="settings-popup__item">
+				Dot color
+				<ColorPicker
+					color={s.panoDotColor}
+					onChange={(color) => setSetting("panoDotColor", color)}
+					ariaLabel="Panorama dot color"
+				/>
+			</div>
+			<label className="settings-popup__item">
+				<input
+					type="radio"
+					name="panodotsize"
+					checked={!s.panoDotScaled}
+					onChange={() => setSetting("panoDotScaled", false)}
+				/>
+				Constant size on screen
+			</label>
+			<label className="settings-popup__item">
+				<input
+					type="radio"
+					name="panodotsize"
+					checked={s.panoDotScaled}
+					onChange={() => setSetting("panoDotScaled", true)}
+				/>
+				Grow when zoomed in
+			</label>
+		</fieldset>
+	);
+}
+
 function ImportSection() {
 	const s = useSettings();
 	return (
@@ -720,6 +757,7 @@ function MapTab() {
 		<>
 			<MapNavigationSection />
 			<ActiveLocationSection />
+			<PanoDotsSection />
 			<ImportSection />
 		</>
 	);

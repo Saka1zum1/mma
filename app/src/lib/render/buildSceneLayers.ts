@@ -47,6 +47,8 @@ export interface SceneContext {
 	scoreMaxError: number;
 	svPanoramas: boolean;
 	panoDots: PanoDot[];
+	panoDotColor: RGB;
+	panoDotScaled: boolean;
 	activeLocationColor: RGB;
 	importPreviewColor: RGB;
 	// Per-view tessellation cache for selection polygons (keyed by selection key).
@@ -222,7 +224,14 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		);
 	}
 
-	if (ctx.svPanoramas && ctx.panoDots.length > 0) layers.push(panoDotsLayer(ctx.panoDots));
+	if (ctx.svPanoramas && ctx.panoDots.length > 0)
+		layers.push(
+			panoDotsLayer(
+				ctx.panoDots,
+				[ctx.panoDotColor.r, ctx.panoDotColor.g, ctx.panoDotColor.b],
+				ctx.panoDotScaled,
+			),
+		);
 
 	const anchor = getLatLngAnchor();
 	if (anchor) {
