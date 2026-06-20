@@ -20,11 +20,10 @@ import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { PolygonTools } from "@/components/editor/PolygonTools";
 
-import { type MapStyle } from "@/lib/geo/tiles";
 import { SearchControl } from "@/components/editor/map/SearchControl";
 import type { ParsedLocation } from "@/lib/data/importExport";
 import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/MapSettingsPanel";
-import { buildMapStack, mapStackOptsFromPrefs, type MapStackOpts } from "@/lib/geo/mapStack";
+import { resolveStackForPrefs, CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/components/editor/map/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
 
@@ -60,13 +59,7 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
 	const [mapZoom, setMapZoom] = useState(2);
 
-	const [customStyles, setCustomStyles] = useState<{ name: string; style: MapStyle[] }[]>(() => {
-		try {
-			return JSON.parse(localStorage.getItem("mma_custom_styles") ?? "[]");
-		} catch {
-			return [];
-		}
-	});
+	const [customStyles, setCustomStyles] = useLocalStorage<CustomStyle[]>(CUSTOM_STYLES_KEY, []);
 	const [showStylesDialog, setShowStylesDialog] = useState(false);
 	const [svPreview, setSvPreview] = useState<{
 		url: string;
@@ -99,12 +92,6 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 
 	const svLayerRef = useRef<google.maps.ImageMapType>(null);
 
-	const makeStack = useCallback((opts: MapStackOpts) => {
-		const { mapType, svLayer } = buildMapStack(opts);
-		svLayerRef.current = svLayer;
-		return mapType;
-	}, []);
-
 	useEffect(() => {
 		if (!containerRef.current || !map) return;
 		mapOpenMark("mounted");
@@ -132,10 +119,11 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 					styles: [{ stylers: [{ visibility: "off" }] }],
 				});
 
-				const custom = customStyles.find((s) => s.name === mapStyleName);
-				const stack = makeStack(
-					mapStackOptsFromPrefs(prefs, { useBlobby: svBlobby, customStyles: custom?.style }),
-				);
+				const { mapType: stack, svLayer } = resolveStackForPrefs(prefs, {
+					useBlobby: svBlobby,
+					customStyles,
+				});
+				svLayerRef.current = svLayer;
 				gMapRef.current.mapTypes.set("stack", stack);
 				gMapRef.current.setMapTypeId("stack");
 				setGoogleMapInstance(gMapRef.current);
@@ -261,11 +249,11 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 	useEffect(() => {
 		if (!gMapRef.current) return;
 		if (!google?.maps) return;
-		const custom = customStyles.find((s) => s.name === mapStyleName);
-		const stack = makeStack(mapStackOptsFromPrefs(prefs, { useBlobby, customStyles: custom?.style }));
+		const { mapType: stack, svLayer } = resolveStackForPrefs(prefs, { useBlobby, customStyles });
+		svLayerRef.current = svLayer;
 		gMapRef.current.mapTypes.set("stack", stack);
 		gMapRef.current.setMapTypeId("stack");
-	}, [prefs, useBlobby, customStyles, mapStyleName, makeStack]);
+	}, [prefs, useBlobby, customStyles]);
 
 	const handleSearchResult = useCallback((lat: number, lng: number, _name: string) => {
 		if (!gMapRef.current) return;
@@ -498,7 +486,6 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 												onClick={() => {
 													const next = customStyles.filter((c) => c.name !== s.name);
 													setCustomStyles(next);
-													localStorage.setItem("mma_custom_styles", JSON.stringify(next));
 													if (mapStyleName === s.name) pref("mapStyleName")("default");
 												}}
 												aria-label="Delete style"
@@ -526,7 +513,6 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 									if (!Array.isArray(style)) return;
 									const next = [...customStyles.filter((s) => s.name !== name), { name, style }];
 									setCustomStyles(next);
-									localStorage.setItem("mma_custom_styles", JSON.stringify(next));
 									ev.currentTarget.reset();
 								} catch {
 									// ignored

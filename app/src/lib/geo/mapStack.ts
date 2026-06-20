@@ -43,9 +43,16 @@ export interface MapStackResult {
 	svLayer: google.maps.ImageMapType;
 }
 
+export interface CustomStyle {
+	name: string;
+	style: MapStyle[];
+}
+
+export const CUSTOM_STYLES_KEY = "mma_custom_styles";
+
 // Maps the saved map prefs onto stack opts. `useBlobby` and resolved `customStyles` are passed in
-// because callers derive them differently (zoom-coupled blobby on the big map; custom styles read
-// from component state vs localStorage). TODO
+// because callers derive them differently (zoom-coupled blobby on the big map; per-call vs reactive
+// custom-style lists).
 export function mapStackOptsFromPrefs(
 	prefs: MapEmbedPrefs,
 	opts: { useBlobby: boolean; customStyles?: MapStyle[] },
@@ -219,4 +226,14 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 	}
 
 	return { mapType: createCompositeMapType(layers), svLayer };
+}
+
+export function resolveStackForPrefs(
+	prefs: MapEmbedPrefs,
+	opts: { useBlobby: boolean; customStyles: CustomStyle[] },
+): MapStackResult {
+	const custom = opts.customStyles.find((s) => s.name === prefs.mapStyleName);
+	return buildMapStack(
+		mapStackOptsFromPrefs(prefs, { useBlobby: opts.useBlobby, customStyles: custom?.style }),
+	);
 }

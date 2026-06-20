@@ -16,18 +16,9 @@ import { searchCoverage } from "../searchCoverage";
 import "./generator.css";
 
 const genStore = createPluginStorage("map-generator");
-const LEGACY_SETTINGS_KEY = "mma_generator_settings";
 
 function loadSettings(): GeneratorSettings {
-	let saved = genStore.get<Partial<GeneratorSettings>>("settings");
-	if (!saved) {
-		try {
-			const legacy = localStorage.getItem(LEGACY_SETTINGS_KEY);
-			if (legacy) saved = JSON.parse(legacy);
-		} catch {
-			// ignored
-		}
-	}
+	const saved = genStore.get<Partial<GeneratorSettings>>("settings");
 	return { ...DEFAULT_SETTINGS, ...(saved ?? {}) };
 }
 

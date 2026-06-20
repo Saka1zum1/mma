@@ -1,30 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { google } from "@/lib/sv/opensv";
-import { buildMapStack, mapStackOptsFromPrefs } from "@/lib/geo/mapStack";
-import type { MapStyle } from "@/lib/geo/tiles";
+import { resolveStackForPrefs, CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { useMapSurface } from "@/lib/render/useMapSurface";
 import { useSetting, setSetting } from "@/store/settings";
-import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
+import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/components/editor/map/mapEmbedPrefs";
-
-// Builds the minimap tile stack from the big map's saved prefs so it matches its appearance.
-// TODO
-function buildMiniMapType(prefs: MapEmbedPrefs): google.maps.ImageMapType {
-	const customStyles = (() => {
-		try {
-			return JSON.parse(localStorage.getItem("mma_custom_styles") ?? "[]") as {
-				name: string;
-				style: MapStyle[];
-			}[];
-		} catch {
-			return [];
-		}
-	})();
-	const custom = customStyles.find((s) => s.name === prefs.mapStyleName);
-	return buildMapStack(
-		mapStackOptsFromPrefs(prefs, { useBlobby: prefs.svBlobby, customStyles: custom?.style }),
-	).mapType;
-}
 
 const MINIMAP_SCALE_MIN = 0.5;
 const MINIMAP_SCALE_MAX = 2;
@@ -81,7 +61,10 @@ export function FullscreenMiniMap({
 
 	useEffect(() => {
 		if (!containerRef.current || !google?.maps) return;
-		const customType = buildMiniMapType(prefs);
+		const customType = resolveStackForPrefs(prefs, {
+			useBlobby: prefs.svBlobby,
+			customStyles: getLocal<CustomStyle[]>(CUSTOM_STYLES_KEY, []),
+		}).mapType;
 		const map = new google.maps.Map(containerRef.current, {
 			center: { lat, lng },
 			zoom: 14,
