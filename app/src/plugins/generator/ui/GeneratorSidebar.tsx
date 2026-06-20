@@ -19,7 +19,7 @@ const genStore = createPluginStorage("map-generator");
 
 function loadSettings(): GeneratorSettings {
 	const saved = genStore.get<Partial<GeneratorSettings>>("settings");
-	return { ...DEFAULT_SETTINGS, ...(saved ?? {}) };
+	return { ...DEFAULT_SETTINGS, ...saved };
 }
 
 function saveSettings(s: GeneratorSettings) {
