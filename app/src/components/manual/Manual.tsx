@@ -198,8 +198,14 @@ const CHAPTERS: Chapter[] = [
 				<p>
 					When no map is open you see the home screen. The left column, <strong>Your Maps</strong>,
 					lists every map with a header showing the total map and location counts. The right column
-					holds a <strong>Getting Started</strong> notice and the link to the{" "}
+					holds a <strong>What's New</strong> panel and the link to the{" "}
 					<strong>Manual</strong>.
+				</p>
+				<h2>What's New</h2>
+				<p>
+					The right column shows a scrollable release history pulled from the changelog. Each version
+					section lists its user-facing changes. Versions newer than your installed app are visually
+					marked so you can see what an update would bring.
 				</p>
 				<Img
 					name="map-list.png"
@@ -228,7 +234,8 @@ const CHAPTERS: Chapter[] = [
 				<h2>Map rows</h2>
 				<ul>
 					<li>
-						<strong>Open.</strong> Click a map's name to open it in its own editor window.
+						<strong>Open.</strong> Click a map's name to open it in its own editor window. The
+						window title shows the map name.
 					</li>
 					<li>
 						<strong>Drag handle.</strong> Drag a map by its handle onto a folder to move it; drag it
@@ -239,7 +246,8 @@ const CHAPTERS: Chapter[] = [
 						(free-text keywords shown on the row and searchable).
 					</li>
 					<li>
-						<strong>Delete.</strong> The trash icon deletes the map after a confirmation.
+						<strong>Delete.</strong> The trash icon deletes the map after a confirmation. You can
+						also delete a map from inside its editor via the map rename dialog.
 					</li>
 					<li>
 						<strong>Row fields.</strong> Each row can show location count, last opened, and date
@@ -352,10 +360,18 @@ const CHAPTERS: Chapter[] = [
 						<strong>Emphasise subdivision borders</strong>.
 					</li>
 					<li>
-						<strong>Map style.</strong> <strong>Default</strong>, <strong>Dark mode</strong>, any
-						custom styles you add, and a <strong>Manage map styles</strong> link.
+						<strong>Map style.</strong> <strong>Default</strong>, <strong>Legacy</strong> (the
+						classic GeoGuessr cloud style), <strong>Dark mode</strong>, any custom styles you add,
+						and a <strong>Manage map styles</strong> link.
 					</li>
 				</ul>
+				<h2>Select-only mode</h2>
+				<p>
+					Toggle <strong>Select-only mode</strong> (<Kbd>O</Kbd>) from the Map Settings dropdown or
+					its hotkey. When active, clicking the map never creates a new location; only existing
+					markers are clickable. Useful when you want to browse and select without accidentally
+					adding pins.
+				</p>
 				<h2>Navigating the map</h2>
 				<ul>
 					<li>
@@ -469,13 +485,20 @@ const CHAPTERS: Chapter[] = [
 					Hold <Kbd>Enter</Kbd> to show a crosshair at the map center, then release to create a
 					location there. It can be a bit janky, but is supported if you want to go mouseless.
 				</p>
-				<h2>Paste coordinates or a URL</h2>
+				<h2>Paste coordinates or URLs</h2>
 				<ul>
 					<li>
-						<strong>Paste a Google Maps URL</strong> to drop a location at that point.
+						<strong>Paste a Google Maps URL</strong> to drop a location at that point. Short
+						links (<code>maps.app.goo.gl</code>) are resolved automatically.
 					</li>
 					<li>
-						<strong>Paste multiple lines of coordinates</strong> to import them all at once.
+						<strong>Paste multiple URLs or coordinates</strong> (one per line) to import them
+						all at once. A staged preview appears before they are added (see{" "}
+						<ChapterLink id="importing-into-map" />).
+					</li>
+					<li>
+						<strong>Paste into the search box.</strong> Pasting a URL or coordinate pair into
+						the place search control also imports the location.
 					</li>
 				</ul>
 				<Note>
@@ -554,6 +577,7 @@ const CHAPTERS: Chapter[] = [
 					</li>
 					<li>
 						<strong>Zoom.</strong> Zoom the panorama in and out (<Kbd>+</Kbd> / <Kbd>-</Kbd>).
+						Press <Kbd>0</Kbd> to zoom all the way out.
 					</li>
 					<li>
 						<strong>Return to spawn.</strong> Snaps the pano back to the location's saved
@@ -576,15 +600,18 @@ const CHAPTERS: Chapter[] = [
 					</li>
 					<li>
 						<strong>Map links.</strong> Open in Google Maps and copy a Street View link (
-						<Kbd>Ctrl</Kbd>+<Kbd>C</Kbd>; long URL with <Kbd>Ctrl</Kbd>+<Kbd>Alt</Kbd>+<Kbd>C</Kbd>
-						).
+						<Kbd>Ctrl</Kbd>+<Kbd>C</Kbd>). Hold <Kbd>Shift</Kbd> while copying to omit tags
+						from the URL, or <Kbd>Alt</Kbd> to copy the full long URL instead of a short
+						link.
 					</li>
 				</ul>
 				<h2>Display options</h2>
 				<ul>
 					<li>
 						<strong>Fullscreen.</strong> Expands the panorama and shows a <strong>minimap</strong>{" "}
-						and a <strong>tag bar</strong> (each toggleable) (<Kbd>F</Kbd>).
+						and a <strong>tag bar</strong> (each toggleable) (<Kbd>F</Kbd>). The minimap mirrors
+						the editor map, rendering all markers, selections, and polygons, and follows the
+						active location.
 					</li>
 					<li>
 						<strong>Hide car.</strong> Masks the capture vehicle (<Kbd>Ctrl</Kbd>+<Kbd>H</Kbd>).
@@ -802,6 +829,14 @@ const CHAPTERS: Chapter[] = [
 					<li>
 						<strong>Quicktags.</strong> While editing a location, number keys <Kbd>1</Kbd> through{" "}
 						<Kbd>9</Kbd> toggle the first nine visible tags by position. These keys are rebindable.
+						Quicktags and autocomplete suggestions follow your chosen tag sort order (name, count,
+						or manual).
+					</li>
+					<li>
+						<strong>Per-map hotkeys.</strong> You can assign a dedicated hotkey to any tag from
+						its edit dialog. Pressing the key while a location is open applies or removes the
+						tag. These bindings are stored per-map, not globally. See{" "}
+						<ChapterLink id="controls-hotkeys" />.
 					</li>
 					<li>
 						Click a tag pill in the Tags section to select every location carrying it; shift-click
@@ -821,6 +856,11 @@ const CHAPTERS: Chapter[] = [
 						<strong>Visibility.</strong> Hide a tag to declutter the map. A tag automatically
 						becomes hidden when no location carries it.
 					</li>
+					<li>
+						<strong>Suggestion limit.</strong> Cap how many tags appear in autocomplete and
+						quicktag lists in{" "}
+						<strong>Settings &rarr; Street View &rarr; Tags &rarr; Suggestions shown</strong>.
+					</li>
 				</ul>
 				<h2>Tree grouping</h2>
 				<p>
@@ -836,8 +876,9 @@ const CHAPTERS: Chapter[] = [
 						per distinct value, assigning each location the tag for its value (command palette). For
 						example, applying <strong>countryCode</strong> turns a map into per-country tags in one
 						step. Date and month fields offer a grouping choice (year, year-month, exact day, month
-						of year, time of day), with an optional location-timezone frame; number fields can be
-						bucketed by a fixed width (e.g. altitude in 500m bands).
+						of year, or hour of day), with an optional <strong>Location timezone</strong> checkbox;
+						number fields can be bucketed by a fixed width (e.g. altitude in 500m bands). The same
+						partition options are available in the Gradient plugin.
 					</li>
 					<li>
 						<strong>Find and replace in tag names.</strong> Bulk-rename across tags (command
@@ -878,8 +919,15 @@ const CHAPTERS: Chapter[] = [
 						a pano vs resolved by coordinates).
 					</li>
 					<li>
-						<strong>Polygon.</strong> An area you draw as a polygon, rectangle, or freehand shape. 
+						<strong>Polygon.</strong> An area you draw as a polygon, rectangle, or freehand shape.
 						Polygon selections can be configured to include informational locations.
+					</li>
+					<li>
+						<strong>Country / Subdivision.</strong> Hold <Kbd>Q</Kbd> and click the map to select
+						a country. Hold <Kbd>Q</Kbd>+<Kbd>Shift</Kbd> and click to select an admin-1
+						subdivision (state, province, etc.). Enable subdivisions and choose their detail
+						level in{" "}
+						<strong>Settings &rarr; Street View &rarr; Country Select &rarr; Subdivisions</strong>.
 					</li>
 					<li>
 						<strong>Duplicates.</strong> Locations within a chosen distance of each other.
@@ -906,8 +954,10 @@ const CHAPTERS: Chapter[] = [
 						<strong>Invert selection.</strong> Everything except this selection.
 					</li>
 					<li>
-						<strong>Ghost selection.</strong> Dim it on the map without removing it (top-level
-						selections).
+						<strong>Ghost selection.</strong> Dim it on the map without removing it. Each
+						selection row also has an inline ghost toggle button. <Kbd>Alt</Kbd>-click the
+						ghost button to <strong>isolate</strong> that selection (ghost every other
+						selection); <Kbd>Alt</Kbd>-click again to restore all.
 					</li>
 					<li>
 						<strong>Edit filter.</strong> Re-open the filter form (Filter selections only).
@@ -927,12 +977,21 @@ const CHAPTERS: Chapter[] = [
 						<strong>Download GeoJSON</strong> and <strong>Rename.</strong> For polygon selections.
 					</li>
 					<li>
+						<strong>Prune duplicates.</strong> On a Duplicates selection, keeps one location per
+						cluster and removes the rest.
+					</li>
+					<li>
+						<strong>Delete polygon.</strong> Hold <Kbd>E</Kbd> and click the map to delete the
+						polygon under the cursor.
+					</li>
+					<li>
 						<strong>Deselect.</strong> Remove the selection.
 					</li>
 				</ul>
 				<p>
 					<strong>Delete selected locations</strong> also lives in the command palette. To tag the
-					whole selection at once, use <strong>Bulk add tags</strong>.
+					whole selection at once, use <strong>Bulk add tags</strong> — type to filter matching
+					tags from a dropdown, or press <Kbd>Enter</Kbd> to create a new tag by name.
 				</p>
 				<h2>Picking a random subset</h2>
 				<p>
@@ -1000,7 +1059,7 @@ const CHAPTERS: Chapter[] = [
 				<ul>
 					<li>
 						<strong>Built-in fields.</strong> <strong>Created</strong> and <strong>Modified</strong>{" "}
-						timestamps.
+						timestamps, and <strong>Tag count</strong> (how many tags a location carries).
 					</li>
 					<li>
 						<strong>Metadata fields.</strong> Any field present on the map, such as{" "}
@@ -1029,6 +1088,21 @@ const CHAPTERS: Chapter[] = [
 				<p>
 					Enum fields (such as camera type) offer only the equality operators and a value list. Date
 					and month fields use a date picker, including any-year mode for season-style filters.
+					A date pick at midnight means "the whole day" — the filter spans the full calendar day.
+					Use the clear-time button on the picker to reset to day-grain.
+				</p>
+				<h2>Timezone</h2>
+				<p>
+					Date filters compare against your local timezone by default. Check{" "}
+					<strong>Location timezone</strong> on the filter to compare in each location's own
+					timezone instead, which is important when filtering by time of day across many countries.
+				</p>
+				<h2>Stepping through periods</h2>
+				<p>
+					Filter selection rows for date and number ranges show left/right arrow buttons. These
+					shift the filter window forward or backward by its own span, so you can step through
+					dates day-by-day or numbers band-by-band. Between the min and max inputs, copy buttons
+					let you duplicate one bound to the other.
 				</p>
 				<Note>
 					Filters operate on stored metadata. Run enrichment first so the fields you want to filter
@@ -1095,7 +1169,11 @@ const CHAPTERS: Chapter[] = [
 						<strong>Set metadata field value.</strong> Writes a chosen value into a field across the
 						scope. Besides custom metadata fields, the picker also offers the built-in camera fields{" "}
 						<strong>Heading</strong>, <strong>Pitch</strong>, and <strong>Zoom</strong>, so you can
-						set a fixed point of view across many locations at once.
+						set a fixed point of view across many locations at once. For numeric fields you can
+						enter an expression instead of a constant, such as{" "}
+						<code>mod(heading + 180, 360)</code>. Expressions can reference any field on the
+						location and use functions like <code>mod</code>, <code>clamp</code>,{" "}
+						<code>abs</code>, <code>round</code>, <code>min</code>, and <code>max</code>.
 					</li>
 					<li>
 						<strong>Pan headings along road.</strong> Sets each location's heading to face along the
@@ -1479,7 +1557,18 @@ const CHAPTERS: Chapter[] = [
 					Opened from the gear icon (bottom-right). These apply everywhere and are stored on your
 					machine. They are organized into three tabs: <strong>Controls</strong>,{" "}
 					<strong>Street View</strong>, and <strong>Advanced</strong>. Covered in the next chapters.
+					A few notable settings that live in the <strong>Map</strong> section:
 				</p>
+				<ul>
+					<li>
+						<strong>Panorama dots.</strong> Customize the color and scaling mode of the individual
+						Street View dots that appear at close zoom (constant size vs grow when zoomed in).
+					</li>
+					<li>
+						<strong>Staged marker color.</strong> The color used for import-preview markers before
+						they are committed. See <ChapterLink id="importing-into-map" />.
+					</li>
+				</ul>
 				<h2>Per-map settings</h2>
 				<p>
 					Opened from the <strong>Map settings</strong> dropdown above the map. These belong to the
@@ -1495,7 +1584,8 @@ const CHAPTERS: Chapter[] = [
 					</li>
 					<li>
 						<strong>Map behaviour.</strong> Show location previews on hover; enrich locations with
-						metadata (and pick fields).
+						metadata (and pick fields); <strong>Select-only mode</strong> (map clicks never add
+						locations).
 					</li>
 					<li>
 						<strong>Scoring.</strong> The score bounds editor.
@@ -1542,6 +1632,21 @@ const CHAPTERS: Chapter[] = [
 					blocked: for example, a combination using <Kbd>Alt</Kbd> cannot shadow a navigation
 					action, because <Kbd>Alt</Kbd> is the slow modifier.
 				</p>
+				<h2>Per-map hotkeys</h2>
+				<p>
+					Each map can have its own hotkeys that override global bindings while the map is open.
+					Two kinds of per-map binding are available:
+				</p>
+				<ul>
+					<li>
+						<strong>Tag hotkeys.</strong> Assign a key to a tag from its edit dialog. Pressing
+						the key while a location is open toggles the tag.
+					</li>
+					<li>
+						<strong>Copy-to-map.</strong> Assign a key to another map. Pressing the key copies
+						the active location into that map.
+					</li>
+				</ul>
 				<h2>Movement speeds</h2>
 				<ul>
 					<li>
@@ -1617,8 +1722,9 @@ const CHAPTERS: Chapter[] = [
 					</li>
 					<li>
 						<strong>Additional.</strong> Downloadable plugins from the online registry, with{" "}
-						<strong>Install</strong>, <strong>Enable</strong>/<strong>Disable</strong>, and an
-						uninstall (trash) button.
+						<strong>Install</strong>, <strong>Enable</strong>/<strong>Disable</strong>, an
+						uninstall (trash) button, and an <strong>Update</strong> action when a newer version
+						is available.
 					</li>
 				</ul>
 				<p>
@@ -1639,7 +1745,11 @@ const CHAPTERS: Chapter[] = [
 						<strong>Map generator.</strong> Generates Street View locations from coverage inside
 						regions you draw, with extensive quality filters (camera generation, date ranges,
 						official vs unofficial, minimum spacing, and more). It can follow linked panoramas to
-						spread coverage.
+						spread coverage. Additional options include searching within panorama descriptions,
+						filtering by number of links, setting a fixed output zoom level, and adjusting the
+						generation speed. Settings changes apply mid-run. An optional search-coverage overlay
+						visualizes where the generator has searched. The generator session persists across
+						view switches, so you can leave and return without losing progress.
 					</li>
 					<li>
 						<strong>Vali.</strong> Generates locations from pre-built coverage data using the
@@ -1658,6 +1768,9 @@ const CHAPTERS: Chapter[] = [
 					</li>
 					<li>
 						<strong>Gradient.</strong> Colors locations by a field value using gradient buckets.
+						Supports the same date/number partition modes as{" "}
+						<strong>Apply metadata as tags</strong>. A scope selector lets you color only the
+						current selection, with bucket boundaries computed from the subset.
 					</li>
 					<li>
 						<strong>Pivot Table.</strong> Cross-tabulates selections against location metadata.
@@ -1722,6 +1835,8 @@ const CHAPTERS: Chapter[] = [
 					current map. You can also <strong>drag a JSON or CSV file</strong> straight onto the
 					editor window; a "Drop file to import" overlay appears while you hover. Either way an
 					import panel opens in the sidebar showing a preview before anything is committed.
+					Staged locations appear on the map in a distinct color (configurable in{" "}
+					<strong>Settings &rarr; Map &rarr; Import &rarr; Staged marker color</strong>).
 				</p>
 				<h2>The import panel</h2>
 				<ul>
@@ -1781,7 +1896,8 @@ const CHAPTERS: Chapter[] = [
 					</li>
 					<li>
 						<strong>Save MMA data.</strong> Include MMA-specific data such as tags. Turning it off
-						makes the file smaller, which helps when uploading very large maps to GeoGuessr.
+						makes the file smaller, which helps when uploading very large maps to GeoGuessr. Tag
+						order is preserved through export and re-import.
 					</li>
 					<li>
 						<strong>Bypass GeoGuessr auto-panning for locations with 0 heading.</strong> Keeps your
