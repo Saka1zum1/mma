@@ -447,6 +447,34 @@ fn resolve_untagged() {
     assert_eq!(ids, vec![2]);
 }
 
+// tagCount is a virtual field: filtered through the Filter primitive, resolved as the
+// length of the tag list. Counts every assigned tag (visibility is a display concern).
+// Covers both resolution paths: base-batch rows (resolve_field_arrow) and overlay adds
+// (resolve_field_loc).
+#[test]
+fn resolve_filter_tag_count() {
+    let b1 = loc(1, 0.0, 0.0); // base: 0 tags
+    let mut b2 = loc(2, 0.0, 0.0);
+    b2.tags = vec![10, 11]; // base: 2 tags
+    let batch = locations_to_batch(&[b1, b2]);
+
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let mut a3 = loc(3, 0.0, 0.0);
+    a3.tags = vec![10, 11, 12]; // add: 3 tags
+    let adds = vec![a3];
+    let view = make_view(Some(&batch), &dead, &patches, &adds);
+
+    let eq2 = SelectionProps::Filter { field: "tagCount".into(), op: FilterOp::Eq, value: serde_json::json!(2), value2: None, tz_local: false };
+    assert_eq!(resolve(&view, &eq2), vec![2]);
+
+    let gt1 = SelectionProps::Filter { field: "tagCount".into(), op: FilterOp::Gt, value: serde_json::json!(1), value2: None, tz_local: false };
+    assert_eq!(resolve(&view, &gt1), vec![2, 3]);
+
+    let eq0 = SelectionProps::Filter { field: "tagCount".into(), op: FilterOp::Eq, value: serde_json::json!(0), value2: None, tz_local: false };
+    assert_eq!(resolve(&view, &eq0), vec![1]);
+}
+
 #[test]
 fn resolve_reviewed_is_an_id_set_leaf_over_batch() {
     let locs = vec![loc(1, 0.0, 0.0), loc(2, 0.0, 0.0), loc(3, 0.0, 0.0), loc(4, 0.0, 0.0)];

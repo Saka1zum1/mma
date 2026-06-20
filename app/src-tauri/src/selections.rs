@@ -944,6 +944,7 @@ fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
         "id" => Some(serde_json::json!(loc.id)),
         "createdAt" => Some(serde_json::json!(loc.created_at as f64)),
         "modifiedAt" => loc.modified_at.map(|ts| serde_json::json!(ts as f64)),
+        "tagCount" => Some(serde_json::json!(loc.tags.len())),
         _ => loc.extra.as_ref().and_then(|e| e.get(field).cloned()),
     }
 }
@@ -963,6 +964,7 @@ fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_
             if c.is_null(idx) { return None; }
             Some(serde_json::json!(c.value(idx) as f64))
         }),
+        "tagCount" => view.tags.map(|c| serde_json::json!(c.value(idx).len())),
         _ => {
             let extras = view.extras?;
             if extras.is_null(idx) { return None; }

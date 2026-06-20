@@ -35,6 +35,7 @@ export interface FieldEntry {
 const VIRTUAL_FIELDS: FieldEntry[] = [
 	{ key: "createdAt", label: "Created", fieldType: "date" },
 	{ key: "modifiedAt", label: "Modified", fieldType: "date" },
+	{ key: "tagCount", label: "Tag count", fieldType: "number" },
 ];
 
 export function useExtraFieldKeys(): FieldEntry[] {
