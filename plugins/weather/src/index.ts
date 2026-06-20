@@ -1,7 +1,5 @@
-import type { Location_Serialize, ExtraFieldDef, EnrichFieldOption } from "mma-plugin-types";
+import type { Location_Serialize, ExtraFieldDef, EnrichFieldOption, EnrichCtx } from "mma-plugin-types";
 
-// Single source of truth: extra key <-> Open-Meteo hourly variable <-> label.
-// Everything (field defs, enrich-modal options, request var list) derives from this.
 interface WeatherField {
 	key: string;
 	param: string;
@@ -138,22 +136,34 @@ async function runTask(
 	}
 }
 
-async function enrich(
+function requestedFields(enrichFields: string[] | null): WeatherField[] {
+	return WEATHER_FIELDS.filter((f) => !enrichFields || enrichFields.includes(f.key));
+}
+
+// Strictly datetime-dependent, and skips anything already holding every requested field
+// (re-runs cost nothing; only missing fields trigger a fetch).
+function usableLocations(
 	locations: Location_Serialize[],
 	enrichFields: string[] | null,
-): Promise<Map<number, Record<string, unknown>>> {
-	const patches = new Map<number, Record<string, unknown>>();
-
-	const requested = WEATHER_FIELDS.filter((f) => !enrichFields || enrichFields.includes(f.key));
-	if (requested.length === 0) return patches;
-
-	// Strictly datetime-dependent, and skip anything already holding every requested field
-	// (re-runs cost nothing; only missing fields trigger a fetch).
-	const usable = locations.filter(
+): Location_Serialize[] {
+	const requested = requestedFields(enrichFields);
+	if (requested.length === 0) return [];
+	return locations.filter(
 		(l) =>
 			typeof l.extra?.datetime === "number" &&
 			requested.some((f) => l.extra?.[f.key] == null),
 	);
+}
+
+async function enrich(
+	locations: Location_Serialize[],
+	enrichFields: string[] | null,
+	ctx?: EnrichCtx,
+): Promise<Map<number, Record<string, unknown>>> {
+	const patches = new Map<number, Record<string, unknown>>();
+
+	const requested = requestedFields(enrichFields);
+	const usable = usableLocations(locations, enrichFields);
 	if (usable.length === 0) return patches;
 
 	// Chunk all pending locations; per-coordinate dates let one request span arbitrary days.
@@ -166,8 +176,11 @@ async function enrich(
 	const limiter = new RateLimiter(CALLS_PER_MIN, 60_000);
 	let cursor = 0;
 	async function worker(): Promise<void> {
-		while (cursor < chunks.length) {
-			await runTask(chunks[cursor++], vars, requested, limiter, patches);
+		while (cursor < chunks.length && !ctx?.signal?.aborted) {
+			const chunk = chunks[cursor++];
+			await runTask(chunk, vars, requested, limiter, patches);
+			// One unit per location attempted, so the bar fills to the unit count above.
+			for (let i = 0; i < chunk.length; i++) ctx?.onUnit?.();
 		}
 	}
 	await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT, chunks.length) }, worker));
@@ -180,9 +193,11 @@ MMA.registerPlugin({
 		MMA.registerEnrichFields(ENRICH_OPTIONS);
 		MMA.registerEnrichmentProvider({
 			id: "weather",
+			label: "Weather",
 			enrich,
 			fieldDefs: FIELD_DEFS,
 			requires: ["datetime"],
+			units: (locations, enrichFields) => usableLocations(locations, enrichFields).length,
 		});
 	},
 });

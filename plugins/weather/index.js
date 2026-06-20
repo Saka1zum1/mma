@@ -93,13 +93,20 @@ async function runTask(locs, vars, requested, limiter, patches) {
     if (Object.keys(patch).length > 0) patches.set(loc.id, patch);
   }
 }
-async function enrich(locations, enrichFields) {
-  const patches = /* @__PURE__ */ new Map();
-  const requested = WEATHER_FIELDS.filter((f) => !enrichFields || enrichFields.includes(f.key));
-  if (requested.length === 0) return patches;
-  const usable = locations.filter(
+function requestedFields(enrichFields) {
+  return WEATHER_FIELDS.filter((f) => !enrichFields || enrichFields.includes(f.key));
+}
+function usableLocations(locations, enrichFields) {
+  const requested = requestedFields(enrichFields);
+  if (requested.length === 0) return [];
+  return locations.filter(
     (l) => typeof l.extra?.datetime === "number" && requested.some((f) => l.extra?.[f.key] == null)
   );
+}
+async function enrich(locations, enrichFields, ctx) {
+  const patches = /* @__PURE__ */ new Map();
+  const requested = requestedFields(enrichFields);
+  const usable = usableLocations(locations, enrichFields);
   if (usable.length === 0) return patches;
   const chunks = [];
   for (let i = 0; i < usable.length; i += COORDS_PER_REQUEST) {
@@ -109,8 +116,10 @@ async function enrich(locations, enrichFields) {
   const limiter = new RateLimiter(CALLS_PER_MIN, 6e4);
   let cursor = 0;
   async function worker() {
-    while (cursor < chunks.length) {
-      await runTask(chunks[cursor++], vars, requested, limiter, patches);
+    while (cursor < chunks.length && !ctx?.signal?.aborted) {
+      const chunk = chunks[cursor++];
+      await runTask(chunk, vars, requested, limiter, patches);
+      for (let i = 0; i < chunk.length; i++) ctx?.onUnit?.();
     }
   }
   await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT, chunks.length) }, worker));
@@ -121,9 +130,11 @@ MMA.registerPlugin({
     MMA.registerEnrichFields(ENRICH_OPTIONS);
     MMA.registerEnrichmentProvider({
       id: "weather",
+      label: "Weather",
       enrich,
       fieldDefs: FIELD_DEFS,
-      requires: ["datetime"]
+      requires: ["datetime"],
+      units: (locations, enrichFields) => usableLocations(locations, enrichFields).length
     });
   }
 });
