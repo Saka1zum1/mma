@@ -13,6 +13,7 @@ import {
 	selectUnpanned,
 	selectPanoIds,
 	selectNotPanoIds,
+	selectUncommitted,
 	setPolygonName,
 	setSelectionColors,
 	addTagToLocations,
@@ -735,6 +736,12 @@ export function MapOverview() {
 													onSelect={() => selectNotPanoIds()}
 												>
 													Not Pano IDs
+												</DropdownMenu.Item>
+												<DropdownMenu.Item
+													className="context-menu__item"
+													onSelect={() => selectUncommitted()}
+												>
+													Uncommitted
 												</DropdownMenu.Item>
 											</DropdownMenu.SubContent>
 										</DropdownMenu.Portal>

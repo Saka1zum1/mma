@@ -1035,6 +1035,10 @@ export function selectNotPanoIds() {
 	return addSelections([{ type: "NotPanoIds" }]);
 }
 
+export function selectUncommitted() {
+	return addSelections([{ type: "Uncommitted" }]);
+}
+
 export function selectDuplicates(distance: number) {
 	return addSelections([{ type: "Duplicates", distance }]);
 }
@@ -1497,7 +1501,13 @@ export async function commitMap(message?: string): Promise<string> {
 	t.end();
 	undoRedoState = { canUndo: false, canRedo: false };
 	cachedCommitDiff = { added: 0, removed: 0, modified: 0 };
-	bump();
+	// Commit clears the overlay; commit-sensitive selections (e.g. Uncommitted) must
+	// re-resolve against the new baseline instead of showing now-committed rows.
+	if (selections.length > 0) {
+		await applySelectionUpdate((s) => s);
+	} else {
+		bump();
+	}
 	return id;
 }
 

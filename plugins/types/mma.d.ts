@@ -706,6 +706,8 @@ export type SelectionProps = {
 } | {
 	type: "NotPanoIds";
 } | {
+	type: "Uncommitted";
+} | {
 	type: "Manual";
 	locations: number[];
 } | {
@@ -1405,6 +1407,8 @@ export type SavedSelectionProps = {
 } | {
 	type: "NotPanoIds";
 } | {
+	type: "Uncommitted";
+} | {
 	type: "Duplicates";
 	distance: number;
 } | {
@@ -1890,6 +1894,7 @@ declare const mma: {
 	selectUnpanned(): Promise<void>;
 	selectPanoIds(): Promise<void>;
 	selectNotPanoIds(): Promise<void>;
+	selectUncommitted(): Promise<void>;
 	selectDuplicates(distance: number): Promise<void>;
 	previewDuplicateGroups(distance: number): Promise<number[][]>;
 	mergeDuplicates(distance: number): Promise<void>;

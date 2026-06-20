@@ -32,6 +32,7 @@ pub enum SelectionProps {
     Unpanned,
     PanoIds,
     NotPanoIds,
+    Uncommitted,
     Manual { locations: Vec<u32> },
     Duplicates { distance: f64 },
     ValidationState { locations: Vec<u32>, state: u8 },
@@ -240,6 +241,11 @@ impl<'a, 'v> RowRef<'a, 'v> {
     pub fn matches(&self, props: &SelectionProps) -> bool {
         test_row(self, props)
     }
+    /// Whether this row lives in the overlay (an add or a patch) rather than the
+    /// committed base batch -- i.e. it has uncommitted changes since the last commit.
+    pub fn is_uncommitted(&self) -> bool {
+        matches!(self.inner, RowInner::Loc(_))
+    }
 }
 
 impl<'a> LocView<'a> {
@@ -364,6 +370,7 @@ fn test_row(r: &RowRef, props: &SelectionProps) -> bool {
         SelectionProps::Unpanned => r.heading() == 0.0,
         SelectionProps::PanoIds => r.flags().contains(LocationFlags::LOAD_AS_PANO_ID),
         SelectionProps::NotPanoIds => !r.flags().contains(LocationFlags::LOAD_AS_PANO_ID),
+        SelectionProps::Uncommitted => r.is_uncommitted(),
         SelectionProps::Polygon { polygon, include_informational } => {
             if !include_informational && r.flags().contains(LocationFlags::INFORMATIONAL) { return false; }
             point_in_geometry(r.lng(), r.lat(), polygon)

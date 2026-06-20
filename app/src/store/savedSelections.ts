@@ -23,6 +23,7 @@ export type SavedSelectionProps =
 	| { type: "Unpanned" }
 	| { type: "PanoIds" }
 	| { type: "NotPanoIds" }
+	| { type: "Uncommitted" }
 	| { type: "Duplicates"; distance: number }
 	| { type: "Filter"; field: string; op: FilterOp; value: unknown; value2?: unknown }
 	| { type: "Intersection"; selections: SavedSelectionProps[] }
@@ -114,6 +115,8 @@ export function describeRule(props: SavedSelectionProps): string {
 			return "Has Pano ID";
 		case "NotPanoIds":
 			return "No Pano ID";
+		case "Uncommitted":
+			return "Uncommitted";
 		case "Duplicates":
 			return `Dupes (${props.distance}m)`;
 		case "Filter":

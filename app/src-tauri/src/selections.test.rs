@@ -475,6 +475,26 @@ fn resolve_filter_tag_count() {
     assert_eq!(resolve(&view, &eq0), vec![1]);
 }
 
+// Uncommitted resolves to overlay membership: committed base rows are excluded, while
+// both overlay adds (new) and patched base rows (edited since commit) are included.
+#[test]
+fn resolve_uncommitted() {
+    let b1 = loc(1, 0.0, 0.0); // committed, untouched
+    let b2 = loc(2, 0.0, 0.0); // committed, will be patched
+    let batch = locations_to_batch(&[b1, b2]);
+
+    let dead = HashSet::new();
+    let mut patches = HashMap::new();
+    let mut p2 = loc(2, 1.0, 1.0); // edited -> uncommitted
+    p2.heading = 90.0;
+    patches.insert(2, p2);
+    let a3 = loc(3, 0.0, 0.0); // new add -> uncommitted
+    let adds = vec![a3];
+    let view = make_view(Some(&batch), &dead, &patches, &adds);
+
+    assert_eq!(resolve(&view, &SelectionProps::Uncommitted), vec![2, 3]);
+}
+
 #[test]
 fn resolve_reviewed_is_an_id_set_leaf_over_batch() {
     let locs = vec![loc(1, 0.0, 0.0), loc(2, 0.0, 0.0), loc(3, 0.0, 0.0), loc(4, 0.0, 0.0)];

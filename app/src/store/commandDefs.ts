@@ -35,6 +35,7 @@ import {
 	selectUnpanned,
 	selectPanoIds,
 	selectNotPanoIds,
+	selectUncommitted,
 	selectInverse,
 	selectIntersection,
 	selectUnion,
@@ -134,6 +135,13 @@ registerCommand({
 	label: "Select non-Pano ID locations",
 	group: "Selections",
 	execute: selectNotPanoIds,
+});
+
+registerCommand({
+	id: "select-uncommitted",
+	label: "Select uncommitted locations",
+	group: "Selections",
+	execute: selectUncommitted,
 });
 
 registerCommand({
