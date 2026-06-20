@@ -5,6 +5,31 @@
 	flex-wrap: wrap;
 }
 
+/* Body children keep their natural height so the body scrolls, instead of the
+   flex column shrinking the cards to nothing when the footer takes space. */
+.generator-sidebar .plugin-sidebar__body > * {
+	flex-shrink: 0;
+}
+
+/* Actions + live progress pinned to the bottom of the sidebar, full-bleed over
+   the body padding, so the region list scrolls above without squishing them. */
+.generator-sidebar__footer {
+	position: sticky;
+	bottom: -0.5rem;
+	margin: auto -0.5rem -0.5rem;
+	padding: 0.5rem;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	background: var(--background-color);
+	border-top: 1px solid var(--pu-divider);
+}
+
+.generator-sidebar__footer .generator-progress {
+	max-height: 30vh;
+	overflow-y: auto;
+}
+
 .generator-settings {
 	display: flex;
 	flex-direction: column;

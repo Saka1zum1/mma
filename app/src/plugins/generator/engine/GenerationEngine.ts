@@ -340,10 +340,10 @@ export class GenerationEngine {
 		this.pendingBatch.push(loc);
 		this.callbacks.onProgress(region.id, region.found.length, region.target);
 
-		if (this.pendingBatch.length >= 10) {
+		if (this.pendingBatch.length >= 200) {
 			this.flushBatch();
 		} else if (!this.flushTimer) {
-			this.flushTimer = setTimeout(() => this.flushBatch(), 500);
+			this.flushTimer = setTimeout(() => this.flushBatch(), 1000);
 		}
 	}
 

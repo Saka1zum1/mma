@@ -6,6 +6,7 @@ import { GenerationEngine } from "../engine/GenerationEngine";
 import { RegionSelector } from "./RegionSelector";
 import { SettingsPanel } from "./SettingsPanel";
 import { ProgressDisplay } from "./ProgressDisplay";
+import { tickProgress } from "./progressSignal";
 import { google } from "@/lib/sv/opensv";
 import { getSelections, useSelections, getCurrentMap, createTags } from "@/store/useMapStore";
 import type { Selection } from "@/bindings.gen";
@@ -102,9 +103,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				MMA.addLocations(locs.map((l) => generatedToLocation(l, tagId)));
 				rerender((n) => n + 1);
 			},
-			onProgress: () => {
-				rerender((n) => n + 1);
-			},
+			onProgress: () => tickProgress(),
 			onRegionComplete: () => {
 				rerender((n) => n + 1);
 			},
@@ -165,9 +164,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				MMA.addLocations(locs.map((l) => generatedToLocation(l, tagId)));
 				rerender((n) => n + 1);
 			},
-			onProgress: () => {
-				rerender((n) => n + 1);
-			},
+			onProgress: () => tickProgress(),
 			onRegionComplete: () => {
 				rerender((n) => n + 1);
 			},
@@ -234,32 +231,33 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 
 			<SettingsPanel settings={settings} onChange={updateSettings} />
 
-			<div className="generator-sidebar__actions">
-				{!running ? (
-					<button
-						className="button button--primary"
-						onClick={handleStart}
-						disabled={polygonSelections.length === 0}
-					>
-						Start
-					</button>
-				) : (
-					<>
-						<button className="button" onClick={handlePause}>
-							{paused ? "Resume" : "Pause"}
-						</button>
-						<button className="button" onClick={handleStop}>
-							Stop
-						</button>
-					</>
+			<div className="generator-sidebar__footer">
+				{running && regions.length > 0 && (
+					<div className="generator-progress">
+						<ProgressDisplay regions={regions} />
+					</div>
 				)}
+				<div className="generator-sidebar__actions">
+					{!running ? (
+						<button
+							className="button button--primary"
+							onClick={handleStart}
+							disabled={polygonSelections.length === 0}
+						>
+							Start
+						</button>
+					) : (
+						<>
+							<button className="button" onClick={handlePause}>
+								{paused ? "Resume" : "Pause"}
+							</button>
+							<button className="button" onClick={handleStop}>
+								Stop
+							</button>
+						</>
+					)}
+				</div>
 			</div>
-
-			{running && regions.length > 0 && (
-				<Section title="Progress">
-					<ProgressDisplay regions={regions} />
-				</Section>
-			)}
 		</Sidebar>
 	);
 }

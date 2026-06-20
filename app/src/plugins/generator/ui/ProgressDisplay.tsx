@@ -1,6 +1,9 @@
 import type { GeneratorRegion } from "../engine/types";
+import { useProgressTick } from "./progressSignal";
 
 export function ProgressDisplay({ regions }: { regions: GeneratorRegion[] }) {
+	useProgressTick();
+
 	const totalFound = regions.reduce((s, r) => s + r.found.length, 0);
 	const totalTarget = regions.reduce((s, r) => s + r.target, 0);
 
