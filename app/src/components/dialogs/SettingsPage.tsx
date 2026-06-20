@@ -888,7 +888,7 @@ function BorderDetailSection() {
 	const subdivisionStatus = () => {
 		if (downloading === "adm1") return " (downloading...)";
 		if (adm1Ready === null) return "";
-		return adm1Ready ? "" : " (~3MB, will download)";
+		return adm1Ready ? "" : " (~45MB, will download)";
 	};
 
 	return (
