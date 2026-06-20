@@ -3,11 +3,10 @@ import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiUndo, mdiBookmarkOutline, mdiBookmarkCheckOutline } from "@mdi/js";
+import { mdiUndo, mdiBookmarkOutline, mdiBookmarkCheckOutline, mdiPin, mdiPinOutline } from "@mdi/js";
 import { BulkOperationModal, type BulkOperation } from "@/components/dialogs/BulkOperationModal";
-import { RandomPickModal } from "@/components/dialogs/RandomPickModal";
-import { useSelections, useCurrentMap, getSelectedLocationIds } from "@/store/useMapStore";
-import { getCommands, type CommandGroup } from "@/store/commands";
+import { useSelections, useCurrentMap } from "@/store/useMapStore";
+import { getCommands, togglePinnedCommand, type CommandGroup } from "@/store/commands";
 import {
 	saveCurrentSelections,
 	deleteSavedSelection,
@@ -33,6 +32,8 @@ function PaletteItem({
 	closeOnSelect = true,
 	type = "Action",
 	shortcut,
+	commandId,
+	pinned,
 }: {
 	label: string;
 	icon?: React.ReactNode;
@@ -41,6 +42,8 @@ function PaletteItem({
 	closeOnSelect?: boolean;
 	type?: string;
 	shortcut?: string;
+	commandId?: string;
+	pinned?: boolean;
 }) {
 	const ctx = useContext(Ctx);
 	const handleSelect = useCallback(() => {
@@ -57,10 +60,31 @@ function PaletteItem({
 			onSelect={handleSelect}
 			disabled={disabled}
 			className="command-palette__item"
+			onContextMenu={commandId ? (e) => {
+				e.preventDefault();
+				togglePinnedCommand(commandId);
+			} : undefined}
 		>
 			{icon && <span className="command-palette__icon">{icon}</span>}
 			<span className="command-palette__label">{label}</span>
 			{shortcut && <kbd className="command-palette__kbd">{shortcut}</kbd>}
+			{commandId && (
+				<button
+					className="command-palette__pin"
+					title={pinned ? "Unpin from toolbar" : "Pin to toolbar"}
+					onPointerDown={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+					}}
+					onClick={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						togglePinnedCommand(commandId);
+					}}
+				>
+					<Icon path={pinned ? mdiPin : mdiPinOutline} size={18} />
+				</button>
+			)}
 			<span className="command-palette__type">{type}</span>
 		</Command.Item>
 	);
@@ -98,6 +122,7 @@ const COMMAND_GROUPS: CommandGroup[] = ["Map", "Bulk Operations", "Selections", 
 function MainCommands() {
 	const map = useCurrentMap();
 	const commands = getCommands();
+	const pinnedSet = new Set(useSetting("pinnedCommands"));
 
 	return (
 		<>
@@ -114,6 +139,8 @@ function MainCommands() {
 								onSelect={cmd.execute}
 								disabled={cmd.enabled ? !cmd.enabled() : false}
 								shortcut={cmd.defaultBinding ? formatBinding(getBinding(cmd.id)) : undefined}
+								commandId={cmd.id}
+								pinned={pinnedSet.has(cmd.id)}
 							/>
 						))}
 						{group === "Map" && <PageItem label="Open map..." page="maps" />}
@@ -320,8 +347,6 @@ function PaletteContent({ onChangeOpen }: { onChangeOpen: (v: boolean) => void }
 export function CommandPalette() {
 	const [open, setOpen] = useState(false);
 	const [bulkOp, setBulkOp] = useState<BulkOperation | null>(null);
-	const [randomPick, setRandomPick] = useState<number | null>(null);
-
 	useHotkey(useBinding("openCommandPalette"), () => setOpen((v) => !v));
 
 	useEffect(() => {
@@ -334,12 +359,6 @@ export function CommandPalette() {
 		const handler = (e: Event) => setBulkOp((e as CustomEvent).detail as BulkOperation);
 		document.addEventListener("open-bulk-op", handler);
 		return () => document.removeEventListener("open-bulk-op", handler);
-	}, []);
-
-	useEffect(() => {
-		const handler = () => setRandomPick(getSelectedLocationIds().size);
-		document.addEventListener("open-random-pick", handler);
-		return () => document.removeEventListener("open-random-pick", handler);
 	}, []);
 
 	return (
@@ -356,13 +375,6 @@ export function CommandPalette() {
 				</RadixDialog.Portal>
 			</RadixDialog.Root>
 			{bulkOp && <BulkOperationModal operation={bulkOp} onClose={() => setBulkOp(null)} />}
-			{randomPick != null && (
-				<RandomPickModal
-					open
-					total={randomPick}
-					onOpenChange={(o) => !o && setRandomPick(null)}
-				/>
-			)}
 		</>
 	);
 }

@@ -115,6 +115,14 @@ const DEFAULTS = {
 	previewAspectRatio: "16 / 9" as PreviewAspectRatio,
 	tagSuggestionLimit: 0 as number,
 	savedSelections: [] as SavedSelection[],
+	pinnedCommands: [
+		"deselectAll",
+		"selection-delete-locations",
+		"review-selected",
+		"---",
+		"find-duplicates",
+		"filter-by-metadata",
+	] as string[],
 };
 export type AppSettings = typeof DEFAULTS;
 

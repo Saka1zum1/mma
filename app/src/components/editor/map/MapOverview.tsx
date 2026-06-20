@@ -1,19 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import {
 	useCurrentMap,
 	useSelectedLocationIds,
 	useSelections,
-	removeLocations,
 	removeSelections,
-	resetSelections,
-	selectIntersection,
-	selectUnion,
 	selectInverse,
-	selectUntagged,
-	selectUnpanned,
-	selectPanoIds,
-	selectNotPanoIds,
-	selectUncommitted,
 	setPolygonName,
 	setSelectionColors,
 	addTagToLocations,
@@ -31,6 +22,8 @@ import {
 	useGhostedSelections,
 	updateFilterSelection,
 	pruneDuplicates,
+	selectFilter,
+	selectRandomFromSelection,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { sortTagsByMode } from "@/lib/util/util";
@@ -38,12 +31,13 @@ import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { stepFilterWindow } from "@/lib/data/fieldOps";
 import { useSetting } from "@/store/settings";
 import { cmd } from "@/lib/commands";
+import { getCommand } from "@/store/commands";
 
 import { RgbColorPicker } from "react-colorful";
 import type { Selection, Tag } from "@/bindings.gen";
 import { selectionDisplayName } from "@/store/selections";
 import { TagManager } from "@/components/editor/tags/TagManager";
-import { FilterBuilder, FilterForm, filterPropsToSeed, useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
+import { FilterForm, filterPropsToSeed, useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
 import { ApplyFieldAsTagsDialog } from "@/components/editor/tags/ApplyFieldAsTagsDialog";
 import { TagFindReplaceDialog } from "@/components/editor/tags/TagFindReplaceDialog";
 import { MergeDuplicatesModal } from "@/components/dialogs/MergeDuplicatesModal";
@@ -52,13 +46,20 @@ import { beginReview } from "@/lib/review/review";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiClose, mdiChevronLeft, mdiChevronRight, mdiDotsVertical, mdiGhost, mdiGhostOutline } from "@mdi/js";
+import {
+	mdiClose,
+	mdiChevronLeft,
+	mdiChevronRight,
+	mdiDotsVertical,
+	mdiGhost,
+	mdiGhostOutline,
+	mdiBookOpenOutline,
+} from "@mdi/js";
 import { PluginToolbar } from "@/plugins/PluginPanels";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { fmt } from "@/lib/util/format";
 import { rgbCss } from "@/lib/util/color";
 import { getGoogleMap as getGoogleMapInstance } from "@/lib/map/mapState";
-import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
 
 async function fitSelectionBounds(map: google.maps.Map, selection: Selection) {
 	if (selection.props.type === "Polygon") {
@@ -85,9 +86,6 @@ function uniqueTagName(base: string, existing: Set<string>): string {
 	}
 }
 
-// Distance for "Prune duplicates": on a Duplicates selection directly, or an
-// Intersection containing one (prune then runs on the intersection's resolved
-// locations).
 function pruneDistance(selection: Selection): number | null {
 	if (selection.props.type === "Duplicates") return selection.props.distance;
 	if (selection.props.type === "Intersection") {
@@ -96,6 +94,140 @@ function pruneDistance(selection: Selection): number | null {
 		}
 	}
 	return null;
+}
+
+// --- Pinned command toolbar ---
+
+interface PanelDef {
+	render: (onClose: () => void) => ReactNode;
+}
+
+function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<string, PanelDef> }) {
+	const pinned = useSetting("pinnedCommands");
+	const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
+	useSelections();
+	useSelectedLocationIds();
+
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const id = (e as CustomEvent).detail as string;
+			if (panels[id]) setOpenPanels((prev) => {
+				const next = new Set(prev);
+				if (next.has(id)) next.delete(id); else next.add(id);
+				return next;
+			});
+		};
+		document.addEventListener("open-inline-panel", handler);
+		return () => document.removeEventListener("open-inline-panel", handler);
+	}, [panels]);
+
+	useEffect(() => {
+		if (openPanels.size === 0) return;
+		let changed = false;
+		const next = new Set(openPanels);
+		for (const id of next) {
+			const cmd = getCommand(id);
+			if (cmd?.enabled && !cmd.enabled()) { next.delete(id); changed = true; }
+		}
+		if (changed) setOpenPanels(next);
+	});
+
+	if (pinned.length === 0 && !right) return null;
+	let itemIndex = 0;
+	const togglePanel = (id: string) => setOpenPanels((prev) => {
+		const next = new Set(prev);
+		if (next.has(id)) next.delete(id); else next.add(id);
+		return next;
+	});
+	return (
+		<div className="selection-manager__toolbar">
+			<div className="selection-manager__bar">
+				{pinned.map((id, i) => {
+					if (id === "---") {
+						return <span key={`sep-${i}`} className="selection-manager__bar-sep" />;
+					}
+					const command = getCommand(id);
+					if (!command) return null;
+					const disabled = command.enabled ? !command.enabled() : false;
+					const hasPanel = id in panels;
+					const isOpen = openPanels.has(id);
+					const tipPos = itemIndex < 3 ? "bottom-right" : "bottom";
+					itemIndex++;
+					const handleClick = hasPanel ? () => togglePanel(id) : command.execute;
+					if (command.icon) {
+						return (
+							<button
+								key={id}
+								className={`icon-button${isOpen ? " is-active" : ""}`}
+								type="button"
+								disabled={disabled}
+								role="tooltip"
+								data-microtip-position={tipPos}
+								aria-label={command.label}
+								data-qa={id}
+								onClick={handleClick}
+							>
+								<Icon path={command.icon} />
+							</button>
+						);
+					}
+					return (
+						<button
+							key={id}
+							className={`button${isOpen ? " is-active" : ""}`}
+							type="button"
+							disabled={disabled}
+							role="tooltip"
+							data-microtip-position={tipPos}
+							aria-label={command.label}
+							onClick={handleClick}
+						>
+							{command.label}
+						</button>
+					);
+				})}
+				{right}
+			</div>
+			{Object.entries(panels).map(([id, panel]) => (
+				<div key={id} className="selection-manager__panel" hidden={!openPanels.has(id)}>
+					{panel.render(() => setOpenPanels((prev) => { const next = new Set(prev); next.delete(id); return next; }))}
+				</div>
+			))}
+		</div>
+	);
+}
+
+function RandomPickPanel() {
+	const [value, setValue] = useState("");
+	const total = useSelectedLocationIds().size;
+	const parsed = Math.floor(Number(value));
+	const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
+	const count = valid ? Math.min(parsed, total) : 0;
+	return (
+		<form
+			className="selection-manager__inline-form"
+			onSubmit={(e) => {
+				e.preventDefault();
+				if (!valid) return;
+				const picked = selectRandomFromSelection(count);
+				if (picked > 0) toast(`Selected ${fmt.format(picked)} random location${picked !== 1 ? "s" : ""}`);
+			}}
+		>
+			<input
+				className="input"
+				type="number"
+				min={1}
+				style={{ width: "7rem" }}
+				placeholder="Count"
+				value={value}
+				onChange={(e) => setValue(e.target.value)}
+			/>
+			<span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>
+			<button className="button" type="submit" disabled={!valid}>
+				Pick
+			</button>
+		</form>
+	);
 }
 
 // --- Mouse-based drag system (HTML5 DnD is broken in Tauri webview) ---
@@ -161,7 +293,6 @@ function SelectionRow({
 
 	if (!map) return null;
 	const inner = selection.props.type === "Invert" ? selection.props.selections[0] : selection;
-	// Window filters (between on date/month/number) step inline by their own span.
 	const stepFilter = (() => {
 		const p = selection.props;
 		if (p.type !== "Filter") return null;
@@ -390,14 +521,6 @@ function SelectionRow({
 										>
 											Invert selection
 										</DropdownMenu.Item>
-										{isTopLevel && (
-											<DropdownMenu.Item
-												className="context-menu__item"
-												onSelect={() => toggleGhostSelection(selection.key)}
-											>
-												{ghosted ? "Un-ghost selection" : "Ghost selection"}
-											</DropdownMenu.Item>
-										)}
 										{selection.props.type === "Filter" && (
 											<DropdownMenu.Item
 												className="context-menu__item"
@@ -596,6 +719,20 @@ export function MapOverview() {
 		return () => document.removeEventListener("open-apply-field-as-tags", handler);
 	}, []);
 
+	useEffect(() => {
+		const handler = () => setShowMergeDuplicates(true);
+		document.addEventListener("open-merge-duplicates", handler);
+		return () => document.removeEventListener("open-merge-duplicates", handler);
+	}, []);
+
+	useEffect(() => {
+		const handler = () => {
+			if (selected.size > 0) beginReview(Array.from(selected));
+		};
+		document.addEventListener("open-review-selected", handler);
+		return () => document.removeEventListener("open-review-selected", handler);
+	}, [selected]);
+
 	if (!map) return null;
 
 	const handleBulkAddTag = async (e: React.FormEvent) => {
@@ -619,32 +756,8 @@ export function MapOverview() {
 		setBulkTagInput("");
 	};
 
-	const handleDeleteSelected = () => {
-		if (selected.size === 0) return;
-		removeLocations(selected);
-	};
-
-	const hasPolygon = selections.some((s) => s.props.type === "Polygon");
-
-	const handleDownloadGeoJSON = () => {
-		const features: unknown[] = [];
-		for (const sel of selections) {
-			if (sel.props.type !== "Polygon") continue;
-			features.push({
-				type: "Feature",
-				properties: sel.props.polygon.properties ?? {},
-				geometry: { type: "Polygon", coordinates: sel.props.polygon.coordinates },
-			});
-		}
-		const fc = { type: "FeatureCollection", features };
-		const blob = new Blob([JSON.stringify(fc)], { type: "application/geo+json" });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
-		a.href = url;
-		a.download = "selections.geojson";
-		a.click();
-		URL.revokeObjectURL(url);
-	};
+	const hasSelection = selected.size > 0;
+	const hasSelections = selections.length > 0;
 
 	return (
 		<section className="map-overview">
@@ -655,104 +768,35 @@ export function MapOverview() {
 				title="Selections"
 				isCollapsed={selectionsCollapsed}
 				onCollapse={setSelectionsCollapsed}
-				collapsedAddons={<span>({fmt.format(selected.size)} locations selected)</span>}
+				collapsedAddons={<span>({fmt.format(selected.size)} selected)</span>}
 				addons={
 					<>
-						<span>({fmt.format(selected.size)} locations selected)</span>
+						<span className="selection-manager__count">
+							{fmt.format(selected.size)} selected
+						</span>
 						<span className="selection-manager__space" />
-						<button className="button" disabled={selections.length === 0} onClick={resetSelections}>
-							Deselect all
+						<PluginToolbar />
+						<button
+							className="icon-button"
+							type="button"
+							role="tooltip"
+							data-microtip-position="bottom"
+							aria-label="Review sessions"
+							data-qa="open-reviews"
+							onClick={() => setShowReviews(true)}
+						>
+							<Icon path={mdiBookOpenOutline} />
 						</button>
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger asChild>
-								<button className="button">More</button>
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Portal>
-								<DropdownMenu.Content className="context-menu" align="end">
-									<DropdownMenu.Item className="context-menu__item" onSelect={loadGeoJSON}>
-										Load polygon selections from GeoJSON
-									</DropdownMenu.Item>
-									<DropdownMenu.Item
-										className="context-menu__item"
-										disabled={!hasPolygon}
-										onSelect={handleDownloadGeoJSON}
-									>
-										Download polygon selections as GeoJSON
-									</DropdownMenu.Item>
-									<DropdownMenu.Item
-										className="context-menu__item"
-										disabled={selections.length < 2}
-										onSelect={() => selectIntersection()}
-									>
-										AND all selections
-									</DropdownMenu.Item>
-									<DropdownMenu.Item
-										className="context-menu__item"
-										disabled={selections.length < 2}
-										onSelect={() => selectUnion()}
-									>
-										OR all selections
-									</DropdownMenu.Item>
-									<DropdownMenu.Item
-										className="context-menu__item"
-										disabled={selections.length === 0}
-										onSelect={() => selectInverse()}
-									>
-										Invert all selections
-									</DropdownMenu.Item>
-									<DropdownMenu.Sub>
-										<DropdownMenu.SubTrigger className="context-menu__item">
-											Select locations
-											<span style={{ float: "right" }}>
-												<Icon path={mdiChevronRight} />
-											</span>
-										</DropdownMenu.SubTrigger>
-										<DropdownMenu.Portal>
-											<DropdownMenu.SubContent
-												className="context-menu"
-												sideOffset={2}
-												alignOffset={-6}
-											>
-												<DropdownMenu.Item
-													className="context-menu__item"
-													onSelect={() => selectUntagged()}
-												>
-													No tags
-												</DropdownMenu.Item>
-												<DropdownMenu.Item
-													className="context-menu__item"
-													onSelect={() => selectUnpanned()}
-												>
-													Panned north
-												</DropdownMenu.Item>
-												<DropdownMenu.Item
-													className="context-menu__item"
-													onSelect={() => selectPanoIds()}
-												>
-													Pano IDs
-												</DropdownMenu.Item>
-												<DropdownMenu.Item
-													className="context-menu__item"
-													onSelect={() => selectNotPanoIds()}
-												>
-													Not Pano IDs
-												</DropdownMenu.Item>
-												<DropdownMenu.Item
-													className="context-menu__item"
-													onSelect={() => selectUncommitted()}
-												>
-													Uncommitted
-												</DropdownMenu.Item>
-											</DropdownMenu.SubContent>
-										</DropdownMenu.Portal>
-									</DropdownMenu.Sub>
-								</DropdownMenu.Content>
-							</DropdownMenu.Portal>
-						</DropdownMenu.Root>
+						<button
+							className="button"
+							onClick={() => document.dispatchEvent(new CustomEvent("open-command-palette"))}
+						>
+							Commands...
+						</button>
 					</>
 				}
 			>
-				{selections.length > 0 && (
+				{hasSelections && (
 					<div className="selection-manager__selections">
 						{selections.map((sel) => (
 							<SelectionRow
@@ -763,99 +807,75 @@ export function MapOverview() {
 						))}
 					</div>
 				)}
-				<div style={{ marginTop: ".5rem" }}>
-					<button
-						className="button button--destructive"
-						type="button"
-						disabled={selected.size === 0}
-						onClick={handleDeleteSelected}
-					>
-						Delete selected locations
-					</button>
-					<button
-						className="button"
-						disabled={selected.size === 0}
-						style={{ marginInlineStart: "1rem" }}
-						onClick={() => beginReview(Array.from(selected))}
-						data-qa="selection-review"
-					>
-						Review selected locations
-					</button>
-					<button
-						className="button"
-						style={{ marginInlineStart: "1rem" }}
-						onClick={() => setShowReviews(true)}
-						data-qa="open-reviews"
-					>
-						Reviews...
-					</button>
-					<form
-						style={{ display: "inline-block", marginInline: "1rem" }}
-						onSubmit={handleBulkAddTag}
-					>
-						<span className={`tag-input ${selected.size === 0 ? "is-disabled" : ""} has-button`}>
-							<button
-								type="submit"
-								className="button tag-input__button"
-								disabled={selected.size === 0}
-							>
-								+
-							</button>
-							<SuggestInput
-								containerClassName="tag-input__suggest"
-								inputClassName="tag-input__value"
-								placeholder="Bulk-add a tag..."
-								disabled={selected.size === 0}
-								value={bulkTagInput}
-								onChange={setBulkTagInput}
-								suggestions={bulkSuggestions}
-								getKey={(t) => t.id}
-								onPick={handleBulkPick}
-								renderItem={(t) => t.name}
-								pickOnEnter={false}
-								listStyle={{ top: "100%", left: 0, zIndex: 10 }}
-							/>
-						</span>
-					</form>
-				</div>
+
+				<PinnedToolbar
+					right={
+						<form className="selection-manager__bulk-tag" onSubmit={handleBulkAddTag}>
+							<span className={`tag-input has-button${!hasSelection ? " is-disabled" : ""}`}>
+								<button type="submit" className="button tag-input__button" disabled={!hasSelection}>+</button>
+								<SuggestInput
+									containerClassName="tag-input__suggest"
+									inputClassName="tag-input__value"
+									placeholder="Bulk-add tag..."
+									disabled={!hasSelection}
+									value={bulkTagInput}
+									onChange={setBulkTagInput}
+									suggestions={bulkSuggestions}
+									getKey={(t) => t.id}
+									onPick={handleBulkPick}
+									renderItem={(t) => t.name}
+									pickOnEnter={false}
+									listStyle={{ top: "100%", right: 0, zIndex: 10 }}
+								/>
+							</span>
+						</form>
+					}
+					panels={{
+						"select-random": {
+							render: () => <RandomPickPanel />,
+						},
+						"find-duplicates": {
+							render: () => (
+								<form
+									className="selection-manager__inline-form"
+									onSubmit={(e) => {
+										e.preventDefault();
+										selectDuplicates(dupDistance);
+									}}
+								>
+									<label>
+										Distance (m):{" "}
+										<input
+											type="number"
+											className="input"
+											min="0"
+											style={{ width: "5rem" }}
+											value={dupDistance}
+											onChange={(e) => setDupDistance(Number(e.target.value))}
+										/>
+									</label>
+									<button className="button" type="submit">Find</button>
+									<button className="button" type="button" onClick={() => setShowMergeDuplicates(true)}>
+										Merge
+									</button>
+								</form>
+							),
+						},
+						"filter-by-metadata": {
+							render: () => (
+								<FilterForm
+									persistKey={map.meta.id}
+									submitLabel="Add filter"
+									onSubmit={(field, op, value, value2, tzLocal) => {
+										selectFilter(field, op, value, value2, tzLocal);
+									}}
+								/>
+							),
+						},
+					}}
+				/>
 			</ToolBlock>
 
-			<ToolBlock
-				title="Tools"
-				addons={
-					<>
-						<PluginToolbar />
-						<span style={{ flexGrow: 1 }} />
-						<button
-							className="button"
-							onClick={() => document.dispatchEvent(new CustomEvent("open-command-palette"))}
-						>
-							Commands...
-						</button>
-					</>
-				}
-			>
-				<p>
-					<label>
-						Duplicate distance (metres):{" "}
-						<input
-							type="number"
-							className="input"
-							min="0"
-							style={{ width: "6rem", marginRight: "1rem" }}
-							value={dupDistance}
-							onChange={(e) => setDupDistance(Number(e.target.value))}
-						/>
-					</label>
-					<button className="button" type="button" onClick={() => selectDuplicates(dupDistance)}>
-						Find duplicates
-					</button>{" "}
-					<button className="button" type="button" onClick={() => setShowMergeDuplicates(true)}>
-						Merge duplicates
-					</button>
-				</p>
-				<FilterBuilder key={map.meta.id} mapId={map.meta.id} />
-			</ToolBlock>
 			<TagFindReplaceDialog open={showTagFindReplace} onOpenChange={setShowTagFindReplace} />
 			<ApplyFieldAsTagsDialog open={showApplyFieldAsTags} onOpenChange={setShowApplyFieldAsTags} />
 			<MergeDuplicatesModal

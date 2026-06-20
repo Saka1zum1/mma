@@ -25,6 +25,10 @@ import {
 	mdiCompassOutline,
 	mdiDiceMultiple,
 	mdiMapPlus,
+	mdiMapSearchOutline,
+	mdiFilterOutline,
+	mdiCallMerge,
+	mdiPlayOutline,
 } from "@mdi/js";
 import { registerCommand } from "./commands";
 import {
@@ -177,12 +181,72 @@ registerCommand({
 });
 
 registerCommand({
+	id: "download-polygon-geojson",
+	label: "Download polygon selections as GeoJSON",
+	icon: mdiCodeJson,
+	group: "Selections",
+	enabled: () => getSelections().some((s) => s.props.type === "Polygon"),
+	execute: () => {
+		const features: unknown[] = [];
+		for (const sel of getSelections()) {
+			if (sel.props.type !== "Polygon") continue;
+			features.push({
+				type: "Feature",
+				properties: sel.props.polygon.properties ?? {},
+				geometry: { type: "Polygon", coordinates: sel.props.polygon.coordinates },
+			});
+		}
+		const blob = new Blob([JSON.stringify({ type: "FeatureCollection", features })], { type: "application/geo+json" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = "selections.geojson";
+		a.click();
+		URL.revokeObjectURL(url);
+	},
+});
+
+registerCommand({
 	id: "deselectAll",
 	label: "Deselect everything",
 	icon: mdiSelectRemove,
 	group: "Selections",
 	defaultBinding: "Mod+d",
 	execute: resetSelections,
+	enabled: () => getSelections().length > 0,
+});
+
+registerCommand({
+	id: "find-duplicates",
+	label: "Find duplicates...",
+	icon: mdiMapSearchOutline,
+	group: "Selections",
+	execute: () => document.dispatchEvent(new CustomEvent("open-inline-panel", { detail: "find-duplicates" })),
+});
+
+registerCommand({
+	id: "merge-duplicates",
+	label: "Merge duplicates...",
+	icon: mdiCallMerge,
+	group: "Selections",
+	execute: () => document.dispatchEvent(new CustomEvent("open-merge-duplicates")),
+});
+
+registerCommand({
+	id: "filter-by-metadata",
+	label: "Filter by metadata...",
+	icon: mdiFilterOutline,
+	group: "Selections",
+	execute: () => document.dispatchEvent(new CustomEvent("open-inline-panel", { detail: "filter-by-metadata" })),
+});
+
+registerCommand({
+	id: "review-selected",
+	label: "Review selected locations",
+	icon: mdiPlayOutline,
+	group: "Selections",
+	enabled: () => getSelectedLocationIds().size > 0,
+	execute: () => document.dispatchEvent(new CustomEvent("open-review-selected")),
 });
 
 registerCommand({
@@ -190,7 +254,7 @@ registerCommand({
 	label: "Pick random locations from selection",
 	icon: mdiDiceMultiple,
 	group: "Selections",
-	execute: () => document.dispatchEvent(new CustomEvent("open-random-pick")),
+	execute: () => document.dispatchEvent(new CustomEvent("open-inline-panel", { detail: "select-random" })),
 	enabled: () => getSelectedLocationIds().size > 0,
 });
 

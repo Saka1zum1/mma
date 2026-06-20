@@ -23,3 +23,16 @@ export function getCommands(): readonly Command[] {
 export function getCommand(id: string): Command | undefined {
 	return commands.find((c) => c.id === id);
 }
+
+import { getSettings, setSetting } from "./settings";
+
+export function togglePinnedCommand(id: string): void {
+	const pinned = [...getSettings().pinnedCommands];
+	const idx = pinned.indexOf(id);
+	if (idx >= 0) {
+		pinned.splice(idx, 1);
+	} else {
+		pinned.push(id);
+	}
+	setSetting("pinnedCommands", pinned);
+}

@@ -864,6 +864,11 @@ summary.button {
 	padding: 0;
 	line-height: 2rem;
 }
+.icon-button:disabled {
+	opacity: 0.35;
+	cursor: default;
+	pointer-events: none;
+}
 .input {
 	border: none;
 	border-radius: 2px;
@@ -2380,6 +2385,11 @@ summary.button {
 .tag-input .search-results {
 	box-shadow: var(--shadow-1);
 }
+.selection-manager__bulk-tag .search-results {
+	right: 0;
+	left: auto;
+	max-width: calc(100vw - 2rem);
+}
 .tag-input .search-result {
 	color: #000;
 }
@@ -3620,6 +3630,10 @@ summary.button {
 .pano-value__note {
 	font-size: 0.75rem;
 }
+.selection-manager__count {
+	font-variant-numeric: tabular-nums;
+	opacity: 0.7;
+}
 .selection-manager__space {
 	flex-grow: 1;
 }
@@ -3713,6 +3727,46 @@ summary.button {
 	z-index: 1;
 	border-radius: 2px;
 	position: absolute;
+}
+.selection-manager__bar {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+.selection-manager__bar-space {
+	flex-grow: 1;
+}
+.selection-manager__bar-sep {
+	width: 1px;
+	height: 1.25rem;
+	background: #ffffff33;
+	flex-shrink: 0;
+}
+.selection-manager__bulk-tag-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+}
+.selection-manager__toolbar {
+	margin-top: 0.5rem;
+	padding-top: 0.5rem;
+	border-top: 1px solid #0000000d;
+}
+.selection-manager__panel {
+	padding-top: 0.5rem;
+}
+.selection-manager__inline-form {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.icon-button.is-active {
+	background: #ffffff1a;
+}
+.selection-manager__bulk-tag {
+	display: inline-flex;
+	margin-left: auto;
 }
 .auto-tag-modal__info,
 .auto-tag-modal__tag-name,
@@ -4118,6 +4172,7 @@ summary.button {
 	margin-inline: -0.25rem;
 	padding-inline: 0.25rem;
 	display: grid;
+	overflow-x: hidden;
 	overflow-y: auto;
 	scrollbar-width: none;
 }
@@ -4268,6 +4323,25 @@ summary.button {
 }
 .command-palette__label {
 	flex-grow: 1;
+}
+.command-palette__pin {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: #ffffff40;
+	padding: 2px;
+	line-height: 0;
+	flex-shrink: 0;
+}
+.command-palette__pin:hover {
+	color: #ffffffcc;
+}
+.command-palette__item .command-palette__pin {
+	opacity: 0;
+}
+.command-palette__item[aria-selected="true"] .command-palette__pin,
+.command-palette__item:hover .command-palette__pin {
+	opacity: 1;
 }
 .command-palette__type {
 	color: #ffffff80;
@@ -5616,6 +5690,9 @@ body {
 	flex-direction: column;
 	gap: 0.5rem;
 	pointer-events: none;
+}
+:has(> .page-map-editor) > .toast-container {
+	left: 75%;
 }
 .toast-entry {
 	background: #3c3c38;
