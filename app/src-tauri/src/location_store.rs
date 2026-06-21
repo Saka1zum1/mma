@@ -957,6 +957,7 @@ impl Store {
         } else if self.base_loc_by_id(id).as_ref() == Some(&loc) {
             self.overlay.patches.remove(&id);
         } else {
+            loc.modified_at = Some(crate::util::now_unix());
             self.overlay.patches.insert(id, loc);
         }
         self.overlay.dirty = true;
