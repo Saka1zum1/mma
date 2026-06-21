@@ -4394,13 +4394,13 @@ summary.button {
 	display: flex;
 	gap: 0.25rem;
 	margin-bottom: 0.75rem;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 	padding-bottom: 0.75rem;
 }
 .review-sessions__tab {
 	background: none;
 	border: none;
-	color: rgba(255, 255, 255, 0.5);
+	color: #888;
 	cursor: pointer;
 	font-size: 0.875rem;
 	font-weight: 500;
@@ -4408,15 +4408,15 @@ summary.button {
 	border-radius: 0.25rem;
 }
 .review-sessions__tab:hover {
-	color: rgba(255, 255, 255, 0.8);
-	background: rgba(255, 255, 255, 0.06);
+	color: #333;
+	background: rgba(0, 0, 0, 0.04);
 }
 .review-sessions__tab.is-active {
-	color: #fff;
-	background: rgba(255, 255, 255, 0.1);
+	color: #000;
+	background: rgba(0, 0, 0, 0.08);
 }
 .review-sessions__empty {
-	opacity: 0.5;
+	color: #888;
 	text-align: center;
 	padding: 2rem 0;
 	margin: 0;
@@ -4429,7 +4429,7 @@ summary.button {
 	gap: 0.5rem;
 }
 .review-sessions__card {
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(0, 0, 0, 0.1);
 	border-radius: 0.5rem;
 	padding: 0.75rem;
 	display: flex;
@@ -4438,7 +4438,7 @@ summary.button {
 	transition: border-color 0.15s;
 }
 .review-sessions__card:hover {
-	border-color: rgba(255, 255, 255, 0.18);
+	border-color: rgba(0, 0, 0, 0.2);
 }
 .review-sessions__info {
 	flex: 1;
@@ -4455,12 +4455,13 @@ summary.button {
 	display: flex;
 	gap: 0.75rem;
 	font-size: 0.8rem;
-	color: rgba(255, 255, 255, 0.45);
+	color: #888;
+	white-space: nowrap;
 }
 .review-sessions__bar {
 	height: 4px;
 	border-radius: 2px;
-	background: rgba(255, 255, 255, 0.08);
+	background: rgba(0, 0, 0, 0.08);
 	overflow: hidden;
 	margin-top: 0.5rem;
 }
@@ -4483,10 +4484,10 @@ summary.button {
 	font-size: 0.8rem;
 }
 .review-sessions__delete {
-	color: rgba(255, 255, 255, 0.3);
+	color: #bbb;
 }
 .review-sessions__delete:hover {
-	color: #f85149;
+	color: #d32f2f;
 }
 .review-header {
 	background: var(--indigo-10);
