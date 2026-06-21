@@ -38,17 +38,9 @@ export function hexToHsl(hex: string): { h: number; s: number; l: number } {
 }
 
 export function hslToHex(h: number, s: number, l: number): string {
-	s /= 100;
-	l /= 100;
-	const a = s * Math.min(l, 1 - l);
-	const f = (n: number) => {
-		const k = (n + h / 30) % 12;
-		const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-		return Math.round(255 * color)
-			.toString(16)
-			.padStart(2, "0");
-	};
-	return `#${f(0)}${f(8)}${f(4)}`;
+	const [r, g, b] = hslToRgb(h, s / 100, l / 100);
+	const hex = (n: number) => n.toString(16).padStart(2, "0");
+	return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 
 export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -73,10 +65,6 @@ export function colorForName(name: string): string {
 	const [r, g, b] = hslToRgb(hue, 0.5, 0.5);
 	const hex = (n: number) => n.toString(16).padStart(2, "0");
 	return `#${hex(r)}${hex(g)}${hex(b)}`;
-}
-
-export function hexToRgba(hex: string): [number, number, number, number] {
-	return [...hexToRgb(hex), 200];
 }
 
 export function rgbCss([r, g, b]: [number, number, number]): string {

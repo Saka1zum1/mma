@@ -3,27 +3,22 @@ import { getSettings } from "@/store/settings";
 import { getCurrentMapId } from "@/store/useMapStore";
 import { log } from "@/lib/util/log";
 import type { LocationPOV } from "@/types";
+import type { SeenFilter } from "@/bindings.gen";
+import type { Nullable, Rename, RequireNonNull } from "@/types/util";
+import type { GeoDisplay } from "@/components/editor/location/useReverseGeocode";
 
-import type { SeenEntry } from "@/bindings.gen";
+import type { Location, SeenEntry } from "@/bindings.gen";
 
-interface PendingEntry {
-	panoId: string;
-	lat: number;
-	lng: number;
+type PendingEntryLocation = RequireNonNull<Pick<Location, 'lat' | 'lng' | 'panoId'>> & Nullable<Rename<Pick<Location, 'id'>, { id: 'locationId' }>>
+type PendingEntry = PendingEntryLocation & Nullable<GeoDisplay> & {
 	enteredAt: number;
 	mapId: string | null;
-	locationId: number | null;
-	countryCode: string | null;
-	address: string | null;
 }
 
 let staged: PendingEntry | null = null;
 let canvasGetter: (() => HTMLCanvasElement | null) | null = null;
 let skipNextPanoId: string | null = null;
-let latestGeo: { countryCode: string | null; address: string | null } = {
-	countryCode: null,
-	address: null,
-};
+let latestGeo: GeoDisplay | null = null;
 
 export function seenSetCanvas(getter: (() => HTMLCanvasElement | null) | null) {
 	canvasGetter = getter;
@@ -33,27 +28,23 @@ export function seenSkipNext(panoId: string) {
 	skipNextPanoId = panoId;
 }
 
-export function seenUpdateGeo(countryCode: string | null, address: string | null) {
-	latestGeo = { countryCode, address };
+export function seenUpdateGeo(geo: GeoDisplay) {
+	latestGeo = geo;
 	if (staged) {
-		if (countryCode) staged.countryCode = countryCode;
-		if (address) staged.address = address;
+		if (geo.countryCode) staged.countryCode = geo.countryCode;
+		if (geo.address) staged.address = geo.address;
 	}
 }
 
 export function seenPanoChanged(
-	panoId: string,
-	lat: number,
-	lng: number,
-	locationId: number | null,
-	countryCode: string | null,
-	address: string | null,
+	location: PendingEntryLocation,
+	geo: GeoDisplay | null,
 	getPov: () => LocationPOV,
 ) {
 	const settings = getSettings();
 	if (!settings.enableSeen) return;
 
-	if (skipNextPanoId === panoId) {
+	if (skipNextPanoId === location.panoId) {
 		skipNextPanoId = null;
 		return;
 	}
@@ -63,14 +54,11 @@ export function seenPanoChanged(
 	}
 
 	staged = {
-		panoId,
-		lat,
-		lng,
+		...location,
 		enteredAt: Date.now(),
 		mapId: getCurrentMapId(),
-		locationId,
-		countryCode: countryCode || latestGeo.countryCode,
-		address: address || latestGeo.address,
+		countryCode: geo?.countryCode || latestGeo?.countryCode || null,
+		address: geo?.address || latestGeo?.address || null,
 	};
 }
 
@@ -121,25 +109,14 @@ async function writeEntry(
 ) {
 	try {
 		await cmd.storeSeenWrite({
-			panoId: entry.panoId,
-			lat: entry.lat,
-			lng: entry.lng,
-			heading: pov.heading,
-			pitch: pov.pitch,
-			zoom: pov.zoom,
-			enteredAt: entry.enteredAt,
-			mapId: entry.mapId,
-			locationId: entry.locationId,
-			countryCode: entry.countryCode,
-			address: entry.address,
+			...entry,
+			...pov,
 			thumbnail,
 		});
 	} catch (e) {
 		log.warn("[seen] failed to write entry:", e);
 	}
 }
-
-import type { SeenFilter } from "@/bindings.gen";
 
 export async function getSeenEntries(
 	limit = 100,

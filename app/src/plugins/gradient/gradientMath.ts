@@ -1,5 +1,4 @@
-import type { ExtraFieldDef, SelectionProps } from "@/bindings.gen";
-import type { PartitionGroup } from "@/lib/data/fieldOps";
+import type { ExtraFieldDef, PartitionBucket, SelectionProps } from "@/bindings.gen";
 
 export function lerp(
 	a: [number, number, number],
@@ -57,7 +56,7 @@ export interface GradientSelection {
 //   - everything else       -> static Locations (projections can't be expressed as a Filter;
 //                              scoped groups are inherently a fixed id subset)
 export function colorPartition(
-	groups: PartitionGroup[],
+	groups: PartitionBucket[],
 	opts: {
 		fieldKey: string;
 		fieldType: string | undefined;

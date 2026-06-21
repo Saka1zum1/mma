@@ -1,33 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isFiniteNumber, fovToZoom, compareNatural, bucketize, binNumeric, sortTagsByMode, tagChipStyle, appendTagName } from "@/lib/util/util";
+import { fovToZoom, compareNatural, binNumeric, sortTagsByMode, tagChipStyle, appendTagName } from "@/lib/util/util";
 import { colorForName } from "@/lib/util/color";
 import { relativeTime } from "@/lib/util/format";
 import type { Tag } from "@/bindings.gen";
-
-describe("isFiniteNumber", () => {
-	it("returns true for normal numbers", () => {
-		expect(isFiniteNumber(0)).toBe(true);
-		expect(isFiniteNumber(42)).toBe(true);
-		expect(isFiniteNumber(-3.14)).toBe(true);
-	});
-
-	it("returns false for Infinity", () => {
-		expect(isFiniteNumber(Infinity)).toBe(false);
-		expect(isFiniteNumber(-Infinity)).toBe(false);
-	});
-
-	it("returns false for NaN", () => {
-		expect(isFiniteNumber(NaN)).toBe(false);
-	});
-
-	it("returns false for non-number types", () => {
-		expect(isFiniteNumber("42")).toBe(false);
-		expect(isFiniteNumber(null)).toBe(false);
-		expect(isFiniteNumber(undefined)).toBe(false);
-		expect(isFiniteNumber(true)).toBe(false);
-		expect(isFiniteNumber({})).toBe(false);
-	});
-});
 
 describe("sortTagsByMode", () => {
 	const tag = (id: number, name: string, order?: number): Tag => ({ id, name, color: "#000", order });
@@ -116,16 +91,16 @@ describe("compareNatural", () => {
 	});
 });
 
-describe("bucketize", () => {
+describe("binNumeric (count mode)", () => {
 	it("splits a range into equal-width buckets", () => {
-		const b = bucketize([0, 25, 50, 75, 100], 5)!;
+		const b = binNumeric([0, 25, 50, 75, 100], { by: "count", n: 5 })!;
 		expect(b.count).toBe(5);
 		expect(b.bounds[0]).toEqual([0, 20]);
 		expect(b.bounds[4][1]).toBe(100);
 	});
 
 	it("assigns values to the right bucket and clamps the ends", () => {
-		const b = bucketize([0, 100], 10)!;
+		const b = binNumeric([0, 100], { by: "count", n: 10 })!;
 		expect(b.bucketIndex(0)).toBe(0);
 		expect(b.bucketIndex(100)).toBe(9);
 		expect(b.bucketIndex(55)).toBe(5);
@@ -134,15 +109,15 @@ describe("bucketize", () => {
 	});
 
 	it("ignores non-finite values", () => {
-		const b = bucketize([NaN, 0, Infinity, 10], 2)!;
+		const b = binNumeric([NaN, 0, Infinity, 10], { by: "count", n: 2 })!;
 		expect(b.min).toBe(0);
 		expect(b.max).toBe(10);
 	});
 
 	it("returns null when there is no spread", () => {
-		expect(bucketize([5, 5, 5], 4)).toBeNull();
-		expect(bucketize([], 4)).toBeNull();
-		expect(bucketize([1, 2, 3], 0)).toBeNull();
+		expect(binNumeric([5, 5, 5], { by: "count", n: 4 })).toBeNull();
+		expect(binNumeric([], { by: "count", n: 4 })).toBeNull();
+		expect(binNumeric([1, 2, 3], { by: "count", n: 0 })).toBeNull();
 	});
 });
 

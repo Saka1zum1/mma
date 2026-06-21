@@ -1,11 +1,12 @@
 import { pointInPolygon } from "@/lib/geo/geo";
+import type { LatLng } from "@/types";
 
 export function randomPointInBounds(
 	south: number,
 	north: number,
 	west: number,
 	east: number,
-): { lat: number; lng: number } {
+): LatLng {
 	const sinS = Math.sin((south * Math.PI) / 180);
 	const sinN = Math.sin((north * Math.PI) / 180);
 	const lat = (Math.asin(Math.random() * (sinN - sinS) + sinS) * 180) / Math.PI;

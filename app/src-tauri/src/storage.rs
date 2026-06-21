@@ -6,19 +6,18 @@
 
 use crate::types::{AppError, AppResult};
 use rusqlite::Connection;
-use tauri::ipc::InvokeBody;
 use tauri::Manager;
 use crate::arrow_bridge;
 
 /// True when running under e2e tests or with `MMA_TEST_DB` set.
 /// Controls which database file and Arrow directory are used, keeping
 /// test data isolated from production.
-pub fn is_test_mode() -> bool {
+fn is_test_mode() -> bool {
     cfg!(feature = "e2e") || std::env::var("MMA_TEST_DB").is_ok()
 }
 
 /// Returns `"mma_test.db"` in test mode, `"mma.db"` otherwise.
-pub fn db_filename() -> &'static str {
+fn db_filename() -> &'static str {
     if is_test_mode() { "mma_test.db" } else { "mma.db" }
 }
 
@@ -473,26 +472,6 @@ pub(crate) fn read_arrow_ipc_mmap(path: &std::path::Path) -> AppResult<(arrow::a
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Extract the raw binary body from a Tauri IPC request, or error if the
-/// body is JSON rather than binary.
-fn raw_body<'a>(req: &'a tauri::ipc::Request<'a>) -> AppResult<&'a [u8]> {
-    match req.body() {
-        InvokeBody::Raw(b) => Ok(b),
-        _ => Err("expected binary request body".into()),
-    }
-}
-
-
-/// Append a msgpack fixstr (up to 31 bytes) to `out`. Panics if `s` exceeds 31 bytes.
-fn write_fixstr(out: &mut Vec<u8>, s: &str) {
-    assert!(s.len() <= 31);
-    out.push(0xa0 | s.len() as u8);
-    out.extend_from_slice(s.as_bytes());
-}
 
 #[cfg(test)]
 #[path = "storage.test.rs"]

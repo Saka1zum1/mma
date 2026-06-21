@@ -276,9 +276,6 @@ impl<'a> LocView<'a> {
 
     /// Number of rows in the Arrow batch (before overlay).
     pub fn batch_rows(&self) -> usize { self.batch_rows }
-    /// Overlay add locations (appended after batch rows in logical order).
-    pub fn adds(&self) -> &[Location] { self.adds }
-
     /// Read the raw batch ID at row `i` (no overlay check).
     pub fn batch_id(&self, i: usize) -> u32 { self.ids.unwrap().value(i) }
 
@@ -302,10 +299,6 @@ impl<'a> LocView<'a> {
         }
         self.batch_id(i)
     }
-
-    /// Read the raw lat/lng column value at batch row `i` (no overlay check).
-    #[inline] pub fn lat_raw(&self, i: usize) -> f64 { self.lats.unwrap().value(i) }
-    #[inline] pub fn lng_raw(&self, i: usize) -> f64 { self.lngs.unwrap().value(i) }
 
     /// Materialize batch row `i` into a full `Location`.
     pub fn loc_at(&self, i: usize) -> Location {
@@ -535,7 +528,7 @@ fn normalize_lng(lng: f64) -> f64 {
 /// Ray-casting algorithm: cast a horizontal ray eastward from (lng, lat) and count
 /// edge crossings. Odd count = inside. O(V) where V = vertices.
 /// Handles antimeridian-crossing rings by shifting to [0, 360).
-pub(crate) fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
+fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
     let crosses = ring_crosses_antimeridian(ring);
     let lng = if crosses { normalize_lng(lng) } else { lng };
     let mut inside = false;
@@ -556,7 +549,7 @@ pub(crate) fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
 
 /// Test point-in-polygon with holes: must be inside the outer ring (coords[0])
 /// and outside all hole rings (coords[1..]).
-pub(crate) fn point_in_polygon(lng: f64, lat: f64, coords: &[Vec<[f64; 2]>]) -> bool {
+fn point_in_polygon(lng: f64, lat: f64, coords: &[Vec<[f64; 2]>]) -> bool {
     if coords.is_empty() { return false; }
     if !point_in_ring(lng, lat, &coords[0]) { return false; }
     for hole in coords.iter().skip(1) {
@@ -930,7 +923,7 @@ const EARTH_R_M: f64 = 6_371_000.0;
 /// once per query point. Error vs haversine is sub-mm under ~1km — negligible for the
 /// meter-scale radii dedup/find-nearby use. Compare against `threshold * threshold`.
 #[inline]
-pub(crate) fn equirect_m2(lat1: f64, lng1: f64, lat2: f64, lng2: f64, cos_lat: f64) -> f64 {
+fn equirect_m2(lat1: f64, lng1: f64, lat2: f64, lng2: f64, cos_lat: f64) -> f64 {
     let x = (lng2 - lng1).to_radians() * cos_lat;
     let y = (lat2 - lat1).to_radians();
     (x * x + y * y) * EARTH_R_M * EARTH_R_M

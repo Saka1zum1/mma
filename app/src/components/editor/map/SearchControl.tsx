@@ -1,12 +1,11 @@
 import { useState, useCallback, useRef } from "react";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { parseMapsUrl, parseCoordinates, type ParsedLocation } from "@/lib/data/importExport";
+import type { LatLng } from "@/types";
 
-interface PlaceResult {
+type PlaceResult = LatLng & {
 	name: string;
-	lat: number;
-	lng: number;
-}
+};
 
 export function SearchControl({
 	onResult,

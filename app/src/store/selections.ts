@@ -28,8 +28,6 @@ export enum ValidationState {
 	GoodcamAvailable = 6,
 }
 
-export type SelectionType = SelectionProps["type"];
-
 /** Display symbol/word for each filter operator. */
 export const OP_LABELS: Record<FilterOp, string> = {
 	eq: "=",

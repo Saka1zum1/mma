@@ -9,7 +9,6 @@ mma.html
 
 # IDE / editor
 .idea/
-.vscode/
 
 # WSL dotfiles
 .bash_profile

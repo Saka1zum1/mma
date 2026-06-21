@@ -1,0 +1,22 @@
+{
+	"rust-analyzer.linkedProjects": ["app/src-tauri/Cargo.toml"],
+
+	"files.readonlyInclude": {
+		"app/src/bindings.gen.ts": true,
+		"plugins/types/mma.d.ts": true,
+		"**/*.gen.d.ts": true
+	},
+
+	"search.exclude": {
+		"app/public/opensv/**": true,
+		"app/opensv-build/**": true,
+		"app/src-tauri/crates/**": true,
+		"app/src-tauri/target/**": true,
+		"mma-source/**": true,
+		"app/test/**": true,
+		"app/public/**": true,
+		"data/**": true
+	},
+
+	"typescript.preferences.importModuleSpecifier": "non-relative"
+}

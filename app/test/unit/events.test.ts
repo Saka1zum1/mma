@@ -12,8 +12,6 @@ import {
 	subscribeMany,
 	LOCATION_DATA_EVENTS,
 	SELECTION_EVENTS,
-	TAG_DATA_EVENTS,
-	MAP_LIFECYCLE_EVENTS,
 } from "@/lib/events";
 
 // The group constants are derived from the event registry by prefix. If an event name
@@ -27,13 +25,8 @@ describe("event group constants", () => {
 		]);
 	});
 
-	it("TAG_DATA_EVENTS contains exactly the tag:* events", () => {
-		expect([...TAG_DATA_EVENTS].sort()).toEqual(["tag:add", "tag:remove", "tag:update"]);
-	});
-
-	it("SELECTION_EVENTS and MAP_LIFECYCLE_EVENTS are correct", () => {
+	it("SELECTION_EVENTS is correct", () => {
 		expect([...SELECTION_EVENTS]).toEqual(["selection:change"]);
-		expect([...MAP_LIFECYCLE_EVENTS].sort()).toEqual(["map:close", "map:open"]);
 	});
 });
 

@@ -8,6 +8,7 @@ import { randomPointInBounds, getBoundingBox, pointInGeoJsonGeometry } from "./g
 import { passesInitialFilters, passesDateFilters, isPanoGood, computeHeading } from "./filters";
 import { distMeters } from "@/lib/geo/geo";
 import { searchCoverage } from "../searchCoverage";
+import type { LatLng } from "@/types";
 
 function chunk<T>(arr: T[], n: number): T[][] {
 	const result: T[][] = [];
@@ -147,7 +148,7 @@ export class GenerationEngine {
 
 			region.isProcessing = true;
 			const n = Math.min(region.target * 100, this.settings.speed);
-			const randomCoords: { lat: number; lng: number }[] = [];
+			const randomCoords: LatLng[] = [];
 			// Cap attempts so a degenerate/near-zero-area polygon can never spin forever.
 			// The bbox reject in pointInGeoJsonGeometry keeps each attempt cheap.
 			let attempts = 0;
@@ -173,7 +174,7 @@ export class GenerationEngine {
 		this.callbacks.onRegionComplete(region.id);
 	}
 
-	private getLoc(coord: { lat: number; lng: number }, region: GeneratorRegion): Promise<void> {
+	private getLoc(coord: LatLng, region: GeneratorRegion): Promise<void> {
 		searchCoverage.addProbe(coord.lng, coord.lat);
 		const s = this.settings;
 		const source = s.rejectUnofficial

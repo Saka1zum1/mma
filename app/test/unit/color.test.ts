@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { textColorFor, hexToHsl, hslToHex, hslToRgb, hexToRgba, rgbCss } from "@/lib/util/color";
+import { textColorFor, hexToHsl, hslToHex, hslToRgb, rgbCss } from "@/lib/util/color";
 
 describe("textColorFor", () => {
 	it("returns black for light backgrounds", () => {
@@ -94,16 +94,6 @@ describe("hslToRgb", () => {
 
 	it("white", () => {
 		expect(hslToRgb(0, 0, 1)).toEqual([255, 255, 255]);
-	});
-});
-
-describe("hexToRgba", () => {
-	it("parses hex to RGBA with fixed alpha", () => {
-		expect(hexToRgba("#ff8800")).toEqual([255, 136, 0, 200]);
-	});
-
-	it("works without hash", () => {
-		expect(hexToRgba("000000")).toEqual([0, 0, 0, 200]);
 	});
 });
 

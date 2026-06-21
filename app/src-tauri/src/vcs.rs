@@ -21,7 +21,14 @@ use crate::vcs_delta;
 // Types
 // ---------------------------------------------------------------------------
 
-/// Metadata for a single commit, returned to the frontend for the commit history UI.
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDiff {
+    pub added: u32,
+    pub removed: u32,
+    pub modified: u32,
+}
+
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitInfo {
@@ -30,9 +37,8 @@ pub struct CommitInfo {
     pub parent_id: Option<String>,
     pub message: Option<String>,
     pub tree_hash: Option<String>,
-    pub added: u32,
-    pub removed: u32,
-    pub modified: u32,
+    #[serde(flatten)]
+    pub diff: CommitDiff,
     pub location_count: u32,
     pub created_at: String,
 }
@@ -247,9 +253,11 @@ pub fn store_list_commits(
                 parent_id: row.get(2)?,
                 message: row.get(3)?,
                 tree_hash: row.get(4)?,
-                added: row.get(5)?,
-                removed: row.get(6)?,
-                modified: row.get(7)?,
+                diff: CommitDiff {
+                    added: row.get(5)?,
+                    removed: row.get(6)?,
+                    modified: row.get(7)?,
+                },
                 location_count: row.get(8)?,
                 created_at: row.get(9)?,
             })

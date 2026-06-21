@@ -20,10 +20,6 @@ export function isWeb(): boolean {
 	);
 }
 
-export function isFiniteNumber(v: unknown): v is number {
-	return typeof v === "number" && isFinite(v);
-}
-
 // Order strings with embedded numbers by numeric value, not lexically
 export function compareNatural(a: string, b: string): number {
 	return a.localeCompare(b, undefined, { numeric: true });
@@ -107,11 +103,6 @@ export function binNumeric(values: number[], binning: NumericBinning): NumericBu
 			return idx < 0 ? 0 : idx >= count ? count - 1 : idx;
 		},
 	};
-}
-
-// Split a numeric range into `count` equal-width buckets (a histogram axis).
-export function bucketize(values: number[], count: number): NumericBuckets | null {
-	return binNumeric(values, { by: "count", n: count });
 }
 
 export function sortTagsByMode(tags: Tag[], mode: TagSortMode, counts: Record<number, number>): Tag[] {

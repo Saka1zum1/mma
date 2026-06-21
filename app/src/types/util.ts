@@ -86,3 +86,9 @@ export const range = <const T extends readonly [number, number]>(
 };
 
 export const clamp = (val: number, r: Range): number => Math.min(r.max, Math.max(r.min, val));
+
+export type RequireNonNull<T> = { [P in keyof T]-?: NonNullable<T[P]> };
+export type Nullable<T> = { [K in keyof T]: T[K] | null };
+export type Rename<T, Map extends Record<string, string>> = {
+    [K in keyof T as K extends keyof Map ? Map[K] : K]: T[K]
+};

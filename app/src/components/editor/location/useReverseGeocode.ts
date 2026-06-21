@@ -3,22 +3,22 @@ import { getSettings } from "@/store/settings";
 import { log } from "@/lib/util/log";
 import { useAsync } from "@/lib/hooks/useAsync";
 
-interface GeoResult {
-	text: string;
+export interface GeoDisplay {
+	address: string;
 	countryCode: string | null;
 }
 
-async function geocodeLocal(lat: number, lng: number): Promise<GeoResult | null> {
+async function geocodeLocal(lat: number, lng: number): Promise<GeoDisplay | null> {
 	const result = await cmd.reverseGeocode(lat, lng);
 	if (!result) return null;
 	const parts = [result.city, result.admin].filter(Boolean);
 	return {
-		text: parts.join(", "),
+		address: parts.join(", "),
 		countryCode: result.country_code?.toUpperCase() ?? null,
 	};
 }
 
-async function geocodeNominatim(lat: number, lng: number): Promise<GeoResult | null> {
+async function geocodeNominatim(lat: number, lng: number): Promise<GeoDisplay | null> {
 	const apiKey = getSettings().nominatimApiKey;
 	const url = new URL("https://nominatim.openstreetmap.org/reverse");
 	url.searchParams.set("lat", String(lat));
@@ -35,12 +35,12 @@ async function geocodeNominatim(lat: number, lng: number): Promise<GeoResult | n
 		Boolean,
 	);
 	return {
-		text: parts.join(", "),
+		address: parts.join(", "),
 		countryCode: (a.country_code as string)?.toUpperCase() ?? null,
 	};
 }
 
-export function useReverseGeocode(lat: number, lng: number): GeoResult | null {
+export function useReverseGeocode(lat: number, lng: number): GeoDisplay | null {
 	return useAsync(async () => {
 		const provider = getSettings().geocodeProvider;
 		const fn = provider === "nominatim" ? geocodeNominatim : geocodeLocal;

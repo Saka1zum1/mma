@@ -1,4 +1,6 @@
-export function pointInRing(lng: number, lat: number, ring: number[][]): boolean {
+import type { LatLng } from "@/types";
+
+function pointInRing(lng: number, lat: number, ring: number[][]): boolean {
 	let inside = false;
 	for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
 		const [xi, yi] = ring[i];
@@ -18,29 +20,9 @@ export function pointInPolygon(lng: number, lat: number, coordinates: number[][]
 	return true;
 }
 
-export function distMeters(
-	a: { lat: number; lng: number },
-	b: { lat: number; lng: number },
-): number;
-export function distMeters(lat1: number, lng1: number, lat2: number, lng2: number): number;
-export function distMeters(
-	a: { lat: number; lng: number } | number,
-	b: { lat: number; lng: number } | number,
-	c?: number,
-	d?: number,
-): number {
-	let lat1: number, lng1: number, lat2: number, lng2: number;
-	if (typeof a === "number") {
-		lat1 = a;
-		lng1 = b as number;
-		lat2 = c!;
-		lng2 = d!;
-	} else {
-		lat1 = a.lat;
-		lng1 = a.lng;
-		lat2 = (b as { lat: number; lng: number }).lat;
-		lng2 = (b as { lat: number; lng: number }).lng;
-	}
+export function distMeters(a: LatLng, b: LatLng): number {
+	const { lat: lat1, lng: lng1 } = a;
+	const { lat: lat2, lng: lng2 } = b;
 	const R = 6371000;
 	const f1 = (lat1 * Math.PI) / 180;
 	const f2 = (lat2 * Math.PI) / 180;

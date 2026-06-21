@@ -1,13 +1,11 @@
 // Photometa API for fetching Street View panorama dots.
 
+import type { LatLng } from "@/types";
+
 const TILE_ZOOM = 17;
 const TILE_SIZE = 256;
 
-export interface PanoDot {
-	lat: number;
-	lng: number;
-	panoId?: string;
-}
+export type PanoDot = LatLng & { panoId: string }
 
 export function latLngToWorldCoord(lat: number, lng: number) {
 	let n = Math.sin((lat * Math.PI) / 180);
@@ -63,7 +61,7 @@ function parsePanoDots(data: any): PanoDot[] {
 			const lat = pos[2];
 			const lng = pos[3];
 			if (typeof lat === "number" && typeof lng === "number") {
-				dots.push({ lat, lng, panoId: typeof panoId === "string" ? panoId : undefined });
+				dots.push({ lat, lng, panoId });
 			}
 		}
 		return dots;
@@ -75,10 +73,10 @@ function parsePanoDots(data: any): PanoDot[] {
 export async function fetchPanoDotsWithIds(tile: {
 	x: number;
 	y: number;
-}): Promise<{ lat: number; lng: number; panoId: string }[]> {
+}): Promise<PanoDot[]> {
 	const dots = await fetchPanoDots(tile);
 	return dots.filter(
-		(d): d is { lat: number; lng: number; panoId: string } => typeof d.panoId === "string",
+		(d): d is PanoDot => typeof d.panoId === "string",
 	);
 }
 
