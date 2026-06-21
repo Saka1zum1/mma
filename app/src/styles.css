@@ -3559,9 +3559,18 @@ summary.button {
 	grid-template-rows: min-content min-content;
 	display: grid;
 }
+.location-preview.free-resize {
+	grid-template-rows: 1fr min-content;
+	overflow: hidden;
+}
 .location-preview__panorama {
 	aspect-ratio: 16/9;
 	position: relative;
+	overflow: hidden;
+}
+.location-preview.free-resize .location-preview__panorama {
+	aspect-ratio: unset;
+	min-height: 0;
 }
 .location-preview__panorama.is-fullscreen {
 	position: fixed;

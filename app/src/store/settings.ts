@@ -52,6 +52,7 @@ export const PREVIEW_ASPECT_RATIOS = {
 	"16 / 9": "16:9",
 	"21 / 9": "21:9",
 	"32 / 9": "32:9",
+	"free": "Free",
 } as const;
 
 export type MovementMode = keyof typeof MOVEMENT_MODES;

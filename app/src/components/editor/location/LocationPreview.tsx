@@ -710,10 +710,24 @@ function LocationPreviewInner() {
 		setIsFullscreen((v) => !v);
 	}, []);
 
-	// Reflow the pano (and its FOV) when the preview aspect ratio changes.
 	useEffect(() => {
 		if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
 	}, [appSettings.previewAspectRatio]);
+
+	useEffect(() => {
+		if (!singletonPano || appSettings.previewAspectRatio !== "free") return;
+		const el = fullscreenContainerRef.current;
+		if (!el) return;
+		let timer: ReturnType<typeof setTimeout>;
+		const obs = new ResizeObserver(() => {
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				if (google?.maps) google.maps.event.trigger(singletonPano, "resize");
+			}, 150);
+		});
+		obs.observe(el);
+		return () => { obs.disconnect(); clearTimeout(timer); };
+	}, [singletonPano, appSettings.previewAspectRatio]);
 
 	useHotkey(useBinding("locationSave"), () => {
 		if (location) handleSave();
@@ -1096,11 +1110,11 @@ function LocationPreviewInner() {
 	return (
 		<>
 			<ReviewBar />
-			<section className="location-preview">
+			<section className={`location-preview${appSettings.previewAspectRatio === "free" ? " free-resize" : ""}`}>
 				<div
 					className="location-preview__panorama"
 					ref={fullscreenContainerRef}
-					style={isFullscreen ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
+					style={isFullscreen || appSettings.previewAspectRatio === "free" ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
 				>
 					<div
 						className={`location-preview__embed${appSettings.hidePanoUI ? " hide-pano-ui" : ""}`}

@@ -164,22 +164,38 @@ function SplitHandle({ onSplitChange }: { onSplitChange: (v: number) => void }) 
 			const grid = el.parentElement;
 			if (!grid) return;
 
+			const panoEl = grid.querySelector<HTMLElement>(".location-preview__panorama");
+			const embedEl = panoEl?.querySelector<HTMLElement>(".location-preview__embed");
+			if (panoEl && embedEl) {
+				embedEl.style.position = "absolute";
+				embedEl.style.width = `${panoEl.offsetWidth}px`;
+				embedEl.style.height = `${panoEl.offsetHeight}px`;
+			}
+
 			const onMove = (ev: PointerEvent) => {
 				const rect = grid.getBoundingClientRect();
 				const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
 				const available = rect.width - gap;
 				const pct = ((ev.clientX - rect.left - gap / 2) / available) * 100;
-				const clamped = Math.min(70, Math.max(30, pct));
+				const clamped = Math.min(85, Math.max(15, pct));
 				grid.style.gridTemplateColumns = `minmax(0, ${clamped}fr) minmax(0, ${100 - clamped}fr)`;
+				if (embedEl && panoEl) {
+					embedEl.style.width = `${panoEl.offsetWidth}px`;
+					embedEl.style.height = `${panoEl.offsetHeight}px`;
+				}
 			};
 			const onUp = (ev: PointerEvent) => {
 				el.removeEventListener("pointermove", onMove);
 				el.removeEventListener("pointerup", onUp);
+				if (embedEl) {
+					embedEl.style.width = "";
+					embedEl.style.height = "";
+				}
 				const rect = grid.getBoundingClientRect();
 				const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
 				const available = rect.width - gap;
 				const pct = ((ev.clientX - rect.left - gap / 2) / available) * 100;
-				onSplitChange(Math.min(70, Math.max(30, pct)));
+				onSplitChange(Math.min(85, Math.max(15, pct)));
 			};
 			el.addEventListener("pointermove", onMove);
 			el.addEventListener("pointerup", onUp);
