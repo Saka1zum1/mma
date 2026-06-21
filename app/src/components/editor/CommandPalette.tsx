@@ -1,19 +1,11 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, createContext, useContext } from "react";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiUndo, mdiBookmarkOutline, mdiBookmarkCheckOutline, mdiPin, mdiPinOutline } from "@mdi/js";
+import { mdiUndo, mdiPin, mdiPinOutline } from "@mdi/js";
 import { BulkOperationModal, type BulkOperation } from "@/components/dialogs/BulkOperationModal";
-import { useSelections, useCurrentMap } from "@/store/useMapStore";
 import { getCommands, togglePinnedCommand, type CommandGroup } from "@/store/commands";
-import {
-	saveCurrentSelections,
-	deleteSavedSelection,
-	applySavedSelection,
-	selectionToSaved,
-	describeRule,
-} from "@/store/savedSelections";
 import { useSetting } from "@/store/settings";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { getBinding, useBinding } from "@/lib/util/hotkeys";
@@ -30,7 +22,6 @@ function PaletteItem({
 	onSelect,
 	disabled = false,
 	closeOnSelect = true,
-	type = "Action",
 	shortcut,
 	commandId,
 	pinned,
@@ -40,7 +31,6 @@ function PaletteItem({
 	onSelect: () => void;
 	disabled?: boolean;
 	closeOnSelect?: boolean;
-	type?: string;
 	shortcut?: string;
 	commandId?: string;
 	pinned?: boolean;
@@ -85,26 +75,10 @@ function PaletteItem({
 					<Icon path={pinned ? mdiPin : mdiPinOutline} size={18} />
 				</button>
 			)}
-			<span className="command-palette__type">{type}</span>
 		</Command.Item>
 	);
 }
 
-function PageItem({ label, page, icon }: { label: string; page: string; icon?: React.ReactNode }) {
-	const ctx = useContext(Ctx);
-	return (
-		<PaletteItem
-			label={label}
-			onSelect={() => ctx.setPage(page)}
-			icon={icon}
-			type="Page"
-			closeOnSelect={false}
-		/>
-	);
-}
-
-const BookmarkIcon = () => <Icon path={mdiBookmarkOutline} size={18} />;
-const BookmarkCheckIcon = () => <Icon path={mdiBookmarkCheckOutline} size={18} />;
 const UndoIcon = () => <Icon path={mdiUndo} size={18} />;
 
 function formatBinding(binding: string): string {
@@ -120,7 +94,7 @@ function formatBinding(binding: string): string {
 const COMMAND_GROUPS: CommandGroup[] = ["Map", "Bulk Operations", "Selections", "Tags"];
 
 function MainCommands() {
-	const map = useCurrentMap();
+	const ctx = useContext(Ctx);
 	const commands = getCommands();
 	const pinnedSet = new Set(useSetting("pinnedCommands"));
 
@@ -143,145 +117,17 @@ function MainCommands() {
 								pinned={pinnedSet.has(cmd.id)}
 							/>
 						))}
-						{group === "Map" && <PageItem label="Open map..." page="maps" />}
-						{group === "Selections" && (
-							<>
-								<PageItem label="Save current selections..." page="save-selections" icon={<BookmarkIcon />} />
-								{map && <PageItem label="Apply saved selection..." page="saved-selections" icon={<BookmarkCheckIcon />} />}
-							</>
+						{group === "Map" && (
+							<PaletteItem
+								label="Open map..."
+								onSelect={() => ctx.setPage("maps")}
+								closeOnSelect={false}
+							/>
 						)}
 					</Command.Group>
 				);
 			})}
 		</>
-	);
-}
-
-function SaveSelectionsPage() {
-	const ctx = useContext(Ctx);
-	const selections = useSelections();
-	const map = useCurrentMap();
-	const inputRef = useRef<HTMLInputElement>(null);
-	const [name, setName] = useState("");
-
-	const saveableItems = useMemo(() => {
-		if (!map) return [];
-		return selections
-			.map((s) => {
-				const saved = selectionToSaved(s, map);
-				if (!saved) return null;
-				return { props: saved, color: s.color };
-			})
-			.filter((item): item is NonNullable<typeof item> => item !== null);
-	}, [selections, map]);
-
-	const handleSave = () => {
-		if (!name.trim() || !map) return;
-		const ok = saveCurrentSelections(name.trim(), selections, map);
-		if (ok) ctx.close();
-	};
-
-	useEffect(() => {
-		setTimeout(() => inputRef.current?.focus(), 0);
-	}, []);
-
-	if (!map || saveableItems.length === 0) {
-		return (
-			<Command.Group heading="Save Selections">
-				<PaletteItem label="Back" onSelect={() => ctx.setPage(null)} icon={<UndoIcon />} closeOnSelect={false} />
-				<Command.Empty>No saveable selections active.</Command.Empty>
-			</Command.Group>
-		);
-	}
-
-	return (
-		<div className="command-palette__save-page">
-			<div className="command-palette__save-form">
-				<input
-					ref={inputRef}
-					type="text"
-					value={name}
-					onChange={(e) => setName(e.target.value)}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") handleSave();
-						if (e.key === "Escape") ctx.setPage(null);
-						e.stopPropagation();
-					}}
-					placeholder="Name this selection..."
-					className="command-palette__save-input"
-				/>
-				<button onClick={handleSave} disabled={!name.trim()} className="command-palette__save-btn">
-					Save
-				</button>
-			</div>
-			<div className="command-palette__saved-rules">
-				{saveableItems.map((item, i) => (
-					<span key={i} className="command-palette__rule-chip">
-						<span
-							className="command-palette__rule-dot"
-							style={{ background: `rgb(${item.color[0]},${item.color[1]},${item.color[2]})` }}
-						/>
-						{describeRule(item.props)}
-					</span>
-				))}
-			</div>
-		</div>
-	);
-}
-
-function SavedSelectionsPage() {
-	const ctx = useContext(Ctx);
-	const map = useCurrentMap();
-	const saved = useSetting("savedSelections");
-	const [altHeld, setAltHeld] = useState(false);
-
-	useEffect(() => {
-		const down = (e: KeyboardEvent) => { if (e.key === "Alt") setAltHeld(true); };
-		const up = (e: KeyboardEvent) => { if (e.key === "Alt") setAltHeld(false); };
-		window.addEventListener("keydown", down);
-		window.addEventListener("keyup", up);
-		return () => {
-			window.removeEventListener("keydown", down);
-			window.removeEventListener("keyup", up);
-		};
-	}, []);
-
-	return (
-		<Command.Group heading="Saved Selections">
-			<PaletteItem label="Back" onSelect={() => ctx.setPage(null)} icon={<UndoIcon />} closeOnSelect={false} />
-			{saved.length === 0 && <Command.Empty>No saved selections.</Command.Empty>}
-			{saved.map((s) => (
-				<Command.Item
-					key={s.id}
-					value={s.name}
-					onSelect={() => {
-						if (altHeld) {
-							deleteSavedSelection(s.id);
-						} else if (map) {
-							applySavedSelection(s, map);
-							ctx.close();
-						}
-					}}
-					className="command-palette__item command-palette__saved-item"
-				>
-					<div className="command-palette__saved-header">
-						<span className="command-palette__label">{altHeld ? `Delete "${s.name}"` : s.name}</span>
-						<span className="command-palette__type">{altHeld ? "Delete" : "Apply"}</span>
-					</div>
-					<div className="command-palette__saved-rules">
-						{s.items.map((item, i) => (
-							<span key={i} className="command-palette__rule-chip">
-								<span
-									className="command-palette__rule-dot"
-									style={{ background: `rgb(${item.color[0]},${item.color[1]},${item.color[2]})` }}
-								/>
-								{describeRule(item.props)}
-							</span>
-						))}
-					</div>
-				</Command.Item>
-			))}
-		</Command.Group>
 	);
 }
 
@@ -335,8 +181,6 @@ function PaletteContent({ onChangeOpen }: { onChangeOpen: (v: boolean) => void }
 							<Command.Empty>No maps found.</Command.Empty>
 						</Command.Group>
 					)}
-					{page === "save-selections" && <SaveSelectionsPage />}
-					{page === "saved-selections" && <SavedSelectionsPage />}
 				</Command.List>
 				<p className="command-palette__footer" style={{ margin: 0, padding: ".5rem 1.375rem" }} />
 			</Command>

@@ -37,6 +37,14 @@ import { RgbColorPicker } from "react-colorful";
 import type { Selection, Tag } from "@/bindings.gen";
 import { selectionDisplayName } from "@/store/selections";
 import { TagManager } from "@/components/editor/tags/TagManager";
+import {
+	saveCurrentSelections,
+	applySavedSelection,
+	deleteSavedSelection,
+	selectionToSaved,
+	describeRule,
+	type SavedSelectionItem,
+} from "@/store/savedSelections";
 import { FilterForm, filterPropsToSeed, useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
 import { ApplyFieldAsTagsDialog } from "@/components/editor/tags/ApplyFieldAsTagsDialog";
 import { TagFindReplaceDialog } from "@/components/editor/tags/TagFindReplaceDialog";
@@ -784,6 +792,129 @@ function SelectionRow({
 	);
 }
 
+function SaveSelectionsDialog({
+	open,
+	onOpenChange,
+	name,
+	onNameChange,
+}: {
+	open: boolean;
+	onOpenChange: (v: boolean) => void;
+	name: string;
+	onNameChange: (v: string) => void;
+}) {
+	const map = useCurrentMap();
+	const selections = useSelections();
+	const saveableItems: SavedSelectionItem[] = (() => {
+		if (!map) return [];
+		return selections
+			.map((s) => {
+				const saved = selectionToSaved(s, map);
+				if (!saved) return null;
+				return { props: saved, color: s.color } as SavedSelectionItem;
+			})
+			.filter((item): item is SavedSelectionItem => item !== null);
+	})();
+
+	const handleSave = () => {
+		if (!name.trim() || !map) return;
+		const ok = saveCurrentSelections(name.trim(), selections, map);
+		if (ok) {
+			onNameChange("");
+			onOpenChange(false);
+		}
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent title="Save current selections">
+				{saveableItems.length === 0 ? (
+					<p>No saveable selections active.</p>
+				) : (
+					<form
+						onSubmit={(e) => { e.preventDefault(); handleSave(); }}
+						style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}
+					>
+						<input
+							className="input"
+							value={name}
+							onChange={(e) => onNameChange(e.target.value)}
+							placeholder="Name this selection..."
+							autoFocus
+						/>
+						<div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem" }}>
+							{saveableItems.map((item, i) => (
+								<span key={i} className="command-palette__rule-chip">
+									<span
+										className="command-palette__rule-dot"
+										style={{ background: `rgb(${item.color[0]},${item.color[1]},${item.color[2]})` }}
+									/>
+									{describeRule(item.props)}
+								</span>
+							))}
+						</div>
+						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+							<button className="button" type="button" onClick={() => onOpenChange(false)}>Cancel</button>
+							<button className="button button--primary" type="submit" disabled={!name.trim()}>Save</button>
+						</div>
+					</form>
+				)}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function ApplySavedSelectionDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+	const map = useCurrentMap();
+	const saved = useSetting("savedSelections");
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent title="Apply saved selection">
+				{saved.length === 0 ? (
+					<p>No saved selections.</p>
+				) : (
+					<div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: 4 }}>
+						{saved.map((s) => (
+							<div key={s.id} className="saved-selection-row">
+								<button
+									className="button saved-selection-row__apply"
+									onClick={() => {
+										if (map) {
+											applySavedSelection(s, map);
+											onOpenChange(false);
+										}
+									}}
+								>
+									{s.name}
+								</button>
+								<div style={{ display: "flex", flexWrap: "wrap", gap: "0.25rem", flex: 1 }}>
+									{s.items.map((item, i) => (
+										<span key={i} className="command-palette__rule-chip">
+											<span
+												className="command-palette__rule-dot"
+												style={{ background: `rgb(${item.color[0]},${item.color[1]},${item.color[2]})` }}
+											/>
+											{describeRule(item.props)}
+										</span>
+									))}
+								</div>
+								<button
+									className="icon-button"
+									onClick={() => deleteSavedSelection(s.id)}
+									title="Delete"
+								>
+									<Icon path={mdiClose} />
+								</button>
+							</div>
+						))}
+					</div>
+				)}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 export function MapOverview({ hidden }: { hidden?: boolean }) {
 	const map = useCurrentMap();
 	const selected = useSelectedLocationIds();
@@ -796,6 +927,9 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	const [showMergeDuplicates, setShowMergeDuplicates] = useState(false);
 	const [showReviews, setShowReviews] = useState(false);
 	const [showApplyFieldAsTags, setShowApplyFieldAsTags] = useState(false);
+	const [showSaveSelections, setShowSaveSelections] = useState(false);
+	const [showApplySaved, setShowApplySaved] = useState(false);
+	const [saveSelName, setSaveSelName] = useState("");
 
 	useEffect(() => {
 		const handler = () => setShowTagFindReplace(true);
@@ -822,6 +956,18 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 		document.addEventListener("open-review-selected", handler);
 		return () => document.removeEventListener("open-review-selected", handler);
 	}, [selected]);
+
+	useEffect(() => {
+		const handler = () => setShowSaveSelections(true);
+		document.addEventListener("open-save-selections", handler);
+		return () => document.removeEventListener("open-save-selections", handler);
+	}, []);
+
+	useEffect(() => {
+		const handler = () => setShowApplySaved(true);
+		document.addEventListener("open-apply-saved-selection", handler);
+		return () => document.removeEventListener("open-apply-saved-selection", handler);
+	}, []);
 
 	if (!map) return null;
 
@@ -974,6 +1120,17 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				distance={dupDistance}
 			/>
 			<ReviewSessionsModal open={showReviews} onOpenChange={setShowReviews} />
+
+			<SaveSelectionsDialog
+				open={showSaveSelections}
+				onOpenChange={setShowSaveSelections}
+				name={saveSelName}
+				onNameChange={setSaveSelName}
+			/>
+			<ApplySavedSelectionDialog
+				open={showApplySaved}
+				onOpenChange={setShowApplySaved}
+			/>
 		</section>
 	);
 }

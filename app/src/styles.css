@@ -2071,6 +2071,25 @@ summary.button {
 	position: relative;
 	box-shadow: 0 0.0625rem 0.125rem #00000026;
 }
+.nselect--compact {
+	width: auto;
+	min-width: 0;
+	height: 28px;
+	padding: 0 40px 0 10px;
+	font-size: 13px;
+	line-height: 28px;
+}
+.nselect--compact::picker-icon {
+	width: 8px;
+	height: 8px;
+	right: 10px;
+	top: calc(50% - 6px);
+}
+.nselect--compact option {
+	height: 28px;
+	padding: 0 10px;
+	font-size: 13px;
+}
 .nselect:not(:disabled) {
 	cursor: pointer;
 }
@@ -3789,6 +3808,14 @@ summary.button {
 	align-items: center;
 	gap: 0.5rem;
 	margin-top: 0.5rem;
+}
+.saved-selection-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.saved-selection-row__apply {
+	white-space: nowrap;
 }
 .selection-manager__toolbar {
 	margin-top: 0.5rem;

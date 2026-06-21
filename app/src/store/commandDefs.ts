@@ -29,6 +29,8 @@ import {
 	mdiFilterOutline,
 	mdiCallMerge,
 	mdiPlayOutline,
+	mdiBookmarkOutline,
+	mdiBookmarkCheckOutline,
 } from "@mdi/js";
 import { registerCommand } from "./commands";
 import {
@@ -265,6 +267,23 @@ registerCommand({
 	group: "Selections",
 	execute: () => toggleGhostAllSelections(),
 	enabled: () => getSelections().length > 0,
+});
+
+registerCommand({
+	id: "save-selections",
+	label: "Save current selections...",
+	icon: mdiBookmarkOutline,
+	group: "Selections",
+	execute: () => document.dispatchEvent(new CustomEvent("open-save-selections")),
+	enabled: () => getSelections().length > 0,
+});
+
+registerCommand({
+	id: "apply-saved-selection",
+	label: "Apply saved selection...",
+	icon: mdiBookmarkCheckOutline,
+	group: "Selections",
+	execute: () => document.dispatchEvent(new CustomEvent("open-apply-saved-selection")),
 });
 
 registerCommand({
