@@ -9,7 +9,7 @@ import { getCommands, togglePinnedCommand, type CommandGroup } from "@/store/com
 import { useSetting } from "@/store/settings";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { getBinding, useBinding } from "@/lib/util/hotkeys";
-import { useMapList, getCurrentMapId } from "@/store/useMapStore";
+import { useMapList, getCurrentMapId, closeMap } from "@/store/useMapStore";
 import { goToMap } from "@/store/router";
 
 interface PaletteContext {
@@ -154,7 +154,7 @@ function MapSwitcher() {
 					<PaletteItem
 						key={m.id}
 						label={m.name}
-						onSelect={() => goToMap(m.id)}
+						onSelect={() => closeMap().then(() => goToMap(m.id))}
 					/>
 				))
 			)}
