@@ -50,7 +50,7 @@ import { isFieldEnabled } from "@/lib/data/fieldDefs";
 import * as Select from "@radix-ui/react-select";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch";
-import { dateFmt } from "@/lib/util/format";
+import { dateFmt, relativeTime } from "@/lib/util/format";
 import { textColorFor } from "@/lib/util/color";
 import {
 	type PanoReference,
@@ -1152,6 +1152,11 @@ function LocationPreviewInner() {
 						)}
 						{geoResult?.countryCode && geoResult.text && " "}
 						{geoResult?.text && <span>{geoResult.text}</span>}
+						{(geoResult?.text || geoResult?.countryCode) && <span className="location-preview__timestamp-sep"> · </span>}
+						<span className="location-preview__timestamps">
+							Created {relativeTime(location.createdAt)}
+							{location.modifiedAt != null && <>{" · "}Modified {relativeTime(location.modifiedAt)}</>}
+						</span>
 					</span>
 					<div className="location-preview__date">
 						<PanoDatePicker

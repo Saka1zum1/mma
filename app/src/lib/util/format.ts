@@ -37,11 +37,12 @@ const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
-export function relativeTime(iso: string): string {
-	const delta = Date.now() - new Date(iso).getTime();
+export function relativeTime(time: string | number): string {
+	const ms = typeof time === "number" ? time * 1000 : new Date(time).getTime();
+	const delta = Date.now() - ms;
 	if (delta < MINUTE) return "just now";
 	if (delta < HOUR) return `${Math.floor(delta / MINUTE)}m ago`;
 	if (delta < DAY) return `${Math.floor(delta / HOUR)}h ago`;
 	if (delta < 30 * DAY) return `${Math.floor(delta / DAY)}d ago`;
-	return shortDateFmt.format(new Date(iso));
+	return shortDateFmt.format(new Date(ms));
 }

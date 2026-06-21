@@ -3595,6 +3595,10 @@ summary.button {
 	align-items: center;
 	display: grid;
 }
+.location-preview__timestamps,
+.location-preview__timestamp-sep {
+	color: #888;
+}
 .location-preview__description {
 	grid-area: desc;
 	font-size: 0.875rem;
