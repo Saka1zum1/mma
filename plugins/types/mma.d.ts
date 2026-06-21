@@ -1546,6 +1546,7 @@ declare const DEFAULTS: {
 	previewAspectRatio: PreviewAspectRatio;
 	tagSuggestionLimit: number;
 	savedSelections: SavedSelection[];
+	pinnedCommands: string[];
 };
 export type AppSettings = typeof DEFAULTS;
 declare function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void;
@@ -1774,6 +1775,7 @@ declare const mma: {
 		previewAspectRatio: PreviewAspectRatio;
 		tagSuggestionLimit: number;
 		savedSelections: SavedSelection[];
+		pinnedCommands: string[];
 	};
 	on<E extends EditorEvent>(event: E, handler: EventHandler<E>): () => void;
 	getSeenEntries: typeof getSeenEntries;
