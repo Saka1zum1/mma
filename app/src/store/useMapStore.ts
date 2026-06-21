@@ -1,14 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import type { Location, WorkArea, ImportPreview } from "@/types";
+import type { WorkArea, LatLng } from "@/types";
 import { isVirtualLocation, stagedIndexToVirtualId, virtualIdToStagedIndex } from "@/types";
-import type { MapData, MapMeta, Tag, ExtraFieldDef, FilterOp, KeySpec, Scope } from "@/bindings.gen";
+import type { Location, MapData, MapMeta, Tag, ExtraFieldDef, FilterOp, KeySpec, Scope, CommitDiff, PartitionBucket, EditorImportPreview } from "@/bindings.gen";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { emit as tauriEmit, listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
-	MutationResult_Serialize as MutationResult,
-	LocationPatch_Deserialize as LocationPatch,
-	MapMetaPatch,
+	MutationResult,
+	MapMetaPatch_Deserialize as MapMetaPatch,
 	SyncSelectionsResult,
 	CommitInfo
 } from "@/bindings.gen";
@@ -27,10 +26,11 @@ import {
 	planFieldDelete,
 	rewriteSelectionFields,
 	type MergeWinner,
-	type PartitionGroup,
 } from "@/lib/data/fieldOps";
+import type { LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
 import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections";
-import { SelectedIds, decodeSelectionBitmask, type ReadonlyIdSet, type RenderDelta, type SelCellEntry } from "@/lib/render/CellManager";
+import type { RenderDelta } from "@/bindings.gen";
+import { SelectedIds, decodeSelectionBitmask, type ReadonlyIdSet, type SelCellEntry } from "@/lib/render/CellManager";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */
 function createBus<T extends (...args: never[]) => void>() {
@@ -142,7 +142,7 @@ let knownFieldKeys = new Set<string>();
 
 /** Parsed-but-not-committed import shown while `workArea === "import"`. */
 export interface ImportStaging {
-	preview: ImportPreview;
+	preview: EditorImportPreview;
 	source: "file" | "paste";
 }
 let importStaging: ImportStaging | null = null;
@@ -155,7 +155,7 @@ let importMarkerVersion = 0;
 export interface CommitDiffPreview {
 	commitId: string;
 	hash: string;
-	counts: { added: number; removed: number; modified: number };
+	counts: CommitDiff;
 	added: Float32Array;
 	removed: Float32Array;
 	modified: Float32Array;
@@ -169,7 +169,7 @@ export function getTagCounts() {
 	return tagCounts;
 }
 
-async function computeCommitDiff(): Promise<{ added: number; removed: number; modified: number }> {
+async function computeCommitDiff(): Promise<CommitDiff> {
 	const [added, removed, modified] = await cmd.storeCommitDiff();
 	return { added, removed, modified };
 }
@@ -484,7 +484,7 @@ export function applyScope<T extends { id: number }>(scope: Scope, pool: T[]): T
 
 /** Group the scoped location set by a derived key — entirely in Rust, no locations fetched.
  *  Numeric bins arrive in bound order; projection keys are sorted naturally for display. */
-export async function partition(field: string, key: KeySpec, scope: Scope): Promise<PartitionGroup[]> {
+export async function partition(field: string, key: KeySpec, scope: Scope): Promise<PartitionBucket[]> {
 	const groups = await cmd.storePartition(field, key, scope);
 	if (key.kind !== "numericBin") groups.sort((a, b) => compareNatural(a.key, b.key));
 	return groups;
@@ -712,19 +712,14 @@ export async function addLocations(locs: Location[], opts?: { hideInDelta?: bool
 	emitEvent("location:add", locs);
 }
 
-export async function duplicateLocation(locId: number): Promise<number | null> {
-	if (!currentMap || isVirtualLocation({ id: locId })) return null;
-	const loc = await cmd.storeGetLocation(locId);
+export async function duplicateLocation(id: number): Promise<number | null> {
+	if (!currentMap || isVirtualLocation({ id })) return null;
+	const loc = await cmd.storeGetLocation(id);
 	if (!loc) return null;
 	const now = nowUnix();
 	const clone: Location = { ...loc, id: 0, createdAt: now, modifiedAt: now };
 	await addLocations([clone]);
 	return clone.id;
-}
-
-export function updateLocationNoUndo(id: number, patch: Partial<Location>) {
-	if (isVirtualLocation({ id })) return Promise.resolve(null);
-	return cmd.storeUpdateLocations(buildUpdates([{ id, patch }]) as [number, LocationPatch][], false);
 }
 
 export async function removeLocations(ids: ReadonlyIdSet) {
@@ -745,45 +740,18 @@ export async function removeLocations(ids: ReadonlyIdSet) {
 	);
 }
 
-function buildUpdates(
-	items: { id: number; patch: Partial<Location> }[],
-): [number, Record<string, unknown>][] {
-	return items.map(({ id, patch }) => {
-		const p: Record<string, unknown> = {};
-		for (const [k, v] of Object.entries(patch)) {
-			if (k !== "id") p[k] = v;
-		}
-		return [id, p];
-	});
-}
-
-export async function updateLocation(loc: Location, patch: Partial<Location>) {
-	if (!currentMap) return;
-	if (isVirtualLocation(loc)) return;
-	const updates = buildUpdates([{ id: loc.id, patch }]);
-	emitEvent("location:update", { id: loc.id, ...patch });
-	await mutate(cmd.storeUpdateLocations(updates, true));
-	if (activeLocationId === loc.id) {
-		cachedActiveLocation = { ...loc, ...patch };
+export async function updateLocations(
+	updates: LocationUpdate[],
+	opts?: { undoable?: boolean }
+) {
+	if (!currentMap || updates.length === 0) return;
+	for (const u of updates) emitEvent("location:update", u);
+	await mutate(cmd.storeUpdateLocations(updates, opts?.undoable ?? true));
+	if (cachedActiveLocation && updates.some(u => u.id === activeLocationId)) {
+		const activePatch = updates.find(u => u.id === activeLocationId)?.patch;
+		if (activePatch) cachedActiveLocation = { ...cachedActiveLocation, ...activePatch } as Location;
 		bump();
 	}
-}
-
-export function batchUpdateLocations(updates: { id: number; patch: Partial<Location> }[]) {
-	if (!currentMap || updates.length === 0) return Promise.resolve();
-	return mutate(cmd.storeUpdateLocations(buildUpdates(updates), true)).catch((e) =>
-		log.error("[batchUpdate] store_update_locations failed:", e),
-	);
-}
-
-// Like batchUpdateLocations but records no undo entry. Used by bulk field ops whose
-// definition/selection migration isn't part of the undo system — an undoable data
-// change there would half-revert and leave the map inconsistent.
-function batchUpdateLocationsNoUndo(updates: { id: number; patch: Partial<Location> }[]) {
-	if (!currentMap || updates.length === 0) return Promise.resolve();
-	return mutate(cmd.storeUpdateLocations(buildUpdates(updates), false)).catch((e) =>
-		log.error("[batchUpdateNoUndo] store_update_locations failed:", e),
-	);
 }
 
 // --- Bulk metadata-field operations (rare; intentionally NOT undoable, since the
@@ -797,7 +765,7 @@ export async function renameField(from: string, to: string, winner: MergeWinner 
 	const updates = planFieldMove(await fetchAllLocations(), from, to, winner);
 	const nextKeys = new Set(knownFieldKeys);
 	if (updates.length) {
-		await batchUpdateLocationsNoUndo(updates);
+		await updateLocations(updates, { undoable: false });
 		nextKeys.add(to);
 	}
 	nextKeys.delete(from);
@@ -810,7 +778,7 @@ export async function deleteField(key: string) {
 	if (!currentMap) return;
 	const updates = planFieldDelete(await fetchAllLocations(), key);
 	if (updates.length) {
-		await batchUpdateLocationsNoUndo(updates);
+		await updateLocations(updates, { undoable: false });
 	}
 	knownFieldKeys = new Set(knownFieldKeys);
 	knownFieldKeys.delete(key);
@@ -838,7 +806,7 @@ export async function patchLocationExtra(
 	if (!currentMap) return;
 	if (isVirtualLocation(loc)) return;
 	const extra = replace ? extraPatch : { ...loc.extra, ...extraPatch };
-	await mutate(cmd.storeUpdateLocations([[loc.id, { extra }]], false));
+	await mutate(cmd.storeUpdateLocations([{ id: loc.id, patch: { extra } }], false));
 
 	const patched = { ...loc, extra };
 	if (activeLocationId === loc.id) {
@@ -930,10 +898,6 @@ function pruneGhosted() {
 }
 
 export const useGhostedSelections = makeStoreHook(() => ghostedSelections);
-
-export function isSelectionGhosted(key: string): boolean {
-	return ghostedSelections.has(key);
-}
 
 /** Toggle a selection's ghosted state and re-sync (excludes/includes it from the overlay). */
 export function toggleGhostSelection(key: string) {
@@ -1330,9 +1294,9 @@ export async function reorderTags(orderedIds: number[]) {
 export async function addTagToLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
-	const updates: [number, LocationPatch][] = locs
+	const updates: LocationUpdate[] = locs
 		.filter((l) => !l.tags.includes(tagId))
-		.map((l) => [l.id, { tags: [...l.tags, tagId] }]);
+		.map((l) => ({ id: l.id, patch: { tags: [...l.tags, tagId] } }));
 	if (updates.length === 0) return;
 	await mutate(cmd.storeUpdateLocations(updates, true));
 }
@@ -1340,9 +1304,9 @@ export async function addTagToLocations(tagId: number, locationIds: number[]) {
 export async function removeTagFromLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
-	const updates: [number, LocationPatch][] = locs
+	const updates: LocationUpdate[] = locs
 		.filter((l) => l.tags.includes(tagId))
-		.map((l) => [l.id, { tags: l.tags.filter((t: number) => t !== tagId) }]);
+		.map((l) => ({ id: l.id, patch: { tags: l.tags.filter((t: number) => t !== tagId) } }));
 	if (updates.length === 0) return;
 	await mutate(cmd.storeUpdateLocations(updates, true));
 }
@@ -1355,7 +1319,7 @@ export async function removeTagFromAllLocations(tagId: number) {
 
 // --- Import ---
 
-async function setImportStaging(preview: ImportPreview, source: "file" | "paste") {
+async function setImportStaging(preview: EditorImportPreview, source: "file" | "paste") {
 	let positions = new Float32Array(0);
 	try {
 		const resp = await fetch(mmaBufUrl(preview.previewPositionsPath));
@@ -1463,11 +1427,7 @@ export const useUndoRedo = makeStoreHook(() => undoRedoState);
 
 // --- Version control ---
 
-function formatDiffMessage(diff: {
-	added: number;
-	removed: number;
-	modified: number;
-}): string | undefined {
+function formatDiffMessage(diff: CommitDiff): string | undefined {
 	const parts: string[] = [];
 	if (diff.added > 0) parts.push(`+${diff.added}`);
 	if (diff.removed > 0) parts.push(`-${diff.removed}`);
@@ -1512,7 +1472,7 @@ export async function commitMap(message?: string): Promise<string> {
 }
 
 /** Interleave `[lng, lat]` pairs into an f32 buffer for deck.gl. */
-export function diffPositions(locs: { lat: number; lng: number }[]): Float32Array {
+export function diffPositions(locs: LatLng[]): Float32Array {
 	const a = new Float32Array(locs.length * 2);
 	for (let i = 0; i < locs.length; i++) {
 		a[i * 2] = locs[i].lng;

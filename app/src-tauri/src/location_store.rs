@@ -1121,7 +1121,6 @@ pub struct RenderDelta {
     pub updated: Vec<RenderPatchEntry>,
     pub removed: Vec<CellRemoval>,
     pub color_patches: Vec<ColorPatchEntry>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub full_reset: bool,
 }
 
@@ -1245,6 +1244,12 @@ pub struct LocationPatch {
     pub modified_at: Option<Option<u32>>,
 }
 
+/// A location ID paired with a partial patch, sent from JS for updates.
+#[derive(serde::Deserialize, specta::Type)]
+pub struct LocationUpdate {
+    pub id: u32,
+    pub patch: LocationPatch,
+}
 
 
 // ---------------------------------------------------------------------------
@@ -1547,22 +1552,22 @@ pub fn store_remove_locations(
 pub fn store_update_locations(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
-    updates: Vec<(u32, LocationPatch)>,
+    updates: Vec<LocationUpdate>,
     record_undo: Option<bool>,
 ) -> AppResult<MutationResult> {
     let record_undo = record_undo.unwrap_or(true);
     let _t = std::time::Instant::now();
     with_store!(webview, state, |store| {
         let mut updated: Vec<(Location, Location)> = Vec::new();
-        let any_tags = updates.iter().any(|(_, p)| p.tags.is_some());
-        let any_extras = updates.iter().any(|(_, p)| p.extra.is_some());
+        let any_tags = updates.iter().any(|u| u.patch.tags.is_some());
+        let any_extras = updates.iter().any(|u| u.patch.extra.is_some());
         // TODO: overlay_update re-fetches internally; returning (old, new) would drop 2 of the
         // 3 lookups+clones per id, and the any_tags/undo blocks below re-clone the pairs again.
         // Only matters for 100k+ bulk edits.
-        for (id, patch) in &updates {
-            if let Some(old) = store.get_loc_by_id(*id) {
-                store.overlay_update(*id, patch);
-                let new_loc = store.get_loc_by_id(*id).unwrap();
+        for u in &updates {
+            if let Some(old) = store.get_loc_by_id(u.id) {
+                store.overlay_update(u.id, &u.patch);
+                let new_loc = store.get_loc_by_id(u.id).unwrap();
                 updated.push((old, new_loc));
             }
         }

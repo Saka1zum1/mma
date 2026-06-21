@@ -4,18 +4,11 @@
  * orchestrates IPC, definitions, and persistence. Kept side-effect-free for testability.
  */
 
-import type { Location } from "@/types";
-import type { ExtraFieldDef, ExtraFieldType, Selection, SelectionProps, PartitionBucket } from "@/bindings.gen";
+import type { Location, ExtraFieldDef, ExtraFieldType, Selection, SelectionProps, LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
 import { buildSelection } from "@/store/selections";
 
 /** When a move target already holds a value, which field's value survives. */
 export type MergeWinner = "from" | "to";
-
-/** A planned partial patch to one location (top-level field or `extra`). */
-export interface LocationUpdate {
-	id: number;
-	patch: Partial<Location>;
-}
 
 /** Built-in top-level Location fields offered in the bulk "Set field" picker, with display metadata. */
 export const TOP_LEVEL_SET_FIELDS: Record<string, ExtraFieldDef> = {
@@ -110,14 +103,14 @@ function changesLocation(loc: Location, patch: Partial<Location>): boolean {
 // parens, and a few functions. Scope (WHERE) belongs to selections and multiple
 // assignments are repeat runs -- the language stays one expression wide.
 
-export type FieldExpr =
+type FieldExpr =
 	| { kind: "num"; value: number }
 	| { kind: "field"; name: string }
 	| { kind: "neg"; arg: FieldExpr }
 	| { kind: "bin"; op: "+" | "-" | "*" | "/" | "%"; left: FieldExpr; right: FieldExpr }
 	| { kind: "call"; fn: string; args: FieldExpr[] };
 
-export const EXPR_FNS: Record<string, { arity: number; apply: (args: number[]) => number }> = {
+const EXPR_FNS: Record<string, { arity: number; apply: (args: number[]) => number }> = {
 	mod: { arity: 2, apply: ([x, n]) => ((x % n) + n) % n },
 	clamp: { arity: 3, apply: ([x, lo, hi]) => Math.min(hi, Math.max(lo, x)) },
 	abs: { arity: 1, apply: ([x]) => Math.abs(x) },
@@ -340,7 +333,7 @@ function rewriteSelection(
 }
 
 /** Calendar digits of a timestamp in a clock frame. */
-export interface DateParts {
+interface DateParts {
 	y: number;
 	mo: number; // 0-based, as Date
 	d: number;
@@ -454,7 +447,7 @@ export function stepFilterWindow(
 // id/label/applicability only — drives the dropdowns. Key derivation runs in Rust
 // (`selections.rs` KeySpec); ids line up 1:1 with the Rust `DatePart` variants.
 
-export interface FieldProjection {
+interface FieldProjection {
 	id: string;
 	label: string;
 	appliesTo: ExtraFieldType[];
@@ -462,7 +455,7 @@ export interface FieldProjection {
 	needsTz?: boolean;
 }
 
-export const TAG_PROJECTIONS: FieldProjection[] = [
+const TAG_PROJECTIONS: FieldProjection[] = [
 	{ id: "value", label: "Value", appliesTo: ["string", "enum", "number", "month"] },
 	{ id: "year", label: "Year", appliesTo: ["date", "month"], needsTz: true },
 	{ id: "yearMonth", label: "Year-month", appliesTo: ["date"], needsTz: true },
@@ -477,9 +470,6 @@ export function projectionsForType(type: ExtraFieldType): FieldProjection[] {
 }
 
 // --- Partition: grouping runs in Rust (`store_partition`); these are the JS-side glue. ---
-
-/** A group from Rust: key, its ids, and (numeric bins only) the `[lo, hi]` bounds. */
-export type PartitionGroup = PartitionBucket;
 
 /** The synthetic "Range" option: numeric binning, which isn't a stateless projection. */
 export const RANGE_ID = "range";

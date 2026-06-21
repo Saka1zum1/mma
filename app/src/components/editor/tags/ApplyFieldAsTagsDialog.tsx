@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import type { ExtraFieldDef, KeySpec, DatePart } from "@/bindings.gen";
+import type { ExtraFieldDef, KeySpec, DatePart, LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import {
@@ -8,7 +8,7 @@ import {
 	partition,
 	useScope,
 	createTags,
-	batchUpdateLocations,
+    updateLocations,
 } from "@/store/useMapStore";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { useSetting } from "@/store/settings";
@@ -70,7 +70,7 @@ export function ApplyFieldAsTagsDialog({
 		const tagIdByName = new Map(created.map((t) => [t.name.toLowerCase(), t.id]));
 		const locs = await fetchLocationsByIds(groups.flatMap((g) => g.ids));
 		const locById = new Map(locs.map((l) => [l.id, l]));
-		const updates: { id: number; patch: { tags: number[] } }[] = [];
+		const updates: LocationUpdate[] = [];
 		for (const g of groups) {
 			const tagId = tagIdByName.get(g.key.toLowerCase());
 			if (tagId == null) continue;
@@ -79,7 +79,7 @@ export function ApplyFieldAsTagsDialog({
 				if (l && !l.tags.includes(tagId)) updates.push({ id, patch: { tags: [...l.tags, tagId] } });
 			}
 		}
-		if (updates.length > 0) await batchUpdateLocations(updates);
+		if (updates.length > 0) await updateLocations(updates);
 		onOpenChange(false);
 	};
 
