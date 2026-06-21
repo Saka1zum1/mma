@@ -745,6 +745,7 @@ export async function updateLocations(
 	opts?: { undoable?: boolean }
 ) {
 	if (!currentMap || updates.length === 0) return;
+	if (updates.some(u => isVirtualLocation(u))) return;
 	for (const u of updates) emitEvent("location:update", u);
 	await mutate(cmd.storeUpdateLocations(updates, opts?.undoable ?? true));
 	if (cachedActiveLocation && updates.some(u => u.id === activeLocationId)) {

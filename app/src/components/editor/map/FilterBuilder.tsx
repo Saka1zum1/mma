@@ -260,10 +260,9 @@ export function FilterForm({
 	const availableOps = opsForType(fieldEntry?.fieldType);
 	const isBetween = op === "between" || op === "between_anyyear" || op === "between_anytime";
 
-	const persist = (patch: Partial<typeof saved>) => {
-		if (!persistKey) return;
-		filterBuilderState.set(persistKey, { field, op, value, value2, anyYear, anyTime, tzLocal, ...patch });
-	};
+	useEffect(() => {
+		if (persistKey) filterBuilderState.set(persistKey, { field, op, value, value2, anyYear, anyTime, tzLocal });
+	}, [persistKey, field, op, value, value2, anyYear, anyTime, tzLocal]);
 
 	const handleFieldChange = (key: string) => {
 		setField(key);
@@ -276,7 +275,6 @@ export function FilterForm({
 		setAnyYear(false);
 		setAnyTime(false);
 		setTzLocal(false);
-		persist({ field: key, op: newOp, value: "", value2: "", anyYear: false, anyTime: false, tzLocal: false });
 	};
 
 	// tzLocal is an independent toggle: it survives op changes (the values' encoding
@@ -417,7 +415,6 @@ export function FilterForm({
 				parsed = pickPeriodEnd(parsed, grain(parsed), tzLocal);
 			}
 		}
-		persist({ field: field, op: finalOp, value, value2, anyYear, anyTime, tzLocal });
 		onSubmit(field, finalOp, parsed, parsed2, isExactDate && tzLocal);
 		onClose?.();
 	};

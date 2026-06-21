@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import {
 	useCurrentMap,
 	useSelectedLocationIds,
@@ -132,16 +132,16 @@ function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<st
 		return () => document.removeEventListener("open-inline-panel", handler);
 	}, [panels]);
 
-	const visiblePanels = useMemo(() => {
-		if (openPanels.size === 0) return openPanels;
+	useEffect(() => {
+		if (openPanels.size === 0) return;
 		let changed = false;
 		const next = new Set(openPanels);
 		for (const id of next) {
 			const cmd = getCommand(id);
 			if (cmd?.enabled && !cmd.enabled()) { next.delete(id); changed = true; }
 		}
-		return changed ? next : openPanels;
-	}, [openPanels]);
+		if (changed) setOpenPanels(next);
+	});
 
 	if (pinned.length === 0 && !right) return null;
 	let itemIndex = 0;
@@ -213,7 +213,7 @@ function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<st
 					if (!command) return null;
 					const disabled = command.enabled ? !command.enabled() : false;
 					const hasPanel = id in panels;
-					const isOpen = visiblePanels.has(id);
+					const isOpen = openPanels.has(id);
 					const tipPos = itemIndex < 3 ? "bottom-right" : "bottom";
 					itemIndex++;
 					const handleClick = hasPanel ? () => togglePanel(id) : command.execute;
@@ -287,7 +287,7 @@ function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<st
 				{right}
 			</div>
 			{Object.entries(panels).map(([id, panel]) => (
-				<div key={id} className="selection-manager__panel" hidden={!visiblePanels.has(id)}>
+				<div key={id} className="selection-manager__panel" hidden={!openPanels.has(id)}>
 					{panel.render(() => setOpenPanels((prev) => { const next = new Set(prev); next.delete(id); return next; }))}
 				</div>
 			))}
