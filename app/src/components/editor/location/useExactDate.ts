@@ -14,12 +14,13 @@ export function useExactDate(
 	// come from viewer state — which pano in the time slider is being viewed.
 	const location = useActiveLocation();
 	const existingDatetime = location?.extra?.datetime as number | undefined;
+	const panoMatchesLocation = panoId != null && panoId === location?.panoId;
 
 	const { data, loading, error } = useAsync<number | null>(() => {
-		if (existingDatetime != null) return existingDatetime;
+		if (existingDatetime != null && panoMatchesLocation) return existingDatetime;
 		if (!enabled || !panoId || !yearMonth) return null;
 		return resolveExactTimestamp(lat, lng, yearMonth);
-	}, [panoId, lat, lng, yearMonth, enabled, existingDatetime]);
+	}, [panoId, lat, lng, yearMonth, enabled, existingDatetime, panoMatchesLocation]);
 
 	return { ts: data, loading, error: error != null };
 }
