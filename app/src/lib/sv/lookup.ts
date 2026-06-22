@@ -129,6 +129,13 @@ export function svSearchRadius(lat: number, zoom: number): number {
 	return (4 * (156543.03392 * Math.cos((lat * Math.PI) / 180))) / 2 ** zoom;
 }
 
+/** The radius (m) a map click searches for SV coverage: the zoom/lat extent, floored
+ *  by `minRadius` (the per-map searchRadius) or the 50m default. Single source of truth
+ *  for both the click path and the cursor picker overlay. */
+export function clickSearchRadius(lat: number, zoom: number, minRadius?: number): number {
+	return Math.max(minRadius ?? SV_SEARCH_RADIUS, Math.round(svSearchRadius(lat, zoom)));
+}
+
 /** Clamp heading to [-180, 180]. */
 export function normalizeHeading(h: number): number {
 	return h > 180 ? h - 360 : h < -180 ? h + 360 : h;
@@ -250,7 +257,7 @@ export async function lookupStreetView(
 		minRadius?: number;
 	},
 ): Promise<Location | null> {
-	const radius = opts.radius ?? Math.max(opts.minRadius ?? SV_SEARCH_RADIUS, Math.round(svSearchRadius(lat, zoom)));
+	const radius = opts.radius ?? clickSearchRadius(lat, zoom, opts.minRadius);
 	const click = { lat, lng };
 	const userUploaded: "ignore" | "avoid" | "allow" = opts.onlyOfficial
 		? "ignore"

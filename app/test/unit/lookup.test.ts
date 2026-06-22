@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
 	parsePanoDate,
 	svSearchRadius,
+	clickSearchRadius,
 	normalizeHeading,
 	nearestLinkHeading,
 	panoTileLayout,
@@ -71,6 +72,24 @@ describe("svSearchRadius", () => {
 	it("zoom 15+ produces a radius suitable for local navigation", () => {
 		const r = svSearchRadius(0, 15);
 		expect(r).toBeLessThan(200);
+	});
+});
+
+describe("clickSearchRadius (the cursor picker must equal the real click radius)", () => {
+	it("equals the rounded zoom/lat extent when above the 50m floor", () => {
+		expect(clickSearchRadius(0, 12)).toBe(Math.round(svSearchRadius(0, 12)));
+	});
+
+	it("floors at 50m when zoomed in past the default minimum", () => {
+		expect(clickSearchRadius(0, 22)).toBe(50);
+	});
+
+	it("respects a custom minRadius floor", () => {
+		expect(clickSearchRadius(0, 22, 120)).toBe(120);
+	});
+
+	it("ignores the minRadius floor when the extent is larger", () => {
+		expect(clickSearchRadius(0, 5, 120)).toBe(Math.round(svSearchRadius(0, 5)));
 	});
 });
 

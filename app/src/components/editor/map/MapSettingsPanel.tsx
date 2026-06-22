@@ -59,6 +59,8 @@ export interface MapSettingsDropdownProps {
 	setMarkerStyle: (v: MarkerStyle) => void;
 	showPerfectScoreCircle: boolean;
 	setShowPerfectScoreCircle: (v: boolean) => void;
+	showSearchRadiusCursor: boolean;
+	setShowSearchRadiusCursor: (v: boolean) => void;
 	showPreviews: boolean;
 	setShowPreviews: (v: boolean) => void;
 	selectOnly: boolean;
@@ -515,6 +517,14 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 								onChange={(e) => s.setShowPerfectScoreCircle(e.target.checked)}
 							/>
 							Display 5K radius
+						</label>
+						<label className="settings-popup__item">
+							<input
+								type="checkbox"
+								checked={s.showSearchRadiusCursor}
+								onChange={(e) => s.setShowSearchRadiusCursor(e.target.checked)}
+							/>
+							Show click search radius at cursor
 						</label>
 					</fieldset>
 					<div className="settings-popup__footer">

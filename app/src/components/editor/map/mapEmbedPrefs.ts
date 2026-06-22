@@ -22,6 +22,7 @@ export interface MapEmbedPrefs {
 	markerStyle: MarkerStyle;
 	markerOpacity: number;
 	showPerfectScoreCircle: boolean;
+	showSearchRadiusCursor: boolean;
 	showPreviews: boolean;
 	selectOnly: boolean;
 }
@@ -42,6 +43,7 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 	markerStyle: "pin",
 	markerOpacity: 1,
 	showPerfectScoreCircle: true,
+	showSearchRadiusCursor: false,
 	showPreviews: false,
 	selectOnly: false,
 };

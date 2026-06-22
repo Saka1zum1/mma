@@ -15,6 +15,7 @@ import { useCurrentMap, selectPolygon, mapOpenMark } from "@/store/useMapStore";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
 import { setGoogleMap as setGoogleMapInstance, tryInterceptDraw } from "@/lib/map/mapState";
+import { mountSearchRadiusCursor } from "@/lib/map/searchRadiusCursor";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
@@ -54,6 +55,7 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		markerStyle,
 		markerOpacity,
 		showPerfectScoreCircle,
+		showSearchRadiusCursor,
 		showPreviews,
 		selectOnly,
 	} = prefs;
@@ -90,6 +92,11 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 		panToActiveHotkey: true,
 		keyboardNav: true,
 	});
+
+	useEffect(() => {
+		if (!mapReady || !showSearchRadiusCursor) return;
+		return mountSearchRadiusCursor();
+	}, [mapReady, showSearchRadiusCursor]);
 
 	const svLayerRef = useRef<google.maps.ImageMapType>(null);
 
@@ -383,6 +390,8 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 							setMarkerStyle: pref("markerStyle"),
 							showPerfectScoreCircle,
 							setShowPerfectScoreCircle: pref("showPerfectScoreCircle"),
+							showSearchRadiusCursor,
+							setShowSearchRadiusCursor: pref("showSearchRadiusCursor"),
 							showPreviews,
 							setShowPreviews: pref("showPreviews"),
 							selectOnly,
