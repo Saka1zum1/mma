@@ -2,8 +2,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { cmd } from "@/lib/commands";
 import { createLocation } from "@/types";
-import { getCurrentMap, createTags } from "@/store/useMapStore";
+import { createTags } from "@/store/useMapStore";
 import { Sidebar } from "@/components/primitives/Sidebar";
+import { createPluginStorage } from "@/plugins/registry";
 import "./vali.css";
 
 type Phase = "editing" | "generating" | "done" | "error";
@@ -24,6 +25,7 @@ interface ValiLocation {
 
 const VALIG_URL = "https://valig.vercel.app";
 const OUTPUT_SUFFIX = "-locations.json";
+const valiStore = createPluginStorage("vali");
 
 let sessionPhase: Phase = "editing";
 let sessionLines: LogLine[] = [];
@@ -34,6 +36,7 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 	const [lines, setLines] = useState<LogLine[]>(sessionLines);
 	const [error, setError] = useState("");
 	const [importCount, setImportCount] = useState(0);
+	const [tagName, setTagName] = useState(() => valiStore.get<string>("tagName", ""));
 	const logRef = useRef<HTMLDivElement>(null);
 	const childRef = useRef<Child | null>(sessionChild);
 
@@ -61,7 +64,7 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 				const raw = await cmd.readFile(outputPath);
 				const valiLocs: ValiLocation[] = JSON.parse(raw);
 				let tagId: number | null = null;
-				const tagName = getCurrentMap()?.meta.settings?.generatedLocationTag;
+				const tagName = valiStore.get<string>("tagName", "");
 				if (tagName) {
 					tagId = (await createTags([tagName]))[0].id;
 				}
@@ -195,6 +198,19 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 						</div>
 						<div className="vali-sidebar__actions">
 							{error && <div className="vali-sidebar__error">{error}</div>}
+							<label className="settings-popup__item settings-popup__select">
+								Tag as:
+								<input
+									className="input"
+									type="text"
+									value={tagName}
+									onChange={(e) => {
+										setTagName(e.target.value);
+										valiStore.set("tagName", e.target.value);
+									}}
+									placeholder="None"
+								/>
+							</label>
 							<button className="button button--primary" onClick={handleGenerate}>
 								Generate
 							</button>

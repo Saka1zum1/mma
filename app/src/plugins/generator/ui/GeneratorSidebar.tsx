@@ -8,7 +8,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { ProgressDisplay } from "./ProgressDisplay";
 import { tickProgress } from "./progressSignal";
 import { google } from "@/lib/sv/opensv";
-import { getSelections, useSelections, getCurrentMap, createTags } from "@/store/useMapStore";
+import { getSelections, useSelections, createTags } from "@/store/useMapStore";
 import type { Selection } from "@/bindings.gen";
 import { createPluginStorage } from "@/plugins/registry";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
@@ -40,10 +40,9 @@ function generatedToLocation(loc: GeneratedLocation, tagId: number | null) {
 	});
 }
 
-async function resolveGeneratedLocationTag(): Promise<number | null> {
-	const tagName = getCurrentMap()?.meta.settings?.generatedLocationTag;
-	if (!tagName) return null;
-	const [tag] = await createTags([tagName]);
+async function resolveTagByName(name: string): Promise<number | null> {
+	if (!name) return null;
+	const [tag] = await createTags([name]);
 	return tag.id;
 }
 
@@ -76,6 +75,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 	const [meta, setMeta] = useState<Map<string, GeneratorRegionMeta>>(sessionMeta);
 	const [running, setRunning] = useState(sessionRunning);
 	const [paused, setPaused] = useState(sessionPaused);
+	const [tagName, setTagName] = useState(() => genStore.get<string>("tagName", ""));
 	const [, rerender] = useState(0);
 	const engineRef = useRef<GenerationEngine | null>(sessionEngine);
 	const selections = useSelections();
@@ -133,7 +133,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		if (sels.length === 0) return;
 		if (!google) return;
 
-		const tagId = await resolveGeneratedLocationTag();
+		const tagId = await resolveTagByName(tagName);
 		sessionTagId = tagId;
 
 		// Reset metadata for selected regions
@@ -172,7 +172,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		setRunning(true);
 		setPaused(false);
 		engine.start();
-	}, [settings]);
+	}, [settings, tagName]);
 
 	const handlePause = useCallback(() => {
 		const engine = engineRef.current;
@@ -221,6 +221,23 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 			</Section>
 
 			<SettingsPanel settings={settings} onChange={updateSettings} />
+
+			<Section title="Output">
+				<label className="settings-popup__item settings-popup__select">
+					Tag as:
+					<input
+						className="input"
+						type="text"
+						value={tagName}
+						onChange={(e) => {
+							setTagName(e.target.value);
+							genStore.set("tagName", e.target.value);
+						}}
+						placeholder="None"
+						disabled={running}
+					/>
+				</label>
+			</Section>
 
 			<div className="generator-sidebar__footer">
 				{running && regions.length > 0 && (

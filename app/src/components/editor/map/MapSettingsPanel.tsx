@@ -347,7 +347,6 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 	const [searchRadius, setSearchRadius] = useMapSetting("searchRadius");
 	const [enrichMetadata, setEnrichMetadata] = useMapSetting("enrichMetadata");
 	const [enrichFields, setEnrichFields] = useMapSetting("enrichFields");
-	const [generatedLocationTag, setGeneratedLocationTag] = useMapSetting("generatedLocationTag");
 	const [isOpen, setIsOpen] = useState(false);
 	const [showManageFields, setShowManageFields] = useState(false);
 	const [showEnrichFields, setShowEnrichFields] = useState(false);
@@ -493,21 +492,6 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 						</label>
 					</fieldset>
 					<ScoreBoundsEditor />
-					<fieldset className="fieldset">
-						<legend className="fieldset__header">
-							Generation <span className="fieldset__divider" />
-						</legend>
-						<label className="settings-popup__item settings-popup__select">
-							Tag generated locations:
-							<input
-								className="input"
-								type="text"
-								value={generatedLocationTag ?? ""}
-								onChange={(e) => setGeneratedLocationTag(e.target.value || null)}
-								placeholder="None"
-							/>
-						</label>
-					</fieldset>
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">
 							Display <span className="fieldset__divider" />

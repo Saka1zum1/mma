@@ -50,7 +50,6 @@ describe("Map metadata persistence", () => {
 					exportUnpanned: false,
 					enrichMetadata: false,
 					enrichFields: null,
-					generatedLocationTag: null,
 				},
 			});
 		});

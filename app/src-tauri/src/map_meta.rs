@@ -54,7 +54,6 @@ pub struct MapSettings {
     pub search_radius: Option<u32>,
     pub enrich_metadata: bool,
     pub enrich_fields: Option<Vec<String>>,
-    pub generated_location_tag: Option<String>,
     pub key_bindings: Vec<MapKeyBinding>,
 }
 
@@ -74,7 +73,6 @@ impl Default for MapSettings {
             search_radius: None,
             enrich_metadata: false,
             enrich_fields: None,
-            generated_location_tag: None,
             key_bindings: Vec::new(),
         }
     }

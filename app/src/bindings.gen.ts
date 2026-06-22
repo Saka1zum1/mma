@@ -775,7 +775,6 @@ export type MapSettings = {
 	searchRadius?: number | null,
 	enrichMetadata?: boolean,
 	enrichFields?: string[] | null,
-	generatedLocationTag?: string | null,
 	keyBindings?: MapKeyBinding[],
 };
 
