@@ -57,6 +57,13 @@ export async function resolveExactTimestamp(
 	let hi = endInit.getTime() / 1000;
 	const hiInit = hi;
 
+	// single query over whole date window, so if the pano is not valid in the range to begin with, we don't waste 20+ RPC requests trying to find it
+	// TODO: ideally, we just determine which pano is the default (with convergence from LoadAsPanoId) so that we only ever check
+	// if the pano is "Google's default pano", but this gets tricky with historical dates decidedly (randomly?) being preferred by Google
+	if (!(await checkTimestamp(lat, lng, lo, hi, radius, signal))) {
+		throw new Error("Failed to resolve exact date: not a candidate");
+	}
+
 	while (true) {
 		const range = hi - lo;
 		const mid = lo + Math.floor(range / 2);

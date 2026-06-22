@@ -178,12 +178,10 @@ function PanoDatePicker({
 		defaultPanoId;
 	const triggerCameraType = useCameraType(triggerPanoId);
 
-	const newestPano = sorted.length > 0 ? sorted[sorted.length - 1] : null;
-	const isNewest = triggerPanoId != null && triggerPanoId === newestPano?.pano;
 	const yearMonth = displayDate
 		? `${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, "0")}`
 		: null;
-	const exactDate = useExactDate(triggerPanoId, lat, lng, yearMonth, datetimeEnabled && isNewest);
+	const exactDate = useExactDate(triggerPanoId, lat, lng, yearMonth, datetimeEnabled);
 	const resolvedTz = useTimezone(lat, lng, datetimeEnabled && dateTimezone === "location");
 	const tzOption = dateTimezone === "utc" ? "UTC" : (resolvedTz ?? undefined);
 	const exactLabel = exactDate.ts
