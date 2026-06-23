@@ -116,6 +116,7 @@ export async function runResolvers(
 	};
 
 	// --- Phase 0: resolve missing pano IDs for the union that needs them. ---
+	const allUpdates: LocationUpdate[] = [];
 	let resolvedPanoIds: Map<number, string> | undefined;
 	if (needResolve.length > 0) {
 		onProgress?.(0, needResolve.length, "Resolving panoramas");
@@ -124,6 +125,9 @@ export async function runResolvers(
 			onProgress: (d) => onProgress?.(d, needResolve.length, "Resolving panoramas"),
 		});
 		resolvedPanoIds = new Map(pr.resolved.map((x) => [x.id, x.panoId]));
+		for (const { id, panoId } of pr.resolved) {
+			allUpdates.push({ id, patch: { panoId } });
+		}
 	}
 	const panoIdFor = (l: Location) => l.panoId ?? resolvedPanoIds?.get(l.id);
 
@@ -149,7 +153,6 @@ export async function runResolvers(
 			return;
 		}
 
-		const updates: LocationUpdate[] = [];
 		for (let j = 0; j < batch.length; j++) {
 			const loc = batch[j];
 			const data = datas[j];
@@ -165,9 +168,8 @@ export async function runResolvers(
 				if (patch) patches.push(patch);
 			}
 			const merged = mergePatches(loc, patches);
-			if (merged) updates.push({ id: loc.id, patch: merged });
+			if (merged) allUpdates.push({ id: loc.id, patch: merged });
 		}
-		if (updates.length > 0) updateLocations(updates);
 	}
 
 	if (metaPending.length > 0) onProgress?.(0, metaPending.length);
@@ -188,7 +190,6 @@ export async function runResolvers(
 
 	// --- Flag-only resolvers (pin to pano): patch off the prelude result. ---
 	if (flagResolvers.length > 0) {
-		const updates: LocationUpdate[] = [];
 		for (const loc of locations) {
 			const patches: Partial<Location>[] = [];
 			for (const { r, config } of flagResolvers) {
@@ -202,10 +203,11 @@ export async function runResolvers(
 				}
 			}
 			const merged = mergePatches(loc, patches);
-			if (merged) updates.push({ id: loc.id, patch: merged });
+			if (merged) allUpdates.push({ id: loc.id, patch: merged });
 		}
-		if (updates.length > 0) updateLocations(updates);
 	}
+
+	await updateLocations(allUpdates);
 
 	// --- Phase 2: enrichment providers (when an enrich-style resolver ran), in
 	//     dependency waves -- a provider runs once no other provider still produces

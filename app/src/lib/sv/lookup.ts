@@ -9,8 +9,6 @@ import { toast } from "@/lib/util/toast";
 import { runConcurrent } from "@/lib/util/concurrent";
 
 import { SV_SEARCH_RADIUS, SV_CONCURRENCY } from "@/lib/sv/constants";
-import type { LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
-import { updateLocations } from "@/store/useMapStore";
 import { type RequireNonNull } from "@/types/util";
 
 /** A single historical panorama entry (pano ID + capture date). */
@@ -103,13 +101,11 @@ export async function resolvePanoIds(
 	for (let i = 0; i < locations.length; i += batchSize) {
 		signal?.throwIfAborted();
 		const chunk = locations.slice(i, i + batchSize);
-		const updates: LocationUpdate[] = [];
 		await runConcurrent(
 			chunk,
 			async (loc) => {
 				const pano = await getPanoAtCoords(loc.lat, loc.lng);
 				if (pano) {
-					updates.push({ id: loc.id, patch: { panoId: pano } });
 					result.resolved.push({ id: loc.id, panoId: pano });
 				} else {
 					result.failed.push(loc.id);
@@ -117,7 +113,6 @@ export async function resolvePanoIds(
 			},
 			{ concurrency, signal },
 		);
-		if (updates.length > 0) updateLocations(updates);
 		onProgress?.(Math.min(i + chunk.length, locations.length), locations.length);
 	}
 
