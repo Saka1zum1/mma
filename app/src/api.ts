@@ -59,9 +59,11 @@ async function createLocationStore(): Promise<LocationStore> {
 			for (const id of ids) locs.delete(id);
 			notify();
 		}),
-		subscribe("location:update", (u) => {
-			const existing = locs.get(u.id);
-			if (existing) locs.set(u.id, { ...existing, ...u.patch } as Location);
+		subscribe("location:update", (updates) => {
+			for (const u of updates) {
+				const existing = locs.get(u.id);
+				if (existing) locs.set(u.id, { ...existing, ...u.patch } as Location);
+			}
 			notify();
 		}),
 	];

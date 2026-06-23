@@ -1314,7 +1314,7 @@ declare function save(options?: SaveDialogOptions): Promise<string | null>;
 declare const EVENT_DEFS: {
 	"location:add": Location$1[];
 	"location:remove": number[];
-	"location:update": LocationUpdate_Deserialize;
+	"location:update": LocationUpdate_Deserialize[];
 	"tag:add": Tag[];
 	"tag:remove": number[];
 	"tag:update": (Partial<Tag> & {

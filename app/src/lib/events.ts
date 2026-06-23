@@ -7,7 +7,7 @@ const event = <T>() => null as T;
 const EVENT_DEFS = {
 	"location:add": event<Location[]>(),
 	"location:remove": event<number[]>(),
-	"location:update": event<LocationUpdate_Deserialize>(),
+	"location:update": event<LocationUpdate_Deserialize[]>(),
 	"tag:add": event<Tag[]>(),
 	"tag:remove": event<number[]>(),
 	"tag:update": event<(Partial<Tag> & { id: number })[]>(),

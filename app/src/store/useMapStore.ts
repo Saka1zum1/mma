@@ -747,7 +747,7 @@ export async function updateLocations(
 ) {
 	if (!currentMap || updates.length === 0) return;
 	if (updates.some(u => isVirtualLocation(u))) return;
-	for (const u of updates) emitEvent("location:update", u);
+	emitEvent("location:update", updates);
 	await mutate(cmd.storeUpdateLocations(updates, opts?.undoable ?? true));
 	if (cachedActiveLocation && updates.some(u => u.id === activeLocationId)) {
 		const activePatch = updates.find(u => u.id === activeLocationId)?.patch;
