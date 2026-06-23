@@ -997,11 +997,14 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 
 	useEffect(() => {
 		const handler = () => {
-			if (selected.size > 0) beginReview(Array.from(selected));
+			if (selected.size === 0) return;
+			// exactly one selection has an unambiguous name, just use it
+			const source = selections.length === 1 ? selections[0] : undefined;
+			beginReview(Array.from(selected), source);
 		};
 		document.addEventListener("open-review-selected", handler);
 		return () => document.removeEventListener("open-review-selected", handler);
-	}, [selected]);
+	}, [selected, selections]);
 
 	useEffect(() => {
 		const handler = () => setShowSaveSelections(true);
