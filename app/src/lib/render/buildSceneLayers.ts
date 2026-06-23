@@ -8,7 +8,7 @@ import type { PanoDot } from "@/lib/geo/photometa";
 import type { LatLng } from "@/types";
 import { isImportPreview } from "@/types";
 import type { Location, SeenEntry } from "@/bindings.gen";
-import { isSeenOverlayActive, getSeenOverlayEntries } from "@/lib/seen/seenOverlay";
+import { isSeenOverlayActive, getSeenOverlayEntries, getSeenOnMapIds, seenEntryColor } from "@/lib/seen/seenOverlay";
 import {
 	getCurrentMap,
 	getWorkArea,
@@ -145,12 +145,13 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 					id: "seen-overlay",
 					data: seen,
 					getPosition: (d) => [d.lng, d.lat],
-					getFillColor: [255, 176, 0, 220],
+					getFillColor: seenEntryColor,
 					getRadius: 5,
 					radiusUnits: "pixels",
 					radiusMinPixels: 3,
 					stroked: false,
 					pickable: true,
+					updateTriggers: { getFillColor: [getSeenOnMapIds()] },
 				}),
 			);
 		}
