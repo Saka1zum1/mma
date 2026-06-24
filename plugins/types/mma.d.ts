@@ -1853,7 +1853,6 @@ declare const mma: {
 		storeCloseMap: () => Promise<null>;
 		storeSaveDirty: () => Promise<SaveResult>;
 		storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => Promise<CopyToMapResult>;
-		storeBakeAndSave: () => Promise<null>;
 		storeGetSummary: () => Promise<SummaryResult>;
 		storeListMaps: () => Promise<MapMeta[]>;
 		storeGetMap: (id: string) => Promise<MapData | null>;
@@ -1929,8 +1928,7 @@ declare const mma: {
 		storeReviewList: (mapId: string, status: string | null) => Promise<ReviewSession[]>;
 		storeReviewUpdate: (update: ReviewUpdate) => Promise<null>;
 		storeReviewDelete: (id: string) => Promise<null>;
-		storeCreateCommit: (mapId: string, message: string | null) => Promise<string>;
-		storeCommitAndBake: (mapId: string, message: string | null) => Promise<string>;
+		storeCommit: (mapId: string, message: string | null) => Promise<string>;
 		storeListCommits: (mapId: string) => Promise<CommitInfo[]>;
 		storeCheckoutCommit: (mapId: string, commitId: string) => Promise<null>;
 		storeGetCommitDelta: (mapId: string, commitId: string) => Promise<CommitDelta>;

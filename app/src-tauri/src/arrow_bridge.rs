@@ -63,6 +63,14 @@ columns! {
 /// `extra` fields are JSON-stringified. Panics if the resulting columns don't
 /// match [`location_schema`] (indicates a code bug, not a data problem).
 pub fn locations_to_batch(locs: &[Location]) -> RecordBatch {
+    let refs: Vec<&Location> = locs.iter().collect();
+    locations_to_batch_refs(&refs)
+}
+
+/// Reference-based core: builds the batch from `&Location` pointers so callers can
+/// stitch together rows from multiple sources (e.g. a delta's removed+created) without
+/// deep-cloning every `Location` into one contiguous Vec.
+fn locations_to_batch_refs(locs: &[&Location]) -> RecordBatch {
     let n = locs.len();
 
     let ids = UInt32Array::from_iter_values(locs.iter().map(|l| l.id));
@@ -298,12 +306,11 @@ pub fn delta_schema() -> Schema {
 /// Serialize a commit delta (`created` + `removed` locations) into one delta batch.
 /// Removed rows come first, then created; the `op` column tags each.
 pub fn delta_to_batch(created: &[Location], removed: &[Location]) -> RecordBatch {
-    let mut all = Vec::with_capacity(created.len() + removed.len());
-    all.extend_from_slice(removed);
-    all.extend_from_slice(created);
+    // Stitch removed++created by reference — no deep clone of the location set.
+    let refs: Vec<&Location> = removed.iter().chain(created.iter()).collect();
 
-    let base = locations_to_batch(&all);
-    let mut ops: Vec<u8> = Vec::with_capacity(all.len());
+    let base = locations_to_batch_refs(&refs);
+    let mut ops: Vec<u8> = Vec::with_capacity(refs.len());
     ops.resize(removed.len(), OP_REMOVED);
     ops.resize(removed.len() + created.len(), OP_CREATED);
 
