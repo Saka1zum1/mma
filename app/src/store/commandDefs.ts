@@ -35,6 +35,13 @@ import {
 	mdiPlayOutline,
 	mdiBookmarkOutline,
 	mdiBookmarkCheckOutline,
+	mdiSelectAll,
+	mdiTagOffOutline,
+	mdiCompassOffOutline,
+	mdiImageOutline,
+	mdiImageOffOutline,
+	mdiContentSaveAlertOutline,
+	mdiEyeCheckOutline,
 } from "@mdi/js";
 import { registerCommand, type CommandDef } from "./commands";
 import {
@@ -142,37 +149,44 @@ const COMMANDS = {
 	},
 	"selectAll": {
 		label: "Select everything",
+		icon: mdiSelectAll,
 		group: "Selections",
 		defaultBinding: "Mod+a",
 		execute: selectEverything,
 	},
 	"select-untagged": {
 		label: "Select untagged locations",
+		icon: mdiTagOffOutline,
 		group: "Selections",
 		execute: selectUntagged,
 	},
 	"select-unpanned": {
 		label: "Select unpanned locations",
+		icon: mdiCompassOffOutline,
 		group: "Selections",
 		execute: selectUnpanned,
 	},
 	"select-panoid": {
 		label: "Select Pano ID locations",
+		icon: mdiImageOutline,
 		group: "Selections",
 		execute: selectPanoIds,
 	},
 	"select-no-panoid": {
 		label: "Select non-Pano ID locations",
+		icon: mdiImageOffOutline,
 		group: "Selections",
 		execute: selectNotPanoIds,
 	},
 	"select-uncommitted": {
 		label: "Select uncommitted locations",
+		icon: mdiContentSaveAlertOutline,
 		group: "Selections",
 		execute: selectUncommitted,
 	},
 	"select-reviewed": {
 		label: "Select reviewed locations",
+		icon: mdiEyeCheckOutline,
 		group: "Selections",
 		execute: () => selectReviewedHistory(),
 		enabled: () => getCurrentMap() !== null,
