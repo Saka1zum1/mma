@@ -604,7 +604,7 @@ describe("Benchmarks - batch update", () => {
 					updates.push({ id: allLocs[i].id, patch: { heading: iteration * 10 + i } });
 				}
 				const t0 = performance.now();
-				api.batchUpdateLocations(updates);
+				api.updateLocations(updates);
 				return performance.now() - t0;
 			}, iter);
 			times.push(ms);

@@ -112,7 +112,7 @@ describe("Active location with undo/redo", () => {
 
 		const loc = await getLoc(locIds[0]);
 		await withApi(async (api, l) => {
-			await api.updateLocation(l, { heading: 123 });
+			await api.updateLocations([{ id: l.id, patch: { heading: 123 } }]);
 		}, loc);
 
 		const heading = await withApi(async (api, id) => {

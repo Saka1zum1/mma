@@ -199,7 +199,7 @@ function timeBatchUpdate(count: number, iter: number): Promise<number> {
 			const ids: number[] = await api.cmd.storeResolveSelection({ type: "Everything" });
 			const updates = ids.slice(0, n).map((id: number) => ({ id, patch: { heading: it * 10 } }));
 			const t0 = performance.now();
-			await api.batchUpdateLocations(updates);
+			await api.updateLocations(updates);
 			return performance.now() - t0;
 		},
 		count,

@@ -152,7 +152,7 @@ const mma = {
 	enrichAll: async (opts?: Record<string, unknown>) => enrichAll(await store.fetchAllLocations(), opts),
 	bulkPinToPano: async (opts?: Record<string, unknown>) => bulkPinToPano(await store.fetchAllLocations(), opts),
 	validateLocations,
-	needsEnrichment: (loc: Pick<Location, "extra">) => needsEnrichment(loc as Location),
+	needsEnrichment,
 
 	// --- SV metadata ---
 	fetchSvMetadata,

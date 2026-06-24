@@ -189,11 +189,15 @@ describe("Bulk operations -- needsEnrichment", () => {
 		expect(result).toEqual([true, true, true]);
 	});
 
-	it("returns false for locations with countryCode", async () => {
-		const result = await withApi(async (api) => {
-			return api.needsEnrichment({ extra: { countryCode: "US" } });
-		});
-		expect(result).toBe(false);
+	it("is field-aware: needs enrichment unless every requested field is present", async () => {
+		const fields = ["countryCode", "altitude"];
+		const result = await withApi(async (api, f) => {
+			return [
+				api.needsEnrichment({ extra: { countryCode: "US" } }, f),
+				api.needsEnrichment({ extra: { countryCode: "US", altitude: 100 } }, f),
+			];
+		}, fields);
+		expect(result).toEqual([true, false]);
 	});
 });
 

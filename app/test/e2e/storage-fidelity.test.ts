@@ -192,10 +192,10 @@ describe("Save ordering under concurrent mutations", () => {
 	it("update between two saves persists the latest value", async () => {
 		const loc = await getLoc(so1Id);
 		await withApi(async (api, l) => {
-			await api.updateLocation(l, { heading: 45 });
+			await api.updateLocations([{ id: l.id, patch: { heading: 45 } }]);
 			await api.flushSave();
 			const l2 = await api.fetchLocation(l.id);
-			await api.updateLocation(l2, { heading: 180 });
+			await api.updateLocations([{ id: l2.id, patch: { heading: 180 } }]);
 			await api.flushSave();
 			return { ok: true };
 		}, loc);
@@ -300,7 +300,7 @@ describe("Field fidelity across multiple save cycles", () => {
 	it("updated fields survive save/load without corrupting other fields", async () => {
 		const loc = await getLoc(ff1Id);
 		await withApi(async (api, l) => {
-			await api.updateLocation(l, { heading: 90 });
+			await api.updateLocations([{ id: l.id, patch: { heading: 90 } }]);
 			return { ok: true };
 		}, loc);
 
@@ -601,7 +601,7 @@ describe("Dirty tracking accuracy", () => {
 	it("mutation after reopen marks dirty again", async () => {
 		const loc = await getLoc(dt1Id);
 		await withApi(async (api, l) => {
-			await api.updateLocation(l, { heading: 99 });
+			await api.updateLocations([{ id: l.id, patch: { heading: 99 } }]);
 			return { ok: true };
 		}, loc);
 

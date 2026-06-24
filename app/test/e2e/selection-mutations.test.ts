@@ -201,7 +201,7 @@ describe("Live selection correctness after update", () => {
 			async (api, tagId: number, loc) => {
 				await api.selectTag(tagId);
 				const before = api.getSelectedLocationIds().size;
-				await api.updateLocation(loc, { tags: [tagId] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [tagId] } }]);
 				const result = await api.syncSelections();
 				const after = result.ids;
 				return { before, after: after.length, has: after.includes(loc.id) };
@@ -221,7 +221,7 @@ describe("Live selection correctness after update", () => {
 			async (api, tagId: number, loc) => {
 				await api.selectTag(tagId);
 				const before = api.getSelectedLocationIds().size;
-				await api.updateLocation(loc, { tags: [] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [] } }]);
 				return before;
 			},
 			tagAlphaId,
@@ -238,7 +238,7 @@ describe("Live selection correctness after update", () => {
 		const before = await withApi(async (api, loc) => {
 			await api.selectPanoIds();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(loc, { flags: 1 });
+			await api.updateLocations([{ id: loc.id, patch: { flags: 1 } }]);
 			return before;
 		}, loc10);
 		const ids = await refreshSelections();
@@ -251,7 +251,7 @@ describe("Live selection correctness after update", () => {
 		const before = await withApi(async (api, loc) => {
 			await api.selectPanoIds();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(loc, { flags: 0 });
+			await api.updateLocations([{ id: loc.id, patch: { flags: 0 } }]);
 			return before;
 		}, loc0);
 		const ids = await refreshSelections();
@@ -264,7 +264,7 @@ describe("Live selection correctness after update", () => {
 		const before = await withApi(async (api, loc) => {
 			await api.selectUnpanned();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(loc, { heading: 45 });
+			await api.updateLocations([{ id: loc.id, patch: { heading: 45 } }]);
 			return before;
 		}, loc0);
 		const ids = await refreshSelections();
@@ -277,7 +277,7 @@ describe("Live selection correctness after update", () => {
 		const before = await withApi(async (api, loc) => {
 			await api.selectUnpanned();
 			const before = api.getSelectedLocationIds().size;
-			await api.updateLocation(loc, { heading: 0 });
+			await api.updateLocations([{ id: loc.id, patch: { heading: 0 } }]);
 			return before;
 		}, loc10);
 		const ids = await refreshSelections();
@@ -478,7 +478,7 @@ describe("Selection correctness after undo/redo", () => {
 			async (api, tagId: number, loc) => {
 				await api.resetSelections();
 				await api.selectTag(tagId);
-				await api.updateLocation(loc, { tags: [tagId] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [tagId] } }]);
 				await new Promise((r) => setTimeout(r, 300));
 			},
 			tagUndoId,
@@ -609,7 +609,7 @@ describe("Composite selection correctness after mutations", () => {
 				await api.selectIntersection();
 				const before = api.getSelectedLocationIds().size;
 
-				await api.updateLocation(loc, { tags: [tagAId, tagBId] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [tagAId, tagBId] } }]);
 				return before;
 			},
 			tagCompAId,
@@ -632,7 +632,7 @@ describe("Composite selection correctness after mutations", () => {
 				await api.selectIntersection();
 				const before = api.getSelectedLocationIds().size;
 
-				await api.updateLocation(loc, { tags: [tagAId] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [tagAId] } }]);
 				return before;
 			},
 			tagCompAId,
@@ -729,7 +729,7 @@ describe("Bulk operations with active selections", () => {
 				await api.selectTag(tagId);
 				const before = api.getSelectedLocationIds().size;
 				const updates = ids.map((id: number) => ({ id, patch: { tags: [tagId] } }));
-				await api.batchUpdateLocations(updates);
+				await api.updateLocations(updates);
 				const result = await api.syncSelections();
 				const after = result.ids;
 				return { before, after: after.length };

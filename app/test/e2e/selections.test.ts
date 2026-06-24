@@ -345,7 +345,7 @@ describe("Selection correctness after mutations", () => {
 			await api.selectPanoIds();
 			const before = api.getSelectedLocationIds().size;
 			for (const l of locs) {
-				await api.updateLocation(l, { flags: 1 });
+				await api.updateLocations([{ id: l.id, patch: { flags: 1 } }]);
 			}
 			await new Promise((r) => setTimeout(r, 500));
 			api.resetSelections();
@@ -392,7 +392,7 @@ describe("Selection correctness after mutations", () => {
 		await withApi(async (api, loc) => {
 			api.resetSelections();
 			await api.selectPanoIds();
-			await api.updateLocation(loc, { flags: 0 });
+			await api.updateLocations([{ id: loc.id, patch: { flags: 0 } }]);
 			await new Promise((r) => setTimeout(r, 300));
 		}, loc0);
 
@@ -415,8 +415,8 @@ describe("Selection correctness after mutations", () => {
 		await withApi(
 			async (api, l0, l1, tagId: number) => {
 				api.resetSelections();
-				await api.updateLocation(l0, { tags: [tagId] });
-				await api.updateLocation(l1, { tags: [tagId] });
+				await api.updateLocations([{ id: l0.id, patch: { tags: [tagId] } }]);
+				await api.updateLocations([{ id: l1.id, patch: { tags: [tagId] } }]);
 				await api.selectTag(tagId);
 			},
 			tagLoc0,

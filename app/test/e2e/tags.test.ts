@@ -122,7 +122,7 @@ describe("Tag operations on locations", () => {
 		const loc0 = await getLoc(locIds[0]);
 		const tags = await withApi(
 			async (api, loc, tagId) => {
-				await api.updateLocation(loc, { tags: [tagId] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [tagId] } }]);
 				const updated = await api.fetchLocation(loc.id);
 				return updated?.tags;
 			},
@@ -174,7 +174,7 @@ describe("Tag operations on locations", () => {
 	it("remove tag from location", async () => {
 		const loc0 = await getLoc(locIds[0]);
 		await withApi(async (api, loc) => {
-			await api.updateLocation(loc, { tags: [] });
+			await api.updateLocations([{ id: loc.id, patch: { tags: [] } }]);
 			return "ok";
 		}, loc0);
 		const loc = await getLoc(locIds[0]);
@@ -185,7 +185,7 @@ describe("Tag operations on locations", () => {
 		const loc5 = await getLoc(locIds[5]);
 		const tags = await withApi(
 			async (api, loc, bulkId, otherId) => {
-				await api.updateLocation(loc, { tags: [bulkId, otherId] });
+				await api.updateLocations([{ id: loc.id, patch: { tags: [bulkId, otherId] } }]);
 				const updated = await api.fetchLocation(loc.id);
 				return updated!.tags;
 			},

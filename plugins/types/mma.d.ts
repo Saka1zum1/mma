@@ -2029,7 +2029,7 @@ declare const mma: {
 	enrichAll: (opts?: Record<string, unknown>) => Promise<EnrichResult>;
 	bulkPinToPano: (opts?: Record<string, unknown>) => Promise<number>;
 	validateLocations: typeof validateLocations;
-	needsEnrichment: (loc: Pick<Location$1, "extra">) => boolean;
+	needsEnrichment: (loc: Pick<Location$1, "extra">, enrichFields?: string[]) => boolean;
 	fetchSvMetadata: typeof fetchSvMetadata;
 	mmaBufUrl: typeof mmaBufUrl;
 	_test: {
