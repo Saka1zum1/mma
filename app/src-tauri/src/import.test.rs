@@ -111,7 +111,7 @@ fn reconcile_location_tags_remapped_correctly() {
 #[test]
 fn extract_tag_meta_reads_color_and_order() {
     let json = br#"{"customCoordinates":[],"extra":{"tags":{"Roof":{"color":[255,0,0],"order":3},"Wall":{"color":[0,128,255],"order":1}}}}"#;
-    let meta = extract_tag_meta(json);
+    let meta = extract_tag_meta(json, 0, 0);
     assert_eq!(meta.len(), 2);
 
     let roof = &meta["Roof"];
@@ -126,7 +126,7 @@ fn extract_tag_meta_reads_color_and_order() {
 #[test]
 fn extract_tag_meta_missing_order() {
     let json = br#"{"extra":{"tags":{"NoOrder":{"color":[10,20,30]}}}}"#;
-    let meta = extract_tag_meta(json);
+    let meta = extract_tag_meta(json, 0, 0);
     let tag = &meta["NoOrder"];
     assert_eq!(tag.color.as_deref(), Some("#0a141e"));
     assert_eq!(tag.order, None);
@@ -135,7 +135,7 @@ fn extract_tag_meta_missing_order() {
 #[test]
 fn extract_tag_meta_missing_color() {
     let json = br#"{"extra":{"tags":{"OnlyOrder":{"order":5}}}}"#;
-    let meta = extract_tag_meta(json);
+    let meta = extract_tag_meta(json, 0, 0);
     let tag = &meta["OnlyOrder"];
     assert_eq!(tag.color, None);
     assert_eq!(tag.order, Some(5));
@@ -144,7 +144,7 @@ fn extract_tag_meta_missing_color() {
 #[test]
 fn extract_tag_meta_no_extra() {
     let json = br#"{"customCoordinates":[]}"#;
-    let meta = extract_tag_meta(json);
+    let meta = extract_tag_meta(json, 0, 0);
     assert!(meta.is_empty());
 }
 
@@ -163,6 +163,63 @@ fn parsed_tags_sorted_by_order() {
     assert_eq!(parsed.tags[1].order, Some(1));
     assert_eq!(parsed.tags[2].name, "Alpha");
     assert_eq!(parsed.tags[2].order, Some(2));
+}
+
+// -----------------------------------------------------------------------
+// Parse benchmark (ignored; run explicitly against a real large file)
+//   cargo test --release -p app_lib import::tests::bench_parse_real -- --ignored --nocapture
+// Override the file with MMA_BENCH_FILE=/path/to/file.json
+// -----------------------------------------------------------------------
+struct StderrLog;
+impl log::Log for StderrLog {
+    fn enabled(&self, _: &log::Metadata) -> bool { true }
+    fn log(&self, record: &log::Record) { eprintln!("{}", record.args()); }
+    fn flush(&self) {}
+}
+static STDERR_LOG: StderrLog = StderrLog;
+
+#[test]
+#[ignore]
+fn bench_parse_real() {
+    let _ = log::set_logger(&STDERR_LOG);
+    log::set_max_level(log::LevelFilter::Debug);
+    let path = std::env::var("MMA_BENCH_FILE")
+        .unwrap_or_else(|_| "C:/Users/Ryan/Downloads/us 850k 01.01.26.json".to_string());
+
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => { eprintln!("SKIP bench: cannot read {path}: {e}"); return; }
+    };
+    eprintln!("file={} size={:.1}MB", path, bytes.len() as f64 / 1e6);
+
+    let iters = 5;
+    let mut best_parse = f64::MAX;
+    let mut best_build = f64::MAX;
+    let mut locs = 0usize;
+    for i in 0..iters {
+        let mut buf = bytes.clone();
+        let t0 = std::time::Instant::now();
+        let parsed = parse_file(&mut buf);
+        let t_parse = t0.elapsed().as_secs_f64() * 1e3;
+        locs = parsed.locations.len();
+
+        let t1 = std::time::Instant::now();
+        let _bounds = crate::util::compute_bounds(parsed.locations.iter().map(|l| (l.lat, l.lng)));
+        let t_bounds = t1.elapsed().as_secs_f64() * 1e3;
+
+        let t2 = std::time::Instant::now();
+        let _p = write_preview_positions(&parsed.locations).expect("positions");
+        let t_pos = t2.elapsed().as_secs_f64() * 1e3;
+
+        let t3 = std::time::Instant::now();
+        let _preview = build_preview(parsed).expect("build_preview");
+        let t_build = t3.elapsed().as_secs_f64() * 1e3;
+
+        eprintln!("iter {i}: parse={t_parse:.0}ms build_preview={t_build:.0}ms (bounds={t_bounds:.0} pos_write={t_pos:.0})");
+        best_parse = best_parse.min(t_parse);
+        best_build = best_build.min(t_build);
+    }
+    eprintln!("BEST: parse={best_parse:.0}ms build_preview={best_build:.0}ms locs={locs}");
 }
 
 #[test]

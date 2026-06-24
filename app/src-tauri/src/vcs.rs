@@ -153,9 +153,12 @@ pub fn store_create_commit(
 /// commit delta by reusing the baked columns + an op column. Semantically identical:
 /// genesis delta = full state (all created); non-genesis delta = the pre-bake overlay
 /// changeset (captured before the bake clears it). Returns the new commit id.
+// `async` so the heavy bake/VCS work runs on a runtime worker instead of the main
+// (event-loop) thread — a sync command here blocks the webview AND stalls the queued
+// render command behind it (the import-confirm freeze).
 #[tauri::command]
 #[specta::specta]
-pub fn store_commit_and_bake(
+pub async fn store_commit_and_bake(
     state: State<'_, StoreState>,
     map_id: String,
     message: Option<String>,

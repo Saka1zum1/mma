@@ -161,12 +161,15 @@ struct ExtraTagMeta {
 /// Extract tag color/order metadata from the top-level `"extra"."tags"` block
 /// without parsing the entire JSON. Uses a manual depth-tracking scanner to find
 /// the `"extra"` key at depth 1, avoiding a full-document parse on multi-MB files.
-fn extract_tag_meta(buf: &[u8]) -> HashMap<String, ExtraTagMeta> {
+fn extract_tag_meta(buf: &[u8], start: usize, start_depth: i32) -> HashMap<String, ExtraTagMeta> {
     let mut meta = HashMap::new();
     let needle = b"\"extra\"";
-    // Find "extra" at depth 1 (top-level key, not inside customCoordinates)
-    let mut i = 0;
-    let mut depth = 0i32;
+    // Find "extra" at depth 1 (top-level key, not inside customCoordinates).
+    // Callers that already know where the coordinate array ends pass `start`
+    // (just past the last object) + `start_depth` (2, still inside the array) so
+    // we scan only the tiny tail instead of the whole multi-MB document.
+    let mut i = start;
+    let mut depth = start_depth;
     let mut in_str = false;
     let mut esc2 = false;
     let mut pos = None;
@@ -247,10 +250,13 @@ fn parse_single_json(text: &str) -> ParsedMap {
     parse_single_json_mut(&mut buf)
 }
 
-/// Scan raw bytes for `{...}` object boundaries at depth 1 inside a JSON array.
-/// Returns `(start, end)` byte offsets. This is the key to parallel parsing:
-/// we find boundaries in a single pass, then hand each slice to rayon/simd_json.
-fn find_object_boundaries(bytes: &[u8]) -> Vec<(usize, usize)> {
+/// Scan raw bytes for `{...}` object boundaries inside a JSON array.
+/// Returns `(ranges, array_end)` where `array_end` is the offset of the array's
+/// closing `]` (or `bytes.len()` if unterminated). Stops there so trailing
+/// top-level keys (e.g. a sibling `"extra"`) aren't mistaken for objects.
+/// This is the key to parallel parsing: we find boundaries in a single pass,
+/// then hand each slice to rayon/simd_json.
+fn find_object_boundaries(bytes: &[u8]) -> (Vec<(usize, usize)>, usize) {
     let mut ranges = Vec::new();
     let mut depth = 0i32;
     let mut in_string = false;
@@ -273,10 +279,13 @@ fn find_object_boundaries(bytes: &[u8]) -> Vec<(usize, usize)> {
                     ranges.push((obj_start, i + 1));
                 }
             }
+            // The coordinate array's own `]` is the first one seen outside any
+            // object (nested `extra.tags` arrays close while depth > 0).
+            b']' if depth == 0 => return (ranges, i),
             _ => {}
         }
     }
-    ranges
+    (ranges, bytes.len())
 }
 
 /// Core JSON parser. Three-phase pipeline:
@@ -367,7 +376,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
     let t_scan = t0.elapsed();
 
     // Find object boundaries within the array
-    let obj_ranges = find_object_boundaries(&buf[arr_start..arr_end]);
+    let (obj_ranges, arr_close) = find_object_boundaries(&buf[arr_start..arr_end]);
     let t_boundaries = t0.elapsed();
 
     let now = now_unix();
@@ -440,7 +449,10 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
 
     let t_parse = t0.elapsed();
 
-    let tag_meta = extract_tag_meta(buf);
+    // Top-level "extra" sits after the coordinate array; start the scan at the
+    // array's closing `]` (depth 2, the `]` drops it to 1) instead of rescanning
+    // the whole buffer.
+    let tag_meta = extract_tag_meta(buf, arr_start + arr_close, 2);
 
     let mut tags_by_name: HashMap<String, u32> = HashMap::new();
     let mut next_tag: u32 = 1;
@@ -730,23 +742,31 @@ fn write_preview_positions(locs: &[Location]) -> AppResult<String> {
 
 /// Build preview stats from a parsed map and cache the parse for commit.
 fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
-    let mut field_counts: HashMap<String, u32> = HashMap::new();
+    // Count without per-location String allocation: fixed counters for the core
+    // fields, and a map for extra.* keyed by the raw key (cloned at most once per
+    // distinct key, not once per location).
+    let (mut heading, mut pitch, mut zoom, mut pano, mut tags) = (0u32, 0u32, 0u32, 0u32, 0u32);
+    let mut extra_counts: HashMap<&str, u32> = HashMap::new();
     for loc in &parsed.locations {
-        if loc.heading != 0.0 { *field_counts.entry("heading".into()).or_default() += 1; }
-        if loc.pitch != 0.0 { *field_counts.entry("pitch".into()).or_default() += 1; }
-        if loc.zoom != 0.0 { *field_counts.entry("zoom".into()).or_default() += 1; }
-        if loc.pano_id.is_some() { *field_counts.entry("panoId".into()).or_default() += 1; }
-        if !loc.tags.is_empty() { *field_counts.entry("tags".into()).or_default() += 1; }
+        if loc.heading != 0.0 { heading += 1; }
+        if loc.pitch != 0.0 { pitch += 1; }
+        if loc.zoom != 0.0 { zoom += 1; }
+        if loc.pano_id.is_some() { pano += 1; }
+        if !loc.tags.is_empty() { tags += 1; }
         if let Some(extra) = &loc.extra {
             for k in extra.keys() {
-                *field_counts.entry(format!("extra.{k}")).or_default() += 1;
+                *extra_counts.entry(k.as_str()).or_default() += 1;
             }
         }
     }
 
-    let fields: Vec<FieldCount> = field_counts.into_iter()
-        .map(|(key, count)| FieldCount { key, count })
-        .collect();
+    let mut fields: Vec<FieldCount> = Vec::with_capacity(5 + extra_counts.len());
+    for (key, count) in [("heading", heading), ("pitch", pitch), ("zoom", zoom), ("panoId", pano), ("tags", tags)] {
+        if count > 0 { fields.push(FieldCount { key: key.into(), count }); }
+    }
+    for (key, count) in extra_counts {
+        fields.push(FieldCount { key: format!("extra.{key}"), count });
+    }
 
     let preview_positions_path = write_preview_positions(&parsed.locations)?;
 
@@ -780,28 +800,37 @@ pub fn store_import_staged_location(index: u32) -> AppResult<Location> {
 /// import sidebar. Caches the parse result for `store_import_file` to consume on commit.
 #[tauri::command]
 #[specta::specta]
-pub fn store_import_preview(path: String) -> AppResult<EditorImportPreview> {
-    let t0 = std::time::Instant::now();
-    let mut buf = std::fs::read(&path)?;
-    let t_read = t0.elapsed();
-    let parsed = parse_file(&mut buf);
-    log::debug!("[import-preview] read={:.0}ms parse={:.0}ms locs={}", t_read.as_millis(), t0.elapsed().as_millis(), parsed.locations.len());
-    build_preview(parsed)
+pub async fn store_import_preview(path: String) -> AppResult<EditorImportPreview> {
+    // CPU-bound parse runs on a blocking thread so it never stalls the main/event-loop
+    // thread (which the webview shares — a sync command here freezes the window).
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        let mut buf = std::fs::read(&path)?;
+        let t_read = t0.elapsed();
+        let parsed = parse_file(&mut buf);
+        let t_parse = t0.elapsed();
+        let preview = build_preview(parsed)?;
+        log::debug!("[import-preview] read={:.0}ms parse={:.0}ms build={:.0}ms locs={}",
+            t_read.as_millis(), (t_parse - t_read).as_millis(), (t0.elapsed() - t_parse).as_millis(), preview.location_count);
+        Ok(preview)
+    }).await?
 }
 
 /// Parse pasted text (JSON or CSV) and stage it for preview, exactly like
 /// `store_import_preview` does for a file. Caches the parse for `store_import_file`.
 #[tauri::command]
 #[specta::specta]
-pub fn store_import_paste_preview(text: String) -> AppResult<EditorImportPreview> {
-    let t0 = std::time::Instant::now();
-    let mut buf = text.into_bytes();
-    let parsed = parse_file(&mut buf);
-    if parsed.locations.is_empty() {
-        return Err("no locations found".into());
-    }
-    log::debug!("[paste-preview] parse={:.0}ms locs={}", t0.elapsed().as_millis(), parsed.locations.len());
-    build_preview(parsed)
+pub async fn store_import_paste_preview(text: String) -> AppResult<EditorImportPreview> {
+    tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+        let mut buf = text.into_bytes();
+        let parsed = parse_file(&mut buf);
+        if parsed.locations.is_empty() {
+            return Err("no locations found".into());
+        }
+        log::debug!("[paste-preview] parse={:.0}ms locs={}", t0.elapsed().as_millis(), parsed.locations.len());
+        build_preview(parsed)
+    }).await?
 }
 
 /// Combined result of an editor import: the mutation delta (for render pipeline)
@@ -932,9 +961,11 @@ fn add_parsed_to_store(
 /// applying a bulk tag to every imported location. Consumes the cached parse from
 /// `store_import_preview`/`store_import_paste_preview`. Fields in `dropped_fields`
 /// (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
+// `async` so the insert + render-buffer registration runs off the main (event-loop)
+// thread; as a sync command it froze the webview for the duration of the import insert.
 #[tauri::command]
 #[specta::specta]
-pub fn store_import_file(
+pub async fn store_import_file(
     webview: tauri::Webview,
     state: tauri::State<'_, location_store::StoreState>,
     dropped_fields: Vec<String>,

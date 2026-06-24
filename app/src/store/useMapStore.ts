@@ -1355,6 +1355,7 @@ export async function removeTagFromAllLocations(tagId: number) {
 
 async function setImportStaging(preview: EditorImportPreview, source: "file" | "paste") {
 	let positions = new Float32Array(0);
+	const tf = performance.now();
 	try {
 		const resp = await fetch(mmaBufUrl(preview.previewPositionsPath));
 		if (!resp.ok) throw new Error(`preview fetch ${resp.status}: ${await resp.text()}`);
@@ -1362,18 +1363,24 @@ async function setImportStaging(preview: EditorImportPreview, source: "file" | "
 	} catch (e) {
 		log.error("[import] preview positions fetch failed:", e);
 	}
+	const tFetch = performance.now() - tf;
 	importStaging = { preview, source };
 	importPreviewPositions = positions;
 	importMarkerVersion++;
 	workArea = "import";
+	const tb = performance.now();
 	bump();
+	log.debug(`[import-staging] positions_fetch=${tFetch.toFixed(0)}ms bump=${(performance.now() - tb).toFixed(0)}ms points=${positions.length / 2}`);
 	if (getSettings().panToImported) fitMapToBounds(preview.bounds, 100);
 }
 
 /** Import from a known file path. Used by file picker and drag-and-drop. */
 export async function beginImportFromPath(path: string) {
+	const t0 = performance.now();
 	const preview = await cmd.storeImportPreview(path);
+	const t1 = performance.now();
 	await setImportStaging(preview, "file");
+	log.debug(`[import] rust_preview=${(t1 - t0).toFixed(0)}ms staging=${(performance.now() - t1).toFixed(0)}ms locs=${preview.locationCount}`);
 }
 
 /** Pick a file, stage it for preview. No-op if the picker is cancelled. */

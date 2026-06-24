@@ -2408,21 +2408,27 @@ pub async fn store_fill_render_file(
     state: tauri::State<'_, StoreState>,
     req: RenderRequest,
 ) -> AppResult<String> {
-    log::debug!("[cmd] store_fill_render_file ENTER");
-    let (buf, map_id_str) = {
+    let t0 = std::time::Instant::now();
+    let (buf, map_id_str, t_lock) = {
         let mut mgr = state.lock()?;
+        let t_lock = t0.elapsed();
         let store = mgr.store_for_window(webview.label())?;
         store.render.arrow_style = req.marker_style == "arrow";
         let mid = store.map_id.clone().unwrap_or_default();
-        (build_cell_render_buffers(store, &req), mid)
+        (build_cell_render_buffers(store, &req), mid, t_lock)
     };
+    let t_build = t0.elapsed();
+    let nbytes = buf.len();
     let path = storage::temp_dir()?
         .join(format!("mma_render_{map_id_str}.bin"));
-    tokio::task::spawn_blocking(move || {
+    let path_str = tokio::task::spawn_blocking(move || {
         std::fs::write(&path, &buf)?;
-        Ok(path.to_string_lossy().into_owned())
+        Ok::<_, crate::types::AppError>(path.to_string_lossy().into_owned())
     })
-    .await?
+    .await??;
+    log::debug!("[cmd] store_fill_render_file lock_wait={}ms build={}ms write={}ms bytes={}",
+        t_lock.as_millis(), (t_build - t_lock).as_millis(), (t0.elapsed() - t_build).as_millis(), nbytes);
+    Ok(path_str)
 }
 
 /// Resolve a deck.gl pick result (cell key + index within cell) to a location ID.

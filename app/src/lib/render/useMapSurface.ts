@@ -26,6 +26,7 @@ import { useMapKeyboardNav } from "@/lib/hooks/useMapKeyboardNav";
 import { useTrailVersion } from "@/lib/sv/svTrail";
 import { useSeenOverlayVersion } from "@/lib/seen/seenOverlay";
 import type { MapEmbedPrefs } from "@/components/editor/map/mapEmbedPrefs";
+import { log } from "@/lib/util/log";
 
 type OverlayEvent = { srcEvent?: { domEvent?: Event } };
 
@@ -83,6 +84,7 @@ export function useMapSurface(
 				measuring: opts.measuring,
 				onContextMenu: opts.onContextMenu,
 			})) as GoogleMapsOverlayProps["onClick"];
+		const tBuild = performance.now();
 		const layers = buildSceneLayers(getScene(), {
 			markerStyle: opts.prefs.markerStyle,
 			markerOpacity: opts.prefs.markerOpacity,
@@ -96,12 +98,16 @@ export function useMapSurface(
 			polygonGeomCache: polygonGeomCache.current,
 			freehandPath: opts.freehandPathRef?.current ?? null,
 		});
+		const tSet = performance.now();
 		overlay.setProps({
 			layers,
 			onClick,
 			onHover: handleMapHover as GoogleMapsOverlayProps["onHover"],
 			onError: opts.onError,
 		});
+		const build = tSet - tBuild;
+		const set = performance.now() - tSet;
+		if (build + set > 30) log.debug(`[render] buildLayers=${build.toFixed(0)}ms setProps=${set.toFixed(0)}ms`);
 	}, [
 		map,
 		scoreMaxError,
