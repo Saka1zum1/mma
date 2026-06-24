@@ -1559,7 +1559,7 @@ pub fn store_update_locations(
     let record_undo = record_undo.unwrap_or(true);
     let _t = std::time::Instant::now();
     with_store!(webview, state, |store| {
-        let mut updated: Vec<(Location, Location)> = Vec::new();
+        let mut updated: Vec<(Location, Location)> = Vec::with_capacity(updates.len());
         let any_tags = updates.iter().any(|u| u.patch.tags.is_some());
         let any_extras = updates.iter().any(|u| u.patch.extra.is_some());
         // TODO: overlay_update re-fetches internally; returning (old, new) would drop 2 of the
@@ -1623,7 +1623,7 @@ pub fn store_update_tag(
         let affected = selections::resolve(&view, &SelectionProps::Tag { tag_id });
         drop(view);
 
-        let mut updated: Vec<(Location, Location)> = Vec::new();
+        let mut updated: Vec<(Location, Location)> = Vec::with_capacity(affected.len());
         for loc_id in &affected {
             if let Some(old) = store.get_loc_by_id(*loc_id) {
                 let mut new_tags: Vec<u32> = old.tags.iter()
@@ -1678,7 +1678,7 @@ pub fn store_delete_tags(
         }
         drop(view);
 
-        let mut updated: Vec<(Location, Location)> = Vec::new();
+        let mut updated: Vec<(Location, Location)> = Vec::with_capacity(affected_ids.len());
         for &id in &affected_ids {
             if let Some(old) = store.get_loc_by_id(id) {
                 let mut new_loc = old.clone();
@@ -2357,7 +2357,13 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     }
 
     // Serialize: u32 cell_count, per cell: [1 byte geohash char][u32 count][positions][colors][angles]
-    let mut buf = Vec::new();
+    let body_cap: usize = (0..32)
+        .filter_map(|ci| cells[ci].as_ref())
+        .map(|o| 5 + o.ids.len() * 4 + o.positions.len() * 4 + o.colors.len() + o.angles.len() * 4)
+        .sum();
+    let sel_cap = if sel_ov.ids.is_empty() { 0 }
+        else { sel_ov.positions.len() * 4 + sel_ov.colors.len() + sel_ov.angles.len() * 4 + sel_ov.ids.len() * 4 };
+    let mut buf = Vec::with_capacity(4 + body_cap + 4 + sel_cap);
     buf.extend_from_slice(&non_empty.to_le_bytes());
     for ci in 0..32 {
         let out = match &cells[ci] { Some(o) => o, None => continue };
