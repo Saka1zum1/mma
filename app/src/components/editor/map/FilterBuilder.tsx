@@ -14,6 +14,16 @@ import { mdiArrowRight, mdiArrowLeft } from "@mdi/js";
 const ALL_OPS: FilterOp[] = ["eq", "neq", "gt", "lt", "gte", "lte", "between", "has", "nothas"];
 const EQUALITY_OPS: FilterOp[] = ["eq", "neq", "has", "nothas"];
 const DATE_OPS: FilterOp[] = ["between", "gt", "lt", "gte", "lte", "has", "nothas"];
+const ARRAY_OPS: FilterOp[] = ["contains", "notcontains", "eq", "neq", "gt", "lt", "gte", "lte", "between", "has", "nothas"];
+const ARRAY_OP_LABELS: Partial<Record<FilterOp, string>> = {
+	eq: "length =",
+	neq: "length !=",
+	gt: "length >",
+	lt: "length <",
+	gte: "length >=",
+	lte: "length <=",
+	between: "length between",
+};
 const filterBuilderState = new Map<
 	string,
 	{ field: string; op: FilterOp; value: string; value2: string; anyYear?: boolean; anyTime?: boolean; tzLocal?: boolean }
@@ -22,6 +32,7 @@ const filterBuilderState = new Map<
 function opsForType(type: string | undefined): FilterOp[] {
 	if (type === "enum") return EQUALITY_OPS;
 	if (type === "date") return DATE_OPS;
+	if (type === "array") return ARRAY_OPS;
 	return ALL_OPS;
 }
 
@@ -96,6 +107,7 @@ function useEnumValues(
 
 function FilterValueInput({
 	fieldEntry,
+	op,
 	value,
 	onChange,
 	placeholder,
@@ -111,6 +123,7 @@ function FilterValueInput({
 	onYearSelect,
 }: {
 	fieldEntry: FieldEntry | undefined;
+	op?: FilterOp;
 	value: string;
 	onChange: (v: string) => void;
 	placeholder?: string;
@@ -165,14 +178,25 @@ function FilterValueInput({
 		);
 	}
 
-	if (type === "number") {
+	if (type === "array" && (op === "contains" || op === "notcontains")) {
+		return (
+			<input
+				className="input"
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				placeholder={placeholder ?? "Value"}
+			/>
+		);
+	}
+
+	if (type === "number" || type === "array") {
 		return (
 			<input
 				className="input"
 				type="number"
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				placeholder={placeholder ?? "Value"}
+				placeholder={placeholder ?? (type === "array" ? "Length" : "Value")}
 			/>
 		);
 	}
@@ -255,7 +279,8 @@ export function FilterForm({
 	const [anyTime, setAnyTime] = useState(saved?.anyTime ?? false);
 	const [tzLocal, setTzLocal] = useState(saved?.tzLocal ?? false);
 	const fieldEntry = fields.find((f) => f.key === field);
-	const isNumeric = fieldEntry?.fieldType === "number" || fieldEntry?.fieldType === "date";
+	const isArrayContains = fieldEntry?.fieldType === "array" && (op === "contains" || op === "notcontains");
+	const isNumeric = fieldEntry?.fieldType === "number" || fieldEntry?.fieldType === "date" || (fieldEntry?.fieldType === "array" && !isArrayContains);
 	const isDateLike = fieldEntry?.fieldType === "date" || fieldEntry?.fieldType === "month";
 	const isExactDate = fieldEntry?.fieldType === "date";
 	const availableOps = opsForType(fieldEntry?.fieldType);
@@ -449,13 +474,14 @@ export function FilterForm({
 			>
 				{availableOps.map((o) => (
 					<option key={o} value={o}>
-						{OP_LABELS[o]}
+						{(fieldEntry?.fieldType === "array" && ARRAY_OP_LABELS[o]) || OP_LABELS[o]}
 					</option>
 				))}
 			</select>
 			{needsValue && (
 				<FilterValueInput
 					fieldEntry={fieldEntry}
+					op={op}
 					value={value}
 					onChange={setValue}
 					anyYear={anyYear}
@@ -493,6 +519,7 @@ export function FilterForm({
 			{isBetween && (
 				<FilterValueInput
 					fieldEntry={fieldEntry}
+					op={op}
 					value={value2}
 					onChange={setValue2}
 					placeholder="Max"

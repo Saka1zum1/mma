@@ -13,13 +13,14 @@ import type { MergeWinner } from "@/lib/data/fieldOps";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 
 type Comparison = NonNullable<ExtraFieldDef["comparison"]>;
-const FIELD_TYPES: ExtraFieldDef["type"][] = ["string", "number", "date", "month", "enum"];
+const FIELD_TYPES: ExtraFieldDef["type"][] = ["string", "number", "date", "month", "enum", "array"];
 const TYPE_LABELS: Record<ExtraFieldDef["type"], string> = {
 	string: "Text",
 	number: "Number",
 	date: "Date/time",
 	month: "Month (YYYY-MM)",
 	enum: "Enum",
+	array: "Array",
 };
 
 // How a field is compared during disambiguation. "auto" = inferred from type.

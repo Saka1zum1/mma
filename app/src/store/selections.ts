@@ -41,6 +41,8 @@ export const OP_LABELS: Record<FilterOp, string> = {
 	between_anytime: "between (any date)",
 	has: "has",
 	nothas: "does not have",
+	contains: "contains",
+	notcontains: "does not contain",
 };
 
 export function colorForKey(key: string): [number, number, number] {

@@ -534,7 +534,7 @@ export type ExtraFieldDef = {
  *  Type discriminant for `Location.extra` field definitions.
  *  Determines how the field is displayed and filtered in the UI.
  */
-export type ExtraFieldType = "string" | "number" | "date" | "month" | "enum";
+export type ExtraFieldType = "string" | "number" | "date" | "month" | "enum" | "array";
 
 /**
  *  Field presence count for the editor import preview dialog, letting
@@ -549,7 +549,7 @@ export type FieldCount = {
  *  Filter comparison operator. Single source of truth: specta renders the literal
  *  union, so the TS `FilterOp` type and `OP_LABELS` derive from this enum.
  */
-export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas";
+export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas" | "contains" | "notcontains";
 
 /**  Reverse geocode result: nearest populated place to a coordinate. */
 export type GeoResult = {

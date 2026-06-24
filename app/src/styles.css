@@ -2333,6 +2333,13 @@ summary.button {
 	padding: 0;
 	list-style-type: none;
 	position: absolute;
+	max-height: 240px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	scrollbar-width: none;
+}
+.search-results::-webkit-scrollbar {
+	display: none;
 }
 .search-result {
 	cursor: pointer;
@@ -3517,7 +3524,7 @@ summary.button {
 	padding: 4px;
 	list-style: none;
 	display: flex;
-	overflow: hidden;
+	overflow: clip;
 }
 .tag-list.is-collapsed {
 	opacity: 0.7;

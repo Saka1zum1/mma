@@ -61,6 +61,8 @@ pub enum FilterOp {
     BetweenAnytime,
     Has,
     Nothas,
+    Contains,
+    Notcontains,
 }
 
 /// GeoJSON-like polygon geometry. `coordinates` is the primary polygon (outer ring +
@@ -1007,11 +1009,24 @@ fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_
 /// between_anyyear (month-day range ignoring year), and between_anytime (time-of-day range).
 /// Numeric comparison is attempted first; falls back to lexicographic string comparison.
 fn compare_filter(field_val: &serde_json::Value, op: FilterOp, value: &serde_json::Value, value2: Option<&serde_json::Value>) -> bool {
+    if let Some(arr) = field_val.as_array() {
+        return match op {
+            FilterOp::Contains => arr.iter().any(|el| val_eq(el, value)),
+            FilterOp::Notcontains => !arr.iter().any(|el| val_eq(el, value)),
+            FilterOp::Has => true,
+            FilterOp::Nothas => false,
+            _ => {
+                let len_val = serde_json::Value::from(arr.len() as f64);
+                compare_filter(&len_val, op, value, value2)
+            }
+        };
+    }
     match op {
         FilterOp::Eq => val_eq(field_val, value),
         FilterOp::Neq => !val_eq(field_val, value),
         FilterOp::Has => true,
         FilterOp::Nothas => false,
+        FilterOp::Contains | FilterOp::Notcontains => false,
         FilterOp::Gt | FilterOp::Lt | FilterOp::Gte | FilterOp::Lte | FilterOp::Between => {
             let fv = as_f64(field_val);
             let cv = as_f64(value);

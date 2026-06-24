@@ -26,6 +26,7 @@ export function buildPatch(
 	enrichFields: string[] | null,
 ): Record<string, unknown> | null {
 	if (!data.extra) return null;
+	const pad2 = (n: number) => String(n).padStart(2, "0");
 	const fullPatch: Record<string, unknown> = {
 		altitude: data.extra.altitude ?? 0,
 		countryCode: data.extra.countryCode ?? null,
@@ -34,6 +35,7 @@ export function buildPatch(
 		drivingDirection: data.extra.drivingDirection ?? null,
 		uploaderName: data.extra.uploaderName ?? null,
 		imageDate: data.imageDate || null,
+		coverageDates: data.time?.filter((t) => t.date).map((t) => `${t.date!.getFullYear()}-${pad2(t.date!.getMonth() + 1)}`) ?? [],
 	};
 	const filtered = filterEnrichPatch(fullPatch, enrichFields);
 	// Stale exact-date data is wrong once imageDate changes; clear it regardless of the

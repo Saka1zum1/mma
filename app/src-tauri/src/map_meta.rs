@@ -98,6 +98,8 @@ pub enum ExtraFieldType {
     Month,
     #[serde(rename = "enum")]
     Enum,
+    #[serde(rename = "array")]
+    Array,
 }
 
 /// Schema definition for a single `Location.extra` field. Stored in the map's
@@ -230,6 +232,13 @@ pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
             labels: None,
             comparison: None,
         }),
+        "coverageDates" => Some(ExtraFieldDef {
+            field_type: ExtraFieldType::Array,
+            label: Some("Coverage dates".into()),
+            values: None,
+            labels: None,
+            comparison: None,
+        }),
         _ => None,
     }
 }
@@ -237,6 +246,9 @@ pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
 /// Infer an `ExtraFieldType` from a sample JSON value. Numbers become `Number`,
 /// strings matching `YYYY-MM` become `Month`, everything else becomes `String`.
 pub fn infer_field_type(value: &serde_json::Value) -> ExtraFieldType {
+    if value.is_array() {
+        return ExtraFieldType::Array;
+    }
     if value.is_number() {
         return ExtraFieldType::Number;
     }
