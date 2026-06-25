@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { WorkArea, LatLng, MaybeLocation } from "@/types";
-import { isVirtualLocation, isImportPreview, LocationFlag, locId } from "@/types";
+import { isVirtualLocation, isImportPreview, LocationFlag, locId, bboxTupleToBounds } from "@/types";
 import type { Location, MapData, MapMeta, Tag, ExtraFieldDef, FilterOp, KeySpec, Scope, CommitDiff, PartitionBucket, EditorImportPreview } from "@/bindings.gen";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { emit as tauriEmit, listen } from "@tauri-apps/api/event";
@@ -1377,7 +1377,7 @@ async function setImportStaging(preview: EditorImportPreview, source: "file" | "
 	importMarkerVersion++;
 	workArea = "import";
 	bump();
-	if (getSettings().panToImported) fitMapToBounds(preview.bounds, 100);
+	if (getSettings().panToImported) fitMapToBounds(bboxTupleToBounds(preview.bounds), 100);
 }
 
 /** Import from a known file path. Used by file picker and drag-and-drop. */
@@ -1554,7 +1554,7 @@ export async function beginCommitDiffPreview(commit: CommitInfo) {
 			if (l.lat < south) south = l.lat;
 			if (l.lat > north) north = l.lat;
 		}
-		fitMapToBounds([west, south, east, north], 100);
+		fitMapToBounds({ west, south, east, north }, 100);
 	}
 }
 

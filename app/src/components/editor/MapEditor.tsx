@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Bounds } from "@/types";
 import { createLocation } from "@/types";
 import {
 	useCurrentMap,
@@ -47,7 +48,7 @@ import { useDeletePolygon } from "@/lib/map/useDeletePolygon";
 import { useMapKeyBindings } from "@/lib/map/mapKeyBindings";
 import { range, clamp } from "@/types/util"
 
-function zoomToPasted(bounds: [number, number, number, number] | null, padding = 0) {
+function zoomToPasted(bounds: Bounds | null, padding = 0) {
 	if (!getSettings().panToImported) return;
 	fitMapToBounds(bounds, padding);
 }
@@ -66,7 +67,7 @@ async function addParsedLocations(parsed: ParsedLocation[]) {
 	setActiveLocation(locs[locs.length - 1].id);
 	const lats = locs.map((l) => l.lat);
 	const lngs = locs.map((l) => l.lng);
-	zoomToPasted([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)]);
+	zoomToPasted({ west: Math.min(...lngs), south: Math.min(...lats), east: Math.max(...lngs), north: Math.max(...lats) });
 }
 
 function usePasteHandler() {

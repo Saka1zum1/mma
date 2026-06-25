@@ -2,7 +2,8 @@
 /// <reference path="../../types/measuretool.d.ts" />
 import { useSyncExternalStore, useEffect, useState, useCallback } from "react";
 import MeasureToolClass from "measuretool-googlemaps-v3";
-import type { LatLng } from "@/types";
+import type { LatLng, Bounds } from "@/types";
+import { isWorldBounds, scoreTupleToBounds } from "@/types";
 import type { Location } from "@/bindings.gen";
 import { createSyncStore } from "@/lib/util/syncStore";
 import { useCurrentMap } from "@/store/useMapStore";
@@ -138,6 +139,7 @@ export function computeScore(
 
 // World bounds constant (ACW): the resolved max-error for the whole world.
 export const WORLD_MAX_ERROR = DEFAULT_MAX_ERROR;
+type Bbox = [minLng: number, minLat: number, maxLng: number, maxLat: number];
 const BBOX_TO_ERROR_DIVISOR = 7.458421;
 const TURF_EARTH_RADIUS_M = 6371008.8;
 
@@ -152,24 +154,17 @@ function haversineKm(a: [number, number], b: [number, number]): number {
 	return (2 * TURF_EARTH_RADIUS_M * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))) / 1000;
 }
 
-/**
- * Resolve a bounding box to its max-error distance, the value fed to `computeScore`.
- * `bbox` is `[minLng, minLat, maxLng, maxLat]` (GeoJSON order).
- */
-export function bboxToMaxError(bbox: [number, number, number, number]): number {
+export function bboxToMaxError(bbox: Bbox): number {
 	const diagonalKm = haversineKm([bbox[0], bbox[1]], [bbox[2], bbox[3]]);
 	return diagonalKm / BBOX_TO_ERROR_DIVISOR / -1e4 / Math.log(SCORE_BASE);
 }
 
-/**
- * Pad a `[minLng, minLat, maxLng, maxLat]` box so it is never degenerate.
- */
-export function padBbox(bbox: [number, number, number, number]): [number, number, number, number] {
+export function padBbox(bbox: Bbox): Bbox {
 	const pad = 0.01;
 	// An antimeridian-crossing box arrives as west > east; unwrap east past 180 so
 	// the midpoint/pad math stays monotonic (haversine downstream is periodic-safe).
 	const east = bbox[2] < bbox[0] ? bbox[2] + 360 : bbox[2];
-	const out: [number, number, number, number] = [bbox[0], bbox[1], east, bbox[3]];
+	const out: Bbox = [bbox[0], bbox[1], east, bbox[3]];
 	const cx = (out[0] + out[2]) / 2;
 	const cy = (out[1] + out[3]) / 2;
 	if (cx - pad < out[0]) out[0] = cx - pad;
@@ -179,14 +174,8 @@ export function padBbox(bbox: [number, number, number, number]): [number, number
 	return out;
 }
 
-/**
- * Bounding box of locations, padded so it is never degenerate.
- * Returns `[minLng, minLat, maxLng, maxLat]`.
- */
-export function locationsBbox(
-	locations: LatLng[],
-): [number, number, number, number] {
-	const bbox: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+export function locationsBbox(locations: LatLng[]): Bbox {
+	const bbox: Bbox = [Infinity, Infinity, -Infinity, -Infinity];
 	for (const l of locations) {
 		if (l.lng < bbox[0]) bbox[0] = l.lng;
 		if (l.lat < bbox[1]) bbox[1] = l.lat;
@@ -196,45 +185,26 @@ export function locationsBbox(
 	return padBbox(bbox);
 }
 
-/** Stored world bounds `[south, west, north, east]` (the ACW world map). */
-export const WORLD_BOUNDS: [number, number, number, number] = [-90, -180, 90, 180];
-
-export function isWorldBounds(b: [number, number, number, number]): boolean {
-	return b[0] === -90 && b[1] === -180 && b[2] === 90 && b[3] === 180;
-}
-
-/** Resolved max-error for a map's score bounds. `"auto"` derives it from locations. */
 export function resolveScoreMaxError(
-	bounds: "auto" | [number, number, number, number],
+	bounds: "auto" | Bounds,
 	locations: LatLng[],
 ): number {
 	if (bounds === "auto") {
 		return locations.length > 1 ? bboxToMaxError(locationsBbox(locations)) : 25;
 	}
-	// The world map uses the exact ACW constant.
 	if (isWorldBounds(bounds)) return WORLD_MAX_ERROR;
-	// Stored bounds are [south, west, north, east] (lat-first); convert to GeoJSON order.
-	const [south, west, north, east] = bounds;
-	return bboxToMaxError([west, south, east, north]);
+	return bboxToMaxError([bounds.west, bounds.south, bounds.east, bounds.north]);
 }
 
-/**
- * Resolve a map's score bounds to its max-error distance, the value fed to
- * `computeScore`. `autoLocationsBbox` is the precomputed locations bounding box
- * in GeoJSON order `[minLng, minLat, maxLng, maxLat]` (from `store_bounds`), or
- * `null` when the map is empty. Used by both the editor and the measurement bar
- * so the score curve is single-sourced.
- */
 export function resolveScoreMaxErrorFromBounds(
-	bounds: "auto" | [number, number, number, number],
-	autoLocationsBbox: [number, number, number, number] | null,
+	bounds: "auto" | Bounds,
+	autoLocationsBbox: Bbox | null,
 ): number {
 	if (bounds === "auto") {
 		return autoLocationsBbox ? bboxToMaxError(padBbox(autoLocationsBbox)) : 25;
 	}
 	if (isWorldBounds(bounds)) return WORLD_MAX_ERROR;
-	const [south, west, north, east] = bounds;
-	return bboxToMaxError([west, south, east, north]);
+	return bboxToMaxError([bounds.west, bounds.south, bounds.east, bounds.north]);
 }
 
 /**
@@ -245,9 +215,10 @@ export function resolveScoreMaxErrorFromBounds(
  */
 export function useScoreMaxError(): number {
 	const map = useCurrentMap();
-	const bounds = (map?.meta.scoreBounds ?? "auto") as "auto" | [number, number, number, number];
-	const isAuto = bounds === "auto" || typeof bounds === "string";
-	const [autoBbox, setAutoBbox] = useState<[number, number, number, number] | null>(null);
+	const raw = map?.meta.scoreBounds ?? "auto";
+	const bounds: "auto" | Bounds = typeof raw === "string" ? "auto" : scoreTupleToBounds(raw);
+	const isAuto = bounds === "auto";
+	const [autoBbox, setAutoBbox] = useState<Bbox | null>(null);
 
 	const refresh = useCallback(async () => {
 		const res = await cmd.storeBounds(false);

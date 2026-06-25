@@ -1,20 +1,20 @@
 import { Fragment, useState, useEffect, useRef } from "react";
 import type { ScoreBounds } from "@/bindings.gen";
+import type { Bounds } from "@/types";
+import { isWorldBounds, scoreTupleToBounds, boundsToScoreTuple } from "@/types";
 import { useCurrentMap, updateMapMeta } from "@/store/useMapStore";
 import {
 	resolveScoreMaxError,
 	formatDistance,
 	useScoreMaxError,
 	WORLD_MAX_ERROR,
-	WORLD_BOUNDS,
-	isWorldBounds,
 } from "@/lib/sv/measure";
 
 type Mode = "auto" | "world" | "fixed";
 
 function modeOf(bounds: ScoreBounds): Mode {
-	if (bounds === "auto" || typeof bounds === "string") return "auto";
-	return isWorldBounds(bounds) ? "world" : "fixed";
+	if (typeof bounds === "string") return "auto";
+	return isWorldBounds(scoreTupleToBounds(bounds)) ? "world" : "fixed";
 }
 
 /** "Scoring" section of the edit-map modal. */
@@ -24,36 +24,39 @@ export function ScoreBoundsEditor() {
 	const mode = modeOf(bounds);
 	const resolvedError = useScoreMaxError();
 
-	const fixed: [number, number, number, number] =
-		typeof bounds !== "string" && !isWorldBounds(bounds) ? bounds : [0, 0, 0, 0];
+	const fixed: Bounds =
+		typeof bounds !== "string" && !isWorldBounds(scoreTupleToBounds(bounds))
+			? scoreTupleToBounds(bounds)
+			: { south: 0, west: 0, north: 0, east: 0 };
 	const [draft, setDraft] = useState<[string, string, string, string]>([
-		String(fixed[0]),
-		String(fixed[1]),
-		String(fixed[2]),
-		String(fixed[3]),
+		String(fixed.south),
+		String(fixed.west),
+		String(fixed.north),
+		String(fixed.east),
 	]);
-	const lastFixedRef = useRef<[number, number, number, number]>(fixed);
+	const lastFixedRef = useRef<Bounds>(fixed);
 
-	// Keep the draft inputs in step with stored fixed bounds (e.g. on map open).
 	useEffect(() => {
 		if (mode !== "fixed") return;
 		lastFixedRef.current = fixed;
-		setDraft([String(fixed[0]), String(fixed[1]), String(fixed[2]), String(fixed[3])]);
+		setDraft([String(fixed.south), String(fixed.west), String(fixed.north), String(fixed.east)]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [mode, fixed[0], fixed[1], fixed[2], fixed[3]]);
+	}, [mode, fixed.south, fixed.west, fixed.north, fixed.east]);
 
 	const setMode = (next: Mode) => {
 		if (next === "auto") void updateMapMeta({ scoreBounds: "auto" });
-		else if (next === "world") void updateMapMeta({ scoreBounds: WORLD_BOUNDS });
-		else void updateMapMeta({ scoreBounds: lastFixedRef.current });
+		else if (next === "world")
+			void updateMapMeta({ scoreBounds: boundsToScoreTuple(google.maps.LatLngBounds.MAX_BOUNDS.toJSON()) });
+		else void updateMapMeta({ scoreBounds: boundsToScoreTuple(lastFixedRef.current) });
 	};
 
 	const commitFixed = (parts: [string, string, string, string]) => {
 		const nums = parts.map((p) => Number.parseFloat(p));
 		if (nums.some((n) => !Number.isFinite(n))) return;
-		const next = nums as [number, number, number, number];
+		const [s, w, n, e] = nums;
+		const next: Bounds = { south: s, west: w, north: n, east: e };
 		lastFixedRef.current = next;
-		void updateMapMeta({ scoreBounds: next });
+		void updateMapMeta({ scoreBounds: boundsToScoreTuple(next) });
 	};
 
 	// Per-mode resolved max-error for the radio labels. The active mode shows the

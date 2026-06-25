@@ -5,6 +5,24 @@ import { nowUnix } from "@/lib/util/format";
 export type LocationPOV = Pick<Location, "heading" | "pitch" | "zoom">;
 
 export type LatLng = google.maps.LatLngLiteral;
+export type Bounds = google.maps.LatLngBoundsLiteral;
+
+export function isWorldBounds(b: Bounds): boolean {
+	return b.south === -90 && b.west === -180 && b.north === 90 && b.east === 180;
+}
+
+export function scoreTupleToBounds([s, w, n, e]: [number, number, number, number]): Bounds {
+	return { south: s, west: w, north: n, east: e };
+}
+
+export function bboxTupleToBounds(t: [number, number, number, number] | null): Bounds | null {
+	if (!t) return null;
+	return { south: t[1], west: t[0], north: t[3], east: t[2] };
+}
+
+export function boundsToScoreTuple(b: Bounds): [number, number, number, number] {
+	return [b.south, b.west, b.north, b.east];
+}
 
 export const enum LocationFlag {
 	None = 0,

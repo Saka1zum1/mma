@@ -1,3 +1,5 @@
+import type { Bounds } from "@/types";
+
 let googleMap: google.maps.Map | null = null;
 let mapReadyResolve: ((map: google.maps.Map) => void) | null = null;
 let mapReadyPromise: Promise<google.maps.Map> | null = null;
@@ -28,13 +30,11 @@ export function waitForGoogleMap(): Promise<google.maps.Map> {
 	return mapReadyPromise;
 }
 
-/** fitBounds the map to a `[west, south, east, north]` box. No-op if no map or no bounds. */
-export function fitMapToBounds(bounds: [number, number, number, number] | null | undefined, padding = 0) {
+export function fitMapToBounds(bounds: Bounds | null | undefined, padding = 0) {
 	if (!bounds) return;
 	const gm = googleMap;
 	if (!gm) return;
-	const [west, south, east, north] = bounds;
-	gm.fitBounds({ west, south, east, north }, padding);
+	gm.fitBounds(bounds, padding);
 }
 
 type ClickInterceptor = (lat: number, lng: number, shiftKey: boolean) => boolean;

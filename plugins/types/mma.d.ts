@@ -2178,7 +2178,7 @@ declare const mma: {
 	openStagedLocation(index: number): Promise<void>;
 	previewVirtualLocation(loc: Location$1): void;
 	resolveLocation(m: MaybeLocation): Promise<Location$1 | null>;
-	setActiveLocation(target: MaybeLocation | null): Promise<void>;
+	setActiveLocation(target: MaybeLocation | null, checkDuplicates?: boolean): Promise<void>;
 	openDuplicateLocation(loc: Location$1): void;
 	removeDuplicate(id: number): void;
 	closeDuplicates(): void;
