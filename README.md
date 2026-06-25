@@ -1,31 +1,37 @@
 # MMA
 
-Local-first desktop clone of [map-making.app](https://map-making.app).
+A local-first desktop alternative to [map-making.app](https://map-making.app).
 
 ![preview](img/preview.png)
 
 ## Features
 
 - Offline/local-first
-- Handles millions of locations
-- Plugin system
+- Much faster for large maps; handles millions of locations
 - Configurable hotkeys
-- Extra fields on locations - non-boolean arbitrary metadata
-- Composable selections
-- Map generator built-in
+- Composable & saveable selections
+- Map generator/vali/autotag built-in
 - Version history with commits
+- Editor state saves automatically - pick up where you left off
+- Extra fields on locations - arbitrary metadata
+- "Seen locations" history - find locations you've looked at before
+- Concurrent and manageable reviews
+- Plugin system
+
+...and much more!
 
 ## Installation
-### User
-Open [the releases menu](https://github.com/ccmdi/mma/releases) and download the respective installation for your system.
 
-#### MacOS/Linux
-If you are on MacOS, you will likely need to run
+Open [the latest release](https://github.com/ccmdi/mma/releases/latest) and download the installer for your platform.
+
+### macOS / Linux
+
+On macOS, you will likely need to run:
 ```zsh
 xattr -dr com.apple.quarantine "/Applications/Map Making App.app"
 ```
 
-On both Mac & Linux, framerate and rendering stability can be an issue. If you encounter these problems, you can [try running the app in a browser](###run-in-a-browser). The web version will eventually be a first-class launch option, but is only available from source for now.
+On both Mac & Linux, framerate and rendering stability can be an issue. If you encounter these problems, you can [run the app in a browser](#run-in-a-browser). The web version will eventually be a first-class launch option, but is only available from source for now.
 
 ### From source
 
@@ -36,6 +42,7 @@ cd app && npm install && cargo tauri build
 Requires: Rust toolchain, Node.js, npm.
 
 ### Run in a browser
+
 Serve the app locally and open it in any browser:
 
 ```bash
