@@ -147,7 +147,6 @@ function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<st
 	});
 
 	if (pinned.length === 0 && !right) return null;
-	let itemIndex = 0;
 	const togglePanel = (id: string) => setOpenPanels((prev) => {
 		const next = new Set(prev);
 		if (next.has(id)) next.delete(id); else next.add(id);
@@ -217,7 +216,6 @@ function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<st
 					const disabled = command.enabled ? !command.enabled() : false;
 					const hasPanel = id in panels;
 					const isOpen = openPanels.has(id);
-					itemIndex++;
 					const handleClick = hasPanel ? () => togglePanel(id) : command.execute;
 					const isFirst = i === 0;
 					const isLast = i === pinned.length - 1;
