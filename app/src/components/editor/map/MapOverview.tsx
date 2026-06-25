@@ -283,7 +283,13 @@ function PinnedToolbar({ right, panels }: { right?: ReactNode; panels: Record<st
 				})}
 				{right}
 			</div>
-			{Object.entries(panels).map(([id, panel]) => (
+			{Object.entries(panels)
+				.sort(([a], [b]) => {
+					const ai = pinned.indexOf(a);
+					const bi = pinned.indexOf(b);
+					return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
+				})
+				.map(([id, panel]) => (
 				<div key={id} className="selection-manager__panel" hidden={!openPanels.has(id)}>
 					{panel.render(() => setOpenPanels((prev) => { const next = new Set(prev); next.delete(id); return next; }))}
 				</div>
