@@ -445,6 +445,26 @@ fn cached_bounds_tracks_adds_and_invalidates_on_remove() {
     assert_eq!(store.cached_bounds(), store.compute_bounds(None));
 }
 
+#[test]
+fn bounds_cross_antimeridian_picks_tight_box() {
+    // Straddling 180°: naive min/max would give a ~356°-wide box. The shifted
+    // framing wins, yielding the 4°-wide crossing box (west > east).
+    let mut store = setup_store_with(&[loc(1, 0.0, 178.0), loc(2, 0.0, -178.0)]);
+    let [w, s, e, n] = store.cached_bounds().unwrap();
+    assert_eq!([w, s, e, n], [178.0, 0.0, -178.0, 0.0]);
+    assert!(w > e, "antimeridian-crossing box has west > east");
+}
+
+#[test]
+fn bounds_wide_span_stays_non_crossing() {
+    // Portugal (-9) to Japan (140): 149° genuine span, no crossing — raw framing
+    // wins (149 < the 211° shifted span), so west < east as normal.
+    let mut store = setup_store_with(&[loc(1, 0.0, -9.0), loc(2, 0.0, 140.0)]);
+    let [w, s, e, n] = store.cached_bounds().unwrap();
+    assert_eq!([w, s, e, n], [-9.0, 0.0, 140.0, 0.0]);
+    assert!(w < e);
+}
+
 // -----------------------------------------------------------------------
 // Render cell tracking
 // -----------------------------------------------------------------------

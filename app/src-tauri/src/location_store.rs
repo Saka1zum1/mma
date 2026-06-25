@@ -262,10 +262,10 @@ pub struct Store {
     pub(crate) selections: SelectionState,
     pub(crate) tags: TagState,
     pub(crate) edits: EditStacks,
-    /// Cached unscoped bounding box `[w,s,e,n]`. Maintained incrementally on
-    /// add/update (which can only grow it); `bounds_dirty` forces an O(N)
-    /// recompute on the next read after a removal or bulk change.
-    bounds_cache: Option<[f64; 4]>,
+    /// Cached unscoped bounds accumulator. Maintained incrementally on add/update
+    /// (which can only grow it); `bounds_dirty` forces an O(N) recompute on the
+    /// next read after a removal or bulk change. Resolved to `[w,s,e,n]` on read.
+    bounds_cache: Option<BoundsAcc>,
     bounds_dirty: bool,
 }
 
@@ -288,15 +288,63 @@ struct MembershipDelta {
 struct LocationAggregates {
     alive: usize,
     tag_counts: HashMap<u32, usize>,
-    bounds: Option<[f64; 4]>,
+    bounds: Option<BoundsAcc>,
 }
 
-/// Grow a bounding box `[w,s,e,n]` to include a point, seeding from the point when
-/// the box is empty.
-fn expand_bounds(b: Option<[f64; 4]>, lat: f64, lng: f64) -> [f64; 4] {
-    match b {
-        Some([w, s, e, n]) => [w.min(lng), s.min(lat), e.max(lng), n.max(lat)],
-        None => [lng, lat, lng, lat],
+/// Incremental bounding-box accumulator. Tracks latitude min/max plus longitude
+/// min/max in *two* framings — raw `[-180,180]` and shifted `[0,360)` — so
+/// `resolve` can pick the tighter longitude span and emit an antimeridian-crossing
+/// box (`west > east`) when the data straddles 180°. Every field is a plain
+/// min/max, so it grows in O(1) per point with no sort — the cache stays cheap.
+#[derive(Clone, Copy)]
+struct BoundsAcc {
+    s: f64, n: f64,    // latitude min / max
+    w: f64, e: f64,    // longitude min / max, raw [-180,180]
+    ws: f64, es: f64,  // longitude min / max, shifted to [0,360)
+}
+
+impl BoundsAcc {
+    fn shift(lng: f64) -> f64 { if lng < 0.0 { lng + 360.0 } else { lng } }
+
+    fn seed(lat: f64, lng: f64) -> Self {
+        let sh = Self::shift(lng);
+        BoundsAcc { s: lat, n: lat, w: lng, e: lng, ws: sh, es: sh }
+    }
+
+    fn expand(self, lat: f64, lng: f64) -> Self {
+        let sh = Self::shift(lng);
+        BoundsAcc {
+            s: self.s.min(lat), n: self.n.max(lat),
+            w: self.w.min(lng), e: self.e.max(lng),
+            ws: self.ws.min(sh), es: self.es.max(sh),
+        }
+    }
+
+    /// Fold a point into an optional accumulator (seed if empty).
+    fn fold(acc: Option<Self>, lat: f64, lng: f64) -> Self {
+        match acc { Some(a) => a.expand(lat, lng), None => Self::seed(lat, lng) }
+    }
+
+    /// `[west, south, east, north]`, choosing whichever longitude framing is
+    /// tighter. The shifted framing winning means the box crosses 180°, which
+    /// maps back to `west > east` — the form Google/deck `fitBounds` zooms to the
+    /// short way (matching the original's `east += 360` handling).
+    fn resolve(self) -> [f64; 4] {
+        if self.es - self.ws < self.e - self.w {
+            let unshift = |v: f64| if v >= 180.0 { v - 360.0 } else { v };
+            [unshift(self.ws), self.s, unshift(self.es), self.n]
+        } else {
+            [self.w, self.s, self.e, self.n]
+        }
+    }
+
+    /// Whether a point sits on any extreme — removing it might shrink the box,
+    /// forcing a recompute.
+    fn on_edge(self, lat: f64, lng: f64) -> bool {
+        let sh = Self::shift(lng);
+        lat == self.s || lat == self.n
+            || lng == self.w || lng == self.e
+            || sh == self.ws || sh == self.es
     }
 }
 
@@ -853,14 +901,20 @@ impl Store {
         }
     }
 
-    fn compute_bounds(&self, scope: Option<&RoaringBitmap>) -> Option<[f64; 4]> {
+    /// Full O(N) bounds scan, optionally scoped to a selection. Returns the raw
+    /// accumulator; callers `.resolve()` it to `[w,s,e,n]`.
+    fn scan_bounds(&self, scope: Option<&RoaringBitmap>) -> Option<BoundsAcc> {
         let view = self.loc_view();
-        let mut b: Option<[f64; 4]> = None;
+        let mut acc: Option<BoundsAcc> = None;
         view.for_each(|row| {
             if let Some(ids) = scope { if !ids.contains(row.id()) { return; } }
-            b = Some(expand_bounds(b, row.lat(), row.lng()));
+            acc = Some(BoundsAcc::fold(acc, row.lat(), row.lng()));
         });
-        b
+        acc
+    }
+
+    fn compute_bounds(&self, scope: Option<&RoaringBitmap>) -> Option<[f64; 4]> {
+        self.scan_bounds(scope).map(BoundsAcc::resolve)
     }
 
     /// Unscoped bounding box, cached. Recomputes O(N) only when dirty (after a
@@ -868,10 +922,10 @@ impl Store {
     /// every edit, so it must not scan the whole map per mutation.
     fn cached_bounds(&mut self) -> Option<[f64; 4]> {
         if self.bounds_dirty {
-            self.bounds_cache = self.compute_bounds(None);
+            self.bounds_cache = self.scan_bounds(None);
             self.bounds_dirty = false;
         }
-        self.bounds_cache
+        self.bounds_cache.map(BoundsAcc::resolve)
     }
 
     /// Keep the cached bounds current for one mutation. Added / updated-new
@@ -885,10 +939,8 @@ impl Store {
             self.bounds_dirty = true;
             return;
         }
-        if let Some([w, s, e, n]) = self.bounds_cache {
-            if changes.updated.iter().any(|(old, _)|
-                old.lng == w || old.lat == s || old.lng == e || old.lat == n)
-            {
+        if let Some(acc) = self.bounds_cache {
+            if changes.updated.iter().any(|(old, _)| acc.on_edge(old.lat, old.lng)) {
                 self.bounds_dirty = true;
                 return;
             }
@@ -896,7 +948,7 @@ impl Store {
         for (lat, lng) in changes.added.iter().map(|l| (l.lat, l.lng))
             .chain(changes.updated.iter().map(|(_, nw)| (nw.lat, nw.lng)))
         {
-            self.bounds_cache = Some(expand_bounds(self.bounds_cache, lat, lng));
+            self.bounds_cache = Some(BoundsAcc::fold(self.bounds_cache, lat, lng));
         }
     }
 
@@ -908,10 +960,10 @@ impl Store {
         let view = self.loc_view();
         let mut tag_counts: HashMap<u32, usize> = HashMap::new();
         let mut alive = 0usize;
-        let mut bounds: Option<[f64; 4]> = None;
+        let mut bounds: Option<BoundsAcc> = None;
         view.for_each(|row| {
             alive += 1;
-            bounds = Some(expand_bounds(bounds, row.lat(), row.lng()));
+            bounds = Some(BoundsAcc::fold(bounds, row.lat(), row.lng()));
             row.for_each_tag(|tid| { *tag_counts.entry(tid).or_default() += 1; });
         });
         LocationAggregates { alive, tag_counts, bounds }
