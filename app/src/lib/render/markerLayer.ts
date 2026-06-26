@@ -21,6 +21,7 @@ export function buildMarkerLayer(
 	colorVer: number,
 	posVer: number,
 	opacity?: number,
+	sizeScale = 1,
 ): Layer {
 	const s = MARKER_STYLE[markerStyle];
 	const attributes: Record<string, unknown> = {
@@ -29,10 +30,14 @@ export function buildMarkerLayer(
 	};
 	if (s.angle) attributes.getAngle = { value: buf.angles, size: 1 };
 	const LayerClass = s.Layer as new (props: Record<string, unknown>) => Layer;
+	const sizeProps: Record<string, unknown> = {};
+	if ("radiusPixels" in s.base) sizeProps.radiusPixels = s.base.radiusPixels * sizeScale;
+	if ("getRadius" in s.base) sizeProps.getRadius = s.base.getRadius * sizeScale;
 	return new LayerClass({
 		id: `${idBase}:${s.idSuffix}`,
 		data: { length: count, attributes },
 		...s.base,
+		...sizeProps,
 		pickable: true,
 		...(opacity != null ? { opacity } : {}),
 		updateTriggers: {
@@ -49,6 +54,7 @@ export function baseMarkerLayers(
 	cm: CellManager,
 	markerStyle: MarkerStyle,
 	markerOpacity: number,
+	markerSize = 1,
 ): Layer[] {
 	if (markerOpacity <= 0 || cm.totalCount === 0) return [];
 	const out: Layer[] = [];
@@ -63,6 +69,7 @@ export function baseMarkerLayers(
 				cell.colorVersion,
 				cell.positionVersion,
 				markerOpacity,
+				markerSize,
 			),
 		);
 	}

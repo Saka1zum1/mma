@@ -388,6 +388,8 @@ export function MapEmbed({ onAddLocation }: { onAddLocation: (parsed: ParsedLoca
 						settings={{
 							markerStyle,
 							setMarkerStyle: pref("markerStyle"),
+							markerSize: prefs.markerSize,
+							setMarkerSize: pref("markerSize"),
 							showPerfectScoreCircle,
 							setShowPerfectScoreCircle: pref("showPerfectScoreCircle"),
 							showSearchRadiusCursor,

@@ -86,6 +86,7 @@ export function useMapSurface(
 		const layers = buildSceneLayers(getScene(), {
 			markerStyle: opts.prefs.markerStyle,
 			markerOpacity: opts.prefs.markerOpacity,
+			markerSize: opts.prefs.markerSize,
 			showPerfectScoreCircle: opts.prefs.showPerfectScoreCircle,
 			scoreMaxError,
 			svPanoramas: opts.prefs.svPanoramas,
@@ -109,6 +110,7 @@ export function useMapSurface(
 		importPreviewColor,
 		opts.prefs.markerStyle,
 		opts.prefs.markerOpacity,
+		opts.prefs.markerSize,
 		opts.prefs.showPerfectScoreCircle,
 		opts.prefs.svPanoramas,
 		panoDotColor,

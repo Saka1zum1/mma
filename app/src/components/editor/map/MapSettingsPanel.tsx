@@ -57,6 +57,8 @@ export interface LayerConfig {
 export interface MapSettingsDropdownProps {
 	markerStyle: MarkerStyle;
 	setMarkerStyle: (v: MarkerStyle) => void;
+	markerSize: number;
+	setMarkerSize: (v: number) => void;
 	showPerfectScoreCircle: boolean;
 	setShowPerfectScoreCircle: (v: boolean) => void;
 	showSearchRadiusCursor: boolean;
@@ -509,6 +511,17 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 								<option value="circle">Circle</option>
 								<option value="arrow">Camera direction arrow</option>
 							</select>
+						</label>
+						<label className="settings-popup__item settings-popup__slider">
+							Marker size:{" "}
+							<input
+								type="range"
+								min={0.5}
+								max={3}
+								step={0.25}
+								value={s.markerSize}
+								onChange={(e) => s.setMarkerSize(Number(e.target.value))}
+							/>
 						</label>
 						<label className="settings-popup__item">
 							<input
