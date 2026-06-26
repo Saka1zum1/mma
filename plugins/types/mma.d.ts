@@ -2103,6 +2103,7 @@ declare const mma: {
 	getAllSelections(): Selection$1[];
 	getSelections(): Selection$1[];
 	getSelectedLocationIds(): SelectedIds;
+	setSelectedLocationIds(ids: SelectedIds): void;
 	syncSelections(): Promise<{
 		ids: number[];
 	}>;

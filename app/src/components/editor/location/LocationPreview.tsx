@@ -5,7 +5,6 @@ import {
 	useRef,
 	useState,
 	useCallback,
-	useMemo,
 	useSyncExternalStore,
 } from "react";
 import {
@@ -16,20 +15,16 @@ import {
 	isImportPreview,
 	isSeenPreview,
 } from "@/types";
-import { clamp } from "@/types/util";
 import { Tooltip } from "@/components/primitives/Tooltip";
-import { PANO_ZOOM, PANO_PITCH, FRAME_MS, SV_SEARCH_RADIUS } from "@/lib/sv/constants";
-import type { Location, Tag } from "@/bindings.gen";
+import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
+import type { Tag } from "@/bindings.gen";
 import {
 	useActiveLocation,
 	useCurrentMap,
 	updateLocations,
-	patchLocationExtra,
 	getActiveLocation,
-	fetchLocation,
 	getCurrentMap,
 	removeLocations,
-	duplicateLocation,
 	addLocations,
 	createTags,
 	setActiveLocation,
@@ -47,349 +42,47 @@ import {
 } from "@/lib/review/review";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { useHotkey, parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
 import { useLatestRef } from "@/lib/hooks/useLatestRef";
-import { registerMapKeyActionHandler } from "@/lib/map/mapKeyBindings";
-import { cmd } from "@/lib/commands";
-import { log } from "@/lib/util/log";
-import { useBinding, getBinding } from "@/lib/util/hotkeys";
-import { useSettings, useSetting, setSetting, getSettings } from "@/store/settings";
-import { useTimezone } from "@/lib/util/timezone";
-import { isFieldEnabled } from "@/lib/data/fieldDefs";
-import * as Select from "@radix-ui/react-select";
+import { useSettings, useSetting, getSettings } from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
-import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch";
-import { dateFmt, relativeTime } from "@/lib/util/format";
+import { relativeTime } from "@/lib/util/format";
 import { textColorFor } from "@/lib/util/color";
 import {
 	type PanoReference,
-	type ResolvedPano,
-	parsePanoDate,
 	resolvePano,
 	fetchPanoData,
-	followLinkedPanos,
-	downloadPano,
 	showToast,
-	nearestLinkHeading,
 } from "@/lib/sv/lookup";
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { enrich } from "@/lib/sv/enrich";
 import { FullscreenMiniMap } from "@/components/editor/location/FullscreenMiniMap";
 import { FullscreenTagBar } from "@/components/editor/location/FullscreenTagBar";
 import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
-import { tweenPov } from "@/lib/sv/tweenPov";
 import {
 	seenPanoChanged,
 	seenFlush,
 	seenSetCanvas,
-	seenSkipNext,
 	seenUpdateGeo,
 } from "@/lib/seen/seen";
-import type { SeenEntry } from "@/bindings.gen";
 import { useReverseGeocode } from "@/components/editor/location/useReverseGeocode";
-import { useCameraType } from "@/components/editor/location/useCameraType";
-import { useExactDate } from "@/components/editor/location/useExactDate";
 import { PanoViewerProvider, usePanoViewer } from "./PanoViewerContext";
 import {
-	toggleViewportLock,
 	applyViewportLock,
 	getViewportLockInfo,
 	subscribeViewportLock,
 	getViewportLockSnapshot,
 } from "@/lib/sv/viewportLock";
 import { resetTrail, pushTrail, clearTrail } from "@/lib/sv/svTrail";
+import { singletonPano, singletonDiv, getPanorama, applyResolved } from "./panoSingleton";
+export { loadSeenPano } from "./panoSingleton";
+import { PanoDatePicker } from "./PanoDatePicker";
+import { usePanoNavigation } from "./usePanoNavigation";
+import { useLocationHotkeys } from "./useLocationHotkeys";
 
 /** Tags are staged by name, not ID, because some tags do not exist yet. */
 function idsToNames(ids: number[]): string[] {
 	const tags = getCurrentMap()?.meta.tags ?? {};
 	return ids.map((id) => tags[id]?.name).filter((n): n is string => n != null);
-}
-
-function PanoBadge({ cameraType }: { cameraType: FullCameraType | null }) {
-	switch (cameraType) {
-		case "unofficial":
-			return <span className="pano-option__badge badge badge--unofficial">unofficial</span>;
-		case "gen1":
-			return <span className="pano-option__badge badge badge--gen1">Gen1</span>;
-		case "gen2":
-			return <span className="pano-option__badge badge badge--gen2">Gen2/3</span>;
-		case "gen4":
-			return <span className="pano-option__badge badge badge--gen4">Gen4</span>;
-		case "badcam":
-			return <span className="pano-option__badge badge badge--badcam">Badcam</span>;
-		case "tripod":
-			return <span className="pano-option__badge badge badge--tripod">Tripod</span>;
-		case "trekker":
-			return <span className="pano-option__badge badge badge--rb">Trekker</span>;
-		default:
-			return null;
-	}
-}
-
-function PanoDatePicker({
-	defaultPanoId,
-	onChange,
-	onExactDateResolved,
-}: {
-	defaultPanoId: string | null;
-	onChange: (panoId: string | null) => void;
-	onExactDateResolved?: (ts: number, timezone: string | null) => void;
-}) {
-	const { currentPano, panoDates, selectedPanoId } = usePanoViewer();
-	const location = useActiveLocation();
-	const lat = currentPano?.location?.latLng?.lat() ?? location?.lat ?? 0;
-	const lng = currentPano?.location?.latLng?.lng() ?? location?.lng ?? 0;
-	const defaultEntry = panoDates.find((d) => d.pano === defaultPanoId);
-	const resolvedEntry = currentPano?.location
-		? panoDates.find((d) => d.pano === currentPano.location!.pano)
-		: undefined;
-	const sorted = useMemo(
-		() => [...panoDates].sort((a, b) => a.date.getTime() - b.date.getTime()),
-		[panoDates],
-	);
-	const currentEntry =
-		selectedPanoId == null
-			? (defaultEntry ?? resolvedEntry)
-			: sorted.find((d) => d.pano === selectedPanoId);
-	const isDefault = selectedPanoId == null;
-	const displayDate =
-		currentEntry?.date ??
-		(isDefault && currentPano?.imageDate ? parsePanoDate(currentPano.imageDate) : null);
-	const prevLabelRef = useRef("");
-	const displayLabel = displayDate
-		? isDefault
-			? `Default (${dateFmt.format(displayDate)})`
-			: dateFmt.format(displayDate)
-		: prevLabelRef.current;
-	if (displayLabel) prevLabelRef.current = displayLabel;
-
-	const handleValueChange = useCallback(
-		(value: string) => {
-			if (value === "default") onChange(null);
-			else onChange(value);
-		},
-		[onChange],
-	);
-
-	const showBadges = useSetting("showCameraBadges");
-	const currentMap = useCurrentMap();
-	const datetimeEnabled = isFieldEnabled(
-		currentMap?.meta.settings.enrichFields ?? null,
-		"datetime",
-	);
-	const exactDateFormat = useSetting("exactDateFormat");
-	const dateTimezone = useSetting("dateTimezone");
-	const triggerPanoId =
-		currentEntry?.pano ??
-		currentPano?.location?.pano ??
-		sorted[sorted.length - 1]?.pano ??
-		defaultPanoId;
-	const triggerCameraType = useCameraType(triggerPanoId);
-
-	const yearMonth = displayDate
-		? `${displayDate.getFullYear()}-${String(displayDate.getMonth() + 1).padStart(2, "0")}`
-		: null;
-	const exactDate = useExactDate(triggerPanoId, lat, lng, yearMonth, datetimeEnabled);
-	const resolvedTz = useTimezone(lat, lng, datetimeEnabled && dateTimezone === "location");
-	const tzOption = dateTimezone === "utc" ? "UTC" : (resolvedTz ?? undefined);
-	const exactLabel = exactDate.ts
-		? exactDateFormat === "datetime"
-			? new Date(exactDate.ts * 1000).toLocaleString("en-US", {
-					year: "numeric",
-					month: "short",
-					day: "numeric",
-					hour: "2-digit",
-					minute: "2-digit",
-					timeZone: tzOption,
-				})
-			: new Date(exactDate.ts * 1000).toLocaleDateString("en-US", {
-					year: "numeric",
-					month: "short",
-					day: "numeric",
-					timeZone: tzOption,
-				})
-		: null;
-
-	useEffect(() => {
-		if (exactDate.ts != null && onExactDateResolved) {
-			onExactDateResolved(exactDate.ts, resolvedTz);
-		}
-	}, [exactDate.ts, resolvedTz, onExactDateResolved]);
-
-	if (sorted.length === 0) {
-		return (
-			<Select.Root disabled>
-				<Select.Trigger className="select__input">
-					<Select.Value placeholder="No dates" />
-				</Select.Trigger>
-			</Select.Root>
-		);
-	}
-
-	return (
-		<Select.Root value={selectedPanoId ?? "default"} onValueChange={handleValueChange}>
-			<Select.Trigger className="select__input">
-				<Select.Value>
-					<span className="pano-value">
-						{exactDate.loading ? displayLabel : (exactLabel ?? displayLabel)}
-						<span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-							{exactDate.loading && <span className="badge badge--loading">...</span>}
-							{(triggerCameraType === "unofficial" || showBadges) && (
-								<PanoBadge cameraType={triggerCameraType} />
-							)}
-						</span>
-						<span className="badge badge--number">{sorted.length}</span>
-					</span>
-				</Select.Value>
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content
-					className="select__content"
-					position="popper"
-					side="top"
-				>
-					<Select.Viewport>
-						<Select.Group>
-							<Select.Label className="select__group-header">Specific Panorama</Select.Label>
-							{sorted.map((d) => (
-								<PanoOption key={d.pano} pano={d} />
-							))}
-						</Select.Group>
-						<Select.Group>
-							<Select.Label className="select__group-header">Default / auto-updating</Select.Label>
-							<Select.Item value="default" className="select__option pano-option">
-								<Select.ItemText>
-									<span className="pano-option__name">
-										Default
-										{(defaultEntry?.date ?? sorted[sorted.length - 1]?.date)
-											? ` (${dateFmt.format((defaultEntry?.date ?? sorted[sorted.length - 1]?.date)!)})`
-											: ""}
-									</span>
-								</Select.ItemText>
-							</Select.Item>
-						</Select.Group>
-					</Select.Viewport>
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
-	);
-}
-
-function PanoOption({ pano }: { pano: PanoReference }) {
-	const showBadges = useSetting("showCameraBadges");
-	const cameraType = useCameraType(pano.pano);
-	return (
-		<Select.Item value={pano.pano} className="select__option pano-option">
-			<Select.ItemText>
-				<span className="pano-option__name">{dateFmt.format(pano.date)}</span>
-				{(cameraType === "unofficial" || showBadges) && <PanoBadge cameraType={cameraType} />}
-			</Select.ItemText>
-		</Select.Item>
-	);
-}
-
-
-let singletonPano: google.maps.StreetViewPanorama | null = null;
-
-export async function loadSeenPano(entry: SeenEntry) {
-	seenSkipNext(entry.panoId);
-
-	const fetched = entry.locationId != null ? await fetchLocation(entry.locationId) : null;
-	const existing = fetched && fetched.panoId === entry.panoId ? fetched : null;
-
-	if (existing) {
-		const active = getActiveLocation();
-		if (active?.id !== existing.id) {
-			setActiveLocation(existing.id);
-			return;
-		}
-	} else {
-		const loc = createLocation({
-			lat: entry.lat,
-			lng: entry.lng,
-			heading: entry.heading,
-			pitch: entry.pitch,
-			zoom: entry.zoom,
-			panoId: entry.panoId,
-			extra: entry.countryCode ? { countryCode: entry.countryCode } : undefined,
-		});
-		await addLocations([loc]);
-		await setActiveLocation(loc.id, false);
-		return;
-	}
-
-	if (!singletonPano) return;
-	singletonPano.setPano(entry.panoId);
-	singletonPano.setPov({ heading: entry.heading, pitch: entry.pitch });
-	singletonPano.setZoom(entry.zoom);
-}
-const singletonDiv = (() => {
-	const el = document.createElement("div");
-	Object.assign(el.style, { width: "100%", height: "100%" });
-	el.addEventListener("pointerenter", () => setPanoHovered(true));
-	el.addEventListener("pointerleave", () => setPanoHovered(false));
-	const BLOCKED = new Set([
-		"arrowleft",
-		"arrowright",
-		"arrowup",
-		"arrowdown",
-		"w",
-		"a",
-		"s",
-		"d",
-		"+",
-		"-",
-		"=",
-	]);
-	el.addEventListener(
-		"keydown",
-		(e) => {
-			if (BLOCKED.has(e.key.toLowerCase())) e.stopPropagation();
-		},
-		true,
-	);
-	el.addEventListener(
-		"keyup",
-		(e) => {
-			if (BLOCKED.has(e.key.toLowerCase())) e.stopPropagation();
-		},
-		true,
-	);
-	return el;
-})();
-
-function getPanorama(): google.maps.StreetViewPanorama | null {
-	if (singletonPano) return singletonPano;
-	if (!google?.maps) return null;
-	const s = getSettings();
-	const noMove = s.defaultMovementMode !== "moving";
-	singletonPano = new google.maps.StreetViewPanorama(singletonDiv, {
-		disableDefaultUI: true,
-		showRoadLabels: s.showRoadLabels,
-		linksControl: noMove ? false : s.showLinksControl,
-		clickToGo: noMove ? false : s.clickToGo,
-		scrollwheel: s.defaultMovementMode !== "nmpz",
-		motionTracking: false,
-		visible: false,
-	});
-	patchOpenSV(singletonPano);
-	const root = Object.values(singletonPano).find((v) => v instanceof HTMLElement) as
-		| HTMLElement
-		| undefined;
-	if (root) root.style.backgroundColor = "#000";
-	return singletonPano;
-}
-
-function applyResolved(sv: google.maps.StreetViewPanorama, result: ResolvedPano, loc: Location) {
-	if (result.pano?.location?.pano) {
-		sv.setPano(result.pano.location.pano);
-	} else {
-		sv.setPosition({ lat: loc.lat, lng: loc.lng });
-	}
-	sv.setZoom(loc.zoom);
-	sv.setPov({ heading: loc.heading, pitch: loc.pitch });
-	sv.setVisible(true);
-	sv.focus();
 }
 
 export function LocationPreview() {
@@ -657,7 +350,6 @@ function LocationPreviewInner() {
 
 		const savedPanoId = selectedPanoId ?? pano ?? location.panoId;
 
-		// Seen preview has no real row to update — materialize it as a new location instead.
 		if (isSeenPreview(location)) {
 			await addLocations([
 				createLocation({
@@ -749,349 +441,18 @@ function LocationPreviewInner() {
 		return () => { obs.disconnect(); clearTimeout(timer); };
 	}, [singletonPano, appSettings.previewAspectRatio]);
 
-	useHotkey(useBinding("locationSave"), () => {
-		if (location) handleSave();
-	});
-	useHotkey(useBinding("locationClose"), () => {
-		handleClose();
-	});
-	useHotkey(useBinding("locationDelete"), () => {
-		if (location) handleDelete();
-	});
-	useHotkey(useBinding("reviewNext"), () => {
-		if (isReviewMode) reviewNext();
-	});
-	useHotkey(useBinding("reviewPrev"), () => {
-		if (isReviewMode) reviewPrev();
-	});
-	useHotkey(useBinding("toggleFullscreen"), () => {
-		handleFullscreen();
-	});
-	useHotkey(useBinding("returnToSpawn"), () => {
-		handleReturnToSpawn();
-	});
-	useHotkey(useBinding("pointNorth"), () => {
-		if (singletonPano) {
-			cancelTweenRef.current?.();
-			const h = singletonPano.getPov().heading;
-			if (Math.abs(h) < 1 && Math.abs(singletonPano.getPov().pitch) < 1) {
-				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: -90 });
-			} else {
-				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: 0 });
-			}
-		}
-	});
-	useHotkey(useBinding("centerRoad"), () => {
-		if (!singletonPano) return;
-		const headings = (singletonPano.getLinks() ?? [])
-			.map((l) => l?.heading)
-			.filter((h): h is number => h != null);
-		const nearest = nearestLinkHeading(headings, singletonPano.getPov().heading);
-		if (nearest == null) return;
-		cancelTweenRef.current?.();
-		cancelTweenRef.current = tweenPov(singletonPano, { heading: nearest, pitch: 0 });
-	});
-	useHotkey(useBinding("spin180"), () => {
-		if (singletonPano) {
-			cancelTweenRef.current?.();
-			const pov = singletonPano.getPov();
-			cancelTweenRef.current = tweenPov(singletonPano, {
-				heading: (pov.heading + 180) % 360,
-				pitch: pov.pitch,
-			});
-		}
-	});
-	useHotkey(useBinding("zoomIn"), () => {
-		if (singletonPano) {
-			singletonPano.setZoom(Math.min(PANO_ZOOM.max, singletonPano.getZoom() + 1));
-		}
-	});
-	useHotkey(useBinding("zoomOut"), () => {
-		if (singletonPano) {
-			singletonPano.setZoom(Math.max(PANO_ZOOM.min, singletonPano.getZoom() - 1));
-		}
-	});
-	useHotkey(useBinding("panoZoomReset"), () => {
-		if (singletonPano) {
-			singletonPano.setZoom(0);
-		}
-	});
-	useHotkey(
-		useBinding("copyLink"),
-		(e) => {
-			if (!location) return;
-			const btn = document.querySelector<HTMLButtonElement>('button[aria-label^="Copy link"]');
-			btn?.dispatchEvent(
-				new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: e.shiftKey, altKey: e.altKey }),
-			);
-		},
-		{ ignoreAlt: true, ignoreShift: true },
-	);
-	useHotkey(useBinding("toggleCrosshair"), () => {
-		setSetting("showCrosshair", !getSettings().showCrosshair);
-	});
-	useHotkey(useBinding("toggleHideCar"), () => {
-		setSetting("showCar", !getSettings().showCar);
-	});
-	useHotkey(useBinding("togglePanoUI"), () => {
-		setSetting("hidePanoUI", !getSettings().hidePanoUI);
-	});
-	useHotkey(useBinding("duplicateLocation"), () => {
-		if (location) duplicateLocation(location.id);
-	});
-
-	useHotkey(useBinding("downloadPanoTile"), () => {
-		const panoId = singletonPano?.getPano();
-		if (panoId) downloadPano(panoId);
-	});
-	useHotkey(useBinding("nextPanoDate"), () => {
-		if (!panoDates.length) return;
-		const currentPanoId = selectedPanoId ?? currentPano?.location?.pano ?? location?.panoId;
-		const raw = currentPanoId ? panoDates.findIndex((d) => d.pano === currentPanoId) : -1;
-		const idx = raw === -1 ? panoDates.length - 1 : raw;
-		const next = idx < panoDates.length - 1 ? idx + 1 : 0;
-		handleDateChange(panoDates[next].pano);
-	});
-	useHotkey(useBinding("prevPanoDate"), () => {
-		if (!panoDates.length) return;
-		const currentPanoId = selectedPanoId ?? currentPano?.location?.pano ?? location?.panoId;
-		const raw = currentPanoId ? panoDates.findIndex((d) => d.pano === currentPanoId) : -1;
-		const idx = raw === -1 ? panoDates.length - 1 : raw;
-		const prev = idx > 0 ? idx - 1 : panoDates.length - 1;
-		handleDateChange(panoDates[prev].pano);
-	});
-	useHotkey(useBinding("followRoad"), () => {
-		if (!singletonPano) return;
-		const panoId = singletonPano.getPano();
-		const heading = singletonPano.getPov().heading;
-		if (!panoId) return;
-		const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
-		if (container) showToast(container, "Following road...");
-		followLinkedPanos(panoId, heading)
-			.then((locs) => {
-				if (locs.length > 0) addLocations(locs);
-				if (container) showToast(container, `Added ${locs.length} locations`);
-			})
-			.catch(() => {
-				if (container) showToast(container, "Follow road failed");
-			});
-	});
-
-	useHotkey(useBinding("refreshPano"), () => {
-		if (!singletonPano || !location) return;
-		const panoId = singletonPano.getPano();
-		const pov = singletonPano.getPov();
-		const zoom = singletonPano.getZoom();
-		singletonPano.setVisible(false);
-		singletonPano = null;
-		const fresh = getPanorama();
-		if (!fresh) return;
-		if (panoId) fresh.setPano(panoId);
-		else fresh.setPosition({ lat: location.lat, lng: location.lng });
-		fresh.setPov(pov);
-		fresh.setZoom(zoom);
-		fresh.setVisible(true);
-		google.maps.event.trigger(fresh, "resize");
-		sendHideCar(!getSettings().showCar);
-	});
-
-	useHotkey(useBinding("viewportLock"), () => {
-		if (singletonPano) toggleViewportLock(singletonPano);
-	});
-
 	const pendingTagsRef = useLatestRef(pendingTags);
-	// Quicktag slots 1-9: toggle the Nth tag in the current sort order. Bindings
-	// are rebindable (registered as quicktag1..9 hotkey actions), defaulting to 1-9.
-	const quicktagSlot = (idx: number) => {
-		if (!location || !map) return;
-		const tags = sortTagsByMode(getVisibleTags(), getSettings().tagSortMode, getTagCounts());
-		if (idx >= tags.length) return;
-		const tag = tags[idx];
-		const cur = pendingTagsRef.current;
-		const has = cur.includes(tag.name);
-		setPendingTags(has ? cur.filter((t) => t !== tag.name) : [...cur, tag.name]);
-	};
-	// Per-map bindings: registered only while a location is open, so the keys
-	// fall through to global hotkeys otherwise. Soft-deleted (invisible) tags
-	// keep their binding for undo symmetry; declining lets the key fall through.
-	// Staged (virtual) locations are read-only: both actions decline.
-	const hasLocation = location != null;
-	useEffect(() => {
-		if (!hasLocation) return;
-		const unregisterApply = registerMapKeyActionHandler("applyTag", ({ tagId }) => {
-			const active = getActiveLocation();
-			if (!active || isVirtualLocation(active)) return false;
-			const tag = getVisibleTags().find((t) => t.id === tagId);
-			if (!tag) return false;
-			const cur = pendingTagsRef.current;
-			setPendingTags(
-				cur.includes(tag.name) ? cur.filter((t) => t !== tag.name) : [...cur, tag.name],
-			);
-		});
-		const unregisterCopy = registerMapKeyActionHandler("copyToMap", ({ mapId }) => {
-			const loc = getActiveLocation();
-			if (!loc || isVirtualLocation(loc)) return false;
-			const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
-			const t0 = performance.now();
-			cmd
-				.storeCopyLocationsToMap(mapId, [loc.id])
-				.then((res) => {
-					log.debug(`[copyToMap] ipc=${Math.round(performance.now() - t0)}ms`);
-					if (!container) return;
-					showToast(
-						container,
-						res.copied > 0
-							? `Copied to "${res.targetName}"`
-							: `Already in "${res.targetName}"`,
-					);
-				})
-				.catch((e) => {
-					log.error("[copyToMap] failed:", e);
-					if (container) showToast(container, "Copy failed");
-				});
-		});
-		return () => {
-			unregisterApply();
-			unregisterCopy();
-		};
-	}, [hasLocation]);
 
-	useHotkey(useBinding("quicktag1"), () => quicktagSlot(0));
-	useHotkey(useBinding("quicktag2"), () => quicktagSlot(1));
-	useHotkey(useBinding("quicktag3"), () => quicktagSlot(2));
-	useHotkey(useBinding("quicktag4"), () => quicktagSlot(3));
-	useHotkey(useBinding("quicktag5"), () => quicktagSlot(4));
-	useHotkey(useBinding("quicktag6"), () => quicktagSlot(5));
-	useHotkey(useBinding("quicktag7"), () => quicktagSlot(6));
-	useHotkey(useBinding("quicktag8"), () => quicktagSlot(7));
-	useHotkey(useBinding("quicktag9"), () => quicktagSlot(8));
+	useLocationHotkeys({
+		location, map, isReviewMode,
+		panoDates, selectedPanoId, currentPano,
+		cancelTweenRef, pendingTagsRef, setPendingTags,
+		fullscreenContainerRef, panoContainerRef,
+		handleSave, handleClose, handleDelete,
+		handleReturnToSpawn, handleFullscreen, handleDateChange,
+	});
 
-	const panoNavRef = useRef({ held: new Set<string>(), rafId: 0, alt: false, lastTime: 0 });
-	const appSettingsRef = useLatestRef(appSettings);
-
-	useEffect(() => {
-		const nav = panoNavRef.current;
-		const lookActions = ["panoLookLeft", "panoLookRight", "panoLookUp", "panoLookDown"] as const;
-		const moveActions = ["panoMoveForward", "panoMoveBackward"] as const;
-		const allActions = [...lookActions, ...moveActions] as const;
-
-		function tick() {
-			if (!singletonPano || nav.held.size === 0) {
-				nav.rafId = 0;
-				nav.lastTime = 0;
-				return;
-			}
-
-			const now = performance.now();
-			const dt = nav.lastTime ? (now - nav.lastTime) / FRAME_MS : 1;
-			nav.lastTime = now;
-
-			const s = appSettingsRef.current;
-			const slow = nav.alt ? s.slowModifier : 1;
-			const speed = (s.panoLookSpeed * 0.4 * dt) / slow;
-			const pov = singletonPano.getPov();
-			let dh = 0,
-				dp = 0;
-			if (nav.held.has("panoLookLeft")) dh -= speed;
-			if (nav.held.has("panoLookRight")) dh += speed;
-			if (nav.held.has("panoLookUp")) dp += speed;
-			if (nav.held.has("panoLookDown")) dp -= speed;
-
-			if (dh || dp) {
-				singletonPano.setOptions({
-					pov: {
-						heading: (pov.heading + dh + 360) % 360,
-						pitch: clamp(pov.pitch + dp, PANO_PITCH),
-					},
-				});
-			}
-
-			nav.rafId = requestAnimationFrame(tick);
-		}
-
-		function getParsed() {
-			return allActions.map((a) => ({ action: a, parsed: parseHotkey(getBinding(a)) }));
-		}
-		const bindings = getParsed();
-
-		function onKeyDown(e: KeyboardEvent) {
-			nav.alt = e.altKey;
-			if (e.key === "Alt") {
-				e.preventDefault();
-				return;
-			}
-			if (e.defaultPrevented || e.repeat) return;
-			if (isEditableElement(e.target)) return;
-			for (const { action, parsed } of bindings) {
-				for (const alt of parsed) {
-					if (alt.length === 1 && matchesKey(e, alt[0], { ignoreAlt: true })) {
-						if (action === "panoMoveForward" || action === "panoMoveBackward") {
-							if (!singletonPano) return;
-							const links = singletonPano
-								.getLinks()
-								?.filter((l): l is google.maps.StreetViewLink => l != null);
-							if (!links?.length) return;
-							const heading = singletonPano.getPov().heading;
-							const target = action === "panoMoveForward" ? heading : (heading + 180) % 360;
-							let best = links[0];
-							let bestDiff = 360;
-							for (const link of links) {
-								const diff = Math.abs(((link.heading! - target + 540) % 360) - 180);
-								if (diff < bestDiff) {
-									bestDiff = diff;
-									best = link;
-								}
-							}
-							if (best.pano) singletonPano.setPano(best.pano);
-							e.preventDefault();
-							e.stopImmediatePropagation();
-							return;
-						}
-						nav.held.add(action);
-						if (!nav.rafId) nav.rafId = requestAnimationFrame(tick);
-						e.preventDefault();
-						e.stopImmediatePropagation();
-						return;
-					}
-				}
-			}
-		}
-
-		function onKeyUp(e: KeyboardEvent) {
-			nav.alt = e.altKey;
-			if (nav.held.size === 0) return;
-			const key = e.key.toLowerCase();
-			for (const { action, parsed } of bindings) {
-				for (const alt of parsed) {
-					if (alt.length === 1 && alt[0].key === key) {
-						nav.held.delete(action);
-					}
-				}
-			}
-		}
-
-		function onBlur() {
-			nav.held.clear();
-		}
-
-		document.addEventListener("keydown", onKeyDown, true);
-		document.addEventListener("keyup", onKeyUp, true);
-		window.addEventListener("blur", onBlur);
-		return () => {
-			document.removeEventListener("keydown", onKeyDown, true);
-			document.removeEventListener("keyup", onKeyUp, true);
-			window.removeEventListener("blur", onBlur);
-			if (nav.rafId) cancelAnimationFrame(nav.rafId);
-			nav.held.clear();
-		};
-	}, []);
-
-	const onExactDateResolved = useCallback((ts: number, timezone: string | null) => {
-		if (!(getCurrentMap()?.meta.settings.enrichMetadata ?? true)) return;
-		const loc = getActiveLocation();
-		if (!loc || loc.extra?.datetime != null) return;
-		patchLocationExtra(loc, { datetime: ts, timezone });
-	}, []);
+	usePanoNavigation(appSettings);
 
 	if (!location || !map) return null;
 
@@ -1198,7 +559,6 @@ function LocationPreviewInner() {
 						<PanoDatePicker
 							defaultPanoId={location.panoId}
 							onChange={handleDateChange}
-							onExactDateResolved={onExactDateResolved}
 						/>
 					</div>
 					<div className="location-preview__actions">

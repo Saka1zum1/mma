@@ -1187,18 +1187,14 @@ export function previewVirtualLocation(loc: Location) {
 	emitEvent("active:change", null);
 }
 
-/** Full row from a `MaybeLocation` — fetches only when it's an id. The fetch is
- *  O(log n) but queues behind main-thread render, scaling to 200-580ms on large
- *  maps, so callers that hold the row pass it to skip the get entirely. */
+/** Materialize a `MaybeLocation`. */
 export async function resolveLocation(m: MaybeLocation): Promise<Location | null> {
 	return typeof m === "number" ? await cmd.storeGetLocation(m) : m;
 }
 
-// Pass a `Location` when you already hold it (e.g. map-click add) to skip the get;
-// pass an id to fetch. The distinction is explicit at the call site by design.
 export async function setActiveLocation(target: MaybeLocation | null, checkDuplicates = true) {
 	const t = trace("setActive");
-	const id: number | null = target == null ? null : locId(target);
+	const id = target == null ? null : locId(target);
 	if (cachedActiveLocation && isVirtualLocation(cachedActiveLocation)) {
 		importMarkerVersion++;
 		const wasStaged = isImportPreview(cachedActiveLocation);
@@ -1216,7 +1212,7 @@ export async function setActiveLocation(target: MaybeLocation | null, checkDupli
 	activeLocationId = id;
 	fireAndForget(cmd.storeSetActive(id), "setActive");
 	if (id) {
-		const loc = await resolveLocation(target!); // identity if a Location, fetch if an id
+		const loc = await resolveLocation(target!);
 		t.step("ipc");
 		if (checkDuplicates && loc) {
 			const nearby = await cmd.storeFindNearby(loc.lat, loc.lng, 2.0);

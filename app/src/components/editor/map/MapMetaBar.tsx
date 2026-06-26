@@ -15,7 +15,7 @@ import { VersionHistory } from "@/components/dialogs/VersionHistory";
 import { SeenDialog } from "@/components/dialogs/SeenDialog";
 import { CopyToMapDialog } from "@/components/editor/CopyToMapDialog";
 import { QuickCopyToMapDialog } from "@/components/editor/QuickCopyToMapDialog";
-import { loadSeenPano } from "@/components/editor/location/LocationPreview";
+import { loadSeenPano } from "@/components/editor/location/panoSingleton";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiUndo, mdiRedo } from "@mdi/js";
 import { fmt } from "@/lib/util/format";

@@ -39,7 +39,7 @@ export function PolygonTools({
 }: {
 	map: google.maps.Map | null;
 	onDraw: (rings: number[][][]) => void;
-	freehandPathRef: React.MutableRefObject<number[][] | null>;
+	freehandPathRef: React.RefObject<number[][] | null>;
 	requestOverlayUpdate: () => void;
 }) {
 	const [mode, setMode] = useState<DrawMode>(null);

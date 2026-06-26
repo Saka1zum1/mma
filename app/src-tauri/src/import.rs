@@ -281,8 +281,6 @@ fn skip_string(bytes: &[u8], from: usize) -> usize {
 /// every byte. This is the precursor to parallel parsing — we find boundaries
 /// in one pass, then hand each slice to rayon.
 fn find_object_boundaries(bytes: &[u8]) -> (Vec<(usize, usize)>, usize) {
-    // Pre-size to avoid ~20 doubling reallocs (the range Vec grows to ~13MB at
-    // 850k objects). Estimate from a conservative average object size.
     let mut ranges = Vec::with_capacity(bytes.len() / 96);
     let mut depth = 0i32;
     let mut obj_start = 0usize;

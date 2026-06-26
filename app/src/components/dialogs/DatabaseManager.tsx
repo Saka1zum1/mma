@@ -14,7 +14,7 @@ interface TableInfo {
 const KNOWN_TABLES: Record<string, { description: string; risk: Risk }> = {
 	edit_history: { description: "Undo/redo stacks per map", risk: "safe" },
 	commits: { description: "Version history snapshots", risk: "moderate" },
-	commit_trees: { description: "Chunk data for version history", risk: "moderate" },
+	review_sessions: { description: "Map review session data", risk: "safe" },
 	tags: { description: "Map tags", risk: "dangerous" },
 	maps: { description: "Map metadata", risk: "dangerous" },
 	seen: { description: "Viewed pano history", risk: "safe" },

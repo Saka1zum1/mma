@@ -47,7 +47,6 @@ pub struct Location {
     pub lng: f64,
     pub heading: f64,
     pub pitch: f64,
-    /// Street View zoom level (0-5), not map zoom.
     pub zoom: f64,
     pub pano_id: Option<String>,
     /// See [`LocationFlags`].
