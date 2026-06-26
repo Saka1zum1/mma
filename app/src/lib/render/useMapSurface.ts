@@ -25,7 +25,7 @@ import { useBinding } from "@/lib/util/hotkeys";
 import { useMapKeyboardNav } from "@/lib/hooks/useMapKeyboardNav";
 import { useTrailVersion } from "@/lib/sv/svTrail";
 import { useSeenOverlayVersion } from "@/lib/seen/seenOverlay";
-import type { MapEmbedPrefs } from "@/components/editor/map/mapEmbedPrefs";
+import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 
 type OverlayEvent = { srcEvent?: { domEvent?: Event } };
 

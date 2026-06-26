@@ -5,7 +5,7 @@ import { useMapSurface } from "@/lib/render/useMapSurface";
 import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
-import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/components/editor/map/mapEmbedPrefs";
+import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import type { LatLng } from "@/types";
 
 const MINIMAP_SCALE = range([0.5, 2]);

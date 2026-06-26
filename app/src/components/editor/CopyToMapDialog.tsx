@@ -5,7 +5,7 @@ import type { MapMeta } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { HotkeyInput } from "@/components/primitives/HotkeyInput";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
-import { useMapSetting } from "@/components/editor/map/useMapSetting";
+import { useMapSetting } from "@/store/useMapSetting";
 import { getMapCopyBindingKey, withMapCopyBinding } from "@/lib/map/mapKeyBindings";
 import { getCurrentMapId } from "@/store/useMapStore";
 

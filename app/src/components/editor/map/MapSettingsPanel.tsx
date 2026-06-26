@@ -14,7 +14,7 @@ import {
 	type SvThickness,
 	type MarkerStyle,
 } from "@/types";
-import { useMapSetting } from "./useMapSetting";
+import { useMapSetting } from "@/store/useMapSetting";
 import { ScoreBoundsEditor } from "./ScoreBoundsEditor";
 
 const MAP_TYPE_LABELS: Record<MapTypeKey, string> = {

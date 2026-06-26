@@ -26,7 +26,7 @@ import { fmt } from "@/lib/util/format";
 import { textColorFor, hexToHsl, hslToHex } from "@/lib/util/color";
 import { useSetting, setSetting } from "@/store/settings";
 import { sortTagsByMode } from "@/lib/util/util";
-import { useMapSetting } from "@/components/editor/map/useMapSetting";
+import { useMapSetting } from "@/store/useMapSetting";
 import { HotkeyInput } from "@/components/primitives/HotkeyInput";
 import { getConflicts } from "@/lib/util/hotkeys";
 import { getTagBindingKey, withTagKeyBinding } from "@/lib/map/mapKeyBindings";
