@@ -30,8 +30,9 @@ export interface SvResolver {
 	pending(loc: Location, force: boolean): boolean;
 	/** Locations this resolver needs a coords->panoId resolution for (prelude). */
 	needsPanoResolve?(loc: Location, force: boolean): boolean;
-	/** Whether this resolver consumes fetched `PanoData` (joins the metadata phase). */
-	needsMetadata?: boolean;
+	/** Whether this resolver consumes fetched `PanoData` (joins the metadata phase).
+	 *  When a function, receives the config passed via `selected[].config`. */
+	needsMetadata?: boolean | ((config: unknown) => boolean);
 	/** Per-location patch derived in the metadata phase. `data` is null for resolvers
 	 *  that don't need metadata (they act off the prelude-resolved panoId).
 	 *  `ctx.resolvedPanoId` is set only when this run resolved the pano from coords. */
@@ -104,7 +105,9 @@ export async function runResolvers(
 
 	// --- Progress: each pass reports as its own labeled phase (per-phase done/total) --
 	//     pano-resolve prelude, metadata, then the provider waves. ---
-	const metaResolvers = chosen.filter(({ r }) => r.needsMetadata);
+	const wantsMeta = ({ r, config }: { r: SvResolver; config: unknown }) =>
+		typeof r.needsMetadata === "function" ? r.needsMetadata(config) : !!r.needsMetadata;
+	const metaResolvers = chosen.filter(wantsMeta);
 	const metaPending = locations.filter((l) => metaResolvers.some(({ r }) => r.pending(l, force)));
 	const needResolve = locations.filter((l) =>
 		chosen.some(({ r }) => r.pending(l, force) && r.needsPanoResolve?.(l, force)),
@@ -132,7 +135,7 @@ export async function runResolvers(
 	const panoIdFor = (l: Location) => l.panoId ?? resolvedPanoIds?.get(l.id);
 
 	// --- Resolvers that act off the prelude only (no metadata), e.g. pin to pano. ---
-	const flagResolvers = chosen.filter(({ r }) => r.resolve && !r.needsMetadata);
+	const flagResolvers = chosen.filter((c) => c.r.resolve && !wantsMeta(c));
 
 	// --- Phase 1: metadata. Fetch each pano once, run every metadata resolver. ---
 	const metaLocs = metaPending.filter((l) => panoIdFor(l));

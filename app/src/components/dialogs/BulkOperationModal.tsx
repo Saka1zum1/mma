@@ -38,167 +38,38 @@ const TITLES = {
 } as const;
 export type BulkOperation = keyof typeof TITLES;
 
+type ProgressFn = (done: number, total: number, label?: string) => void;
+
+interface BulkRunContext {
+	locations: Location[];
+	signal: AbortSignal;
+	onProgress: ProgressFn;
+}
+
+interface BulkRunResult {
+	doneMessage?: string;
+	doneContent?: React.ReactNode;
+}
+
+type BulkRunner = (ctx: BulkRunContext) => Promise<BulkRunResult>;
+
 interface Props {
 	operation: BulkOperation;
 	onClose: () => void;
 }
 
-function BulkSetup({
-	operation,
-	scopeCtl,
-	locs,
-	onStart,
-}: {
-	operation: BulkOperation;
+interface SetupProps {
 	scopeCtl: ScopeController;
 	locs: Location[];
-	onStart: (opts: {
-		force: boolean;
-		clearKeys?: string[];
-		setField?: Partial<Location>;
-		setExpr?: { key: string; src: string };
-		headingDirection?: RoadDirection;
-	}) => void;
-}) {
-	const [force, setForce] = useState(false);
-	const { scope } = scopeCtl;
-	const map = getCurrentMap();
+	scopedLocs: Location[];
+	onReady: (run: BulkRunner) => void;
+}
 
-	if (!map) return null;
+// ---------------------------------------------------------------------------
+// Setup components — each produces a BulkRunner closure
+// ---------------------------------------------------------------------------
 
-	const scopedLocs = applyScope(scope, locs);
-
-	if (operation === "enrich") {
-		const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
-		const allOptions = getEnrichFieldOptions();
-		const enabledFields = allOptions.filter((f) => isFieldEnabled(enrichFields, f.key));
-		const total = scopedLocs.length;
-		const coverage: { key: string; label: string; have: number }[] = enabledFields.map((f) => ({
-			key: f.key,
-			label: f.label,
-			have: scopedLocs.filter((l) => l.extra?.[f.key] != null).length,
-		}));
-		const needsAny = coverage.some((c) => c.have < total);
-		const noPano = scopedLocs.filter((l) => !l.panoId).length;
-		return (
-			<div className="bulk-operation">
-				<ScopeSelector ctl={scopeCtl} />
-				{enabledFields.length === 0 && (
-					<div className="bulk-operation__status" style={{ opacity: 0.8 }}>
-						No enrichment fields are enabled. Enable them in Map Settings under the Enrichment tab.
-					</div>
-				)}
-				{total > 0 && enabledFields.length > 0 && (
-					<table className="bulk-operation__coverage">
-						<tbody>
-							{coverage.map((c) => {
-								const missing = total - c.have;
-								return (
-									<tr key={c.key} className={missing > 0 ? "is-incomplete" : ""}>
-										<td className="bulk-operation__coverage-label">{c.label}</td>
-										<td className="bulk-operation__coverage-bar">
-											<span
-												className="bulk-operation__coverage-fill"
-												style={{ width: `${(c.have / total) * 100}%` }}
-											/>
-										</td>
-										<td className="bulk-operation__coverage-stat">
-											{missing > 0
-												? `${fmt.format(missing)} missing`
-												: "complete"}
-										</td>
-									</tr>
-								);
-							})}
-						</tbody>
-					</table>
-				)}
-				{noPano > 0 && (
-					<div className="bulk-operation__status">
-						{fmt.format(noPano)} without pano ID will be resolved from coordinates.
-					</div>
-				)}
-				<label className="bulk-operation__option">
-					<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
-					Re-enrich already enriched locations
-				</label>
-				<div className="bulk-operation__actions">
-					<button
-						className="button button--primary"
-						type="button"
-						onClick={() => onStart({ force })}
-						disabled={enabledFields.length === 0 || (!force && !needsAny)}
-					>
-						Start
-					</button>
-				</div>
-			</div>
-		);
-	}
-
-	if (operation === "pinPano") {
-		const unpinned = scopedLocs.filter((l) => !isPinnedToPano(l)).length;
-		return (
-			<div className="bulk-operation">
-				<ScopeSelector ctl={scopeCtl} />
-				<div className="bulk-operation__status">
-					{fmt.format(unpinned)} locations not pinned to a pano ID.
-				</div>
-				<label className="bulk-operation__option">
-					<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
-					Re-pin already pinned locations
-				</label>
-				<div className="bulk-operation__actions">
-					<button
-						className="button button--primary"
-						type="button"
-						onClick={() => onStart({ force })}
-						disabled={!force && unpinned === 0}
-					>
-						Start
-					</button>
-				</div>
-			</div>
-		);
-	}
-
-	if (operation === "clearFields") {
-		return (
-			<ClearFieldsSetup
-				locs={locs}
-				scopedLocs={scopedLocs}
-				scopeCtl={scopeCtl}
-				onStart={(keys) => onStart({ force: false, clearKeys: keys })}
-			/>
-		);
-	}
-
-	if (operation === "setField") {
-		return (
-			<SetFieldSetup
-				locs={locs}
-				scopeCtl={scopeCtl}
-				onStart={(v) =>
-					onStart({
-						force: false,
-						setField: v.patch,
-						setExpr: v.exprKey != null ? { key: v.exprKey, src: v.exprSrc! } : undefined,
-					})
-				}
-			/>
-		);
-	}
-
-	if (operation === "headingRoad") {
-		return (
-			<HeadingRoadSetup
-				scopeCtl={scopeCtl}
-				onStart={(direction) => onStart({ force: false, headingDirection: direction })}
-			/>
-		);
-	}
-
-	// validate has no setup options beyond scope
+function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 	return (
 		<div className="bulk-operation">
 			<ScopeSelector ctl={scopeCtl} />
@@ -206,7 +77,33 @@ function BulkSetup({
 				<button
 					className="button button--primary"
 					type="button"
-					onClick={() => onStart({ force: false })}
+					onClick={() =>
+						onReady(async ({ locations, signal, onProgress }) => {
+							const results = await validateLocations(locations, {
+								signal,
+								onProgress: (p) =>
+									onProgress(Math.round(p.progress * locations.length), locations.length),
+							});
+							const stateOrder = [
+								ValidationState.Ok,
+								ValidationState.UpdateAvailable,
+								ValidationState.UpdateApplied,
+								ValidationState.GoodcamAvailable,
+								ValidationState.PanoIdBroke,
+								ValidationState.Unofficial,
+								ValidationState.NotFound,
+							];
+							const batch = stateOrder
+								.filter((state) => (results.get(state)?.length ?? 0) > 0)
+								.map((state) => ({
+									type: "ValidationState" as const,
+									locations: results.get(state)!.map((l) => l.id),
+									state,
+								}));
+							if (batch.length > 0) addSelections(batch);
+							return { doneMessage: `Done -- ${fmt.format(locations.length)} locations validated.` };
+						})
+					}
 				>
 					Start
 				</button>
@@ -215,17 +112,135 @@ function BulkSetup({
 	);
 }
 
-function ClearFieldsSetup({
-	locs,
-	scopedLocs,
-	scopeCtl,
-	onStart,
-}: {
-	locs: Location[];
-	scopedLocs: Location[];
-	scopeCtl: ScopeController;
-	onStart: (keys: string[]) => void;
-}) {
+function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
+	const [force, setForce] = useState(false);
+	const map = getCurrentMap();
+	if (!map) return null;
+
+	const scopedLocs = applyScope(scopeCtl.scope, locs);
+	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
+	const allOptions = getEnrichFieldOptions();
+	const enabledFields = allOptions.filter((f) => isFieldEnabled(enrichFields, f.key));
+	const total = scopedLocs.length;
+	const coverage = enabledFields.map((f) => ({
+		key: f.key,
+		label: f.label,
+		have: scopedLocs.filter((l) => l.extra?.[f.key] != null).length,
+	}));
+	const needsAny = coverage.some((c) => c.have < total);
+	const noPano = scopedLocs.filter((l) => !l.panoId).length;
+
+	return (
+		<div className="bulk-operation">
+			<ScopeSelector ctl={scopeCtl} />
+			{enabledFields.length === 0 && (
+				<div className="bulk-operation__status" style={{ opacity: 0.8 }}>
+					No enrichment fields are enabled. Enable them in Map Settings under the Enrichment tab.
+				</div>
+			)}
+			{total > 0 && enabledFields.length > 0 && (
+				<table className="bulk-operation__coverage">
+					<tbody>
+						{coverage.map((c) => {
+							const missing = total - c.have;
+							return (
+								<tr key={c.key} className={missing > 0 ? "is-incomplete" : ""}>
+									<td className="bulk-operation__coverage-label">{c.label}</td>
+									<td className="bulk-operation__coverage-bar">
+										<span
+											className="bulk-operation__coverage-fill"
+											style={{ width: `${(c.have / total) * 100}%` }}
+										/>
+									</td>
+									<td className="bulk-operation__coverage-stat">
+										{missing > 0 ? `${fmt.format(missing)} missing` : "complete"}
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			)}
+			{noPano > 0 && (
+				<div className="bulk-operation__status">
+					{fmt.format(noPano)} without pano ID will be resolved from coordinates.
+				</div>
+			)}
+			<label className="bulk-operation__option">
+				<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+				Re-enrich already enriched locations
+			</label>
+			<div className="bulk-operation__actions">
+				<button
+					className="button button--primary"
+					type="button"
+					onClick={() =>
+						onReady(async ({ locations, signal, onProgress }) => {
+							const er = await enrichAll(locations, { signal, force, onProgress });
+							return {
+								doneContent: (
+									<EnrichSummary
+										result={er}
+										onSelect={(ids) => addSelections([{ type: "Manual", locations: ids }])}
+									/>
+								),
+							};
+						})
+					}
+					disabled={enabledFields.length === 0 || (!force && !needsAny)}
+				>
+					Start
+				</button>
+			</div>
+		</div>
+	);
+}
+
+function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
+	const [force, setForce] = useState(false);
+	const [useLatest, setUseLatest] = useState(false);
+	const scopedLocs = applyScope(scopeCtl.scope, locs);
+	const unpinned = scopedLocs.filter((l) => !isPinnedToPano(l)).length;
+
+	return (
+		<div className="bulk-operation">
+			<ScopeSelector ctl={scopeCtl} />
+			<div className="bulk-operation__status">
+				{fmt.format(unpinned)} locations not pinned to a pano ID.
+			</div>
+			<label className="bulk-operation__option">
+				<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+				Re-pin already pinned locations
+			</label>
+			<label className="bulk-operation__option">
+				<input type="checkbox" checked={useLatest} onChange={(e) => setUseLatest(e.target.checked)} />
+				Use latest timeline coverage
+			</label>
+			<div className="bulk-operation__actions">
+				<button
+					className="button button--primary"
+					type="button"
+					onClick={() =>
+						onReady(async ({ locations, signal, onProgress }) => {
+							const count = await bulkPinToPano(locations, {
+								signal,
+								force: force || useLatest,
+								useLatest,
+								onProgress,
+							});
+							return { doneMessage: `Done -- ${fmt.format(count)} locations pinned.` };
+						})
+					}
+					disabled={!force && !useLatest && unpinned === 0}
+				>
+					Start
+				</button>
+			</div>
+		</div>
+	);
+}
+
+function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 	const allKeys = new Set<string>();
 	for (const loc of locs) {
 		if (loc.extra) for (const k of Object.keys(loc.extra)) allKeys.add(k);
@@ -274,7 +289,22 @@ function ClearFieldsSetup({
 				<button
 					className="button button--primary"
 					type="button"
-					onClick={() => onStart([...selected])}
+					onClick={() => {
+						const keys = [...selected];
+						onReady(async ({ locations }) => {
+							const updates: LocationUpdate[] = [];
+							for (const loc of locations) {
+								if (!loc.extra) continue;
+								const hasAny = keys.some((k) => loc.extra![k] != null);
+								if (!hasAny) continue;
+								const cleaned = { ...loc.extra };
+								for (const k of keys) delete cleaned[k];
+								updates.push({ id: loc.id, patch: { extra: cleaned } });
+							}
+							if (updates.length > 0) await updateLocations(updates);
+							return { doneMessage: `Cleared fields from ${fmt.format(updates.length)} locations.` };
+						});
+					}}
 					disabled={selected.size === 0}
 				>
 					Clear {selected.size > 0 ? `${selected.size} field${selected.size !== 1 ? "s" : ""}` : ""}
@@ -284,15 +314,7 @@ function ClearFieldsSetup({
 	);
 }
 
-function SetFieldSetup({
-	locs,
-	scopeCtl,
-	onStart,
-}: {
-	locs: Location[];
-	scopeCtl: ScopeController;
-	onStart: (v: { patch?: Partial<Location>; exprKey?: string; exprSrc?: string }) => void;
-}) {
+function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 	const sortedKeys = useMemo(() => {
 		const known = new Set<string>([
 			...Object.keys(TOP_LEVEL_SET_FIELDS),
@@ -313,8 +335,6 @@ function SetFieldSetup({
 	const def = effectiveKey ? (getFieldDef(effectiveKey) ?? TOP_LEVEL_SET_FIELDS[effectiveKey]) : undefined;
 	const isNumber = def?.type === "number";
 	const isEnum = def?.type === "enum" && def.values;
-	// Number targets take an expression (a constant is the degenerate case); other
-	// types keep the literal input.
 	const exprError = useMemo(() => {
 		if (!isNumber || raw.trim() === "") return null;
 		try {
@@ -399,11 +419,23 @@ function SetFieldSetup({
 					className="button button--primary"
 					type="button"
 					disabled={invalid}
-					onClick={() =>
-						isNumber
-							? onStart({ exprKey: effectiveKey, exprSrc: raw })
-							: onStart({ patch: fieldPatch(effectiveKey, raw) })
-					}
+					onClick={() => {
+						const ek = effectiveKey;
+						const rv = raw;
+						const useExpr = isNumber;
+						onReady(async ({ locations }) => {
+							if (useExpr) {
+								const { updates, skipped } = planFieldExpr(locations, ek, parseFieldExpr(rv));
+								if (updates.length > 0) await updateLocations(updates);
+								const msg = `Set field on ${fmt.format(updates.length)} locations.` +
+									(skipped > 0 ? ` ${fmt.format(skipped)} skipped (missing source fields).` : "");
+								return { doneMessage: msg };
+							}
+							const updates = planFieldSet(locations, fieldPatch(ek, rv));
+							if (updates.length > 0) await updateLocations(updates);
+							return { doneMessage: `Set field on ${fmt.format(updates.length)} locations.` };
+						});
+					}}
 				>
 					Set field
 				</button>
@@ -412,13 +444,7 @@ function SetFieldSetup({
 	);
 }
 
-function HeadingRoadSetup({
-	scopeCtl,
-	onStart,
-}: {
-	scopeCtl: ScopeController;
-	onStart: (direction: RoadDirection) => void;
-}) {
+function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 	const [direction, setDirection] = useState<RoadDirection>("forwards");
 
 	return (
@@ -445,13 +471,26 @@ function HeadingRoadSetup({
 				</label>
 			</div>
 			<div className="bulk-operation__actions">
-				<button className="button button--primary" type="button" onClick={() => onStart(direction)}>
+				<button
+					className="button button--primary"
+					type="button"
+					onClick={() =>
+						onReady(async ({ locations, signal, onProgress }) => {
+							const count = await bulkPanHeading(locations, direction, { signal, onProgress });
+							return { doneMessage: `Panned ${fmt.format(count)} headings.` };
+						})
+					}
+				>
 					Start
 				</button>
 			</div>
 		</div>
 	);
 }
+
+// ---------------------------------------------------------------------------
+// Result display
+// ---------------------------------------------------------------------------
 
 function EnrichSummary({
 	result,
@@ -489,23 +528,17 @@ function EnrichSummary({
 	);
 }
 
+// ---------------------------------------------------------------------------
+// Progress — runs the BulkRunner and shows progress/results
+// ---------------------------------------------------------------------------
+
 function BulkProgress({
-	operation,
-	force,
+	runner,
 	scope,
-	clearKeys,
-	setField,
-	setExpr,
-	headingDirection,
 	onClose,
 }: {
-	operation: BulkOperation;
-	force: boolean;
+	runner: BulkRunner;
 	scope: Scope;
-	clearKeys?: string[];
-	setField?: Partial<Location>;
-	setExpr?: { key: string; src: string };
-	headingDirection?: RoadDirection;
 	onClose: () => void;
 }) {
 	const [progress, setProgress] = useState(0);
@@ -514,20 +547,16 @@ function BulkProgress({
 	const [phaseLabel, setPhaseLabel] = useState<string | null>(null);
 	const [status, setStatus] = useState<"running" | "done" | "cancelled" | "error">("running");
 	const [error, setError] = useState<string | null>(null);
-	const [enrichResult, setEnrichResult] = useState<EnrichResult | null>(null);
-	const [clearCount, setClearCount] = useState(0);
-	const [skippedCount, setSkippedCount] = useState(0);
+	const [result, setResult] = useState<BulkRunResult>({});
 	const controllerRef = useRef<AbortController | null>(null);
 
 	const run = useCallback(async () => {
-		const map = getCurrentMap();
-		if (!map) return;
 		const controller = new AbortController();
 		controllerRef.current = controller;
 
 		const locations = applyScope(scope, await fetchAllLocations());
 
-		const onProgress = (d: number, t: number, label?: string) => {
+		const onProgress: ProgressFn = (d, t, label) => {
 			setPhaseLabel(label ?? null);
 			setTotal(t);
 			setDone(d);
@@ -535,89 +564,8 @@ function BulkProgress({
 		};
 
 		try {
-			if (operation === "validate") {
-				const results = await validateLocations(locations, {
-					signal: controller.signal,
-					onProgress: (p) =>
-						onProgress(Math.round(p.progress * locations.length), locations.length),
-				});
-
-				const stateOrder = [
-					ValidationState.Ok,
-					ValidationState.UpdateAvailable,
-					ValidationState.UpdateApplied,
-					ValidationState.GoodcamAvailable,
-					ValidationState.PanoIdBroke,
-					ValidationState.Unofficial,
-					ValidationState.NotFound,
-				];
-				const batch = stateOrder
-					.filter((state) => (results.get(state)?.length ?? 0) > 0)
-					.map((state) => ({
-						type: "ValidationState" as const,
-						locations: results.get(state)!.map((l) => l.id),
-						state,
-					}));
-				if (batch.length > 0) addSelections(batch);
-			} else if (operation === "enrich") {
-				const er = await enrichAll(locations, {
-					signal: controller.signal,
-					force,
-					onProgress,
-				});
-				setEnrichResult(er);
-			} else if (operation === "pinPano") {
-				await bulkPinToPano(locations, {
-					signal: controller.signal,
-					force,
-					onProgress,
-				});
-			} else if (operation === "clearFields") {
-				const keys = clearKeys ?? [];
-				const updates: LocationUpdate[] = [];
-				for (const loc of locations) {
-					if (!loc.extra) continue;
-					const hasAny = keys.some((k) => loc.extra![k] != null);
-					if (!hasAny) continue;
-					const cleaned = { ...loc.extra };
-					for (const k of keys) delete cleaned[k];
-					updates.push({ id: loc.id, patch: { extra: cleaned } });
-				}
-
-				setTotal(updates.length);
-				if (updates.length > 0) {
-					await updateLocations(updates);
-				}
-				setDone(updates.length);
-				setClearCount(updates.length);
-			} else if (operation === "setField" && setExpr) {
-				const { updates, skipped } = planFieldExpr(
-					locations,
-					setExpr.key,
-					parseFieldExpr(setExpr.src),
-				);
-				setTotal(updates.length);
-				if (updates.length > 0) {
-					await updateLocations(updates);
-				}
-				setDone(updates.length);
-				setClearCount(updates.length);
-				setSkippedCount(skipped);
-			} else if (operation === "setField" && setField) {
-				const updates = planFieldSet(locations, setField);
-				setTotal(updates.length);
-				if (updates.length > 0) {
-					await updateLocations(updates);
-				}
-				setDone(updates.length);
-				setClearCount(updates.length);
-			} else if (operation === "headingRoad") {
-				const count = await bulkPanHeading(locations, headingDirection ?? "forwards", {
-					signal: controller.signal,
-					onProgress,
-				});
-				setClearCount(count);
-			}
+			const r = await runner({ locations, signal: controller.signal, onProgress });
+			setResult(r);
 			setProgress(1);
 			setStatus("done");
 		} catch (e: unknown) {
@@ -628,7 +576,7 @@ function BulkProgress({
 				setStatus("error");
 			}
 		}
-	}, [operation, force, scope, clearKeys, setField, setExpr, headingDirection]);
+	}, [runner, scope]);
 
 	useEffect(() => {
 		run();
@@ -644,24 +592,7 @@ function BulkProgress({
 			<div className="bulk-operation__status">
 				{status === "running" &&
 					`${phaseLabel ? `${phaseLabel}: ` : ""}${fmt.format(done)} / ${fmt.format(total)} (${pct}%)`}
-				{status === "done" && enrichResult ? (
-					<EnrichSummary
-						result={enrichResult}
-						onSelect={(ids, _label) => {
-							addSelections([{ type: "Manual", locations: ids }]);
-						}}
-					/>
-				) : status === "done" && operation === "clearFields" ? (
-					`Cleared fields from ${fmt.format(clearCount)} locations.`
-				) : status === "done" && operation === "setField" ? (
-					`Set field on ${fmt.format(clearCount)} locations.${
-						skippedCount > 0 ? ` ${fmt.format(skippedCount)} skipped (missing source fields).` : ""
-					}`
-				) : status === "done" && operation === "headingRoad" ? (
-					`Panned ${fmt.format(clearCount)} headings.`
-				) : (
-					status === "done" && `Done -- ${fmt.format(total)} locations processed.`
-				)}
+				{status === "done" && (result.doneContent ?? result.doneMessage ?? `Done -- ${fmt.format(total)} locations processed.`)}
 				{status === "cancelled" && `Cancelled at ${fmt.format(done)} / ${fmt.format(total)}.`}
 				{status === "error" && `Error: ${error}`}
 			</div>
@@ -685,21 +616,33 @@ function BulkProgress({
 	);
 }
 
+// ---------------------------------------------------------------------------
+// Modal shell
+// ---------------------------------------------------------------------------
+
+const SETUPS: Record<BulkOperation, React.ComponentType<SetupProps>> = {
+	validate: ValidateSetup,
+	enrich: EnrichSetup,
+	pinPano: PinPanoSetup,
+	clearFields: ClearFieldsSetup,
+	setField: SetFieldSetup,
+	headingRoad: HeadingRoadSetup,
+};
+
 export function BulkOperationModal({ operation, onClose }: Props) {
-	const [started, setStarted] = useState(false);
-	const [force, setForce] = useState(false);
+	const [runner, setRunner] = useState<BulkRunner | null>(null);
 	const [locs, setLocs] = useState<Location[] | null>(null);
 	const scopeCtl = useScope();
-	const [clearKeys, setClearKeys] = useState<string[]>([]);
-	const [setField, setSetField] = useState<Partial<Location> | undefined>(undefined);
-	const [setExpr, setSetExpr] = useState<{ key: string; src: string } | undefined>(undefined);
-	const [headingDirection, setHeadingDirection] = useState<RoadDirection | undefined>(undefined);
 
 	useEffect(() => {
 		fetchAllLocations().then(setLocs);
 	}, []);
 
 	if (locs === null) return null;
+
+	const onReady = (run: BulkRunner) => setRunner(() => run);
+	const scopedLocs = applyScope(scopeCtl.scope, locs);
+	const Setup = SETUPS[operation];
 
 	return (
 		<Dialog
@@ -709,30 +652,18 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 			}}
 		>
 			<DialogContent title={TITLES[operation]} className="bulk-operation-modal">
-				{!started ? (
-					<BulkSetup
-						operation={operation}
-						scopeCtl={scopeCtl}
-						locs={locs}
-						onStart={(opts) => {
-							setForce(opts.force);
-							if (opts.clearKeys) setClearKeys(opts.clearKeys);
-							if (opts.setField) setSetField(opts.setField);
-							if (opts.setExpr) setSetExpr(opts.setExpr);
-							if (opts.headingDirection) setHeadingDirection(opts.headingDirection);
-							setStarted(true);
-						}}
+				{runner ? (
+					<BulkProgress
+						runner={runner}
+						scope={scopeCtl.scope}
+						onClose={onClose}
 					/>
 				) : (
-					<BulkProgress
-						operation={operation}
-						force={force}
-						scope={scopeCtl.scope}
-						clearKeys={clearKeys}
-						setField={setField}
-						setExpr={setExpr}
-						headingDirection={headingDirection}
-						onClose={onClose}
+					<Setup
+						scopeCtl={scopeCtl}
+						locs={locs}
+						scopedLocs={scopedLocs}
+						onReady={onReady}
 					/>
 				)}
 			</DialogContent>
