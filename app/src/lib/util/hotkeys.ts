@@ -48,6 +48,12 @@ const STATIC_HOTKEY_DEFS = [
 		defaultBinding: "Mod+Shift+d",
 	},
 	{
+		action: "closeMap",
+		label: "Close map",
+		group: "Global",
+		defaultBinding: "Mod+Shift+w",
+	},
+	{
 		action: "locationSave",
 		label: "Save location",
 		group: "Location Editor",

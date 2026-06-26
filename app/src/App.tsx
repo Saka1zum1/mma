@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { useCurrentMap } from "@/store/useMapStore";
-import { useTargetMapId, useManualChapter, closeManual, gotoManualChapter } from "@/store/router";
+import { useTargetMapId, useManualChapter, closeManual, gotoManualChapter, goToList } from "@/store/router";
 import { MapList, BulkActions } from "@/components/map-list/MapList";
 import { StatsForNerds } from "@/components/dialogs/StatsForNerds";
 import { SettingsPage } from "@/components/dialogs/SettingsPage";
@@ -81,6 +81,7 @@ function AppChrome() {
 
 	useHotkey(useBinding("toggleStats"), () => setShowStats((s) => !s));
 	useHotkey(useBinding("openManualSearch"), () => setManualSearchOpen((v) => !v));
+	useHotkey(useBinding("closeMap"), () => { if (map) goToList(); });
 
 	return (
 		<>
