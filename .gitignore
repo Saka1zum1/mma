@@ -31,6 +31,9 @@ mma.html
 shard-*.log
 build-e2e.log
 
+# Plugin built artifacts (CI builds these during release)
+plugins/*/index.js
+
 # Misc
 .gitmodules
 app/public/icon-1024.png

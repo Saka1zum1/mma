@@ -38,10 +38,10 @@ var require_jsx_runtime = __commonJS({
   }
 });
 
-// src/VisionSidebar.tsx
+// plugins/vision/src/VisionSidebar.tsx
 var import_react = __toESM(require_react());
 
-// src/sidecar.ts
+// plugins/vision/src/sidecar.ts
 var BINARY_NAME = "mma-vision";
 var IS_WIN = navigator.userAgent.includes("Windows");
 var SEP = IS_WIN ? "\\" : "/";
@@ -173,7 +173,7 @@ async function spawnImageSearch(panoId, k, threshold) {
   return spawnCommand(["search-image", "--input", inputPath, "--cache-dir", cd]);
 }
 
-// src/VisionSidebar.tsx
+// plugins/vision/src/VisionSidebar.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime());
 var { Sidebar, Field } = MMA.ui;
 var CSS = `
@@ -306,7 +306,7 @@ function VisionSidebar({ onClose }) {
   ] });
 }
 
-// src/FindSimilarButton.tsx
+// plugins/vision/src/FindSimilarButton.tsx
 var import_react2 = __toESM(require_react());
 var import_jsx_runtime2 = __toESM(require_jsx_runtime());
 var SIMILARITY_THRESHOLD = 0.9;
@@ -362,7 +362,7 @@ function FindSimilarButton() {
   );
 }
 
-// src/index.tsx
+// plugins/vision/src/index.tsx
 MMA.registerPlugin({
   activate() {
   },

@@ -52,6 +52,19 @@ fs.writeFileSync('app/src-tauri/tauri.conf.json', JSON.stringify(p, null, '\t') 
 # Update Cargo.lock (cargo will pick up the new version from Cargo.toml)
 (cd app/src-tauri && cargo check --quiet 2>/dev/null) || true
 
+# Rebuild plugins — committed artifacts must match source by release time.
+echo ""
+echo "Building plugins..."
+node plugins/build-plugin.mjs
+node plugins/generate-registry.js
+if ! git diff --quiet -- plugins/; then
+  git add -f plugins/*/index.js plugins/registry.json
+  git commit -m "chore: rebuild plugins"
+  echo "Plugin artifacts updated"
+else
+  echo "Plugin artifacts unchanged"
+fi
+
 echo ""
 echo "Bumped to $NEW in:"
 echo "  app/package.json"

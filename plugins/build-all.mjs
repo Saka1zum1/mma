@@ -1,55 +1,44 @@
-// Build every plugin (any dir with a build.js) concurrently, then regenerate
-// registry.json once all builds finish. Run: node plugins/build-all.mjs
-import { exec as execCb, execSync } from "node:child_process";
+// Build every plugin via the shared build script, then regenerate registry.json.
+// Run: node plugins/build-all.mjs
+import { execSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
-const exec = promisify(execCb);
 const pluginsDir = dirname(fileURLToPath(import.meta.url));
 
+// Install deps for any plugin that has a package.json but no node_modules.
 const plugins = readdirSync(pluginsDir)
 	.map((name) => join(pluginsDir, name))
-	.filter((dir) => statSync(dir).isDirectory() && existsSync(join(dir, "build.js")))
-	.sort();
+	.filter(
+		(dir) =>
+			statSync(dir).isDirectory() &&
+			existsSync(join(dir, "manifest.json")) &&
+			(existsSync(join(dir, "src/index.tsx")) || existsSync(join(dir, "src/index.ts"))),
+	);
 
-// Build each plugin independently; capture output so concurrent logs stay legible.
-async function buildPlugin(dir) {
-	const name = dir.slice(pluginsDir.length + 1);
-	if (!existsSync(join(dir, "node_modules"))) {
-		// Prefer `npm ci` (exact, lockfile-driven) so builds are reproducible in CI.
-		const install = existsSync(join(dir, "package-lock.json")) ? "npm ci" : "npm install";
-		await exec(install, { cwd: dir });
+for (const dir of plugins) {
+	if (existsSync(join(dir, "package.json")) && !existsSync(join(dir, "node_modules"))) {
+		const name = dir.slice(pluginsDir.length + 1);
+		const cmd = existsSync(join(dir, "package-lock.json")) ? "npm ci" : "npm install";
+		console.log(`[${name}] ${cmd}`);
+		execSync(cmd, { cwd: dir, stdio: "inherit" });
 	}
-	const { stdout, stderr } = await exec("npm run build", { cwd: dir });
-	return { name, output: (stdout + stderr).trim() };
 }
 
-const results = await Promise.allSettled(plugins.map(buildPlugin));
+console.log("\nBuilding plugins...");
+try {
+	execSync("node build-plugin.mjs", { cwd: pluginsDir, stdio: "inherit" });
+} catch {
+	process.exit(1);
+}
 
-const failures = [];
-results.forEach((r, i) => {
-	const name = plugins[i].slice(pluginsDir.length + 1);
-	if (r.status === "fulfilled") {
-		console.log(`[${name}] ok`);
-	} else {
-		failures.push(name);
-		const e = r.reason;
-		console.error(`[${name}] FAILED\n${(e.stdout || "") + (e.stderr || e.message || "")}`);
-	}
-});
-
-// Registry must run after the barrier — it reads every plugin's manifest.
+// Regenerate the registry from manifests.
 console.log("\n[registry] regenerating...");
 try {
 	execSync("node generate-registry.js", { cwd: pluginsDir, stdio: "inherit" });
 } catch {
-	failures.push("registry");
-}
-
-if (failures.length) {
-	console.error(`\nFAILED: ${failures.join(", ")}`);
 	process.exit(1);
 }
+
 console.log(`\nBuilt ${plugins.length} plugin${plugins.length !== 1 ? "s" : ""}.`);
