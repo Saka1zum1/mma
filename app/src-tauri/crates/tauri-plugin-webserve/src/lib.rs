@@ -13,9 +13,9 @@
 //! through [`register_scheme`]. Everything else is generic.
 
 use std::collections::HashMap;
-use std::io::Read;
-use std::sync::mpsc::sync_channel;
-use std::sync::{OnceLock, RwLock};
+use std::io::{Read, Write};
+use std::sync::mpsc::{channel, sync_channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use tauri::ipc::{CallbackFn, InvokeBody, InvokeError, InvokeResponse};
@@ -72,6 +72,34 @@ where
     F: Fn(SchemeRequest) -> SchemeResponse + Send + Sync + 'static,
 {
     schemes().write().unwrap().insert(name.to_string(), Box::new(handler));
+}
+
+// ---------------------------------------------------------------------------
+// Event bridge — `app.emit` reaches the app's own webviews, but a plain browser
+// tab isn't one, so backend events never arrive there. The app forwards every
+// event it emits to [`forward_event`], which fans them out to all connected
+// browsers over Server-Sent Events (`GET /__events`). Generic over the app's
+// events: no event name is hardcoded — the app passes the serialized payload.
+// ---------------------------------------------------------------------------
+
+fn event_clients() -> &'static Mutex<Vec<Sender<Vec<u8>>>> {
+    static CLIENTS: OnceLock<Mutex<Vec<Sender<Vec<u8>>>>> = OnceLock::new();
+    CLIENTS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Forward a backend event to every connected web client (SSE). No-op when no
+/// browser is connected — always the case on desktop, so the app can call this
+/// unconditionally from its emit chokepoint.
+pub fn forward_event(event: &str, payload: serde_json::Value) {
+    let Ok(mut clients) = event_clients().lock() else {
+        return;
+    };
+    if clients.is_empty() {
+        return;
+    }
+    let frame = format!("data: {}\n\n", serde_json::json!({ "event": event, "payload": payload }))
+        .into_bytes();
+    clients.retain(|tx| tx.send(frame.clone()).is_ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +172,15 @@ fn serve<R: Runtime>(handle: AppHandle<R>) {
             continue;
         }
 
+        if method == Method::Get && path == "/__events" {
+            let (tx, rx) = channel::<Vec<u8>>();
+            event_clients().lock().unwrap().push(tx);
+            // Own thread: the accept loop is single-threaded, so holding an SSE
+            // connection open here would stall every other request.
+            std::thread::spawn(move || stream_events(req, rx));
+            continue;
+        }
+
         if path == "/__webserve/sw.js" {
             let resp = Response::from_string(SERVICE_WORKER_JS)
                 .with_header(ct_header("text/javascript; charset=utf-8"))
@@ -195,6 +232,32 @@ fn serve_scheme(
         .with_status_code(resp.status)
         .with_header(ct_header(&resp.content_type))
         .with_header(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap())
+}
+
+/// Hold one browser's SSE connection open and write event frames as they arrive.
+/// Uses the raw response writer (not `Response`/chunked, which buffers until the
+/// stream ends — never, here) and flushes per frame so events deliver live. A
+/// 25s heartbeat keeps the connection alive and turns a dropped client into a
+/// write error that ends the thread; its `tx` is then pruned on the next emit.
+fn stream_events(req: tiny_http::Request, rx: Receiver<Vec<u8>>) {
+    let mut w = req.into_writer();
+    let head = "HTTP/1.1 200 OK\r\n\
+                Content-Type: text/event-stream\r\n\
+                Cache-Control: no-cache\r\n\
+                Connection: close\r\n\r\n";
+    if w.write_all(head.as_bytes()).and_then(|_| w.flush()).is_err() {
+        return;
+    }
+    loop {
+        let frame = match rx.recv_timeout(Duration::from_secs(25)) {
+            Ok(f) => f,
+            Err(RecvTimeoutError::Timeout) => b": ping\n\n".to_vec(),
+            Err(RecvTimeoutError::Disconnected) => return,
+        };
+        if w.write_all(&frame).and_then(|_| w.flush()).is_err() {
+            return;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -58,6 +58,12 @@ static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::
 /// Emit an app-wide event to all windows. No-op before setup completes.
 pub(crate) fn emit_event(event: &str, payload: impl serde::Serialize + Clone) {
     use tauri::Emitter;
+    // Browser tabs aren't app webviews, so app.emit can't reach them — bridge the
+    // event to the web-serve SSE channel (no-op when no browser is connected).
+    #[cfg(feature = "web-serve")]
+    if let Ok(value) = serde_json::to_value(&payload) {
+        tauri_plugin_webserve::forward_event(event, value);
+    }
     if let Some(app) = APP_HANDLE.get() {
         let _ = app.emit(event, payload);
     }
