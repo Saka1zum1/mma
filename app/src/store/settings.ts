@@ -30,7 +30,13 @@ export const MAP_LIST_FIELDS = {
 export const GEOCODE_PROVIDERS = {
 	local: "Local (offline)",
 	nominatim: "Nominatim (online)",
+	google: "Google (from panorama)",
 } as const;
+export const GEOCODE_PROVIDER_LABELS: Record<keyof typeof GEOCODE_PROVIDERS, string> = {
+	local: "Local reverse geocode",
+	nominatim: "OpenStreetMap (Nominatim)",
+	google: "Google Street View",
+};
 export const TAG_VIEW_MODES = {
 	flat: "Flat",
 	tree: "Tree",

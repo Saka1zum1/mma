@@ -789,7 +789,6 @@ function GeocodingSection() {
 							className="input"
 							value={s.nominatimApiKey}
 							onChange={(e) => setSetting("nominatimApiKey", e.target.value)}
-							placeholder="Leave blank for keyless access"
 						/>
 					</label>
 				</>

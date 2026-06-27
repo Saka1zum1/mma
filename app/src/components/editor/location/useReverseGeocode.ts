@@ -40,9 +40,15 @@ async function geocodeNominatim(lat: number, lng: number): Promise<GeoDisplay | 
 	};
 }
 
-export function useReverseGeocode(lat: number, lng: number): GeoDisplay | null {
-	return useAsync(async () => {
-		const provider = getSettings().geocodeProvider;
+export function useReverseGeocode(
+	lat: number,
+	lng: number,
+	panoGeo?: GeoDisplay | null,
+): GeoDisplay | null {
+	const provider = getSettings().geocodeProvider;
+
+	const asyncResult = useAsync(async () => {
+		if (provider === "google") return null;
 		const fn = provider === "nominatim" ? geocodeNominatim : geocodeLocal;
 		try {
 			return await fn(lat, lng);
@@ -50,5 +56,8 @@ export function useReverseGeocode(lat: number, lng: number): GeoDisplay | null {
 			log.warn("[geocode] reverse geocode failed:", e);
 			return null;
 		}
-	}, [lat, lng]).data;
+	}, [lat, lng, provider]).data;
+
+	if (provider === "google") return panoGeo ?? null;
+	return asyncResult;
 }

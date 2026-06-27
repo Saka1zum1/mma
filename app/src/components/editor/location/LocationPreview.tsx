@@ -43,7 +43,7 @@ import {
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { useLatestRef } from "@/lib/hooks/useLatestRef";
-import { useSettings, useSetting, getSettings } from "@/store/settings";
+import { useSettings, useSetting, getSettings, GEOCODE_PROVIDER_LABELS } from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
 import { textColorFor } from "@/lib/util/color";
@@ -64,7 +64,7 @@ import {
 	seenSetCanvas,
 	seenUpdateGeo,
 } from "@/lib/seen/seen";
-import { useReverseGeocode } from "@/components/editor/location/useReverseGeocode";
+import { useReverseGeocode, type GeoDisplay } from "@/components/editor/location/useReverseGeocode";
 import { PanoViewerProvider, usePanoViewer } from "./PanoViewerContext";
 import {
 	applyViewportLock,
@@ -115,11 +115,13 @@ function LocationPreviewInner() {
 	const [tagInput, setTagInput] = useState("");
 	const [pendingTags, setPendingTags] = useState<string[]>(() => idsToNames(location?.tags ?? []));
 	const tagSortMode = useSetting("tagSortMode");
-	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0);
+	const [panoGeo, setPanoGeo] = useState<GeoDisplay | null>(null);
+	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0, panoGeo);
 	const cancelTweenRef = useRef<(() => void) | null>(null);
 	const geoRef = useLatestRef(geoResult);
 	useEffect(() => {
 		setPendingTags(idsToNames(location?.tags ?? []));
+		setPanoGeo(null);
 	}, [location?.id]);
 	useEffect(() => {
 		if (geoResult) seenUpdateGeo(geoResult);
@@ -314,6 +316,10 @@ function LocationPreviewInner() {
 		fetchSvMetadata([loc.pano]).then(([data]) => {
 			if (cancelled || !data) return;
 			setAltitude(data.extra?.altitude ?? 0);
+			setPanoGeo({
+				address: data.location.description || "",
+				countryCode: data.extra?.countryCode?.toUpperCase() ?? null,
+			});
 			const loc = getActiveLocation();
 			if (loc) enrich(loc, data);
 		});
@@ -534,7 +540,7 @@ function LocationPreviewInner() {
 				<div className="location-preview__meta">
 					<span className="location-preview__description">
 						{geoResult?.countryCode && (
-							<Tooltip content="As identified by OSM">
+							<Tooltip content={GEOCODE_PROVIDER_LABELS[getSettings().geocodeProvider]}>
 								<span>
 									<img
 										height={15}
