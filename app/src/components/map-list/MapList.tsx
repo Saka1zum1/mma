@@ -626,6 +626,34 @@ interface ImportPreview {
 	warnings: string[];
 }
 
+async function applyFolderFiles(paths: string[], maps: MapMeta[]) {
+	const byName = new Map(maps.map((m) => [m.name, m]));
+	let applied = 0;
+	let skipped = 0;
+
+	for (const path of paths) {
+		let mapping: Record<string, string>;
+		try {
+			mapping = JSON.parse(await cmd.readFile(path));
+		} catch (e) {
+			log.error("[folder import] failed to read", path, e);
+			continue;
+		}
+		for (const [mapName, folder] of Object.entries(mapping)) {
+			const map = byName.get(mapName);
+			if (!map) { skipped++; continue; }
+			if (map.folder === folder) continue;
+			await moveMapToFolder(map.id, folder);
+			applied++;
+		}
+	}
+
+	const parts = [];
+	if (applied > 0) parts.push(`${applied} map${applied > 1 ? "s" : ""} assigned to folders`);
+	if (skipped > 0) parts.push(`${skipped} not found locally`);
+	if (parts.length > 0) toast(parts.join(", "));
+}
+
 function ImportPreviewModal({
 	preview,
 	onConfirm,
@@ -762,16 +790,26 @@ export function BulkActions() {
 	const handleImport = useCallback(async () => {
 		const selection = await openDialog({
 			multiple: true,
-			filters: [{ name: "Map data", extensions: ["json", "zip"] }],
+			filters: [
+				{ name: "Map data", extensions: ["json", "zip", "mmafolders"] },
+			],
 		});
 		if (!selection) return;
 		const paths = Array.isArray(selection) ? selection : [selection];
 
-		setParseStatus(paths.length > 1 ? "Scanning files..." : "Scanning file...");
+		const folderFiles = paths.filter((p) => p.endsWith(".mmafolders"));
+		const mapFiles = paths.filter((p) => !p.endsWith(".mmafolders"));
+
+		if (folderFiles.length > 0) {
+			await applyFolderFiles(folderFiles, maps);
+		}
+		if (mapFiles.length === 0) return;
+
+		setParseStatus(mapFiles.length > 1 ? "Scanning files..." : "Scanning file...");
 		try {
 			const aggregated: ImportEntry[] = [];
 			const warnings: string[] = [];
-			for (const path of paths) {
+			for (const path of mapFiles) {
 				const entries = await cmd.bulkImportPreview(path);
 				entries.forEach((e, localIndex) => {
 					const isDuplicate = maps.some(

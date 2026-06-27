@@ -15,7 +15,21 @@ If you don't use any data-affecting userscripts, you can simply export using "Do
 > [!WARNING]
 > For the time being, map-level `extra` fields like tag order and color are not carried by the webapp's bulk export method. You may re-import maps from a manual export on individual maps, on the webapp, if that's important to you.
 
-## Migrating from [Map-Making Folders](https://greasyfork.org/en/scripts/571049-map-making-folders)
+## Migrating map folders
+
+If your maps are organized into folders on map-making.app, you can bring that folder structure into MMA:
+
+1. Go to https://map-making.app (main page, logged in)
+2. Open the browser console (F12 -> Console)
+3. Paste the contents of `scripts/migrations/export-map-folders.js` and press Enter
+4. A `map-folders.mmafolders` file will download
+5. In MMA's map list, click the import button and select the `.mmafolders` file
+
+Maps are matched by name. Any maps not found locally are skipped (the count is shown in a toast).
+
+## Migrating from [tag folders](https://greasyfork.org/en/scripts/571049-map-making-folders)
+
+Download your locations, then run:
 
 ```bash
 node scripts/migrations/migrate-folders.mjs <input.json...> [-o outdir]
