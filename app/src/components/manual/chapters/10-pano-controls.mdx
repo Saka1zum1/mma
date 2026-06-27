@@ -1,0 +1,31 @@
+export const title = "Pano controls & movement";
+
+Overlay controls sit on top of the panorama. Every control can be shown or hidden in **Settings**.
+
+<Img name="pano-controls.png" caption="The panorama overlay: compass, zoom, return-to-spawn, jump, coordinates, and map links." />
+
+## Orientation and movement
+
+- **Compass.** A wind rose that rotates with your heading; click it to point north. An optional heading tape is also available. Point north with <Kbd>N</Kbd>, spin 180 with <Kbd>T</Kbd>.
+- **Zoom.** Zoom the panorama in and out (<Kbd>+</Kbd> / <Kbd>-</Kbd>). Press <Kbd>0</Kbd> to zoom all the way out.
+- **Return to spawn.** Snaps the pano back to the location's saved coordinates and clears any per-location pano pin (<Kbd>R</Kbd>).
+- **Jump forward / backward.** Hops roughly 100m along the road (<Kbd>{"}"}</Kbd> / <Kbd>{"{"}</Kbd>).
+- **Follow road.** Walks along linked panos in the direction you face (<Kbd>G</Kbd>).
+
+## Reference and links
+
+- **Coordinate / zoom display.** Shows the current pano's coordinates and zoom.
+- **Map links.** Open in Google Maps and copy a Street View link (<Kbd>Ctrl</Kbd>+<Kbd>C</Kbd>). Hold <Kbd>Shift</Kbd> while copying to omit tags from the URL, or <Kbd>Alt</Kbd> to copy the full long URL instead of a short link.
+
+## Display options
+
+- **Fullscreen.** Expands the panorama and shows a **minimap** and a **tag bar** (each toggleable) (<Kbd>F</Kbd>). The minimap mirrors the editor map, rendering all markers, selections, and polygons, and follows the active location.
+- **Hide car.** Masks the capture vehicle (<Kbd>Ctrl</Kbd>+<Kbd>H</Kbd>).
+- **Crosshair.** A center crosshair for precise framing (<Kbd>X</Kbd>).
+- **Toggle pano UI.** Hides the overlay controls for a clean view (<Kbd>H</Kbd>).
+- **Preview aspect ratio.** The panorama pane can be shaped to a fixed aspect ratio (4:3, 16:10, 16:9, or 21:9) to match how the map will be played. Set it in **Settings → Street View**.
+
+## Movement modes and speed
+
+- **Movement mode.** The default is set in Settings: **Moving** (walk and look freely), **No Move** (look only, no walking), or **NMPZ** (no move, pan, or zoom).
+- **Look & pan speed.** Keyboard look speed and map pan speed are adjustable in **Settings → Controls**. Hold <Kbd>Alt</Kbd> for the slow modifier.

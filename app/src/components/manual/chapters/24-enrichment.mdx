@@ -1,0 +1,18 @@
+export const title = "Metadata enrichment";
+
+Enrichment fetches extra information about each location's panorama and stores it on the location. This metadata is extremely powerful, as it can store **non-boolean data**, unlike tags.
+
+## Available fields (by default)
+
+- **Altitude.** Elevation of the pano.
+- **Country code.** ISO country of the coverage.
+- **Camera type.** The generation/quality: gen1, gen2, gen4, tripod, or badcam.
+- **Pano type.** Official, unknown, or user-uploaded.
+- **Image date.** The year-month of capture.
+
+## Running enrichment
+
+- **In bulk.** Run **Enrich metadata fields** from the command palette, choosing a scope. The runner skips locations that are already enriched unless you force a refresh.
+- **Automatically on view.** Enable **Enrich locations with metadata** in the map settings dropdown to enrich each location as you open it in the viewer. The gear beside it picks which fields to fetch.
+
+Enrichment fields can be added from other plugins or settings within the application.

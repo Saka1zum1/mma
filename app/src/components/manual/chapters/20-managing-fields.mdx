@@ -1,0 +1,13 @@
+export const title = "Managing metadata fields";
+
+Open **Manage metadata fields** from the map settings dropdown. It lists every metadata field known to the map and lets you edit its definition.
+
+## What you can edit
+
+- **Field key.** Rename a field. Renaming to an existing field's key **merges** them; on conflict you choose which field's values win. Both rename and merge report how many locations are affected and cannot be undone.
+- **Label.** The display name shown in pickers and filters.
+- **Type.** **Text**, **Number**, **Date/time**, **Month (YYYY-MM)**, or **Enum**.
+- **Compare as.** How the field is compared during disambiguation: **Auto**, **Numeric**, **Circular** (with a wrap period such as 360 for degrees or 24 for hours), or **Categorical**.
+- **Delete.** Removes the field and clears its values from every location. This cannot be undone.
+
+Fields with no data are marked **(no data)**. Press **Save** to commit definition changes.

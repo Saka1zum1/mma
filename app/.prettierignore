@@ -5,4 +5,4 @@ src-tauri/target/
 test/fixtures/
 public/borders.json
 src/bindings.gen.ts
-src/components/dialogs/manual-img-dims.gen.ts
+src/components/manual/manual-img-dims.gen.ts

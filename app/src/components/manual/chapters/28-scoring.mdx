@@ -1,0 +1,11 @@
+export const title = "Scoring & score bounds";
+
+GeoGuessr scores a guess from the distance to the true location and the size of the playable area. A map's **score bounds** define that area, which sets how harshly distance is penalized. Edit them in the **Scoring** section of the map settings dropdown.
+
+<Img name="score-bounds.png" caption="The Scoring section: automatic, world, or fixed bounds, with the resolved error distance." />
+
+## The three modes
+
+- **Automatic based on locations.** Derived from the bounding box of your locations and updated as you add or remove them.
+- **World map (ACW).** The whole-world curve, like a worldwide map.
+- **Fixed bounds.** An explicit box you enter as south, west, north, and east coordinates.

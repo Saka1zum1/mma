@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { searchManual } from "@/components/manual/Manual";
+import { searchManual } from "@/components/manual/search";
 
 describe("searchManual", () => {
 	it("returns nothing for an empty query", () => {

@@ -1,0 +1,15 @@
+export const title = "Installing user plugins";
+
+## From the marketplace
+
+On the **Additional** tab, press **Install** on a registry plugin. It downloads into your plugins folder, enables itself, and activates on the open map. Use the trash button to uninstall.
+
+## Manually
+
+Plugins live in a `plugins/` subfolder of your application data folder, one folder per plugin. To install one by hand:
+
+1. Copy the plugin's folder into your plugins directory.
+2. Reopen a map in MMA.
+3. Enable it in the marketplace.
+
+Each plugin folder contains a `manifest.json` (its identity: id, name, description, icon, version, entry file) and the entry JavaScript file.

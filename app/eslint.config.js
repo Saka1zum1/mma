@@ -7,7 +7,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import noDuplicateCommandIcons from "./eslint-rules/no-duplicate-command-icons.js";
 
 export default defineConfig([
-	globalIgnores(["dist", "src/bindings.gen.ts", "src/components/dialogs/manual-img-dims.gen.ts"]),
+	globalIgnores(["dist", "src/bindings.gen.ts", "src/components/manual/manual-img-dims.gen.ts"]),
 	{
 		files: ["**/*.{ts,tsx}"],
 		extends: [

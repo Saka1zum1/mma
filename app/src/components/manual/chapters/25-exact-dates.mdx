@@ -1,0 +1,14 @@
+export const title = "Exact dates & timezones";
+
+Beyond the coarse year-month image date, MMA can resolve the **exact capture timestamp** of a panorama. This is an optional enrichment field because it is significantly slower (it makes many requests per location), so it is off by default.
+
+## Enabling it
+
+Turn on the exact-date field in the enrichment field picker (the gear next to **Enrich locations with metadata**), then enrich. When viewing a location with auto-enrich on, the exact date resolves in the background.
+
+## Display format and timezone
+
+In **Settings → Street View → Date Picker**:
+
+- **Exact date format.** **Date only** or **Date + time**.
+- **Exact date timezone.** **Location timezone** (the pano's local time) or **UTC**.

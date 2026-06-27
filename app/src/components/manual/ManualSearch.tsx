@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import { searchManual } from "@/components/manual/Manual";
+import { searchManual } from "@/components/manual/search";
 import { openManual } from "@/store/router";
 import "@/components/manual/manual.css";
 

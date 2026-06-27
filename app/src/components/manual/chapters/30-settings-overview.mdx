@@ -1,0 +1,22 @@
+export const title = "App settings vs per-map settings";
+
+MMA has two distinct layers of settings. Knowing which is which avoids confusion.
+
+<Img name="settings.png" caption="App settings, organized into Controls, Street View, and Advanced tabs." />
+
+## App settings (global)
+
+Opened from the gear icon (bottom-right). These apply everywhere and are stored on your machine. They are organized into three tabs: **Controls**, **Street View**, and **Advanced**. Covered in the next chapters. A few notable settings that live in the **Map** section:
+
+- **Panorama dots.** Customize the color and scaling mode of the individual Street View dots that appear at close zoom (constant size vs grow when zoomed in).
+- **Staged marker color.** The color used for import-preview markers before they are committed. See <ChapterLink id="importing-into-map" />.
+
+## Per-map settings
+
+Opened from the **Map settings** dropdown above the map. These belong to the current map only:
+
+- **Selecting new locations.** Point view along the road and a **Direction** preference (forwards, backwards, most northern/eastern/southern/western, or random); prefer official over unofficial; prefer higher quality over newer images; disallow unofficial; use Pano ID locations by default; and a **Min search radius** slider.
+- **Map behaviour.** Show location previews on hover; enrich locations with metadata (and pick fields); **Select-only mode** (map clicks never add locations).
+- **Scoring.** The score bounds editor.
+- **Generation.** A tag automatically applied to generated locations.
+- **Display.** Marker style (Pin, Circle, Camera direction arrow) and **Display 5K radius**.

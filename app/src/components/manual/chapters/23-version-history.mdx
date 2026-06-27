@@ -1,0 +1,11 @@
+export const title = "Version history & reverting";
+
+The **History** button opens the commit list for the map. Commits form a chain, each recording the change from the previous one.
+
+## The commit table
+
+- **Columns.** Date, a short hash, the change diff (+added / -removed / ±modified) or message, and the resulting location count.
+- **Expand a row.** Click it to see the added, removed, and modified locations in that commit (with their IDs and coordinates).
+- **Restore.** The restore button (with a confirm step) returns the map to that commit's state.
+
+If the map has no commits yet, the dialog prompts you to press Commit to create the first.

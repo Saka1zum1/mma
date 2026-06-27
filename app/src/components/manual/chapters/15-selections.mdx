@@ -1,0 +1,39 @@
+export const title = "Selections";
+
+A selection is a named subset of your locations, drawn on the map in its own color. The Selections section lists active selections with their match counts. Selections re-evaluate against the live map, so they stay correct as you edit.
+
+<Img name="selections.png" caption="The Selections section: each rule drawn in its own color, with a per-selection menu." />
+
+## Selection types
+
+- **Tag** and **Untagged.** Locations carrying a given tag, or carrying none.
+- **Unpanned.** Locations not yet framed and saved.
+- **Has Pano ID** / **No Pano ID.** By how they load (pinned to a pano vs resolved by coordinates).
+- **Polygon.** An area you draw as a polygon, rectangle, or freehand shape. Polygon selections can be configured to include informational locations.
+- **Country / Subdivision.** Hold <Kbd>Q</Kbd> and click the map to select a country. Hold <Kbd>Q</Kbd>+<Kbd>Shift</Kbd> and click to select an admin-1 subdivision (state, province, etc.). Enable subdivisions and choose their detail level in **Settings → Street View → Country Select → Subdivisions**.
+- **Duplicates.** Locations within a chosen distance of each other.
+- **Validation state.** Locations classified by the validator (see <ChapterLink id="validation" />).
+- **Filter.** A query over metadata fields (see <ChapterLink id="filters" />).
+- **Manual.** Individual locations you toggle by <Kbd>Ctrl</Kbd>-clicking markers.
+- **Everything.** All locations (<Kbd>Ctrl</Kbd>+<Kbd>A</Kbd>).
+
+## Acting on a selection
+
+The menu on each selection row (the dots button) offers:
+
+- **Invert selection.** Everything except this selection.
+- **Ghost selection.** Dim it on the map without removing it. Each selection row also has an inline ghost toggle button. <Kbd>Alt</Kbd>-click the ghost button to **isolate** that selection (ghost every other selection); <Kbd>Alt</Kbd>-click again to restore all.
+- **Edit filter.** Re-open the filter form (Filter selections only).
+- **Review selection.** Step through its locations in the panorama viewer.
+- **Save as tag.** Snapshot just this selection into a new tag, without disturbing the rest of your selection setup.
+- **Change color.** Recolor the selection (any non-Tag selection; Tag selections use the tag's color).
+- **Download GeoJSON** and **Rename.** For polygon selections.
+- **Prune duplicates.** On a Duplicates selection, keeps one location per cluster and removes the rest.
+- **Delete polygon.** Hold <Kbd>E</Kbd> and click the map to delete the polygon under the cursor.
+- **Deselect.** Remove the selection.
+
+**Delete selected locations** also lives in the command palette. To tag the whole selection at once, use **Bulk add tags** — type to filter matching tags from a dropdown, or press <Kbd>Enter</Kbd> to create a new tag by name.
+
+## Picking a random subset
+
+**Pick random locations from selection** (command palette) takes a count and replaces the current selection with that many locations chosen at random from it. If you ask for more than the selection holds, it is clamped to the whole selection. Handy for sampling a large map down to a manageable set to review or export.

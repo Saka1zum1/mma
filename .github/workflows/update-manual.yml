@@ -1,7 +1,7 @@
 name: Update manual on release
 
 # When a GitHub Release is published, have Claude treat the in-app manual
-# (app/src/components/dialogs/Manual.add.tsx) as a living document: fold the
+# (app/src/components/manual/chapters/*.mdx) as a living document: fold the
 # release's user-facing changes into the right chapters and open a DRAFT PR.
 # release.yml creates a *draft* release; this fires when you publish it.
 on:
@@ -43,13 +43,17 @@ jobs:
             this release changed for users, then open a DRAFT pull request.
 
             THE MANUAL
-            - It is the in-app dialog at app/src/components/dialogs/Manual.add.tsx,
-              a React component whose content is the `CHAPTERS` array. Each chapter
-              is JSX built from primitives: <Kbd>, <Note>, <Img>, <ChapterLink id=.../>.
+            - It lives in app/src/components/manual/chapters/*.mdx -- one MDX file
+              per chapter, named NN-id.mdx (the numeric prefix sets reading order,
+              the rest is the chapter id). Each file starts with `export const title
+              = "..."` then markdown prose. The primitives <Kbd>, <Note>, <Img>, and
+              <ChapterLink id="..."/> are available in any chapter without importing
+              them. (The renderer and search live in ../Manual.tsx; you rarely touch it.)
             - Treat it as a LIVING DOCUMENT, not a changelog. Integrate changes into
               the chapters where they naturally belong -- edit existing prose so it
               describes how the app works *now*. Add a new chapter only if a feature
-              is substantial enough to warrant one. Never add a "What's new" / release
+              is substantial enough to warrant one (create a new NN-id.mdx; the
+              registry picks it up automatically). Never add a "What's new" / release
               notes / changelog section.
             - Match the existing tone, structure, and primitives exactly. Read several
               existing chapters first so your edits are indistinguishable from them.

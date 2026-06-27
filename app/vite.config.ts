@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import mdx from "@mdx-js/rollup";
 import path from "node:path";
 
 // console.error('[VITE CONFIG LOADED]');
@@ -16,7 +17,9 @@ export default defineConfig({
 	// SV tiles (svtile), the Maps batchexecute RPC (gmaps), and short-link
 	// resolution (googl) are served by Tauri Rust URI-scheme handlers now
 	// (work in dev + release), so no vite dev proxies are needed.
-	plugins: [react()],
+	// mdx() runs `enforce: "pre"` so the manual's .mdx chapters compile before
+	// React's transform; react({ include }) extends Fast Refresh to them.
+	plugins: [{ ...mdx(), enforce: "pre" }, react({ include: /\.(jsx|js|mdx|tsx|ts)$/ })],
 	optimizeDeps: {
 		include: [
 			"@deck.gl/core",
