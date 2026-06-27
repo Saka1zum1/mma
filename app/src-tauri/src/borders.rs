@@ -362,7 +362,7 @@ fn parse_geojson(data: &str) -> AppResult<BorderDataset> {
 
 fn load_dataset(level: &str) -> AppResult<()> {
     let data = if level == "light" {
-        include_str!("../../public/borders.json").to_string()
+        include_str!("../data/borders.json").to_string()
     } else {
         let path = crate::storage::app_data_dir()?
             .join("borders")
