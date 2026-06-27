@@ -52,7 +52,7 @@ var require_jsx_runtime = __commonJS({
   }
 });
 
-// plugins/inaturalist/src/inat.ts
+// inaturalist/src/inat.ts
 var import_google_maps = __toESM(require_google_maps());
 var import_layers = __toESM(require_layers());
 var TILE_TTL = 5 * 60 * 1e3;
@@ -271,7 +271,7 @@ function render() {
   });
 }
 
-// plugins/inaturalist/src/INatSidebar.tsx
+// inaturalist/src/INatSidebar.tsx
 var import_react = __toESM(require_react());
 var import_jsx_runtime = __toESM(require_jsx_runtime());
 var ARROW_LEFT = "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
@@ -416,7 +416,7 @@ function INatSidebar({ onClose }) {
   ] });
 }
 
-// plugins/inaturalist/src/index.tsx
+// inaturalist/src/index.tsx
 MMA.registerPlugin({
   activate() {
     let cancelled = false;

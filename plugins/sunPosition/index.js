@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// plugins/sunPosition/node_modules/suncalc/suncalc.js
+// sunPosition/node_modules/suncalc/suncalc.js
 var require_suncalc = __commonJS({
-  "plugins/sunPosition/node_modules/suncalc/suncalc.js"(exports, module) {
+  "sunPosition/node_modules/suncalc/suncalc.js"(exports, module) {
     (function() {
       "use strict";
       var PI = Math.PI, sin = Math.sin, cos = Math.cos, tan = Math.tan, asin = Math.asin, atan = Math.atan2, acos = Math.acos, rad = PI / 180;
@@ -205,7 +205,7 @@ var require_suncalc = __commonJS({
   }
 });
 
-// plugins/sunPosition/src/index.ts
+// sunPosition/src/index.ts
 var import_suncalc = __toESM(require_suncalc());
 var DEG = 180 / Math.PI;
 var FIELDS = {

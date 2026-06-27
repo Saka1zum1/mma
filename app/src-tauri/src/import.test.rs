@@ -273,18 +273,10 @@ fn bench_parse_real() {
         locs = parsed.locations.len();
 
         let t1 = std::time::Instant::now();
-        let _bounds = crate::util::compute_bounds(parsed.locations.iter().map(|l| (l.lat, l.lng)));
-        let t_bounds = t1.elapsed().as_secs_f64() * 1e3;
-
-        let t2 = std::time::Instant::now();
-        let _p = write_preview_positions(&parsed.locations).expect("positions");
-        let t_pos = t2.elapsed().as_secs_f64() * 1e3;
-
-        let t3 = std::time::Instant::now();
         let _preview = build_preview(parsed).expect("build_preview");
-        let t_build = t3.elapsed().as_secs_f64() * 1e3;
+        let t_build = t1.elapsed().as_secs_f64() * 1e3;
 
-        eprintln!("iter {i}: parse={t_parse:.0}ms build_preview={t_build:.0}ms (bounds={t_bounds:.0} pos_write={t_pos:.0})");
+        eprintln!("iter {i}: parse={t_parse:.0}ms build_preview={t_build:.0}ms");
         best_parse = best_parse.min(t_parse);
         best_build = best_build.min(t_build);
     }

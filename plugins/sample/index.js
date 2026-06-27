@@ -1,4 +1,4 @@
-// plugins/sample/src/index.ts
+// sample/src/index.ts
 MMA.registerPlugin({
   activate() {
     const map = MMA.getCurrentMap();

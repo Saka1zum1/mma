@@ -8,15 +8,17 @@
 // Auto-detects entry point (src/index.tsx > src/index.ts) and applies JSX
 // config only when needed.
 
-import { build, context } from "esbuild";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
-const mmaExternals = require("./mma-externals.js");
 const pluginsDir = dirname(fileURLToPath(import.meta.url));
+const mmaExternals = createRequire(import.meta.url)("./mma-externals.js");
+
+function resolveEsbuild(pluginDir) {
+	return createRequire(join(pluginDir, "package.json"))("esbuild");
+}
 
 function buildOpts(pluginDir) {
 	const tsx = existsSync(join(pluginDir, "src/index.tsx"));
@@ -30,6 +32,7 @@ function buildOpts(pluginDir) {
 		bundle: true,
 		format: "esm",
 		outfile: join(pluginDir, "index.js"),
+		absWorkingDir: pluginsDir,
 		plugins: [mmaExternals()],
 	};
 
@@ -62,6 +65,7 @@ const targets = dirs.length > 0 ? dirs.map((d) => resolve(d)) : discoverPlugins(
 if (watch) {
 	for (const dir of targets) {
 		const name = dir.slice(pluginsDir.length + 1);
+		const { context } = resolveEsbuild(dir);
 		const ctx = await context(buildOpts(dir));
 		await ctx.watch();
 		console.log(`[${name}] watching`);
@@ -70,6 +74,7 @@ if (watch) {
 	const results = await Promise.allSettled(
 		targets.map(async (dir) => {
 			const name = dir.slice(pluginsDir.length + 1);
+			const { build } = resolveEsbuild(dir);
 			await build(buildOpts(dir));
 			return name;
 		}),

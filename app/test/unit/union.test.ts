@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isVariant, unionTuple, type Variant } from "@/lib/util/union";
+import { isVariant, unionTuple, type Variant } from "@/types/util";
 
 type Shape =
 	| { type: "circle"; r: number }

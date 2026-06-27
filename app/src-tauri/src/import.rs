@@ -44,6 +44,7 @@ fn read_sequential(path: &str) -> std::io::Result<Vec<u8>> {
 
 /// Cached result from `bulk_import_preview` so `bulk_import_confirm` can
 /// skip re-parsing. Keyed by file path to detect stale caches.
+// TODO: single slot — multi-file bulk import only caches the last file; earlier ones re-parse.
 static CACHED_PARSE: Mutex<Option<CachedImport>> = Mutex::new(None);
 
 struct CachedImport {
