@@ -39,7 +39,9 @@ export function TagManager() {
 	const tagViewMode = useSetting("tagViewMode");
 	const [filterText, setFilterText] = useState("");
 	const sortMode = useSetting("tagSortMode");
+	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags");
 	const [editingTagId, setEditingTagId] = useState<number | null>(null);
+	const [editingVirtualPath, setEditingVirtualPath] = useState<string | null>(null);
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
 	const [dragTagId, setDragTagId] = useState<number | null>(null);
@@ -252,7 +254,9 @@ export function TagManager() {
 						selectedTagIds={selectedTagIds}
 						tagCounts={tagCounts}
 						sortMode={sortMode}
+						virtualTags={virtualTags ?? {}}
 						onEditTag={setEditingTagId}
+						onEditVirtual={setEditingVirtualPath}
 						onRenameTag={setRenamingTag}
 						filterText={filterText}
 					/>
@@ -307,6 +311,24 @@ export function TagManager() {
 				)}
 
 			{editingTag && <EditTagDialog tag={editingTag} onClose={() => setEditingTagId(null)} />}
+
+			{editingVirtualPath != null && (
+				<VirtualTagDialog
+					path={editingVirtualPath}
+					color={(virtualTags ?? {})[editingVirtualPath]?.color ?? null}
+					onClose={() => setEditingVirtualPath(null)}
+					onSave={(color) => {
+						setVirtualTags({ ...(virtualTags ?? {}), [editingVirtualPath]: { color } });
+						setEditingVirtualPath(null);
+					}}
+					onReset={() => {
+						const next = { ...(virtualTags ?? {}) };
+						delete next[editingVirtualPath];
+						setVirtualTags(next);
+						setEditingVirtualPath(null);
+					}}
+				/>
+			)}
 
 			{renamingTag && (
 				<RenameInSelectionDialog tag={renamingTag} onClose={() => setRenamingTag(null)} />
@@ -599,6 +621,72 @@ function EditTagDialog({
 							Delete
 						</button>
 						<button className="button button--primary" type="submit" data-qa="tag-save">
+							Save
+						</button>
+					</div>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** Color editor for a virtual tag-tree node (a folder path with no underlying tag).
+ *  Persists to `MapSettings.virtualTags`; Reset clears the override back to inherited. */
+function VirtualTagDialog({
+	path,
+	color,
+	onClose,
+	onSave,
+	onReset,
+}: {
+	path: string;
+	color: string | null;
+	onClose: () => void;
+	onSave: (color: string) => void;
+	onReset: () => void;
+}) {
+	const [hsl, setHsl] = useState(() => hexToHsl(color ?? "#888888"));
+	const hexValue = hslToHex(hsl.h, hsl.s, hsl.l);
+	const segment = path.split("/").pop() || path;
+
+	return (
+		<Dialog open onOpenChange={(open) => !open && onClose()}>
+			<DialogContent title={`Edit folder "${segment}"`}>
+				<form
+					onSubmit={(e) => {
+						e.preventDefault();
+						onSave(hexValue);
+					}}
+					style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingTop: "2px" }}
+				>
+					<div className="edit-tag-modal__color">
+						<span>Color:</span>
+						<input
+							className="input hex-color"
+							type="text"
+							value={hexValue}
+							onChange={(e) => {
+								const v = e.target.value;
+								if (/^#[0-9a-fA-F]{6}$/.test(v)) setHsl(hexToHsl(v));
+							}}
+						/>
+						<HslColorPicker
+							className="edit-tag-modal__color-picker"
+							style={{ width: "100%" }}
+							color={hsl}
+							onChange={setHsl}
+						/>
+					</div>
+					<div className="edit-tag-modal__actions">
+						<button
+							className="button button--destructive"
+							type="button"
+							onClick={onReset}
+							disabled={color == null}
+						>
+							Reset
+						</button>
+						<button className="button button--primary" type="submit">
 							Save
 						</button>
 					</div>

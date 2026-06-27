@@ -1,4 +1,4 @@
-import type { Tag } from "@/bindings.gen";
+import type { Tag, VirtualTag } from "@/bindings.gen";
 import type { TagSortMode } from "@/types";
 
 export interface TagTreeNode {
@@ -24,11 +24,13 @@ export function sumCounts(node: TagTreeNode, tagCounts: Record<number, number>):
 }
 
 /** Build the nested tag tree from `/`-delimited tag names. Within each level, leaf tags
- *  are floated above sub-branches so they render as a flat pill group above folder rows. */
+ *  are floated above sub-branches so they render as a flat pill group above folder rows.
+ *  `virtualTags` colors folder nodes that have no underlying tag (keyed by full path). */
 export function buildTagTree(
 	tags: Tag[],
 	sortMode: TagSortMode,
 	tagCounts: Record<number, number>,
+	virtualTags: Record<string, VirtualTag> = {},
 ): TagTreeNode[] {
 	const root: TagTreeNode[] = [];
 
@@ -64,7 +66,8 @@ export function buildTagTree(
 
 	function propagateColor(nodes: TagTreeNode[], parentColor: string | null) {
 		for (const node of nodes) {
-			const ownColor = node.tag?.color ?? null;
+			// Real tag color wins; otherwise a virtual-tag color for this path; else inherit.
+			const ownColor = node.tag?.color ?? virtualTags[node.fullPath]?.color ?? null;
 			const effectiveColor = ownColor ?? parentColor ?? "#888888";
 			node.inheritedColor = effectiveColor;
 			propagateColor(node.children, effectiveColor);

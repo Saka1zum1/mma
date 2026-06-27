@@ -119,6 +119,8 @@ const DEFAULTS = {
 	panoDotScaled: false,
 	tagViewMode: "flat" as TagViewMode,
 	tagSortMode: "default" as TagSortMode,
+	/** Gap between tag pills (px), shared by flat and tree views via `--tag-gap`. */
+	tagGap: 6 as number,
 	borderDetail: "light" as BorderDetail,
 	subdivisionDetail: "off" as SubdivisionDetail,
 	previewAspectRatio: "16 / 9" as PreviewAspectRatio,
@@ -140,6 +142,12 @@ const DEFAULTS = {
 	] as PinnedEntry[],
 };
 export type AppSettings = typeof DEFAULTS;
+
+/** App settings mirrored to CSS custom properties on `:root`. Add an entry to expose a
+ *  setting to CSS; `useCssVarSettings` (App.tsx) keeps them in sync reactively. */
+export const CSS_VAR_SETTINGS: ReadonlyArray<readonly [cssVar: string, value: (s: AppSettings) => string]> = [
+	["--tag-gap", (s) => `${s.tagGap}px`],
+];
 
 
 const STORAGE_KEY = "appSettings";

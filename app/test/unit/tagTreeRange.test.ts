@@ -147,4 +147,20 @@ describe("buildTagTree", () => {
 		const tree = buildTagTree([mkTag(1, "A/B"), mkTag(2, "A/C")], "default", { 1: 3, 2: 4 });
 		expect(sumCounts(tree[0], { 1: 3, 2: 4 })).toBe(7);
 	});
+
+	it("colors a virtual folder node from virtualTags and propagates to tagless descendants", () => {
+		const tree = buildTagTree([mkTag(1, "a/b/x")], "default", {}, { a: { color: "#ff0000" } });
+		const a = tree[0];
+		expect(a.tag).toBeNull();
+		expect(a.inheritedColor).toBe("#ff0000");
+		const ab = a.children[0]; // 'a/b' is virtual too — inherits a's color
+		expect(ab.tag).toBeNull();
+		expect(ab.inheritedColor).toBe("#ff0000");
+	});
+
+	it("leaves a virtual folder node gray when unconfigured", () => {
+		const tree = buildTagTree([mkTag(1, "a/b")], "default", {});
+		expect(tree[0].tag).toBeNull();
+		expect(tree[0].inheritedColor).toBe("#888888");
+	});
 });

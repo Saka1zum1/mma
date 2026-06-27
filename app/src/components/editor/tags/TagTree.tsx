@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiChevronDown, mdiChevronRight, mdiPencil } from "@mdi/js";
+import { mdiChevronDown, mdiChevronRight, mdiPencil, mdiFolder } from "@mdi/js";
 import { textColorFor } from "@/lib/util/color";
 import { fmt } from "@/lib/util/format";
 import { toggleTagSelections, reorderTags } from "@/store/useMapStore";
@@ -16,7 +16,7 @@ import {
 	type TagTreeNode,
 } from "./tagTreeRange";
 import type { TagSortMode } from "@/types";
-import type { Tag } from "@/bindings.gen";
+import type { Tag, VirtualTag } from "@/bindings.gen";
 
 interface TreeDrag {
 	enabled: boolean;
@@ -45,7 +45,9 @@ interface TagTreeViewProps {
 	selectedTagIds: Set<number>;
 	tagCounts: Record<number, number>;
 	sortMode: TagSortMode;
+	virtualTags: Record<string, VirtualTag>;
 	onEditTag: (tagId: number) => void;
+	onEditVirtual: (fullPath: string) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	filterText: string;
 }
@@ -55,13 +57,15 @@ export function TagTreeView({
 	selectedTagIds,
 	tagCounts,
 	sortMode,
+	virtualTags,
 	onEditTag,
+	onEditVirtual,
 	onRenameTag,
 	filterText,
 }: TagTreeViewProps) {
 	const tree = useMemo(
-		() => buildTagTree(tags, sortMode, tagCounts),
-		[tags, sortMode, tagCounts],
+		() => buildTagTree(tags, sortMode, tagCounts, virtualTags),
+		[tags, sortMode, tagCounts, virtualTags],
 	);
 	const [expandedPaths, setExpandedPaths] = useState(loadExpanded);
 
@@ -284,6 +288,7 @@ export function TagTreeView({
 							selectedTagIds={selectedTagIds}
 							tagCounts={tagCounts}
 							onEditTag={onEditTag}
+							onEditVirtual={onEditVirtual}
 							onRenameTag={onRenameTag}
 							forceExpanded={forceExpanded}
 							expandedPaths={expandedPaths}
@@ -328,6 +333,7 @@ function TagTreeNodeRow({
 	selectedTagIds,
 	tagCounts,
 	onEditTag,
+	onEditVirtual,
 	onRenameTag,
 	forceExpanded,
 	expandedPaths,
@@ -340,6 +346,7 @@ function TagTreeNodeRow({
 	selectedTagIds: Set<number>;
 	tagCounts: Record<number, number>;
 	onEditTag: (tagId: number) => void;
+	onEditVirtual: (fullPath: string) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	forceExpanded: boolean;
 	expandedPaths: Set<string>;
@@ -401,15 +408,23 @@ function TagTreeNodeRow({
 							<span className="tag-tree__chevron-spacer" />
 						)}
 						<span className="tag-tree__label">{node.segment}</span>
+						{!node.tag && (
+							<Icon
+								path={mdiFolder}
+								size={13}
+								style={{ color: fg, opacity: 0.5, flexShrink: 0 }}
+							/>
+						)}
 						<small className="tag-tree__count">{fmt.format(count)}</small>
 						<button
 							className="button tag-tree__edit"
 							onClick={(e) => {
 								e.stopPropagation();
 								if (node.tag) onEditTag(node.tag.id);
+								else onEditVirtual(node.fullPath);
 							}}
 							type="button"
-							style={{ color: fg, visibility: node.tag ? "visible" : "hidden" }}
+							style={{ color: fg }}
 						>
 							<Icon path={mdiPencil} size={14} />
 						</button>
@@ -449,6 +464,7 @@ function TagTreeNodeRow({
 									selectedTagIds={selectedTagIds}
 									tagCounts={tagCounts}
 									onEditTag={onEditTag}
+									onEditVirtual={onEditVirtual}
 									onRenameTag={onRenameTag}
 									forceExpanded={forceExpanded}
 									expandedPaths={expandedPaths}

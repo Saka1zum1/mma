@@ -769,6 +769,8 @@ export type MapSettings = {
 	enrichMetadata?: boolean,
 	enrichFields?: string[] | null,
 	keyBindings?: MapKeyBinding[],
+	/**  Virtual tag-tree nodes keyed by full slash path. Tree-view only. */
+	virtualTags?: { [key in string]: VirtualTag },
 };
 
 /**
@@ -1078,6 +1080,15 @@ export type Tag = {
 	 *  fast sidebar display -- kept in sync by callers after batch edits.
 	 */
 	count?: number,
+};
+
+/**
+ *  Per-map config for a virtual tag-tree node — a folder node with no underlying
+ *  tag (e.g. "a" when only "a/b" and "a/c" exist). Keyed by the node's full slash
+ *  path in `MapSettings::virtual_tags`. Tree-view only; never creates a real tag.
+ */
+export type VirtualTag = {
+	color?: string | null,
 };
 
 /* Tauri Specta runtime */

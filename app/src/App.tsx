@@ -13,7 +13,7 @@ import { Manual } from "@/components/manual/Manual";
 import { ManualSearch } from "@/components/manual/ManualSearch";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
-import { useSetting } from "@/store/settings";
+import { useSetting, useSettings, CSS_VAR_SETTINGS } from "@/store/settings";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiCog, mdiPuzzle, mdiClose } from "@mdi/js";
 import { ToastContainer } from "@/components/primitives/Toast";
@@ -46,6 +46,7 @@ export default function App() {
 
 	useSelfDestruct(closing);
 	useCustomCss();
+	useCssVarSettings();
 
 	return (
 		<TooltipProvider>
@@ -158,6 +159,16 @@ function useSelfDestruct(closing: boolean) {
 				getCurrentWindow().destroy();
 			});
 	}, [closing]);
+}
+
+/** Mirror the CSS-var-backed app settings (see `CSS_VAR_SETTINGS`) onto `:root`. */
+function useCssVarSettings() {
+	const settings = useSettings();
+	useEffect(() => {
+		for (const [cssVar, value] of CSS_VAR_SETTINGS) {
+			document.documentElement.style.setProperty(cssVar, value(settings));
+		}
+	}, [settings]);
 }
 
 function useCustomCss() {

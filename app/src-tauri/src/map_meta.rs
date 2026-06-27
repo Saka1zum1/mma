@@ -37,6 +37,15 @@ pub struct MapKeyBinding {
     pub action: MapKeyAction,
 }
 
+/// Per-map config for a virtual tag-tree node — a folder node with no underlying
+/// tag (e.g. "a" when only "a/b" and "a/c" exist). Keyed by the node's full slash
+/// path in `MapSettings::virtual_tags`. Tree-view only; never creates a real tag.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(default, rename_all = "camelCase")]
+pub struct VirtualTag {
+    pub color: Option<String>,
+}
+
 /// Per-map editor preferences. Controls Street View lookup behavior (official vs
 /// unofficial, camera type filters), export defaults, and metadata enrichment.
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -55,6 +64,8 @@ pub struct MapSettings {
     pub enrich_metadata: bool,
     pub enrich_fields: Option<Vec<String>>,
     pub key_bindings: Vec<MapKeyBinding>,
+    /// Virtual tag-tree nodes keyed by full slash path. Tree-view only.
+    pub virtual_tags: HashMap<String, VirtualTag>,
 }
 
 /// Canonical default map settings.
@@ -74,6 +85,7 @@ impl Default for MapSettings {
             enrich_metadata: false,
             enrich_fields: None,
             key_bindings: Vec::new(),
+            virtual_tags: HashMap::new(),
         }
     }
 }
@@ -708,6 +720,20 @@ mod tests {
         let settings: MapSettings = serde_json::from_str(old_json).unwrap();
         assert!(settings.key_bindings.is_empty());
         assert!(MapSettings::default().key_bindings.is_empty());
+    }
+
+    #[test]
+    fn map_settings_virtual_tags_default_empty() {
+        // Old settings JSON (no virtualTags) must deserialize with an empty map.
+        let old_json = r#"{"pointAlongRoad":true}"#;
+        let settings: MapSettings = serde_json::from_str(old_json).unwrap();
+        assert!(settings.virtual_tags.is_empty());
+        assert!(MapSettings::default().virtual_tags.is_empty());
+
+        // Round-trips a configured virtual node.
+        let json = r##"{"virtualTags":{"a":{"color":"#ff0000"}}}"##;
+        let settings: MapSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.virtual_tags["a"].color.as_deref(), Some("#ff0000"));
     }
 
     #[test]

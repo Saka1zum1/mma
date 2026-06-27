@@ -3529,7 +3529,7 @@ summary.button {
 	overflow: hidden;
 }
 .tag-list {
-	grid-gap: 1rem;
+	gap: var(--tag-gap, 6px);
 	flex-wrap: wrap;
 	margin: -4px;
 	padding: 4px;
@@ -3545,11 +3545,6 @@ summary.button {
 .tag-list.is-collapsed .tag {
 	overflow: hidden;
 	text-overflow: ellipsis;
-}
-@media (max-width: 1600px) {
-	.tag-list {
-		grid-gap: 0.5rem;
-	}
 }
 .tag {
 	opacity: 0.7;
@@ -3750,7 +3745,7 @@ summary.button {
 }
 .tag-tree__leaves {
 	margin-top: 0.25rem;
-	margin-bottom: 0.625rem;
+	margin-bottom: 0.25rem;
 }
 
 .edit-tag-modal {

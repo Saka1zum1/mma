@@ -821,6 +821,24 @@ function TagsSection() {
 				className="settings-popup__item"
 				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
 			>
+				Tag gap
+				<input
+					type="range"
+					min={0}
+					max={16}
+					step={1}
+					value={s.tagGap}
+					onChange={(e) => setSetting("tagGap", Number(e.target.value))}
+					style={{ flex: 1 }}
+				/>
+				<span style={{ minWidth: "2rem", textAlign: "right", fontSize: "0.85rem" }}>
+					{s.tagGap}px
+				</span>
+			</label>
+			<label
+				className="settings-popup__item"
+				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+			>
 				Suggestions shown
 				<input
 					type="range"
