@@ -1948,7 +1948,7 @@ summary.button {
 	padding: 16px;
 }
 .select__content {
-	z-index: 100;
+	z-index: 10000;
 	max-height: min(var(--radix-select-content-available-height), 400px);
 	animation: 0.15s cubic-bezier(0.16, 1, 0.3, 1) popoverShow;
 }
@@ -3131,6 +3131,11 @@ summary.button {
 	z-index: 9999;
 	aspect-ratio: unset;
 	background: #000;
+	--fs-tray-h: 0px;
+}
+.is-fullscreen .embed-controls__control[data-position="bottom-left"],
+.is-fullscreen .embed-controls__control[data-position="left-bottom"] {
+	transform: translateY(calc(-1 * var(--fs-tray-h, 0px)));
 }
 .location-preview__embed {
 	width: 100%;
@@ -3742,6 +3747,19 @@ summary.button {
 }
 .tag-tree__edit:hover {
 	opacity: 1 !important;
+}
+.tag-tree__leaves {
+	margin-top: 0.25rem;
+}
+.tag-tree__leaves .tag.is-dragging {
+	visibility: visible;
+	opacity: 0.4;
+}
+.tag-tree__leaves .tag[data-drop="before"] {
+	box-shadow: -2px 0 0 0 #4a9eff;
+}
+.tag-tree__leaves .tag[data-drop="after"] {
+	box-shadow: 2px 0 0 0 #4a9eff;
 }
 
 .edit-tag-modal {
@@ -5069,7 +5087,7 @@ body {
 /* Fullscreen minimap */
 .fullscreen-minimap {
 	position: absolute;
-	bottom: 56px;
+	bottom: calc(var(--fs-tray-h, 0px) + 8px);
 	right: 8px;
 	width: 250px;
 	height: 200px;
@@ -5124,18 +5142,35 @@ body {
 	opacity: 0.4;
 	cursor: default;
 }
-/* Fullscreen tag bar */
-.fullscreen-tagbar {
+/* Fullscreen bottom tray (date picker + tag bar) */
+.fullscreen-bottom-tray {
 	position: absolute;
 	bottom: 0;
 	left: 0;
 	right: 0;
 	display: flex;
+	flex-direction: column;
+	z-index: 10;
+}
+
+/* Fullscreen tag bar */
+.fullscreen-tagbar {
+	display: flex;
 	align-items: center;
 	gap: 0.5rem;
 	padding: 0.375rem 0.75rem;
 	background: rgba(0, 0, 0, 0.7);
-	z-index: 10;
+}
+
+/* Fullscreen date picker */
+.fullscreen-date-picker {
+	position: absolute;
+	bottom: var(--fs-tray-h, 0px);
+	left: 50%;
+	transform: translateX(-50%);
+	width: 300px;
+	z-index: 11;
+	padding-bottom: 8px;
 }
 .fullscreen-tagbar .tag-list {
 	display: flex;

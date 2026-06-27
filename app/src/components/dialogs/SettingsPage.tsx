@@ -461,6 +461,14 @@ function FullscreenSection() {
 				/>
 				Show tag bar in fullscreen
 			</label>
+			<label className="settings-popup__item">
+				<input
+					type="checkbox"
+					checked={s.showFullscreenDatePicker}
+					onChange={(e) => setSetting("showFullscreenDatePicker", e.target.checked)}
+				/>
+				Show date picker in fullscreen
+			</label>
 		</fieldset>
 	);
 }

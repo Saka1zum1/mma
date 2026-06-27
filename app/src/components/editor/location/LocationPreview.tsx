@@ -127,6 +127,15 @@ function LocationPreviewInner() {
 		if (geoResult) seenUpdateGeo(geoResult);
 	}, [geoResult]);
 	const appSettings = useSettings();
+	const bottomTrayRef = useRef<HTMLDivElement>(null);
+	const [bottomTrayHeight, setBottomTrayHeight] = useState(0);
+	useLayoutEffect(() => {
+		const el = bottomTrayRef.current;
+		if (!el) { setBottomTrayHeight(0); return; }
+		const obs = new ResizeObserver(() => setBottomTrayHeight(el.offsetHeight));
+		obs.observe(el);
+		return () => obs.disconnect();
+	}, [isFullscreen, appSettings.showFullscreenTagbar, appSettings.showFullscreenDatePicker, appSettings.hidePanoUI]);
 	useSyncExternalStore(subscribeViewportLock, getViewportLockSnapshot);
 	const lockInfo = getViewportLockInfo();
 
@@ -500,7 +509,9 @@ function LocationPreviewInner() {
 				<div
 					className={`location-preview__panorama${isFullscreen ? " is-fullscreen" : ""}`}
 					ref={fullscreenContainerRef}
-					style={isFullscreen || appSettings.previewAspectRatio === "free" ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
+					style={isFullscreen
+						? { "--fs-tray-h": `${bottomTrayHeight}px` } as React.CSSProperties
+						: appSettings.previewAspectRatio === "free" ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
 				>
 					<div
 						className={`location-preview__embed${appSettings.hidePanoUI ? " hide-pano-ui" : ""}`}
@@ -529,12 +540,24 @@ function LocationPreviewInner() {
 					{isFullscreen && appSettings.showFullscreenMinimap && !appSettings.hidePanoUI && (
 						<FullscreenMiniMap lat={location.lat} lng={location.lng}/>
 					)}
-					{isFullscreen && appSettings.showFullscreenTagbar && !appSettings.hidePanoUI && (
-						<FullscreenTagBar
-							pendingTags={pendingTags}
-							onChangeTags={setPendingTags}
-							tags={getVisibleTags()}
-						/>
+					{isFullscreen && !appSettings.hidePanoUI && (
+						<div className="fullscreen-bottom-tray" ref={bottomTrayRef}>
+							{appSettings.showFullscreenTagbar && (
+								<FullscreenTagBar
+									pendingTags={pendingTags}
+									onChangeTags={setPendingTags}
+									tags={getVisibleTags()}
+								/>
+							)}
+						</div>
+					)}
+					{isFullscreen && appSettings.showFullscreenDatePicker && !appSettings.hidePanoUI && (
+						<div className="fullscreen-date-picker">
+							<PanoDatePicker
+								defaultPanoId={location.panoId}
+								onChange={handleDateChange}
+							/>
+						</div>
 					)}
 				</div>
 				<div className="location-preview__meta">

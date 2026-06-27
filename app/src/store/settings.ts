@@ -99,6 +99,7 @@ const DEFAULTS = {
 	showFullscreenMinimap: true,
 	fullscreenMinimapScale: 1,
 	showFullscreenTagbar: true,
+	showFullscreenDatePicker: true,
 	customCss: "",
 	enableSeen: true,
 	enableSeenThumbnails: true,
