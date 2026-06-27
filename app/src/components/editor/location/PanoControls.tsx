@@ -6,6 +6,7 @@ import type { Location } from "@/bindings.gen";
 import { google } from "@/lib/sv/opensv";
 import { lookupStreetView } from "@/lib/sv/lookup";
 import { shortenMapsUrl } from "@/lib/sv/shortUrl";
+import { isOfficialPano } from "@/lib/sv/panoId";
 import { useSettings } from "@/store/settings";
 import { getCurrentMap } from "@/store/useMapStore";
 import { useBinding } from "@/lib/util/hotkeys";
@@ -279,7 +280,23 @@ export function PanoControls({
 		if (!loc || !pos || !pov) return null;
 		const fov = (360 / Math.PI) * Math.atan(0.75 * Math.pow(2, 1 - panorama.getZoom()));
 		const panoId = loc.pano ?? "";
-		const data = `!3m4!1e1!3m2!1s${panoId}!2e0`;
+
+		// Official panos embed a Street View thumbnail (!6s) so the link unfurls with a preview.
+		let data: string;
+		if (isOfficialPano(panoId)) {
+			const thumb = new URL("https://streetviewpixels-pa.googleapis.com/v1/thumbnail");
+			thumb.searchParams.set("panoid", panoId);
+			thumb.searchParams.set("cb_client", "maps_sv.share");
+			thumb.searchParams.set("w", "900");
+			thumb.searchParams.set("h", "600");
+			thumb.searchParams.set("yaw", String(pov.heading));
+			thumb.searchParams.set("pitch", String(-pov.pitch));
+			thumb.searchParams.set("thumbfov", fov.toFixed(0));
+			data = `!3m5!1e1!3m3!1s${panoId}!2e0!6s${encodeURIComponent(thumb.toString())}`;
+		} else {
+			data = `!3m4!1e1!3m2!1s${panoId}!2e0`;
+		}
+
 		const url = new URL(
 			`https://www.google.com/maps/@${pos.lat()},${pos.lng()},3a,${fov.toFixed(1)}y,${pov.heading.toFixed(2)}h,${(pov.pitch + 90).toFixed(2)}t/data=${data}`,
 		);
