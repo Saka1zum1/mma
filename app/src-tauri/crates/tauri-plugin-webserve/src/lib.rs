@@ -108,6 +108,27 @@ fn serve<R: Runtime>(handle: AppHandle<R>) {
         let path = url.split('?').next().unwrap_or("").to_string();
         let query = url.split_once('?').map(|(_, q)| q.to_string()).unwrap_or_default();
 
+        if method == Method::Post && path == "/__ipc_upload" {
+            let raw = query.strip_prefix("name=").unwrap_or("upload");
+            let name = url_decode(raw);
+            let mut body = Vec::new();
+            let _ = req.as_reader().read_to_end(&mut body);
+            let dest = std::env::temp_dir().join(format!("mma_{name}"));
+            let resp = match std::fs::write(&dest, &body) {
+                Ok(()) => {
+                    let path_str = dest.to_string_lossy().to_string();
+                    (200, serde_json::json!(path_str).to_string())
+                }
+                Err(e) => (500, err_json(&format!("write failed: {e}"))),
+            };
+            let _ = req.respond(
+                Response::from_string(resp.1)
+                    .with_status_code(resp.0)
+                    .with_header(json_header()),
+            );
+            continue;
+        }
+
         if method == Method::Post && path.starts_with("/__ipc/") {
             let cmd = path.trim_start_matches("/__ipc/").to_string();
             let mut body = String::new();
@@ -313,4 +334,24 @@ fn header_value(req: &tiny_http::Request, name: &str) -> Option<String> {
         .iter()
         .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case(name))
         .map(|h| h.value.as_str().to_string())
+}
+
+fn url_decode(s: &str) -> String {
+    let mut out = Vec::with_capacity(s.len());
+    let mut bytes = s.as_bytes().iter();
+    while let Some(&b) = bytes.next() {
+        if b == b'%' {
+            let hi = bytes.next().copied().unwrap_or(0);
+            let lo = bytes.next().copied().unwrap_or(0);
+            let hex = [hi, lo];
+            if let Ok(val) = u8::from_str_radix(std::str::from_utf8(&hex).unwrap_or(""), 16) {
+                out.push(val);
+            }
+        } else if b == b'+' {
+            out.push(b' ');
+        } else {
+            out.push(b);
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }

@@ -59,11 +59,18 @@
 				input.onchange = async () => {
 					const file = input.files && input.files[0];
 					if (!file) return resolve(null);
-					const text = await file.text();
-					const path = await realInvoke("write_temp_file", {
-						name: file.name,
-						content: text,
-					});
+					var isBinary = !/\.(json|csv|geojson|txt)$/i.test(file.name);
+					var path;
+					if (isBinary) {
+						var buf = await file.arrayBuffer();
+						var r = await _fetch("/__ipc_upload?name=" + encodeURIComponent(file.name), {
+							method: "POST",
+							body: buf,
+						});
+						path = await r.json();
+					} else {
+						path = await realInvoke("write_temp_file", { name: file.name, content: await file.text() });
+					}
 					resolve(opts.multiple ? [path] : path);
 				};
 				input.click();
