@@ -19,6 +19,55 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { basename, join, resolve, dirname } from "path";
 
+// Inlined LZString decompressor (WTFPL license, pieroxy.net/blog/pages/lz-string)
+const lzDecompress = (() => {
+  const f = String.fromCharCode;
+  const keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-$";
+  const baseReverseDic = {};
+  function getBaseValue(alphabet, ch) {
+    if (!baseReverseDic[alphabet]) {
+      baseReverseDic[alphabet] = {};
+      for (let i = 0; i < alphabet.length; i++) baseReverseDic[alphabet][alphabet[i]] = i;
+    }
+    return baseReverseDic[alphabet][ch];
+  }
+  function _decompress(length, resetValue, getNextValue) {
+    const dictionary = []; let enlargeIn = 4, dictSize = 4, numBits = 3, entry, w, bits, resb, maxpower, power, c;
+    const result = [];
+    const data = { val: getNextValue(0), position: resetValue, index: 1 };
+    for (let i = 0; i < 3; i++) dictionary[i] = i;
+    bits = 0; maxpower = 4; power = 1;
+    while (power !== maxpower) { resb = data.val & data.position; data.position >>= 1; if (!data.position) { data.position = resetValue; data.val = getNextValue(data.index++); } bits |= (resb > 0 ? 1 : 0) * power; power <<= 1; }
+    switch (bits) {
+      case 0: bits = 0; maxpower = 256; power = 1; while (power !== maxpower) { resb = data.val & data.position; data.position >>= 1; if (!data.position) { data.position = resetValue; data.val = getNextValue(data.index++); } bits |= (resb > 0 ? 1 : 0) * power; power <<= 1; } c = f(bits); break;
+      case 1: bits = 0; maxpower = 65536; power = 1; while (power !== maxpower) { resb = data.val & data.position; data.position >>= 1; if (!data.position) { data.position = resetValue; data.val = getNextValue(data.index++); } bits |= (resb > 0 ? 1 : 0) * power; power <<= 1; } c = f(bits); break;
+      case 2: return "";
+    }
+    dictionary[3] = c; w = c; result.push(c);
+    while (true) {
+      if (data.index > length) return "";
+      bits = 0; maxpower = Math.pow(2, numBits); power = 1;
+      while (power !== maxpower) { resb = data.val & data.position; data.position >>= 1; if (!data.position) { data.position = resetValue; data.val = getNextValue(data.index++); } bits |= (resb > 0 ? 1 : 0) * power; power <<= 1; }
+      switch (c = bits) {
+        case 0: bits = 0; maxpower = 256; power = 1; while (power !== maxpower) { resb = data.val & data.position; data.position >>= 1; if (!data.position) { data.position = resetValue; data.val = getNextValue(data.index++); } bits |= (resb > 0 ? 1 : 0) * power; power <<= 1; } dictionary[dictSize++] = f(bits); c = dictSize - 1; enlargeIn--; break;
+        case 1: bits = 0; maxpower = 65536; power = 1; while (power !== maxpower) { resb = data.val & data.position; data.position >>= 1; if (!data.position) { data.position = resetValue; data.val = getNextValue(data.index++); } bits |= (resb > 0 ? 1 : 0) * power; power <<= 1; } dictionary[dictSize++] = f(bits); c = dictSize - 1; enlargeIn--; break;
+        case 2: return result.join("");
+      }
+      if (enlargeIn === 0) { enlargeIn = Math.pow(2, numBits); numBits++; }
+      if (dictionary[c]) { entry = dictionary[c]; } else if (c === dictSize) { entry = w + w[0]; } else { return null; }
+      result.push(entry);
+      dictionary[dictSize++] = w + entry[0]; enlargeIn--;
+      w = entry;
+      if (enlargeIn === 0) { enlargeIn = Math.pow(2, numBits); numBits++; }
+    }
+  }
+  return (input) => {
+    if (input == null) return ""; if (input === "") return null;
+    input = input.replace(/ /g, "+");
+    return _decompress(input.length, 32, (index) => getBaseValue(keyStr, input[index]));
+  };
+})();
+
 const STORAGE_PREFIX = "[⚠️_DO_NOT_DELETE_MM_CLOUD_SAVE]";
 const OLD_STORAGE_PREFIX = "[⚠️_NE_PAS_SUPPRIMER_MM_CLOUD_SAVE]";
 
@@ -84,19 +133,17 @@ function extractEmbeddedFolders(mapData) {
     if (sep === -1) continue;
     const encoded = tagName.slice(sep + 3);
     try {
-      // LZString-compressed — but the userscript's Export button gives plain JSON.
-      // Try plain JSON first, then bail (we can't decompress LZString in plain Node
-      // without the library, and the user can just use the Export button instead).
       const parsed = JSON.parse(encoded);
       if (parsed?.folders) return parsed.folders;
     } catch {
-      console.error(
-        "  Found embedded folder data but it's LZString-compressed."
-      );
-      console.error(
-        '  Use the userscript\'s "Export" button and pass the result with -f.'
-      );
-      return null;
+      try {
+        const decoded = lzDecompress(encoded);
+        const parsed = JSON.parse(decoded);
+        if (parsed?.folders) return parsed.folders;
+      } catch (e) {
+        console.error(`  Failed to decompress embedded folder data: ${e.message}`);
+        return null;
+      }
     }
   }
   return null;
