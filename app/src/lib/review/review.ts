@@ -156,7 +156,7 @@ export async function beginReview(ids: number[], source?: Selection): Promise<vo
 	if (!mapId || !map || ids.length === 0) return;
 
 	const sourceKey = source?.key ?? "manual";
-	if (source) {
+	if (source && source.props.type !== "Manual") {
 		try {
 			const existing = await cmd.storeReviewGet(mapId, sourceKey);
 			if (existing) {
