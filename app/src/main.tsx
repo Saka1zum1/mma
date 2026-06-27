@@ -52,6 +52,9 @@ async function boot() {
 		if (e.key === "F11") {
 			win.isFullscreen().then((fs) => win.setFullscreen(!fs));
 		}
+		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+			e.preventDefault();
+		}
 	});
 
 	createRoot(document.getElementById("root")!).render(<App />);
