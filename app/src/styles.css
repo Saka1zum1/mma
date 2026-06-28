@@ -5090,7 +5090,7 @@ body {
 	height: 200px;
 	border: 2px solid rgba(255, 255, 255, 0.4);
 	border-radius: 4px;
-	z-index: 10;
+	z-index: 12;
 	pointer-events: auto;
 	transition:
 		width 0.2s,
@@ -5147,7 +5147,7 @@ body {
 	right: 0;
 	display: flex;
 	flex-direction: column;
-	z-index: 10;
+	z-index: 13;
 }
 
 /* Fullscreen tag bar */
@@ -5230,9 +5230,16 @@ body {
 }
 
 /* Hide all pano UI (Google close button, attribution, etc.) when toggled */
-.location-preview__embed.hide-pano-ui .gm-style > div > div > div > div > button,
-.location-preview__embed.hide-pano-ui .gm-style > div > div > div > div > a {
-	display: none !important;
+.location-preview__panorama.hide-pano-ui .gm-style > div > div > div > div > button,
+.location-preview__panorama.hide-pano-ui .gm-style > div > div > div > div > a {
+	visibility: hidden !important;
+}
+.location-preview__panorama.hide-pano-ui .embed-controls,
+.location-preview__panorama.hide-pano-ui .viewport-lock-badge,
+.location-preview__panorama.hide-pano-ui .fullscreen-minimap,
+.location-preview__panorama.hide-pano-ui .fullscreen-bottom-tray,
+.location-preview__panorama.hide-pano-ui .fullscreen-date-picker {
+	visibility: hidden !important;
 }
 
 .tag-find-replace-modal {

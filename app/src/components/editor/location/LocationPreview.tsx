@@ -135,7 +135,7 @@ function LocationPreviewInner() {
 		const obs = new ResizeObserver(() => setBottomTrayHeight(el.offsetHeight));
 		obs.observe(el);
 		return () => obs.disconnect();
-	}, [isFullscreen, appSettings.showFullscreenTagbar, appSettings.showFullscreenDatePicker, appSettings.hidePanoUI]);
+	}, [isFullscreen, appSettings.showFullscreenTagbar, appSettings.showFullscreenDatePicker]);
 	useSyncExternalStore(subscribeViewportLock, getViewportLockSnapshot);
 	const lockInfo = getViewportLockInfo();
 
@@ -507,20 +507,18 @@ function LocationPreviewInner() {
 			<ReviewBar />
 			<section className={`location-preview${appSettings.previewAspectRatio === "free" ? " free-resize" : ""}`}>
 				<div
-					className={`location-preview__panorama${isFullscreen ? " is-fullscreen" : ""}`}
+					className={`location-preview__panorama${isFullscreen ? " is-fullscreen" : ""}${appSettings.hidePanoUI ? " hide-pano-ui" : ""}`}
 					ref={fullscreenContainerRef}
 					style={isFullscreen
 						? { "--fs-tray-h": `${bottomTrayHeight}px` } as React.CSSProperties
 						: appSettings.previewAspectRatio === "free" ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
 				>
-					<div
-						className={`location-preview__embed${appSettings.hidePanoUI ? " hide-pano-ui" : ""}`}
-					>
+					<div className="location-preview__embed">
 						<div style={{ position: "absolute", inset: 0 }} ref={panoContainerRef} />
 						{appSettings.defaultMovementMode === "nmpz" && (
 							<div style={{ position: "absolute", inset: 0, zIndex: 1 }} />
 						)}
-						{panoReady && singletonPano && !appSettings.hidePanoUI && (
+						{panoReady && singletonPano && (
 							<PanoControls
 								panorama={singletonPano}
 								location={location}
@@ -530,17 +528,17 @@ function LocationPreviewInner() {
 								onReturnToSpawn={handleReturnToSpawn}
 							/>
 						)}
-						{lockInfo && !appSettings.hidePanoUI && (
+						{lockInfo && (
 							<div className="viewport-lock-badge">
 								VIEWPORT LOCK h {lockInfo.relHeading.toFixed(1)} p {lockInfo.relPitch.toFixed(1)} z{" "}
 								{lockInfo.lockedZoom.toFixed(1)}
 							</div>
 						)}
 					</div>
-					{isFullscreen && appSettings.showFullscreenMinimap && !appSettings.hidePanoUI && (
+					{isFullscreen && appSettings.showFullscreenMinimap && (
 						<FullscreenMiniMap />
 					)}
-					{isFullscreen && !appSettings.hidePanoUI && (
+					{isFullscreen && (
 						<div className="fullscreen-bottom-tray" ref={bottomTrayRef}>
 							{appSettings.showFullscreenTagbar && (
 								<FullscreenTagBar
@@ -551,7 +549,7 @@ function LocationPreviewInner() {
 							)}
 						</div>
 					)}
-					{isFullscreen && appSettings.showFullscreenDatePicker && !appSettings.hidePanoUI && (
+					{isFullscreen && appSettings.showFullscreenDatePicker && (
 						<div className="fullscreen-date-picker">
 							<PanoDatePicker onChange={handleDateChange} />
 						</div>
