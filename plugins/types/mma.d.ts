@@ -152,6 +152,11 @@ export type EditorImportResult = {
 	warnings: string[];
 	/**  True when the import was large enough to autocommit; the caller commits it. */
 	autoCommit: boolean;
+	/**
+	 *  Settings carried by the import (`extra.settings`), a partial overlay for the
+	 *  JS caller to merge into the open map's settings via `updateMapMeta`.
+	 */
+	settings: any;
 } & MutationResult;
 /**
  *  Configuration for JSON export. Controls which fields are included and
@@ -390,6 +395,10 @@ export type MapSettings = {
 	enrichMetadata?: boolean;
 	enrichFields?: string[] | null;
 	keyBindings?: MapKeyBinding[];
+	/**  Virtual tag-tree nodes keyed by full slash path. Tree-view only. */
+	virtualTags?: {
+		[key in string]: VirtualTag;
+	};
 };
 /**
  *  Unified response for every mutation IPC. Bundles the store status, render delta,
@@ -765,6 +774,14 @@ export type Tag = {
 	 *  fast sidebar display -- kept in sync by callers after batch edits.
 	 */
 	count?: number;
+};
+/**
+ *  Per-map config for a virtual tag-tree node — a folder node with no underlying
+ *  tag (e.g. "a" when only "a/b" and "a/c" exist). Keyed by the node's full slash
+ *  path in `MapSettings::virtual_tags`. Tree-view only; never creates a real tag.
+ */
+export type VirtualTag = {
+	color?: string | null;
 };
 export type LatLng = google.maps.LatLngLiteral;
 /** A location you already hold in full, or just its id to fetch on demand.
@@ -1773,6 +1790,7 @@ declare const DEFAULTS: {
 	showFullscreenMinimap: boolean;
 	fullscreenMinimapScale: number;
 	showFullscreenTagbar: boolean;
+	showFullscreenDatePicker: boolean;
 	customCss: string;
 	enableSeen: boolean;
 	enableSeenThumbnails: boolean;
@@ -1782,6 +1800,8 @@ declare const DEFAULTS: {
 	slowModifier: number;
 	showFps: boolean;
 	mapListFields: MapListField[];
+	/** Per-label color overrides (hex), keyed by lowercased label name. Shared across all maps. */
+	labelColors: Record<string, string>;
 	geocodeProvider: GeocodeProvider;
 	nominatimApiKey: string;
 	panToImported: boolean;
@@ -1804,6 +1824,8 @@ declare const DEFAULTS: {
 	panoDotScaled: boolean;
 	tagViewMode: TagViewMode;
 	tagSortMode: TagSortMode;
+	/** Gap between tag pills (px), shared by flat and tree views via `--tag-gap`. */
+	tagGap: number;
 	borderDetail: BorderDetail;
 	subdivisionDetail: SubdivisionDetail;
 	previewAspectRatio: PreviewAspectRatio;
@@ -1916,6 +1938,7 @@ declare const mma: {
 		storeResolvePick: (cell: string, cellIndex: number) => Promise<number | null>;
 		bulkImportPreview: (path: string) => Promise<ImportPreviewEntry[]>;
 		bulkImportConfirm: (path: string, selectedIndices: number[]) => Promise<ImportedMapInfo[]>;
+		bulkImportCancel: () => Promise<null>;
 		storeImportPreview: (path: string) => Promise<EditorImportPreview>;
 		storeImportPastePreview: (text: string) => Promise<EditorImportPreview>;
 		storeImportStagedLocation: (index: number) => Promise<Location$1>;
@@ -1999,6 +2022,7 @@ declare const mma: {
 		showFullscreenMinimap: boolean;
 		fullscreenMinimapScale: number;
 		showFullscreenTagbar: boolean;
+		showFullscreenDatePicker: boolean;
 		customCss: string;
 		enableSeen: boolean;
 		enableSeenThumbnails: boolean;
@@ -2008,6 +2032,7 @@ declare const mma: {
 		slowModifier: number;
 		showFps: boolean;
 		mapListFields: MapListField[];
+		labelColors: Record<string, string>;
 		geocodeProvider: GeocodeProvider;
 		nominatimApiKey: string;
 		panToImported: boolean;
@@ -2030,6 +2055,7 @@ declare const mma: {
 		panoDotScaled: boolean;
 		tagViewMode: TagViewMode;
 		tagSortMode: TagSortMode;
+		tagGap: number;
 		borderDetail: BorderDetail;
 		subdivisionDetail: SubdivisionDetail;
 		previewAspectRatio: PreviewAspectRatio;
@@ -2098,7 +2124,6 @@ declare const mma: {
 	openMap(id: string): Promise<void>;
 	closeMap(): Promise<void>;
 	discardOpenMap(): void;
-	refreshFromExternalMutation(): Promise<void>;
 	getCurrentMapId(): string | null;
 	getCurrentMap(): MapData | null;
 	getKnownFieldKeys(): ReadonlySet<string>;
