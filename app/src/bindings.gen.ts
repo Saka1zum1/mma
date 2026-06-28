@@ -162,7 +162,7 @@ export const commands = {
 	 *  tag (case-insensitive), merges: remaps all locations from `tag_id` to the
 	 *  existing tag, removes `tag_id`. Returns MutationResult with `tags` populated.
 	 */
-	storeUpdateTag: (tagId: number, name: string | null, color: string | null) => typedError<MutationResult, string>(__TAURI_INVOKE("store_update_tag", { tagId, name, color })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
+	storeUpdateTags: (updates: TagUpdate[]) => typedError<MutationResult, string>(__TAURI_INVOKE("store_update_tags", { updates })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
 	/**
 	 *  Strip tags from all locations. Tags stay in `store.tags` with count=0 /
 	 *  visible=false so undo can revive them. Returns MutationResult with `tags`.
@@ -672,6 +672,13 @@ export type LocationUpdate_Deserialize = {
 export type LocationUpdate = {
 	id: number,
 	patch: LocationPatch,
+};
+
+/** A single tag's name/color patch for `store_update_tags`. */
+export type TagUpdate = {
+	id: number,
+	name: string | null,
+	color: string | null,
 };
 
 export type MapData = {

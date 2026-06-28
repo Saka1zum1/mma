@@ -414,7 +414,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_extra_field_values,
             // --- Tag CRUD ---
             location_store::store_create_tags,
-            location_store::store_update_tag,
+            location_store::store_update_tags,
             location_store::store_delete_tags,
             location_store::store_reorder_tags,
             // --- Undo / redo ---

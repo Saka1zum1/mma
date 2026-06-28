@@ -1299,9 +1299,11 @@ export async function createTags(names: string[]): Promise<Tag[]> {
  *  to the survivor. */
 export async function updateTags(patches: { id: number; patch: Partial<Tag> }[]) {
 	if (!currentMapId || !currentMap || patches.length === 0) return;
-	for (const { id, patch } of patches) {
-		await mutate(cmd.storeUpdateTag(id, patch.name ?? null, patch.color ?? null));
-	}
+	await mutate(
+		cmd.storeUpdateTags(
+			patches.map(({ id, patch }) => ({ id, name: patch.name ?? null, color: patch.color ?? null })),
+		),
+	);
 	emitEvent("tag:update", patches.map(({ id, patch }) => ({ id, ...patch })));
 	if (
 		selections.some((s) => {

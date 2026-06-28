@@ -1726,68 +1726,73 @@ pub fn store_update_locations(
     })
 }
 
-/// Update a tag's name and/or color. If the new name collides with an existing
-/// tag (case-insensitive), merges: remaps all locations from `tag_id` to the
-/// existing tag, removes `tag_id`. Returns MutationResult with `tags` populated.
+/// A single tag's name/color patch for `store_update_tags`.
+#[derive(serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TagUpdate {
+    pub id: u32,
+    pub name: Option<String>,
+    pub color: Option<String>,
+}
+
+/// Update name and/or color for one or more tags in a single mutation. A new name
+/// that collides with an existing tag (case-insensitive) merges: locations remap from
+/// the renamed tag to the existing one. Batched so a folder-cascade rename lands as one
+/// render instead of one per tag. Returns MutationResult with `tags` populated.
 #[tauri::command]
 #[specta::specta]
-pub fn store_update_tag(
+pub fn store_update_tags(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
-    tag_id: u32,
-    name: Option<String>,
-    color: Option<String>,
+    updates: Vec<TagUpdate>,
 ) -> AppResult<MutationResult> {
     let _t = std::time::Instant::now();
     with_store!(webview, state, |store| {
+        let mut all_updated: Vec<(Location, Location)> = Vec::new();
 
-    if !store.tags.all.contains_key(&tag_id) { return Err("tag not found".into()); }
+        for u in &updates {
+            if !store.tags.all.contains_key(&u.id) { continue; }
 
-    let merge_target = name.as_ref().and_then(|new_name| {
-        let trimmed = new_name.trim();
-        if trimmed.is_empty() { return None; }
-        let lower = trimmed.to_lowercase();
-        store.tags.all.iter().find(|(&id, t)| id != tag_id && t.name.to_lowercase() == lower).map(|(&id, _)| id)
-    });
+            let merge_target = u.name.as_ref().and_then(|new_name| {
+                let trimmed = new_name.trim();
+                if trimmed.is_empty() { return None; }
+                let lower = trimmed.to_lowercase();
+                store.tags.all.iter().find(|(&id, t)| id != u.id && t.name.to_lowercase() == lower).map(|(&id, _)| id)
+            });
 
-    let changeset = if let Some(target_id) = merge_target {
-        let view = store.loc_view();
-        let affected = selections::resolve(&view, &SelectionProps::Tag { tag_id });
-        drop(view);
+            if let Some(target_id) = merge_target {
+                let view = store.loc_view();
+                let affected = selections::resolve(&view, &SelectionProps::Tag { tag_id: u.id });
+                drop(view);
 
-        let mut updated: Vec<(Location, Location)> = Vec::with_capacity(affected.len());
-        for loc_id in &affected {
-            if let Some(old) = store.get_loc_by_id(*loc_id) {
-                let mut new_tags: Vec<u32> = old.tags.iter()
-                    .filter(|&&t| t != tag_id)
-                    .copied()
-                    .collect();
-                if !new_tags.contains(&target_id) { new_tags.push(target_id); }
-                let mut new_loc = old.clone();
-                new_loc.tags = new_tags;
-                updated.push((old, new_loc));
+                let mut updated: Vec<(Location, Location)> = Vec::with_capacity(affected.len());
+                for loc_id in &affected {
+                    if let Some(old) = store.get_loc_by_id(*loc_id) {
+                        let mut new_tags: Vec<u32> = old.tags.iter()
+                            .filter(|&&t| t != u.id)
+                            .copied()
+                            .collect();
+                        if !new_tags.contains(&target_id) { new_tags.push(target_id); }
+                        let mut new_loc = old.clone();
+                        new_loc.tags = new_tags;
+                        updated.push((old, new_loc));
+                    }
+                }
+                all_updated.extend(store.commit_tag_update(updated).updated);
+            } else if let Some(t) = store.tags.all.get_mut(&u.id) {
+                if let Some(n) = &u.name {
+                    let trimmed = n.trim();
+                    if !trimmed.is_empty() { t.name = trimmed.to_string(); }
+                }
+                if let Some(c) = &u.color { t.color = c.clone(); }
             }
         }
 
-        log::debug!("[cmd] store_update_tag merge {}→{} locs={} total={}ms", tag_id, target_id, affected.len(), _t.elapsed().as_millis());
-        store.commit_tag_update(updated)
-    } else {
-        if let Some(t) = store.tags.all.get_mut(&tag_id) {
-            if let Some(n) = &name {
-                let trimmed = n.trim();
-                if !trimmed.is_empty() { t.name = trimmed.to_string(); }
-            }
-            if let Some(c) = &color { t.color = c.clone(); }
-        }
-        log::debug!("[cmd] store_update_tag patch tag={} total={}ms", tag_id, _t.elapsed().as_millis());
-        ChangeSet::default()
-    };
-
-    store.tags.dirty = true;
-    let mut result = store.finish_mutation(changeset);
-    result.tags = Some(store.tags.all.clone());
-    Ok(result)
-
+        store.tags.dirty = true;
+        let mut result = store.finish_mutation(ChangeSet { updated: all_updated, ..Default::default() });
+        result.tags = Some(store.tags.all.clone());
+        log::debug!("[cmd] store_update_tags n={} total={}ms", updates.len(), _t.elapsed().as_millis());
+        Ok(result)
     })
 }
 
