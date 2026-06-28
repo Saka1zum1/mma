@@ -1375,13 +1375,6 @@ pub struct LocationPatch {
     pub modified_at: Option<Option<u32>>,
 }
 
-/// A location ID paired with a partial patch, sent from JS for updates.
-#[derive(serde::Deserialize, specta::Type)]
-pub struct LocationUpdate {
-    pub id: u32,
-    pub patch: LocationPatch,
-}
-
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -1685,7 +1678,7 @@ pub fn store_remove_locations(
 pub fn store_update_locations(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
-    updates: Vec<LocationUpdate>,
+    updates: Vec<Update<LocationPatch>>,
     record_undo: Option<bool>,
 ) -> AppResult<MutationResult> {
     let record_undo = record_undo.unwrap_or(true);
@@ -1726,11 +1719,20 @@ pub fn store_update_locations(
     })
 }
 
-/// A single tag's name/color patch for `store_update_tags`.
+/// Generic `{id, patch}` update envelope, parameterized by the patch type. Specta
+/// has no `Partial<T>`, and a patch is a deliberate *subset* of patchable fields, so
+/// each entity names its own patch struct (e.g. `TagPatch`) rather than deriving one.
 #[derive(serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
-pub struct TagUpdate {
+pub struct Update<P> {
     pub id: u32,
+    pub patch: P,
+}
+
+/// Patchable fields of a `Tag`. Subset by design: id/count/visible aren't editable here.
+#[derive(serde::Deserialize, specta::Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TagPatch {
     pub name: Option<String>,
     pub color: Option<String>,
 }
@@ -1744,7 +1746,7 @@ pub struct TagUpdate {
 pub fn store_update_tags(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
-    updates: Vec<TagUpdate>,
+    updates: Vec<Update<TagPatch>>,
 ) -> AppResult<MutationResult> {
     let _t = std::time::Instant::now();
     with_store!(webview, state, |store| {
@@ -1753,7 +1755,7 @@ pub fn store_update_tags(
         for u in &updates {
             if !store.tags.all.contains_key(&u.id) { continue; }
 
-            let merge_target = u.name.as_ref().and_then(|new_name| {
+            let merge_target = u.patch.name.as_ref().and_then(|new_name| {
                 let trimmed = new_name.trim();
                 if trimmed.is_empty() { return None; }
                 let lower = trimmed.to_lowercase();
@@ -1780,11 +1782,11 @@ pub fn store_update_tags(
                 }
                 all_updated.extend(store.commit_tag_update(updated).updated);
             } else if let Some(t) = store.tags.all.get_mut(&u.id) {
-                if let Some(n) = &u.name {
+                if let Some(n) = &u.patch.name {
                     let trimmed = n.trim();
                     if !trimmed.is_empty() { t.name = trimmed.to_string(); }
                 }
-                if let Some(c) = &u.color { t.color = c.clone(); }
+                if let Some(c) = &u.patch.color { t.color = c.clone(); }
             }
         }
 

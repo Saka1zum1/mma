@@ -15,7 +15,7 @@ import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { resolvePanoIds } from "@/lib/sv/lookup";
 import { getEnrichmentProviders, providerWaves } from "@/lib/data/fieldDefs";
 import { runConcurrent } from "@/lib/util/concurrent";
-import type { LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
+import type { Update, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
 
 // 200 is GetMetadata's hard per-request cap; concurrency saturates the endpoint ~48.
 const BATCH_SIZE = 200;
@@ -119,7 +119,7 @@ export async function runResolvers(
 	};
 
 	// --- Phase 0: resolve missing pano IDs for the union that needs them. ---
-	const allUpdates: LocationUpdate[] = [];
+	const allUpdates: Update<LocationPatch>[] = [];
 	let resolvedPanoIds: Map<number, string> | undefined;
 	if (needResolve.length > 0) {
 		onProgress?.(0, needResolve.length, "Resolving panoramas");

@@ -27,7 +27,7 @@ import {
 	rewriteSelectionFields,
 	type MergeWinner,
 } from "@/lib/data/fieldOps";
-import type { LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
+import type { LocationPatch_Deserialize as LocationPatch, Update, TagPatch_Deserialize as TagPatch } from "@/bindings.gen";
 import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections";
 import type { RenderDelta } from "@/bindings.gen";
 import { SelectedIds, decodeSelectionBitmask, type ReadonlyIdSet, type SelCellEntry } from "@/lib/render/CellManager";
@@ -741,7 +741,7 @@ export async function removeLocations(ids: ReadonlyIdSet) {
 }
 
 export async function updateLocations(
-	updates: LocationUpdate[],
+	updates: Update<LocationPatch>[],
 	opts?: { undoable?: boolean }
 ) {
 	if (!currentMap || updates.length === 0) return;
@@ -1297,18 +1297,14 @@ export async function createTags(names: string[]): Promise<Tag[]> {
 /** Rename or recolor tags. If a rename collides with an existing tag name
  *  (case-insensitive), the two tags are merged — all locations are remapped
  *  to the survivor. */
-export async function updateTags(patches: { id: number; patch: Partial<Tag> }[]) {
-	if (!currentMapId || !currentMap || patches.length === 0) return;
-	await mutate(
-		cmd.storeUpdateTags(
-			patches.map(({ id, patch }) => ({ id, name: patch.name ?? null, color: patch.color ?? null })),
-		),
-	);
-	emitEvent("tag:update", patches.map(({ id, patch }) => ({ id, ...patch })));
+export async function updateTags(updates: Update<TagPatch>[]) {
+	if (!currentMapId || !currentMap || updates.length === 0) return;
+	await mutate(cmd.storeUpdateTags(updates));
+	emitEvent("tag:update", updates);
 	if (
 		selections.some((s) => {
 			const p = s.props;
-			return p.type === "Tag" && patches.some((q) => q.id === p.tagId);
+			return p.type === "Tag" && updates.some((q) => q.id === p.tagId);
 		})
 	) {
 		applySelectionUpdate((sels) => sels);
@@ -1332,7 +1328,7 @@ export async function reorderTags(orderedIds: number[]) {
 export async function addTagToLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
-	const updates: LocationUpdate[] = locs
+	const updates: Update<LocationPatch>[] = locs
 		.filter((l) => !l.tags.includes(tagId))
 		.map((l) => ({ id: l.id, patch: { tags: [...l.tags, tagId] } }));
 	if (updates.length === 0) return;
@@ -1342,7 +1338,7 @@ export async function addTagToLocations(tagId: number, locationIds: number[]) {
 export async function removeTagFromLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
-	const updates: LocationUpdate[] = locs
+	const updates: Update<LocationPatch>[] = locs
 		.filter((l) => l.tags.includes(tagId))
 		.map((l) => ({ id: l.id, patch: { tags: l.tags.filter((t: number) => t !== tagId) } }));
 	if (updates.length === 0) return;

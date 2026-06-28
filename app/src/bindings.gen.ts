@@ -110,7 +110,7 @@ export const commands = {
 	 *  set to false for ephemeral updates (e.g., plugin-driven batch modifications
 	 *  that manage their own undo).
 	 */
-	storeUpdateLocations: (updates: LocationUpdate_Deserialize[], recordUndo: boolean | null) => typedError<MutationResult, string>(__TAURI_INVOKE("store_update_locations", { updates: updates.map(i=>({...i,patch:({...i.patch,lat:i.patch.lat==null?i.patch.lat:i.patch.lat,lng:i.patch.lng==null?i.patch.lng:i.patch.lng,heading:i.patch.heading==null?i.patch.heading:i.patch.heading,pitch:i.patch.pitch==null?i.patch.pitch:i.patch.pitch,zoom:i.patch.zoom==null?i.patch.zoom:i.patch.zoom})})), recordUndo })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
+	storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null) => typedError<MutationResult, string>(__TAURI_INVOKE("store_update_locations", { updates: updates.map(i=>({...i,patch:({...i.patch,lat:i.patch.lat==null?i.patch.lat:i.patch.lat,lng:i.patch.lng==null?i.patch.lng:i.patch.lng,heading:i.patch.heading==null?i.patch.heading:i.patch.heading,pitch:i.patch.pitch==null?i.patch.pitch:i.patch.pitch,zoom:i.patch.zoom==null?i.patch.zoom:i.patch.zoom})})), recordUndo })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
 	/**
 	 *  Set (or clear) the active location. Fire-and-forget from JS; no re-render triggered.
 	 *  JS patches the cell buffer synchronously to hide/show the active marker.
@@ -162,7 +162,7 @@ export const commands = {
 	 *  tag (case-insensitive), merges: remaps all locations from `tag_id` to the
 	 *  existing tag, removes `tag_id`. Returns MutationResult with `tags` populated.
 	 */
-	storeUpdateTags: (updates: TagUpdate[]) => typedError<MutationResult, string>(__TAURI_INVOKE("store_update_tags", { updates })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
+	storeUpdateTags: (updates: Update<TagPatch_Deserialize>[]) => typedError<MutationResult, string>(__TAURI_INVOKE("store_update_tags", { updates })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,delta:({...v.data.delta,added:v.data.delta.added.map(i=>i),updated:v.data.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.data.newFieldDefs==null?v.data.newFieldDefs:Object.fromEntries(Object.entries(v.data.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) } : v) as typeof v)),
 	/**
 	 *  Strip tags from all locations. Tags stay in `store.tags` with count=0 /
 	 *  visible=false so undo can revive them. Returns MutationResult with `tags`.
@@ -660,23 +660,20 @@ export type LocationPatch = {
 	modifiedAt: number | null,
 };
 
-/**  A location ID paired with a partial patch, sent from JS for updates. */
-
-/**  A location ID paired with a partial patch, sent from JS for updates. */
-export type LocationUpdate_Deserialize = {
+/** Generic `{id, patch}` update envelope, parameterized by the patch type. */
+export type Update<P> = {
 	id: number,
-	patch: LocationPatch_Deserialize,
+	patch: P,
 };
 
-/**  A location ID paired with a partial patch, sent from JS for updates. */
-export type LocationUpdate = {
-	id: number,
-	patch: LocationPatch,
+/** Patchable fields of a `Tag` (input variant). Subset by design; omit to leave unchanged. */
+export type TagPatch_Deserialize = {
+	name?: string | null,
+	color?: string | null,
 };
 
-/** A single tag's name/color patch for `store_update_tags`. */
-export type TagUpdate = {
-	id: number,
+/** Patchable fields of a `Tag`. Subset by design. */
+export type TagPatch = {
 	name: string | null,
 	color: string | null,
 };

@@ -4,7 +4,7 @@
  * orchestrates IPC, definitions, and persistence. Kept side-effect-free for testability.
  */
 
-import type { Location, ExtraFieldDef, ExtraFieldType, Selection, SelectionProps, LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
+import type { Location, ExtraFieldDef, ExtraFieldType, Selection, SelectionProps, Update, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
 import { buildSelection } from "@/store/selections";
 
 /** When a move target already holds a value, which field's value survives. */
@@ -36,9 +36,9 @@ export function planFieldMove(
 	from: string,
 	to: string,
 	winner: MergeWinner,
-): LocationUpdate[] {
+): Update<LocationPatch>[] {
 	if (from === to || !to) return [];
-	const updates: LocationUpdate[] = [];
+	const updates: Update<LocationPatch>[] = [];
 	for (const loc of locations) {
 		const extra = loc.extra;
 		if (!extra || !(from in extra)) continue;
@@ -54,8 +54,8 @@ export function planFieldMove(
 }
 
 /** Remove field `key` from every location that has it. */
-export function planFieldDelete(locations: Location[], key: string): LocationUpdate[] {
-	const updates: LocationUpdate[] = [];
+export function planFieldDelete(locations: Location[], key: string): Update<LocationPatch>[] {
+	const updates: Update<LocationPatch>[] = [];
 	for (const loc of locations) {
 		if (!loc.extra || !(key in loc.extra)) continue;
 		const next = { ...loc.extra };
@@ -71,8 +71,8 @@ export function planFieldDelete(locations: Location[], key: string): LocationUpd
  * The caller asserts intent by how it shapes `patch` (e.g. `{ heading }` vs
  * `{ extra: { foo } }`); this function holds no notion of which fields are which.
  */
-export function planFieldSet(locations: Location[], patch: Partial<Location>): LocationUpdate[] {
-	const updates: LocationUpdate[] = [];
+export function planFieldSet(locations: Location[], patch: Partial<Location>): Update<LocationPatch>[] {
+	const updates: Update<LocationPatch>[] = [];
 	for (const loc of locations) {
 		if (!changesLocation(loc, patch)) continue;
 		const next = patch.extra
@@ -291,8 +291,8 @@ export function planFieldExpr(
 	locations: Location[],
 	key: string,
 	expr: FieldExpr,
-): { updates: LocationUpdate[]; skipped: number } {
-	const updates: LocationUpdate[] = [];
+): { updates: Update<LocationPatch>[]; skipped: number } {
+	const updates: Update<LocationPatch>[] = [];
 	let skipped = 0;
 	for (const loc of locations) {
 		const v = evalFieldExpr(expr, loc);

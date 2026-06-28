@@ -9,7 +9,7 @@ import {
 	type ScopeController,
     updateLocations,
 } from "@/store/useMapStore";
-import type { Scope, Location, LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
+import type { Scope, Location, Update, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { isPinnedToPano } from "@/types";
 import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
@@ -292,7 +292,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 					onClick={() => {
 						const keys = [...selected];
 						onReady(async ({ locations }) => {
-							const updates: LocationUpdate[] = [];
+							const updates: Update<LocationPatch>[] = [];
 							for (const loc of locations) {
 								if (!loc.extra) continue;
 								const hasAny = keys.some((k) => loc.extra![k] != null);

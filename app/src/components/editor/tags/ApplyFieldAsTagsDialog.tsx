@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import type { ExtraFieldDef, KeySpec, DatePart, LocationUpdate_Deserialize as LocationUpdate } from "@/bindings.gen";
+import type { ExtraFieldDef, KeySpec, DatePart, Update, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import {
@@ -70,7 +70,7 @@ export function ApplyFieldAsTagsDialog({
 		const tagIdByName = new Map(created.map((t) => [t.name.toLowerCase(), t.id]));
 		const locs = await fetchLocationsByIds(groups.flatMap((g) => g.ids));
 		const locById = new Map(locs.map((l) => [l.id, l]));
-		const updates: LocationUpdate[] = [];
+		const updates: Update<LocationPatch>[] = [];
 		for (const g of groups) {
 			const tagId = tagIdByName.get(g.key.toLowerCase());
 			if (tagId == null) continue;
