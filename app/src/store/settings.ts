@@ -29,7 +29,7 @@ export const MAP_LIST_FIELDS = {
 } as const;
 export const GEOCODE_PROVIDERS = {
 	local: "Local (offline)",
-	nominatim: "Nominatim (online)",
+	nominatim: "Nominatim",
 	google: "Google (from panorama)",
 } as const;
 export const GEOCODE_PROVIDER_LABELS: Record<keyof typeof GEOCODE_PROVIDERS, string> = {

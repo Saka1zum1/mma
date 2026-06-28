@@ -58,7 +58,9 @@ function SettingSelect<K extends keyof AppSettings>({
 			onChange={(e) => setSetting(setting, e.target.value as AppSettings[K])}
 		>
 			{Object.entries(options).map(([v, label]) => (
-				<option key={v} value={v}>{label as string}</option>
+				<option key={v} value={v}>
+					{label as string}
+				</option>
 			))}
 		</select>
 	);
@@ -75,7 +77,8 @@ function getBlockedReason(e: KeyboardEvent): string | null {
 			return `${formatBinding(combo)} conflicts with "${conflict.label}" (Alt is the slow modifier for navigation)`;
 		}
 	}
-	if (BLOCKED_COMBOS.has(combo)) return "Intercepted by the app window before shortcuts can reach it";
+	if (BLOCKED_COMBOS.has(combo))
+		return "Intercepted by the app window before shortcuts can reach it";
 	return null;
 }
 
@@ -168,11 +171,7 @@ function HotkeyRow({
 								<code>{formatBinding(pending.combo)}</code> is bound to{" "}
 								<strong>{pending.conflicts.map((c) => c.label).join(", ")}</strong>
 							</span>
-							<button
-								className="button button--primary hotkey-reset"
-								autoFocus
-								onClick={reassign}
-							>
+							<button className="button button--primary hotkey-reset" autoFocus onClick={reassign}>
 								Reassign
 							</button>
 							<button className="button hotkey-reset" onClick={cancel}>
@@ -182,13 +181,16 @@ function HotkeyRow({
 					) : (
 						<>
 							<input
-							ref={inputRef}
-							className="hotkey-record"
-							readOnly
-							value={blocked ? "Try another key..." : "Press a key..."}
-							onKeyDown={handleKeyDown}
-							onBlur={() => { setRecording(false); setBlocked(null); }}
-						/>
+								ref={inputRef}
+								className="hotkey-record"
+								readOnly
+								value={blocked ? "Try another key..." : "Press a key..."}
+								onKeyDown={handleKeyDown}
+								onBlur={() => {
+									setRecording(false);
+									setBlocked(null);
+								}}
+							/>
 							{blocked && <span className="hotkey-blocked">{blocked}</span>}
 						</>
 					)
@@ -256,7 +258,7 @@ function KeyboardShortcutsSection() {
 		// div, not fieldset: Chromium ignores position:sticky inside <fieldset>
 		<div className="fieldset">
 			<div className="fieldset__header">
-				Keyboard Shortcuts <span className="fieldset__divider" />
+				Keyboard shortcuts <span className="fieldset__divider" />
 			</div>
 			<div className="settings-hotkey-filter">
 				<input
@@ -270,7 +272,11 @@ function KeyboardShortcutsSection() {
 			</div>
 			{GROUPS.map((group) => {
 				const defs = allBindings.filter(
-					(d) => d.group === group && (!lower || d.label.toLowerCase().includes(lower) || getBinding(d.action).toLowerCase().includes(lower)),
+					(d) =>
+						d.group === group &&
+						(!lower ||
+							d.label.toLowerCase().includes(lower) ||
+							getBinding(d.action).toLowerCase().includes(lower)),
 				);
 				if (defs.length === 0) return null;
 				return (
@@ -422,7 +428,7 @@ function ViewerControlsSection() {
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
-				Viewer Controls <span className="fieldset__divider" />
+				Viewer controls <span className="fieldset__divider" />
 			</legend>
 			{controls.map(({ key, label }) => (
 				<label key={key} className="settings-popup__item">
@@ -478,7 +484,7 @@ function DatePickerSection() {
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
-				Date Picker <span className="fieldset__divider" />
+				Date picker <span className="fieldset__divider" />
 			</legend>
 			<label className="settings-popup__item">
 				<input
@@ -542,7 +548,7 @@ function MapNavigationSection() {
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
-				Map Navigation <span className="fieldset__divider" />
+				Map navigation <span className="fieldset__divider" />
 			</legend>
 			<label
 				className="settings-popup__item"
@@ -807,7 +813,10 @@ function GeocodingSection() {
 
 function TagsSection() {
 	const s = useSettings();
-	const limitIndex = Math.max(0, (TAG_SUGGESTION_LIMITS as readonly number[]).indexOf(s.tagSuggestionLimit));
+	const limitIndex = Math.max(
+		0,
+		(TAG_SUGGESTION_LIMITS as readonly number[]).indexOf(s.tagSuggestionLimit),
+	);
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
@@ -846,7 +855,9 @@ function TagsSection() {
 					max={TAG_SUGGESTION_LIMITS.length - 1}
 					step={1}
 					value={limitIndex}
-					onChange={(e) => setSetting("tagSuggestionLimit", TAG_SUGGESTION_LIMITS[Number(e.target.value)])}
+					onChange={(e) =>
+						setSetting("tagSuggestionLimit", TAG_SUGGESTION_LIMITS[Number(e.target.value)])
+					}
 					style={{ flex: 1 }}
 				/>
 				<span style={{ minWidth: "2rem", textAlign: "right", fontSize: "0.85rem" }}>
@@ -879,7 +890,9 @@ function BorderDetailSection() {
 				setAdm1Ready(a);
 			}
 		})();
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, []);
 
 	const handleChange = async (level: BorderDetail) => {
@@ -940,10 +953,10 @@ function BorderDetailSection() {
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
-				Country Select <span className="fieldset__divider" />
+				Border select <span className="fieldset__divider" />
 			</legend>
 			<label className="settings-popup__item">
-				Border accuracy
+				Country data
 				<select
 					className="nselect nselect--compact"
 					value={s.borderDetail}
@@ -959,7 +972,7 @@ function BorderDetailSection() {
 				</select>
 			</label>
 			<label className="settings-popup__item">
-				Subdivisions (Shift + click)
+				Subdivision data
 				<select
 					className="nselect nselect--compact"
 					value={s.subdivisionDetail}
@@ -1032,7 +1045,15 @@ function UpdateSection() {
 					<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 						<span>Version {update.version} is available</span>
 						{update.notes && (
-							<pre style={{ maxHeight: 120, overflow: "auto", fontSize: 12, whiteSpace: "pre-wrap", margin: 0 }}>
+							<pre
+								style={{
+									maxHeight: 120,
+									overflow: "auto",
+									fontSize: 12,
+									whiteSpace: "pre-wrap",
+									margin: 0,
+								}}
+							>
 								{update.notes}
 							</pre>
 						)}
@@ -1090,10 +1111,7 @@ function AdvancedTab() {
 					<button className="button" onClick={() => setShowDbManager(true)}>
 						Database management
 					</button>
-					<button
-						className="button"
-						onClick={() => cmd.openDataFolder()}
-					>
+					<button className="button" onClick={() => cmd.openDataFolder()}>
 						Open data folder
 					</button>
 				</div>
