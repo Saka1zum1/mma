@@ -17,7 +17,7 @@ import {
     removeTagFromLocations,
 } from "@/store/useMapStore";
 import type { TagSortMode } from "@/types";
-import type { Tag } from "@/bindings.gen";
+import type { Tag, VirtualTag } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiPencil } from "@mdi/js";
@@ -31,6 +31,7 @@ import { HotkeyInput } from "@/components/primitives/HotkeyInput";
 import { getConflicts } from "@/lib/util/hotkeys";
 import { getTagBindingKey, withTagKeyBinding } from "@/lib/map/mapKeyBindings";
 import { TagTreeView } from "./TagTree";
+import { cascadeRename } from "./tagTreeRange";
 
 export function TagManager() {
 	const map = useCurrentMap();
@@ -41,6 +42,9 @@ export function TagManager() {
 	const sortMode = useSetting("tagSortMode");
 	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags");
 	const [editingTagId, setEditingTagId] = useState<number | null>(null);
+	// Tree-mode tag edit carries the node so the dialog can offer a descendant-cascade
+	// rename; flat-mode edits stay on editingTagId (no folder context).
+	const [editingTreeTag, setEditingTreeTag] = useState<{ tag: Tag; descendantCount: number } | null>(null);
 	const [editingVirtualPath, setEditingVirtualPath] = useState<string | null>(null);
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
@@ -257,7 +261,10 @@ export function TagManager() {
 						tagCounts={tagCounts}
 						sortMode={sortMode}
 						virtualTags={virtualTags ?? {}}
-						onEditTag={setEditingTagId}
+						onEditTag={(node) => {
+							if (node.tag)
+								setEditingTreeTag({ tag: node.tag, descendantCount: node.descendantTagIds.length - 1 });
+						}}
 						onEditVirtual={setEditingVirtualPath}
 						onRenameTag={setRenamingTag}
 						filterText={filterText}
@@ -313,13 +320,47 @@ export function TagManager() {
 
 			{editingTag && <EditTagDialog tag={editingTag} onClose={() => setEditingTagId(null)} />}
 
+			{editingTreeTag && (
+				<EditTagDialog
+					tag={editingTreeTag.tag}
+					cascade={
+						editingTreeTag.descendantCount > 0
+							? {
+									descendantCount: editingTreeTag.descendantCount,
+									tags,
+									virtualTags: virtualTags ?? {},
+									setVirtualTags,
+								}
+							: undefined
+					}
+					onClose={() => setEditingTreeTag(null)}
+				/>
+			)}
+
 			{editingVirtualPath != null && (
 				<VirtualTagDialog
 					path={editingVirtualPath}
 					color={(virtualTags ?? {})[editingVirtualPath]?.color ?? null}
 					onClose={() => setEditingVirtualPath(null)}
-					onSave={(color) => {
-						setVirtualTags({ ...(virtualTags ?? {}), [editingVirtualPath]: { color } });
+					onSave={(color, newSegment) => {
+						const vt = virtualTags ?? {};
+						const i = editingVirtualPath.lastIndexOf("/");
+						const parent = i === -1 ? "" : editingVirtualPath.slice(0, i);
+						const newPath = parent ? `${parent}/${newSegment}` : newSegment;
+						if (newPath !== editingVirtualPath) {
+							const { tagRenames, virtualTags: nextVT } = cascadeRename(
+								editingVirtualPath,
+								newPath,
+								tags,
+								vt,
+							);
+							if (tagRenames.length)
+								updateTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
+							nextVT[newPath] = { color };
+							setVirtualTags(nextVT);
+						} else {
+							setVirtualTags({ ...vt, [editingVirtualPath]: { color } });
+						}
 						setEditingVirtualPath(null);
 					}}
 					onReset={() => {
@@ -511,11 +552,20 @@ function RenameInSelectionDialog({
 function EditTagDialog({
 	tag,
 	onClose,
+	cascade,
 }: {
 	tag: { id: number; name: string; color: string };
 	onClose: () => void;
+	/** Present for a tree folder node with descendants: lets the rename cascade down. */
+	cascade?: {
+		descendantCount: number;
+		tags: Tag[];
+		virtualTags: Record<string, VirtualTag>;
+		setVirtualTags: (v: Record<string, VirtualTag>) => void;
+	};
 }) {
 	const [name, setName] = useState(tag.name);
+	const [cascadeOn, setCascadeOn] = useState(false);
 	const [hsl, setHsl] = useState(() => hexToHsl(tag.color));
 	const hexValue = hslToHex(hsl.h, hsl.s, hsl.l);
 	const [bindings, setBindings] = useMapSetting("keyBindings");
@@ -537,7 +587,24 @@ function EditTagDialog({
 			: undefined;
 
 	const handleSave = () => {
-		updateTags([{ id: tag.id, patch: { name: name.trim() || tag.name, color: hexValue } }]);
+		const newName = name.trim() || tag.name;
+		if (cascade && cascadeOn && newName !== tag.name) {
+			const { tagRenames, virtualTags: nextVT } = cascadeRename(
+				tag.name,
+				newName,
+				cascade.tags,
+				cascade.virtualTags,
+			);
+			updateTags(
+				tagRenames.map((r) => ({
+					id: r.id,
+					patch: r.id === tag.id ? { name: r.name, color: hexValue } : { name: r.name },
+				})),
+			);
+			cascade.setVirtualTags(nextVT);
+		} else {
+			updateTags([{ id: tag.id, patch: { name: newName, color: hexValue } }]);
+		}
 		const cur = bindings ?? [];
 		if ((getTagBindingKey(cur, tag.id) ?? "") !== hotkey) {
 			setBindings(withTagKeyBinding(cur, tag.id, hotkey));
@@ -569,6 +636,16 @@ function EditTagDialog({
 							onChange={(e) => setName(e.target.value)}
 							autoFocus
 						/>
+						{cascade && (
+							<label className="edit-tag-modal__cascade">
+								<input
+									type="checkbox"
+									checked={cascadeOn}
+									onChange={(e) => setCascadeOn(e.target.checked)}
+								/>
+								Rename {cascade.descendantCount} tag{cascade.descendantCount === 1 ? "" : "s"} inside
+							</label>
+						)}
 					</div>
 					<div className="edit-tag-modal__color">
 						<span>Color:</span>
@@ -641,12 +718,13 @@ function VirtualTagDialog({
 	path: string;
 	color: string | null;
 	onClose: () => void;
-	onSave: (color: string) => void;
+	onSave: (color: string, newSegment: string) => void;
 	onReset: () => void;
 }) {
 	const [hsl, setHsl] = useState(() => hexToHsl(color ?? "#888888"));
 	const hexValue = hslToHex(hsl.h, hsl.s, hsl.l);
 	const segment = path.split("/").pop() || path;
+	const [name, setName] = useState(segment);
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -654,10 +732,20 @@ function VirtualTagDialog({
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
-						onSave(hexValue);
+						onSave(hexValue, name.trim() || segment);
 					}}
 					style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingTop: "2px" }}
 				>
+					<div className="edit-tag-modal__name">
+						Rename:{" "}
+						<input
+							className="input"
+							type="text"
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							autoFocus
+						/>
+					</div>
 					<div className="edit-tag-modal__color">
 						<span>Color:</span>
 						<input

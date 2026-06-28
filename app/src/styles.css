@@ -3768,6 +3768,16 @@ body.mm-tag-dragging * {
 .edit-tag-modal__name {
 	grid-area: name;
 }
+.edit-tag-modal__cascade {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	margin-top: 0.4rem;
+	font-size: 0.85em;
+}
+.edit-tag-modal__cascade input {
+	margin: 0;
+}
 .edit-tag-modal__hotkey {
 	grid-gap: 0.25rem;
 	grid-area: hotkey;

@@ -45,7 +45,7 @@ interface TagTreeViewProps {
 	tagCounts: Record<number, number>;
 	sortMode: TagSortMode;
 	virtualTags: Record<string, VirtualTag>;
-	onEditTag: (tagId: number) => void;
+	onEditTag: (node: TagTreeNode) => void;
 	onEditVirtual: (fullPath: string) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	filterText: string;
@@ -348,7 +348,7 @@ function TagTreeNodeRow({
 	depth: number;
 	selectedTagIds: Set<number>;
 	tagCounts: Record<number, number>;
-	onEditTag: (tagId: number) => void;
+	onEditTag: (node: TagTreeNode) => void;
 	onEditVirtual: (fullPath: string) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	forceExpanded: boolean;
@@ -423,7 +423,7 @@ function TagTreeNodeRow({
 							className="button tag-tree__edit"
 							onClick={(e) => {
 								e.stopPropagation();
-								if (node.tag) onEditTag(node.tag.id);
+								if (node.tag) onEditTag(node);
 								else onEditVirtual(node.fullPath);
 							}}
 							type="button"
@@ -519,7 +519,7 @@ function TagLeafGroup({
 	depth: number;
 	selectedTagIds: Set<number>;
 	tagCounts: Record<number, number>;
-	onEditTag: (tagId: number) => void;
+	onEditTag: (node: TagTreeNode) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	onRowClick: (node: TagTreeNode, shiftKey: boolean, altKey: boolean) => void;
 	drag: TreeDrag;
@@ -559,7 +559,7 @@ function TagTreeLeaf({
 	node: TagTreeNode;
 	selectedTagIds: Set<number>;
 	tagCounts: Record<number, number>;
-	onEditTag: (tagId: number) => void;
+	onEditTag: (node: TagTreeNode) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	onRowClick: (node: TagTreeNode, shiftKey: boolean, altKey: boolean) => void;
 	drag: TreeDrag;
@@ -589,7 +589,7 @@ function TagTreeLeaf({
 						className="button tag__button tag__button--edit"
 						onClick={(e) => {
 							e.stopPropagation();
-							onEditTag(tag.id);
+							onEditTag(node);
 						}}
 						type="button"
 					>

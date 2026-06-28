@@ -139,6 +139,44 @@ export function rangeToggleTagIds(
 	return [...ids];
 }
 
+export interface TagNameChange {
+	id: number;
+	name: string;
+}
+
+/** Rewrite the path prefix `oldPrefix` -> `newPrefix` across every tag and virtual-tag
+ *  key whose path is `oldPrefix` itself or sits under it (`oldPrefix/...`). Used to rename
+ *  a tag-tree folder and cascade to its descendants. Returns the tag renames plus the
+ *  rewritten virtualTags map. Collisions (target path already exists) just merge -- last
+ *  write wins -- which is the intended folder-merge behavior. */
+export function cascadeRename(
+	oldPrefix: string,
+	newPrefix: string,
+	tags: Tag[],
+	virtualTags: Record<string, VirtualTag>,
+): { tagRenames: TagNameChange[]; virtualTags: Record<string, VirtualTag> } {
+	const moved = newPrefix !== oldPrefix;
+	const rewrite = (s: string): string | null => {
+		if (!moved) return null;
+		if (s === oldPrefix) return newPrefix;
+		if (s.startsWith(`${oldPrefix}/`)) return newPrefix + s.slice(oldPrefix.length);
+		return null;
+	};
+
+	const tagRenames: TagNameChange[] = [];
+	for (const t of tags) {
+		const next = rewrite(t.name);
+		if (next !== null && next !== t.name) tagRenames.push({ id: t.id, name: next });
+	}
+
+	const nextVirtual: Record<string, VirtualTag> = {};
+	for (const [path, cfg] of Object.entries(virtualTags)) {
+		nextVirtual[rewrite(path) ?? path] = cfg;
+	}
+
+	return { tagRenames, virtualTags: nextVirtual };
+}
+
 interface OrderNode {
 	fullPath: string;
 	tag: { id: number } | null;

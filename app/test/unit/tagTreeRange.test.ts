@@ -3,6 +3,7 @@ import {
 	rangeToggleTagIds,
 	reorderSiblingsFlatOrder,
 	buildTagTree,
+	cascadeRename,
 	isLeafTag,
 	sumCounts,
 	type TagTreeNode,
@@ -162,5 +163,57 @@ describe("buildTagTree", () => {
 		const tree = buildTagTree([mkTag(1, "a/b")], "default", {});
 		expect(tree[0].tag).toBeNull();
 		expect(tree[0].inheritedColor).toBe("#888888");
+	});
+});
+
+describe("cascadeRename", () => {
+	const mkTag = (id: number, name: string): Tag => ({ id, name, color: "#888888", order: id });
+
+	it("renames the folder tag and all descendants, leaving unrelated tags", () => {
+		const tags = [
+			mkTag(1, "Europe"),
+			mkTag(2, "Europe/France"),
+			mkTag(3, "Europe/France/Paris"),
+			mkTag(4, "Asia"),
+		];
+		const { tagRenames } = cascadeRename("Europe", "EU", tags, {});
+		const byId = Object.fromEntries(tagRenames.map((r) => [r.id, r.name]));
+		expect(byId).toEqual({ 1: "EU", 2: "EU/France", 3: "EU/France/Paris" });
+	});
+
+	it("rewrites a nested prefix without touching siblings", () => {
+		const tags = [mkTag(1, "Europe/France"), mkTag(2, "Europe/France/Paris"), mkTag(3, "Europe/Spain")];
+		const { tagRenames } = cascadeRename("Europe/France", "Europe/Iberia", tags, {});
+		const byId = Object.fromEntries(tagRenames.map((r) => [r.id, r.name]));
+		expect(byId).toEqual({ 1: "Europe/Iberia", 2: "Europe/Iberia/Paris" });
+	});
+
+	it("moves virtualTags color keys under the renamed prefix", () => {
+		const vt = { Europe: { color: "#111" }, "Europe/France": { color: "#222" }, Asia: { color: "#333" } };
+		const { virtualTags } = cascadeRename("Europe", "EU", [], vt);
+		expect(virtualTags).toEqual({ EU: { color: "#111" }, "EU/France": { color: "#222" }, Asia: { color: "#333" } });
+	});
+
+	it("merges on collision (renamed name matches an existing tag)", () => {
+		const tags = [mkTag(1, "A/x"), mkTag(2, "B/x")];
+		const { tagRenames } = cascadeRename("A", "B", tags, {});
+		expect(tagRenames).toEqual([{ id: 1, name: "B/x" }]);
+	});
+
+	it("no-ops when the prefix is unchanged", () => {
+		const tags = [mkTag(1, "A/b")];
+		const { tagRenames, virtualTags } = cascadeRename("A", "A", tags, { A: { color: "#1" } });
+		expect(tagRenames).toEqual([]);
+		expect(virtualTags).toEqual({ A: { color: "#1" } });
+	});
+
+	it("renames descendants of a tagless folder and moves its color key", () => {
+		const tags = [mkTag(1, "a/b"), mkTag(2, "a/c")];
+		const { tagRenames, virtualTags } = cascadeRename("a", "x", tags, { a: { color: "#aaa" } });
+		expect(tagRenames).toEqual([
+			{ id: 1, name: "x/b" },
+			{ id: 2, name: "x/c" },
+		]);
+		expect(virtualTags).toEqual({ x: { color: "#aaa" } });
 	});
 });
