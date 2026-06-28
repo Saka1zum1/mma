@@ -108,10 +108,15 @@ fn reconcile_location_tags_remapped_correctly() {
     assert!(loc.tags.contains(&remap[&2]), "Rural should map to new ID");
 }
 
+/// Scan `extra` from a buffer and pull tag meta, as the parse path does internally.
+fn tag_meta(buf: &[u8]) -> HashMap<String, ExtraTagMeta> {
+    find_top_level_extra(buf, 0, 0).as_ref().map(tag_meta_from_extra).unwrap_or_default()
+}
+
 #[test]
-fn extract_tag_meta_reads_color_and_order() {
+fn tag_meta_reads_color_and_order() {
     let json = br#"{"customCoordinates":[],"extra":{"tags":{"Roof":{"color":[255,0,0],"order":3},"Wall":{"color":[0,128,255],"order":1}}}}"#;
-    let meta = extract_tag_meta(json, 0, 0);
+    let meta = tag_meta(json);
     assert_eq!(meta.len(), 2);
 
     let roof = &meta["Roof"];
@@ -124,28 +129,78 @@ fn extract_tag_meta_reads_color_and_order() {
 }
 
 #[test]
-fn extract_tag_meta_missing_order() {
+fn tag_meta_missing_order() {
     let json = br#"{"extra":{"tags":{"NoOrder":{"color":[10,20,30]}}}}"#;
-    let meta = extract_tag_meta(json, 0, 0);
+    let meta = tag_meta(json);
     let tag = &meta["NoOrder"];
     assert_eq!(tag.color.as_deref(), Some("#0a141e"));
     assert_eq!(tag.order, None);
 }
 
 #[test]
-fn extract_tag_meta_missing_color() {
+fn tag_meta_missing_color() {
     let json = br#"{"extra":{"tags":{"OnlyOrder":{"order":5}}}}"#;
-    let meta = extract_tag_meta(json, 0, 0);
+    let meta = tag_meta(json);
     let tag = &meta["OnlyOrder"];
     assert_eq!(tag.color, None);
     assert_eq!(tag.order, Some(5));
 }
 
 #[test]
-fn extract_tag_meta_no_extra() {
+fn tag_meta_no_extra() {
     let json = br#"{"customCoordinates":[]}"#;
-    let meta = extract_tag_meta(json, 0, 0);
+    let meta = tag_meta(json);
     assert!(meta.is_empty());
+}
+
+// -----------------------------------------------------------------------
+// Map settings carried through import (extra.settings)
+// -----------------------------------------------------------------------
+
+#[test]
+fn parse_captures_settings_overlay() {
+    let json = br##"{"customCoordinates":[
+        {"lat":1,"lng":2,"extra":{"tags":["Europe/France/Paris"]}}
+    ],"extra":{"tags":{"Europe/France/Paris":{"color":[1,2,3]}},"settings":{"virtualTags":{"Europe":{"color":"#c0f0f8"},"Europe/France":{"color":"#183848"}}}}}"##;
+    let mut buf = json.to_vec();
+    let parsed = parse_single_json_mut(&mut buf);
+    assert!(parsed.settings.contains_key("virtualTags"));
+
+    let merged = merge_settings(crate::map_meta::MapSettings::default(), &parsed.settings);
+    assert_eq!(merged.virtual_tags["Europe"].color.as_deref(), Some("#c0f0f8"));
+    assert_eq!(merged.virtual_tags["Europe/France"].color.as_deref(), Some("#183848"));
+}
+
+#[test]
+fn parse_no_settings_is_empty() {
+    let json = br#"{"customCoordinates":[],"extra":{"tags":{}}}"#;
+    let mut buf = json.to_vec();
+    let parsed = parse_single_json_mut(&mut buf);
+    assert!(parsed.settings.is_empty());
+}
+
+#[test]
+fn merge_settings_overlays_present_keys_only() {
+    let json = br##"{"customCoordinates":[{"lat":1,"lng":2}],"extra":{"settings":{"virtualTags":{"Asia":{"color":"#asia"}}}}}"##;
+    let mut buf = json.to_vec();
+    let parsed = parse_single_json_mut(&mut buf);
+
+    let mut base = crate::map_meta::MapSettings::default();
+    base.point_along_road = false; // non-default, unrelated key
+    base.virtual_tags.insert("Europe".into(), crate::map_meta::VirtualTag { color: Some("#existing".into()) });
+
+    let merged = merge_settings(base, &parsed.settings);
+    assert!(!merged.point_along_road, "key absent from the overlay keeps its base value");
+    assert_eq!(merged.virtual_tags["Asia"].color.as_deref(), Some("#asia"), "imported key applied");
+    // A present key replaces wholesale (shallow overlay), so base's Europe is gone.
+    assert!(!merged.virtual_tags.contains_key("Europe"), "present key replaces the whole value");
+}
+
+#[test]
+fn merge_settings_empty_overlay_is_base() {
+    let base = crate::map_meta::MapSettings::default();
+    let merged = merge_settings(base, &serde_json::Map::new());
+    assert!(merged.point_along_road, "empty overlay leaves defaults untouched");
 }
 
 // -----------------------------------------------------------------------

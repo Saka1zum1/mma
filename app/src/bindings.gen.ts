@@ -486,6 +486,11 @@ export type EditorImportResult = {
 	warnings: string[],
 	/**  True when the import was large enough to autocommit; the caller commits it. */
 	autoCommit: boolean,
+	/**
+	 *  Settings carried by the import (`extra.settings`), a partial overlay for the
+	 *  JS caller to merge into the open map's settings via `updateMapMeta`.
+	 */
+	settings: any,
 } & MutationResult;
 
 /**

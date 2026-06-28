@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * migrate-folders.mjs
+ * migrate-tag-folders.mjs
  *
  * Renames tags in a map-making.app export to include their folder path,
  * so MMA's tag tree view displays them hierarchically.
  *
  * Usage:
- *   node scripts/migrations/migrate-folders.mjs <map-export.json...> [-o outdir]
- *   node scripts/migrations/migrate-folders.mjs <map-export.json...> -f folders.json [-o outdir]
+ *   node scripts/migrations/migrate-tag-folders.mjs <map-export.json...> [-o outdir]
+ *   node scripts/migrations/migrate-tag-folders.mjs <map-export.json...> -f folders.json [-o outdir]
  *
  * The folder hierarchy is read from:
  *   1. The embedded storage tag in the map export (auto-detected), or
@@ -74,7 +74,7 @@ const OLD_STORAGE_PREFIX = "[⚠️_NE_PAS_SUPPRIMER_MM_CLOUD_SAVE]";
 const args = process.argv.slice(2);
 if (!args.length) {
   console.error(
-    "Usage: node scripts/migrations/migrate-folders.mjs <map-export.json...> [-f folders.json] [-o outdir]"
+    "Usage: node scripts/migrations/migrate-tag-folders.mjs <map-export.json...> [-f folders.json] [-o outdir]"
   );
   process.exit(1);
 }
@@ -118,6 +118,48 @@ function buildRenameMap(folders, parentPath = "") {
     }
   }
   return map;
+}
+
+// MMA colors tag-tree folder nodes from MapSettings.virtualTags, keyed by the same
+// full slash path the tags are renamed into. useParentColor folders inherit in MMA's
+// tree, so only emit a color for folders that own one (top-level always own theirs).
+function buildVirtualTags(folders, parentPath = "", out = {}) {
+  for (const f of folders) {
+    const folderPath = parentPath ? `${parentPath}/${f.name}` : f.name;
+    if (f.color && !f.useParentColor) out[folderPath] = { color: f.color };
+    if (f.children?.length) buildVirtualTags(f.children, folderPath, out);
+  }
+  return out;
+}
+
+function orderedFolderTags(f) {
+  const tags = f.tags || [];
+  if (!Array.isArray(f.itemsOrder) || !f.itemsOrder.length) return tags;
+  const ordered = f.itemsOrder
+    .filter((k) => k.startsWith("tag:"))
+    .map((k) => k.slice(4))
+    .filter((t) => tags.includes(t));
+  for (const t of tags) if (!ordered.includes(t)) ordered.push(t);
+  return ordered;
+}
+
+// MMA's tag tree sorts by each tag's `order` (default mode). Assign order from a
+// pre-order walk of the tree -- a folder's tags (in itemsOrder), then its children --
+// so the userscript's arrangement (within-folder order + folder order) is what MMA
+// renders. Returns tag name -> order index.
+function buildOrderMap(folders) {
+  const order = new Map();
+  let counter = 0;
+  const walk = (list) => {
+    for (const f of list) {
+      for (const t of orderedFolderTags(f)) {
+        if (!order.has(t)) order.set(t, counter++);
+      }
+      if (f.children?.length) walk(f.children);
+    }
+  };
+  walk(folders);
+  return order;
 }
 
 function isStorageTag(name) {
@@ -181,6 +223,7 @@ function processFile(inputPath, externalFolders) {
   }
 
   const renameMap = buildRenameMap(folders);
+  const orderMap = buildOrderMap(folders);
   let renamed = 0;
   let skippedAliases = 0;
 
@@ -193,7 +236,7 @@ function processFile(inputPath, externalFolders) {
     for (const child of fl.children || []) countTags(child);
   };
   for (const f of folders) countTags(f);
-  for (const [tag, count] of tagFolderCount) {
+  for (const [, count] of tagFolderCount) {
     if (count > 1) skippedAliases++;
   }
 
@@ -227,9 +270,21 @@ function processFile(inputPath, externalFolders) {
     for (const [tagName, def] of Object.entries(mapData.extra.tags)) {
       if (isStorageTag(tagName)) continue;
       const newName = renameMap.get(tagName);
+      const ord = orderMap.get(tagName);
+      if (ord !== undefined && def && typeof def === "object") def.order = ord;
       newDefs[newName || tagName] = def;
     }
     mapData.extra.tags = newDefs;
+  }
+
+  // Carry folder colors as virtual tags under the map's settings (MMA colors folder
+  // nodes from these). settings is a map field, so it rides in extra alongside tags.
+  const virtualTags = buildVirtualTags(folders);
+  const folderColors = Object.keys(virtualTags).length;
+  if (folderColors) {
+    if (!mapData.extra) mapData.extra = {};
+    if (!mapData.extra.settings) mapData.extra.settings = {};
+    mapData.extra.settings.virtualTags = virtualTags;
   }
 
   const outName = name.replace(/\.json$/, "-mma.json");
@@ -239,7 +294,7 @@ function processFile(inputPath, externalFolders) {
   writeFileSync(outPath, JSON.stringify(mapData, null, 2), "utf-8");
 
   console.log(
-    `  ${name} -> ${basename(outPath)}  (${renameMap.size} tags mapped, ${renamed} references renamed)`
+    `  ${name} -> ${basename(outPath)}  (${renameMap.size} tags mapped, ${renamed} references renamed, ${folderColors} folder colors)`
   );
   if (skippedAliases > 0) {
     console.log(

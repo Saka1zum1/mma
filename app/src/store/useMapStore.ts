@@ -1400,6 +1400,11 @@ export async function confirmImport(droppedFields: string[], tagName?: string) {
 	const r = await cmd.storeImportFile(droppedFields, tagName?.trim() || null);
 	cancelImport();
 	await mutate(Promise.resolve(r));
+	// Overlay any settings the import carried (extra.settings) onto the open map's
+	// settings. Generic: imported keys win, untouched keys are preserved.
+	if (currentMap && r.settings && Object.keys(r.settings).length) {
+		await updateMapMeta({ settings: { ...currentMap.meta.settings, ...r.settings } });
+	}
 	// Large imports skip the undo stack (Rust); commit them so the baseline advances
 	// with a recorded history entry instead of silently diverging from HEAD. Use the
 	// single-pass commit+bake (builds the Arrow batch once) instead of commitMap.

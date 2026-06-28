@@ -92,6 +92,8 @@ struct ParsedMap {
     tags: Vec<Tag>,
     fields: Option<Value>,
     warnings: Vec<String>,
+    /// Map settings carried by the import (`extra.settings`)
+    settings: serde_json::Map<String, Value>,
 }
 
 use crate::util::color_for_name;
@@ -103,7 +105,7 @@ use crate::util::color_for_name;
 /// Parse CSV text into locations. Supports both named columns (lat/lng/heading/etc.)
 /// and positional (first two numeric columns = lat, lng). Skips malformed rows silently.
 fn parse_csv(text: &str) -> ParsedMap {
-    let empty = || ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: Vec::new() };
+    let empty = || ParsedMap { name: String::new(), folder: None, locations: Vec::new(), tags: Vec::new(), fields: None, warnings: Vec::new(), settings: serde_json::Map::new() };
     let warn = |w: &str| { let mut m = empty(); m.warnings.push(w.into()); m };
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -172,7 +174,7 @@ fn parse_csv(text: &str) -> ParsedMap {
         }
     }
 
-    ParsedMap { name: String::new(), folder: None, locations, tags: Vec::new(), fields: None, warnings: Vec::new() }
+    ParsedMap { name: String::new(), folder: None, locations, tags: Vec::new(), fields: None, warnings: Vec::new(), settings: serde_json::Map::new() }
 }
 
 struct ExtraTagMeta {
@@ -180,16 +182,14 @@ struct ExtraTagMeta {
     order: Option<u32>,
 }
 
-/// Extract tag color/order metadata from the top-level `"extra"."tags"` block
-/// without parsing the entire JSON. Uses a manual depth-tracking scanner to find
-/// the `"extra"` key at depth 1, avoiding a full-document parse on multi-MB files.
-fn extract_tag_meta(buf: &[u8], start: usize, start_depth: i32) -> HashMap<String, ExtraTagMeta> {
-    let mut meta = HashMap::new();
+/// Parse the top-level `"extra"` object (sibling of the coordinate array) into a
+/// JSON Value without parsing the entire document. Uses a manual depth-tracking
+/// scanner to find the `"extra"` key at depth 1, avoiding a full-document parse on
+/// multi-MB files. Callers that already know where the coordinate array ends pass
+/// `start` (just past the last object) + `start_depth` (2, still inside the array)
+/// so we scan only the tiny tail. Shared by tag-meta and settings extraction.
+fn find_top_level_extra(buf: &[u8], start: usize, start_depth: i32) -> Option<serde_json::Value> {
     let needle = b"\"extra\"";
-    // Find "extra" at depth 1 (top-level key, not inside customCoordinates).
-    // Callers that already know where the coordinate array ends pass `start`
-    // (just past the last object) + `start_depth` (2, still inside the array) so
-    // we scan only the tiny tail instead of the whole multi-MB document.
     let mut i = start;
     let mut depth = start_depth;
     let mut in_str = false;
@@ -208,10 +208,10 @@ fn extract_tag_meta(buf: &[u8], start: usize, start_depth: i32) -> HashMap<Strin
         if buf[i] == b'}' || buf[i] == b']' { depth -= 1; }
         i += 1;
     }
-    let pos = match pos { Some(p) => p, None => return meta };
+    let pos = pos?;
     let mut j = pos + needle.len();
     while j < buf.len() && matches!(buf[j], b' ' | b':' | b'\n' | b'\r' | b'\t') { j += 1; }
-    if j >= buf.len() || buf[j] != b'{' { return meta; }
+    if j >= buf.len() || buf[j] != b'{' { return None; }
     let obj_start = j;
     let mut depth = 1i32;
     let mut k = obj_start + 1;
@@ -226,10 +226,12 @@ fn extract_tag_meta(buf: &[u8], start: usize, start_depth: i32) -> HashMap<Strin
         if buf[k] == b'}' { depth -= 1; }
         k += 1;
     }
-    let extra: serde_json::Value = match serde_json::from_slice(&buf[obj_start..k]) {
-        Ok(v) => v,
-        Err(_) => return meta,
-    };
+    serde_json::from_slice(&buf[obj_start..k]).ok()
+}
+
+/// Tag color/order metadata from a parsed top-level `"extra"."tags"` block.
+fn tag_meta_from_extra(extra: &serde_json::Value) -> HashMap<String, ExtraTagMeta> {
+    let mut meta = HashMap::new();
     if let Some(tags_obj) = extra.get("tags").and_then(|t| t.as_object()) {
         for (name, entry) in tags_obj {
             let color = entry.get("color").and_then(|c| c.as_array()).and_then(|arr| {
@@ -245,6 +247,14 @@ fn extract_tag_meta(buf: &[u8], start: usize, start_depth: i32) -> HashMap<Strin
         }
     }
     meta
+}
+
+/// Map settings carried by an import, from a parsed top-level `"extra"."settings"` block.
+fn settings_from_extra(extra: &serde_json::Value) -> serde_json::Map<String, Value> {
+    extra.get("settings")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -429,7 +439,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
         Some(r) => r,
         None => {
             warnings.push("No recognized coordinate array found".to_string());
-            return ParsedMap { name, folder, locations: Vec::new(), tags: Vec::new(), fields: None, warnings };
+            return ParsedMap { name, folder, locations: Vec::new(), tags: Vec::new(), fields: None, warnings, settings: serde_json::Map::new() };
         }
     };
 
@@ -537,8 +547,10 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
 
     // Top-level "extra" sits after the coordinate array; start the scan at the
     // array's closing `]` (depth 2, the `]` drops it to 1) instead of rescanning
-    // the whole buffer.
-    let tag_meta = extract_tag_meta(buf, arr_start + arr_close, 2);
+    // the whole buffer. Parse it once, derive both tag meta and virtual tags.
+    let extra_val = find_top_level_extra(buf, arr_start + arr_close, 2);
+    let tag_meta = extra_val.as_ref().map(tag_meta_from_extra).unwrap_or_default();
+    let settings = extra_val.as_ref().map(settings_from_extra).unwrap_or_default();
 
     // Merge chunk-local tag tables into one global table, remapping each chunk's
     // local ids to global ids in place.
@@ -575,7 +587,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
         (t_parse - t_boundaries).as_millis(), (t_merge - t_parse).as_millis(),
         t0.elapsed().as_millis(), locations.len());
 
-    ParsedMap { name, folder, locations, tags, fields: None, warnings }
+    ParsedMap { name, folder, locations, tags, fields: None, warnings, settings }
 }
 
 
@@ -614,6 +626,21 @@ fn read_single_json(path: &str) -> AppResult<Vec<(String, String)>> {
 // DB write
 // ---------------------------------------------------------------------------
 
+/// Sole place an import's settings become `MapSettings`. Overlays the import's
+/// settings keys (`extra.settings`) onto `base` (defaults for a new map, the open
+/// map's current settings for editor import)
+fn merge_settings(
+    base: crate::map_meta::MapSettings,
+    overlay: &serde_json::Map<String, Value>,
+) -> crate::map_meta::MapSettings {
+    if overlay.is_empty() { return base; }
+    let mut v = serde_json::to_value(&base).unwrap_or_default();
+    if let Some(obj) = v.as_object_mut() {
+        for (k, val) in overlay { obj.insert(k.clone(), val.clone()); }
+    }
+    serde_json::from_value(v).unwrap_or(base)
+}
+
 /// Persist a parsed map as a new database entry + Arrow IPC file.
 /// Assigns sequential u32 location IDs starting at 1.
 fn write_map_to_db(conn: &Connection, mut map: ParsedMap) -> AppResult<ImportedMapInfo> {
@@ -627,6 +654,10 @@ fn write_map_to_db(conn: &Connection, mut map: ParsedMap) -> AppResult<ImportedM
     } else {
         "{}".to_string()
     };
+
+    let settings = merge_settings(crate::map_meta::MapSettings::default(), &map.settings);
+    let settings_json = serde_json::to_string(&settings)
+        .unwrap_or_else(|_| crate::map_meta::default_settings_json());
 
     // Assign sequential u32 IDs
     for (i, loc) in map.locations.iter_mut().enumerate() {
@@ -650,7 +681,7 @@ fn write_map_to_db(conn: &Connection, mut map: ParsedMap) -> AppResult<ImportedM
 
     tx.execute(
         "INSERT INTO maps (id, name, description, folder, settings, score_bounds, extra, tags, location_count, created_at, updated_at) VALUES (?1, ?2, '', ?3, ?4, '\"auto\"', ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params![map_id, map.name, map.folder, crate::map_meta::default_settings_json(), extra_json, tags_json, loc_count, now, now],
+        rusqlite::params![map_id, map.name, map.folder, settings_json, extra_json, tags_json, loc_count, now, now],
     )?;
 
     tx.commit()?;
@@ -924,6 +955,8 @@ pub struct EditorImportResult {
     pub warnings: Vec<String>,
     /// True when the import was large enough to autocommit; the caller commits it.
     pub auto_commit: bool,
+    /// Settings carried by the import (`extra.settings`)
+    pub settings: serde_json::Map<String, Value>,
 }
 
 
@@ -943,6 +976,7 @@ pub(crate) fn add_copied_to_store(
         tags,
         fields: None,
         warnings: Vec::new(),
+        settings: serde_json::Map::new(),
     };
     add_parsed_to_store(store, &mut parsed, None)
 }
@@ -1084,6 +1118,7 @@ pub async fn store_import_file(
             imported_count,
             auto_commit,
             warnings: parsed.warnings,
+            settings: parsed.settings,
             mutation,
         })
     })

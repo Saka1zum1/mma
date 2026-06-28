@@ -32,7 +32,7 @@ Maps are matched by name. Any maps not found locally are skipped (the count is s
 Download your locations, then run:
 
 ```bash
-node scripts/migrations/migrate-folders.mjs <input.json...> [-o outdir]
+node scripts/migrations/migrate-tag-folders.mjs <input.json...> [-o outdir]
 ```
 
 - **Input:** the JSON from the userscript's "Export" button
@@ -41,5 +41,5 @@ node scripts/migrations/migrate-folders.mjs <input.json...> [-o outdir]
 Accepts multiple files / globs:
 
 ```bash
-node scripts/migrations/migrate-folders.mjs maps/*.json -o converted/
+node scripts/migrations/migrate-tag-folders.mjs maps/*.json -o converted/
 ```
