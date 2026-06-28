@@ -27,6 +27,9 @@ interface PanoViewerContextValue {
 	altitude: number;
 	setAltitude: React.Dispatch<React.SetStateAction<number>>;
 	selectedPanoId: string | null;
+	/** Resolved live pano position (current pano if loaded, else the active location). */
+	lat: number;
+	lng: number;
 	/** Date-picker view state + resolution inputs, derived once for every picker. */
 	dateState: PanoDateState;
 	/** Exact capture timestamp, resolved once and shared (the lookup is expensive). */
@@ -92,6 +95,8 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 				altitude,
 				setAltitude,
 				selectedPanoId,
+				lat,
+				lng,
 				dateState,
 				exactDate,
 				resolvedTz,

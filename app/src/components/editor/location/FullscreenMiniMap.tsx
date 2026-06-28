@@ -7,7 +7,7 @@ import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
-import type { LatLng } from "@/types";
+import { usePanoViewer } from "./PanoViewerContext";
 
 const MINIMAP_SCALE = range([0.5, 2]);
 const MINIMAP_SCALE_STEP = 0.5;
@@ -51,10 +51,8 @@ function ensureMinimapMap(
 	return { map: minimapMap, div: minimapDiv, overlay: minimapOverlay };
 }
 
-export function FullscreenMiniMap({
-	lat,
-	lng,
-}: LatLng) {
+export function FullscreenMiniMap() {
+	const { lat, lng } = usePanoViewer();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const scale = useSetting("fullscreenMinimapScale");
 	const [expanded, setExpanded] = useState(false);
@@ -77,7 +75,16 @@ export function FullscreenMiniMap({
 	}, [div, map]);
 
 	useEffect(() => {
-		map.setCenter({ lat, lng });
+		const b = map.getBounds();
+		if (!b) { map.panTo({ lat, lng }); return; }
+		// Deadzone: only follow once the pano nears the edge (outer 10%) or leaves the view,
+		// so the camera holds still until you're about to walk off-frame.
+		const ne = b.getNorthEast(), sw = b.getSouthWest(), c = b.getCenter();
+		const latPad = (ne.lat() - sw.lat()) * 0.45;
+		const lngPad = (ne.lng() - sw.lng()) * 0.45;
+		const inside =
+			Math.abs(lat - c.lat()) <= latPad && Math.abs(lng - c.lng()) <= lngPad;
+		if (!inside) map.panTo({ lat, lng });
 	}, [lat, lng, map]);
 
 	useEffect(() => {

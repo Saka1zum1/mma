@@ -237,9 +237,7 @@ export function MapEditor() {
 		};
 	}, [map?.meta.id]);
 
-	// Another window mutated this map: the payload is a MutationResult, so it runs
-	// through the same mutate() flow as a local edit (Promise.resolve since it's
-	// already resolved). This window owns persistence — mutate schedules the save.
+	// Another window mutated this map
 	useEffect(() => {
 		const unlisten = listen<MutationResult & { mapId: string }>("store-external-mutation", (e) => {
 			if (e.payload.mapId === getCurrentMapId()) void mutate(Promise.resolve(e.payload));

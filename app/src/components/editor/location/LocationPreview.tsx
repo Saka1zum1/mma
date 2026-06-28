@@ -538,7 +538,7 @@ function LocationPreviewInner() {
 						)}
 					</div>
 					{isFullscreen && appSettings.showFullscreenMinimap && !appSettings.hidePanoUI && (
-						<FullscreenMiniMap lat={location.lat} lng={location.lng}/>
+						<FullscreenMiniMap />
 					)}
 					{isFullscreen && !appSettings.hidePanoUI && (
 						<div className="fullscreen-bottom-tray" ref={bottomTrayRef}>
