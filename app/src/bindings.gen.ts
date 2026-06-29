@@ -16,7 +16,10 @@ export const commands = {
 	getAppDataDir: () => typedError<string, string>(__TAURI_INVOKE("get_app_data_dir")),
 	/**  Report where map data is currently stored. */
 	getDataLocation: () => typedError<DataLocation, string>(__TAURI_INVOKE("get_data_location")),
-	/**  Set (`path`) or clear (`null`) the data-folder override. Takes effect after relaunch. Does not move existing data. */
+	/**
+	 *  Set (`Some`) or clear (`None`) the data-folder override. Takes effect after relaunch.
+	 *  Does not move existing data -- the caller warns the user.
+	 */
 	setDataLocation: (path: string | null) => typedError<null, string>(__TAURI_INVOKE("set_data_location", { path })),
 	/**  Open the app data directory in the OS file explorer. */
 	openDataFolder: () => typedError<null, string>(__TAURI_INVOKE("open_data_folder")),
@@ -441,6 +444,16 @@ export type CopyToMapResult = {
 	targetName: string,
 };
 
+/**  The active and default data-folder paths, plus whether a custom override is in effect. */
+export type DataLocation = {
+	/**  Folder currently in use this session (default or override). */
+	path: string,
+	/**  OS default, ignoring any override -- used for the "reset" affordance. */
+	default_path: string,
+	/**  True when `path` differs from the OS default. */
+	is_custom: boolean,
+};
+
 /**  A calendar component to group dates by. */
 export type DatePart = "year" | "yearMonth" | "day" | "monthOfYear" | "hourOfDay";
 
@@ -802,16 +815,6 @@ export type PluginManifest = {
 	icon: string,
 	main: string,
 	version: string,
-};
-
-/** The active and default data-folder paths, plus whether a custom override is in effect. */
-export type DataLocation = {
-	/** Folder currently in use this session (default or override). */
-	path: string,
-	/** OS default, ignoring any override -- used for the "reset" affordance. */
-	default_path: string,
-	/** True when `path` differs from the OS default. */
-	is_custom: boolean,
 };
 
 /**

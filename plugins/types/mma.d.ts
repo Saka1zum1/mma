@@ -101,6 +101,15 @@ export type CopyToMapResult = {
 	skipped: number;
 	targetName: string;
 };
+/**  The active and default data-folder paths, plus whether a custom override is in effect. */
+export type DataLocation = {
+	/**  Folder currently in use this session (default or override). */
+	path: string;
+	/**  OS default, ignoring any override -- used for the "reset" affordance. */
+	default_path: string;
+	/**  True when `path` differs from the OS default. */
+	is_custom: boolean;
+};
 /**  A calendar component to group dates by. */
 export type DatePart = "year" | "yearMonth" | "day" | "monthOfYear" | "hourOfDay";
 /**  Aggregate database statistics for the debug panel. */
@@ -152,11 +161,10 @@ export type EditorImportResult = {
 	warnings: string[];
 	/**  True when the import was large enough to autocommit; the caller commits it. */
 	autoCommit: boolean;
-	/**
-	 *  Settings carried by the import (`extra.settings`), a partial overlay for the
-	 *  JS caller to merge into the open map's settings via `updateMapMeta`.
-	 */
-	settings: any;
+	/**  Settings carried by the import (`extra.settings`) */
+	settings: {
+		[key in string]: any;
+	};
 } & MutationResult;
 /**
  *  Configuration for JSON export. Controls which fields are included and
@@ -298,16 +306,6 @@ export type LocationPatch_Deserialize = {
 	extra?: any | null;
 	createdAt?: number | null;
 	modifiedAt?: number | null;
-};
-/** Generic `{id, patch}` update envelope, parameterized by the patch type. */
-export type Update<P> = {
-	id: number;
-	patch: P;
-};
-/** Patchable fields of a `Tag` (input variant). Subset by design; omit to leave unchanged. */
-export type TagPatch_Deserialize = {
-	name?: string | null;
-	color?: string | null;
 };
 export type MapData = {
 	meta: MapMeta;
@@ -778,6 +776,20 @@ export type Tag = {
 	 *  fast sidebar display -- kept in sync by callers after batch edits.
 	 */
 	count?: number;
+};
+/**  Patchable fields of a `Tag`. Subset by design: id/count/visible aren't editable here. */
+export type TagPatch = {
+	name?: string | null;
+	color?: string | null;
+};
+/**
+ *  Generic `{id, patch}` update envelope, parameterized by the patch type. Specta
+ *  has no `Partial<T>`, and a patch is a deliberate *subset* of patchable fields, so
+ *  each entity names its own patch struct (e.g. `TagPatch`) rather than deriving one.
+ */
+export type Update<P> = {
+	id: number;
+	patch: P;
 };
 /**
  *  Per-map config for a virtual tag-tree node — a folder node with no underlying
@@ -1346,7 +1358,7 @@ declare const EVENT_DEFS: {
 	"location:update": Update<LocationPatch_Deserialize>[];
 	"tag:add": Tag[];
 	"tag:remove": number[];
-	"tag:update": Update<TagPatch_Deserialize>[];
+	"tag:update": Update<TagPatch>[];
 	"selection:change": Selection$1[];
 	"active:change": number | null;
 	"map:open": MapData;
@@ -1825,6 +1837,8 @@ declare const DEFAULTS: {
 	};
 	panoDotScaled: boolean;
 	tagViewMode: TagViewMode;
+	/** Tree view only: render each tag as the shortest path suffix that's still unique. */
+	truncateTagPaths: boolean;
 	tagSortMode: TagSortMode;
 	/** Gap between tag pills (px), shared by flat and tree views via `--tag-gap`. */
 	tagGap: number;
@@ -1875,6 +1889,8 @@ declare const mma: {
 		readFile: (path: string) => Promise<string>;
 		appReady: () => Promise<number>;
 		getAppDataDir: () => Promise<string>;
+		getDataLocation: () => Promise<DataLocation>;
+		setDataLocation: (path: string | null) => Promise<null>;
 		openDataFolder: () => Promise<null>;
 		listUserPlugins: () => Promise<PluginManifest[]>;
 		installPlugin: (id: string) => Promise<PluginManifest>;
@@ -1918,7 +1934,7 @@ declare const mma: {
 		storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location$1[]>;
 		storeExtraFieldValues: (field: string) => Promise<string[]>;
 		storeCreateTags: (names: string[]) => Promise<MutationResult>;
-		storeUpdateTags: (updates: Update<TagPatch_Deserialize>[]) => Promise<MutationResult>;
+		storeUpdateTags: (updates: Update<TagPatch>[]) => Promise<MutationResult>;
 		storeDeleteTags: (tagIds: number[]) => Promise<MutationResult>;
 		storeReorderTags: (orderedIds: number[]) => Promise<MutationResult>;
 		storeUndo: () => Promise<MutationResult>;
@@ -2056,6 +2072,7 @@ declare const mma: {
 		};
 		panoDotScaled: boolean;
 		tagViewMode: TagViewMode;
+		truncateTagPaths: boolean;
 		tagSortMode: TagSortMode;
 		tagGap: number;
 		borderDetail: BorderDetail;
@@ -2221,7 +2238,7 @@ declare const mma: {
 	setPluginMode(pluginId: string): void;
 	exitPluginMode(): void;
 	createTags(names: string[]): Promise<Tag[]>;
-	updateTags(updates: Update<TagPatch_Deserialize>[]): Promise<void>;
+	updateTags(updates: Update<TagPatch>[]): Promise<void>;
 	deleteTags(tagIds: number[]): Promise<void>;
 	reorderTags(orderedIds: number[]): Promise<void>;
 	addTagToLocations(tagId: number, locationIds: number[]): Promise<void>;
