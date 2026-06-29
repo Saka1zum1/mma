@@ -4696,6 +4696,7 @@ body {
 	display: block;
 	overflow-y: auto;
 	min-height: 0;
+	transform: translateZ(0);
 }
 .settings-tabs {
 	display: flex;
