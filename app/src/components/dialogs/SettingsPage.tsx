@@ -1132,6 +1132,9 @@ function DataFolderSection() {
 				<button className="button" onClick={pick}>
 					Change folder...
 				</button>
+				<button className="button" onClick={() => cmd.openDataFolder()}>
+					Open data folder
+				</button>
 				{loc?.is_custom && (
 					<button className="button" onClick={() => setPending(null)}>
 						Reset to default
@@ -1192,9 +1195,6 @@ function AdvancedTab() {
 				<div style={{ display: "flex", gap: 8 }}>
 					<button className="button" onClick={() => setShowDbManager(true)}>
 						Database management
-					</button>
-					<button className="button" onClick={() => cmd.openDataFolder()}>
-						Open data folder
 					</button>
 				</div>
 			</fieldset>
