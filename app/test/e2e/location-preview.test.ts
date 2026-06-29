@@ -1453,10 +1453,11 @@ describe("LocationPreview — settings toggles", () => {
 		});
 		await openLocation(set1Id);
 		await waitForDates();
-		// Controls should be visible initially (no hide-pano-ui class)
+		// Controls should be visible initially (no hide-pano-ui class). The class lives on
+		// `.location-preview__panorama` (the CSS hides controls via that), not on the embed child.
 		await browser.waitUntil(
 			async () => {
-				const el = await browser.$(".location-preview__embed");
+				const el = await browser.$(".location-preview__panorama");
 				return (
 					(await el.isExisting()) &&
 					!((await el.getAttribute("class")) ?? "").includes("hide-pano-ui")
@@ -1469,12 +1470,12 @@ describe("LocationPreview — settings toggles", () => {
 		await withApi(async (api) => {
 			api.setSetting("hidePanoUI", true);
 		});
-		const embed = await browser.$(".location-preview__embed");
+		const panorama = await browser.$(".location-preview__panorama");
 		await browser.waitUntil(
-			async () => ((await embed.getAttribute("class")) ?? "").includes("hide-pano-ui"),
+			async () => ((await panorama.getAttribute("class")) ?? "").includes("hide-pano-ui"),
 			{ timeout: 5000, timeoutMsg: "hide-pano-ui class never applied" },
 		);
-		expect(((await embed.getAttribute("class")) ?? "").includes("hide-pano-ui")).toBe(true);
+		expect(((await panorama.getAttribute("class")) ?? "").includes("hide-pano-ui")).toBe(true);
 
 		// Reset
 		await withApi(async (api) => {
