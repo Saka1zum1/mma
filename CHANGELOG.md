@@ -2,7 +2,6 @@
 - Choose where your map data is stored on disk
 - Tag names are shortened to their shortest unique path in tree view
 - Fixed country and subdivision selection failing when its border data wasn't downloaded yet
-- Fixed the relaunch button doing nothing (e.g. after installing an update)
 - Fixed a rendering glitch when opening dropdowns in Settings
 
 ## v0.6.7 — 2026-06-28
