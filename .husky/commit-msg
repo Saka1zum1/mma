@@ -1,0 +1,28 @@
+#!/bin/sh
+
+[ "$HUSKY" = "0" ] && exit 0
+
+msg_file="$1"
+
+# Subject = first line that isn't a comment or blank.
+subject=$(grep -vE '^[[:space:]]*#' "$msg_file" | grep -vE '^[[:space:]]*$' | head -n1)
+
+# Skip git-generated / special subjects (merge, revert template, fixup/squash).
+case "$subject" in
+	"Merge "*|"Revert "*|fixup!*|squash!*|amend!*) exit 0 ;;
+esac
+
+types="feat|fix|refactor|chore|test|ci|docs|revert"
+scopes="selections|render|store|sv|editor|maps|tags|plugins|import|ui"
+
+if printf '%s' "$subject" | grep -qE "^($types)(\(($scopes)\))?!?: .+"; then
+	exit 0
+fi
+
+echo "[commit-msg] Rejected: subject does not fit the commit taxonomy."
+echo "  subject : $subject"
+echo ""
+echo "  format  : type(scope): subject   (scope optional; omit for repo-wide changes)"
+echo "  types   : feat fix refactor chore test ci docs revert   (never perf)"
+echo "  scopes  : selections render store sv editor maps tags plugins import ui"
+exit 1
