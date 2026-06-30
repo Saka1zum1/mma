@@ -17,18 +17,18 @@ jobs:
       - name: Install Python deps
         run: pip install torch transformers --index-url https://download.pytorch.org/whl/cpu
       - name: Export ONNX models
-        working-directory: plugins/vision-sidecar
+        working-directory: plugins/vision/sidecar
         run: python export_models.py --output-dir models
       - uses: actions/upload-artifact@v4
         with:
           name: clip-models
-          path: plugins/vision-sidecar/models/
+          path: plugins/vision/sidecar/models/
 
   # Build sidecar binary for each platform
   build-sidecar:
     uses: ./.github/workflows/build-sidecar.yml
     with:
-      crate-path: plugins/vision-sidecar
+      crate-path: plugins/vision/sidecar
       binary-name: mma-vision
 
   # Bundle everything into release archives

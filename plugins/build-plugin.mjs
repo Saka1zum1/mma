@@ -8,7 +8,7 @@
 // Auto-detects entry point (src/index.tsx > src/index.ts) and applies JSX
 // config only when needed.
 
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -18,6 +18,17 @@ const mmaExternals = createRequire(import.meta.url)("./mma-externals.js");
 
 function resolveEsbuild(pluginDir) {
 	return createRequire(join(pluginDir, "package.json"))("esbuild");
+}
+
+function bumpPatch(pluginDir) {
+	const manifestPath = join(pluginDir, "manifest.json");
+	if (!existsSync(manifestPath)) return;
+	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+	if (!manifest.version) return;
+	const parts = manifest.version.split(".");
+	parts[2] = String((parseInt(parts[2], 10) || 0) + 1);
+	manifest.version = parts.join(".");
+	writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 }
 
 function buildOpts(pluginDir) {
@@ -74,6 +85,7 @@ if (watch) {
 	const results = await Promise.allSettled(
 		targets.map(async (dir) => {
 			const name = dir.slice(pluginsDir.length + 1);
+			bumpPatch(dir);
 			const { build } = resolveEsbuild(dir);
 			await build(buildOpts(dir));
 			return name;

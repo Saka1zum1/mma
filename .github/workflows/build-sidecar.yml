@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       crate-path:
-        description: 'Path to the Rust crate (e.g. plugins/vision-sidecar)'
+        description: 'Path to the Rust crate (e.g. plugins/vision/sidecar)'
         required: true
         type: string
       binary-name:
