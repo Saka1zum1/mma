@@ -631,8 +631,6 @@ type Selection$1 = {
 		number
 	];
 	props: SelectionProps;
-	/**  JS-only: cached resolved count for sidebar display. Rust never sets this. */
-	count?: number | null;
 };
 /**  Input for `store_sync_selections`: selection criteria + display color. */
 export type SelectionInput = {
@@ -719,6 +717,7 @@ export type SelectionProps = {
  *  mutations). `None` when nothing changed. `counts` gives per-selection match counts.
  */
 export type SelectionSync = {
+	/**  Resolved count per selection node, keyed by `Selection.key` (top-level and nested). */
 	counts: {
 		[key in string]: number;
 	};
@@ -747,14 +746,6 @@ export type SummaryResult = {
 	locationCount: number;
 	version: number;
 	dirtyCount: number;
-};
-/**  Result of `store_sync_selections`: per-selection counts and the inline bitmask bytes. */
-export type SyncSelectionsResult = {
-	counts: {
-		[key in string]: number;
-	};
-	bitmask: number[] | null;
-	selectedCount: number;
 };
 /**
  *  A user-defined label that can be applied to any number of locations.
@@ -1954,7 +1945,7 @@ declare const mma: {
 			number,
 			number
 		]>;
-		storeSyncSelections: (sels: SelectionInput[]) => Promise<SyncSelectionsResult>;
+		storeSyncSelections: (sels: SelectionInput[]) => Promise<SelectionSync>;
 		storeGetSelectedIdsList: () => Promise<number[]>;
 		storeResolveSelection: (props: SelectionProps) => Promise<number[]>;
 		storePartition: (field: string, key: KeySpec, scope: Scope) => Promise<PartitionBucket[]>;
@@ -2311,6 +2302,7 @@ declare const mma: {
 	useKnownFieldKeys: () => ReadonlySet<string>;
 	useAllSelections: () => Selection$1[];
 	useSelections: () => Selection$1[];
+	useSelectionCounts: () => Record<string, number>;
 	useGhostedSelections: () => Set<string>;
 	useActivePluginId: () => string | null;
 	useUndoRedo: () => {

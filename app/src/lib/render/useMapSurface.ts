@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, type RefObject } from "react";
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import type { GoogleMapsOverlayProps } from "@deck.gl/google-maps";
 import type { PickingInfo } from "@deck.gl/core";
 import { google } from "@/lib/sv/opensv";
 import { buildSceneLayers, type PolyGeom } from "@/lib/render/buildSceneLayers";
 import { getScene, useScene } from "@/lib/render/sceneStore";
-import { useLatestRef } from "@/lib/hooks/useLatestRef";
+
 import { useSetting, getSettings } from "@/store/settings";
 import { useScoreMaxError, useLatLngAnchor } from "@/lib/sv/measure";
 import { handleMapClick, handleMapHover } from "@/lib/map/mapClick";
@@ -125,7 +125,7 @@ export function useMapSurface(
 	]);
 
 	// Latest rebuild, so the rAF-delayed creation paints the first frame with current values.
-	const rebuildRef = useLatestRef(rebuild);
+	const rebuildLatest = useEffectEvent(() => rebuild());
 
 	const externalOverlay = opts.overlay ?? null;
 
@@ -133,7 +133,9 @@ export function useMapSurface(
 		if (!map || !google?.maps) return;
 		if (externalOverlay) {
 			overlayRef.current = externalOverlay;
-			return () => { overlayRef.current = null; };
+			return () => {
+				overlayRef.current = null;
+			};
 		}
 		let cancelled = false;
 		// GoogleMapsOverlay needs a rAF delay before creation (deck.gl + Google Maps interop).
@@ -142,7 +144,7 @@ export function useMapSurface(
 			const overlay = new GoogleMapsOverlay({ layers: [], pickingRadius: 2 });
 			overlay.setMap(map);
 			overlayRef.current = overlay;
-			rebuildRef.current();
+			rebuildLatest();
 		});
 		return () => {
 			cancelled = true;
@@ -151,7 +153,7 @@ export function useMapSurface(
 			overlayRef.current?.finalize();
 			overlayRef.current = null;
 		};
-	}, [map, rebuildRef, externalOverlay]);
+	}, [map, externalOverlay]);
 
 	useEffect(() => {
 		rebuild();

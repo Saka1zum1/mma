@@ -5,6 +5,7 @@ import {
 	useRef,
 	useState,
 	useCallback,
+	useEffectEvent,
 	useSyncExternalStore,
 } from "react";
 import {
@@ -43,28 +44,18 @@ import {
 } from "@/lib/review/review";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { useLatestRef } from "@/lib/hooks/useLatestRef";
+
 import { useSettings, useSetting, getSettings, GEOCODE_PROVIDER_LABELS } from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
 import { textColorFor } from "@/lib/util/color";
-import {
-	type PanoReference,
-	resolvePano,
-	fetchPanoData,
-	showToast,
-} from "@/lib/sv/lookup";
+import { type PanoReference, resolvePano, fetchPanoData, showToast } from "@/lib/sv/lookup";
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { enrich } from "@/lib/sv/enrich";
 import { FullscreenMiniMap } from "@/components/editor/location/FullscreenMiniMap";
 import { FullscreenTagBar } from "@/components/editor/location/FullscreenTagBar";
 import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
-import {
-	seenPanoChanged,
-	seenFlush,
-	seenSetCanvas,
-	seenUpdateGeo,
-} from "@/lib/seen/seen";
+import { seenPanoChanged, seenFlush, seenSetCanvas, seenUpdateGeo } from "@/lib/seen/seen";
 import { useReverseGeocode, type GeoDisplay } from "@/components/editor/location/useReverseGeocode";
 import { PanoViewerProvider, usePanoViewer } from "./PanoViewerContext";
 import {
@@ -119,7 +110,7 @@ function LocationPreviewInner() {
 	const [panoGeo, setPanoGeo] = useState<GeoDisplay | null>(null);
 	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0, panoGeo);
 	const cancelTweenRef = useRef<(() => void) | null>(null);
-	const geoRef = useLatestRef(geoResult);
+	const getGeoResult = useEffectEvent(() => geoResult);
 	useEffect(() => {
 		setPendingTags(idsToNames(location?.tags ?? []));
 		setPanoGeo(null);
@@ -132,7 +123,10 @@ function LocationPreviewInner() {
 	const [bottomTrayHeight, setBottomTrayHeight] = useState(0);
 	useLayoutEffect(() => {
 		const el = bottomTrayRef.current;
-		if (!el) { setBottomTrayHeight(0); return; }
+		if (!el) {
+			setBottomTrayHeight(0);
+			return;
+		}
 		const obs = new ResizeObserver(() => setBottomTrayHeight(el.offsetHeight));
 		obs.observe(el);
 		return () => obs.disconnect();
@@ -214,15 +208,18 @@ function LocationPreviewInner() {
 				if (pos) {
 					pushTrail(pos.lng(), pos.lat());
 					const activeForSeen = getActiveLocation();
-					seenPanoChanged({
-							locationId: activeForSeen && !isVirtualLocation(activeForSeen) ? activeForSeen.id : null,
+					const geo = getGeoResult();
+					seenPanoChanged(
+						{
+							locationId:
+								activeForSeen && !isVirtualLocation(activeForSeen) ? activeForSeen.id : null,
 							panoId: panoId,
 							lat: pos.lat(),
 							lng: pos.lng(),
 						},
-						geoRef.current && {
-							address: geoRef.current.address,
-							countryCode: (activeForSeen?.extra?.countryCode) ?? geoRef.current.countryCode,
+						geo && {
+							address: geo.address,
+							countryCode: activeForSeen?.extra?.countryCode ?? geo.countryCode,
 						},
 						() => ({
 							heading: pano.getPov().heading,
@@ -344,10 +341,14 @@ function LocationPreviewInner() {
 			if (!singletonPano || !location) return;
 			// updateLocation no-ops for staged (virtual) locations at the store level.
 			if (panoId == null) {
-				updateLocations([{ id: location.id, patch: { flags: location.flags & ~LocationFlag.LoadAsPanoId }}]);
+				updateLocations([
+					{ id: location.id, patch: { flags: location.flags & ~LocationFlag.LoadAsPanoId } },
+				]);
 				if (location.panoId) singletonPano.setPano(location.panoId);
 			} else {
-				updateLocations([{ id: location.id, patch: { flags: location.flags | LocationFlag.LoadAsPanoId }}]);
+				updateLocations([
+					{ id: location.id, patch: { flags: location.flags | LocationFlag.LoadAsPanoId } },
+				]);
 				singletonPano.setPano(panoId);
 			}
 		},
@@ -383,19 +384,21 @@ function LocationPreviewInner() {
 		}
 
 		const panoChanged = savedPanoId !== location.panoId;
-		updateLocations([{
-			id: location.id,
-			patch: {
-				heading: pov.heading,
-				pitch: pov.pitch,
-				zoom: zoom,
-				panoId: savedPanoId,
-				lat: pos?.lat() ?? location.lat,
-				lng: pos?.lng() ?? location.lng,
-				tags: (await createTags(pendingTags)).map((t) => t.id),
-				extra: panoChanged ? {} : location.extra,
-			}
-		}]);
+		updateLocations([
+			{
+				id: location.id,
+				patch: {
+					heading: pov.heading,
+					pitch: pov.pitch,
+					zoom: zoom,
+					panoId: savedPanoId,
+					lat: pos?.lat() ?? location.lat,
+					lng: pos?.lng() ?? location.lng,
+					tags: (await createTags(pendingTags)).map((t) => t.id),
+					extra: panoChanged ? {} : location.extra,
+				},
+			},
+		]);
 		if (isReviewMode && reviewSession?.cursorId === location.id) {
 			reviewNext();
 		} else {
@@ -430,7 +433,9 @@ function LocationPreviewInner() {
 		const result = await resolvePano(location);
 		applyResolved(singletonPano, result, location);
 		google.maps.event.trigger(singletonPano, "resize");
-		updateLocations([{ id: location.id, patch: { flags: location.flags & ~LocationFlag.LoadAsPanoId } }]);
+		updateLocations([
+			{ id: location.id, patch: { flags: location.flags & ~LocationFlag.LoadAsPanoId } },
+		]);
 	}, [location]);
 
 	const handleFullscreen = useCallback(() => {
@@ -453,18 +458,30 @@ function LocationPreviewInner() {
 			}, 150);
 		});
 		obs.observe(el);
-		return () => { obs.disconnect(); clearTimeout(timer); };
+		return () => {
+			obs.disconnect();
+			clearTimeout(timer);
+		};
 	}, [singletonPano, appSettings.previewAspectRatio]);
 
-	const pendingTagsRef = useLatestRef(pendingTags);
-
 	useLocationHotkeys({
-		location, map, isReviewMode,
-		panoDates, selectedPanoId, currentPano,
-		cancelTweenRef, pendingTagsRef, setPendingTags,
-		fullscreenContainerRef, panoContainerRef,
-		handleSave, handleClose, handleDelete,
-		handleReturnToSpawn, handleFullscreen, handleDateChange,
+		location,
+		map,
+		isReviewMode,
+		panoDates,
+		selectedPanoId,
+		currentPano,
+		cancelTweenRef,
+		pendingTags,
+		setPendingTags,
+		fullscreenContainerRef,
+		panoContainerRef,
+		handleSave,
+		handleClose,
+		handleDelete,
+		handleReturnToSpawn,
+		handleFullscreen,
+		handleDateChange,
 	});
 
 	usePanoNavigation(appSettings);
@@ -506,13 +523,19 @@ function LocationPreviewInner() {
 	return (
 		<>
 			<ReviewBar />
-			<section className={`location-preview${appSettings.previewAspectRatio === "free" ? " free-resize" : ""}`}>
+			<section
+				className={`location-preview${appSettings.previewAspectRatio === "free" ? " free-resize" : ""}`}
+			>
 				<div
 					className={`location-preview__panorama${isFullscreen ? " is-fullscreen" : ""}${appSettings.hidePanoUI ? " hide-pano-ui" : ""}`}
 					ref={fullscreenContainerRef}
-					style={isFullscreen
-						? { "--fs-tray-h": `${bottomTrayHeight}px` } as React.CSSProperties
-						: appSettings.previewAspectRatio === "free" ? undefined : { aspectRatio: appSettings.previewAspectRatio }}
+					style={
+						isFullscreen
+							? ({ "--fs-tray-h": `${bottomTrayHeight}px` } as React.CSSProperties)
+							: appSettings.previewAspectRatio === "free"
+								? undefined
+								: { aspectRatio: appSettings.previewAspectRatio }
+					}
 				>
 					<div className="location-preview__embed">
 						<div style={{ position: "absolute", inset: 0 }} ref={panoContainerRef} />
@@ -536,9 +559,7 @@ function LocationPreviewInner() {
 							</div>
 						)}
 					</div>
-					{isFullscreen && appSettings.showFullscreenMinimap && (
-						<FullscreenMiniMap />
-					)}
+					{isFullscreen && appSettings.showFullscreenMinimap && <FullscreenMiniMap />}
 					{isFullscreen && (
 						<div className="fullscreen-bottom-tray" ref={bottomTrayRef}>
 							{appSettings.showFullscreenTagbar && (
@@ -573,10 +594,16 @@ function LocationPreviewInner() {
 						)}
 						{geoResult?.countryCode && geoResult.address && " "}
 						{geoResult?.address && <span>{geoResult.address}</span>}
-						{(geoResult?.address || geoResult?.countryCode) && <span className="location-preview__timestamp-sep"> · </span>}
+						{(geoResult?.address || geoResult?.countryCode) && (
+							<span className="location-preview__timestamp-sep"> · </span>
+						)}
 						<span className="location-preview__timestamps">
 							Created {relativeTime(location.createdAt)}
-							{location.modifiedAt != null && <>{" · "}Modified {relativeTime(location.modifiedAt)}</>}
+							{location.modifiedAt != null && (
+								<>
+									{" · "}Modified {relativeTime(location.modifiedAt)}
+								</>
+							)}
 						</span>
 					</span>
 					<div className="location-preview__date">
@@ -630,73 +657,80 @@ function LocationPreviewInner() {
 					<div className="location-preview__tags">
 						{isImportPreview(location) ? (
 							<p>
-								This location is still being imported and cannot be modified. Complete the
-								import before making changes.
+								This location is still being imported and cannot be modified. Complete the import
+								before making changes.
 							</p>
 						) : (
-						<>
-						<ul className="tag-list">
-							{pendingTags.map((name) => (
-								<li
-									key={name}
-									className="tag is-small has-button"
-									style={tagChipStyle(name, allTags)}
-								>
-									<button
-										className="button tag__button tag__button--delete"
-										onClick={() => handleRemoveTag(name)}
-										type="button"
-									>
-										<svg height="16" width="16" viewBox="0 0 24 24" fill="currentColor">
-											<path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
-										</svg>
-									</button>
-									<span className="tag__text">{displayTagName(map, name)}</span>
-								</li>
-							))}
-							<li>
-								<form className="form-add-tag" onSubmit={handleAddTag}>
-									<button className="button form-add-tag__button" type="submit">
-										+
-									</button>
-									<input
-										className="form-add-tag__input"
-										type="text"
-										placeholder="Add a tag…"
-										value={tagInput}
-										onChange={(e) => setTagInput(e.target.value)}
-									/>
-								</form>
-							</li>
-						</ul>
-						{suggestions.length > 0 && (
-							<div style={{ paddingTop: "0.5rem", maxHeight: "40vh", overflowY: "auto", scrollbarWidth: "none" }}>
-								<ol className="tag-list">
-									{suggestions.map((t) => (
+							<>
+								<ul className="tag-list">
+									{pendingTags.map((name) => (
 										<li
-											key={t.id}
+											key={name}
 											className="tag is-small has-button"
-											style={{
-												backgroundColor: t.color,
-												color: textColorFor(t.color),
-											}}
+											style={tagChipStyle(name, allTags)}
 										>
 											<button
-												className="button tag__button tag__button--add"
-												onClick={() => handleSuggestionClick(t)}
+												className="button tag__button tag__button--delete"
+												onClick={() => handleRemoveTag(name)}
 												type="button"
 											>
 												<svg height="16" width="16" viewBox="0 0 24 24" fill="currentColor">
-													<path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+													<path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" />
 												</svg>
 											</button>
-											<span className="tag__text">{displayTagName(map, t.name)}</span>
+											<span className="tag__text">{displayTagName(map, name)}</span>
 										</li>
 									))}
-								</ol>
-							</div>
-						)}
-						</>
+									<li>
+										<form className="form-add-tag" onSubmit={handleAddTag}>
+											<button className="button form-add-tag__button" type="submit">
+												+
+											</button>
+											<input
+												className="form-add-tag__input"
+												type="text"
+												placeholder="Add a tag…"
+												value={tagInput}
+												onChange={(e) => setTagInput(e.target.value)}
+											/>
+										</form>
+									</li>
+								</ul>
+								{suggestions.length > 0 && (
+									<div
+										style={{
+											paddingTop: "0.5rem",
+											maxHeight: "40vh",
+											overflowY: "auto",
+											scrollbarWidth: "none",
+										}}
+									>
+										<ol className="tag-list">
+											{suggestions.map((t) => (
+												<li
+													key={t.id}
+													className="tag is-small has-button"
+													style={{
+														backgroundColor: t.color,
+														color: textColorFor(t.color),
+													}}
+												>
+													<button
+														className="button tag__button tag__button--add"
+														onClick={() => handleSuggestionClick(t)}
+														type="button"
+													>
+														<svg height="16" width="16" viewBox="0 0 24 24" fill="currentColor">
+															<path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
+														</svg>
+													</button>
+													<span className="tag__text">{displayTagName(map, t.name)}</span>
+												</li>
+											))}
+										</ol>
+									</div>
+								)}
+							</>
 						)}
 					</div>
 					<PluginLocationPanels />

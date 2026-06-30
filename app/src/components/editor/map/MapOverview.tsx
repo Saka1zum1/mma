@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
 	useCurrentMap,
 	useSelectedLocationIds,
@@ -47,7 +47,8 @@ function RandomPickPanel() {
 				e.preventDefault();
 				if (!valid) return;
 				const picked = selectRandomFromSelection(count);
-				if (picked > 0) toast(`Selected ${fmt.format(picked)} random location${picked !== 1 ? "s" : ""}`);
+				if (picked > 0)
+					toast(`Selected ${fmt.format(picked)} random location${picked !== 1 ? "s" : ""}`);
 			}}
 		>
 			<input
@@ -68,11 +69,19 @@ function RandomPickPanel() {
 }
 
 function TopKPanel({
-	field, setField, count, setCount, ascending, setAscending,
+	field,
+	setField,
+	count,
+	setCount,
+	ascending,
+	setAscending,
 }: {
-	field: string; setField: (v: string) => void;
-	count: number; setCount: (v: number) => void;
-	ascending: boolean; setAscending: (v: boolean) => void;
+	field: string;
+	setField: (v: string) => void;
+	count: number;
+	setCount: (v: number) => void;
+	ascending: boolean;
+	setAscending: (v: boolean) => void;
 }) {
 	const fields = useExtraFieldKeys();
 	if (field === "" && fields.length > 0) setField(fields[0].key);
@@ -87,10 +96,16 @@ function TopKPanel({
 		>
 			<select className="nselect" value={field} onChange={(e) => setField(e.target.value)}>
 				{fields.map((f) => (
-					<option key={f.key} value={f.key}>{f.label}</option>
+					<option key={f.key} value={f.key}>
+						{f.label}
+					</option>
 				))}
 			</select>
-			<select className="nselect" value={ascending ? "bottom" : "top"} onChange={(e) => setAscending(e.target.value === "bottom")}>
+			<select
+				className="nselect"
+				value={ascending ? "bottom" : "top"}
+				onChange={(e) => setAscending(e.target.value === "bottom")}
+			>
 				<option value="top">Top</option>
 				<option value="bottom">Bottom</option>
 			</select>
@@ -102,7 +117,9 @@ function TopKPanel({
 				value={count}
 				onChange={(e) => setCount(Math.max(1, Number(e.target.value)))}
 			/>
-			<button className="button" type="submit" disabled={!field}>Select</button>
+			<button className="button" type="submit" disabled={!field}>
+				Select
+			</button>
 		</form>
 	);
 }
@@ -133,15 +150,11 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	useDomEvent("open-apply-saved-selection", () => setShowApplySaved(true));
 	useDomEvent("open-review-sessions", () => setShowReviews(true));
 
-	useEffect(() => {
-		const handler = () => {
-			if (selected.size === 0) return;
-			const source = selections.length === 1 ? selections[0] : undefined;
-			beginReview(Array.from(selected), source);
-		};
-		document.addEventListener("open-review-selected", handler);
-		return () => document.removeEventListener("open-review-selected", handler);
-	}, [selected, selections]);
+	useDomEvent("open-review-selected", () => {
+		if (selected.size === 0) return;
+		const source = selections.length === 1 ? selections[0] : undefined;
+		beginReview(Array.from(selected), source);
+	});
 
 	if (!map) return null;
 
@@ -181,9 +194,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				collapsedAddons={<span>{fmt.format(selected.size)} selected</span>}
 				addons={
 					<>
-						<span className="selection-manager__count">
-							{fmt.format(selected.size)} selected
-						</span>
+						<span className="selection-manager__count">{fmt.format(selected.size)} selected</span>
 						<span className="selection-manager__space" />
 						<PluginToolbar />
 						<button
@@ -211,7 +222,9 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 					right={
 						<form className="selection-manager__bulk-tag" onSubmit={handleBulkAddTag}>
 							<span className={`tag-input has-button${!hasSelection ? " is-disabled" : ""}`}>
-								<button type="submit" className="button tag-input__button" disabled={!hasSelection}>+</button>
+								<button type="submit" className="button tag-input__button" disabled={!hasSelection}>
+									+
+								</button>
 								<SuggestInput
 									containerClassName="tag-input__suggest"
 									inputClassName="tag-input__value"
@@ -253,8 +266,14 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 											onChange={(e) => setDupDistance(Number(e.target.value))}
 										/>
 									</label>
-									<button className="button" type="submit">Find</button>
-									<button className="button" type="button" onClick={() => setShowMergeDuplicates(true)}>
+									<button className="button" type="submit">
+										Find
+									</button>
+									<button
+										className="button"
+										type="button"
+										onClick={() => setShowMergeDuplicates(true)}
+									>
 										Merge
 									</button>
 								</form>
@@ -272,14 +291,16 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 							),
 						},
 						"top-k": {
-							render: () => <TopKPanel
-								field={topKField}
-								setField={setTopKField}
-								count={topKCount}
-								setCount={setTopKCount}
-								ascending={topKAscending}
-								setAscending={setTopKAscending}
-							/>,
+							render: () => (
+								<TopKPanel
+									field={topKField}
+									setField={setTopKField}
+									count={topKCount}
+									setCount={setTopKCount}
+									ascending={topKAscending}
+									setAscending={setTopKAscending}
+								/>
+							),
 						},
 					}}
 				/>
@@ -300,10 +321,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				name={saveSelName}
 				onNameChange={setSaveSelName}
 			/>
-			<ApplySavedSelectionDialog
-				open={showApplySaved}
-				onOpenChange={setShowApplySaved}
-			/>
+			<ApplySavedSelectionDialog open={showApplySaved} onOpenChange={setShowApplySaved} />
 		</section>
 	);
 }

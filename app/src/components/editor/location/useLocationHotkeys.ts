@@ -1,4 +1,10 @@
-import { useEffect, type RefObject } from "react";
+import {
+	useEffect,
+	useEffectEvent,
+	type Dispatch,
+	type RefObject,
+	type SetStateAction,
+} from "react";
 import type { Location, MapData } from "@/bindings.gen";
 import {
 	getActiveLocation,
@@ -38,8 +44,8 @@ interface LocationHotkeyDeps {
 	selectedPanoId: string | null;
 	currentPano: Pick<google.maps.StreetViewPanoramaData, "location" | "imageDate"> | null;
 	cancelTweenRef: RefObject<(() => void) | null>;
-	pendingTagsRef: RefObject<string[]>;
-	setPendingTags: (tags: string[]) => void;
+	pendingTags: string[];
+	setPendingTags: Dispatch<SetStateAction<string[]>>;
 	fullscreenContainerRef: RefObject<HTMLDivElement | null>;
 	panoContainerRef: RefObject<HTMLDivElement | null>;
 	handleSave: () => void;
@@ -52,12 +58,23 @@ interface LocationHotkeyDeps {
 
 export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	const {
-		location, map, isReviewMode,
-		panoDates, selectedPanoId, currentPano,
-		cancelTweenRef, pendingTagsRef, setPendingTags,
-		fullscreenContainerRef, panoContainerRef,
-		handleSave, handleClose, handleDelete,
-		handleReturnToSpawn, handleFullscreen, handleDateChange,
+		location,
+		map,
+		isReviewMode,
+		panoDates,
+		selectedPanoId,
+		currentPano,
+		cancelTweenRef,
+		pendingTags,
+		setPendingTags,
+		fullscreenContainerRef,
+		panoContainerRef,
+		handleSave,
+		handleClose,
+		handleDelete,
+		handleReturnToSpawn,
+		handleFullscreen,
+		handleDateChange,
 	} = deps;
 
 	useHotkey(useBinding("locationSave"), () => {
@@ -133,7 +150,12 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 			if (!location) return;
 			const btn = document.querySelector<HTMLButtonElement>('button[aria-label^="Copy link"]');
 			btn?.dispatchEvent(
-				new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: e.shiftKey, altKey: e.altKey }),
+				new MouseEvent("click", {
+					bubbles: true,
+					cancelable: true,
+					shiftKey: e.shiftKey,
+					altKey: e.altKey,
+				}),
 			);
 		},
 		{ ignoreAlt: true, ignoreShift: true },
@@ -214,24 +236,24 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		const tags = sortTagsByMode(getVisibleTags(), getSettings().tagSortMode, getTagCounts());
 		if (idx >= tags.length) return;
 		const tag = tags[idx];
-		const cur = pendingTagsRef.current;
-		const has = cur.includes(tag.name);
-		setPendingTags(has ? cur.filter((t) => t !== tag.name) : [...cur, tag.name]);
+		const has = pendingTags.includes(tag.name);
+		setPendingTags(has ? pendingTags.filter((t) => t !== tag.name) : [...pendingTags, tag.name]);
 	};
+
+	const onApplyTag = useEffectEvent(({ tagId }: { tagId: number }) => {
+		const active = getActiveLocation();
+		if (!active || isVirtualLocation(active)) return false;
+		const tag = getVisibleTags().find((t) => t.id === tagId);
+		if (!tag) return false;
+		setPendingTags((cur) =>
+			cur.includes(tag.name) ? cur.filter((t) => t !== tag.name) : [...cur, tag.name],
+		);
+	});
 
 	const hasLocation = location != null;
 	useEffect(() => {
 		if (!hasLocation) return;
-		const unregisterApply = registerMapKeyActionHandler("applyTag", ({ tagId }) => {
-			const active = getActiveLocation();
-			if (!active || isVirtualLocation(active)) return false;
-			const tag = getVisibleTags().find((t) => t.id === tagId);
-			if (!tag) return false;
-			const cur = pendingTagsRef.current;
-			setPendingTags(
-				cur.includes(tag.name) ? cur.filter((t) => t !== tag.name) : [...cur, tag.name],
-			);
-		});
+		const unregisterApply = registerMapKeyActionHandler("applyTag", (action) => onApplyTag(action));
 		const unregisterCopy = registerMapKeyActionHandler("copyToMap", ({ mapId }) => {
 			const loc = getActiveLocation();
 			if (!loc || isVirtualLocation(loc)) return false;
@@ -244,9 +266,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 					if (!container) return;
 					showToast(
 						container,
-						res.copied > 0
-							? `Copied to "${res.targetName}"`
-							: `Already in "${res.targetName}"`,
+						res.copied > 0 ? `Copied to "${res.targetName}"` : `Already in "${res.targetName}"`,
 					);
 				})
 				.catch((e) => {
@@ -258,7 +278,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 			unregisterApply();
 			unregisterCopy();
 		};
-	}, [hasLocation]);
+	}, [hasLocation, fullscreenContainerRef, panoContainerRef]);
 
 	useHotkey(useBinding("quicktag1"), () => quicktagSlot(0));
 	useHotkey(useBinding("quicktag2"), () => quicktagSlot(1));

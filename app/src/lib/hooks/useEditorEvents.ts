@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { subscribeMany, type EditorEvent } from "@/lib/events";
-import { useLatestRef } from "@/lib/hooks/useLatestRef";
 
 /** Run `handler` whenever any of `events` fires, for the component's lifetime.
- *  The latest `handler` is always used (no re-subscribe on identity change), so
+ *  The latest `handler` is always used without re-subscribing on identity change, so
  *  `events` should be a stable reference — e.g. one of the exported group constants. */
 export function useEditorEvents(events: readonly EditorEvent[], handler: () => void): void {
-	const ref = useLatestRef(handler);
-	useEffect(() => subscribeMany(events, () => ref.current()), [events, ref]);
+	const onEvent = useEffectEvent(handler);
+	useEffect(() => subscribeMany(events, onEvent), [events]);
 }
 
 /** A counter that bumps whenever any of `events` fires. Drop it into a deps array

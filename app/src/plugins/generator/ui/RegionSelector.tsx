@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { useLatestRef } from "@/lib/hooks/useLatestRef";
+import { useEffect, useEffectEvent } from "react";
 import { useSelections } from "@/store/useMapStore";
 import type { Selection } from "@/bindings.gen";
 import type { GeneratorRegionMeta } from "../engine/types";
@@ -28,15 +27,20 @@ export function RegionSelector({
 	const selections = useSelections();
 	const polygonSelections = selections.filter((s) => s.props.type === "Polygon");
 
-	const metaRef = useLatestRef(meta);
+	const getMeta = useEffectEvent(() => meta);
 
 	// Initialize metadata for new polygon selections
 	useEffect(() => {
 		let changed = false;
-		const next = new Map(metaRef.current);
+		const next = new Map(getMeta());
 		for (const sel of polygonSelections) {
 			if (!next.has(sel.key)) {
-				next.set(sel.key, { target: defaultTarget, found: [], checkedPanos: new Set(), isProcessing: false });
+				next.set(sel.key, {
+					target: defaultTarget,
+					found: [],
+					checkedPanos: new Set(),
+					isProcessing: false,
+				});
 				changed = true;
 			}
 		}
@@ -63,7 +67,13 @@ export function RegionSelector({
 			for (const sel of polygonSelections) {
 				const existing = next.get(sel.key);
 				if (existing) next.set(sel.key, { ...existing, target: val });
-				else next.set(sel.key, { target: val, found: [], checkedPanos: new Set(), isProcessing: false });
+				else
+					next.set(sel.key, {
+						target: val,
+						found: [],
+						checkedPanos: new Set(),
+						isProcessing: false,
+					});
 			}
 			onMetaChange(next);
 		}

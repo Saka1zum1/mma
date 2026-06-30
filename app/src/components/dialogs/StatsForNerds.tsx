@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
+import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
 import { getDirtyCount, getCurrentMap } from "@/store/useMapStore";
 
@@ -103,13 +104,9 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 			.catch((e) => setError(String(e)));
 	}, []);
 
-	useEffect(() => {
-		const handler = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", handler);
-		return () => document.removeEventListener("keydown", handler);
-	}, [onClose]);
+	useDomEvent("keydown", (e) => {
+		if ((e as KeyboardEvent).key === "Escape") onClose();
+	});
 
 	if (!stats && !error) return null;
 
@@ -169,28 +166,26 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 				{stats && (
 					<table style={{ width: "100%", borderCollapse: "collapse" }}>
 						<tbody>
-							{(
-								[
-									["Version", stats.appVersion],
-									["Build", stats.buildMode],
-									["Maps", stats.maps],
-									["Locations", stats.locations.toLocaleString()],
-									["Tags", stats.tags],
-									["Commits", stats.commits],
-									["Pending saves", stats.pendingSaves],
-									["DB size", stats.dbSize],
-									["Journal mode", stats.journalMode],
-									["Foreign keys", stats.foreignKeys],
-									["opensv", stats.opensvVersion],
-									["WebGL", stats.webglRenderer],
-									["DPR", stats.devicePixelRatio],
-									["Viewport", stats.viewport],
-									["JS heap", stats.memory],
-									["Startup", stats.startup],
-									["Uptime", stats.uptime],
-									["User agent", stats.userAgent],
-								]
-							).map(([label, value]) => (
+							{[
+								["Version", stats.appVersion],
+								["Build", stats.buildMode],
+								["Maps", stats.maps],
+								["Locations", stats.locations.toLocaleString()],
+								["Tags", stats.tags],
+								["Commits", stats.commits],
+								["Pending saves", stats.pendingSaves],
+								["DB size", stats.dbSize],
+								["Journal mode", stats.journalMode],
+								["Foreign keys", stats.foreignKeys],
+								["opensv", stats.opensvVersion],
+								["WebGL", stats.webglRenderer],
+								["DPR", stats.devicePixelRatio],
+								["Viewport", stats.viewport],
+								["JS heap", stats.memory],
+								["Startup", stats.startup],
+								["Uptime", stats.uptime],
+								["User agent", stats.userAgent],
+							].map(([label, value]) => (
 								<tr key={label}>
 									<td
 										style={{

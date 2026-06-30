@@ -1,15 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { PANO_PITCH, FRAME_MS } from "@/lib/sv/constants";
 import { clamp } from "@/types/util";
 import { parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
 import { getBinding } from "@/lib/util/hotkeys";
-import { useLatestRef } from "@/lib/hooks/useLatestRef";
+
 import { singletonPano } from "@/lib/sv/panoSingleton";
 import type { AppSettings } from "@/store/settings";
 
 export function usePanoNavigation(appSettings: AppSettings) {
 	const navRef = useRef({ held: new Set<string>(), rafId: 0, alt: false, lastTime: 0 });
-	const appSettingsRef = useLatestRef(appSettings);
+	const getAppSettings = useEffectEvent(() => appSettings);
 
 	useEffect(() => {
 		const nav = navRef.current;
@@ -28,7 +28,7 @@ export function usePanoNavigation(appSettings: AppSettings) {
 			const dt = nav.lastTime ? (now - nav.lastTime) / FRAME_MS : 1;
 			nav.lastTime = now;
 
-			const s = appSettingsRef.current;
+			const s = getAppSettings();
 			const slow = nav.alt ? s.slowModifier : 1;
 			const speed = (s.panoLookSpeed * 0.4 * dt) / slow;
 			const pov = singletonPano.getPov();
