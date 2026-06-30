@@ -14,6 +14,8 @@ import {
 	composeSelections,
 	decomposeChild,
 	removeFromComposite,
+	composeSiblings,
+	composeWithChild,
 	replaceSelection,
 	sampleIds,
 	polygonSelectionsContaining,
@@ -248,6 +250,35 @@ describe("invertSelections", () => {
 		const result = invertSelections(inverted, null);
 		expect(result).toHaveLength(1);
 		expect(result[0].props.type).toBe("PanoIds");
+	});
+
+	it("inverts a nested child in place, leaving the parent group intact", () => {
+		const s1 = buildSelection({ type: "PanoIds" });
+		const s2 = buildSelection({ type: "Untagged" });
+		const union = buildSelection({ type: "Union", selections: [s1, s2] });
+		const result = invertSelections([union], [s1.key]);
+		expect(result).toHaveLength(1);
+		const top = result[0].props as { type: "Union"; selections: any[] };
+		expect(top.type).toBe("Union");
+		expect(top.selections).toHaveLength(2);
+		const inverted = top.selections.find((c) => c.props.type === "Invert");
+		expect(inverted).toBeDefined();
+		expect(inverted.props.selections[0].key).toBe(s1.key);
+	});
+
+	it("toggles a nested invert back off without collapsing the group", () => {
+		const s1 = buildSelection({ type: "PanoIds" });
+		const s2 = buildSelection({ type: "Untagged" });
+		const union = buildSelection({ type: "Union", selections: [s1, s2] });
+		const inverted = invertSelections([union], [s1.key]);
+		const invertedChild = (inverted[0].props as { selections: any[] }).selections.find(
+			(c) => c.props.type === "Invert",
+		);
+		const result = invertSelections(inverted, [invertedChild.key]);
+		expect(result).toHaveLength(1);
+		const top = result[0].props as { type: "Union"; selections: any[] };
+		expect(top.type).toBe("Union");
+		expect(top.selections.map((c) => c.key).sort()).toEqual([s1.key, s2.key].sort());
 	});
 });
 
@@ -728,6 +759,35 @@ describe("composeSelections", () => {
 	});
 });
 
+describe("composeSiblings / composeWithChild preserve the Invert wrapper", () => {
+	const invertedGroup = () => {
+		const a = buildSelection({ type: "PanoIds" });
+		const b = buildSelection({ type: "Untagged" });
+		const c = buildSelection({ type: "Unpanned" });
+		const group = buildSelection({ type: "Union", selections: [a, b, c] });
+		const inv = buildSelection({ type: "Invert", selections: [group] });
+		return { a, b, c, inv };
+	};
+
+	it("composeSiblings keeps Invert when nesting two children of an inverted group", () => {
+		const { a, b, inv } = invertedGroup();
+		const result = composeSiblings([inv], inv.key, a.key, b.key, "Intersection");
+		expect(result).toHaveLength(1);
+		expect(result[0].props.type).toBe("Invert");
+		const innerGroup = (result[0].props as { selections: any[] }).selections[0];
+		expect(innerGroup.props.type).toBe("Union");
+	});
+
+	it("composeWithChild keeps Invert when nesting a top-level selection onto a child", () => {
+		const { a, inv } = invertedGroup();
+		const drag = buildSelection({ type: "Tag", tagId: 7 });
+		const result = composeWithChild([inv, drag], drag.key, inv.key, a.key, "Intersection");
+		expect(result.some((s) => s.props.type === "Invert")).toBe(true);
+		const invResult = result.find((s) => s.props.type === "Invert")!;
+		expect((invResult.props as { selections: any[] }).selections[0].props.type).toBe("Union");
+	});
+});
+
 describe("decomposeChild", () => {
 	it("extracts a child from a composite", () => {
 		const s1 = buildSelection({ type: "PanoIds" });
@@ -759,6 +819,32 @@ describe("removeFromComposite", () => {
 		const children = (result[0].props as { selections: any[] }).selections;
 		expect(children.every((c: any) => c.key !== s2.key)).toBe(true);
 	});
+
+	it("preserves the Invert wrapper when removing a child from an inverted group", () => {
+		const s1 = buildSelection({ type: "PanoIds" });
+		const s2 = buildSelection({ type: "Untagged" });
+		const s3 = buildSelection({ type: "Unpanned" });
+		const group = buildSelection({ type: "Intersection", selections: [s1, s2, s3] });
+		const inv = buildSelection({ type: "Invert", selections: [group] });
+		const result = removeFromComposite([inv], inv.key, s1.key);
+		expect(result).toHaveLength(1);
+		expect(result[0].props.type).toBe("Invert");
+		const innerGroup = (result[0].props as { selections: any[] }).selections[0];
+		expect(innerGroup.props.type).toBe("Intersection");
+		const children = (innerGroup.props as { selections: any[] }).selections;
+		expect(children.map((c: any) => c.key).sort()).toEqual([s2.key, s3.key].sort());
+	});
+
+	it("keeps Invert when the inverted group collapses to a single child", () => {
+		const s1 = buildSelection({ type: "PanoIds" });
+		const s2 = buildSelection({ type: "Untagged" });
+		const group = buildSelection({ type: "Intersection", selections: [s1, s2] });
+		const inv = buildSelection({ type: "Invert", selections: [group] });
+		const result = removeFromComposite([inv], inv.key, s1.key);
+		expect(result).toHaveLength(1);
+		expect(result[0].props.type).toBe("Invert");
+		expect((result[0].props as { selections: any[] }).selections[0].key).toBe(s2.key);
+	});
 });
 
 describe("replaceSelection", () => {
@@ -772,6 +858,21 @@ describe("replaceSelection", () => {
 		expect(result[0].key).toBe(buildSelection(filterAEdited).key);
 		expect(result[0].key).not.toBe(sel.key);
 		expect((result[0].props as typeof filterAEdited).value).toBe(2012);
+	});
+
+	it("preserves the Invert wrapper when editing a child of an inverted group", () => {
+		const a = buildSelection(filterA);
+		const b = buildSelection({ type: "Untagged" });
+		const group = buildSelection({ type: "Union", selections: [a, b] });
+		const inv = buildSelection({ type: "Invert", selections: [group] });
+		const result = replaceSelection([inv], a.key, filterAEdited);
+		expect(result).toHaveLength(1);
+		expect(result[0].props.type).toBe("Invert");
+		const innerGroup = (result[0].props as { selections: any[] }).selections[0];
+		expect(innerGroup.props.type).toBe("Union");
+		const children = (innerGroup.props as { selections: any[] }).selections;
+		expect(children.some((c: any) => c.key === buildSelection(filterAEdited).key)).toBe(true);
+		expect(children.some((c: any) => c.key === b.key)).toBe(true);
 	});
 
 	it("replaces a child inside a composite and rebuilds the parent key", () => {

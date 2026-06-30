@@ -14,11 +14,15 @@ import type { Selection, SelectionProps } from "@/bindings.gen";
 
 /** Variants that wrap children — derived as exactly those carrying a `selections` array. */
 export type CompositeType = Extract<SelectionProps, { selections: Selection[] }>["type"];
-/** Composite variants that are flat groups (no negation). */
-export type GroupType = Exclude<CompositeType, "Invert">;
+/** Composite variants that wrap exactly one child (operators, not bags). They never collapse — a
+ *  one-child group is degenerate, but one child is a unary node's only valid arity. */
+export type UnaryType = "Invert";
+/** Composite variants that are flat n-ary groups. */
+export type GroupType = Exclude<CompositeType, UnaryType>;
 
 const COMPOSITE_TYPES = unionTuple<CompositeType>()(["Intersection", "Union", "Invert"]);
 const GROUP_TYPES = unionTuple<GroupType>()(["Intersection", "Union"]);
+export const UNARY_TYPES = unionTuple<UnaryType>()(["Invert"]);
 
 export enum ValidationState {
 	Ok = 0,
@@ -193,20 +197,24 @@ export const intersectSelections = (current: Selection[], keys: string[] | null)
 export const unionSelections = (current: Selection[], keys: string[] | null) =>
 	composeSelectionGroup(current, keys, "Union");
 
-/** Invert targeted selections. Single target toggles in-place; multiple are wrapped in Union then Invert. */
+/** Invert targeted selections. Single target toggles in-place at any depth; multiple are wrapped in Union then Invert. */
 export function invertSelections(
 	current: Selection[],
 	keys: string[] | null,
 ): Selection[] {
 	if (current.length === 0) return current;
 	const targetKeys = keys ?? current.map((s) => s.key);
-	// single-target invert toggles in-place
+	// single-target invert toggles in-place, nested children included
 	if (targetKeys.length === 1) {
-		return current.map((s) => {
-			if (s.key !== targetKeys[0]) return s;
-			if (s.props.type === "Invert") return s.props.selections[0];
-			return buildSelection({ type: "Invert", selections: [s] });
-		});
+		const toggle = (m: Selection): Selection =>
+			m.props.type === "Invert"
+				? m.props.selections[0]
+				: buildSelection({ type: "Invert", selections: [m] });
+		for (let i = 0; i < current.length; i++) {
+			const inverted = transformInTree(current[i], targetKeys[0], toggle);
+			if (inverted) return spliceMerging(current, i, inverted);
+		}
+		return current;
 	}
 	const [targets, others] = partitionByKeys(current, targetKeys);
 	const flat = targets.flatMap((s) => (s.props.type === "Union" ? s.props.selections : [s]));
@@ -272,13 +280,30 @@ export function composeSelections(
 	return current.filter((_, i) => i !== dragIdx).map((s) => (s.key === dropKey ? composite : s));
 }
 
+/** Unwrap a unary operator (e.g. Invert) to the n-ary group it wraps, returning that group's props
+ *  plus a `rewrap` that restores the operator; a plain group returns itself with an identity rewrap.
+ *  Null when there's no group to operate on. Single source for "a unary node keeps its wrapper" —
+ *  every site that rebuilds a composite's children routes through it. */
+function unwrapUnary(
+	sel: Selection,
+): { props: Variant<SelectionProps, GroupType>; rewrap: (inner: Selection) => Selection } | null {
+	const unary = isVariant(sel.props, UNARY_TYPES) ? sel.props.type : null;
+	const props = isVariant(sel.props, UNARY_TYPES) ? sel.props.selections[0].props : sel.props;
+	if (!isVariant(props, GROUP_TYPES)) return null;
+	return {
+		props,
+		rewrap: (inner) => (unary ? buildSelection({ type: unary, selections: [inner] }) : inner),
+	};
+}
+
 function removeChildFromComposite(
 	sel: Selection,
 	parentKey: string,
 	childKey: string,
 ): { updated: Selection; removed: Selection } | null {
-	const compositeProps = isVariant(sel.props, "Invert") ? sel.props.selections[0].props : sel.props;
-	if (!isVariant(compositeProps, GROUP_TYPES)) return null;
+	const grp = unwrapUnary(sel);
+	if (!grp) return null;
+	const { props: compositeProps, rewrap } = grp;
 	const children = compositeProps.selections;
 
 	if (sel.key === parentKey) {
@@ -291,13 +316,11 @@ function removeChildFromComposite(
 			...unwrapped,
 			...children.slice(childIdx + 1),
 		];
-		if (remaining.length <= 1) {
-			return { updated: remaining[0] ?? child, removed: child };
-		}
-		return {
-			updated: buildSelection({ type: compositeProps.type, selections: remaining }),
-			removed: child,
-		};
+		const group =
+			remaining.length <= 1
+				? remaining[0] ?? child
+				: buildSelection({ type: compositeProps.type, selections: remaining });
+		return { updated: rewrap(group), removed: child };
 	}
 
 	for (let i = 0; i < children.length; i++) {
@@ -305,7 +328,7 @@ function removeChildFromComposite(
 		if (result) {
 			const newChildren = children.with(i, result.updated);
 			return {
-				updated: buildSelection({ type: compositeProps.type, selections: newChildren }),
+				updated: rewrap(buildSelection({ type: compositeProps.type, selections: newChildren })),
 				removed: result.removed,
 			};
 		}
@@ -364,11 +387,9 @@ export function composeSiblings(
 ): Selection[] {
 	const parentIdx = current.findIndex((s) => s.key === parentKey);
 	if (parentIdx === -1) return current;
-	const parent = current[parentIdx];
-	const compositeProps = isVariant(parent.props, "Invert")
-		? parent.props.selections[0].props
-		: parent.props;
-	if (!isVariant(compositeProps, GROUP_TYPES)) return current;
+	const grp = unwrapUnary(current[parentIdx]);
+	if (!grp) return current;
+	const { props: compositeProps, rewrap } = grp;
 
 	const children = compositeProps.selections;
 	const dragChild = children.find((s) => s.key === dragKey);
@@ -379,7 +400,7 @@ export function composeSiblings(
 	const newChildren = children
 		.filter((s) => s.key !== dragKey)
 		.map((s) => (s.key === dropKey ? nested : s));
-	const newParent = buildSelection({ type: compositeProps.type, selections: newChildren });
+	const newParent = rewrap(buildSelection({ type: compositeProps.type, selections: newChildren }));
 	return current.with(parentIdx, newParent);
 }
 
@@ -393,12 +414,10 @@ export function composeWithChild(
 	const parentIdx = current.findIndex((s) => s.key === parentKey);
 	const dragIdx = current.findIndex((s) => s.key === dragKey);
 	if (parentIdx === -1 || dragIdx === -1) return current;
-	const parent = current[parentIdx];
 	const drag = current[dragIdx];
-	const compositeProps = isVariant(parent.props, "Invert")
-		? parent.props.selections[0].props
-		: parent.props;
-	if (!isVariant(compositeProps, GROUP_TYPES)) return current;
+	const grp = unwrapUnary(current[parentIdx]);
+	if (!grp) return current;
+	const { props: compositeProps, rewrap } = grp;
 
 	const children = compositeProps.selections;
 	const childIdx = children.findIndex((s) => s.key === childKey);
@@ -407,7 +426,7 @@ export function composeWithChild(
 
 	const nested = buildSelection({ type: mode, selections: [child, drag] });
 	const newChildren = children.with(childIdx, nested);
-	const newParent = buildSelection({ type: compositeProps.type, selections: newChildren });
+	const newParent = rewrap(buildSelection({ type: compositeProps.type, selections: newChildren }));
 
 	return current.filter((_, i) => i !== dragIdx).map((s) => (s.key === parentKey ? newParent : s));
 }
@@ -424,20 +443,23 @@ function spliceMerging(list: Selection[], index: number, replaced: Selection): S
 	return list.with(index, replaced);
 }
 
-function replaceInTree(
+/** Find the node identified by `key` at any depth and replace it with `fn(matched)`, rebuilding the
+ *  keys of every composite on the path so identity stays consistent. Enforces the unique-key
+ *  invariant via {@link spliceMerging}. A group that merges down to one child collapses to that
+ *  child; Invert is unary, so it always keeps its wrapper around the rebuilt child. */
+function transformInTree(
 	sel: Selection,
-	oldKey: string,
-	props: SelectionProps,
+	key: string,
+	fn: (matched: Selection) => Selection,
 ): Selection | null {
-	if (sel.key === oldKey) return buildSelection(props);
+	if (sel.key === key) return fn(sel);
 	if (!isVariant(sel.props, COMPOSITE_TYPES)) return null;
 	const children = sel.props.selections;
 	for (let i = 0; i < children.length; i++) {
-		const replaced = replaceInTree(children[i], oldKey, props);
-		if (replaced) {
-			const newChildren = spliceMerging(children, i, replaced);
-			// a group merged down to a single child is just that child
-			if (newChildren.length === 1) return newChildren[0];
+		const next = transformInTree(children[i], key, fn);
+		if (next) {
+			const newChildren = spliceMerging(children, i, next);
+			if (newChildren.length === 1 && !isVariant(sel.props, UNARY_TYPES)) return newChildren[0];
 			return buildSelection({ type: sel.props.type, selections: newChildren });
 		}
 	}
@@ -457,7 +479,7 @@ export function replaceSelection(
 	props: SelectionProps,
 ): Selection[] {
 	for (let i = 0; i < current.length; i++) {
-		const replaced = replaceInTree(current[i], oldKey, props);
+		const replaced = transformInTree(current[i], oldKey, () => buildSelection(props));
 		if (replaced) return spliceMerging(current, i, replaced);
 	}
 	return current;

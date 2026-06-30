@@ -1,5 +1,6 @@
 import type { MapData, Selection, SelectionProps, PolygonGeometry, FilterOp } from "@/bindings.gen";
-import { buildSelection } from "./selections";
+import { buildSelection, UNARY_TYPES } from "./selections";
+import { isVariant } from "@/types/util";
 import { getSettings, setSetting } from "./settings";
 import { addSelections } from "./useMapStore";
 
@@ -197,7 +198,7 @@ export function rewriteSavedSelectionFields(
 				.map(rewriteProps)
 				.filter((c): c is SavedSelectionProps => c !== null);
 			if (children.length === 0) return null;
-			if (children.length === 1 && p.type !== "Invert") return children[0];
+			if (children.length === 1 && !isVariant(p, UNARY_TYPES)) return children[0];
 			return { ...p, selections: children };
 		}
 		return p;
