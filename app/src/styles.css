@@ -671,6 +671,10 @@ summary.button {
 	padding: 0;
 	line-height: 2rem;
 }
+.icon-button:focus-visible {
+	outline: 2px solid rgba(255, 255, 255, 0.65);
+	outline-offset: -2px;
+}
 .icon-button:disabled,
 .icon-button.is-disabled {
 	opacity: 0.35;
