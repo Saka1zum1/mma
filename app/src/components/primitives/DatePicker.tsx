@@ -1,10 +1,11 @@
-import { useState, useCallback } from "react";
+﻿import { useState, useCallback, useRef } from "react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import * as Popover from "@radix-ui/react-popover";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiClose } from "@mdi/js";
 import { dateParts, partsToEpoch } from "@/lib/data/fieldOps";
+import { MONTHS, parseTypedDate } from "@/lib/util/date";
 
 interface DatePickerProps {
 	mode: "date" | "month";
@@ -26,21 +27,6 @@ interface DatePickerProps {
 	 *  date filtering, where Rust re-interprets the wall-clock in each pano's zone. */
 	wallClock?: boolean;
 }
-
-const MONTHS_SHORT = [
-	"Jan",
-	"Feb",
-	"Mar",
-	"Apr",
-	"May",
-	"Jun",
-	"Jul",
-	"Aug",
-	"Sep",
-	"Oct",
-	"Nov",
-	"Dec",
-];
 
 function pad2(n: number): string {
 	return n < 10 ? `0${n}` : String(n);
@@ -84,12 +70,12 @@ function formatDisplay(
 	if (!d) return "Select...";
 	if (anyYear) {
 		if (mode === "month") {
-			return MONTHS_SHORT[d.getMonth()] ?? "Select...";
+			return MONTHS.short[d.getMonth()] ?? "Select...";
 		}
 		return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 	}
 	if (mode === "month") {
-		return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+		return `${MONTHS.short[d.getMonth()]} ${d.getFullYear()}`;
 	}
 	const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
 	const dateStr = d.toLocaleDateString("en-US", {
@@ -102,6 +88,12 @@ function formatDisplay(
 		return `${dateStr} ${timeStr}`;
 	}
 	return dateStr;
+}
+
+function formatHint(mode: "date" | "month", anyYear?: boolean, anyTime?: boolean): string {
+	if (anyTime) return "HH:MM";
+	if (mode === "month") return anyYear ? "Jun" : "2019-06";
+	return anyYear ? "06-03" : "YYYY-MM-DD";
 }
 
 function MonthGrid({
@@ -160,7 +152,7 @@ function MonthGrid({
 				</div>
 			)}
 			<div className="month-grid__months">
-				{MONTHS_SHORT.map((name, i) => {
+				{MONTHS.short.map((name, i) => {
 					const isSelected = i === selectedMonth && (anyYear || selectedYear === year);
 					return (
 						<button
@@ -196,6 +188,10 @@ export function DatePicker({
 	wallClock,
 }: DatePickerProps) {
 	const [open, setOpen] = useState(false);
+	// Hand-typed text while the trigger input is being edited; null = displaying.
+	const [draft, setDraft] = useState<string | null>(null);
+	const initialDraftRef = useRef("");
+	const inputRef = useRef<HTMLInputElement>(null);
 
 	const selectedDate = parseToDate(value, wallClock) ?? undefined;
 	const [navMonth, setNavMonth] = useState<Date>(() => selectedDate ?? new Date());
@@ -216,7 +212,9 @@ export function DatePicker({
 				onChange(`${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`);
 			} else {
 				const [h, m] = timeStr.split(":").map(Number);
-				onChange(String(encode(date.getFullYear(), date.getMonth(), date.getDate(), h || 0, m || 0)));
+				onChange(
+					String(encode(date.getFullYear(), date.getMonth(), date.getDate(), h || 0, m || 0)),
+				);
 			}
 		},
 		[anyYear, onChange, encode],
@@ -273,13 +271,76 @@ export function DatePicker({
 		[value, wallClock],
 	);
 
+	// Commit a hand-typed draft. Unparseable or untouched text is dropped and the display falls back to the current value.
+	const commitDraft = useCallback(() => {
+		if (draft == null || draft === initialDraftRef.current) return;
+		const parsed = parseTypedDate(draft, {
+			mode,
+			anyYear,
+			anyTime,
+			withTime: showTime && !anyYear,
+			wallClock,
+		});
+		if (parsed != null) onChange(parsed);
+	}, [draft, mode, anyYear, anyTime, showTime, wallClock, onChange]);
+
+	// Seed the draft with the exact display text: blur then repaints identical pixels,
+	// so clicking a calendar day never flashes the old value in another format.
+	// parseTypedDate accepts the display forms ("Jun 3, 2019 14:30", "Jun 2019", ...).
+	const startEditing = useCallback(() => {
+		if (draft == null) {
+			const seed = value ? formatDisplay(value, mode, anyYear, anyTime, wallClock) : "";
+			initialDraftRef.current = seed;
+			setDraft(seed);
+		}
+		if (!open) handleOpenChange(true);
+	}, [draft, value, mode, anyYear, anyTime, wallClock, open, handleOpenChange]);
+
+	const inputSize = anyTime
+		? 6
+		: mode === "month"
+			? anyYear
+				? 5
+				: 9
+			: anyYear
+				? 7
+				: showTime
+					? 17
+					: 12;
+
 	return (
 		<Popover.Root open={open} onOpenChange={handleOpenChange}>
-			<Popover.Trigger asChild>
-				<button type="button" className="date-picker__trigger">
-					{formatDisplay(value, mode, anyYear, anyTime, wallClock)}
-				</button>
-			</Popover.Trigger>
+			<Popover.Anchor asChild>
+				<input
+					ref={inputRef}
+					type="text"
+					className="date-picker__trigger"
+					size={inputSize}
+					value={draft ?? (value ? formatDisplay(value, mode, anyYear, anyTime, wallClock) : "")}
+					placeholder={draft != null ? formatHint(mode, anyYear, anyTime) : "Select..."}
+					onFocus={startEditing}
+					onClick={startEditing}
+					onChange={(e) => setDraft(e.target.value)}
+					onBlur={() => {
+						commitDraft();
+						setDraft(null);
+					}}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") {
+							e.preventDefault(); // typing a date must not submit an enclosing form
+							commitDraft();
+							setDraft(null);
+							setOpen(false);
+							inputRef.current?.blur();
+						} else if (e.key === "Escape") {
+							e.stopPropagation();
+							setDraft(null);
+							setOpen(false);
+							inputRef.current?.blur();
+						}
+					}}
+				/>
+			</Popover.Anchor>
 			<Popover.Portal>
 				<Popover.Content
 					className="date-picker__popover"
@@ -287,6 +348,12 @@ export function DatePicker({
 					align="start"
 					collisionPadding={8}
 					onOpenAutoFocus={(e) => e.preventDefault()}
+					onInteractOutside={(e) => {
+						// Clicking the anchor input is not "outside" â€” it would close and
+						// instantly re-open via the input's focus/click handlers.
+						if (inputRef.current && e.target instanceof Node && inputRef.current.contains(e.target))
+							e.preventDefault();
+					}}
 				>
 					{anyTime ? (
 						<div className="date-picker__time-only">
@@ -300,7 +367,19 @@ export function DatePicker({
 							</label>
 						</div>
 					) : mode === "month" ? (
-						<MonthGrid value={value} onChange={handleMonthSelect} anyYear={anyYear} onYearSelect={onYearSelect ? (y) => { onYearSelect(y); setOpen(false); } : undefined} />
+						<MonthGrid
+							value={value}
+							onChange={handleMonthSelect}
+							anyYear={anyYear}
+							onYearSelect={
+								onYearSelect
+									? (y) => {
+											onYearSelect(y);
+											setOpen(false);
+										}
+									: undefined
+							}
+						/>
 					) : (
 						<>
 							<DayPicker

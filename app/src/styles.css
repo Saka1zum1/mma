@@ -2952,6 +2952,14 @@ summary.button {
 .date-picker__trigger:hover {
 	border-color: #999;
 }
+input.date-picker__trigger {
+	cursor: text;
+	width: auto;
+}
+input.date-picker__trigger:focus {
+	border-color: #999;
+	outline: none;
+}
 .color-picker__swatch {
 	width: 28px;
 	height: 28px;
