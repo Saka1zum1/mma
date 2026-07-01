@@ -464,6 +464,13 @@ export type PolygonGeometry = {
 	])[])[])[] | null;
 	properties?: any | null;
 };
+/**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
+export type RemoteMappingRow = {
+	localId: number;
+	/**  Remote ids can exceed u32 (observed ~1.2e10), so i64. */
+	remoteId: number;
+	hash: string;
+};
 /**
  *  Incremental render update sent to JS after a mutation. Contains adds, position/heading
  *  patches, swap-removals, and color patches (for selection overlay changes).
@@ -1979,6 +1986,10 @@ declare const mma: {
 		storeReviewList: (mapId: string, status: string | null) => Promise<ReviewSession[]>;
 		storeReviewUpdate: (update: ReviewUpdate) => Promise<null>;
 		storeReviewDelete: (id: string) => Promise<null>;
+		remoteMappingGet: (provider: string, mapId: string) => Promise<RemoteMappingRow[]>;
+		remoteMappingUpsert: (provider: string, mapId: string, rows: RemoteMappingRow[]) => Promise<null>;
+		remoteMappingDelete: (provider: string, mapId: string, localIds: number[]) => Promise<null>;
+		remoteMappingClear: (provider: string, mapId: string) => Promise<null>;
 		storeCommit: (mapId: string, message: string | null) => Promise<string>;
 		storeListCommits: (mapId: string) => Promise<CommitInfo[]>;
 		storeCheckoutCommit: (mapId: string, commitId: string) => Promise<null>;

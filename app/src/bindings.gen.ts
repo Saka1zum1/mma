@@ -350,6 +350,10 @@ export const commands = {
 	storeReviewList: (mapId: string, status: string | null) => typedError<ReviewSession[], string>(__TAURI_INVOKE("store_review_list", { mapId, status })),
 	storeReviewUpdate: (update: ReviewUpdate) => typedError<null, string>(__TAURI_INVOKE("store_review_update", { update })),
 	storeReviewDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("store_review_delete", { id })),
+	remoteMappingGet: (provider: string, mapId: string) => typedError<RemoteMappingRow[], string>(__TAURI_INVOKE("remote_mapping_get", { provider, mapId })),
+	remoteMappingUpsert: (provider: string, mapId: string, rows: RemoteMappingRow[]) => typedError<null, string>(__TAURI_INVOKE("remote_mapping_upsert", { provider, mapId, rows })),
+	remoteMappingDelete: (provider: string, mapId: string, localIds: number[]) => typedError<null, string>(__TAURI_INVOKE("remote_mapping_delete", { provider, mapId, localIds })),
+	remoteMappingClear: (provider: string, mapId: string) => typedError<null, string>(__TAURI_INVOKE("remote_mapping_clear", { provider, mapId })),
 	/**
 	 *  Create a commit and bake the overlay in a single pass — the only commit path.
 	 * 
@@ -825,6 +829,14 @@ export type PolygonGeometry = {
 	coordinates: (([number, number])[])[],
 	extraPolygons?: ((([number, number])[])[])[] | null,
 	properties?: any | null,
+};
+
+/**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
+export type RemoteMappingRow = {
+	localId: number,
+	/**  Remote ids can exceed u32 (observed ~1.2e10), so i64. */
+	remoteId: number,
+	hash: string,
 };
 
 /**

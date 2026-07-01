@@ -44,6 +44,7 @@ mod borders;
 mod geocoder;
 mod seen;
 mod review;
+mod remote_mapping;
 mod vcs;
 mod vcs_delta;
 
@@ -494,6 +495,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             review::store_review_list,
             review::store_review_update,
             review::store_review_delete,
+            remote_mapping::remote_mapping_get,
+            remote_mapping::remote_mapping_upsert,
+            remote_mapping::remote_mapping_delete,
+            remote_mapping::remote_mapping_clear,
             vcs::store_commit,
             vcs::store_list_commits,
             vcs::store_checkout_commit,
