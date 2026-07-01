@@ -85,9 +85,13 @@ if (watch) {
 	const results = await Promise.allSettled(
 		targets.map(async (dir) => {
 			const name = dir.slice(pluginsDir.length + 1);
-			bumpPatch(dir);
+			const opts = buildOpts(dir);
+			const before = existsSync(opts.outfile) ? readFileSync(opts.outfile) : null;
 			const { build } = resolveEsbuild(dir);
-			await build(buildOpts(dir));
+			await build(opts);
+			// Bump only when the artifact actually changed, so a no-op rebuild stays
+			// idempotent (CI fails if the committed build artifacts differ).
+			if (before === null || !before.equals(readFileSync(opts.outfile))) bumpPatch(dir);
 			return name;
 		}),
 	);
