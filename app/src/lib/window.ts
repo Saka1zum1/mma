@@ -41,6 +41,8 @@ export async function openMapWindowIds(): Promise<string[]> {
 export async function closeAllMapWindows(): Promise<void> {
 	const wins = await getAllWebviewWindows();
 	await Promise.all(
-		wins.filter((w) => w.label.startsWith(MAP_LABEL_PREFIX)).map((w) => w.close().catch(() => {})),
+		wins
+			.filter((w) => w.label.startsWith(MAP_LABEL_PREFIX))
+			.map((w) => w.close().catch((e) => log.error(`Failed to close ${w.label}:`, e))),
 	);
 }

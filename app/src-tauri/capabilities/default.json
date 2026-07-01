@@ -9,6 +9,7 @@
 		"core:window:allow-set-focus",
 		"core:window:allow-is-minimized",
 		"core:window:allow-unminimize",
+		"core:window:allow-close",
 		"core:window:allow-destroy",
 		"core:window:allow-show",
 		"core:window:allow-is-fullscreen",

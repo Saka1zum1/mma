@@ -43,7 +43,9 @@ async function boot() {
 		// Closing the main (list) window ends the session: remember the maps still
 		// open at this instant, then close them so they restore next launch.
 		if (isMainWindow && getSettings().restoreSession) {
-			saveSession(await openMapWindowIds());
+			const openIds = await openMapWindowIds();
+			saveSession(openIds);
+			log.info(`[session] saved ${openIds.length} open map(s): ${openIds.join(", ")}`);
 			await closeAllMapWindows();
 		}
 		await flushSave();
@@ -93,6 +95,7 @@ async function boot() {
 function restoreSession() {
 	const ids = loadSession();
 	if (!ids.length) return;
+	log.info(`[session] restoring ${ids.length} map(s): ${ids.join(", ")}`);
 	const names = new Map(getMapList().map((m) => [m.id, m.name]));
 	for (const id of ids) {
 		const name = names.get(id);
