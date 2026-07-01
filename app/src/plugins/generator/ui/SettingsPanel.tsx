@@ -317,11 +317,7 @@ export function SettingsPanel({
 						</label>
 						<label className="generator-settings__date-label">
 							To{" "}
-							<DatePicker
-								mode="month"
-								value={settings.toDate}
-								onChange={(v) => set("toDate", v)}
-							/>
+							<DatePicker mode="month" value={settings.toDate} onChange={(v) => set("toDate", v)} />
 						</label>
 					</div>
 				)}
@@ -397,6 +393,20 @@ export function SettingsPanel({
 					</>
 				)}
 				<Check
+					label="Skip near existing map locations"
+					checked={settings.skipExisting}
+					onChange={(v) => set("skipExisting", v)}
+				/>
+				{settings.skipExisting && (
+					<NumberInput
+						label="m"
+						value={settings.skipExistingRadius}
+						onChange={(v) => set("skipExistingRadius", v)}
+						min={1}
+						indent
+					/>
+				)}
+				<Check
 					label="Check all dates"
 					checked={settings.checkAllDates}
 					onChange={(v) => set("checkAllDates", v)}
@@ -422,7 +432,9 @@ export function SettingsPanel({
 							<select
 								className="nselect nselect--compact"
 								value={settings.searchMode}
-								onChange={(e) => set("searchMode", e.target.value as GeneratorSettings["searchMode"])}
+								onChange={(e) =>
+									set("searchMode", e.target.value as GeneratorSettings["searchMode"])
+								}
 							>
 								<option value="contains">Contains</option>
 								<option value="fullword">Full word</option>

@@ -127,6 +127,7 @@ function summarizeSettings(s: GeneratorSettings): string {
 	if (s.onlyOneInTimeframe) parts.push("unique in timeframe");
 
 	// Search strategy
+	if (s.skipExisting) parts.push(`skipping existing (${s.skipExistingRadius}m)`);
 	if (s.getIntersection) parts.push("intersections");
 	if (s.pinpointSearch) parts.push(`curves >${s.pinpointAngle}°`);
 	if (s.checkLinks) parts.push(`checking ${s.linksDepth} link hops`);

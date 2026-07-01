@@ -8,6 +8,8 @@ import { randomPointInBounds, getBoundingBox, pointInGeoJsonGeometry } from "./g
 import { passesInitialFilters, passesDateFilters, isPanoGood, computeHeading } from "./filters";
 import { distMeters } from "@/lib/geo/geo";
 import { searchCoverage } from "../searchCoverage";
+import { cmd } from "@/lib/commands";
+import { log } from "@/lib/util/log";
 import type { LatLng } from "@/types";
 
 function chunk<T>(arr: T[], n: number): T[][] {
@@ -182,14 +184,21 @@ export class GenerationEngine {
 
 	private async generateRegion(region: GeneratorRegion): Promise<void> {
 		const [west, south, east, north] = getBoundingBox(region.feature);
+		// Consecutive rounds where skip-existing filtered every probe: the region is
+		// blanketed by existing locations — give up instead of spinning forever.
+		let coveredRounds = 0;
 
-		while (region.found.length < region.target && this.running && !this.cancelledRegions.has(region.id)) {
+		while (
+			region.found.length < region.target &&
+			this.running &&
+			!this.cancelledRegions.has(region.id)
+		) {
 			await this.waitIfPaused();
 			if (!this.running || this.cancelledRegions.has(region.id)) return;
 
 			region.isProcessing = true;
 			const n = Math.min(region.target * 100, this.settings.speed);
-			const randomCoords: LatLng[] = [];
+			let randomCoords: LatLng[] = [];
 			// Cap attempts so a degenerate/near-zero-area polygon can never spin forever.
 			// The bbox reject in pointInGeoJsonGeometry keeps each attempt cheap.
 			let attempts = 0;
@@ -201,11 +210,35 @@ export class GenerationEngine {
 					randomCoords.push(pt);
 				}
 			}
+			// Skip-existing: drop probes already covered by map locations before any SV
+			// request is spent on them. One bulk IPC per probe batch (spatial index).
+			if (this.settings.skipExisting && randomCoords.length > 0) {
+				try {
+					// eslint-disable-next-line local/no-ipc-in-loop -- already the bulk form: one IPC per probe batch (up to `speed` coords), not per point
+					const near = await cmd.storeNearAny(
+						randomCoords.map((c) => c.lat),
+						randomCoords.map((c) => c.lng),
+						this.settings.skipExistingRadius,
+					);
+					randomCoords = randomCoords.filter((_, i) => !near[i]);
+				} catch (e) {
+					log.warn("[generator] storeNearAny failed, probing unfiltered:", e);
+				}
+				if (randomCoords.length === 0) {
+					if (++coveredRounds >= 20) break;
+					continue;
+				}
+				coveredRounds = 0;
+			}
 			if (randomCoords.length === 0) break;
 
 			const batchSize = this.settings.findRegions ? 1 : 75;
 			for (const batch of chunk(randomCoords, batchSize)) {
-				if (!this.running || this.cancelledRegions.has(region.id) || region.found.length >= region.target)
+				if (
+					!this.running ||
+					this.cancelledRegions.has(region.id) ||
+					region.found.length >= region.target
+				)
 					break;
 				await this.waitIfPaused();
 				await Promise.allSettled(batch.map((coord) => this.getLoc(coord, region)));
@@ -351,15 +384,15 @@ export class GenerationEngine {
 					}
 				}
 
-				if (good) this.finalizeLoc(pano, region);
+				if (good) void this.finalizeLoc(pano, region);
 			},
 		);
 	}
 
-	private finalizeLoc(
+	private async finalizeLoc(
 		pano: google.maps.StreetViewResolvedPanoramaData,
 		region: GeneratorRegion,
-	): void {
+	): Promise<void> {
 		if (!this.running || this.paused || this.cancelledRegions.has(region.id)) return;
 		const s = this.settings;
 		const panoId: string = pano.location.pano;
@@ -368,6 +401,23 @@ export class GenerationEngine {
 		if (region.found.length >= region.target) return;
 
 		this.globalFoundPanoIds.add(panoId);
+
+		// A link-walked or snapped pano can sit near an existing location even when
+		// its probe coordinate didn't — final skip-existing gate before accepting.
+		if (s.skipExisting) {
+			try {
+				const covered = await cmd.storeNearAny(
+					[pano.location.latLng.lat()],
+					[pano.location.latLng.lng()],
+					s.skipExistingRadius,
+				);
+				if (covered[0]) return;
+			} catch (e) {
+				log.warn("[generator] storeNearAny failed, accepting unchecked:", e);
+			}
+			if (!this.running || this.paused || this.cancelledRegions.has(region.id)) return;
+			if (region.found.length >= region.target) return;
+		}
 
 		const loc: GeneratedLocation = {
 			panoId,
