@@ -35,6 +35,7 @@ mod util;
 mod arrow_bridge;
 mod arrow_migrate;
 mod selections;
+mod spatial;
 #[macro_use]
 mod location_store;
 mod import;
@@ -445,6 +446,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_location_count,
             location_store::store_bounds,
             location_store::store_find_nearby,
+            location_store::store_near_any,
             location_store::store_extra_field_values,
             // --- Tag CRUD ---
             location_store::store_create_tags,

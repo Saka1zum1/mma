@@ -149,11 +149,17 @@ export const commands = {
 	/**
 	 *  Find all locations within `radius_m` metres of (`lat`, `lng`).
 	 * 
-	 *  O(n) linear scan with a cheap bounding-box pre-filter (degree margin)
-	 *  that rejects 99.9%+ of points before haversine is called.
-	 *  At 1M locations this is sub-millisecond on a modern CPU.
+	 *  Backed by the store's lazy spatial index: O(cells in radius) per query after a
+	 *  one-time O(N) build, maintained incrementally across mutations. Called on every
+	 *  marker click (duplicate check), so it must not scan.
 	 */
 	storeFindNearby: (lat: number, lng: number, radiusM: number) => typedError<Location[], string>(__TAURI_INVOKE("store_find_nearby", { lat, lng, radiusM })).then((v) => ((v.status === "ok" ? { ...v, data: v.data.map(i=>i) } : v) as typeof v)),
+	/**
+	 *  For each input point, whether any existing location lies within `radius_m` metres.
+	 *  Bulk form so callers probing many coordinates (e.g. the map generator skipping
+	 *  already-covered spots) pay one IPC round-trip, not one per point.
+	 */
+	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => typedError<boolean[], string>(__TAURI_INVOKE("store_near_any", { lats: lats.map(i=>i), lngs: lngs.map(i=>i), radiusM })),
 	/**
 	 *  Collect all distinct values for an `extra` field across all alive locations. O(N).
 	 *  Used by the filter UI to populate dropdown options.

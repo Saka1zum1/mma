@@ -1941,6 +1941,7 @@ declare const mma: {
 			number
 		] | null>;
 		storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location$1[]>;
+		storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
 		storeExtraFieldValues: (field: string) => Promise<string[]>;
 		storeCreateTags: (names: string[]) => Promise<MutationResult>;
 		storeUpdateTags: (updates: Update<TagPatch>[]) => Promise<MutationResult>;
@@ -2137,6 +2138,7 @@ declare const mma: {
 	getTagCounts(): Record<number, number>;
 	refreshAfterMutation(): void;
 	getVisibleTags(): Tag[];
+	getTag(id: number): Tag | undefined;
 	getImportPreviewPositions(): Float32Array<ArrayBuffer>;
 	getCommitDiffPreview(): CommitDiffPreview | null;
 	hasCommitDiff(): boolean;
@@ -2301,6 +2303,7 @@ declare const mma: {
 	getMapList: () => MapMeta[];
 	useTagCounts: () => Record<number, number>;
 	useCurrentMap: () => MapData | null;
+	useVisibleTags: () => Tag[];
 	useMapVersion: () => number;
 	useSelectedLocationIds: () => SelectedIds;
 	useActiveLocation: () => Location$1 | null;

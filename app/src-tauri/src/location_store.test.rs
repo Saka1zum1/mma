@@ -2206,3 +2206,100 @@ fn overlay_update_back_to_base_clears_patch() {
     store.overlay_update(1, &LocationPatch { heading: Some(0.0), ..patch() });
     assert!(store.overlay.patches.contains_key(&1), "modified_at prevents full revert to base");
 }
+
+// -----------------------------------------------------------------------
+// Spatial index (store integration; pure index tests live in spatial.test.rs)
+// -----------------------------------------------------------------------
+
+/// Brute-force reference: ids of alive locations within radius, sorted.
+fn brute_nearby(store: &Store, lat: f64, lng: f64, r: f64) -> Vec<u32> {
+    let mut out: Vec<u32> = store
+        .collect_all_locations()
+        .iter()
+        .filter(|l| selections::haversine_m(lat, lng, l.lat, l.lng) <= r)
+        .map(|l| l.id)
+        .collect();
+    out.sort_unstable();
+    out
+}
+
+fn indexed_nearby(store: &mut Store, lat: f64, lng: f64, r: f64) -> Vec<u32> {
+    let mut ids = store.find_nearby_ids(lat, lng, r);
+    ids.sort_unstable();
+    ids
+}
+
+#[test]
+fn spatial_matches_brute_force_across_mutations() {
+    // Cluster around a point plus scattered outliers.
+    let base = (48.8566, 2.3522);
+    let m = 1.0 / 111_320.0; // ~1m in degrees latitude
+    let mut store = setup_store_with(&[
+        loc(1, base.0, base.1),
+        loc(2, base.0 + m, base.1),
+        loc(3, base.0 + 30.0 * m, base.1),
+        loc(4, base.0 + 500.0 * m, base.1),
+        loc(5, -33.0, 151.0),
+    ]);
+
+    for r in [0.0, 2.0, 50.0, 1000.0] {
+        assert_eq!(
+            indexed_nearby(&mut store, base.0, base.1, r),
+            brute_nearby(&store, base.0, base.1, r),
+            "radius {r}"
+        );
+    }
+
+    // Mutate through every overlay path and re-verify: remove, coord patch, re-add.
+    store.overlay_remove(&[loc(2, base.0 + m, base.1)]);
+    store.overlay_update(3, &LocationPatch { lat: Some(base.0), lng: Some(base.1), ..patch() });
+    store.overlay_add(loc(6, base.0, base.1 + m));
+    store.overlay_update(4, &LocationPatch { lat: Some(10.0), ..patch() }); // move far away
+
+    for r in [0.0, 2.0, 50.0, 1000.0] {
+        assert_eq!(
+            indexed_nearby(&mut store, base.0, base.1, r),
+            brute_nearby(&store, base.0, base.1, r),
+            "radius {r} after mutations"
+        );
+    }
+    assert_eq!(store.spatial.as_ref().unwrap().len(), store.alive_count);
+}
+
+#[test]
+fn spatial_survives_bake_and_undo_roundtrip() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 10.0), loc(2, 10.001, 10.0)]);
+    assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![1]);
+
+    store.bake_overlay();
+    assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![1]);
+
+    // Undo/redo replay flows through apply_edit -> overlay fns.
+    let entry = EditEntry { created: vec![loc(3, 10.0, 10.0)], removed: vec![loc(1, 10.0, 10.0)] };
+    apply_edit_forward(&mut store, &entry);
+    assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![3]);
+    apply_edit_reverse(&mut store, &entry);
+    assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![1]);
+}
+
+#[test]
+fn spatial_rebuilds_when_alive_count_drifts() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 10.0)]);
+    assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![1]);
+
+    // Simulate a bulk path bypassing the overlay fns: the len/alive mismatch
+    // must force a rebuild instead of returning stale results.
+    let pos = store.overlay.adds.partition_point(|l| l.id < 2);
+    store.overlay.adds.insert(pos, loc(2, 10.0, 10.0));
+    store.alive_count += 1;
+    assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![1, 2]);
+}
+
+#[test]
+fn spatial_any_within() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 10.0)]);
+    assert!(store.any_within(10.0, 10.0, 1.0));
+    assert!(store.any_within(10.0004, 10.0, 50.0)); // ~45m away
+    assert!(!store.any_within(10.0004, 10.0, 10.0));
+    assert!(!store.any_within(-45.0, 100.0, 1000.0));
+}

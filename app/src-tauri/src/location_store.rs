@@ -22,6 +22,7 @@ use crate::map_meta;
 use crate::types::{Location, Tag, LocationFlags};
 use crate::util;
 use crate::selections::{self, SelectionProps, Selection};
+use crate::spatial;
 
 const MAX_UNDO_ENTRIES: usize = 1000;
 /// Standard base-32 alphabet (Gustavo Niemeyer geohash variant); render cells are
@@ -270,6 +271,11 @@ pub struct Store {
     /// next read after a removal or bulk change. Resolved to `[w,s,e,n]` on read.
     bounds_cache: Option<BoundsAcc>,
     bounds_dirty: bool,
+    /// Lazy spatial index over alive locations. Built on the first radius query,
+    /// then maintained incrementally by the overlay mutation functions. A length
+    /// mismatch against `alive_count` at query time forces a rebuild, so any bulk
+    /// path that bypasses the overlay fns degrades to a rebuild, never wrong results.
+    spatial: Option<spatial::SpatialIndex>,
 }
 
 /// One undo/redo entry. Records the locations created and removed by a single user action.
@@ -392,6 +398,7 @@ impl Store {
             },
             bounds_cache: None,
             bounds_dirty: true,
+            spatial: None,
         }
     }
 
@@ -900,6 +907,60 @@ impl Store {
         None
     }
     
+    /// Current coordinates of an alive location, without cloning the full Location.
+    fn coords_of(&self, id: u32) -> Option<(f64, f64)> {
+        if self.overlay.dead.contains(&id) { return None; }
+        if let Some(p) = self.overlay.patches.get(&id) { return Some((p.lat, p.lng)); }
+        if let Ok(i) = self.overlay.adds.binary_search_by_key(&id, |l| l.id) {
+            let l = &self.overlay.adds[i];
+            return Some((l.lat, l.lng));
+        }
+        if let Some(ref b) = self.batch {
+            if let Some(idx) = batch_row_for_id(b, id) {
+                return Some((col_lat(b).value(idx), col_lng(b).value(idx)));
+            }
+        }
+        None
+    }
+
+    /// Build the spatial index if absent or drifted (length mismatch vs alive_count
+    /// catches any bulk path that bypassed the overlay fns — rebuild, never wrong).
+    fn ensure_spatial(&mut self) {
+        if let Some(ix) = self.spatial.as_ref() {
+            if ix.len() == self.alive_count { return; }
+            log::warn!("[spatial] index len {} != alive {} — rebuilding", ix.len(), self.alive_count);
+        }
+        let _t = std::time::Instant::now();
+        let mut ix = spatial::SpatialIndex::new();
+        self.loc_view().for_each(|row| ix.insert(row.id(), row.lat(), row.lng()));
+        log::debug!("[spatial] built n={} in {}ms", ix.len(), _t.elapsed().as_millis());
+        self.spatial = Some(ix);
+    }
+
+    /// Ids of alive locations within `radius_m` metres of the point. Index-backed:
+    /// O(cells in radius) instead of an O(N) scan.
+    pub(crate) fn find_nearby_ids(&mut self, lat: f64, lng: f64, radius_m: f64) -> Vec<u32> {
+        self.ensure_spatial();
+        let mut cand = Vec::new();
+        self.spatial.as_ref().unwrap().candidates(lat, lng, radius_m, &mut cand);
+        cand.retain(|&id| {
+            self.coords_of(id)
+                .is_some_and(|(la, ln)| selections::haversine_m(lat, lng, la, ln) <= radius_m)
+        });
+        cand
+    }
+
+    /// Whether any alive location lies within `radius_m` metres of the point.
+    pub(crate) fn any_within(&mut self, lat: f64, lng: f64, radius_m: f64) -> bool {
+        self.ensure_spatial();
+        let mut cand = Vec::new();
+        self.spatial.as_ref().unwrap().candidates(lat, lng, radius_m, &mut cand);
+        cand.iter().any(|&id| {
+            self.coords_of(id)
+                .is_some_and(|(la, ln)| selections::haversine_m(lat, lng, la, ln) <= radius_m)
+        })
+    }
+
     /// Collect all alive locations (batch + overlay) into a Vec. O(N) time and space.
     pub(crate) fn collect_all_locations(&self) -> Vec<Location> {
         let view = self.loc_view();
@@ -1044,6 +1105,9 @@ impl Store {
     pub(crate) fn overlay_add(&mut self, loc: Location) {
         self.overlay.dirty = true;
         self.alive_count += 1;
+        if let Some(ix) = self.spatial.as_mut() {
+            ix.insert(loc.id, loc.lat, loc.lng);
+        }
         let in_batch = self.batch.as_ref().and_then(|b| batch_row_for_id(b, loc.id)).is_some();
         if in_batch {
             self.overlay.dead.remove(&loc.id);
@@ -1071,6 +1135,12 @@ impl Store {
         let remove_set: HashSet<u32> = locs.iter().map(|l| l.id).collect();
         for loc in locs {
             self.alive_count -= 1;
+            // Index under the CURRENT coords, not the caller's copy: a patched
+            // location's overlay coords are where the index filed it.
+            let (lat, lng) = self.coords_of(loc.id).unwrap_or((loc.lat, loc.lng));
+            if let Some(ix) = self.spatial.as_mut() {
+                ix.remove(loc.id, lat, lng);
+            }
             self.overlay.patches.remove(&loc.id);
         }
         self.overlay.dead.extend(&remove_set);
@@ -1085,8 +1155,15 @@ impl Store {
             Some(l) => l,
             None => return,
         };
+        let old_coords = (loc.lat, loc.lng);
         if let Some(v) = patch.lat { loc.lat = v; }
         if let Some(v) = patch.lng { loc.lng = v; }
+        if (loc.lat, loc.lng) != old_coords {
+            if let Some(ix) = self.spatial.as_mut() {
+                ix.remove(id, old_coords.0, old_coords.1);
+                ix.insert(id, loc.lat, loc.lng);
+            }
+        }
         if let Some(v) = patch.heading { loc.heading = v; }
         if let Some(v) = patch.pitch { loc.pitch = v; }
         if let Some(v) = patch.zoom { loc.zoom = v; }
@@ -3117,11 +3194,9 @@ pub fn store_prune_duplicates(
 
 /// Find all locations within `radius_m` metres of (`lat`, `lng`).
 ///
-/// O(n) linear scan with a cheap bounding-box pre-filter (degree margin)
-/// that rejects 99.9%+ of points before haversine is called.
-/// At 1M locations this is sub-millisecond on a modern CPU.
-///
-// TODO: if this becomes a bottleneck, consider a persistent spatial index (R-tree or k-d tree)
+/// Backed by the store's lazy spatial index: O(cells in radius) per query after a
+/// one-time O(N) build, maintained incrementally across mutations. Called on every
+/// marker click (duplicate check), so it must not scan.
 #[tauri::command]
 #[specta::specta]
 pub fn store_find_nearby(
@@ -3132,23 +3207,39 @@ pub fn store_find_nearby(
     radius_m: f64,
 ) -> AppResult<Vec<Location>> {
     with_store!(webview, state, |store| {
-    let deg_margin = radius_m / 111_000.0 * 1.5;
-    let mut result = Vec::new();
-    let view = store.loc_view();
+        let _t = std::time::Instant::now();
+        let mut ids = store.find_nearby_ids(lat, lng, radius_m);
+        ids.sort_unstable();
+        let result: Vec<Location> = ids.iter().filter_map(|&id| store.get_loc_by_id(id)).collect();
+        log::debug!("[cmd] store_find_nearby r={}m hits={} total={}ms", radius_m, result.len(), _t.elapsed().as_millis());
+        Ok(result)
+    })
+}
 
-    let within = |la: f64, ln: f64| {
-        (la - lat).abs() <= deg_margin
-            && (ln - lng).abs() <= deg_margin
-            && selections::haversine_m(lat, lng, la, ln) <= radius_m
-    };
-
-    view.for_each(|row| {
-        if within(row.lat(), row.lng()) {
-            result.push(row.to_location());
-        }
-    });
-
-    Ok(result)
+/// For each input point, whether any existing location lies within `radius_m` metres.
+/// Bulk form so callers probing many coordinates (e.g. the map generator skipping
+/// already-covered spots) pay one IPC round-trip, not one per point.
+#[tauri::command]
+#[specta::specta]
+pub fn store_near_any(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    lats: Vec<f64>,
+    lngs: Vec<f64>,
+    radius_m: f64,
+) -> AppResult<Vec<bool>> {
+    if lats.len() != lngs.len() {
+        return Err(AppError::from("store_near_any: lats/lngs length mismatch"));
+    }
+    with_store!(webview, state, |store| {
+        let _t = std::time::Instant::now();
+        let result: Vec<bool> = lats
+            .iter()
+            .zip(lngs.iter())
+            .map(|(&la, &ln)| store.any_within(la, ln, radius_m))
+            .collect();
+        log::debug!("[cmd] store_near_any n={} r={}m total={}ms", result.len(), radius_m, _t.elapsed().as_millis());
+        Ok(result)
     })
 }
 
