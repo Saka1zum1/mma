@@ -20,7 +20,6 @@
 		{
 			"identifier": "shell:allow-execute",
 			"allow": [
-				{ "name": "vali", "cmd": "vali", "args": true },
 				{ "name": "mma-vision", "cmd": "mma-vision", "args": true },
 				{ "name": "sh", "cmd": "sh", "args": true },
 				{ "name": "bash", "cmd": "bash", "args": true },
@@ -32,7 +31,6 @@
 		{
 			"identifier": "shell:allow-spawn",
 			"allow": [
-				{ "name": "vali", "cmd": "vali", "args": true },
 				{ "name": "mma-vision", "cmd": "mma-vision", "args": true },
 				{ "name": "sh", "cmd": "sh", "args": true },
 				{ "name": "bash", "cmd": "bash", "args": true },

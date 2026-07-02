@@ -82,6 +82,34 @@
 	color: #f87171;
 }
 
+.vali-sidebar__progress {
+	padding: 8px;
+	border-top: 1px solid var(--color-divider, #333);
+	flex-shrink: 0;
+}
+
+.vali-sidebar__progress-label {
+	display: flex;
+	justify-content: space-between;
+	font-size: 12px;
+	opacity: 0.8;
+	margin-bottom: 4px;
+}
+
+.vali-sidebar__progress-track {
+	height: 6px;
+	border-radius: 3px;
+	background: rgba(255, 255, 255, 0.1);
+	overflow: hidden;
+}
+
+.vali-sidebar__progress-fill {
+	height: 100%;
+	border-radius: 3px;
+	background: var(--blue-9, #3b82f6);
+	transition: width 0.15s ease-out;
+}
+
 .vali-sidebar__output-actions {
 	padding: 8px;
 	border-top: 1px solid var(--color-divider, #333);

@@ -384,6 +384,15 @@ export const commands = {
 	storeCheckoutCommit: (mapId: string, commitId: string) => typedError<null, string>(__TAURI_INVOKE("store_checkout_commit", { mapId, commitId })),
 	/**  Read a single commit's delta (created/removed locations) for the diff viewer. */
 	storeGetCommitDelta: (mapId: string, commitId: string) => typedError<CommitDelta, string>(__TAURI_INVOKE("store_get_commit_delta", { mapId, commitId })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,created:v.data.created.map(i=>i),removed:v.data.removed.map(i=>i)}) } : v) as typeof v)),
+	/**
+	 *  Generate locations from a Vali map definition (JSON/JSONC text). Missing country
+	 *  data is auto-downloaded like the Vali CLI. Returns the generated locations.
+	 */
+	valiGenerate: (definition: string) => typedError<ValiLocation[], string>(__TAURI_INVOKE("vali_generate", { definition })).then((v) => ((v.status === "ok" ? { ...v, data: v.data.map(i=>({...i,zoom:i.zoom==null?i.zoom:i.zoom,pitch:i.pitch==null?i.pitch:i.pitch})) } : v) as typeof v)),
+	/**  Download Vali coverage data. `country` = code/continent alias/None for all. */
+	valiDownload: (country: string | null, full: boolean, updates: boolean) => typedError<null, string>(__TAURI_INVOKE("vali_download", { country, full, updates })),
+	/**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
+	valiSubdivisions: (country: string) => typedError<string, string>(__TAURI_INVOKE("vali_subdivisions", { country })),
 };
 
 /* Types */
@@ -1107,6 +1116,27 @@ export type TagPatch = {
 export type Update<P> = {
 	id: number,
 	patch: P,
+};
+
+
+export type ValiLocation_Deserialize = {
+	lat: number,
+	lng: number,
+	heading: number,
+	zoom: number | null,
+	pitch: number | null,
+	panoId: string | null,
+	tags: string[],
+};
+
+export type ValiLocation = {
+	lat: number,
+	lng: number,
+	heading: number,
+	zoom?: number | null,
+	pitch?: number | null,
+	panoId?: string | null,
+	tags: string[],
 };
 
 /**

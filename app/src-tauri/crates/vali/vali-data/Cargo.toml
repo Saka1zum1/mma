@@ -1,0 +1,14 @@
+[package]
+name = "vali-data"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1"
+compact_str = "0.9.1"
+memmap2 = "0.9"
+serde = { features = ["derive"], version = "1" }
+serde_json = { features = ["float_roundtrip"], version = "1" }
+vali-core = { path = "../vali-core" }

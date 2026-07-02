@@ -1,0 +1,12 @@
+[package]
+name = "vali-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+compact_str = { features = ["serde"], version = "0.9.1" }
+serde = { features = ["derive"], version = "1" }
+serde_json = { features = ["float_roundtrip"], version = "1" }
+smallvec = { features = ["serde"], version = "1.15.2" }

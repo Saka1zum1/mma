@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Command, type Child } from "@tauri-apps/plugin-shell";
+import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
+import type { ValiLocation } from "@/bindings.gen";
 import { createLocation, LocationFlag } from "@/types";
 import { createTags } from "@/store/useMapStore";
 import { Sidebar } from "@/components/primitives/Sidebar";
@@ -14,31 +15,49 @@ interface LogLine {
 	isError: boolean;
 }
 
-interface ValiLocation {
-	lat: number;
-	lng: number;
-	heading?: number;
-	pitch?: number;
-	zoom?: number;
-	panoId: string;
+type ValiProgress =
+	| { kind: "workItems"; total: number }
+	| {
+			kind: "workItemDone";
+			countryCode: string;
+			subdivisionCode: string | null;
+			done: number;
+			total: number;
+	  }
+	| {
+			kind: "countryDownloadStarted";
+			countryCode: string;
+			files: number;
+			bytes: number;
+			updates: boolean;
+	  }
+	| { kind: "fileDownloaded"; countryCode: string; name: string; bytes: number };
+
+interface Bar {
+	label: string;
+	done: number;
+	total: number;
+	bytes: boolean;
 }
 
 const VALIG_URL = "https://valig.vercel.app";
-const OUTPUT_SUFFIX = "-locations.json";
 const valiStore = createPluginStorage("vali");
+
+function formatBytes(n: number): string {
+	return n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.round(n / 1e3)} kB`;
+}
 
 let sessionPhase: Phase = "editing";
 let sessionLines: LogLine[] = [];
-let sessionChild: Child | null = null;
 
 export function ValiSidebar({ onClose }: { onClose: () => void }) {
 	const [phase, setPhase] = useState<Phase>(sessionPhase);
 	const [lines, setLines] = useState<LogLine[]>(sessionLines);
+	const [bar, setBar] = useState<Bar | null>(null);
 	const [error, setError] = useState("");
 	const [importCount, setImportCount] = useState(0);
 	const [tagName, setTagName] = useState(() => valiStore.get<string>("tagName", ""));
 	const logRef = useRef<HTMLDivElement>(null);
-	const childRef = useRef<Child | null>(sessionChild);
 
 	useEffect(() => {
 		sessionPhase = phase;
@@ -52,38 +71,64 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 		if (logRef.current) {
 			logRef.current.scrollTop = logRef.current.scrollHeight;
 		}
-	}, [lines]);
+	}, [lines, bar]);
 
 	const appendLine = useCallback((text: string, isError = false) => {
 		setLines((prev) => [...prev, { text, isError }]);
 	}, []);
 
-	const importLocations = useCallback(
-		async (outputPath: string) => {
-			try {
-				const raw = await cmd.readFile(outputPath);
-				const valiLocs: ValiLocation[] = JSON.parse(raw);
-				let tagId: number | null = null;
-				const tagName = valiStore.get<string>("tagName", "");
-				if (tagName) {
-					tagId = (await createTags([tagName]))[0].id;
-				}
-				const locations = valiLocs.map((v) =>
-					createLocation({
-						...v,
-						flags: LocationFlag.LoadAsPanoId,
-						...(tagId != null ? { tags: [tagId] } : {}),
-					}),
-				);
-				MMA.addLocations(locations);
-				setImportCount(locations.length);
-			} catch (e) {
-				setError(`Failed to import locations: ${e}`);
-				setPhase("error");
+	const onProgress = useCallback(
+		(p: ValiProgress) => {
+			switch (p.kind) {
+				case "workItems":
+					setBar({ label: "Generating", done: 0, total: p.total, bytes: false });
+					break;
+				case "workItemDone":
+					setBar({
+						label: `Generating (${p.subdivisionCode ?? p.countryCode})`,
+						done: p.done,
+						total: p.total,
+						bytes: false,
+					});
+					break;
+				case "countryDownloadStarted":
+					appendLine(
+						`Downloading ${p.countryCode}${p.updates ? " updates" : ""} (${p.files} files, ${formatBytes(p.bytes)})...`,
+					);
+					setBar({ label: `Downloading ${p.countryCode}`, done: 0, total: p.bytes, bytes: true });
+					break;
+				case "fileDownloaded":
+					setBar((prev) =>
+						prev?.bytes ? { ...prev, done: Math.min(prev.done + p.bytes, prev.total) } : prev,
+					);
+					break;
 			}
 		},
-		[],
+		[appendLine],
 	);
+
+	const importLocations = useCallback(async (valiLocs: ValiLocation[]) => {
+		let tagId: number | null = null;
+		const tagName = valiStore.get<string>("tagName", "");
+		if (tagName) {
+			tagId = (await createTags([tagName]))[0].id;
+		}
+		const locations = valiLocs.map((v) =>
+			createLocation({
+				lat: v.lat,
+				lng: v.lng,
+				heading: v.heading,
+				...(v.zoom != null ? { zoom: v.zoom } : {}),
+				...(v.pitch != null ? { pitch: v.pitch } : {}),
+				...(v.panoId != null ? { panoId: v.panoId } : {}),
+				...(v.tags.length ? { extra: { tags: v.tags } } : {}),
+				flags: LocationFlag.LoadAsPanoId,
+				...(tagId != null ? { tags: [tagId] } : {}),
+			}),
+		);
+		MMA.addLocations(locations);
+		setImportCount(locations.length);
+	}, []);
 
 	const handleGenerate = useCallback(async () => {
 		setError("");
@@ -106,62 +151,24 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 			return;
 		}
 
-		let tempPath: string;
-		try {
-			tempPath = await cmd.writeTempFile("vali_config.json", json);
-		} catch (e) {
-			setError(`Failed to write config: ${e}`);
-			return;
-		}
-
-		const outputPath = tempPath.replace(/\.json$/, OUTPUT_SUFFIX);
-
 		setPhase("generating");
 		setLines([]);
+		setBar(null);
 
+		const unlisten = await listen<ValiProgress>("vali-progress", (e) => onProgress(e.payload));
 		try {
-			const command = Command.create("vali", ["generate", "--file", tempPath]);
-
-			command.stdout.on("data", (line) => appendLine(line));
-			command.stderr.on("data", (line) => appendLine(line, true));
-
-			command.on("close", (data) => {
-				childRef.current = null;
-				sessionChild = null;
-				if (data.code === 0) {
-					setPhase("done");
-					importLocations(outputPath);
-				} else {
-					setPhase("error");
-					setError(`Vali exited with code ${data.code}`);
-				}
-			});
-
-			command.on("error", (err) => {
-				childRef.current = null;
-				sessionChild = null;
-				setPhase("error");
-				setError(String(err));
-			});
-
-			const child = await command.spawn();
-			childRef.current = child;
-			sessionChild = child;
+			const locations = await cmd.valiGenerate(json);
+			appendLine(`${locations.length} locations generated`);
+			setPhase("done");
+			await importLocations(locations);
 		} catch (e) {
 			setPhase("error");
-			setError(`Failed to start Vali: ${e}`);
+			setError(String(e));
+		} finally {
+			unlisten();
+			setBar(null);
 		}
-	}, [appendLine, importLocations]);
-
-	const handleKill = useCallback(async () => {
-		if (childRef.current) {
-			await childRef.current.kill();
-			childRef.current = null;
-			sessionChild = null;
-			setPhase("error");
-			setError("Cancelled by user");
-		}
-	}, []);
+	}, [appendLine, onProgress, importLocations]);
 
 	const handleReset = useCallback(() => {
 		setPhase("editing");
@@ -172,9 +179,6 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 	}, []);
 
 	const handleClose = useCallback(() => {
-		childRef.current?.kill();
-		childRef.current = null;
-		sessionChild = null;
 		sessionPhase = "editing";
 		sessionLines = [];
 		onClose();
@@ -244,12 +248,27 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 							)}
 						</div>
 
+						{phase === "generating" && bar && (
+							<div className="vali-sidebar__progress">
+								<div className="vali-sidebar__progress-label">
+									{bar.label}
+									<span>
+										{bar.bytes
+											? `${formatBytes(bar.done)} / ${formatBytes(bar.total)}`
+											: `${bar.done} / ${bar.total}`}
+									</span>
+								</div>
+								<div className="vali-sidebar__progress-track">
+									<div
+										className="vali-sidebar__progress-fill"
+										style={{ width: `${bar.total > 0 ? (bar.done / bar.total) * 100 : 0}%` }}
+									/>
+								</div>
+							</div>
+						)}
+
 						<div className="vali-sidebar__output-actions">
-							{phase === "generating" ? (
-								<button className="button" onClick={handleKill}>
-									Cancel
-								</button>
-							) : (
+							{phase !== "generating" && (
 								<button className="button" onClick={handleReset}>
 									Back to Editor
 								</button>

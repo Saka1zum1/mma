@@ -1,0 +1,23 @@
+[package]
+name = "vali-generate"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1"
+bzip2 = "0.6.1"
+fastrand = "2"
+geo = "0.30"
+geojson = "0.24"
+rayon = "1"
+rust_decimal = "1"
+rustc-hash = "2"
+serde = { features = ["derive"], version = "1" }
+serde_json = { features = ["float_roundtrip"], version = "1" }
+ureq = { features = ["json"], version = "3.3.0" }
+vali-core = { path = "../vali-core" }
+vali-data = { path = "../vali-data" }
+vali-expr = { path = "../vali-expr" }
+vali-geo = { path = "../vali-geo" }

@@ -60,6 +60,10 @@ memchr = "2"
 rustc-hash = "2"
 mimalloc = "0.1"
 tauri-plugin-webserve = { path = "crates/tauri-plugin-webserve", optional = true }
+vali-core = { path = "crates/vali/vali-core" }
+vali-data = { path = "crates/vali/vali-data" }
+vali-generate = { path = "crates/vali/vali-generate" }
+json5 = "0.4"
 
 [profile.dev]
 opt-level = 1

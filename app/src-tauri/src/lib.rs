@@ -47,6 +47,7 @@ mod seen;
 mod review;
 mod vcs;
 mod vcs_delta;
+mod plugins;
 
 #[cfg(feature = "web-serve")]
 pub mod serve;
@@ -500,6 +501,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             vcs::store_list_commits,
             vcs::store_checkout_commit,
             vcs::store_get_commit_delta,
+            // --- Plugins (vali) ---
+            plugins::vali_generate,
+            plugins::vali_download,
+            plugins::vali_subdivisions,
         ])
 }
 
