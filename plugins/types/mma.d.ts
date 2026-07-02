@@ -795,6 +795,15 @@ export type Update<P> = {
 	id: number;
 	patch: P;
 };
+export type ValiLocation = {
+	lat: number;
+	lng: number;
+	heading: number;
+	zoom?: number | null;
+	pitch?: number | null;
+	panoId?: string | null;
+	tags: string[];
+};
 /**
  *  Per-map config for a virtual tag-tree node — a folder node with no underlying
  *  tag (e.g. "a" when only "a/b" and "a/c" exist). Keyed by the node's full slash
@@ -1993,6 +2002,9 @@ declare const mma: {
 		storeListCommits: (mapId: string) => Promise<CommitInfo[]>;
 		storeCheckoutCommit: (mapId: string, commitId: string) => Promise<null>;
 		storeGetCommitDelta: (mapId: string, commitId: string) => Promise<CommitDelta>;
+		valiGenerate: (definition: string) => Promise<ValiLocation[]>;
+		valiDownload: (country: string | null, full: boolean, updates: boolean) => Promise<null>;
+		valiSubdivisions: (country: string) => Promise<string>;
 	};
 	invoke: typeof invoke;
 	shell: {
@@ -2197,6 +2209,7 @@ declare const mma: {
 	renameField(from: string, to: string, winner?: MergeWinner): Promise<void>;
 	deleteField(key: string): Promise<void>;
 	patchLocationExtra(loc: Location$1, extraPatch: Record<string, unknown>, replace?: boolean): Promise<void>;
+	getSelectionCounts(): Record<string, number>;
 	toggleGhostSelection(key: string): Promise<void>;
 	isolateSelection(key: string): Promise<void>;
 	toggleGhostAllSelections(): Promise<void>;

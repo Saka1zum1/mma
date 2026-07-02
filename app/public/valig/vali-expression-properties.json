@@ -1,0 +1,113 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"title": "Vali Expression Properties",
+	"description": "Available properties for use in filter expressions.",
+	"type": "object",
+	"properties": {
+		"Surface": {
+			"type": ["string", "null"]
+		},
+		"Buildings10": {
+			"type": "integer"
+		},
+		"Buildings25": {
+			"type": "integer"
+		},
+		"Buildings100": {
+			"type": "integer"
+		},
+		"Buildings200": {
+			"type": "integer"
+		},
+		"Roads0": {
+			"type": "integer"
+		},
+		"Roads10": {
+			"type": "integer"
+		},
+		"Roads25": {
+			"type": "integer"
+		},
+		"Roads50": {
+			"type": "integer"
+		},
+		"Roads100": {
+			"type": "integer"
+		},
+		"Roads200": {
+			"type": "integer"
+		},
+		"Tunnels10": {
+			"type": "integer"
+		},
+		"Tunnels200": {
+			"type": "integer"
+		},
+		"IsResidential": {
+			"type": "boolean"
+		},
+		"ClosestCoast": {
+			"type": ["integer", "null"]
+		},
+		"ClosestLake": {
+			"type": ["integer", "null"]
+		},
+		"ClosestRiver": {
+			"type": ["integer", "null"]
+		},
+		"ClosestRailway": {
+			"type": ["integer", "null"]
+		},
+		"HighwayType": {
+			"type": "string"
+		},
+		"HighwayTypeCount": {
+			"type": "integer"
+		},
+		"WayId": {
+			"type": ["string", "null"]
+		},
+		"Month": {
+			"type": "integer"
+		},
+		"Year": {
+			"type": "integer"
+		},
+		"Lat": {
+			"type": "number"
+		},
+		"Lng": {
+			"type": "number"
+		},
+		"Heading": {
+			"type": "integer"
+		},
+		"DrivingDirectionAngle": {
+			"type": "integer"
+		},
+		"ArrowCount": {
+			"type": "integer"
+		},
+		"Elevation": {
+			"type": ["integer", "null"]
+		},
+		"DescriptionLength": {
+			"type": ["integer", "null"]
+		},
+		"IsScout": {
+			"type": "boolean"
+		},
+		"ResolutionHeight": {
+			"type": "integer"
+		},
+		"CountryCode": {
+			"type": ["string", "null"]
+		},
+		"SubdivisionCode": {
+			"type": ["string", "null"]
+		},
+		"County": {
+			"type": ["string", "null"]
+		}
+	}
+}

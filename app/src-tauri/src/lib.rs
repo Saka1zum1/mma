@@ -29,7 +29,6 @@ pub fn promote_serialize_bindings(path: &std::path::Path) {
 }
 
 mod storage;
-mod iframe_theme;
 mod types;
 mod util;
 mod arrow_bridge;
@@ -639,7 +638,6 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(iframe_theme::plugin())
         .setup(|app| {
             let t = std::time::Instant::now();
             let _ = APP_HANDLE.set(app.handle().clone());
