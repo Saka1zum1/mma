@@ -56,8 +56,8 @@ describe("Storage round-trip", () => {
 	it("should preserve location flags across save/load", async () => {
 		const locs = await getAllLocs();
 		const total = locs.length;
-		const withFlag = locs.filter((l: any) => (l.flags & 1) !== 0).length;
-		const withPano = locs.filter((l: any) => l.panoId != null).length;
+		const withFlag = locs.filter((l) => (l.flags & 1) !== 0).length;
+		const withPano = locs.filter((l) => l.panoId != null).length;
 
 		expect(total).toBe(200);
 		expect(withFlag).toBeGreaterThan(50);

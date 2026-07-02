@@ -10,6 +10,16 @@ import {
 	withApi,
 } from "./helpers";
 
+interface ExportedCoord {
+	lat: number;
+	lng: number;
+	heading?: number;
+	pitch?: number;
+	zoom?: number;
+	panoId?: string | null;
+	extra?: { tags?: string[]; altitude?: number; country?: string };
+}
+
 describe("JSON import/export round-trip", () => {
 	let mapId: string;
 	let locIds: number[];
@@ -44,7 +54,15 @@ describe("JSON import/export round-trip", () => {
 				panoId: null,
 				flags: 0,
 			}),
-			createLocation({ lat: 51.5, lng: -0.1, heading: 0, pitch: 0, zoom: 1, panoId: "XYZ789", flags: 0 }),
+			createLocation({
+				lat: 51.5,
+				lng: -0.1,
+				heading: 0,
+				pitch: 0,
+				zoom: 1,
+				panoId: "XYZ789",
+				flags: 0,
+			}),
 		];
 		locIds = await addLocs(locs);
 
@@ -63,16 +81,16 @@ describe("JSON import/export round-trip", () => {
 			const json = await res.text();
 
 			const parsed = JSON.parse(json);
-			const coords = parsed.customCoordinates || [];
+			const coords = (parsed.customCoordinates || []) as ExportedCoord[];
 			const locCount = await api.cmd.storeLocationCount();
 
 			return {
 				exportedCount: locCount,
 				importedCount: coords.length,
-				firstLat: coords.find((c: any) => c.panoId === "ABC123")?.lat,
-				firstHeading: coords.find((c: any) => c.panoId === "ABC123")?.heading,
-				firstZoom: coords.find((c: any) => c.panoId === "ABC123")?.zoom,
-				secondPano: coords.find((c: any) => Math.abs(c.lat - -33.8) < 0.01)?.panoId,
+				firstLat: coords.find((c) => c.panoId === "ABC123")?.lat,
+				firstHeading: coords.find((c) => c.panoId === "ABC123")?.heading,
+				firstZoom: coords.find((c) => c.panoId === "ABC123")?.zoom,
+				secondPano: coords.find((c) => Math.abs(c.lat - -33.8) < 0.01)?.panoId,
 			};
 		});
 
@@ -89,7 +107,7 @@ describe("JSON import/export round-trip", () => {
 
 		const ieLoc = await getLoc(locIds[0]);
 		await withApi(
-			async (api, loc, tag: any) => {
+			async (api, loc, tag: { id: number; name: string; color: string }) => {
 				await api.updateLocations([{ id: loc.id, patch: { tags: [tag.id] } }]);
 			},
 			ieLoc,
@@ -110,8 +128,8 @@ describe("JSON import/export round-trip", () => {
 			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
-			const coords = parsed.customCoordinates || [];
-			const taggedLoc = coords.find((c: any) => c.extra?.tags && c.extra.tags.length > 0);
+			const coords = (parsed.customCoordinates || []) as ExportedCoord[];
+			const taggedLoc = coords.find((c) => c.extra?.tags && c.extra.tags.length > 0);
 			const exportedTags = parsed.extra?.tags ? Object.keys(parsed.extra.tags) : [];
 			return {
 				hasTaggedLoc: !!taggedLoc,
@@ -138,7 +156,7 @@ describe("JSON import/export round-trip", () => {
 			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
-			return parsed.customCoordinates.every((c: any) => c.zoom === 0);
+			return (parsed.customCoordinates as ExportedCoord[]).every((c) => c.zoom === 0);
 		});
 		expect(result).toBe(true);
 	});
@@ -163,7 +181,9 @@ describe("JSON import/export round-trip", () => {
 			const res = await fetch(api.mmaBufUrl(path));
 			const json = await res.text();
 			const parsed = JSON.parse(json);
-			const ie2 = parsed.customCoordinates.find((c: any) => Math.abs(c.lat - -33.8) < 0.01);
+			const ie2 = (parsed.customCoordinates as ExportedCoord[]).find(
+				(c) => Math.abs(c.lat - -33.8) < 0.01,
+			);
 			return ie2?.heading;
 		});
 		expect(result).toBeCloseTo(0.001, 3);
@@ -185,8 +205,24 @@ describe("CSV import/export", () => {
 
 	it("CSV export produces valid format", async () => {
 		await addLocs([
-			createLocation({ lat: 40.7, lng: -74.0, heading: 90, pitch: 0, zoom: 1, panoId: "P1", flags: 1 }),
-			createLocation({ lat: 51.5, lng: -0.1, heading: 180, pitch: 5, zoom: 2, panoId: null, flags: 0 }),
+			createLocation({
+				lat: 40.7,
+				lng: -74.0,
+				heading: 90,
+				pitch: 0,
+				zoom: 1,
+				panoId: "P1",
+				flags: 1,
+			}),
+			createLocation({
+				lat: 51.5,
+				lng: -0.1,
+				heading: 180,
+				pitch: 5,
+				zoom: 2,
+				panoId: null,
+				flags: 0,
+			}),
 		]);
 
 		const result = await withApi(async (api) => {
@@ -295,7 +331,7 @@ describe("JSON import edge cases", () => {
 			const preview = await api.cmd.storeImportPreview(path);
 			await api._test.importFile([]);
 			const locs = await api.fetchAllLocations();
-			const imported = locs.find((l: any) => l.extra?.altitude === 500);
+			const imported = locs.find((l) => l.extra?.altitude === 500);
 			return {
 				count: preview.locationCount,
 				hasAltitude: imported?.extra?.altitude === 500,
@@ -343,7 +379,7 @@ describe("JSON import edge cases", () => {
 			return {
 				count: preview.locationCount,
 				tagCount: preview.tags.length,
-				tagNames: preview.tags.map((t: any) => t.name).sort(),
+				tagNames: preview.tags.map((t) => t.name).sort(),
 			};
 		});
 		expect(result.count).toBe(2);

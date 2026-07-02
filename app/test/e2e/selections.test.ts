@@ -10,7 +10,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 describe("Selections - basic types", () => {
 	let mapId: string;
@@ -302,7 +302,7 @@ describe("Selection operations", () => {
 			return {
 				count: sels.length,
 				type: sels[0]?.props?.type,
-				locCount: sels[0]?.count,
+				locCount: sels[0] ? api.getSelectionCounts()[sels[0].key] : undefined,
 			};
 		});
 		expect(result.count).toBe(1);

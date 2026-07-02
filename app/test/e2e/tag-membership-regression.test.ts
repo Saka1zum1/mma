@@ -10,7 +10,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Bulk add across multiple tags — bitmap/count agreement
@@ -35,8 +35,7 @@ describe("Bulk add 50 locations split across 3 tags", () => {
 
 		const locs: Location[] = [];
 		for (let i = 0; i < 50; i++) {
-			const tags =
-				i < 20 ? [tagAId] : i < 35 ? [tagBId] : [tagCId];
+			const tags = i < 20 ? [tagAId] : i < 35 ? [tagBId] : [tagCId];
 			locs.push(createLocation({ lat: i * 0.01, lng: i * 0.01, tags }));
 		}
 		await addLocs(locs);
@@ -315,7 +314,6 @@ describe("Multiple tags on same location", () => {
 	let tag2Id: number;
 	let tag3Id: number;
 	let sharedIds: number[];
-	let tag1OnlyIds: number[];
 
 	before(async () => {
 		await waitForReady();
@@ -338,7 +336,7 @@ describe("Multiple tags on same location", () => {
 		for (let i = 8; i < 15; i++) {
 			exclusive.push(createLocation({ lat: i * 0.01, lng: i * 0.01, tags: [tag1Id] }));
 		}
-		tag1OnlyIds = await addLocs(exclusive);
+		await addLocs(exclusive);
 	});
 
 	after(async () => {
@@ -399,7 +397,7 @@ describe("Multiple tags on same location", () => {
 	});
 
 	it("counts agree with selections after cross-tag mutation", async () => {
-		const counts = await withApi((api) => api.getTagCounts()) as any;
+		const counts = (await withApi((api) => api.getTagCounts())) as any;
 		expect(counts[String(tag1Id)]).toBe(15);
 		expect(counts[String(tag2Id)] ?? 0).toBe(0);
 		expect(counts[String(tag3Id)]).toBe(8);

@@ -1,4 +1,4 @@
-/* eslint-disable no-console, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
 	waitForReady,
 	createAndOpenMap,
@@ -7,7 +7,7 @@ import {
 	flushAndWait,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -49,15 +49,17 @@ function seedLocs(n: number, tagId?: number, panoFrac = 0, flagsFrac = 0): Promi
 		async (api, count: number, tid: number, pf: number, ff: number) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < count; i++) {
-				locs.push(api.createLocation({
-					lat: Math.random() * 170 - 85,
-					lng: Math.random() * 360 - 180,
-					heading: Math.random() * 360,
-					zoom: 1,
-					panoId: pf > 0 && i < Math.floor(count * pf) ? "pano_" + i : null,
-					flags: ff > 0 && i < Math.floor(count * ff) ? 1 : 0,
-					tags: tid > 0 && i < Math.floor(count * 0.5) ? [tid] : [],
-				}));
+				locs.push(
+					api.createLocation({
+						lat: Math.random() * 170 - 85,
+						lng: Math.random() * 360 - 180,
+						heading: Math.random() * 360,
+						zoom: 1,
+						panoId: pf > 0 && i < Math.floor(count * pf) ? "pano_" + i : null,
+						flags: ff > 0 && i < Math.floor(count * ff) ? 1 : 0,
+						tags: tid > 0 && i < Math.floor(count * 0.5) ? [tid] : [],
+					}),
+				);
 			}
 			const json = JSON.stringify({ customCoordinates: locs });
 			await api._test.importPaste(json);
@@ -104,9 +106,7 @@ function timeOp(fnName: string, ...args: any[]): Promise<number> {
 
 function addOneLoc(): Promise<void> {
 	return withApi(async (api) => {
-		await api.addLocations([
-			api.createLocation({ lat: 0, lng: 0, zoom: 1 }),
-		]);
+		await api.addLocations([api.createLocation({ lat: 0, lng: 0, zoom: 1 })]);
 	});
 }
 
@@ -114,12 +114,14 @@ function timeAddLocs(n: number): Promise<number> {
 	return withApi(async (api, count: number) => {
 		const locs: Location[] = [];
 		for (let i = 0; i < count; i++) {
-			locs.push(api.createLocation({
-				lat: Math.random() * 170 - 85,
-				lng: Math.random() * 360 - 180,
-				heading: Math.random() * 360,
-				zoom: 1,
-			}));
+			locs.push(
+				api.createLocation({
+					lat: Math.random() * 170 - 85,
+					lng: Math.random() * 360 - 180,
+					heading: Math.random() * 360,
+					zoom: 1,
+				}),
+			);
 		}
 		const t0 = performance.now();
 		await api.addLocations(locs);

@@ -1,11 +1,7 @@
-import {
-	waitForReady,
-	closeMap,
-	deleteMap,
-	withApi,
-} from "./helpers";
+import { waitForReady, closeMap, deleteMap, withApi } from "./helpers";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
+import type { ImportPreviewEntry, MapMeta, Tag } from "@/bindings.gen";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -27,7 +23,7 @@ describe("Rust bulk import — preview", () => {
 
 		expect(entries.length).toBe(6);
 
-		const names = entries.map((e: any) => e.name).sort();
+		const names = entries.map((e: ImportPreviewEntry) => e.name).sort();
 		expect(names).toContain("A Gun World");
 		expect(names).toContain("Denmark Antennae");
 		expect(names).toContain("Karelia notes");
@@ -40,13 +36,13 @@ describe("Rust bulk import — preview", () => {
 			return await api.cmd.bulkImportPreview(p);
 		}, FIXTURE_ZIP);
 
-		const denmark = entries.find((e: any) => e.name === "Denmark Antennae")!;
+		const denmark = entries.find((e: ImportPreviewEntry) => e.name === "Denmark Antennae")!;
 		expect(denmark.locationCount).toBe(97);
 
-		const gun = entries.find((e: any) => e.name === "A Gun World")!;
+		const gun = entries.find((e: ImportPreviewEntry) => e.name === "A Gun World")!;
 		expect(gun.locationCount).toBe(88);
 
-		const karelia = entries.find((e: any) => e.name === "Karelia notes")!;
+		const karelia = entries.find((e: ImportPreviewEntry) => e.name === "Karelia notes")!;
 		expect(karelia.locationCount).toBe(2);
 	});
 
@@ -55,7 +51,7 @@ describe("Rust bulk import — preview", () => {
 			return await api.cmd.bulkImportPreview(p);
 		}, FIXTURE_ZIP);
 
-		const denmark = entries.find((e: any) => e.name === "Denmark Antennae")!;
+		const denmark = entries.find((e: ImportPreviewEntry) => e.name === "Denmark Antennae")!;
 		expect(denmark.tagCount).toBe(3);
 	});
 });
@@ -85,7 +81,7 @@ describe("Rust bulk import — confirm and verify", () => {
 			return await api.cmd.storeListMaps();
 		});
 
-		const names = maps.map((m: any) => m.name);
+		const names = maps.map((m: MapMeta) => m.name);
 		expect(names).toContain("Denmark Antennae");
 		expect(names).toContain("A Gun World");
 		expect(names).toContain("Karelia notes");
@@ -96,17 +92,17 @@ describe("Rust bulk import — confirm and verify", () => {
 			return await api.cmd.storeListMaps();
 		});
 
-		const denmark = maps.find((m: any) => m.name === "Denmark Antennae")!;
+		const denmark = maps.find((m: MapMeta) => m.name === "Denmark Antennae")!;
 		expect(denmark.locationCount).toBe(97);
 
-		const gun = maps.find((m: any) => m.name === "A Gun World")!;
+		const gun = maps.find((m: MapMeta) => m.name === "A Gun World")!;
 		expect(gun.locationCount).toBe(88);
 	});
 
 	it("imported maps can be opened and locations loaded", async () => {
 		const result = await withApi(async (api) => {
 			const maps = await api.cmd.storeListMaps();
-			const denmark = maps.find((m: any) => m.name === "Denmark Antennae")!;
+			const denmark = maps.find((m: MapMeta) => m.name === "Denmark Antennae")!;
 			await api._test.openMap(denmark.id);
 			const locCount = await api.cmd.storeLocationCount();
 			const map = api.getCurrentMap()!;
@@ -127,15 +123,15 @@ describe("Rust bulk import — confirm and verify", () => {
 	it("imported tags have correct colors", async () => {
 		const result = await withApi(async (api) => {
 			const map = api.getCurrentMap()!;
-			const tags = Object.values(map.meta.tags) as any[];
-			return tags.map((t: any) => ({ name: t.name, color: t.color }));
+			const tags = Object.values(map.meta.tags);
+			return tags.map((t: Tag) => ({ name: t.name, color: t.color }));
 		});
 
-		const longTag = result.find((t: any) => t.name === "Long")!;
+		const longTag = result.find((t) => t.name === "Long")!;
 		expect(longTag).toBeDefined();
 		expect(longTag.color).toBe("#ff0303");
 
-		const whiteTag = result.find((t: any) => t.name === "Short Antenna")!;
+		const whiteTag = result.find((t) => t.name === "Short Antenna")!;
 		expect(whiteTag.color).toBe("#ffffff");
 	});
 
@@ -144,8 +140,8 @@ describe("Rust bulk import — confirm and verify", () => {
 			const map = api.getCurrentMap()!;
 			const tagIds = new Set(Object.keys(map.meta.tags));
 			const locs = await api.fetchAllLocations();
-			const tagged = locs.filter((l: any) => l.tags.length > 0);
-			const orphaned = tagged.filter((l: any) => l.tags.some((id: any) => !tagIds.has(String(id))));
+			const tagged = locs.filter((l) => l.tags.length > 0);
+			const orphaned = tagged.filter((l) => l.tags.some((id) => !tagIds.has(String(id))));
 			return { taggedCount: tagged.length, orphanedCount: orphaned.length };
 		});
 
@@ -170,7 +166,7 @@ describe("Rust bulk import — confirm and verify", () => {
 			return {
 				beforeCount,
 				afterCount,
-				latMatch: afterLocs.some((l: any) => Math.abs(l.lat - beforeFirst.lat) < 0.0001),
+				latMatch: afterLocs.some((l) => Math.abs(l.lat - beforeFirst.lat) < 0.0001),
 			};
 		});
 
@@ -242,10 +238,13 @@ describe("Benchmarks — selection at scale", () => {
 					heading: i % 10 === 0 ? 0 : Math.random() * 360,
 					pitch: 0,
 					zoom: 1,
-					panoId: null, id: 0,
+					panoId: null,
+					id: 0,
 					flags: i % 5 === 0 ? 1 : 0,
 					tags: i % 3 === 0 ? [tagId] : [],
 					createdAt: Math.floor(Date.now() / 1000),
+					extra: null,
+					modifiedAt: null,
 				});
 			}
 			await api.addLocations(locs);
@@ -361,10 +360,13 @@ describe("Benchmarks — undo at scale", () => {
 					heading: 0,
 					pitch: 0,
 					zoom: 1,
-					panoId: null, id: 0,
+					panoId: null,
+					id: 0,
 					flags: 0,
 					tags: [],
 					createdAt: Math.floor(Date.now() / 1000),
+					extra: null,
+					modifiedAt: null,
 				});
 			}
 			await api.addLocations(locs);

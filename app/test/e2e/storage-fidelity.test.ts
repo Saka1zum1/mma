@@ -13,7 +13,7 @@ import {
 	createLocation,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // =============================================================================
 // 1. Save failure recovery -- dirty state must survive a failed write
@@ -39,14 +39,23 @@ describe.skip("Save failure recovery", () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [
 				api.createLocation({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
-				api.createLocation({ lat: 30, lng: 40, heading: 90, pitch: 0, zoom: 1, panoId: "pano_sf2", flags: 1 }),
+				api.createLocation({
+					lat: 30,
+					lng: 40,
+					heading: 90,
+					pitch: 0,
+					zoom: 1,
+					panoId: "pano_sf2",
+					flags: 1,
+				}),
 			];
 			await api.addLocations(locs);
 			const sf1Id = locs[0].id;
 			const sf2Id = locs[1].id;
 
 			// Intercept save_blob_chunks to simulate Rust write failure
-			api.interceptInvoke("save_blob_chunks", "failOnce");
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub hook, not yet implemented
+			(api as any).interceptInvoke("save_blob_chunks", "failOnce");
 
 			// This save should fail
 			let saveFailed = false;
@@ -80,17 +89,24 @@ describe.skip("Save failure recovery", () => {
 
 	it("data added AFTER a failed save also persists", async () => {
 		const result = await withApi(async (api) => {
-			const preLocs: Location[] = [api.createLocation({ lat: 1, lng: 1, heading: 0, pitch: 0, zoom: 1 })];
+			const preLocs: Location[] = [
+				api.createLocation({ lat: 1, lng: 1, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(preLocs);
 			const preId = preLocs[0].id;
 
-			api.interceptInvoke("save_blob_chunks", "failOnce");
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub hook, not yet implemented
+			(api as any).interceptInvoke("save_blob_chunks", "failOnce");
 			try {
 				await api.flushSave();
-			} catch { /* expected failure */ }
+			} catch {
+				/* expected failure */
+			}
 
 			// Add more data AFTER the failure
-			const postLocs: Location[] = [api.createLocation({ lat: 2, lng: 2, heading: 0, pitch: 0, zoom: 1 })];
+			const postLocs: Location[] = [
+				api.createLocation({ lat: 2, lng: 2, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(postLocs);
 			const postId = postLocs[0].id;
 
@@ -110,7 +126,9 @@ describe.skip("Save failure recovery", () => {
 
 	it("delete_chunks failure preserves data", async () => {
 		const result = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 50, lng: 50, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 50, lng: 50, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			const delId = locs[0].id;
 			await api.flushSave();
@@ -119,10 +137,13 @@ describe.skip("Save failure recovery", () => {
 			await api.removeLocations(new Set([delId]));
 
 			// Fail the delete
-			api.interceptInvoke("delete_chunks", "failOnce");
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub hook, not yet implemented
+			(api as any).interceptInvoke("delete_chunks", "failOnce");
 			try {
 				await api.flushSave();
-			} catch { /* expected failure */ }
+			} catch {
+				/* expected failure */
+			}
 
 			// Retry
 			await api.flushSave();
@@ -159,7 +180,9 @@ describe("Save ordering under concurrent mutations", () => {
 
 	it("add during save is captured by next save cycle", async () => {
 		const result = await withApi(async (api) => {
-			const locs1: Location[] = [api.createLocation({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 })];
+			const locs1: Location[] = [
+				api.createLocation({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs1);
 			const id1 = locs1[0].id;
 
@@ -167,7 +190,9 @@ describe("Save ordering under concurrent mutations", () => {
 			await api.flushSave();
 
 			// Add while no save is in flight, then save again
-			const locs2: Location[] = [api.createLocation({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
+			const locs2: Location[] = [
+				api.createLocation({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs2);
 			const id2 = locs2[0].id;
 
@@ -195,7 +220,7 @@ describe("Save ordering under concurrent mutations", () => {
 			await api.updateLocations([{ id: l.id, patch: { heading: 45 } }]);
 			await api.flushSave();
 			const l2 = await api.fetchLocation(l.id);
-			await api.updateLocations([{ id: l2.id, patch: { heading: 180 } }]);
+			await api.updateLocations([{ id: l2!.id, patch: { heading: 180 } }]);
 			await api.flushSave();
 			return { ok: true };
 		}, loc);
@@ -210,7 +235,9 @@ describe("Save ordering under concurrent mutations", () => {
 	it("remove then add to same geohash region persists correctly", async () => {
 		const result = await withApi(async (api) => {
 			// Add and save a location
-			const geoLocs1: Location[] = [api.createLocation({ lat: 45.0, lng: 90.0, heading: 0, pitch: 0, zoom: 1 })];
+			const geoLocs1: Location[] = [
+				api.createLocation({ lat: 45.0, lng: 90.0, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(geoLocs1);
 			const geoId1 = geoLocs1[0].id;
 			await api.flushSave();
@@ -323,7 +350,15 @@ describe("Field fidelity across multiple save cycles", () => {
 	it("null panoId and zero flags survive save/load", async () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [
-				api.createLocation({ lat: 0, lng: 0, heading: 0, pitch: 0, zoom: 0, panoId: null, flags: 0 }),
+				api.createLocation({
+					lat: 0,
+					lng: 0,
+					heading: 0,
+					pitch: 0,
+					zoom: 0,
+					panoId: null,
+					flags: 0,
+				}),
 			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
@@ -576,7 +611,9 @@ describe("Dirty tracking accuracy", () => {
 
 	it("mutation marks dirty, close/reopen preserves the pending state", async () => {
 		const result = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -643,7 +680,9 @@ describe("Worker lifecycle across map close/open", () => {
 
 	it("save works correctly after close and reopen", async () => {
 		const result1 = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -655,7 +694,9 @@ describe("Worker lifecycle across map close/open", () => {
 
 		// Add more after reopen (new worker instance)
 		const result2 = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -676,7 +717,9 @@ describe("Worker lifecycle across map close/open", () => {
 
 	it("rapid open/close/open does not lose pending saves", async () => {
 		const result1 = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 30, lng: 30, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 30, lng: 30, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -687,7 +730,9 @@ describe("Worker lifecycle across map close/open", () => {
 		await openMap(mapId);
 		// Immediately add and save again
 		const result2 = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 40, lng: 40, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 40, lng: 40, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -716,7 +761,9 @@ describe("Multi-map isolation", () => {
 		await waitForReady();
 		mapIdA = await createAndOpenMap("E2E IsolationA");
 		await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 10, lng: 10, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -725,7 +772,9 @@ describe("Multi-map isolation", () => {
 
 		mapIdB = await createAndOpenMap("E2E IsolationB");
 		await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 20, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});
@@ -762,7 +811,9 @@ describe("Multi-map isolation", () => {
 	it("mutating map A does not affect map B", async () => {
 		await openMap(mapIdA);
 		const result = await withApi(async (api) => {
-			const locs: Location[] = [api.createLocation({ lat: 15, lng: 15, heading: 0, pitch: 0, zoom: 1 })];
+			const locs: Location[] = [
+				api.createLocation({ lat: 15, lng: 15, heading: 0, pitch: 0, zoom: 1 }),
+			];
 			await api.addLocations(locs);
 			return { id: locs[0].id };
 		});

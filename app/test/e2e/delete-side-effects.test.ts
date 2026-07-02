@@ -19,7 +19,7 @@ import {
 	openLocation,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Delete updates dirty count
@@ -47,7 +47,6 @@ describe("Delete marks store dirty", () => {
 		await withApi(async (api, id) => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-
 
 		// dirtyCount is 0-or-1 (boolean flag from Rust)
 		const dirty = await withApi(async (api) => api.getDirtyCount());
@@ -83,7 +82,6 @@ describe("Delete updates location count", () => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
 
-
 		const after = await getLocCount();
 		expect(after).toBe(before - 1);
 	});
@@ -94,7 +92,6 @@ describe("Delete updates location count", () => {
 		await withApi(async (api, ids) => {
 			await api.removeLocations(new Set(ids));
 		}, toDelete);
-
 
 		const after = await getLocCount();
 		expect(after).toBe(before - 3);
@@ -136,7 +133,6 @@ describe("Delete clears active location", () => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
 
-
 		const activeAfter = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeAfter).toBeNull();
 	});
@@ -150,7 +146,6 @@ describe("Delete clears active location", () => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[1]);
 
-
 		const areaAfter = await withApi(async (api) => api.getWorkArea());
 		expect(areaAfter).toBe("overview");
 	});
@@ -161,7 +156,6 @@ describe("Delete clears active location", () => {
 		await withApi(async (api, id) => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[3]);
-
 
 		const activeAfter = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeAfter).toBe(locIds[2]);
@@ -211,7 +205,6 @@ describe("Delete syncs with selections", () => {
 			await api.removeLocations(new Set([id]));
 		}, taggedIds[0]);
 
-
 		const after = await refreshSelections();
 		expect(after.length).toBe(4);
 	});
@@ -223,7 +216,6 @@ describe("Delete syncs with selections", () => {
 		await withApi(async (api, id) => {
 			await api.removeLocations(new Set([id]));
 		}, untaggedIds[0]);
-
 
 		const after = await refreshSelections();
 		expect(after.length).toBe(before.length - 1);
@@ -268,7 +260,6 @@ describe("Delete updates tag counts", () => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
 
-
 		const count = await withApi(async (api, tid) => {
 			const counts = api.getTagCounts();
 			return (counts as any)[String(tid)] ?? 0;
@@ -281,7 +272,6 @@ describe("Delete updates tag counts", () => {
 		await withApi(async (api, ids) => {
 			await api.removeLocations(new Set(ids));
 		}, toDelete);
-
 
 		const count = await withApi(async (api, tid) => {
 			const counts = api.getTagCounts();

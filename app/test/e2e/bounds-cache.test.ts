@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Location } from "@/types";
+ 
+import type { Location } from "@/bindings.gen";
 import {
 	waitForReady,
 	createAndOpenMap,
@@ -138,7 +138,7 @@ describe("Bounds cache - update edge invalidation", () => {
 
 		await withApi(async (api, edgeId) => {
 			const loc = await api.fetchLocation(edgeId);
-			await api.updateLocations([{ id: loc.id, patch: { lat: 30 } }]);
+			await api.updateLocations([{ id: loc!.id, patch: { lat: 30 } }]);
 		}, ids[1]);
 
 		bounds = await withApi(async (api) => api.cmd.storeBounds(false));
@@ -189,10 +189,7 @@ describe("Bounds cache - antimeridian", () => {
 			await api.removeLocations(new Set(all.map((l) => l.id)));
 		});
 
-		await addLocs([
-			createLocation({ lat: 40, lng: -9 }),
-			createLocation({ lat: 35, lng: 140 }),
-		]);
+		await addLocs([createLocation({ lat: 40, lng: -9 }), createLocation({ lat: 35, lng: 140 })]);
 
 		const bounds = await withApi(async (api) => api.cmd.storeBounds(false));
 		expect(bounds).not.toBeNull();

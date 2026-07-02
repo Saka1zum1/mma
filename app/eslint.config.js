@@ -51,6 +51,16 @@ export default defineConfig([
 		rules: { "local/no-duplicate-command-icons": "error" },
 	},
 	{
+		files: [
+			"test/e2e/benchmarks.test.ts",
+			"test/e2e/bulk-import-rust.test.ts",
+			"test/e2e/perf-import.test.ts",
+			"test/e2e/perf-sel.test.ts",
+			"test/e2e/speed-matrix.test.ts",
+		],
+		rules: { "no-console": "off" },
+	},
+	{
 		files: ["test/e2e/**/*.ts"],
 		ignores: ["test/e2e/helpers.ts"],
 		rules: {

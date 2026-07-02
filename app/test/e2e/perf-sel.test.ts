@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 // Probe: selection sync cost at 1M. Imports the cached perf fixture, then times
 // storeSyncSelections for representative selections. Not part of the normal suite.
 import fs from "fs";
@@ -12,10 +11,14 @@ describe("Perf - selection sync 1M", () => {
 	let mapId: string;
 	before(async function () {
 		this.timeout(300_000);
-		if (!fs.existsSync(FIXTURE)) throw new Error("run perf-import first to generate the 1M fixture");
+		if (!fs.existsSync(FIXTURE))
+			throw new Error("run perf-import first to generate the 1M fixture");
 		await waitForReady();
 	});
-	afterEach(async () => { await closeMap(); if (mapId) await deleteMap(mapId); });
+	afterEach(async () => {
+		await closeMap();
+		if (mapId) await deleteMap(mapId);
+	});
 
 	it("sync selections", async function () {
 		this.timeout(300_000);
@@ -47,7 +50,9 @@ describe("Perf - selection sync 1M", () => {
 					await api.addLocations([loc]);
 					const editWhileSelected = performance.now() - tEdit;
 					done({ everything, panoIds, emptyTag, editWhileSelected });
-				} catch (e) { done({ err: (e as Error).message }); }
+				} catch (e) {
+					done({ err: (e as Error).message });
+				}
 			})();
 		}, FIXTURE);
 		console.log(`  [PERF-SEL] ${JSON.stringify(r)}`);

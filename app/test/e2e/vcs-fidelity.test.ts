@@ -23,7 +23,7 @@ import {
 	flushAndWait,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 /** Stable, comparable projection of a location's persisted data. */
 function snap(l: Location) {
@@ -76,10 +76,7 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 
 		// Extra fields: a string and a number, to prove JSON typing survives.
 		const loc2 = await getLoc(ids[2]);
-		await withApi(
-			async (api, l) => api.patchLocationExtra(l, { note: "hello", score: 42 }),
-			loc2,
-		);
+		await withApi(async (api, l) => api.patchLocationExtra(l, { note: "hello", score: 42 }), loc2);
 
 		await flushAndWait();
 		await withApi(async (api) => api.commitMap("v1"));
@@ -106,7 +103,8 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 		// delete loc3, add a brand-new loc.
 		const loc0 = await getLoc(ids[0]);
 		await withApi(
-			async (api, l) => api.updateLocations([{ id: l.id, patch: { heading: 270, lat: 1.111, panoId: "PANO_A2" } }]),
+			async (api, l) =>
+				api.updateLocations([{ id: l.id, patch: { heading: 270, lat: 1.111, panoId: "PANO_A2" } }]),
 			loc0,
 		);
 		await withApi(async (api, t, c) => api.addTagToLocations(t, [c]), tagId, ids[2]);
@@ -188,7 +186,10 @@ describe("VCS commit-diff badge accuracy", () => {
 
 	it("a pure modification counts as ~1, not an add/remove", async () => {
 		const loc0 = await getLoc(ids[0]);
-		await withApi(async (api, l) => api.updateLocations([{ id: l.id, patch: { heading: 123 } }]), loc0);
+		await withApi(
+			async (api, l) => api.updateLocations([{ id: l.id, patch: { heading: 123 } }]),
+			loc0,
+		);
 		const [added, removed, modified] = await commitDiff();
 		expect([added, removed]).toEqual([0, 0]);
 		expect(modified).toBe(1);

@@ -25,7 +25,11 @@ export function installSvMock(): void {
 			event?: { trigger: (target: unknown, name: string) => void };
 		};
 	}
-	const w = window as unknown as { fetch: typeof fetch; google?: GoogleLike; __mmaSvMocked?: boolean };
+	const w = window as unknown as {
+		fetch: typeof fetch;
+		google?: GoogleLike;
+		__mmaSvMocked?: boolean;
+	};
 	if (w.__mmaSvMocked) return;
 	w.__mmaSvMocked = true;
 
@@ -37,9 +41,27 @@ export function installSvMock(): void {
 		dates: string[];
 	}
 	const FIX: Record<string, Fix> = {
-		"-zrYsLR4Fh-cfJG_EMZ1-A": { lat: 52.10947502806108, lng: 34.90131410856584, cc: "RU", alt: 142, dates: ["2012-08", "2015-06", "2021-09"] },
-		"CAoSF0NJSE0wb2dLRUlDQWdJQ3FpZG1xM3dF": { lat: 64.44241333767505, lng: 46.193924009405855, cc: "RU", alt: 90, dates: ["2019-07"] },
-		"5upMz1_zTGPdkIXG6_QM3g": { lat: 55.510656, lng: 157.636627, cc: "RU", alt: 30, dates: ["2018-05"] },
+		"-zrYsLR4Fh-cfJG_EMZ1-A": {
+			lat: 52.10947502806108,
+			lng: 34.90131410856584,
+			cc: "RU",
+			alt: 142,
+			dates: ["2012-08", "2015-06", "2021-09"],
+		},
+		CAoSF0NJSE0wb2dLRUlDQWdJQ3FpZG1xM3dF: {
+			lat: 64.44241333767505,
+			lng: 46.193924009405855,
+			cc: "RU",
+			alt: 90,
+			dates: ["2019-07"],
+		},
+		"5upMz1_zTGPdkIXG6_QM3g": {
+			lat: 55.510656,
+			lng: 157.636627,
+			cc: "RU",
+			alt: 30,
+			dates: ["2018-05"],
+		},
 	};
 	const isDead = (p: string) => !p || /DEAD|DOES_NOT_EXIST/i.test(p);
 	const fixFor = (pano: string, lat = 0, lng = 0): Fix | null => {
@@ -78,8 +100,13 @@ export function installSvMock(): void {
 		return o;
 	};
 	const fVar = (field: number, v: number): number[] => [...varint(field << 3), ...varint(v)];
-	const fMsg = (field: number, payload: number[]): number[] => [...varint((field << 3) | 2), ...varint(payload.length), ...payload];
-	const fStr = (field: number, s: string): number[] => fMsg(field, [...new TextEncoder().encode(s)]);
+	const fMsg = (field: number, payload: number[]): number[] => [
+		...varint((field << 3) | 2),
+		...varint(payload.length),
+		...payload,
+	];
+	const fStr = (field: number, s: string): number[] =>
+		fMsg(field, [...new TextEncoder().encode(s)]);
 	const fDbl = (field: number, v: number): number[] => {
 		const b = new Uint8Array(8);
 		new DataView(b.buffer).setFloat64(0, v, true);
@@ -139,7 +166,10 @@ export function installSvMock(): void {
 		}
 	};
 	const requestKeys = (body: unknown): [number, string][] => {
-		const b = body instanceof Uint8Array ? body : new Uint8Array(body instanceof ArrayBuffer ? body : 0);
+		const b =
+			body instanceof Uint8Array
+				? body
+				: new Uint8Array(body instanceof ArrayBuffer ? body : new ArrayBuffer(0));
 		const keys: [number, string][] = [];
 		const p = { i: 0 };
 		while (p.i < b.length) {
@@ -175,7 +205,8 @@ export function installSvMock(): void {
 	};
 
 	w.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input?.url ?? "");
+		const url =
+			typeof input === "string" ? input : input instanceof URL ? input.href : (input?.url ?? "");
 		if (url.includes("GetMetadata")) {
 			const results = requestKeys(init?.body).flatMap((k) => fMsg(2, metaResult(k)));
 			const envelope = new Uint8Array([...fMsg(1, fVar(1, 0)), ...results]);
@@ -194,14 +225,27 @@ export function installSvMock(): void {
 		const last = f.dates.length - 1;
 		return {
 			copyright: "",
-			location: { latLng: { lat: () => f.lat, lng: () => f.lng }, pano, shortDescription: "", description: "" },
+			location: {
+				latLng: { lat: () => f.lat, lng: () => f.lng },
+				pano,
+				shortDescription: "",
+				description: "",
+			},
 			imageDate: f.dates[last],
 			time: f.dates.map((d, i) => ({ pano: i === last ? pano : `${pano}~${i}`, AA: ymDate(d) })),
 			links: [],
-			tiles: { worldSize: { width: 16384, height: 8192 }, tileSize: { width: 512, height: 512 }, centerHeading: 0, originHeading: 0 },
+			tiles: {
+				worldSize: { width: 16384, height: 8192 },
+				tileSize: { width: 512, height: 512 },
+				centerHeading: 0,
+				originHeading: 0,
+			},
 		};
 	};
-	type PanoRequest = { pano?: string; location?: { lat: number | (() => number); lng: number | (() => number) } };
+	type PanoRequest = {
+		pano?: string;
+		location?: { lat: number | (() => number); lng: number | (() => number) };
+	};
 	const mockGetPanorama = async (req?: PanoRequest): Promise<{ data: Record<string, unknown> }> => {
 		let pano: string | null = null;
 		let rlat = 0;

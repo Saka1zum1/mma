@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 // Perf harness: drives the REAL import flow (parse -> store_import_file -> autocommit
 // -> render) for a 1M-location map on the actual WebView2 app, so the full trace log
 // (mma.log) reflects production timings. Not part of the normal suite — run via
@@ -49,40 +48,41 @@ describe("Perf - import 1M", () => {
 		this.timeout(300_000);
 		mapId = await createAndOpenMap(`Perf Import ${N} #${Date.now()}`);
 
-		const result = await browser.executeAsync(
-			(fixture: string, done: (r: unknown) => void) => {
-				const api = window.MMA;
-				(async () => {
-					try {
-						const t0 = performance.now();
-						await api.beginImportFromPath(fixture);
-						const tPreview = performance.now();
-						await api.confirmImport([], undefined);
-						const tConfirm = performance.now();
-						// Measure the render path directly (post-commit = contention-free):
-						// storeFillRenderFile (build+write) then the mma-buf fetch (transfer).
-						const rf0 = performance.now();
-						const fp = await api.cmd.storeFillRenderFile({
-							west: -180, south: -90, east: 180, north: 90, markerStyle: "pin",
-						});
-						const rf1 = performance.now();
-						const resp = await fetch(api.mmaBufUrl(fp));
-						const buf = await resp.arrayBuffer();
-						const rf2 = performance.now();
-						done({
-							preview: tPreview - t0,
-							confirm: tConfirm - tPreview,
-							renderFill: rf1 - rf0,
-							renderFetch: rf2 - rf1,
-							renderBytes: buf.byteLength,
-						});
-					} catch (e) {
-						done({ err: (e as Error).message });
-					}
-				})();
-			},
-			FIXTURE,
-		);
+		const result = await browser.executeAsync((fixture: string, done: (r: unknown) => void) => {
+			const api = window.MMA;
+			(async () => {
+				try {
+					const t0 = performance.now();
+					await api.beginImportFromPath(fixture);
+					const tPreview = performance.now();
+					await api.confirmImport([], undefined);
+					const tConfirm = performance.now();
+					// Measure the render path directly (post-commit = contention-free):
+					// storeFillRenderFile (build+write) then the mma-buf fetch (transfer).
+					const rf0 = performance.now();
+					const fp = await api.cmd.storeFillRenderFile({
+						west: -180,
+						south: -90,
+						east: 180,
+						north: 90,
+						markerStyle: "pin",
+					});
+					const rf1 = performance.now();
+					const resp = await fetch(api.mmaBufUrl(fp));
+					const buf = await resp.arrayBuffer();
+					const rf2 = performance.now();
+					done({
+						preview: tPreview - t0,
+						confirm: tConfirm - tPreview,
+						renderFill: rf1 - rf0,
+						renderFetch: rf2 - rf1,
+						renderBytes: buf.byteLength,
+					});
+				} catch (e) {
+					done({ err: (e as Error).message });
+				}
+			})();
+		}, FIXTURE);
 
 		// Let the (fire-and-forget) render effect finish and flush its trace to mma.log.
 		// eslint-disable-next-line no-restricted-syntax -- no observable post-condition; waits on a log-trace side effect

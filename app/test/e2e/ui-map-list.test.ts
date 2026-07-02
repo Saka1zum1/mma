@@ -1,4 +1,5 @@
 import { waitForReady, closeMap, deleteMap, withApi, clearInput } from "./helpers";
+import type { MapMeta } from "@/bindings.gen";
 
 describe("UI: Map list", () => {
 	const createdIds: string[] = [];
@@ -42,7 +43,7 @@ describe("UI: Map list", () => {
 
 		const id = await withApi(async (api) => {
 			const maps = await api.cmd.storeListMaps();
-			const m = maps.find((m: any) => m.name === "UI Test Map");
+			const m = maps.find((m: MapMeta) => m.name === "UI Test Map");
 			return m?.id ?? "NOT_FOUND";
 		});
 		expect(id).not.toBe("NOT_FOUND");
@@ -88,7 +89,7 @@ describe("UI: Map list - rename and delete", () => {
 	});
 
 	it("rename button opens rename dialog", async () => {
-		const entry = await browser.$('.map-list__entry*=Rename Me');
+		const entry = await browser.$(".map-list__entry*=Rename Me");
 		await entry.waitForExist({ timeout: 3000 });
 		// Action buttons are opacity:0 until the row is hovered.
 		await entry.moveTo();
@@ -112,7 +113,7 @@ describe("UI: Map list - rename and delete", () => {
 	});
 
 	it("delete button removes map from list", async () => {
-		const entry = await browser.$('.map-list__entry*=Renamed Via UI');
+		const entry = await browser.$(".map-list__entry*=Renamed Via UI");
 		await entry.waitForExist({ timeout: 3000 });
 		await entry.moveTo();
 		await entry.$('[aria-label="Delete map"]').click();
@@ -123,7 +124,11 @@ describe("UI: Map list - rename and delete", () => {
 		await confirmBtn.click();
 
 		const link = await browser.$(".map-link=Renamed Via UI");
-		await link.waitForExist({ reverse: true, timeout: 5000, timeoutMsg: "Deleted map link never disappeared" });
+		await link.waitForExist({
+			reverse: true,
+			timeout: 5000,
+			timeoutMsg: "Deleted map link never disappeared",
+		});
 		expect(await link.isExisting()).toBe(false);
 	});
 });

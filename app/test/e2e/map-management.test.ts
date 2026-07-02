@@ -10,6 +10,7 @@ import {
 	createLocation,
 	withApi,
 } from "./helpers";
+import type { MapMeta } from "@/bindings.gen";
 
 describe("Map management", () => {
 	const createdMapIds: string[] = [];
@@ -55,7 +56,7 @@ describe("Map management", () => {
 			return await api.cmd.storeListMaps();
 		});
 		// At least our 5 maps exist (might be more from other test suites running)
-		const ourMaps = maps.filter((m: any) => m.name.startsWith("Test Map"));
+		const ourMaps = maps.filter((m: MapMeta) => m.name.startsWith("Test Map"));
 		expect(ourMaps.length).toBeGreaterThanOrEqual(4);
 	});
 

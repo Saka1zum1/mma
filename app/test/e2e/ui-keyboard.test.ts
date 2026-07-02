@@ -82,7 +82,9 @@ describe("UI: Review keyboard navigation", () => {
 		await withApi(async (api) => {
 			try {
 				api.cancelReview();
-			} catch {}
+			} catch {
+				// best-effort cleanup
+			}
 		});
 		await closeMap();
 		await deleteMap(mapId);

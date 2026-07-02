@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 /**
  * Multi-map state isolation: verify that selections, undo/redo, dirty state,
  * settings, and tag operations in one map never bleed into another.
@@ -17,7 +17,7 @@ import {
 	openMap,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Selection state does not leak between maps
@@ -207,11 +207,13 @@ describe("Per-map settings isolation", () => {
 		mapAId = await createAndOpenMap("E2E SettingsIso A");
 		await withApi(async (api) => {
 			const current = api.getCurrentMap()!.meta.settings;
-			await api.updateMapMeta({ settings: {
-				...current,
-				exportZoom: true,
-				preferOfficial: true,
-			}});
+			await api.updateMapMeta({
+				settings: {
+					...current,
+					exportZoom: true,
+					preferOfficial: true,
+				},
+			});
 		});
 		await flushAndWait();
 		await closeMap();
@@ -219,12 +221,14 @@ describe("Per-map settings isolation", () => {
 		mapBId = await createAndOpenMap("E2E SettingsIso B");
 		await withApi(async (api) => {
 			const current = api.getCurrentMap()!.meta.settings;
-			await api.updateMapMeta({ settings: {
-				...current,
-				exportZoom: false,
-				preferOfficial: false,
-				onlyOfficial: true,
-			}});
+			await api.updateMapMeta({
+				settings: {
+					...current,
+					exportZoom: false,
+					preferOfficial: false,
+					onlyOfficial: true,
+				},
+			});
 		});
 		await flushAndWait();
 		await closeMap();
@@ -257,11 +261,13 @@ describe("Per-map settings isolation", () => {
 		await openMap(mapAId);
 		await withApi(async (api) => {
 			const current = api.getCurrentMap()!.meta.settings;
-			await api.updateMapMeta({ settings: {
-				...current,
-				exportZoom: false,
-				preferOfficial: false,
-			}});
+			await api.updateMapMeta({
+				settings: {
+					...current,
+					exportZoom: false,
+					preferOfficial: false,
+				},
+			});
 		});
 		await flushAndWait();
 		await closeMap();

@@ -12,7 +12,7 @@ import {
 	openMap,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Tag reordering
@@ -174,15 +174,12 @@ describe("Bulk tag add", () => {
 	});
 
 	it("bulkAddTag adds tag to all selected locations", async () => {
-		const result = await withApi(
-			async (api, tagId) => {
-				await api.selectEverything();
-				await api.addTagToLocations(tagId, [...api.getSelectedLocationIds()]);
-				const counts = api.getTagCounts();
-				return (counts as any)[String(tagId)] ?? 0;
-			},
-			bulkTagId,
-		);
+		const result = await withApi(async (api, tagId) => {
+			await api.selectEverything();
+			await api.addTagToLocations(tagId, [...api.getSelectedLocationIds()]);
+			const counts = api.getTagCounts();
+			return (counts as any)[String(tagId)] ?? 0;
+		}, bulkTagId);
 		expect(result).toBe(20);
 	});
 
@@ -211,13 +208,10 @@ describe("Bulk tag add", () => {
 	it("undo reverses bulk tag add", async () => {
 		// First add a new bulk tag so we can undo it cleanly
 		const newTag = await createTag("UndoBulk");
-		await withApi(
-			async (api, tagId) => {
-				await api.selectEverything();
-				await api.addTagToLocations(tagId, [...api.getSelectedLocationIds()]);
-			},
-			newTag.id,
-		);
+		await withApi(async (api, tagId) => {
+			await api.selectEverything();
+			await api.addTagToLocations(tagId, [...api.getSelectedLocationIds()]);
+		}, newTag.id);
 
 		const beforeCount = await withApi(async (api, tagId) => {
 			const counts = api.getTagCounts();

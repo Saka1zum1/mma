@@ -1,4 +1,4 @@
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 import {
 	waitForReady,
 	createAndOpenMap,

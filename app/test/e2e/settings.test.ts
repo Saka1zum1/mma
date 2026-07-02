@@ -1,11 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	withApi,
-} from "./helpers";
+import { waitForReady, createAndOpenMap, closeMap, deleteMap, withApi } from "./helpers";
 
 describe("Settings persistence", () => {
 	let mapId: string;
@@ -109,7 +103,12 @@ describe("Settings - saved selections", () => {
 			const entry = {
 				id: "test-1",
 				name: "Test Preset",
-				items: [{ props: { type: "Everything" }, color: [255, 0, 0] }],
+				items: [
+					{
+						props: { type: "Everything" as const },
+						color: [255, 0, 0] as [number, number, number],
+					},
+				],
 				createdAt: Date.now(),
 			};
 			api.setSetting("savedSelections", [...current, entry]);

@@ -12,7 +12,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Live selection correctness after add/remove
@@ -79,9 +79,7 @@ describe("Live selection correctness after add/remove", () => {
 		const before = await withApi(async (api) => {
 			await api.selectEverything();
 			const before = api.getSelectedLocationIds().size;
-			await api.addLocations([
-				api.createLocation({ lat: 99, lng: 99 }),
-			]);
+			await api.addLocations([api.createLocation({ lat: 99, lng: 99 })]);
 			return before;
 		});
 		const ids = await refreshSelections();
@@ -366,9 +364,7 @@ describe("Review mode delete with active selections", () => {
 		expect(afterDeleteCount).toBe(result.before - 1);
 
 		await withApi(async (api) => {
-			await api.addLocations([
-				api.createLocation({ lat: 99, lng: 99 }),
-			]);
+			await api.addLocations([api.createLocation({ lat: 99, lng: 99 })]);
 		});
 		const afterAddIds = await refreshSelections();
 		expect(afterAddIds.length).toBe(afterDeleteCount);
@@ -379,7 +375,7 @@ describe("Review mode delete with active selections", () => {
 			await api.selectEverything();
 			const before = api.getSelectedLocationIds().size;
 			const allLocs = await api.fetchAllLocations();
-			const ids = allLocs.slice(0, 3).map(l => l.id);
+			const ids = allLocs.slice(0, 3).map((l) => l.id);
 			await api.beginReview(ids);
 			await api.reviewDelete();
 			const result = await api.syncSelections();
@@ -434,9 +430,7 @@ describe("Selection correctness after undo/redo", () => {
 			await api.selectTag(tagId);
 			const before = api.getSelectedLocationIds().size;
 
-			await api.addLocations([
-				api.createLocation({ lat: 50, lng: 50, tags: [tagId] }),
-			]);
+			await api.addLocations([api.createLocation({ lat: 50, lng: 50, tags: [tagId] })]);
 			return before;
 		}, tagUndoId);
 		const afterAddIds = await refreshSelections();
@@ -652,9 +646,7 @@ describe("Composite selection correctness after mutations", () => {
 				await api.selectUnion();
 				const before = api.getSelectedLocationIds().size;
 
-				await api.addLocations([
-					api.createLocation({ lat: 99, lng: 99, tags: [tagAId] }),
-				]);
+				await api.addLocations([api.createLocation({ lat: 99, lng: 99, tags: [tagAId] })]);
 				return before;
 			},
 			tagCompAId,
@@ -672,9 +664,7 @@ describe("Composite selection correctness after mutations", () => {
 				await api.selectUnion();
 				const before = api.getSelectedLocationIds().size;
 
-				await api.addLocations([
-					api.createLocation({ lat: 98, lng: 98 }),
-				]);
+				await api.addLocations([api.createLocation({ lat: 98, lng: 98 })]);
 				return before;
 			},
 			tagCompAId,
@@ -966,9 +956,7 @@ describe("Slot reuse correctness", () => {
 			// Add 10 new UNtagged locations -- they may reuse the freed slots
 			const reuse: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				reuse.push(
-					api.createLocation({ lat: 50 + i, lng: 50 + i }),
-				);
+				reuse.push(api.createLocation({ lat: 50 + i, lng: 50 + i }));
 			}
 			await api.addLocations(reuse);
 			const afterReuseResult = await api.syncSelections();
@@ -996,9 +984,7 @@ describe("Slot reuse correctness", () => {
 			// Add 10 tagged locations
 			const batch1: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				batch1.push(
-					api.createLocation({ lat: i, lng: i, tags: [tagId] }),
-				);
+				batch1.push(api.createLocation({ lat: i, lng: i, tags: [tagId] }));
 			}
 			await api.addLocations(batch1);
 
@@ -1069,22 +1055,18 @@ describe("Slot reuse correctness", () => {
 
 			await api.selectTag(tagId);
 			await api.selectPanoIds();
-			const tagBefore = api.getSelections().find((s) => s.props.type === "Tag")?.count;
-			const panoBefore = api
-				.getSelections()
-				.find((s) => s.props.type === "PanoIds")?.count;
+			const tagKey = api.getSelections().find((s) => s.props.type === "Tag")?.key;
+			const panoKey = api.getSelections().find((s) => s.props.type === "PanoIds")?.key;
+			const tagBefore = tagKey ? api.getSelectionCounts()[tagKey] : undefined;
+			const panoBefore = panoKey ? api.getSelectionCounts()[panoKey] : undefined;
 
 			// Remove indices 0-4 (tagged AND flagged)
 			const toRemove = locs.slice(0, 5).map((l) => l.id);
 			api.removeLocations(new Set(toRemove));
 			await api.syncSelections();
 
-			const tagAfterRemove = api
-				.getSelections()
-				.find((s) => s.props.type === "Tag")?.count;
-			const panoAfterRemove = api
-				.getSelections()
-				.find((s) => s.props.type === "PanoIds")?.count;
+			const tagAfterRemove = tagKey ? api.getSelectionCounts()[tagKey] : undefined;
+			const panoAfterRemove = panoKey ? api.getSelectionCounts()[panoKey] : undefined;
 
 			// Add new locs: 3 tagged+flagged, 2 untagged+unflagged
 			const refill: Location[] = [];
@@ -1101,12 +1083,8 @@ describe("Slot reuse correctness", () => {
 			await api.addLocations(refill);
 			await api.syncSelections();
 
-			const tagAfterRefill = api
-				.getSelections()
-				.find((s) => s.props.type === "Tag")?.count;
-			const panoAfterRefill = api
-				.getSelections()
-				.find((s) => s.props.type === "PanoIds")?.count;
+			const tagAfterRefill = tagKey ? api.getSelectionCounts()[tagKey] : undefined;
+			const panoAfterRefill = panoKey ? api.getSelectionCounts()[panoKey] : undefined;
 
 			return {
 				tagBefore,

@@ -1,4 +1,4 @@
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 import {
 	waitForReady,
 	createAndOpenMap,
@@ -64,7 +64,9 @@ describe("Data integrity - flags", () => {
 	});
 
 	it("flag=3 (both bits) survives save/load", async () => {
-		const ids = await addLocs([createLocation({ lat: 50, lng: 60, flags: 3, panoId: "BOTH_PANO" })]);
+		const ids = await addLocs([
+			createLocation({ lat: 50, lng: 60, flags: 3, panoId: "BOTH_PANO" }),
+		]);
 
 		await flushAndWait();
 		await closeMap();
@@ -375,7 +377,7 @@ describe("Data integrity - concurrent operations", () => {
 			// Update same location 10 times rapidly
 			for (let i = 0; i < 10; i++) {
 				const loc = await api.fetchLocation(targetId);
-				await api.updateLocations([{ id: loc.id, patch: { heading: i * 36 } }]);
+				await api.updateLocations([{ id: loc!.id, patch: { heading: i * 36 } }]);
 			}
 
 			const loc = await api.fetchLocation(targetId);

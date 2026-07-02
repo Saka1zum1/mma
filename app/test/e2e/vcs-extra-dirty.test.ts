@@ -64,7 +64,7 @@ describe("VCS — extra-only change commit semantics", () => {
 	it("checkout of the base (pre-extra) commit restores a location with no score", async () => {
 		const commits = await withApi(async (api, m) => api.cmd.storeListCommits(m), mapId);
 		const base = commits.find((c: any) => c.message === "base");
-		await withApi(async (api, cid) => api.checkoutCommit(cid), base.id);
+		await withApi(async (api, cid) => api.checkoutCommit(cid), base!.id);
 		const restored = await getLoc(id);
 		expect(restored.extra?.score).toBeUndefined();
 	});

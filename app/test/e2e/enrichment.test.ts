@@ -11,7 +11,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 const OFFICIAL_PANO = "-zrYsLR4Fh-cfJG_EMZ1-A";
 const OFFICIAL_COORDS = { lat: 52.10947502806108, lng: 34.90131410856584 };
@@ -20,7 +20,12 @@ const LoadAsPanoId = 1;
 const PANO_TIMEOUT = 10_000;
 
 function loc(overrides: Partial<Location> = {}): Location {
-	return createLocation({ lat: 0, lng: 0, modifiedAt: Math.floor(Date.now() / 1000), ...overrides });
+	return createLocation({
+		lat: 0,
+		lng: 0,
+		modifiedAt: Math.floor(Date.now() / 1000),
+		...overrides,
+	});
 }
 
 async function readLocation(id: number): Promise<any> {
@@ -334,7 +339,15 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 		// Manually set countryCode to a custom type
 		await withApi(async (api) => {
 			const cur = api.getCurrentMap()!.meta.extra?.fields ?? {};
-			await api.updateMapMeta({ extra: { ...api.getCurrentMap()!.meta.extra, fields: { ...cur, countryCode: { type: "enum", label: "My Custom Country", values: ["US", "RU"] } } } });
+			await api.updateMapMeta({
+				extra: {
+					...api.getCurrentMap()!.meta.extra,
+					fields: {
+						...cur,
+						countryCode: { type: "enum", label: "My Custom Country", values: ["US", "RU"] },
+					},
+				},
+			});
 			return "ok";
 		});
 
@@ -494,25 +507,55 @@ describe("Enrichment — multiple providers merge without clobbering", () => {
 		// extra keys so they never touch other suites' locations — there is no unregister
 		// API, so these persist for the rest of the app session.
 		await withApi(async (api) => {
-			const gated =
-				(sentinel: string, key: string, value: number) =>
-				async (locs: any[]) =>
-					new Map(
-						locs
-							.filter((l) => l.extra?.[sentinel])
-							.map((l) => [l.id, { [key]: value }]),
-					);
-			api.registerEnrichmentProvider({ id: "e2e-clobber-a", fieldDefs: {}, enrich: gated("__clobberTest", "clobberA", 1) });
-			api.registerEnrichmentProvider({ id: "e2e-clobber-b", fieldDefs: {}, enrich: gated("__clobberTest", "clobberB", 2) });
-			api.registerEnrichmentProvider({ id: "e2e-trig-a", fieldDefs: {}, requires: ["datetime"], enrich: gated("__trigTest", "trigA", 1) });
-			api.registerEnrichmentProvider({ id: "e2e-trig-b", fieldDefs: {}, requires: ["datetime"], enrich: gated("__trigTest", "trigB", 2) });
+			const gated = (sentinel: string, key: string, value: number) => async (locs: any[]) =>
+				new Map(locs.filter((l) => l.extra?.[sentinel]).map((l) => [l.id, { [key]: value }]));
+			api.registerEnrichmentProvider({
+				id: "e2e-clobber-a",
+				fieldDefs: {},
+				enrich: gated("__clobberTest", "clobberA", 1),
+			});
+			api.registerEnrichmentProvider({
+				id: "e2e-clobber-b",
+				fieldDefs: {},
+				enrich: gated("__clobberTest", "clobberB", 2),
+			});
+			api.registerEnrichmentProvider({
+				id: "e2e-trig-a",
+				fieldDefs: {},
+				requires: ["datetime"],
+				enrich: gated("__trigTest", "trigA", 1),
+			});
+			api.registerEnrichmentProvider({
+				id: "e2e-trig-b",
+				fieldDefs: {},
+				requires: ["datetime"],
+				enrich: gated("__trigTest", "trigB", 2),
+			});
 			return "ok";
 		});
 
 		const ids = await addLocs([
-			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO, flags: LoadAsPanoId, extra: { __clobberTest: true } }),
-			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO, flags: LoadAsPanoId, extra: { __clobberTest: true } }),
-			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO, flags: LoadAsPanoId, extra: { __clobberTest: true } }),
+			loc({
+				lat: OFFICIAL_COORDS.lat,
+				lng: OFFICIAL_COORDS.lng,
+				panoId: OFFICIAL_PANO,
+				flags: LoadAsPanoId,
+				extra: { __clobberTest: true },
+			}),
+			loc({
+				lat: OFFICIAL_COORDS.lat,
+				lng: OFFICIAL_COORDS.lng,
+				panoId: OFFICIAL_PANO,
+				flags: LoadAsPanoId,
+				extra: { __clobberTest: true },
+			}),
+			loc({
+				lat: OFFICIAL_COORDS.lat,
+				lng: OFFICIAL_COORDS.lng,
+				panoId: OFFICIAL_PANO,
+				flags: LoadAsPanoId,
+				extra: { __clobberTest: true },
+			}),
 			loc({ lat: 12, lng: 34, extra: { __trigTest: true } }),
 		]);
 		singleId = ids[0];
@@ -558,7 +601,12 @@ describe("Enrichment — multiple providers merge without clobbering", () => {
 			async () => {
 				const a = await readLocation(bulkAId);
 				const b = await readLocation(bulkBId);
-				return a?.extra?.clobberA != null && a?.extra?.clobberB != null && b?.extra?.clobberA != null && b?.extra?.clobberB != null;
+				return (
+					a?.extra?.clobberA != null &&
+					a?.extra?.clobberB != null &&
+					b?.extra?.clobberA != null &&
+					b?.extra?.clobberB != null
+				);
 			},
 			{ timeout: PANO_TIMEOUT, timeoutMsg: "bulk provider fields never present on both locations" },
 		);
@@ -630,7 +678,17 @@ describe("Enrichment — metadata filter uses registered field types", () => {
 		// Register field defs
 		await withApi(async (api) => {
 			const cur = api.getCurrentMap()!.meta.extra?.fields ?? {};
-			await api.updateMapMeta({ extra: { ...api.getCurrentMap()!.meta.extra, fields: { ...cur, altitude: { type: "number", label: "Altitude" }, countryCode: { type: "string", label: "Country code" }, imageDate: { type: "month", label: "Image date" } } } });
+			await api.updateMapMeta({
+				extra: {
+					...api.getCurrentMap()!.meta.extra,
+					fields: {
+						...cur,
+						altitude: { type: "number", label: "Altitude" },
+						countryCode: { type: "string", label: "Country code" },
+						imageDate: { type: "month", label: "Image date" },
+					},
+				},
+			});
 			return "ok";
 		});
 	});

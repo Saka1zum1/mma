@@ -8,7 +8,8 @@ import {
 	createLocation,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
+import type { EnrichOutcome } from "@/lib/sv/enrich";
 
 const OFFICIAL_PANO = "-zrYsLR4Fh-cfJG_EMZ1-A";
 const OFFICIAL_COORDS = { lat: 52.10947502806108, lng: 34.90131410856584 };
@@ -47,8 +48,8 @@ describe("Bulk operations -- enrichAll", () => {
 			return await api.enrichAll();
 		});
 
-		const meta = result.find((r: any) => r.id === "enrichMeta");
-		expect(meta.success.length).toBeGreaterThanOrEqual(2);
+		const meta = result.find((r: EnrichOutcome) => r.id === "enrichMeta");
+		expect(meta!.success.length).toBeGreaterThanOrEqual(2);
 
 		const l = await getLoc(locIds[0]);
 		expect(l.extra?.countryCode).toBeTruthy();
@@ -180,10 +181,23 @@ describe("Bulk operations -- bulkPinToPano", () => {
 describe("Bulk operations -- needsEnrichment", () => {
 	it("returns true for locations without countryCode", async () => {
 		const result = await withApi(async (api) => {
+			const base = {
+				id: 0,
+				lat: 0,
+				lng: 0,
+				heading: 0,
+				pitch: 0,
+				zoom: 0,
+				panoId: null,
+				flags: 0,
+				tags: [],
+				createdAt: 0,
+				modifiedAt: null,
+			};
 			return [
-				api.needsEnrichment({ extra: undefined }),
-				api.needsEnrichment({ extra: {} }),
-				api.needsEnrichment({ extra: { altitude: 100 } }),
+				api.needsEnrichment({ ...base, extra: undefined }),
+				api.needsEnrichment({ ...base, extra: {} }),
+				api.needsEnrichment({ ...base, extra: { altitude: 100 } }),
 			];
 		});
 		expect(result).toEqual([true, true, true]);
@@ -192,9 +206,22 @@ describe("Bulk operations -- needsEnrichment", () => {
 	it("is field-aware: needs enrichment unless every requested field is present", async () => {
 		const fields = ["countryCode", "altitude"];
 		const result = await withApi(async (api, f) => {
+			const base = {
+				id: 0,
+				lat: 0,
+				lng: 0,
+				heading: 0,
+				pitch: 0,
+				zoom: 0,
+				panoId: null,
+				flags: 0,
+				tags: [],
+				createdAt: 0,
+				modifiedAt: null,
+			};
 			return [
-				api.needsEnrichment({ extra: { countryCode: "US" } }, f),
-				api.needsEnrichment({ extra: { countryCode: "US", altitude: 100 } }, f),
+				api.needsEnrichment({ ...base, extra: { countryCode: "US" } }, f),
+				api.needsEnrichment({ ...base, extra: { countryCode: "US", altitude: 100 } }, f),
 			];
 		}, fields);
 		expect(result).toEqual([true, false]);
@@ -237,13 +264,13 @@ describe("Bulk operations -- cancel preserves progress", () => {
 				setTimeout(() => controller.abort(), 2000);
 				await api.enrichAll({ signal: controller.signal, force: true });
 				return { cancelled: false };
-			} catch (e: any) {
-				if (e.name === "AbortError") {
+			} catch (e) {
+				if (e instanceof Error && e.name === "AbortError") {
 					const locs = await api.fetchAllLocations();
-					const enriched = locs.filter((l: any) => l.extra?.countryCode != null).length;
+					const enriched = locs.filter((l) => l.extra?.countryCode != null).length;
 					return { cancelled: true, enriched };
 				}
-				return { error: e.message };
+				return { error: e instanceof Error ? e.message : String(e) };
 			}
 		});
 

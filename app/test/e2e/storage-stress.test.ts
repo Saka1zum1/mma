@@ -16,7 +16,7 @@ import {
 	createTag,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // =============================================================================
 // 1. Delta recovery (crash simulation)
@@ -40,14 +40,16 @@ describe("Delta recovery", () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 20; i++) {
-				locs.push(api.createLocation({
-					lat: 10 + i * 0.01,
-					lng: 20 + i * 0.01,
-					heading: i * 18,
-					zoom: 1,
-					panoId: i % 3 === 0 ? `delta_pano_${i}` : null,
-					flags: i % 2,
-				}));
+				locs.push(
+					api.createLocation({
+						lat: 10 + i * 0.01,
+						lng: 20 + i * 0.01,
+						heading: i * 18,
+						zoom: 1,
+						panoId: i % 3 === 0 ? `delta_pano_${i}` : null,
+						flags: i % 2,
+					}),
+				);
 			}
 			await api.addLocations(locs);
 			return { ids: locs.map((l) => l.id) };
@@ -105,13 +107,15 @@ describe("Bake with mixed overlay", () => {
 		const result = await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 50; i++) {
-				locs.push(api.createLocation({
-					lat: i,
-					lng: i * 2,
-					heading: i,
-					zoom: 1,
-					panoId: `mix_${i}`,
-				}));
+				locs.push(
+					api.createLocation({
+						lat: i,
+						lng: i * 2,
+						heading: i,
+						zoom: 1,
+						panoId: `mix_${i}`,
+					}),
+				);
 			}
 			await api.addLocations(locs);
 			const ids = locs.map((l) => l.id);
@@ -119,7 +123,7 @@ describe("Bake with mixed overlay", () => {
 			// Update 10 (indices 0-9): change heading and lat
 			for (let i = 0; i < 10; i++) {
 				const loc = await api.fetchLocation(ids[i]);
-				await api.updateLocations([{ id: loc.id, patch: { heading: 999, lat: 100 + i } }]);
+				await api.updateLocations([{ id: loc!.id, patch: { heading: 999, lat: 100 + i } }]);
 			}
 
 			// Remove 5 (indices 45-49)
@@ -260,7 +264,11 @@ describe("Repeated updates to same location", () => {
 		const headings = [45, 90, 135, 270, 315];
 		for (const h of headings) {
 			const loc = await getLoc(locId);
-			await withApi((api, l, heading) => api.updateLocations([{ id: l.id, patch: { heading } }]), loc, h);
+			await withApi(
+				(api, l, heading) => api.updateLocations([{ id: l.id, patch: { heading } }]),
+				loc,
+				h,
+			);
 		}
 
 		// Verify in-memory
@@ -835,12 +843,14 @@ describe("Large batch undo correctness", () => {
 		await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
-				locs.push(api.createLocation({
-					lat: (i % 180) - 90,
-					lng: (i % 360) - 180,
-					heading: i % 360,
-					zoom: 1,
-				}));
+				locs.push(
+					api.createLocation({
+						lat: (i % 180) - 90,
+						lng: (i % 360) - 180,
+						heading: i % 360,
+						zoom: 1,
+					}),
+				);
 			}
 			await api.addLocations(locs);
 		});
@@ -912,20 +922,22 @@ describe("Rapid fire-and-forget mutations", () => {
 			// Add 10 locations
 			const locs: Location[] = [];
 			for (let i = 0; i < 10; i++) {
-				locs.push(api.createLocation({
-					lat: 50 + i,
-					lng: 50 + i,
-					zoom: 1,
-				}));
+				locs.push(
+					api.createLocation({
+						lat: 50 + i,
+						lng: 50 + i,
+						zoom: 1,
+					}),
+				);
 			}
 			await api.addLocations(locs);
 			const ids = locs.map((l) => l.id);
 
 			// Fire remove + add simultaneously (no await between)
-			const removePromise = Promise.resolve().then(() => api.removeLocations(new Set(ids.slice(0, 5))));
-			const addPromise = api.addLocations([
-				api.createLocation({ lat: 99, lng: 99, zoom: 1 }),
-			]);
+			const removePromise = Promise.resolve().then(() =>
+				api.removeLocations(new Set(ids.slice(0, 5))),
+			);
+			const addPromise = api.addLocations([api.createLocation({ lat: 99, lng: 99, zoom: 1 })]);
 			await Promise.all([removePromise, addPromise]);
 
 			const count = await api.cmd.storeLocationCount();
@@ -965,12 +977,14 @@ describe("Autosave racing with mutations", () => {
 			// Add 50 locations
 			const locs: Location[] = [];
 			for (let i = 0; i < 50; i++) {
-				locs.push(api.createLocation({
-					lat: i,
-					lng: i,
-					heading: i * 7.2,
-					zoom: 1,
-				}));
+				locs.push(
+					api.createLocation({
+						lat: i,
+						lng: i,
+						heading: i * 7.2,
+						zoom: 1,
+					}),
+				);
 			}
 			await api.addLocations(locs);
 
@@ -1177,7 +1191,8 @@ describe("Selection during mutation", () => {
 
 		// Add 30 tagged locations
 		const locs: Location[] = [];
-		for (let i = 0; i < 30; i++) locs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
+		for (let i = 0; i < 30; i++)
+			locs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
 		await addLocs(locs);
 
 		// Select by tag -- should get 30
@@ -1189,7 +1204,8 @@ describe("Selection during mutation", () => {
 
 		// Add 10 more tagged locations while selection is active
 		const moreLocs: Location[] = [];
-		for (let i = 0; i < 10; i++) moreLocs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
+		for (let i = 0; i < 10; i++)
+			moreLocs.push(createLocation({ ...randomLatLng(), ...randomHeading(), tags: [tag.id] }));
 		await addLocs(moreLocs);
 
 		// Re-select -- should now get 40
@@ -1240,7 +1256,10 @@ describe("Implicit save on close", () => {
 
 		// Update without flushing
 		const original = await getLoc(ids[0]);
-		await withApi((api, l) => api.updateLocations([{ id: l.id, patch: { heading: 222.22 } }]), original);
+		await withApi(
+			(api, l) => api.updateLocations([{ id: l.id, patch: { heading: 222.22 } }]),
+			original,
+		);
 
 		// Close immediately (bake happens in close)
 		await closeMap();

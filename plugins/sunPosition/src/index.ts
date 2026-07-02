@@ -1,5 +1,7 @@
 import SunCalc from "suncalc";
-import type { Location_Serialize, ExtraFieldDef } from "mma-plugin-types";
+import type { ExtraFieldDef } from "mma-plugin-types";
+
+type Location = Awaited<ReturnType<typeof MMA.fetchAllLocations>>[number];
 
 const DEG = 180 / Math.PI;
 
@@ -19,7 +21,7 @@ function computeSun(lat: number, lng: number, unixSeconds: number) {
 }
 
 async function enrich(
-	locations: Location_Serialize[],
+	locations: Location[],
 	enrichFields: string[] | null,
 ): Promise<Map<number, Record<string, unknown>>> {
 	const patches = new Map<number, Record<string, unknown>>();

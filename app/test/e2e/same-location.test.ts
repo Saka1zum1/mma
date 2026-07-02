@@ -56,7 +56,7 @@ describe("SameLocation — duplicate picker", () => {
 			return await api.cmd.storeFindNearby(10.0, 20.0, 2.0);
 		});
 		expect(remaining.length).toBe(2);
-		expect(remaining.every((l: any) => l.id !== toDelete)).toBe(true);
+		expect(remaining.every((l) => l.id !== toDelete)).toBe(true);
 	});
 });
 
@@ -69,7 +69,11 @@ describe("Close map persistence", () => {
 	});
 
 	after(async () => {
-		try { await closeMap(); } catch {}
+		try {
+			await closeMap();
+		} catch {
+			// best-effort cleanup
+		}
 		await deleteMap(mapId);
 	});
 
@@ -117,7 +121,7 @@ describe("Close map persistence", () => {
 		await openMap(mapId);
 
 		const locs = await withApi(async (api) => api.fetchAllLocations());
-		const found = locs.some((l: any) => l.lat === 99);
+		const found = locs.some((l) => l.lat === 99);
 		expect(found).toBe(true);
 	});
 });

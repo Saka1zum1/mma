@@ -9,7 +9,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 describe("Selection composition", () => {
 	let mapId: string;

@@ -18,7 +18,7 @@ import {
 	refreshSelections,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Delete tagged location + undo restores tag count
@@ -49,7 +49,6 @@ describe("Delete tagged location + undo", () => {
 		await withApi(async (api, id) => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[0]);
-
 
 		const count = await withApi(async (api, tid) => {
 			const counts = api.getTagCounts();
@@ -114,10 +113,12 @@ describe("Delete selected locations + undo restores selection", () => {
 		const before = await refreshSelections();
 		expect(before.length).toBe(8);
 
-		await withApi(async (api, ids) => {
-			await api.removeLocations(new Set(ids));
-		}, [locIds[0], locIds[1]]);
-
+		await withApi(
+			async (api, ids) => {
+				await api.removeLocations(new Set(ids));
+			},
+			[locIds[0], locIds[1]],
+		);
 
 		const after = await refreshSelections();
 		expect(after.length).toBe(6);
@@ -167,7 +168,6 @@ describe("Delete active location + undo", () => {
 			await api.removeLocations(new Set([id]));
 		}, locIds[2]);
 
-
 		const activeAfter = await withApi(async (api) => api.getActiveLocation()?.id ?? null);
 		expect(activeAfter).toBeNull();
 
@@ -206,13 +206,15 @@ describe("Batch delete + undo data fidelity", () => {
 
 		const locs: Location[] = [];
 		for (let i = 0; i < 10; i++) {
-			locs.push(createLocation({
-				lat: i * 5,
-				lng: i * 10,
-				heading: i * 36,
-				tags: i < 5 ? [tagId] : [],
-				panoId: i % 2 === 0 ? `pano_${i}` : null,
-			}));
+			locs.push(
+				createLocation({
+					lat: i * 5,
+					lng: i * 10,
+					heading: i * 36,
+					tags: i < 5 ? [tagId] : [],
+					panoId: i % 2 === 0 ? `pano_${i}` : null,
+				}),
+			);
 		}
 		locIds = await addLocs(locs);
 	});
@@ -227,7 +229,6 @@ describe("Batch delete + undo data fidelity", () => {
 		await withApi(async (api, ids) => {
 			await api.removeLocations(new Set(ids));
 		}, toDelete);
-
 
 		const count = await getLocCount();
 		expect(count).toBe(5);
@@ -303,7 +304,6 @@ describe("Multiple delete-undo cycles", () => {
 			await withApi(async (api, id) => {
 				await api.removeLocations(new Set([id]));
 			}, targetId);
-	
 
 			const countAfterDelete = await getLocCount();
 			expect(countAfterDelete).toBe(9);

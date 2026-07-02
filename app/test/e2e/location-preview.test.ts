@@ -20,7 +20,7 @@ import {
 	waitForWorkArea,
 	waitForLocCount,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // --- Test pano IDs ---
 // Official Google car coverage (Kursk oblast, Russia)

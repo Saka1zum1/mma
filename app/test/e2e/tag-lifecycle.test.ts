@@ -18,7 +18,7 @@ import {
 	openMap,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Tag rename propagation
@@ -299,7 +299,7 @@ describe("Multi-tag delete isolation", () => {
 	});
 
 	it("surviving tag counts are correct", async () => {
-		const counts = await withApi((api) => api.getTagCounts()) as any;
+		const counts = (await withApi((api) => api.getTagCounts())) as any;
 		expect(counts[String(tag1Id)]).toBe(6);
 		expect(counts[String(tag3Id)]).toBe(6);
 		expect(counts[String(tag2Id)] ?? 0).toBe(0);

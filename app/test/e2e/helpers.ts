@@ -5,7 +5,7 @@
 
 import type { MMA } from "@/api";
 import { createLocation } from "../../src/types";
-import type { Location } from "@/types";
+import type { Location } from "@/bindings.gen";
 
 /**
  * Run an async function in the browser with the MMA API injected as `api`.
@@ -32,10 +32,10 @@ export async function withApi<A extends unknown[], R>(
 }
 
 export async function waitForReady() {
-	await browser.waitUntil(
-		async () => browser.execute(() => window.MMA?.ready === true),
-		{ timeout: 30000, timeoutMsg: "App did not boot in time" },
-	);
+	await browser.waitUntil(async () => browser.execute(() => window.MMA?.ready === true), {
+		timeout: 30000,
+		timeoutMsg: "App did not boot in time",
+	});
 }
 
 /**
@@ -90,7 +90,9 @@ export async function deleteMap(id: string) {
 	await withApi(async (api, mapId) => {
 		try {
 			await api.cmd.storeDeleteMap(mapId);
-		} catch {}
+		} catch {
+			// best-effort cleanup: map may already be deleted/closed
+		}
 	}, id);
 }
 
@@ -152,7 +154,7 @@ export async function getLocCount(): Promise<number> {
 
 export async function refreshSelections(): Promise<number[]> {
 	return withApi(async (api) => {
-		const sels = api.getSelections().map((s) => ({ props: s.props, color: s.color }));
+		const sels = api.getSelections().map((s) => ({ key: s.key, props: s.props, color: s.color }));
 		if (sels.length === 0) return [] as number[];
 		await api.cmd.storeSyncSelections(sels);
 		return api.cmd.storeGetSelectedIdsList();
@@ -213,7 +215,7 @@ export async function waitForFlag(id: number, flag: number, set = true) {
 
 /** Wait until at least `min` elements match `selector` (dropdowns, lists, dialogs). */
 export async function waitForOptions(selector: string, min = 1) {
-	await browser.waitUntil(async () => (await browser.$$(selector)).length >= min, {
+	await browser.waitUntil(async () => (await (await browser.$$(selector)).length) >= min, {
 		...WAIT,
 		timeoutMsg: `selector ${selector} never had >= ${min} elements`,
 	});

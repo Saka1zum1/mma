@@ -893,6 +893,10 @@ export const useSelections = makeStoreHook(() =>
 /** Keyed per-node selection counts (by `Selection.key`). Look up a row's count by its key. */
 export const useSelectionCounts = makeStoreHook(() => selectionCounts);
 
+export function getSelectionCounts() {
+	return selectionCounts;
+}
+
 /** Resolve a selection's overlay color, substituting the live tag color for Tag selections. */
 function selectionSyncColor(s: Selection): [number, number, number] {
 	if (s.props.type === "Tag" && currentMap) {
