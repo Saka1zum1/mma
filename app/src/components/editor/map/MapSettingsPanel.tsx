@@ -3,6 +3,7 @@ import { ManageFieldsModal } from "@/components/dialogs/ManageFieldsModal";
 import { getEnrichFieldOptions, getDefaultEnrichKeys } from "@/lib/data/fieldDefs";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import type { MapStyle } from "@/lib/geo/tiles";
+import { BUILTIN_STYLE_KEYS, BUILTIN_STYLE_LABELS } from "@/lib/geo/mapStyles";
 import { EnrichInfoButton } from "@/components/editor/map/EnrichInfoButton";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiCogOutline } from "@mdi/js";
@@ -234,33 +235,17 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 				<legend className="layer-config__header">
 					Map&nbsp;style <span className="layer-config__divider" />
 				</legend>
-				<label className="layer-config__item">
-					<input
-						type="radio"
-						name="mapstyle"
-						checked={e.mapStyleName === "default"}
-						onChange={() => e.setMapStyleName("default")}
-					/>
-					Default
-				</label>
-				<label className="layer-config__item">
-					<input
-						type="radio"
-						name="mapstyle"
-						checked={e.mapStyleName === "darkMode"}
-						onChange={() => e.setMapStyleName("darkMode")}
-					/>
-					Dark mode
-				</label>
-				<label className="layer-config__item">
-					<input
-						type="radio"
-						name="mapstyle"
-						checked={e.mapStyleName === "legacy"}
-						onChange={() => e.setMapStyleName("legacy")}
-					/>
-					Legacy
-				</label>
+				{BUILTIN_STYLE_KEYS.map((key) => (
+					<label key={key} className="layer-config__item">
+						<input
+							type="radio"
+							name="mapstyle"
+							checked={e.mapStyleName === key}
+							onChange={() => e.setMapStyleName(key)}
+						/>
+						{BUILTIN_STYLE_LABELS[key]}
+					</label>
+				))}
 				{e.customStyles.map((s) => (
 					<label key={s.name} className="layer-config__item">
 						<input

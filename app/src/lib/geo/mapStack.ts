@@ -13,14 +13,9 @@ import {
 	LEGACY_STYLE_MAP_ID,
 	type MapStyle,
 } from "@/lib/geo/tiles";
-import { DARK_MODE_STYLES } from "@/lib/geo/mapStyles";
+import { BUILTIN_STYLE_MAP } from "@/lib/geo/mapStyles";
 import { createCompositeMapType } from "@/lib/geo/stackedMapType";
-import type {
-	SvColor,
-	MapTypeKey,
-	SvCoverageType,
-	SvThickness,
-} from "@/types";
+import type { SvColor, MapTypeKey, SvCoverageType, SvThickness } from "@/types";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 
 export interface MapStackOpts {
@@ -81,8 +76,9 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 	const legacyBase = opts.style === "legacy" && opts.type === "map" && !opts.terrain;
 
 	const extraStyles: MapStyle[] = [];
-	if (opts.style === "darkMode") {
-		extraStyles.push(...DARK_MODE_STYLES);
+	const builtinStyles = BUILTIN_STYLE_MAP[opts.style as keyof typeof BUILTIN_STYLE_MAP];
+	if (builtinStyles) {
+		extraStyles.push(...builtinStyles);
 	} else if (opts.customStyles) {
 		extraStyles.push(...opts.customStyles);
 	}
@@ -107,8 +103,7 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 		const cfg = createSatelliteTileConfig();
 		layers.push(
 			new google.maps.ImageMapType({
-				getTileUrl: (coord: TileCoord, zoom: number) =>
-					buildTileUrl(cfg, coord.x, coord.y, zoom),
+				getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(cfg, coord.x, coord.y, zoom),
 				tileSize,
 				minZoom: 0,
 				maxZoom: 20,
@@ -149,8 +144,7 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 			]);
 			layers.push(
 				new google.maps.ImageMapType({
-					getTileUrl: (coord: TileCoord, zoom: number) =>
-						buildTileUrl(cfg, coord.x, coord.y, zoom),
+					getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(cfg, coord.x, coord.y, zoom),
 					tileSize,
 					minZoom: 0,
 					maxZoom: 20,
@@ -178,8 +172,7 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 			const cfg = createRoadmapTileConfig(extraStyles);
 			layers.push(
 				new google.maps.ImageMapType({
-					getTileUrl: (coord: TileCoord, zoom: number) =>
-						buildTileUrl(cfg, coord.x, coord.y, zoom),
+					getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(cfg, coord.x, coord.y, zoom),
 					tileSize,
 					minZoom: 0,
 					maxZoom: 20,
