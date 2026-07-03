@@ -616,7 +616,7 @@ function NavigationSection() {
 	);
 }
 
-function MarkerColorSection() {
+function MarkersSection() {
 	const s = useSettings();
 	return (
 		<fieldset className="fieldset">
@@ -631,23 +631,20 @@ function MarkerColorSection() {
 					ariaLabel="Default marker color"
 				/>
 			</div>
-		</fieldset>
-	);
-}
-
-function ActiveLocationSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Active location <span className="fieldset__divider" />
-			</legend>
 			<div className="settings-popup__item">
 				Active marker color
 				<ColorPicker
 					color={s.activeLocationColor}
 					onChange={(color) => setSetting("activeLocationColor", color)}
 					ariaLabel="Active location marker color"
+				/>
+			</div>
+			<div className="settings-popup__item">
+				Staged marker color
+				<ColorPicker
+					color={s.importPreviewColor}
+					onChange={(color) => setSetting("importPreviewColor", color)}
+					ariaLabel="Staged import marker color"
 				/>
 			</div>
 			<label className="settings-popup__item">
@@ -695,25 +692,6 @@ function PanoDotsSection() {
 				/>
 				Grow when zoomed in
 			</label>
-		</fieldset>
-	);
-}
-
-function ImportSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Import <span className="fieldset__divider" />
-			</legend>
-			<div className="settings-popup__item">
-				Staged marker color
-				<ColorPicker
-					color={s.importPreviewColor}
-					onChange={(color) => setSetting("importPreviewColor", color)}
-					ariaLabel="Staged import marker color"
-				/>
-			</div>
 		</fieldset>
 	);
 }
@@ -804,10 +782,8 @@ function MapTab() {
 	return (
 		<>
 			<MapNavigationSection />
-			<MarkerColorSection />
-			<ActiveLocationSection />
+			<MarkersSection />
 			<PanoDotsSection />
-			<ImportSection />
 		</>
 	);
 }
