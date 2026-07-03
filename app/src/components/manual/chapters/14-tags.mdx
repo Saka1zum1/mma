@@ -21,6 +21,9 @@ Tags are colored on/off labels you attach to locations. They are boolean: a loca
 
 With **tree** view enabled (**Settings → Street View → Tags**), tags whose names contain `/` are grouped hierarchically, e.g. `Europe/France` nests under `Europe`. Parents show partial-selection indicators and inherit color.
 
+- **Virtual folders.** Create folder nodes that don't correspond to a real tag. They get their own color and can be renamed or recolored from an edit dialog, with an option to cascade changes to all descendant tags.
+- **Tag aliases.** Place a tag at a second folder path via the **Add alias** item in a tag's context menu. The alias appears in the tree at the chosen path alongside the original.
+
 ## Tag tools
 
 - **Apply metadata as tags.** Pick a metadata field and MMA creates one tag per distinct value, assigning each location the tag for its value (command palette). For example, applying **countryCode** turns a map into per-country tags in one step. Date and month fields offer a grouping choice (year, year-month, exact day, month of year, or hour of day), with an optional **Location timezone** checkbox; number fields can be bucketed by a fixed width (e.g. altitude in 500m bands). The same partition options are available in the Gradient plugin.

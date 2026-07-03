@@ -6,11 +6,10 @@ Opening a map launches the editor: a resizable split between the **map** and the
 
 ## The sidebar
 
-With no location open, the sidebar shows three sections:
+With no location open, the sidebar shows two sections:
 
-- **Tags.** Create, color, and assign labels.
-- **Selections.** Pick subsets of locations and combine them.
-- **Tools.** The plugin toolbar, the **Commands...** button (the command palette), the duplicate finder, and the filter builder.
+- **Tags.** Create, color, and assign labels. A filter input and sort buttons (default, name, amount) sit at the top.
+- **Selections.** Pick subsets of locations and combine them. Its header bar includes the plugin toolbar and a **Commands...** button that opens the command palette (<Kbd>Ctrl</Kbd>+<Kbd>K</Kbd>). Below the active selections is a pinnable toolbar - right-click it to add, remove, or reorder shortcut buttons for commands like random pick, find duplicates, filter by metadata, and top/bottom K.
 
 Clicking a location's marker swaps the sidebar for the location editor (covered later).
 
@@ -22,7 +21,7 @@ The basemap dropdown (top-left of the map) chooses the base imagery and toggles 
 - **Layers.** **Terrain**, **Labels**, and **Panoramas** (individual Street View dots, requires close zoom). The base Street View layer is always on.
 - **Street View coverage.** **Show lines** filtered to **Official**, **Unofficial**, or **All**; a color swatch for the lines; **Make the lines thinner**; and **Use blobby layer while zoomed out**.
 - **Settings.** **Emphasise country borders** and **Emphasise subdivision borders**.
-- **Map style.** **Default**, **Legacy** (the classic GeoGuessr cloud style), **Dark mode**, any custom styles you add, and a **Manage map styles** link.
+- **Map style.** **Default**, **Legacy** (the classic GeoGuessr style), **Muted**, **Midnight**, **Minimal**, **Vintage**, **Grayscale**, **Blueprint**, any custom styles you add, and a **Manage map styles** link.
 
 ## Select-only mode
 
@@ -31,5 +30,5 @@ Toggle **Select-only mode** (<Kbd>O</Kbd>) from the Map Settings dropdown or its
 ## Navigating the map
 
 - **Pan / zoom.** Mouse drag and wheel, or the keyboard: <Kbd>W</Kbd><Kbd>A</Kbd><Kbd>S</Kbd><Kbd>D</Kbd> to pan and <Kbd>Shift</Kbd>+<Kbd>W</Kbd> / <Kbd>Shift</Kbd>+<Kbd>S</Kbd> to zoom. Hold <Kbd>Alt</Kbd> for slow, fine movement. All of these are rebindable.
-- **Place search.** The search control geocodes a place name and fits the map to it. The provider is local (offline) by default and can be switched to Nominatim in Settings.
-- **Marker visibility.** A toggle cycles markers between opaque, transparent, and hidden so you can inspect coverage underneath.
+- **Place search.** The search control geocodes a place name via Nominatim and fits the map to it.
+- **Opacity slider.** A slider in the top-right controls the opacity of the Street View coverage layer or the markers - click the icon next to it to switch between the two.

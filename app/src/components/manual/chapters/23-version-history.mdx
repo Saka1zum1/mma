@@ -5,7 +5,7 @@ The **History** button opens the commit list for the map. Commits form a chain, 
 ## The commit table
 
 - **Columns.** Date, a short hash, the change diff (+added / -removed / ±modified) or message, and the resulting location count.
-- **Expand a row.** Click it to see the added, removed, and modified locations in that commit (with their IDs and coordinates).
-- **Restore.** The restore button (with a confirm step) returns the map to that commit's state.
+- **View changes.** Click a row with changes to enter a full-map diff view: added locations appear green, removed red, and modified amber, with a sidebar showing aggregate counts per category. Rows with no diff are not clickable.
+- **Revert / Restore.** The newest commit shows a **Revert** button; older commits show **Restore**. Either creates a new commit that returns the map to that commit's state (with a confirm step).
 
 If the map has no commits yet, the dialog prompts you to press Commit to create the first.

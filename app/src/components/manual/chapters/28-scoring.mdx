@@ -1,11 +1,19 @@
-export const title = "Scoring & score bounds";
+export const title = "Scoring, measurement & 5K radius";
 
 GeoGuessr scores a guess from the distance to the true location and the size of the playable area. A map's **score bounds** define that area, which sets how harshly distance is penalized. Edit them in the **Scoring** section of the map settings dropdown.
-
-<Img name="score-bounds.png" caption="The Scoring section: automatic, world, or fixed bounds, with the resolved error distance." />
 
 ## The three modes
 
 - **Automatic based on locations.** Derived from the bounding box of your locations and updated as you add or remove them.
 - **World map (ACW).** The whole-world curve, like a worldwide map.
 - **Fixed bounds.** An explicit box you enter as south, west, north, and east coordinates.
+
+## Measuring distance
+
+Right-click the map and choose **Start measurement** to draw a line and read its length. MMA also converts that distance into the GeoGuessr score it would earn under the current score bounds. Choose **End measurement** from the menu to finish.
+
+## The 5K radius (perfect-score circle)
+
+Enable **Display 5K radius** in the map settings dropdown to draw a score-decay circle around locations. The circle's radius is derived from the map's score bounds (at least 25m, but larger for world maps).
+
+<Img name="score-bounds.png" caption="Score bounds and the 5K radius circle drawn around locations." />
