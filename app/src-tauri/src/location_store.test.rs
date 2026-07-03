@@ -314,6 +314,20 @@ fn delta_has_both_for_moved_location() {
     assert_eq!(delta.added.len(), 1);
 }
 
+#[test]
+fn delta_add_uses_configured_marker_color() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
+    store.render.marker_color = [10, 20, 30];
+
+    let entry = EditEntry { created: vec![loc(2, 30.0, 40.0)], removed: vec![] };
+    let changes = apply_edit_forward(&mut store, &entry);
+    let delta = store.derive_render_delta(&changes);
+
+    assert_eq!(delta.added.len(), 1);
+    let e = &delta.added[0];
+    assert_eq!((e.r, e.g, e.b, e.a), (10, 20, 30, 255));
+}
+
 // -----------------------------------------------------------------------
 // "Samey locations" optimization: skip re-render when only non-render
 // fields changed (e.g. pitch, zoom, tags, extra)

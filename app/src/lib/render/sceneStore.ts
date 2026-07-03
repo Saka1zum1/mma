@@ -85,6 +85,34 @@ export function setMarkerDefaultColor(r: number, g: number, b: number) {
 	markerDefault = [r, g, b, 255];
 }
 
+/** Repaint the default marker color in place: patches base cell colors and tells Rust
+ *  (for future deltas). No render rebuild — safe to drive from an interactive picker. */
+export function recolorScene(mc: RGB) {
+	const [or, og, ob] = markerDefault;
+	if (or === mc.r && og === mc.g && ob === mc.b) return;
+	setMarkerDefaultColor(mc.r, mc.g, mc.b);
+	for (const cb of scene.cells.values()) {
+		const colors = cb.colors;
+		for (let i = 0; i < cb.count; i++) {
+			const o = i * 4;
+			if (
+				colors[o + 3] === 255 &&
+				colors[o] === or &&
+				colors[o + 1] === og &&
+				colors[o + 2] === ob
+			) {
+				colors[o] = mc.r;
+				colors[o + 1] = mc.g;
+				colors[o + 2] = mc.b;
+			}
+		}
+		cb.colorVersion++;
+	}
+	void cmd.storeSetMarkerColor([mc.r, mc.g, mc.b]);
+	scene.version++;
+	bumpScene();
+}
+
 export function getMarkerDefaultColor(): [number, number, number, number] {
 	return markerDefault;
 }

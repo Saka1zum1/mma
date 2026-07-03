@@ -196,6 +196,7 @@ pub(crate) struct RenderState {
     pub cells: [Option<CellRender>; 32],
     pub id_to_cell_idx: Vec<u8>,
     pub arrow_style: bool,
+    pub marker_color: [u8; 3],
 }
 
 pub(crate) struct SelectionState {
@@ -377,6 +378,7 @@ impl Store {
                 cells: [const { None }; 32],
                 id_to_cell_idx: Vec::new(),
                 arrow_style: false,
+                marker_color: [42, 42, 42],
             },
             selections: SelectionState {
                 all: Vec::new(),
@@ -521,7 +523,12 @@ impl Store {
     /// Selected locations are transparent (alpha=0) because they are drawn separately
     /// by the selection overlay layer with their selection color.
     fn base_color(&self, id: u32) -> (u8, u8, u8, u8) {
-        if self.selections.ids.contains(id) { (0, 0, 0, 0) } else { (42, 42, 42, 255) }
+        if self.selections.ids.contains(id) {
+            (0, 0, 0, 0)
+        } else {
+            let [r, g, b] = self.render.marker_color;
+            (r, g, b, 255)
+        }
     }
 
     /// Whether any active selection requires a full O(S*N) resolve rather than
@@ -1937,6 +1944,21 @@ pub fn store_set_active(
     })
 }
 
+/// Set the default marker color used by the render delta path. Fire-and-forget from JS;
+/// the JS side recolors its cell buffers in place (no full rebuild).
+#[tauri::command]
+#[specta::specta]
+pub fn store_set_marker_color(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    color: [u8; 3],
+) -> AppResult<()> {
+    with_store!(webview, state, |store| {
+        store.render.marker_color = color;
+        Ok(())
+    })
+}
+
 /// Fetch a single location by ID. Returns `None` if the ID is dead or doesn't exist.
 #[tauri::command]
 #[specta::specta]
@@ -2502,7 +2524,7 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     let color_map = store.selections.color_map();
     let active_id = store.selections.active_id;
     let arrow_style = req.marker_style == "arrow";
-    let mc = req.marker_color.unwrap_or([42, 42, 42]);
+    let mc = store.render.marker_color;
     let base_color = [mc[0], mc[1], mc[2], 255u8];
 
     // 32 cells indexed by render_cell_idx (0-31)
@@ -2638,6 +2660,9 @@ pub async fn store_fill_render_file(
         let mut mgr = state.lock()?;
         let store = mgr.store_for_window(webview.label())?;
         store.render.arrow_style = req.marker_style == "arrow";
+        if let Some(mc) = req.marker_color {
+            store.render.marker_color = mc;
+        }
         let mid = store.map_id.clone().unwrap_or_default();
         (build_cell_render_buffers(store, &req), mid)
     };

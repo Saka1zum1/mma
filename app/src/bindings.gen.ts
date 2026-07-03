@@ -138,6 +138,11 @@ export const commands = {
 	 *  JS patches the cell buffer synchronously to hide/show the active marker.
 	 */
 	storeSetActive: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("store_set_active", { id })),
+	/**
+	 *  Set the default marker color used by the render delta path. Fire-and-forget from JS;
+	 *  the JS side recolors its cell buffers in place (no full rebuild).
+	 */
+	storeSetMarkerColor: (color: [number, number, number]) => typedError<null, string>(__TAURI_INVOKE("store_set_marker_color", { color })),
 	/**  Fetch a single location by ID. Returns `None` if the ID is dead or doesn't exist. */
 	storeGetLocation: (id: number) => typedError<Location | null, string>(__TAURI_INVOKE("store_get_location", { id })).then((v) => ((v.status === "ok" ? { ...v, data: v.data==null?v.data:v.data } : v) as typeof v)),
 	/**  Fetch multiple locations by ID. Silently skips IDs that don't exist. */

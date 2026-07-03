@@ -1,14 +1,14 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { mdiGoogleStreetView, mdiMapMarker } from "@mdi/js";
-import { startSceneEngine, loadScene, clearScene } from "@/lib/render/sceneStore";
+import { startSceneEngine, loadScene, clearScene, recolorScene } from "@/lib/render/sceneStore";
 import { useMapSurface } from "@/lib/render/useMapSurface";
 import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { svThumbnailUrl, svSearchRadius } from "@/lib/sv/lookup";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { useSetting } from "@/store/settings";
+import { getSettings, useSetting } from "@/store/settings";
 import { useMeasure } from "@/lib/sv/measure";
 import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
@@ -188,12 +188,17 @@ export function MapEmbed({
 	// The editor map drives the single scene engine (delta/selection/active subscriptions)
 	useEffect(() => startSceneEngine(), []);
 
-	// Full (re)load on open and on marker-style/color change; clear when the map isn't ready.
+	// Full (re)load on open and on marker-style change; clear when the map isn't ready.
+	useEffect(() => {
+		if (mapReady) void loadScene(markerStyle, getSettings().markerColor);
+		else clearScene();
+	}, [mapReady, markerStyle]);
+
+	// Marker color repaints buffers in place — never a full scene reload.
 	const markerColor = useSetting("markerColor");
 	useEffect(() => {
-		if (mapReady) void loadScene(markerStyle, markerColor);
-		else clearScene();
-	}, [mapReady, markerStyle, markerColor]);
+		recolorScene(markerColor);
+	}, [markerColor]);
 
 	useEffect(() => {
 		if (svPreview?.url) return () => URL.revokeObjectURL(svPreview.url);

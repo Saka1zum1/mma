@@ -464,6 +464,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_remove_locations,
             location_store::store_update_locations,
             location_store::store_set_active,
+            location_store::store_set_marker_color,
             location_store::store_get_location,
             location_store::store_get_locations_by_ids,
             location_store::store_get_all_locations,
