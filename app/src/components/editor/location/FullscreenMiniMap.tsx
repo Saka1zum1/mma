@@ -102,7 +102,12 @@ export function FullscreenMiniMap() {
 		}).mapType;
 		map.mapTypes.set("custom", customType);
 		map.setMapTypeId("custom");
-		map.setOptions({ backgroundColor: getStyleBackgroundColor(prefs.mapStyleName) });
+		const bg = getStyleBackgroundColor(prefs.mapStyleName);
+		map.setOptions({ backgroundColor: bg });
+		const mapDiv = map.getDiv();
+		mapDiv.style.backgroundColor = bg;
+		const inner = mapDiv.querySelector<HTMLElement>("div[style*='background-color']");
+		if (inner) inner.style.backgroundColor = bg;
 	}, [prefs, map]);
 
 	const setScale = (next: number) => {

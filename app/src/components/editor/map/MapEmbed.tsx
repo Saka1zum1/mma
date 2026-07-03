@@ -269,7 +269,12 @@ export function MapEmbed({
 		svLayerRef.current = svLayer;
 		gMapRef.current.mapTypes.set("stack", stack);
 		gMapRef.current.setMapTypeId("stack");
-		gMapRef.current.setOptions({ backgroundColor: getStyleBackgroundColor(prefs.mapStyleName) });
+		const bg = getStyleBackgroundColor(prefs.mapStyleName);
+		gMapRef.current.setOptions({ backgroundColor: bg });
+		const mapDiv = gMapRef.current.getDiv();
+		mapDiv.style.backgroundColor = bg;
+		const inner = mapDiv.querySelector<HTMLElement>("div[style*='background-color']");
+		if (inner) inner.style.backgroundColor = bg;
 	}, [prefs, useBlobby, customStyles]);
 
 	const handleSearchResult = useCallback((lat: number, lng: number, _name: string) => {
