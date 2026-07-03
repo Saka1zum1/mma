@@ -1,3 +1,23 @@
+## v0.7.0 — 2026-07-03
+- **Vali generation is now 5x faster, runs directly in the sidebar, and requires no additional installation**
+- **New Vision plugin: search your locations by describing what they look like, or find ones that look alike**
+- **New Copyright Year plugin: read the copyright year Google stamps on Street View imagery**
+- Plugins with companion tools now download and update them straight from the plugin manager
+- More built-in map style presets
+- Setting to choose a default color for markers
+- Map generator option to skip locations you already have
+- iNaturalist plugin can auto-sort observations by taxonomy
+- Setting to reopen your previously open maps on next launch
+- Tag aliases in the tag tree
+- Searchable aliases for command palette commands
+- Support for typing directly into date pickers
+- Unknown field names now display with sentence-case labels
+- Faster nearby and radius location lookups
+- Inverting a nested selection now works at any depth in the selection tree
+- Fixed plugin manager UI flash for "Additional" tab
+- Fixed the map not zooming out fully on wide windows
+- Fixed the map generator's coverage search being offset
+
 ## v0.6.8 — 2026-06-29
 - Choose where your map data is stored on disk
 - Tag names are shortened to their shortest unique path in tree view
