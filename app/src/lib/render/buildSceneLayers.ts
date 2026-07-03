@@ -8,7 +8,12 @@ import type { MarkerStyle } from "@/types";
 import type { LatLng } from "@/types";
 import { isImportPreview } from "@/types";
 import type { Location, SeenEntry } from "@/bindings.gen";
-import { isSeenOverlayActive, getSeenOverlayEntries, getSeenOnMapIds, seenEntryColor } from "@/lib/seen/seenOverlay";
+import {
+	isSeenOverlayActive,
+	getSeenOverlayEntries,
+	getSeenOnMapIds,
+	seenEntryColor,
+} from "@/lib/seen/seenOverlay";
 import {
 	getCurrentMap,
 	getWorkArea,
@@ -19,11 +24,10 @@ import {
 } from "@/store/useMapStore";
 import { getTrail } from "@/lib/sv/svTrail";
 import { getLatLngAnchor } from "@/lib/sv/measure";
+import type { RGB } from "@/lib/util/color";
 
 export const LOCATION_LAYER_ID = "locations";
 export const PERFECT_SCORE_LAYER_ID = "perfect-score";
-
-type RGB = { r: number; g: number; b: number };
 export type PolyGeom = { poly: object; fill: Position[][][]; stroke: Position[][] };
 
 export function normalizeRing<T extends number[]>(ring: T[]): T[] {
@@ -83,7 +87,8 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 					stroked: false,
 					pickable: false,
 				});
-			if (diff.removed.length) layers.push(diffLayer("diff-removed", diff.removed, [239, 68, 68, 210]));
+			if (diff.removed.length)
+				layers.push(diffLayer("diff-removed", diff.removed, [239, 68, 68, 210]));
 			if (diff.added.length) layers.push(diffLayer("diff-added", diff.added, [34, 197, 94, 210]));
 			if (diff.modified.length)
 				layers.push(diffLayer("diff-modified", diff.modified, [245, 158, 11, 220]));
@@ -175,7 +180,11 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				ctx.markerStyle,
 				"sel-overlay",
 				cm.selOverlayCount,
-				{ positions: cm.selOverlayPositions, colors: cm.selOverlayColors, angles: cm.selOverlayAngles },
+				{
+					positions: cm.selOverlayPositions,
+					colors: cm.selOverlayColors,
+					angles: cm.selOverlayAngles,
+				},
 				cm.selOverlayVersion,
 				cm.selOverlayVersion,
 				undefined,
@@ -201,7 +210,12 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 					getRadius: 6,
 					radiusUnits: "pixels",
 					radiusMinPixels: 3,
-					getFillColor: [ctx.importPreviewColor.r, ctx.importPreviewColor.g, ctx.importPreviewColor.b, 200],
+					getFillColor: [
+						ctx.importPreviewColor.r,
+						ctx.importPreviewColor.g,
+						ctx.importPreviewColor.b,
+						200,
+					],
 					stroked: false,
 					pickable: true,
 				}),
@@ -266,7 +280,9 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 	if (ctx.showPerfectScoreCircle && activeLoc && cm.totalCount > 0) {
 		const trail = getTrail();
 		const last = trail.length ? trail[trail.length - 1] : null;
-		const center = last ? { lng: last[0], lat: last[1] } : { lat: activeLoc.lat, lng: activeLoc.lng };
+		const center = last
+			? { lng: last[0], lat: last[1] }
+			: { lat: activeLoc.lat, lng: activeLoc.lng };
 		layers.push(
 			new ScatterplotLayer({
 				id: PERFECT_SCORE_LAYER_ID,

@@ -24,6 +24,7 @@ import { stepFilterWindow } from "@/lib/data/fieldOps";
 import { cmd } from "@/lib/commands";
 import { RgbColorPicker } from "react-colorful";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
+import type { RGB } from "@/lib/util/color";
 import type { Selection } from "@/bindings.gen";
 import { selectionDisplayName } from "@/store/selections";
 import {
@@ -137,7 +138,7 @@ export function SelectionRow({
 	const isDropTarget = drag != null && drag.key !== selection.key;
 	const handleColorChange = useDebouncedCallback(
 		useCallback(
-			(c: { r: number; g: number; b: number }) => {
+			(c: RGB) => {
 				setSelectionColors([{ key: selection.key, color: [c.r, c.g, c.b] }]);
 			},
 			[selection.key],

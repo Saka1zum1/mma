@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { CellManager } from "@/lib/render/CellManager";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
+import type { RGB } from "@/lib/util/color";
 import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
 import {
@@ -89,10 +90,7 @@ export function getMarkerDefaultColor(): [number, number, number, number] {
 }
 
 /** Full (re)load from Rust for the whole world. Editor-driven on open / marker-style change. */
-export async function loadScene(
-	markerStyle: MarkerStyle,
-	mc?: { r: number; g: number; b: number },
-): Promise<void> {
+export async function loadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
 	lastMarkerStyle = markerStyle;
 	if (mc) setMarkerDefaultColor(mc.r, mc.g, mc.b);
 	const token = ++loadToken;

@@ -1,3 +1,5 @@
+export type RGB = { r: number; g: number; b: number };
+
 /** Parse "#rrggbb" to an [r, g, b] byte tuple. Single source for hex parsing. */
 export function hexToRgb(hex: string): [number, number, number] {
 	const h = hex.replace("#", "");
@@ -52,9 +54,9 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
 	return [f(0), f(8), f(4)];
 }
 
-/** 
- * Deterministic tag color from a name. 
-*/
+/**
+ * Deterministic tag color from a name.
+ */
 export function colorForName(name: string): string {
 	let h = 0;
 	for (const b of new TextEncoder().encode(name)) {
@@ -71,7 +73,7 @@ export function rgbCss([r, g, b]: [number, number, number]): string {
 	return `rgb(${r}, ${g}, ${b})`;
 }
 
-export function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
+export function rgbToHex({ r, g, b }: RGB): string {
 	const h = (n: number) => Math.round(n).toString(16).padStart(2, "0");
 	return `#${h(r)}${h(g)}${h(b)}`;
 }
