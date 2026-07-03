@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 pub mod country_weights;
 pub mod definition;
@@ -27,5 +27,5 @@ pub use goals::{
     country_location_count_goal, goal_for_subdivision,
     subdivision_goal_from_custom_weights,
 };
-pub use progress::{Event as ProgressEvent, Progress};
+pub use progress::{CancelToken, Event as ProgressEvent, Progress};
 pub use store::{GeoMapLocation, GeoMapLocationExtra, MapOutput, StoreSummary};

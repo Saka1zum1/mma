@@ -411,6 +411,8 @@ export const commands = {
 	valiGenerate: (definition: string) => typedError<ValiLocation[], string>(__TAURI_INVOKE("vali_generate", { definition })).then((v) => ((v.status === "ok" ? { ...v, data: v.data.map(i=>({...i,zoom:i.zoom==null?i.zoom:i.zoom,pitch:i.pitch==null?i.pitch:i.pitch})) } : v) as typeof v)),
 	/**  Download Vali coverage data. `country` = code/continent alias/None for all. */
 	valiDownload: (country: string | null, full: boolean, updates: boolean) => typedError<null, string>(__TAURI_INVOKE("vali_download", { country, full, updates })),
+	/**  Cancel an in-flight vali generate or download. */
+	valiCancel: () => __TAURI_INVOKE<void>("vali_cancel"),
 	/**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
 	valiSubdivisions: (country: string) => typedError<string, string>(__TAURI_INVOKE("vali_subdivisions", { country })),
 };

@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 use crate::filter::filter;
 use crate::goals::{goal_for_subdivision, subdivision_goal_from_custom_weights};

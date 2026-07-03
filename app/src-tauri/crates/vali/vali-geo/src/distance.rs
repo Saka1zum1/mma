@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 pub const DEG_TO_RAD: f64 = 0.017453292519943295769236907684886127;
 const HALF_DEG_TO_RAD: f64 = DEG_TO_RAD * 0.5;

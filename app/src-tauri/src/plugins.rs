@@ -6,7 +6,18 @@
 //! streamed to the frontend as `vali-progress` events.
 
 use crate::types::{AppError, AppResult};
-use vali_generate::{generate_output, prepare, GeoMapLocation, ProgressEvent};
+use std::sync::Mutex;
+use vali_generate::{generate_output, prepare, CancelToken, GeoMapLocation, ProgressEvent};
+
+pub struct ValiState {
+    cancel: Mutex<Option<CancelToken>>,
+}
+
+impl ValiState {
+    pub fn new() -> Self {
+        Self { cancel: Mutex::new(None) }
+    }
+}
 
 #[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -85,35 +96,53 @@ fn data_root() -> AppResult<std::path::PathBuf> {
 /// data is auto-downloaded like the Vali CLI. Returns the generated locations.
 #[tauri::command]
 #[specta::specta]
-pub async fn vali_generate(definition: String) -> AppResult<Vec<ValiLocation>> {
-    tokio::task::spawn_blocking(move || {
+pub async fn vali_generate(state: tauri::State<'_, ValiState>, definition: String) -> AppResult<Vec<ValiLocation>> {
+    let token = CancelToken::new();
+    *state.cancel.lock().unwrap() = Some(token.clone());
+    let result = tokio::task::spawn_blocking(move || {
         let def: vali_core::MapDefinition = json5::from_str(&definition)
             .map_err(|e| AppError(format!("The map definition is not valid JSON: {e}")))?;
         let prepared = prepare(&def).map_err(AppError)?;
-        let output = generate_output(&prepared, &data_root()?, false, Some(&emit_progress))
+        let output = generate_output(&prepared, &data_root()?, false, Some(&emit_progress), Some(&token))
             .map_err(|e| AppError(format!("{e:#}")))?;
         Ok(output.records.into_iter().map(ValiLocation::from).collect())
     })
     .await
-    .map_err(|e| AppError(format!("vali generate task failed: {e}")))?
+    .map_err(|e| AppError(format!("vali generate task failed: {e}")))?;
+    *state.cancel.lock().unwrap() = None;
+    result
 }
 
 /// Download Vali coverage data. `country` = code/continent alias/None for all.
 #[tauri::command]
 #[specta::specta]
-pub async fn vali_download(country: Option<String>, full: bool, updates: bool) -> AppResult<()> {
-    tokio::task::spawn_blocking(move || {
+pub async fn vali_download(state: tauri::State<'_, ValiState>, country: Option<String>, full: bool, updates: bool) -> AppResult<()> {
+    let token = CancelToken::new();
+    *state.cancel.lock().unwrap() = Some(token.clone());
+    let result = tokio::task::spawn_blocking(move || {
         vali_generate::download::download_files(
             &data_root()?,
             country.as_deref(),
             full,
             updates,
             Some(&emit_progress),
+            Some(&token),
         )
         .map_err(|e| AppError(format!("{e:#}")))
     })
     .await
-    .map_err(|e| AppError(format!("vali download task failed: {e}")))?
+    .map_err(|e| AppError(format!("vali download task failed: {e}")))?;
+    *state.cancel.lock().unwrap() = None;
+    result
+}
+
+/// Cancel an in-flight vali generate or download.
+#[tauri::command]
+#[specta::specta]
+pub fn vali_cancel(state: tauri::State<'_, ValiState>) {
+    if let Some(token) = state.cancel.lock().unwrap().as_ref() {
+        token.cancel();
+    }
 }
 
 /// Subdivision weights for a country (JSON text, same shape as `vali subdivisions`).

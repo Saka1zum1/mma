@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 use crate::definition::{
     default_distribution, map_country_codes, resolve_country_distribution,
@@ -124,6 +124,7 @@ pub fn report(code: &str, property: &str, by_country: bool) -> Result<String, St
                 &cc,
                 &all_files,
                 Some(&announce),
+                None,
             )
             .map_err(|e| format!("{e:#}"))?;
         for (sub, weight) in weights {

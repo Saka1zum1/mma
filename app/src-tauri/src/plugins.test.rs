@@ -21,7 +21,7 @@ fn vali_generate_produces_locations() {
     let root = vali_data::paths::data_root().unwrap();
     let events = std::sync::Mutex::new(Vec::new());
     let on_event = |e: ProgressEvent| events.lock().unwrap().push(e);
-    let output = generate_output(&prepared, &root, true, Some(&on_event)).unwrap();
+    let output = generate_output(&prepared, &root, true, Some(&on_event), None).unwrap();
 
     let locations: Vec<ValiLocation> = output.records.into_iter().map(ValiLocation::from).collect();
     assert_eq!(locations.len(), 25);

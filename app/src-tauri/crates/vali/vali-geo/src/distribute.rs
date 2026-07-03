@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 use crate::distance::points_are_closer_than;
 use rustc_hash::FxHashMap;

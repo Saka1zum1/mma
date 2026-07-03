@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 use crate::definition::Prepared;
 use crate::distribution::{
@@ -11,7 +11,7 @@ use crate::goals::{
     country_location_count_goal, goal_for_subdivision,
     subdivision_goal_from_custom_weights, subdivision_weights,
 };
-use crate::progress::{emit, Event, Progress};
+use crate::progress::{emit, CancelToken, Event, Progress};
 use crate::store::{build_output, MapOutput, StoreSummary};
 use anyhow::{bail, Context};
 use rayon::prelude::*;
@@ -34,16 +34,17 @@ pub fn generate(
     definition_path: &Path,
     deterministic: bool,
 ) -> anyhow::Result<StoreSummary> {
-    generate_with_progress(prepared, definition_path, deterministic, None)
+    generate_with_progress(prepared, definition_path, deterministic, None, None)
 }
 pub fn generate_with_progress(
     prepared: &Prepared,
     definition_path: &Path,
     deterministic: bool,
     progress: Option<Progress<'_>>,
+    cancel: Option<&CancelToken>,
 ) -> anyhow::Result<StoreSummary> {
     let data_root = vali_data::paths::data_root()?;
-    generate_output(prepared, &data_root, deterministic, progress)?
+    generate_output(prepared, &data_root, deterministic, progress, cancel)?
         .write(definition_path)
 }
 pub fn generate_output(
@@ -51,6 +52,7 @@ pub fn generate_output(
     data_root: &Path,
     deterministic: bool,
     progress: Option<Progress<'_>>,
+    cancel: Option<&CancelToken>,
 ) -> anyhow::Result<MapOutput> {
     timing::reset();
     let mut work_items: Vec<WorkItem> = Vec::new();
@@ -88,7 +90,16 @@ pub fn generate_output(
             .iter()
             .map(|sub| vali_data::paths::subdivision_file(data_root, cc, sub))
             .collect();
-        crate::download::ensure_files_downloaded(data_root, cc, &files, progress)?;
+        if let Some(c) = cancel {
+            c.check()?;
+        }
+        crate::download::ensure_files_downloaded(
+            data_root,
+            cc,
+            &files,
+            progress,
+            cancel,
+        )?;
         for file in &files {
             if !file.exists() {
                 bail!(
@@ -143,6 +154,9 @@ pub fn generate_output(
     let results: Vec<WorkResult> = work_items
         .par_iter()
         .map(|item| {
+            if let Some(c) = cancel {
+                c.check()?;
+            }
             let r = run_work_item(prepared, item, deterministic);
             emit(
                 progress,

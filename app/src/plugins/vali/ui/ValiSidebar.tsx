@@ -11,6 +11,7 @@ import "./vali.css";
 // The embedded Vali GUI (vendored bundle, ?host=mma) owns the whole flow: definition
 // editor, tag input, generate button, progress. This side is just the bridge:
 //   <- iframe  { type: "vali:generate", data, tag }
+//   <- iframe  { type: "vali:cancel" }
 //   -> iframe  { type: "vali:progress", progress } (forwarded vali-progress events)
 //   -> iframe  { type: "vali:done", count } | { type: "vali:error", message }
 
@@ -44,6 +45,10 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 
 	useEffect(() => {
 		const onMessage = async (e: MessageEvent) => {
+			if (e.data?.type === "vali:cancel") {
+				cmd.valiCancel();
+				return;
+			}
 			if (e.data?.type !== "vali:generate" || runningRef.current) return;
 			runningRef.current = true;
 			const post = (msg: unknown) => iframeRef.current?.contentWindow?.postMessage(msg, "*");

@@ -1898,6 +1898,7 @@ declare const DEFAULTS: {
 	tagSuggestionLimit: number;
 	savedSelections: SavedSelection[];
 	pinnedCommands: PinnedEntry[];
+	hasSeenWelcome: boolean;
 };
 export type AppSettings = typeof DEFAULTS;
 declare function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void;
@@ -2054,6 +2055,7 @@ declare const mma: {
 		storeGetCommitDelta: (mapId: string, commitId: string) => Promise<CommitDelta>;
 		valiGenerate: (definition: string) => Promise<ValiLocation[]>;
 		valiDownload: (country: string | null, full: boolean, updates: boolean) => Promise<null>;
+		valiCancel: () => Promise<void>;
 		valiSubdivisions: (country: string) => Promise<string>;
 	};
 	invoke: typeof invoke;
@@ -2163,6 +2165,7 @@ declare const mma: {
 		tagSuggestionLimit: number;
 		savedSelections: SavedSelection[];
 		pinnedCommands: PinnedEntry[];
+		hasSeenWelcome: boolean;
 	};
 	on<E extends EditorEvent>(event: E, handler: EventHandler<E>): () => void;
 	getSeenEntries: typeof getSeenEntries;

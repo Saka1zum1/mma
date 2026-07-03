@@ -1,6 +1,6 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
-use crate::progress::{emit, Event, Progress};
+use crate::progress::{emit, CancelToken, Event, Progress};
 use anyhow::{bail, Context};
 use serde::Deserialize;
 use std::io::Read;
@@ -42,6 +42,7 @@ pub fn download_files(
     full: bool,
     updates: bool,
     progress: Option<Progress<'_>>,
+    cancel: Option<&CancelToken>,
 ) -> anyhow::Result<()> {
     ensure_download_folder_writable(root)?;
     let all_codes: Vec<&str> = crate::names::COUNTRY_NAMES
@@ -76,7 +77,10 @@ pub fn download_files(
         },
     ] {
         for cc in &country_codes {
-            run_operation(&agent, root, cc, &op, progress)?;
+            if let Some(c) = cancel {
+                c.check()?;
+            }
+            run_operation(&agent, root, cc, &op, progress, cancel)?;
         }
     }
     Ok(())
@@ -91,6 +95,7 @@ fn run_operation(
     cc: &str,
     op: &Operation,
     progress: Option<Progress<'_>>,
+    cancel: Option<&CancelToken>,
 ) -> anyhow::Result<()> {
     let country_folder = root.join(cc);
     let (bucket, force) = match op {
@@ -146,11 +151,15 @@ fn run_operation(
                 &country_folder,
                 &files_to_download,
                 progress,
+                cancel,
             )?;
             save_data_files_downloaded(&country_folder, &files_to_download)?;
         }
         Operation::Updates { .. } => {
             for r2 in &files_to_download {
+                if let Some(c) = cancel {
+                    c.check()?;
+                }
                 download_update_file(agent, &country_folder, r2)?;
                 emit(
                     progress,
@@ -175,6 +184,7 @@ pub fn ensure_files_downloaded(
     cc: &str,
     subdivision_files: &[PathBuf],
     progress: Option<Progress<'_>>,
+    cancel: Option<&CancelToken>,
 ) -> anyhow::Result<()> {
     if subdivision_files.iter().all(|f| f.exists()) {
         return Ok(());
@@ -203,11 +213,23 @@ pub fn ensure_files_downloaded(
                 updates: false,
             },
         );
-        download_data_files(&agent, cc, &country_folder, &files_to_download, progress)
-            .with_context(|| {
-                format!(
-                    "Failed to download {} data. Check your internet connection and try again, or run 'vali download --country {cc}' manually.",
-                    crate ::names::country_name(cc)
+        download_data_files(
+                &agent,
+                cc,
+                &country_folder,
+                &files_to_download,
+                progress,
+                cancel,
+            )
+            .map_err(|e| {
+                if cancel.is_some_and(|c| c.is_cancelled()) {
+                    return e;
+                }
+                e.context(
+                    format!(
+                        "Failed to download {} data. Check your internet connection and try again, or run 'vali download --country {cc}' manually.",
+                        crate ::names::country_name(cc)
+                    ),
                 )
             })?;
     }
@@ -219,10 +241,12 @@ fn download_data_files(
     folder: &Path,
     files: &[&R2Object],
     progress: Option<Progress<'_>>,
+    cancel: Option<&CancelToken>,
 ) -> anyhow::Result<()> {
     run_limited(
         files,
         10,
+        cancel,
         |r2| {
             download_file(agent, COUNTRIES_BUCKET, r2, folder)?;
             emit(
@@ -315,6 +339,7 @@ fn list_files(
 fn run_limited<T: Sync>(
     items: &[T],
     limit: usize,
+    cancel: Option<&CancelToken>,
     f: impl Fn(&T) -> anyhow::Result<()> + Sync,
 ) -> anyhow::Result<()> {
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -325,6 +350,9 @@ fn run_limited<T: Sync>(
                 scope
                     .spawn(|| -> anyhow::Result<()> {
                         loop {
+                            if let Some(c) = cancel {
+                                c.check()?;
+                            }
                             let i = next
                                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let Some(item) = items.get(i) else { return Ok(()) };

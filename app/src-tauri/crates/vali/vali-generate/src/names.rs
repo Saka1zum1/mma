@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ 3b22983. Do not edit; regenerate instead.
+// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
 pub static COUNTRY_NAMES: &[(&str, &str)] = &[
     ("AE", "United Arab Emirates"),

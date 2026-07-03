@@ -529,6 +529,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // --- Plugins (vali) ---
             plugins::vali_generate,
             plugins::vali_download,
+            plugins::vali_cancel,
             plugins::vali_subdivisions,
         ])
 }
@@ -626,6 +627,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(location_store::StoreState::new(location_store::StoreManager::new()))
+        .manage(plugins::ValiState::new())
         .invoke_handler({
             let specta_builder = specta_builder();
 
