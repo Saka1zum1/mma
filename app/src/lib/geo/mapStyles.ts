@@ -247,3 +247,18 @@ export const BUILTIN_STYLE_KEYS: BuiltinStyleKey[] = [
 	"grayscale",
 	"blueprint",
 ];
+
+const STYLE_BG_COLORS: Record<BuiltinStyleKey, string> = {
+	default: "#e5e3df",
+	legacy: "#e5e3df",
+	muted: "#e8e4df",
+	midnight: "#0f0f0f",
+	minimal: "#f0f0f0",
+	vintage: "#e8dcc8",
+	grayscale: "#e5e5e5",
+	blueprint: "#0d1b2a",
+};
+
+export function getStyleBackgroundColor(style: string): string {
+	return STYLE_BG_COLORS[style as BuiltinStyleKey] ?? STYLE_BG_COLORS.default;
+}

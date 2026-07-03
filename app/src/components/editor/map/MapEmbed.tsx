@@ -27,6 +27,7 @@ import { SearchControl } from "@/components/editor/map/SearchControl";
 import type { ParsedLocation } from "@/lib/data/importExport";
 import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/MapSettingsPanel";
 import { resolveStackForPrefs, CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
+import { getStyleBackgroundColor } from "@/lib/geo/mapStyles";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
 
@@ -129,6 +130,7 @@ export function MapEmbed({
 					clickableIcons: false,
 					gestureHandling: "greedy",
 					draggableCursor: "crosshair",
+					backgroundColor: getStyleBackgroundColor(prefs.mapStyleName),
 					styles: [{ stylers: [{ visibility: "off" }] }],
 				});
 
@@ -267,6 +269,7 @@ export function MapEmbed({
 		svLayerRef.current = svLayer;
 		gMapRef.current.mapTypes.set("stack", stack);
 		gMapRef.current.setMapTypeId("stack");
+		gMapRef.current.setOptions({ backgroundColor: getStyleBackgroundColor(prefs.mapStyleName) });
 	}, [prefs, useBlobby, customStyles]);
 
 	const handleSearchResult = useCallback((lat: number, lng: number, _name: string) => {

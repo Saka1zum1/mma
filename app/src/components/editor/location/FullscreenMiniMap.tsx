@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { google } from "@/lib/sv/opensv";
 import { resolveStackForPrefs, CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
+import { getStyleBackgroundColor } from "@/lib/geo/mapStyles";
 import { useMapSurface } from "@/lib/render/useMapSurface";
 import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
@@ -39,6 +40,7 @@ function ensureMinimapMap(
 			disableDefaultUI: true,
 			gestureHandling: "greedy",
 			draggableCursor: "crosshair",
+			backgroundColor: getStyleBackgroundColor(prefs.mapStyleName),
 			mapTypeId: "custom",
 			mapTypeControlOptions: { mapTypeIds: ["custom"] },
 		});
@@ -71,19 +73,25 @@ export function FullscreenMiniMap() {
 		if (!containerRef.current) return;
 		containerRef.current.appendChild(div);
 		google.maps.event.trigger(map, "resize");
-		return () => { div.remove(); };
+		return () => {
+			div.remove();
+		};
 	}, [div, map]);
 
 	useEffect(() => {
 		const b = map.getBounds();
-		if (!b) { map.panTo({ lat, lng }); return; }
+		if (!b) {
+			map.panTo({ lat, lng });
+			return;
+		}
 		// Deadzone: only follow once the pano nears the edge (outer 10%) or leaves the view,
 		// so the camera holds still until you're about to walk off-frame.
-		const ne = b.getNorthEast(), sw = b.getSouthWest(), c = b.getCenter();
+		const ne = b.getNorthEast(),
+			sw = b.getSouthWest(),
+			c = b.getCenter();
 		const latPad = (ne.lat() - sw.lat()) * 0.45;
 		const lngPad = (ne.lng() - sw.lng()) * 0.45;
-		const inside =
-			Math.abs(lat - c.lat()) <= latPad && Math.abs(lng - c.lng()) <= lngPad;
+		const inside = Math.abs(lat - c.lat()) <= latPad && Math.abs(lng - c.lng()) <= lngPad;
 		if (!inside) map.panTo({ lat, lng });
 	}, [lat, lng, map]);
 
@@ -94,6 +102,7 @@ export function FullscreenMiniMap() {
 		}).mapType;
 		map.mapTypes.set("custom", customType);
 		map.setMapTypeId("custom");
+		map.setOptions({ backgroundColor: getStyleBackgroundColor(prefs.mapStyleName) });
 	}, [prefs, map]);
 
 	const setScale = (next: number) => {
