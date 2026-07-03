@@ -6,7 +6,7 @@ import type {
 	Update,
 	LocationPatch_Deserialize as LocationPatch,
 } from "@/bindings.gen";
-import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import {
 	useKnownFieldKeys,
@@ -38,7 +38,7 @@ export function ApplyFieldAsTagsDialog({
 		const entries: { key: string; label: string; type: ExtraFieldDef["type"] }[] = [];
 		for (const key of keys) {
 			const def = getFieldDef(key);
-			entries.push({ key, label: def?.label ?? key, type: def?.type ?? "string" });
+			entries.push({ key, label: fieldLabel(key), type: def?.type ?? "string" });
 		}
 		return entries;
 	}, [keys]);

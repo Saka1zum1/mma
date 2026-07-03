@@ -110,6 +110,17 @@ export function getFieldDef(key: string): ExtraFieldDef | undefined {
 	return mergeDef(userDefs[key], pluginDefs[key]);
 }
 
+/** Display label for a field key: registered label if known, otherwise sentence-cased from camelCase/snake_case. */
+export function fieldLabel(key: string): string {
+	return (
+		getFieldDef(key)?.label ??
+		key
+			.replace(/([a-z])([A-Z])/g, "$1 $2")
+			.replace(/_/g, " ")
+			.replace(/^./, (c) => c.toUpperCase())
+	);
+}
+
 /** Merged view of all field definitions across all layers. */
 export function getAllFieldDefs(): Record<string, ExtraFieldDef> {
 	const out: Record<string, ExtraFieldDef> = {};

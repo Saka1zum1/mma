@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import type { ExtraFieldDef, ExtraFieldType, KeySpec, DatePart } from "@/bindings.gen";
-import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
 import { partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { isNumericField, colorPartition } from "./gradientMath";
 import { partition, useScope } from "@/store/useMapStore";
@@ -69,7 +69,9 @@ interface FieldOption {
 // Gradient offers Range for numbers and dates (count bins); numeric defaults to Range.
 const gradientOptions = (type: ExtraFieldType) => partitionKeyOptions(type, true);
 function defaultProjection(type: ExtraFieldType): string {
-	return type === "number" || type === "date" ? RANGE_ID : gradientOptions(type)[0]?.id ?? "value";
+	return type === "number" || type === "date"
+		? RANGE_ID
+		: (gradientOptions(type)[0]?.id ?? "value");
 }
 
 function buildGradientFields(knownKeys: ReadonlySet<string>): FieldOption[] {
@@ -78,7 +80,7 @@ function buildGradientFields(knownKeys: ReadonlySet<string>): FieldOption[] {
 		const def = getFieldDef(key);
 		const numeric = isNumericField(def);
 		if (!def || numeric || def.type === "enum" || def.type === "string" || def.type === "month") {
-			result.push({ key, label: def?.label ?? key, def, numeric });
+			result.push({ key, label: fieldLabel(key), def, numeric });
 		}
 	}
 	return result;
@@ -89,7 +91,9 @@ function defaultGradientField(fields: FieldOption[]): string {
 }
 
 export function GradientSidebar({ onClose }: { onClose: () => void }) {
-	const [fieldKey, setFieldKey] = useState(() => defaultGradientField(buildGradientFields(MMA.getKnownFieldKeys())));
+	const [fieldKey, setFieldKey] = useState(() =>
+		defaultGradientField(buildGradientFields(MMA.getKnownFieldKeys())),
+	);
 	const [projectionId, setProjectionId] = useState(RANGE_ID);
 	const [presetIdx, setPresetIdx] = useState(0);
 	const [bucketCount, setBucketCount] = useState(10);
@@ -116,7 +120,11 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 					? { kind: "numericBin", binning: { by: "count", n: bucketCount } }
 					: projectionId === "value"
 						? { kind: "value" }
-						: { kind: "datePart", part: projectionId as DatePart, tzLocal: dateTimezone === "location" };
+						: {
+								kind: "datePart",
+								part: projectionId as DatePart,
+								tzLocal: dateTimezone === "location",
+							};
 
 			const groups = await partition(fieldKey, key, scopeCtl.scope);
 			if (groups.length === 0) return;
@@ -137,7 +145,17 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 		} finally {
 			setApplying(false);
 		}
-	}, [fieldKey, fieldOpt, fieldType, projectionId, map, bucketCount, preset, scopeCtl.scope, dateTimezone]);
+	}, [
+		fieldKey,
+		fieldOpt,
+		fieldType,
+		projectionId,
+		map,
+		bucketCount,
+		preset,
+		scopeCtl.scope,
+		dateTimezone,
+	]);
 
 	return (
 		<Sidebar title="Gradient" onBack={onClose} className="gradient-sidebar">
@@ -155,9 +173,11 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							onChange={(e) => {
 								const key = e.target.value;
 								setFieldKey(key);
-								const ft = (fields.find((f) => f.key === key)?.def?.type ?? "string") as ExtraFieldType;
+								const ft = (fields.find((f) => f.key === key)?.def?.type ??
+									"string") as ExtraFieldType;
 								const opts = gradientOptions(ft);
-								if (!opts.some((p) => p.id === projectionId)) setProjectionId(defaultProjection(ft));
+								if (!opts.some((p) => p.id === projectionId))
+									setProjectionId(defaultProjection(ft));
 							}}
 						>
 							{fields.map((f) => (

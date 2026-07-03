@@ -5,7 +5,7 @@ import { selectionDisplayName } from "@/store/selections";
 import { savedToSelectionProps, describeRule, type SavedSelection } from "@/store/savedSelections";
 import { Sidebar, Field, EmptyState } from "@/components/primitives/Sidebar";
 import type { ExtraFieldDef } from "@/bindings.gen";
-import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
 import { binNumeric, compareNatural } from "@/lib/util/util";
 import type { LocationStore } from "@/api";
 import "./pivot.css";
@@ -193,7 +193,7 @@ function buildPivotFields(knownKeys: ReadonlySet<string>): FieldOption[] {
 	const result: FieldOption[] = [{ key: TAGS_FIELD_KEY, label: "Tags", def: undefined }];
 	for (const key of knownKeys) {
 		const def = getFieldDef(key);
-		result.push({ key, label: def?.label ?? key, def });
+		result.push({ key, label: fieldLabel(key), def });
 	}
 	return result;
 }

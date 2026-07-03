@@ -17,7 +17,7 @@ import type {
 } from "@/bindings.gen";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { isPinnedToPano } from "@/types";
-import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, fieldLabel, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import {
 	planFieldSet,
 	planFieldExpr,
@@ -284,7 +284,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 						return (
 							<label key={key} className="bulk-operation__field-item">
 								<input type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} />
-								<span className="bulk-operation__field-label">{def?.label ?? key}</span>
+								<span className="bulk-operation__field-label">{fieldLabel(key)}</span>
 								{def?.label && def.label !== key && (
 									<span className="bulk-operation__field-key">{key}</span>
 								)}

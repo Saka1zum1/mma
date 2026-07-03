@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { Selection, FilterOp, ExtraFieldDef } from "@/bindings.gen";
 import { cmd } from "@/lib/commands";
-import { getFieldDef, useFieldDefsVersion } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, fieldLabel, useFieldDefsVersion } from "@/lib/data/fieldDefRegistry";
 import { pickPeriodEnd, hasTimeOfDay, dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { useKnownFieldKeys, selectFilter } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
@@ -14,7 +14,19 @@ import { mdiArrowRight, mdiArrowLeft } from "@mdi/js";
 const ALL_OPS: FilterOp[] = ["eq", "neq", "gt", "lt", "gte", "lte", "between", "has", "nothas"];
 const EQUALITY_OPS: FilterOp[] = ["eq", "neq", "has", "nothas"];
 const DATE_OPS: FilterOp[] = ["between", "gt", "lt", "gte", "lte", "has", "nothas"];
-const ARRAY_OPS: FilterOp[] = ["contains", "notcontains", "eq", "neq", "gt", "lt", "gte", "lte", "between", "has", "nothas"];
+const ARRAY_OPS: FilterOp[] = [
+	"contains",
+	"notcontains",
+	"eq",
+	"neq",
+	"gt",
+	"lt",
+	"gte",
+	"lte",
+	"between",
+	"has",
+	"nothas",
+];
 const ARRAY_OP_LABELS: Partial<Record<FilterOp, string>> = {
 	eq: "length =",
 	neq: "length !=",
@@ -26,7 +38,15 @@ const ARRAY_OP_LABELS: Partial<Record<FilterOp, string>> = {
 };
 const filterBuilderState = new Map<
 	string,
-	{ field: string; op: FilterOp; value: string; value2: string; anyYear?: boolean; anyTime?: boolean; tzLocal?: boolean }
+	{
+		field: string;
+		op: FilterOp;
+		value: string;
+		value2: string;
+		anyYear?: boolean;
+		anyTime?: boolean;
+		tzLocal?: boolean;
+	}
 >();
 
 function opsForType(type: string | undefined): FilterOp[] {
@@ -62,7 +82,7 @@ export function useExtraFieldKeys(): FieldEntry[] {
 			const def = getFieldDef(key);
 			entries.push({
 				key,
-				label: def?.label ?? key,
+				label: fieldLabel(key),
 				fieldType: def?.type ?? "string",
 				fieldDef: def,
 			});
@@ -222,7 +242,9 @@ type FilterFormSeed = {
 };
 
 /** Reverse of FilterForm.handleAdd: turn a stored Filter selection back into editable form state. */
-export function filterPropsToSeed(p: Extract<Selection["props"], { type: "Filter" }>): FilterFormSeed {
+export function filterPropsToSeed(
+	p: Extract<Selection["props"], { type: "Filter" }>,
+): FilterFormSeed {
 	let op = p.op as FilterOp;
 	let anyYear = false;
 	let anyTime = false;
@@ -270,7 +292,9 @@ export function FilterForm({
 	const [field, setField] = useState(() => saved?.field || fields[0]?.key || "");
 	const [op, setOp] = useState<FilterOp>(() => {
 		const initial = saved?.op ?? "eq";
-		const ops = opsForType(fields.find((f) => f.key === (saved?.field || fields[0]?.key))?.fieldType);
+		const ops = opsForType(
+			fields.find((f) => f.key === (saved?.field || fields[0]?.key))?.fieldType,
+		);
 		return ops.includes(initial) ? initial : ops[0];
 	});
 	const [value, setValue] = useState(saved?.value ?? "");
@@ -279,15 +303,20 @@ export function FilterForm({
 	const [anyTime, setAnyTime] = useState(saved?.anyTime ?? false);
 	const [tzLocal, setTzLocal] = useState(saved?.tzLocal ?? false);
 	const fieldEntry = fields.find((f) => f.key === field);
-	const isArrayContains = fieldEntry?.fieldType === "array" && (op === "contains" || op === "notcontains");
-	const isNumeric = fieldEntry?.fieldType === "number" || fieldEntry?.fieldType === "date" || (fieldEntry?.fieldType === "array" && !isArrayContains);
+	const isArrayContains =
+		fieldEntry?.fieldType === "array" && (op === "contains" || op === "notcontains");
+	const isNumeric =
+		fieldEntry?.fieldType === "number" ||
+		fieldEntry?.fieldType === "date" ||
+		(fieldEntry?.fieldType === "array" && !isArrayContains);
 	const isDateLike = fieldEntry?.fieldType === "date" || fieldEntry?.fieldType === "month";
 	const isExactDate = fieldEntry?.fieldType === "date";
 	const availableOps = opsForType(fieldEntry?.fieldType);
 	const isBetween = op === "between" || op === "between_anyyear" || op === "between_anytime";
 
 	useEffect(() => {
-		if (persistKey) filterBuilderState.set(persistKey, { field, op, value, value2, anyYear, anyTime, tzLocal });
+		if (persistKey)
+			filterBuilderState.set(persistKey, { field, op, value, value2, anyYear, anyTime, tzLocal });
 	}, [persistKey, field, op, value, value2, anyYear, anyTime, tzLocal]);
 
 	const handleFieldChange = (key: string) => {
@@ -356,7 +385,9 @@ export function FilterForm({
 				if (isExactDate) {
 					const md = /^(\d{2})-(\d{2})$/.exec(v);
 					if (md) {
-						return String(partsToEpoch({ y: yr, mo: Number(md[1]) - 1, d: Number(md[2]) }, tzLocal));
+						return String(
+							partsToEpoch({ y: yr, mo: Number(md[1]) - 1, d: Number(md[2]) }, tzLocal),
+						);
 					}
 				}
 				if (/^\d{2}$/.test(v)) return `${yr}-${v}`;
@@ -449,15 +480,22 @@ export function FilterForm({
 	const showAnyTime = isBetween && isExactDate;
 	const showTzLocal = isExactDate;
 
-	const handleYearSelect = isBetween && fieldEntry?.fieldType === "month"
-		? (year: number) => {
-			setValue(`${year}-01`);
-			setValue2(`${year}-12`);
-		}
-		: undefined;
+	const handleYearSelect =
+		isBetween && fieldEntry?.fieldType === "month"
+			? (year: number) => {
+					setValue(`${year}-01`);
+					setValue2(`${year}-12`);
+				}
+			: undefined;
 
 	return (
-		<form className="extra-filter-builder" onSubmit={(e) => { e.preventDefault(); handleAdd(); }}>
+		<form
+			className="extra-filter-builder"
+			onSubmit={(e) => {
+				e.preventDefault();
+				handleAdd();
+			}}
+		>
 			<label>Filter by metadata:</label>
 			<select className="nselect" value={field} onChange={(e) => handleFieldChange(e.target.value)}>
 				{fields.length === 0 && <option value="">No metadata yet</option>}
@@ -545,7 +583,9 @@ export function FilterBuilder({ mapId }: { mapId: string }) {
 		<FilterForm
 			persistKey={mapId}
 			submitLabel="Add filter"
-			onSubmit={(field, op, value, value2, tzLocal) => selectFilter(field, op, value, value2, tzLocal)}
+			onSubmit={(field, op, value, value2, tzLocal) =>
+				selectFilter(field, op, value, value2, tzLocal)
+			}
 		/>
 	);
 }

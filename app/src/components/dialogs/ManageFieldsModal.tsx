@@ -10,7 +10,7 @@ import {
 } from "@/store/useMapStore";
 import type { ExtraFieldDef } from "@/bindings.gen";
 import type { MergeWinner } from "@/lib/data/fieldOps";
-import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, fieldLabel, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 
 type Comparison = NonNullable<ExtraFieldDef["comparison"]>;
 const FIELD_TYPES: ExtraFieldDef["type"][] = ["string", "number", "date", "month", "enum", "array"];
@@ -96,7 +96,7 @@ function buildRows(): FieldRow[] {
 		return {
 			key,
 			draftKey: key,
-			label: def?.label ?? key,
+			label: fieldLabel(key),
 			type: def?.type ?? "string",
 			comparison: def?.comparison ?? null,
 		};
