@@ -1458,6 +1458,7 @@ declare const COMMANDS: {
 		icon: string;
 		group: "Map";
 		defaultBinding: string;
+		aliases: string[];
 		execute: () => Promise<string>;
 		enabled: () => boolean;
 	};
@@ -1537,6 +1538,7 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: typeof selectUntagged;
 	};
 	"select-unpanned": {
@@ -1592,6 +1594,7 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: typeof loadGeoJSON;
 	};
 	"download-polygon-geojson": {
@@ -1613,18 +1616,21 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"merge-duplicates": {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"filter-by-metadata": {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"top-k": {
@@ -1650,6 +1656,7 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: () => boolean;
 		enabled: () => boolean;
 	};
@@ -1657,6 +1664,7 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Selections";
+		aliases: string[];
 		execute: () => Promise<void>;
 		enabled: () => boolean;
 	};
@@ -1684,36 +1692,42 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Bulk Operations";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"bulk-enrich": {
 		label: string;
 		icon: string;
 		group: "Bulk Operations";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"bulk-set-field": {
 		label: string;
 		icon: string;
 		group: "Bulk Operations";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"bulk-clear-fields": {
 		label: string;
 		icon: string;
 		group: "Bulk Operations";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"bulk-pin-pano": {
 		label: string;
 		icon: string;
 		group: "Bulk Operations";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"bulk-heading-road": {
 		label: string;
 		icon: string;
 		group: "Bulk Operations";
+		aliases: string[];
 		execute: () => boolean;
 	};
 	"delete-selected-tags": {
@@ -1733,6 +1747,7 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Tags";
+		aliases: string[];
 		execute: () => boolean;
 		enabled: () => boolean;
 	};
@@ -1740,6 +1755,7 @@ declare const COMMANDS: {
 		label: string;
 		icon: string;
 		group: "Tags";
+		aliases: string[];
 		execute: () => boolean;
 		enabled: () => boolean;
 	};

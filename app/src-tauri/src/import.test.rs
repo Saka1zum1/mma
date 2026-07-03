@@ -308,7 +308,7 @@ fn bench_parse_real() {
     let _ = log::set_logger(&STDERR_LOG);
     log::set_max_level(log::LevelFilter::Debug);
     let path = std::env::var("MMA_BENCH_FILE")
-        .unwrap_or_else(|_| "C:/Users/Ryan/Downloads/us 850k 01.01.26.json".to_string());
+        .unwrap_or_else(|_| "C:/data/us 850k 01.01.26.json".to_string());
 
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
