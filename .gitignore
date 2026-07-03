@@ -46,3 +46,5 @@ docs/
 CLAUDE.md
 mma-source
 *.bin
+# sidecar ONNX models (exported/downloaded, not committed)
+plugins/*/sidecar/models/

@@ -1,0 +1,12 @@
+{
+  "name": "mma-plugin-copyright",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "mma-plugin-types": "file:../types"
+  }
+}
