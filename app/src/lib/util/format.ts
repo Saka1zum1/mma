@@ -1,3 +1,5 @@
+export const APP_NAME = "Map Making App";
+
 export const fmt = new Intl.NumberFormat("en");
 export const dateFmt = new Intl.DateTimeFormat("en-US", {
 	year: "numeric",

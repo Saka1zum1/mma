@@ -27,6 +27,7 @@ import { mdiCog, mdiPuzzle, mdiClose, mdiBookOpenPageVariantOutline } from "@mdi
 import { ToastContainer } from "@/components/primitives/Toast";
 import { TooltipProvider } from "@/components/primitives/Tooltip";
 import { useUpdateState, dismissUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
+import { APP_NAME } from "@/lib/util/format";
 import "@/plugins";
 
 // Dynamic import (deck.gl/luma.gl out of the initial bundle) WITHOUT React.lazy/Suspense —
@@ -231,7 +232,7 @@ function WelcomeDialog({ open, onDismiss }: { open: boolean; onDismiss: () => vo
 				if (!v) onDismiss();
 			}}
 		>
-			<DialogContent title="Welcome to MMA" className="welcome-dialog">
+			<DialogContent title={`Welcome to ${APP_NAME}`} className="welcome-dialog">
 				<p>
 					If you're new, the{" "}
 					<a

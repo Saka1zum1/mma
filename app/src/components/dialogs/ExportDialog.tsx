@@ -196,10 +196,10 @@ export function ExportDialog({ onClose }: Props) {
 								checked={saveExtras}
 								onChange={(e) => setSaveExtras(e.target.checked)}
 							/>
-							Save MMA data
+							Save app data
 							<br />
 							<small className="export-modal__help">
-								Include MMA specific data like tags. Not including this makes the file smaller,
+								Include app-specific data like tags. Not including this makes the file smaller,
 								which can help when uploading maps with 100K+ locations to GeoGuessr.
 							</small>
 						</label>

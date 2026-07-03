@@ -2,6 +2,7 @@
 import { createContext, useContext, type ReactNode, type ComponentPropsWithoutRef } from "react";
 import { MANUAL_IMG_DIMS } from "@/components/manual/manual-img-dims.gen";
 import { chapterTitle } from "@/components/manual/chapters";
+import { APP_NAME } from "@/lib/util/format";
 
 // --- Content primitives, provided to every MDX chapter via the `components` prop ---
 
@@ -65,4 +66,8 @@ function MdxLink({ href, children, ...rest }: ComponentPropsWithoutRef<"a">) {
 	);
 }
 
-export const MANUAL_COMPONENTS = { Kbd, Note, Img, ChapterLink, a: MdxLink };
+function App() {
+	return <>{APP_NAME}</>;
+}
+
+export const MANUAL_COMPONENTS = { Kbd, Note, Img, ChapterLink, App, a: MdxLink };
