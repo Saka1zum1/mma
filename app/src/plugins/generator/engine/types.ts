@@ -46,8 +46,10 @@ export interface GeneratorSettings {
 	adjustZoom: boolean;
 	zoomLevel: number;
 	speed: number;
-	poissonSampling: boolean;
+	samplingMode: SamplingMode;
 }
+
+export type SamplingMode = "random" | "poisson";
 
 export type SearchMode = "contains" | "fullword" | "startswith" | "endswith" | "sectionmatch";
 
@@ -102,7 +104,7 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 	adjustZoom: false,
 	zoomLevel: 0,
 	speed: 1000,
-	poissonSampling: false,
+	samplingMode: "random",
 };
 
 export interface GeneratorRegionMeta {

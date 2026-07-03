@@ -190,7 +190,7 @@ export class GenerationEngine {
 	}
 
 	private async generateRegion(region: GeneratorRegion): Promise<void> {
-		if (this.settings.poissonSampling) {
+		if (this.settings.samplingMode === "poisson") {
 			await this.generateRegionPoisson(region);
 		} else {
 			await this.generateRegionRandom(region);

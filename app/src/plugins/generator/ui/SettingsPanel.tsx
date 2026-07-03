@@ -286,12 +286,17 @@ export function SettingsPanel({
 					min={10}
 					max={1000000}
 				/>
-				<Check
-					label="Uniform spacing"
-					checked={settings.poissonSampling}
-					onChange={(v) => set("poissonSampling", v)}
-					title="Pre-compute evenly spaced probes (Poisson disk). Spacing = 2x radius."
-				/>
+				<label className="generator-settings__number">
+					Sampling
+					<SegmentedControl
+						value={settings.samplingMode}
+						onChange={(v) => set("samplingMode", v as GeneratorSettings["samplingMode"])}
+						options={[
+							{ value: "random", label: "Random" },
+							{ value: "poisson", label: "Uniform" },
+						]}
+					/>
+				</label>
 				<NumberInput
 					label="Generators"
 					value={settings.numGenerators}

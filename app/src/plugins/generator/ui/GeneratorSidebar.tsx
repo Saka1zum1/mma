@@ -116,7 +116,7 @@ function summarizeSettings(s: GeneratorSettings): string {
 
 	// Radius
 	parts.push(s.radius >= 1000 ? `${s.radius / 1000}km radius` : `${s.radius}m radius`);
-	if (s.poissonSampling) parts.push("uniform spacing");
+	if (s.samplingMode !== "random") parts.push(`${s.samplingMode} sampling`);
 
 	// Date behavior
 	if (s.checkAllDates) parts.push("checking all dates");
