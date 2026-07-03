@@ -18,8 +18,7 @@ import { loadAndActivatePlugin, loadUserPlugin } from "@/plugins/index";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 
-const REGISTRY_URL =
-	"https://raw.githubusercontent.com/ccmdi/mma/master/plugins/registry.json";
+const REGISTRY_URL = "https://raw.githubusercontent.com/ccmdi/mma/master/plugins/registry.json";
 
 interface RegistryEntry {
 	id: string;
@@ -98,9 +97,7 @@ function CoreCard({ plugin }: { plugin: Plugin }) {
 			</div>
 			<div className="plugin-card__info">
 				<div className="plugin-card__name">{plugin.name}</div>
-				{plugin.description && (
-					<div className="plugin-card__desc">{plugin.description}</div>
-				)}
+				{plugin.description && <div className="plugin-card__desc">{plugin.description}</div>}
 			</div>
 			{!plugin.comingSoon && (
 				<button
@@ -178,10 +175,10 @@ function AdditionalCard({
 	const TRASH = "M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z";
 
 	return (
-		<div className={`plugin-card ${enabled ? "plugin-card--enabled" : ""} ${comingSoon ? "plugin-card--coming-soon" : ""}`}>
-			<div className="plugin-card__icon">
-				{icon ? <Icon path={icon} size={32} /> : null}
-			</div>
+		<div
+			className={`plugin-card ${enabled ? "plugin-card--enabled" : ""} ${comingSoon ? "plugin-card--coming-soon" : ""}`}
+		>
+			<div className="plugin-card__icon">{icon ? <Icon path={icon} size={32} /> : null}</div>
 			<div className="plugin-card__info">
 				<div className="plugin-card__name">{name}</div>
 				{description && <div className="plugin-card__desc">{description}</div>}
@@ -272,38 +269,38 @@ export function PluginMarketplace({
 	}, []);
 
 	useEffect(() => {
-		if (open && tab === "additional" && !registry) fetchRegistry();
-	}, [open, tab, registry, fetchRegistry]);
+		if (open && !registry) fetchRegistry();
+	}, [open, registry, fetchRegistry]);
 
-	const additionalEntries: AdditionalEntry[] = (() => {
+	const { installedEntries, registryEntries } = (() => {
 		const installedById = new Map(installedManifests.map((m) => [m.id, m]));
-		const seen = new Set<string>();
-		const entries: AdditionalEntry[] = [];
+		const installed: AdditionalEntry[] = [];
+		const fromRegistry: AdditionalEntry[] = [];
 
 		if (registry) {
 			for (const r of registry) {
-				seen.add(r.id);
-				const installedManifest = installedById.get(r.id);
-				const installed = !!installedManifest;
-				const updatable =
-					installed && isPluginUpdatable(installedManifest.version, r.version);
-				entries.push({
+				const manifest = installedById.get(r.id);
+				const isInstalled = !!manifest;
+				const updatable = isInstalled && isPluginUpdatable(manifest.version, r.version);
+				const entry: AdditionalEntry = {
 					id: r.id,
 					name: r.name,
 					description: r.description,
 					icon: r.icon,
-					installed,
+					installed: isInstalled,
 					enabled: isPluginEnabled(r.id),
 					updatable,
 					latestVersion: r.version,
 					comingSoon: r.comingSoon,
-				});
+				};
+				if (isInstalled) installed.push(entry);
+				else fromRegistry.push(entry);
 			}
 		}
 
 		for (const m of installedManifests) {
-			if (seen.has(m.id)) continue;
-			entries.push({
+			if (registry && installed.some((e) => e.id === m.id)) continue;
+			installed.push({
 				id: m.id,
 				name: m.name,
 				description: m.description || "",
@@ -314,20 +311,23 @@ export function PluginMarketplace({
 			});
 		}
 
-		return entries;
+		return { installedEntries: installed, registryEntries: fromRegistry };
 	})();
 
-	const handleInstall = useCallback(async (id: string) => {
-		try {
-			const manifest = await cmd.installPlugin(id);
-			await loadAndActivatePlugin(manifest);
-			setPluginEnabled(id, true);
-			refreshInstalled();
-			rerender((n) => n + 1);
-		} catch (e) {
-			log.error(`[marketplace] install failed for "${id}":`, e);
-		}
-	}, [refreshInstalled]);
+	const handleInstall = useCallback(
+		async (id: string) => {
+			try {
+				const manifest = await cmd.installPlugin(id);
+				await loadAndActivatePlugin(manifest);
+				setPluginEnabled(id, true);
+				refreshInstalled();
+				rerender((n) => n + 1);
+			} catch (e) {
+				log.error(`[marketplace] install failed for "${id}":`, e);
+			}
+		},
+		[refreshInstalled],
+	);
 
 	const handleEnable = useCallback((id: string) => {
 		setPluginEnabled(id, true);
@@ -341,35 +341,41 @@ export function PluginMarketplace({
 		rerender((n) => n + 1);
 	}, []);
 
-	const handleUninstall = useCallback(async (id: string) => {
-		deactivatePlugin(id);
-		setPluginEnabled(id, false);
-		unregisterPlugin(id);
-		try {
-			await cmd.uninstallPlugin(id);
-		} catch (e) {
-			log.error(`[marketplace] uninstall failed for "${id}":`, e);
-		}
-		refreshInstalled();
-		rerender((n) => n + 1);
-	}, [refreshInstalled]);
-
-	const handleUpdate = useCallback(async (id: string) => {
-		const wasEnabled = isPluginEnabled(id);
-		try {
-			// Tear down the running plugin, re-download (install overwrites the files),
-			// then re-register the fresh code — preserving enabled/disabled state.
-			if (wasEnabled) deactivatePlugin(id);
+	const handleUninstall = useCallback(
+		async (id: string) => {
+			deactivatePlugin(id);
+			setPluginEnabled(id, false);
 			unregisterPlugin(id);
-			const manifest = await cmd.installPlugin(id);
-			await loadUserPlugin(manifest);
-			if (wasEnabled) activatePlugin(id);
+			try {
+				await cmd.uninstallPlugin(id);
+			} catch (e) {
+				log.error(`[marketplace] uninstall failed for "${id}":`, e);
+			}
 			refreshInstalled();
 			rerender((n) => n + 1);
-		} catch (e) {
-			log.error(`[marketplace] update failed for "${id}":`, e);
-		}
-	}, [refreshInstalled]);
+		},
+		[refreshInstalled],
+	);
+
+	const handleUpdate = useCallback(
+		async (id: string) => {
+			const wasEnabled = isPluginEnabled(id);
+			try {
+				// Tear down the running plugin, re-download (install overwrites the files),
+				// then re-register the fresh code — preserving enabled/disabled state.
+				if (wasEnabled) deactivatePlugin(id);
+				unregisterPlugin(id);
+				const manifest = await cmd.installPlugin(id);
+				await loadUserPlugin(manifest);
+				if (wasEnabled) activatePlugin(id);
+				refreshInstalled();
+				rerender((n) => n + 1);
+			} catch (e) {
+				log.error(`[marketplace] update failed for "${id}":`, e);
+			}
+		},
+		[refreshInstalled],
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -398,21 +404,30 @@ export function PluginMarketplace({
 				)}
 
 				{tab === "additional" && (
-					<>
-						{!registry && !fetchError && (
-							<div className="plugin-marketplace__grid">
-								{Array.from({ length: 4 }, (_, i) => (
-									<div key={i} className="plugin-card plugin-card--skeleton" aria-hidden="true">
-										<div className="plugin-card__icon" />
-										<div className="plugin-card__info">
-											<div className="plugin-skeleton__line plugin-skeleton__line--title" />
-											<div className="plugin-skeleton__line" />
-										</div>
-										<div className="plugin-skeleton__btn" />
+					<div className="plugin-marketplace__grid">
+						{installedEntries.map((e) => (
+							<AdditionalCard
+								key={e.id}
+								{...e}
+								onInstall={handleInstall}
+								onEnable={handleEnable}
+								onDisable={handleDisable}
+								onUninstall={handleUninstall}
+								onUpdate={handleUpdate}
+							/>
+						))}
+						{!registry &&
+							!fetchError &&
+							Array.from({ length: 4 }, (_, i) => (
+								<div key={i} className="plugin-card plugin-card--skeleton" aria-hidden="true">
+									<div className="plugin-card__icon" />
+									<div className="plugin-card__info">
+										<div className="plugin-skeleton__line plugin-skeleton__line--title" />
+										<div className="plugin-skeleton__line" />
 									</div>
-								))}
-							</div>
-						)}
+									<div className="plugin-skeleton__btn" />
+								</div>
+							))}
 						{fetchError && (
 							<div className="plugin-marketplace__empty">
 								Failed to load registry: {fetchError}
@@ -422,25 +437,21 @@ export function PluginMarketplace({
 								</button>
 							</div>
 						)}
-						{registry && additionalEntries.length === 0 && (
+						{registryEntries.map((e) => (
+							<AdditionalCard
+								key={e.id}
+								{...e}
+								onInstall={handleInstall}
+								onEnable={handleEnable}
+								onDisable={handleDisable}
+								onUninstall={handleUninstall}
+								onUpdate={handleUpdate}
+							/>
+						))}
+						{registry && installedEntries.length === 0 && registryEntries.length === 0 && (
 							<div className="plugin-marketplace__empty">No additional plugins available.</div>
 						)}
-						{additionalEntries.length > 0 && (
-							<div className="plugin-marketplace__grid">
-								{additionalEntries.map((e) => (
-									<AdditionalCard
-										key={e.id}
-										{...e}
-										onInstall={handleInstall}
-										onEnable={handleEnable}
-										onDisable={handleDisable}
-										onUninstall={handleUninstall}
-										onUpdate={handleUpdate}
-									/>
-								))}
-							</div>
-						)}
-					</>
+					</div>
 				)}
 			</DialogContent>
 		</Dialog>
