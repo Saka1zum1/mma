@@ -1,3 +1,12 @@
+## v0.7.1 — 2026-07-03
+- Poisson disk, blue line coverage, and BFS kernel sampling modes for the map generator
+- Vali generate and download can now be cancelled mid-operation
+- Welcome dialog on first launch with links to the manual and Discord
+- Discord and manual shortcut buttons on the map list screen
+- App is now referred to as "Map Making App" in the UI
+- Fixed plugin type declarations exporting mangled names
+- Fixed map list scrollbar visible behind the manual
+
 ## v0.7.0 — 2026-07-03
 - **Vali generation is now 5x faster, runs directly in the sidebar, and requires no additional installation**
 - **New Vision plugin: search your locations by describing what they look like, or find ones that look alike**
