@@ -42,7 +42,6 @@ var require_jsx_runtime = __commonJS({
 var import_react = __toESM(require_react());
 
 // vision/src/sidecar.ts
-var BINARY_NAME = "mma-vision";
 var IS_WIN = navigator.userAgent.includes("Windows");
 var SEP = IS_WIN ? "\\" : "/";
 var _pluginDir = null;
@@ -54,7 +53,7 @@ async function pluginDir() {
   return _pluginDir;
 }
 async function modelDir() {
-  return `${await pluginDir()}${SEP}models`;
+  return `${await pluginDir()}${SEP}sidecar${SEP}models`;
 }
 async function clipCacheDir() {
   return `${await pluginDir()}${SEP}clip-cache`;
@@ -64,44 +63,15 @@ async function writeInputFile(data) {
   const name = `mma_vision_${Date.now()}_${tempCounter++}.json`;
   return MMA.cmd.writeTempFile(name, JSON.stringify(data));
 }
-function spawnCommand(args) {
-  const lineCallbacks = [];
-  const stderrCallbacks = [];
-  const closeCallbacks = [];
-  let child = null;
+async function spawnCommand(args) {
+  const run = await MMA.sidecar.spawn("vision", "mma-vision", args);
+  run.onStderr((line) => console.error("[vision]", line));
   const proc = {
-    kill() {
-      child?.kill();
-    },
-    onLine(cb) {
-      lineCallbacks.push(cb);
-    },
-    onStderr(cb) {
-      stderrCallbacks.push(cb);
-    },
-    onClose(cb) {
-      closeCallbacks.push(cb);
-    }
+    kill: () => run.kill(),
+    onLine: (cb) => run.onLine(cb),
+    onStderr: (cb) => run.onStderr(cb)
   };
-  const done = (async () => {
-    const cmd = MMA.shell.Command.create(BINARY_NAME, args);
-    cmd.stdout.on("data", (line) => {
-      const trimmed = line.trim();
-      if (trimmed) lineCallbacks.forEach((cb) => cb(trimmed));
-    });
-    cmd.stderr.on("data", (line) => {
-      console.error("[vision]", line);
-      const trimmed = line.trim();
-      if (trimmed) stderrCallbacks.forEach((cb) => cb(trimmed));
-    });
-    child = await cmd.spawn();
-    await new Promise((resolve) => {
-      cmd.on("close", (ev) => {
-        closeCallbacks.forEach((cb) => cb(ev.code));
-        resolve();
-      });
-    });
-  })();
+  const done = new Promise((resolve) => run.onExit(() => resolve()));
   return { process: proc, done };
 }
 async function resolveWorldSizes(panoIds, onProgress) {
@@ -125,11 +95,14 @@ async function resolveWorldSizes(panoIds, onProgress) {
 }
 async function listCached() {
   const cd = await clipCacheDir();
-  const cmd = MMA.shell.Command.create(BINARY_NAME, ["list-cached", "--cache-dir", cd]);
-  const out = await cmd.execute();
-  if (out.code !== 0) return /* @__PURE__ */ new Set();
+  const run = await MMA.sidecar.spawn("vision", "mma-vision", ["list-cached", "--cache-dir", cd]);
+  let out = "";
+  run.onLine((line) => {
+    out += line;
+  });
+  await new Promise((resolve) => run.onExit(() => resolve()));
   try {
-    return new Set(JSON.parse(out.stdout.trim()));
+    return new Set(JSON.parse(out.trim()));
   } catch {
     return /* @__PURE__ */ new Set();
   }
@@ -146,8 +119,6 @@ async function spawnEmbed(panoIds, onMetaProgress) {
       onLine() {
       },
       onStderr() {
-      },
-      onClose() {
       }
     };
     return { process: proc, done: Promise.resolve() };
@@ -189,7 +160,7 @@ function panoIdToLocId(locs, panoId) {
 }
 function VisionSidebar({ onClose }) {
   const [query, setQuery] = (0, import_react.useState)("");
-  const [threshold, setThreshold] = (0, import_react.useState)(0.28);
+  const [threshold, setThreshold] = (0, import_react.useState)(0.01);
   const [running, setRunning] = (0, import_react.useState)(false);
   const [progress, setProgress] = (0, import_react.useState)("");
   const [error, setError] = (0, import_react.useState)("");
@@ -283,13 +254,13 @@ function VisionSidebar({ onClose }) {
           }
         }
       ) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: `Min confidence: ${threshold.toFixed(2)}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: `Min confidence: ${threshold.toFixed(3)}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "input",
         {
           type: "range",
-          min: 0.18,
-          max: 0.45,
-          step: 0.01,
+          min: 0,
+          max: 0.3,
+          step: 5e-3,
           value: threshold,
           onChange: (e) => setThreshold(Number(e.target.value)),
           style: { width: "100%" }
@@ -309,7 +280,7 @@ function VisionSidebar({ onClose }) {
 // vision/src/FindSimilarButton.tsx
 var import_react2 = __toESM(require_react());
 var import_jsx_runtime2 = __toESM(require_jsx_runtime());
-var SIMILARITY_THRESHOLD = 0.9;
+var SIMILARITY_THRESHOLD = 0.85;
 function FindSimilarButton() {
   const [running, setRunning] = (0, import_react2.useState)(false);
   const [result, setResult] = (0, import_react2.useState)(null);

@@ -2,6 +2,33 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use crate::embed::{self, EmbedCache, EMBED_DIM};
 
+/// SigLIP sigmoid scoring parameters, loaded from models/scoring.json.
+/// logit_scale here is already exp'd (the multiplier applied to cosine).
+#[derive(Deserialize)]
+pub struct Scoring {
+    pub logit_scale: f32,
+    pub logit_bias: f32,
+}
+
+impl Scoring {
+    pub fn load(model_dir: &str) -> Self {
+        let p = Path::new(model_dir).join("scoring.json");
+        let raw = std::fs::read_to_string(&p)
+            .unwrap_or_else(|e| panic!("failed to read scoring.json at {}: {e}", p.display()));
+        serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("invalid scoring.json: {e}"))
+    }
+}
+
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
+}
+
+/// SigLIP text-to-image probability from a cosine similarity.
+pub fn text_probability(cosine: f32, scoring: &Scoring) -> f32 {
+    sigmoid(cosine * scoring.logit_scale + scoring.logit_bias)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextSearchInput {
@@ -37,12 +64,19 @@ fn max_crop_score(query: &[f32; EMBED_DIM], crops: &[[f32; EMBED_DIM]]) -> f32 {
         .fold(f32::NEG_INFINITY, f32::max)
 }
 
-fn search(cache: &EmbedCache, query: &[f32; EMBED_DIM], k: Option<usize>, threshold: Option<f32>, exclude: Option<&str>) -> Vec<SearchHit> {
+fn search(
+    cache: &EmbedCache,
+    query: &[f32; EMBED_DIM],
+    k: Option<usize>,
+    threshold: Option<f32>,
+    exclude: Option<&str>,
+    score_fn: impl Fn(f32) -> f32,
+) -> Vec<SearchHit> {
     let mut results: Vec<SearchHit> = cache.entries.iter()
         .filter(|(pid, _)| exclude.is_none_or(|ex| pid.as_str() != ex))
         .map(|(pid, crops)| SearchHit {
             pano_id: pid.clone(),
-            score: (max_crop_score(query, crops) * 10000.0).round() / 10000.0,
+            score: (score_fn(max_crop_score(query, crops)) * 10000.0).round() / 10000.0,
         })
         .collect();
 
@@ -66,10 +100,12 @@ pub fn text_search(input: &TextSearchInput, model_dir: &str, cache_dir: &str) ->
     let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
         .unwrap_or_else(|e| panic!("failed to load tokenizer: {e}"));
 
+    let scoring = Scoring::load(model_dir);
     let mut session = embed::load_text_encoder(model_dir);
     match embed::embed_text(&mut session, &tokenizer, &input.query) {
         Ok(query_emb) => SearchResults {
-            results: search(&cache, &query_emb, input.k, input.threshold, None),
+            results: search(&cache, &query_emb, input.k, input.threshold, None,
+                |cos| text_probability(cos, &scoring)),
         },
         Err(e) => {
             eprintln!("text encoding error: {e}");
@@ -95,6 +131,11 @@ pub fn image_search(input: &ImageSearchInput, cache_dir: &str) -> SearchResults 
     if norm > 0.0 { for v in &mut ref_emb { *v /= norm; } }
 
     SearchResults {
-        results: search(&cache, &ref_emb, input.k, input.threshold, Some(&input.pano_id)),
+        results: search(&cache, &ref_emb, input.k, input.threshold, Some(&input.pano_id),
+            |cos| cos),
     }
 }
+
+#[cfg(test)]
+#[path = "search.test.rs"]
+mod tests;

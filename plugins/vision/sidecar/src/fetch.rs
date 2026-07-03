@@ -30,6 +30,34 @@ fn client() -> &'static reqwest::Client {
     })
 }
 
+const RETRY_BACKOFFS_MS: [u64; 2] = [500, 1500];
+
+async fn fetch_tile(cl: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+    let mut attempt = 0;
+    loop {
+        match cl.get(url).send().await {
+            Ok(resp) if resp.status().is_client_error() => {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            Ok(resp) => match resp.error_for_status() {
+                Ok(resp) => return resp.bytes().await.map(|b| b.to_vec()).map_err(|e| e.to_string()),
+                Err(e) => {
+                    if attempt >= RETRY_BACKOFFS_MS.len() {
+                        return Err(e.to_string());
+                    }
+                }
+            },
+            Err(e) => {
+                if attempt >= RETRY_BACKOFFS_MS.len() {
+                    return Err(e.to_string());
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(RETRY_BACKOFFS_MS[attempt])).await;
+        attempt += 1;
+    }
+}
+
 fn tile_layout(zoom: u32, world_w: u32, world_h: u32) -> (u32, u32, u32, u32, u32) {
     let max_zoom = ((world_w as f64) / TILE_PX as f64).log2().ceil() as u32;
     let z = zoom.min(max_zoom);
@@ -58,12 +86,7 @@ async fn fetch_and_stitch(
                 let url = format!(
                     "{TILE_URL}?cb_client=apiv3&panoid={pid}&output=tile&zoom={z}&x={x}&y={y}"
                 );
-                let data = client.get(&url).send().await
-                    .and_then(|r| r.error_for_status())
-                    .map_err(|e| e.to_string())?
-                    .bytes().await
-                    .map(|b| b.to_vec())
-                    .map_err(|e| e.to_string())?;
+                let data = fetch_tile(client, &url).await?;
                 Ok::<(u32, u32, Vec<u8>), String>((x, y, data))
             }
         })
@@ -71,16 +94,14 @@ async fn fetch_and_stitch(
 
     let results = futures::future::join_all(futs).await;
 
+    // Refuse to embed a partially-black pano: any failed or undecodable tile
+    // fails the whole pano so a later run retries it.
     let mut pano = image::RgbImage::new(width, height);
     for result in results {
-        let (tx, ty, data) = match result {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let tile = match image::load_from_memory(&data) {
-            Ok(img) => img.to_rgb8(),
-            Err(_) => continue,
-        };
+        let (tx, ty, data) = result?;
+        let tile = image::load_from_memory(&data)
+            .map_err(|e| format!("tile decode failed: {e}"))?
+            .to_rgb8();
         let dst_x = tx * TILE_PX;
         let dst_y = ty * TILE_PX;
         let copy_w = tile.width().min(width.saturating_sub(dst_x));

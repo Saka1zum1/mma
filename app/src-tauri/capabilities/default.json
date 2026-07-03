@@ -20,7 +20,6 @@
 		{
 			"identifier": "shell:allow-execute",
 			"allow": [
-				{ "name": "mma-vision", "cmd": "mma-vision", "args": true },
 				{ "name": "sh", "cmd": "sh", "args": true },
 				{ "name": "bash", "cmd": "bash", "args": true },
 				{ "name": "cmd", "cmd": "cmd", "args": true },
@@ -31,7 +30,6 @@
 		{
 			"identifier": "shell:allow-spawn",
 			"allow": [
-				{ "name": "mma-vision", "cmd": "mma-vision", "args": true },
 				{ "name": "sh", "cmd": "sh", "args": true },
 				{ "name": "bash", "cmd": "bash", "args": true },
 				{ "name": "cmd", "cmd": "cmd", "args": true },

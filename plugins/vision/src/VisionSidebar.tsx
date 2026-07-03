@@ -18,7 +18,7 @@ function panoIdToLocId(locs: Awaited<ReturnType<typeof MMA.fetchAllLocations>>, 
 
 export function VisionSidebar({ onClose }: { onClose: () => void }) {
 	const [query, setQuery] = useState("");
-	const [threshold, setThreshold] = useState(0.28);
+	const [threshold, setThreshold] = useState(0.01);
 	const [running, setRunning] = useState(false);
 	const [progress, setProgress] = useState("");
 	const [error, setError] = useState("");
@@ -116,12 +116,12 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 						onKeyDown={(e) => { if (e.key === "Enter" && !running) run(); }}
 					/>
 				</Field>
-				<Field label={`Min confidence: ${threshold.toFixed(2)}`}>
+				<Field label={`Min confidence: ${threshold.toFixed(3)}`}>
 					<input
 						type="range"
-						min={0.18}
-						max={0.45}
-						step={0.01}
+						min={0}
+						max={0.3}
+						step={0.005}
 						value={threshold}
 						onChange={(e) => setThreshold(Number(e.target.value))}
 						style={{ width: "100%" }}

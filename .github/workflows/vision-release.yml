@@ -14,22 +14,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Python deps
-        run: pip install torch transformers --index-url https://download.pytorch.org/whl/cpu
+      # export_models.py is stdlib-only (pinned downloads + SHA256 verification)
       - name: Export ONNX models
         working-directory: plugins/vision/sidecar
         run: python export_models.py --output-dir models
       - uses: actions/upload-artifact@v4
         with:
-          name: clip-models
+          name: vision-models
           path: plugins/vision/sidecar/models/
 
-  # Build sidecar binary for each platform
+  # Build sidecar binary for each platform (GPU backend where available)
   build-sidecar:
     uses: ./.github/workflows/build-sidecar.yml
     with:
       crate-path: plugins/vision/sidecar
       binary-name: mma-vision
+      features-windows-x64: directml
+      features-macos-arm64: coreml
+      features-macos-x64: coreml
 
   # Bundle everything into release archives
   package:
@@ -40,14 +42,19 @@ jobs:
     strategy:
       matrix:
         include:
+          # GPU builds load the fp16 models; CPU (linux) loads int8 vision + fp32 text.
           - label: windows-x64
             suffix: .exe
+            models: vision_model_fp16.onnx text_model_fp16.onnx
           - label: macos-arm64
             suffix: ''
+            models: vision_model_fp16.onnx text_model_fp16.onnx
           - label: macos-x64
             suffix: ''
+            models: vision_model_fp16.onnx text_model_fp16.onnx
           - label: linux-x64
             suffix: ''
+            models: vision_model.onnx text_model.onnx
     steps:
       - uses: actions/checkout@v4
 
@@ -58,30 +65,31 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: clip-models
-          path: bundle/models/
+          name: vision-models
+          path: all-models/
 
-      # Include the JS plugin
-      - name: Copy JS plugin
+      - name: Select platform models
         run: |
-          cp plugins/vision/manifest.json bundle/
-          cp plugins/vision/index.js bundle/
+          mkdir -p bundle/models
+          for f in ${{ matrix.models }} tokenizer.json scoring.json; do
+            cp "all-models/$f" bundle/models/
+          done
 
       - name: Create archive
         run: |
           cd bundle
           chmod +x mma-vision${{ matrix.suffix }} 2>/dev/null || true
-          tar czf ../mma-vision-${{ matrix.label }}.tar.gz .
+          zip -r ../mma-vision-${{ matrix.label }}.zip .
 
       - name: Upload release archive
         uses: actions/upload-artifact@v4
         with:
           name: mma-vision-bundle-${{ matrix.label }}
-          path: mma-vision-${{ matrix.label }}.tar.gz
+          path: mma-vision-${{ matrix.label }}.zip
 
       # Attach to GitHub release if triggered by tag
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: mma-vision-${{ matrix.label }}.tar.gz
+          files: mma-vision-${{ matrix.label }}.zip

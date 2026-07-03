@@ -1,5 +1,3 @@
-const BINARY_NAME = "mma-vision";
-
 const IS_WIN = navigator.userAgent.includes("Windows");
 const SEP = IS_WIN ? "\\" : "/";
 
@@ -12,10 +10,13 @@ async function pluginDir(): Promise<string> {
 	return _pluginDir;
 }
 
+// Models ship inside the sidecar bundle, extracted next to the binary.
 async function modelDir(): Promise<string> {
-	return `${await pluginDir()}${SEP}models`;
+	return `${await pluginDir()}${SEP}sidecar${SEP}models`;
 }
 
+// Embeddings cache lives outside the sidecar dir: sidecar updates wipe
+// {appData}/plugins/vision/sidecar/ entirely, and the cache is expensive to rebuild.
 async function clipCacheDir(): Promise<string> {
 	return `${await pluginDir()}${SEP}clip-cache`;
 }
@@ -24,7 +25,6 @@ interface SidecarProcess {
 	kill(): void;
 	onLine(cb: (line: string) => void): void;
 	onStderr(cb: (line: string) => void): void;
-	onClose(cb: (code: number | null) => void): void;
 }
 
 let tempCounter = 0;
@@ -34,40 +34,17 @@ async function writeInputFile(data: unknown): Promise<string> {
 	return MMA.cmd.writeTempFile(name, JSON.stringify(data));
 }
 
-function spawnCommand(
-	args: string[],
-): { process: SidecarProcess; done: Promise<void> } {
-	const lineCallbacks: ((line: string) => void)[] = [];
-	const stderrCallbacks: ((line: string) => void)[] = [];
-	const closeCallbacks: ((code: number | null) => void)[] = [];
-	let child: { kill(): void } | null = null;
+async function spawnCommand(args: string[]): Promise<{ process: SidecarProcess; done: Promise<void> }> {
+	const run = await MMA.sidecar.spawn("vision", "mma-vision", args);
+	run.onStderr((line) => console.error("[vision]", line));
 
 	const proc: SidecarProcess = {
-		kill() { child?.kill(); },
-		onLine(cb) { lineCallbacks.push(cb); },
-		onStderr(cb) { stderrCallbacks.push(cb); },
-		onClose(cb) { closeCallbacks.push(cb); },
+		kill: () => run.kill(),
+		onLine: (cb) => run.onLine(cb),
+		onStderr: (cb) => run.onStderr(cb),
 	};
 
-	const done = (async () => {
-		const cmd = MMA.shell.Command.create(BINARY_NAME, args);
-		cmd.stdout.on("data", (line: string) => {
-			const trimmed = line.trim();
-			if (trimmed) lineCallbacks.forEach((cb) => cb(trimmed));
-		});
-		cmd.stderr.on("data", (line: string) => {
-			console.error("[vision]", line);
-			const trimmed = line.trim();
-			if (trimmed) stderrCallbacks.forEach((cb) => cb(trimmed));
-		});
-		child = await cmd.spawn();
-		await new Promise<void>((resolve) => {
-			cmd.on("close", (ev: { code: number | null }) => {
-				closeCallbacks.forEach((cb) => cb(ev.code));
-				resolve();
-			});
-		});
-	})();
+	const done = new Promise<void>((resolve) => run.onExit(() => resolve()));
 
 	return { process: proc, done };
 }
@@ -103,11 +80,12 @@ async function resolveWorldSizes(
 
 async function listCached(): Promise<Set<string>> {
 	const cd = await clipCacheDir();
-	const cmd = MMA.shell.Command.create(BINARY_NAME, ["list-cached", "--cache-dir", cd]);
-	const out = await cmd.execute();
-	if (out.code !== 0) return new Set();
+	const run = await MMA.sidecar.spawn("vision", "mma-vision", ["list-cached", "--cache-dir", cd]);
+	let out = "";
+	run.onLine((line) => { out += line; });
+	await new Promise<void>((resolve) => run.onExit(() => resolve()));
 	try {
-		return new Set(JSON.parse(out.stdout.trim()) as string[]);
+		return new Set(JSON.parse(out.trim()) as string[]);
 	} catch {
 		return new Set();
 	}
@@ -127,7 +105,6 @@ export async function spawnEmbed(
 			kill() {},
 			onLine() {},
 			onStderr() {},
-			onClose() {},
 		};
 		return { process: proc, done: Promise.resolve() };
 	}

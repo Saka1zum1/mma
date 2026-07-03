@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { spawnEmbed, spawnImageSearch } from "./sidecar";
 
-const SIMILARITY_THRESHOLD = 0.9;
+const SIMILARITY_THRESHOLD = 0.85;
 
 export function FindSimilarButton() {
 	const [running, setRunning] = useState(false);

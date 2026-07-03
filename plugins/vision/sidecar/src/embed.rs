@@ -9,13 +9,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::fetch::fetch_panos_concurrent;
 
-const CLIP_INPUT_SIZE: usize = 224;
-const MEAN: [f32; 3] = [0.48145466, 0.4578275, 0.40821073];
-const STD: [f32; 3] = [0.26862954, 0.26130258, 0.27577711];
+const INPUT_SIZE: usize = 224;
+// SigLIP normalization: mean/std 0.5 across all channels (x/255 -> [-1, 1]).
+const MEAN: [f32; 3] = [0.5, 0.5, 0.5];
+const STD: [f32; 3] = [0.5, 0.5, 0.5];
 
-pub const EMBED_DIM: usize = 512;
+pub const EMBED_DIM: usize = 768;
 pub const NUM_CROPS: usize = 4;
 const CHUNK_SIZE: usize = 500;
+
+// SigLIP text encoder is trained with a fixed sequence length padded with the
+// pad/eos token (</s> == id 1). No attention mask input.
+const TEXT_SEQ_LEN: usize = 64;
+const PAD_ID: i64 = 1;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +73,7 @@ fn extract_crops(pano: &image::RgbImage) -> Vec<image::RgbImage> {
             let yaws = [0.0f32, 90.0, 180.0, 270.0];
             let tables: Vec<RemapTable> = yaws.iter().map(|&yaw| {
                 RemapTable::new(
-                    CLIP_INPUT_SIZE as u32, CLIP_INPUT_SIZE as u32,
+                    INPUT_SIZE as u32, INPUT_SIZE as u32,
                     90.0, yaw, 0.0,
                     pw, ph,
                 )
@@ -84,14 +90,14 @@ fn extract_crops(pano: &image::RgbImage) -> Vec<image::RgbImage> {
 
 // --- Preprocessing ---
 
-fn preprocess_for_clip(img: &image::RgbImage) -> Array3<f32> {
+fn preprocess_image(img: &image::RgbImage) -> Array3<f32> {
     let resized = image::imageops::resize(
-        img, CLIP_INPUT_SIZE as u32, CLIP_INPUT_SIZE as u32,
-        image::imageops::FilterType::Triangle,
+        img, INPUT_SIZE as u32, INPUT_SIZE as u32,
+        image::imageops::FilterType::CatmullRom,
     );
-    let mut tensor = Array3::<f32>::zeros((3, CLIP_INPUT_SIZE, CLIP_INPUT_SIZE));
-    for y in 0..CLIP_INPUT_SIZE {
-        for x in 0..CLIP_INPUT_SIZE {
+    let mut tensor = Array3::<f32>::zeros((3, INPUT_SIZE, INPUT_SIZE));
+    for y in 0..INPUT_SIZE {
+        for x in 0..INPUT_SIZE {
             let p = resized.get_pixel(x as u32, y as u32).0;
             for c in 0..3 {
                 tensor[[c, y, x]] = (p[c] as f32 / 255.0 - MEAN[c]) / STD[c];
@@ -110,20 +116,35 @@ fn normalize_embedding(emb: &mut [f32]) {
 
 // --- Model loading ---
 
-pub fn load_image_encoder(model_dir: &str) -> Session {
-    let path = Path::new(model_dir).join("clip_image.onnx");
+// GPU builds run fp16 models: DirectML/CoreML/CUDA crash on int8 dynamic-quant
+// graphs, and fp16 is far faster on GPU. CPU builds run the int8 models.
+#[cfg(any(feature = "directml", feature = "coreml", feature = "cuda"))]
+const PREFER_FP16: bool = true;
+#[cfg(not(any(feature = "directml", feature = "coreml", feature = "cuda")))]
+const PREFER_FP16: bool = false;
+
+fn model_path(model_dir: &str, int8_name: &str, fp16_name: &str) -> std::path::PathBuf {
+    let dir = Path::new(model_dir);
+    if PREFER_FP16 {
+        let fp16 = dir.join(fp16_name);
+        if fp16.exists() { return fp16; }
+    }
+    dir.join(int8_name)
+}
+
+fn load_session(path: &Path) -> Session {
     Session::builder()
         .expect("failed to create ONNX session builder")
-        .commit_from_file(&path)
-        .unwrap_or_else(|e| panic!("failed to load image model at {}: {e}", path.display()))
+        .commit_from_file(path)
+        .unwrap_or_else(|e| panic!("failed to load model at {}: {e}", path.display()))
+}
+
+pub fn load_image_encoder(model_dir: &str) -> Session {
+    load_session(&model_path(model_dir, "vision_model.onnx", "vision_model_fp16.onnx"))
 }
 
 pub fn load_text_encoder(model_dir: &str) -> Session {
-    let path = Path::new(model_dir).join("clip_text.onnx");
-    Session::builder()
-        .expect("failed to create ONNX session builder")
-        .commit_from_file(&path)
-        .unwrap_or_else(|e| panic!("failed to load text model at {}: {e}", path.display()))
+    load_session(&model_path(model_dir, "text_model.onnx", "text_model_fp16.onnx"))
 }
 
 // --- Inference ---
@@ -131,21 +152,20 @@ pub fn load_text_encoder(model_dir: &str) -> Session {
 pub fn embed_image_batch(session: &mut Session, images: &[image::RgbImage]) -> Result<Vec<[f32; EMBED_DIM]>, String> {
     if images.is_empty() { return Ok(vec![]); }
     let n = images.len();
-    let mut data = vec![0f32; n * 3 * CLIP_INPUT_SIZE * CLIP_INPUT_SIZE];
+    let mut data = vec![0f32; n * 3 * INPUT_SIZE * INPUT_SIZE];
     for (i, img) in images.iter().enumerate() {
-        let t = preprocess_for_clip(img);
-        let offset = i * 3 * CLIP_INPUT_SIZE * CLIP_INPUT_SIZE;
-        data[offset..offset + 3 * CLIP_INPUT_SIZE * CLIP_INPUT_SIZE]
+        let t = preprocess_image(img);
+        let offset = i * 3 * INPUT_SIZE * INPUT_SIZE;
+        data[offset..offset + 3 * INPUT_SIZE * INPUT_SIZE]
             .copy_from_slice(t.as_slice().unwrap());
     }
-    let shape = [n as i64, 3, CLIP_INPUT_SIZE as i64, CLIP_INPUT_SIZE as i64];
+    let shape = [n as i64, 3, INPUT_SIZE as i64, INPUT_SIZE as i64];
     let tensor = Tensor::from_array((shape.as_slice(), data.into_boxed_slice()))
         .map_err(|e| e.to_string())?;
 
-    let out_name = session.outputs()[0].name().to_string();
     let mut outputs = session.run(ort::inputs!["pixel_values" => tensor])
         .map_err(|e| e.to_string())?;
-    let output = outputs.remove(&out_name).ok_or("no output")?;
+    let output = outputs.remove("pooler_output").ok_or("no pooler_output")?;
     let (_, slice) = output.try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
 
     let mut results = Vec::with_capacity(n);
@@ -160,16 +180,16 @@ pub fn embed_image_batch(session: &mut Session, images: &[image::RgbImage]) -> R
 
 pub fn embed_text(session: &mut Session, tokenizer: &tokenizers::Tokenizer, text: &str) -> Result<[f32; EMBED_DIM], String> {
     let encoding = tokenizer.encode(text, true).map_err(|e| e.to_string())?;
-    let ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-    let len = ids.len();
+    let mut ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
+    ids.truncate(TEXT_SEQ_LEN);
+    ids.resize(TEXT_SEQ_LEN, PAD_ID);
 
-    let ids_tensor = Tensor::from_array(([1i64, len as i64].as_slice(), ids.into_boxed_slice()))
+    let ids_tensor = Tensor::from_array(([1i64, TEXT_SEQ_LEN as i64].as_slice(), ids.into_boxed_slice()))
         .map_err(|e| e.to_string())?;
 
-    let out_name = session.outputs()[0].name().to_string();
     let mut outputs = session.run(ort::inputs!["input_ids" => ids_tensor])
         .map_err(|e| e.to_string())?;
-    let output = outputs.remove(&out_name).ok_or("no output")?;
+    let output = outputs.remove("pooler_output").ok_or("no pooler_output")?;
     let (_, slice) = output.try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
 
     let mut emb = [0f32; EMBED_DIM];
@@ -180,7 +200,8 @@ pub fn embed_text(session: &mut Session, tokenizer: &tokenizers::Tokenizer, text
 
 // --- Cache I/O (multi-crop: NUM_CROPS embeddings per pano) ---
 
-const CACHE_VERSION: u32 = 5;
+const CACHE_VERSION: u32 = 6;
+const CACHE_FILE: &str = "embeddings_v6.bin";
 
 #[derive(Default)]
 pub struct EmbedCache {
@@ -189,7 +210,7 @@ pub struct EmbedCache {
 
 impl EmbedCache {
     pub fn load(cache_dir: &str) -> Self {
-        let p = Path::new(cache_dir).join("embeddings_v5.bin");
+        let p = Path::new(cache_dir).join(CACHE_FILE);
         let mut cache = Self::default();
         let Ok(data) = fs::read(&p) else { return cache; };
         let mut pos = 0;
@@ -220,8 +241,8 @@ impl EmbedCache {
     }
 
     pub fn save(&self, cache_dir: &str) {
-        let p = Path::new(cache_dir).join("embeddings_v5.bin");
-        if let Some(parent) = p.parent() { let _ = fs::create_dir_all(parent); }
+        let dir = Path::new(cache_dir);
+        let _ = fs::create_dir_all(dir);
         let mut buf = Vec::new();
         buf.extend_from_slice(&CACHE_VERSION.to_le_bytes());
         for (id, crops) in &self.entries {
@@ -232,7 +253,11 @@ impl EmbedCache {
                 for &v in emb { buf.extend_from_slice(&v.to_le_bytes()); }
             }
         }
-        let _ = fs::write(p, buf);
+        // Atomic: write to a temp file in the same dir, then rename.
+        let tmp = dir.join(format!("{CACHE_FILE}.tmp"));
+        if fs::write(&tmp, &buf).is_ok() {
+            let _ = fs::rename(&tmp, dir.join(CACHE_FILE));
+        }
     }
 }
 
@@ -359,3 +384,7 @@ pub fn run(
         cache.save(cache_dir);
     }
 }
+
+#[cfg(test)]
+#[path = "embed.test.rs"]
+mod tests;
