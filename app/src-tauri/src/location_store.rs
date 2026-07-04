@@ -1097,6 +1097,23 @@ impl Store {
         (created, removed, added, removed_n, modified)
     }
 
+    /// Net `(added, removed, modified)` since last commit, counted from the overlay.
+    /// Mirrors `build_overlay_delta`'s categorization without cloning any locations:
+    /// adds are created, patches on base rows are modified (patches absent from the
+    /// base are net adds), dead base rows are removed. Added-then-removed ids never
+    /// touch the base and count as nothing. O(overlay * log n).
+    pub(crate) fn overlay_diff_counts(&self) -> (u32, u32, u32) {
+        let in_base =
+            |id: u32| self.batch.as_ref().is_some_and(|b| batch_row_for_id(b, id).is_some());
+        let mut added = self.overlay.adds.len() as u32;
+        let mut modified = 0u32;
+        for &id in self.overlay.patches.keys() {
+            if in_base(id) { modified += 1; } else { added += 1; }
+        }
+        let removed = self.overlay.dead.iter().filter(|&&id| in_base(id)).count() as u32;
+        (added, removed, modified)
+    }
+
     /// Construct a read-only view over all alive locations for selection resolution.
     fn loc_view(&self) -> selections::LocView<'_> {
         selections::LocView::new(
@@ -2734,26 +2751,15 @@ pub fn store_redo(webview: tauri::Webview, state: tauri::State<'_, StoreState>) 
     })
 }
 
-/// Compute the net diff since last commit by walking the undo stack.
-/// Returns (added, removed, modified) counts for the commit dialog.
+/// Net diff since last commit for the commit dialog, derived from the overlay --
+/// the same changeset `store_commit` will record. The undo stack is NOT consulted:
+/// it is capped, and non-undoable edits (enrichment, field renames, plugin batches)
+/// bypass it entirely while still being part of the commit.
 #[tauri::command]
 #[specta::specta]
 pub fn store_commit_diff(webview: tauri::Webview, state: tauri::State<'_, StoreState>) -> AppResult<(u32, u32, u32)> {
     with_store!(webview, state, |store| {
-        let mut added = HashSet::new();
-        let mut removed = HashSet::new();
-        let mut modified = HashSet::new();
-        for entry in &store.edits.undo {
-            for loc in &entry.removed {
-                if added.remove(&loc.id) { modified.remove(&loc.id); }
-                else { removed.insert(&loc.id); }
-            }
-            for loc in &entry.created {
-                if removed.remove(&loc.id) { modified.insert(&loc.id); }
-                else if !added.contains(&loc.id) && !modified.contains(&loc.id) { added.insert(&loc.id); }
-            }
-        }
-        Ok((added.len() as u32, removed.len() as u32, modified.len() as u32))
+        Ok(store.overlay_diff_counts())
     })
 }
 

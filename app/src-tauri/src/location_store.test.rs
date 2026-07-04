@@ -143,6 +143,45 @@ fn collect_all_locations() {
 }
 
 // -----------------------------------------------------------------------
+// Commit diff (overlay-derived)
+// -----------------------------------------------------------------------
+
+#[test]
+fn commit_diff_counts_session_adds() {
+    let store = setup_store_with(&[loc(1, 0.0, 0.0), loc(2, 1.0, 1.0)]);
+    assert_eq!(store.overlay_diff_counts(), (2, 0, 0));
+}
+
+#[test]
+fn commit_diff_counts_patch_on_base_row_without_undo() {
+    // Pins the fix: an edit that never touches the undo stack (record_undo=false
+    // paths) must still show up in the commit diff.
+    let mut store = setup_store_with(&[loc(1, 0.0, 0.0)]);
+    store.bake_overlay();
+    assert_eq!(store.overlay_diff_counts(), (0, 0, 0));
+    store.overlay_update(1, &LocationPatch { lat: Some(5.0), ..patch() });
+    assert!(store.edits.undo.is_empty());
+    assert_eq!(store.overlay_diff_counts(), (0, 0, 1));
+}
+
+#[test]
+fn commit_diff_counts_removed_base_row() {
+    let l = loc(1, 0.0, 0.0);
+    let mut store = setup_store_with(&[l.clone()]);
+    store.bake_overlay();
+    store.overlay_remove(&[l]);
+    assert_eq!(store.overlay_diff_counts(), (0, 1, 0));
+}
+
+#[test]
+fn commit_diff_add_then_remove_is_noop() {
+    let l = loc(1, 0.0, 0.0);
+    let mut store = setup_store_with(&[l.clone()]);
+    store.overlay_remove(&[l]);
+    assert_eq!(store.overlay_diff_counts(), (0, 0, 0));
+}
+
+// -----------------------------------------------------------------------
 // Tag counts
 // -----------------------------------------------------------------------
 
