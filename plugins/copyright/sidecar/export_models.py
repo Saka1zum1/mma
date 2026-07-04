@@ -1,5 +1,10 @@
-"""Export PaddleOCR recognition model to ONNX + download character dictionary.
-Run once: python export_models.py --output-dir ./models
+"""Export the OCR models to ./models (rec_model.onnx + ppocr_keys_v1.txt).
+Runs in CI on release (copyright-release.yml, pinned deps) and locally for dev.
+The rec model MUST match the dict: detect.rs decodes with en_dict (95 chars), so the
+model needs exactly 97 output classes (blank + chars + space). PP-OCRv5 rec models use
+an 18k-class multilingual dict and silently decode to nothing (shipped broken in v0.1.1);
+verify() fails the export rather than let that recur.
+Deps: pip install paddlepaddle paddleocr paddle2onnx onnx (pins in copyright-release.yml)
 """
 import argparse, os, sys, urllib.request
 from pathlib import Path
@@ -26,17 +31,17 @@ def export(output_dir: str):
             use_doc_unwarping=False,
             use_textline_orientation=False,
             text_detection_model_name="PP-OCRv5_mobile_det",
-            text_recognition_model_name="PP-OCRv5_mobile_rec",
+            text_recognition_model_name="en_PP-OCRv4_mobile_rec",
         )
 
         # Find the downloaded rec model dir. Layout differs by paddleocr version:
         # legacy caches use *_rec_infer/ with inference.pdmodel; paddleocr 3.x uses
-        # official_models/PP-OCRv5_mobile_rec/ with PIR inference.json.
+        # official_models/<model_name>/ with PIR inference.json.
         candidates = []
         for root in (Path.home() / ".paddlex", Path.home() / ".paddleocr"):
             if root.exists():
                 candidates += [p.parent for p in root.rglob("inference.pdiparams")]
-        rec_dirs = [d for d in candidates if "rec" in d.name.lower()]
+        rec_dirs = [d for d in candidates if "rec" in d.name.lower() and "en_pp-ocrv4" in d.name.lower()]
         print(f"Found rec model dirs: {rec_dirs}")
 
         import subprocess
@@ -82,9 +87,23 @@ def export(output_dir: str):
                     f.write(c + "\n")
             print(f"  -> Created fallback dict at {dict_path}")
 
+    verify(onnx_path, dict_path)
+
     print(f"\nDone. Models in {out}/")
     for f in sorted(out.iterdir()):
         print(f"  {f.name}: {f.stat().st_size / 1024:.0f} KB")
+
+def verify(onnx_path: Path, dict_path: Path):
+    import onnx
+    model = onnx.load(str(onnx_path))
+    classes = model.graph.output[0].type.tensor_type.shape.dim[-1].dim_value
+    with open(dict_path, encoding="utf-8") as f:
+        # newline-only strip: the dict's last line is a literal space, which counts
+        n_chars = sum(1 for line in f if line.rstrip("\r\n"))
+    expected = n_chars + 2  # CTC blank + trailing space, mirrors load_char_dict in detect.rs
+    if classes != expected:
+        sys.exit(f"ERROR: model outputs {classes} classes but dict implies {expected}; model/dict mismatch")
+    print(f"Verified: {classes} output classes == {n_chars} dict chars + blank + space")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

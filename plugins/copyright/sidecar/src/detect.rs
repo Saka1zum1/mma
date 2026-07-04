@@ -225,6 +225,21 @@ fn recognize_batch(
         .collect()
 }
 
+// Output classes of the rec model, probed with a dummy inference. Must equal the
+// char dict length or every decode silently yields empty text.
+fn model_num_classes(session: &mut Session) -> Option<usize> {
+    let width = 16u32;
+    let data = vec![0f32; (3 * REC_HEIGHT * width) as usize];
+    let shape = [1i64, 3, REC_HEIGHT as i64, width as i64];
+    let tensor = Tensor::from_array((shape.as_slice(), data.into_boxed_slice())).ok()?;
+    let out_name = session.outputs()[0].name().to_string();
+    let mut outputs = session.run(ort::inputs!["x" => tensor]).ok()?;
+    let output = outputs.remove(&out_name)?;
+    let (shape_info, _) = output.try_extract_tensor::<f32>().ok()?;
+    let dims: Vec<usize> = shape_info.iter().map(|&d| d as usize).collect();
+    (dims.len() == 3).then(|| dims[2])
+}
+
 fn extract_year(text: &str, max_year: u32) -> Option<u32> {
     let re = Regex::new(r"(20[0-4]\d)").unwrap();
     re.captures(text)
@@ -344,6 +359,26 @@ pub fn run(
     let pool_size = std::thread::available_parallelism().map_or(4, |n| n.get()).min(2);
     let mut sessions = load_rec_sessions(model_dir, pool_size);
     let char_dict = load_char_dict(model_dir);
+    match model_num_classes(&mut sessions[0]) {
+        Some(nc) if nc == char_dict.len() => {}
+        got => {
+            let classes = got.map_or("unknown".into(), |n: usize| n.to_string());
+            let msg = format!(
+                "model/dict mismatch: model outputs {classes} classes, dict has {} entries",
+                char_dict.len()
+            );
+            eprintln!("[copyright] FATAL: {msg}");
+            let total = input.pano_ids.len();
+            for (i, pid) in input.pano_ids.iter().enumerate() {
+                emit(DetectResult {
+                    pano_id: pid.clone(), year: None, text: None,
+                    error: Some(msg.clone()),
+                    done: Some(i + 1), total: Some(total),
+                });
+            }
+            return;
+        }
+    }
     eprintln!("[copyright] model loaded ({pool_size} sessions), {} chars in dict", char_dict.len());
 
     let total = input.pano_ids.len();

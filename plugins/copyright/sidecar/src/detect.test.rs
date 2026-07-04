@@ -113,6 +113,19 @@ fn ordered_candidate_indices_is_ordered_indices_for_candidates_len() {
 }
 
 #[test]
+fn bundled_model_class_count_matches_dict() {
+    // models/ is an exported artifact (export_models.py), absent in fresh clones
+    let model_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/models");
+    if !std::path::Path::new(model_dir).join("rec_model.onnx").exists() {
+        eprintln!("skipping: no models/ present");
+        return;
+    }
+    let mut sessions = load_rec_sessions(model_dir, 1);
+    let char_dict = load_char_dict(model_dir);
+    assert_eq!(model_num_classes(&mut sessions[0]), Some(char_dict.len()));
+}
+
+#[test]
 fn candidates_table_matches_calibration() {
     assert_eq!(CANDIDATES.len(), 3);
     assert_eq!(CANDIDATES[0].name, "gen4");

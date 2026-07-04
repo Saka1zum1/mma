@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Export ONNX model + character dict (once, platform-independent)
+  # Export ONNX model + character dict (once, platform-independent).
+  # Deps are pinned and export_models.py verifies model/dict class agreement,
+  # so a toolchain drift fails the release instead of shipping a broken bundle.
   export-models:
     runs-on: ubuntu-latest
     steps:
@@ -15,7 +17,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install Python deps
-        run: pip install paddlepaddle paddleocr paddle2onnx onnx
+        run: pip install paddlepaddle==3.3.1 paddleocr==3.7.0 paddle2onnx==2.1.0 onnx==1.17.0
       - name: Export ONNX model
         working-directory: plugins/copyright/sidecar
         run: python export_models.py --output-dir models
