@@ -47,6 +47,7 @@ export function ApplyFieldAsTagsDialog({
 	const projOptions = partitionKeyOptions(fieldType, false);
 	const isRange = projectionId === RANGE_ID;
 	const selectedProj = projectionsForType(fieldType).find((p) => p.id === projectionId);
+	const hasTzData = keys.has("timezone");
 	const showTz = !isRange && selectedProj?.needsTz === true && fieldType === "date";
 	const showWidth = isRange;
 	const widthValid = !showWidth || Number(width) > 0;
@@ -66,7 +67,7 @@ export function ApplyFieldAsTagsDialog({
 			? { kind: "numericBin", binning: { by: "width", w: Number(width) } }
 			: projectionId === "value"
 				? { kind: "value" }
-				: { kind: "datePart", part: projectionId as DatePart, tzLocal };
+				: { kind: "datePart", part: projectionId as DatePart, tzLocal: tzLocal && hasTzData };
 
 		// Grouping runs in Rust; only the matched subset is fetched (once) to append tags.
 		const groups = await partition(field, key, scopeCtl.scope);
@@ -151,10 +152,19 @@ export function ApplyFieldAsTagsDialog({
 						/>
 					)}
 					{showTz && (
-						<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+						<label
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: "0.5rem",
+								opacity: hasTzData ? 1 : 0.5,
+							}}
+							title={hasTzData ? undefined : "No locations have timezone data"}
+						>
 							<input
 								type="checkbox"
-								checked={tzLocal}
+								checked={tzLocal && hasTzData}
+								disabled={!hasTzData}
 								onChange={(e) => setTzLocal(e.target.checked)}
 							/>
 							Location timezone
