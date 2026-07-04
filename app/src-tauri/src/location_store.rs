@@ -189,7 +189,27 @@ pub(crate) struct Overlay {
     pub adds: Vec<Location>,
     pub dead: HashSet<u32>,
     pub patches: HashMap<u32, Location>,
+    /// Unsaved since the last autosave. Cleared by `store_save_dirty` after a
+    /// confirmed write (rev-guarded); NOT a "has uncommitted content" flag — that
+    /// is [`Overlay::is_empty`].
     pub dirty: bool,
+    /// Bumped on every overlay mutation. `store_save_dirty` clears `dirty` only if
+    /// the rev it serialized is still current once the async write lands.
+    pub rev: u64,
+}
+
+impl Overlay {
+    /// No uncommitted content. Distinct from `dirty`: an autosaved overlay is
+    /// clean but stays non-empty until baked by a commit.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.adds.is_empty() && self.dead.is_empty() && self.patches.is_empty()
+    }
+
+    /// Mark the overlay mutated: flag it unsaved and invalidate in-flight saves.
+    fn touch(&mut self) {
+        self.dirty = true;
+        self.rev += 1;
+    }
 }
 
 pub(crate) struct RenderState {
@@ -373,6 +393,7 @@ impl Store {
                 dead: HashSet::new(),
                 patches: HashMap::new(),
                 dirty: false,
+                rev: 0,
             },
             render: RenderState {
                 cells: [const { None }; 32],
@@ -1125,7 +1146,7 @@ impl Store {
 
     /// Insert or restore a location in the overlay. O(1) amortized.
     pub(crate) fn overlay_add(&mut self, loc: Location) {
-        self.overlay.dirty = true;
+        self.overlay.touch();
         self.alive_count += 1;
         if let Some(ix) = self.spatial.as_mut() {
             ix.insert(loc.id, loc.lat, loc.lng);
@@ -1167,7 +1188,7 @@ impl Store {
         }
         self.overlay.dead.extend(&remove_set);
         self.overlay.adds.retain(|l| !remove_set.contains(&l.id));
-        self.overlay.dirty = true;
+        self.overlay.touch();
     }
 
     /// Apply a partial patch to an existing location. Reads the current state, merges
@@ -1209,7 +1230,7 @@ impl Store {
             loc.modified_at = Some(crate::util::now_unix());
             self.overlay.patches.insert(id, loc);
         }
-        self.overlay.dirty = true;
+        self.overlay.touch();
     }
 
     /// Reset overlay state. Called after bake or on map close.
@@ -1222,8 +1243,10 @@ impl Store {
 
     /// Merge overlay (adds, patches, dead) into the Arrow batch. O(N) where N = batch rows.
     /// Expensive at 10M+ rows — prefer delta saves; full bake only on commit.
+    /// Gated on emptiness, not `dirty`: an autosave clears `dirty` without folding
+    /// anything in, and a clean-but-nonempty overlay must still bake.
     pub(crate) fn bake_overlay(&mut self) {
-        if !self.overlay.dirty { return; }
+        if self.overlay.is_empty() { return; }
         let _t = std::time::Instant::now();
 
         let mut batch = match self.batch.take() {
@@ -1344,11 +1367,11 @@ pub struct StoreStatus {
     pub known_field_keys: Vec<String>,
 }
 
-/// Result of `store_save_dirty`: how many bytes were written to the delta file.
+/// Result of `store_save_dirty`: bytes written to the delta sidecar (0 = skipped).
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveResult {
-    pub saved_chunks: usize,
+    pub saved_bytes: usize,
 }
 
 /// Lightweight status for polling: count, version, and whether unsaved changes exist.
@@ -2053,7 +2076,8 @@ pub async fn store_country_distribution(
 }
 
 /// Msgpack-serialized overlay state written to the `.delta` file on autosave.
-/// On next `store_open_map`, the delta is merged into the Arrow file and deleted.
+/// On next `store_open_map` it is loaded back into the overlay (the base file stays
+/// pinned at the last commit); a commit bakes it into the base and deletes the file.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct DeltaOverlay {
     adds: Vec<Location>,
@@ -2346,8 +2370,12 @@ pub(crate) fn persist_dirty_inner(
     Ok(())
 }
 
-/// Delta-only autosave: writes only dirty geohash chunks to disk (~17ms).
-/// Does NOT bake the overlay — `store_commit` does a full merge.
+/// Autosave: serialize the overlay (uncommitted changes) to the delta sidecar, plus
+/// dirty tags and the location count. Skips entirely when nothing changed since the
+/// last save. Does NOT bake the overlay — `store_commit` does the full merge.
+/// `overlay.dirty` is cleared only after the write lands, and only if the overlay
+/// wasn't mutated while the write was in flight (rev guard), so a failed or raced
+/// save keeps the data flagged for the next attempt.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_save_dirty(
@@ -2356,12 +2384,12 @@ pub async fn store_save_dirty(
 ) -> AppResult<SaveResult> {
     let _t = std::time::Instant::now();
     log::debug!("[cmd] store_save_dirty ENTER");
-    let (map_id, delta_data, alive, tags_json) = {
+    let (map_id, delta_data, alive, tags_json, rev) = {
         let mut mgr = state.lock()?;
-    let store = mgr.store_for_window(webview.label())?;
+        let store = mgr.store_for_window(webview.label())?;
         let map_id = store.map_id.clone().ok_or("no map open")?;
         if !store.overlay.dirty && !store.tags.dirty {
-            return Ok(SaveResult { saved_chunks: 0 });
+            return Ok(SaveResult { saved_bytes: 0 });
         }
         let delta_data = store.overlay.dirty.then(|| overlay_delta_bytes(store)).transpose()?;
         let tags_json = if store.tags.dirty {
@@ -2370,16 +2398,28 @@ pub async fn store_save_dirty(
         } else {
             None
         };
-        (map_id, delta_data, store.alive_count, tags_json)
+        (map_id, delta_data, store.alive_count, tags_json, store.overlay.rev)
     };
 
     let size = delta_data.as_ref().map_or(0, |d| d.len());
+    let wrote_delta = delta_data.is_some();
     let map_id2 = map_id.clone();
     tokio::task::spawn_blocking(move || persist_dirty_inner(&map_id2, delta_data, alive, tags_json))
         .await??;
 
+    if wrote_delta {
+        let mut mgr = state.lock()?;
+        // The window may have closed or switched maps during the write; the map_id
+        // check stops a fresh store (rev 0) from being cleared by a stale save.
+        if let Ok(store) = mgr.store_for_window(webview.label()) {
+            if store.overlay.rev == rev && store.map_id.as_deref() == Some(map_id.as_str()) {
+                store.overlay.dirty = false;
+            }
+        }
+    }
+
     log::debug!("[cmd] store_save_dirty total={}ms size={}", _t.elapsed().as_millis(), size);
-    Ok(SaveResult { saved_chunks: size })
+    Ok(SaveResult { saved_bytes: size })
 }
 
 /// Lightweight status query: location count, version, and dirty flag.

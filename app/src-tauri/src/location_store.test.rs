@@ -143,6 +143,46 @@ fn collect_all_locations() {
 }
 
 // -----------------------------------------------------------------------
+// Overlay dirty lifecycle (autosave rev guard)
+// -----------------------------------------------------------------------
+
+#[test]
+fn overlay_rev_bumps_on_every_mutation() {
+    let mut store = setup_store_with(&[]);
+    let r0 = store.overlay.rev;
+    store.overlay_add(loc(1, 0.0, 0.0));
+    let r1 = store.overlay.rev;
+    assert!(r1 > r0);
+    store.overlay_update(1, &LocationPatch { lat: Some(5.0), ..patch() });
+    let r2 = store.overlay.rev;
+    assert!(r2 > r1);
+    store.overlay_remove(&[store.get_loc_by_id(1).unwrap()]);
+    assert!(store.overlay.rev > r2);
+}
+
+#[test]
+fn bake_proceeds_when_clean_but_nonempty() {
+    // Simulate a completed autosave (dirty cleared) with content still in the
+    // overlay: a commit's bake must still fold it into the base batch.
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
+    store.overlay.dirty = false;
+    assert!(!store.overlay.is_empty());
+    store.bake_overlay();
+    assert!(store.overlay.is_empty());
+    assert_eq!(store.batch.as_ref().unwrap().num_rows(), 1);
+}
+
+#[test]
+fn bake_skips_empty_overlay() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
+    store.bake_overlay();
+    let rows_before = store.batch.as_ref().unwrap().num_rows();
+    store.overlay.dirty = true; // stale flag with no content must not re-bake
+    store.bake_overlay();
+    assert_eq!(store.batch.as_ref().unwrap().num_rows(), rows_before);
+}
+
+// -----------------------------------------------------------------------
 // Commit diff (overlay-derived)
 // -----------------------------------------------------------------------
 
