@@ -106,6 +106,35 @@ fn overlay_update_nonexistent_is_noop() {
 }
 
 #[test]
+fn overlay_update_stamps_modified_at_on_session_added_row() {
+    // Row lives in overlay.adds (not yet baked): an edit must stamp modified_at,
+    // same as an edit to a committed base row.
+    let l = loc(1, 10.0, 20.0);
+    let mut store = setup_store_with(&[l]);
+    assert!(store.get_loc_by_id(1).unwrap().modified_at.is_none());
+    store.overlay_update(1, &LocationPatch { lat: Some(50.0), ..patch() });
+    assert!(store.get_loc_by_id(1).unwrap().modified_at.is_some());
+}
+
+#[test]
+fn overlay_update_noop_does_not_stamp_session_added_row() {
+    // A patch that changes nothing must not stamp (or it fabricates undo entries).
+    let l = loc(1, 10.0, 20.0);
+    let mut store = setup_store_with(&[l]);
+    store.overlay_update(1, &LocationPatch { lat: Some(10.0), ..patch() });
+    assert!(store.get_loc_by_id(1).unwrap().modified_at.is_none());
+}
+
+#[test]
+fn overlay_update_stamps_modified_at_on_base_row() {
+    let l = loc(1, 10.0, 20.0);
+    let mut store = setup_store_with(&[l]);
+    store.bake_overlay();
+    store.overlay_update(1, &LocationPatch { lat: Some(50.0), ..patch() });
+    assert!(store.get_loc_by_id(1).unwrap().modified_at.is_some());
+}
+
+#[test]
 fn collect_all_locations() {
     let locs = vec![loc(1, 10.0, 20.0), loc(2, 30.0, 40.0)];
     let store = setup_store_with(&locs);

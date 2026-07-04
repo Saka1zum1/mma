@@ -1181,7 +1181,13 @@ impl Store {
         if let Some(v) = patch.created_at { loc.created_at = v; }
         if let Some(v) = patch.modified_at { loc.modified_at = v; }
         if let Ok(pos) = self.overlay.adds.binary_search_by_key(&id, |l| l.id) {
-            self.overlay.adds[pos] = loc;
+            // Stamp only on a real change (parity with the base-row branch below): a
+            // session-added row must not report "never modified", but a no-op patch
+            // must stay a no-op or it fabricates undo entries.
+            if self.overlay.adds[pos] != loc {
+                loc.modified_at = Some(crate::util::now_unix());
+                self.overlay.adds[pos] = loc;
+            }
         } else if self.base_loc_by_id(id).as_ref() == Some(&loc) {
             self.overlay.patches.remove(&id);
         } else {
