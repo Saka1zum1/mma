@@ -1794,7 +1794,7 @@ pub fn store_remove_locations(
 /// that manage their own undo).
 #[tauri::command]
 #[specta::specta]
-pub fn store_update_locations(
+pub async fn store_update_locations(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     updates: Vec<Update<LocationPatch>>,
@@ -1862,7 +1862,7 @@ pub struct TagPatch {
 /// render instead of one per tag. Returns MutationResult with `tags` populated.
 #[tauri::command]
 #[specta::specta]
-pub fn store_update_tags(
+pub async fn store_update_tags(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     updates: Vec<Update<TagPatch>>,
@@ -1921,7 +1921,7 @@ pub fn store_update_tags(
 /// visible=false so undo can revive them. Returns MutationResult with `tags`.
 #[tauri::command]
 #[specta::specta]
-pub fn store_delete_tags(
+pub async fn store_delete_tags(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     tag_ids: Vec<u32>,
@@ -2038,7 +2038,7 @@ pub fn store_get_all_locations(
 /// Coords are gathered under the store lock, then classified after it's released.
 #[tauri::command]
 #[specta::specta]
-pub fn store_country_distribution(
+pub async fn store_country_distribution(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     level: String,
@@ -3153,7 +3153,7 @@ pub fn store_duplicate_groups(
 /// all other survivor fields are kept. Applied as a single undoable edit.
 #[tauri::command]
 #[specta::specta]
-pub fn store_merge_duplicates(
+pub async fn store_merge_duplicates(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     distance: f64,
@@ -3199,7 +3199,7 @@ pub fn store_merge_duplicates(
 /// range. Informational locations are never pruned. One undoable edit.
 #[tauri::command]
 #[specta::specta]
-pub fn store_prune_duplicates(
+pub async fn store_prune_duplicates(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     ids: Vec<u32>,
