@@ -808,6 +808,54 @@ fn node_counts_invert_is_global_complement() {
     assert_eq!(counts.get("inv"), Some(&2)); // NOT tag 10: l2, l3 (universe of 3 minus 1)
 }
 
+// The single-pass forest must produce exactly what per-selection resolve_set does —
+// same top-level sets, same count for every node key.
+#[test]
+fn resolve_forest_matches_individual_resolve() {
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let mut l1 = loc(1, 0.0, 0.0); l1.tags = vec![10, 20];
+    let mut l2 = loc(2, 0.0, 0.0); l2.tags = vec![10];
+    let mut l3 = loc(3, 5.0, 5.0); l3.tags = vec![20];
+    let l4 = loc(4, 5.0, 5.0);
+    let adds = vec![l1, l2, l3, l4];
+    let view = make_view(None, &dead, &patches, &adds);
+
+    let sels = vec![
+        Selection { key: "t10".into(), color: [0, 0, 0], props: SelectionProps::Tag { tag_id: 10 } },
+        Selection {
+            key: "inv".into(),
+            color: [0, 0, 0],
+            props: SelectionProps::Invert {
+                selections: vec![Selection {
+                    key: "u".into(),
+                    color: [0, 0, 0],
+                    props: SelectionProps::Union {
+                        selections: vec![
+                            Selection { key: "a".into(), color: [0,0,0], props: SelectionProps::Tag { tag_id: 10 } },
+                            Selection { key: "b".into(), color: [0,0,0], props: SelectionProps::Tag { tag_id: 20 } },
+                        ],
+                    },
+                }],
+            },
+        },
+        Selection { key: "none".into(), color: [0, 0, 0], props: SelectionProps::Untagged },
+    ];
+
+    let (sets, counts) = resolve_forest(&view, &sels);
+    assert_eq!(sets.len(), sels.len());
+    for (i, sel) in sels.iter().enumerate() {
+        assert_eq!(sets[i], resolve_set(&view, &sel.props), "set mismatch for {}", sel.key);
+    }
+    for key in ["t10", "inv", "u", "a", "b", "none"] {
+        assert!(counts.contains_key(key), "missing count for {key}");
+    }
+    assert_eq!(counts.get("t10"), Some(&2));
+    assert_eq!(counts.get("u"), Some(&3));   // union of tag10 {1,2} and tag20 {1,3}
+    assert_eq!(counts.get("inv"), Some(&1)); // universe {1..4} minus union {1,2,3}
+    assert_eq!(counts.get("none"), Some(&1)); // l4
+}
+
 // -----------------------------------------------------------------------
 // Duplicates
 // -----------------------------------------------------------------------

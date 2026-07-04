@@ -448,28 +448,57 @@ pub fn resolve_set(view: &LocView, props: &SelectionProps) -> RoaringBitmap {
     mask_to_set(view, &mask)
 }
 
-/// Resolved count of every selection node — top-level and nested — keyed by `Selection.key`.
-/// A thin walk over [`resolve_set`] (the single resolution path): each node is resolved for its
-/// own count, then composite children are walked for theirs. Produces the per-node sidebar counts.
-pub fn resolve_node_counts(view: &LocView, sels: &[Selection]) -> HashMap<String, u32> {
-    fn walk(view: &LocView, sel: &Selection, out: &mut HashMap<String, u32>) {
-        out.insert(sel.key.clone(), resolve_set(view, &sel.props).len() as u32);
-        match &sel.props {
-            SelectionProps::Intersection { selections }
-            | SelectionProps::Union { selections }
-            | SelectionProps::Invert { selections } => {
+/// Resolve a whole selection forest in one pass: the id-set for each top-level
+/// selection plus the resolved count of every node (top-level and nested), keyed by
+/// `Selection.key`. Each node is resolved exactly once — composites combine their
+/// children's already-resolved sets instead of re-resolving them. (The previous
+/// resolve-then-count pair resolved every top-level node twice and nested children
+/// twice or more.)
+pub fn resolve_forest(view: &LocView, sels: &[Selection]) -> (Vec<RoaringBitmap>, HashMap<String, u32>) {
+    fn walk(view: &LocView, sel: &Selection, counts: &mut HashMap<String, u32>) -> RoaringBitmap {
+        let set = match &sel.props {
+            SelectionProps::Intersection { selections } => {
+                // No empty short-circuit: children's counts are reported regardless,
+                // so they must resolve either way.
+                let mut acc: Option<RoaringBitmap> = None;
                 for c in selections {
-                    walk(view, c, out);
+                    let child = walk(view, c, counts);
+                    acc = Some(match acc { Some(a) => a & child, None => child });
                 }
+                acc.unwrap_or_default()
             }
-            _ => {}
-        }
+            SelectionProps::Union { selections } => {
+                let mut acc = RoaringBitmap::new();
+                for c in selections { acc |= walk(view, c, counts); }
+                acc
+            }
+            SelectionProps::Invert { selections } => {
+                let universe = alive_id_set(view);
+                let mut children = selections.iter();
+                let set = match children.next() {
+                    Some(first) => universe - walk(view, first, counts),
+                    None => universe,
+                };
+                // Invert is unary: extra children don't affect the set but their
+                // counts are still reported, matching resolve_set semantics.
+                for c in children { walk(view, c, counts); }
+                set
+            }
+            _ => resolve_set(view, &sel.props),
+        };
+        counts.insert(sel.key.clone(), set.len() as u32);
+        set
     }
-    let mut out = HashMap::new();
-    for s in sels {
-        walk(view, s, &mut out);
-    }
-    out
+    let mut counts = HashMap::new();
+    let sets = sels.iter().map(|s| walk(view, s, &mut counts)).collect();
+    (sets, counts)
+}
+
+/// Resolved count of every selection node — top-level and nested — keyed by
+/// `Selection.key`. Thin wrapper over [`resolve_forest`] for callers that only
+/// need the counts.
+pub fn resolve_node_counts(view: &LocView, sels: &[Selection]) -> HashMap<String, u32> {
+    resolve_forest(view, sels).1
 }
 
 /// Set of all alive location ids (batch minus dead, plus overlay adds).

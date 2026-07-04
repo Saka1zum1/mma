@@ -703,9 +703,7 @@ impl Store {
         let sels = self.selections.all.clone();
         let (loc_sets, node_counts) = {
             let view = self.loc_view();
-            let loc_sets: Vec<RoaringBitmap> =
-                sels.iter().map(|s| selections::resolve_set(&view, &s.props)).collect();
-            (loc_sets, selections::resolve_node_counts(&view, &sels))
+            selections::resolve_forest(&view, &sels)
         };
         self.selections.loc_sets = loc_sets;
         self.selections.node_counts = node_counts;
@@ -3038,14 +3036,12 @@ pub async fn store_sync_selections(
             props: si.props.clone(),
         }).collect();
 
-        // 1. Resolve each selection directly to a Roaring id-set. Tag leaves hit the
-        //    membership index; composites combine natively. (Geometric leaves still scan.)
+        // 1. Resolve the whole forest in one pass: per-selection Roaring id-sets plus
+        //    counts for every node (top-level and nested). Tag leaves hit the membership
+        //    index; composites combine natively. (Geometric leaves still scan.)
+        //    Counts cover ghosted selections too; the overlay uses the non-ghosted subset.
         let view = store.loc_view();
-        let sel_sets: Vec<RoaringBitmap> = sels.iter()
-            .map(|sel| selections::resolve_set(&view, &sel.props))
-            .collect();
-        // Count all nodes (top-level and nested), keyed. Overlay uses the non-ghosted subset only.
-        let counts = selections::resolve_node_counts(&view, &sels_full);
+        let (sel_sets, counts) = selections::resolve_forest(&view, &sels_full);
         drop(view);
 
         let live: Vec<usize> = (0..sels.len()).filter(|&i| !sels[i].ghosted).collect();
