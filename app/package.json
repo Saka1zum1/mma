@@ -1,7 +1,7 @@
 {
 	"name": "map-making-app",
 	"private": true,
-	"version": "0.7.1",
+	"version": "0.7.2",
 	"type": "module",
 	"scripts": {
 		"gen:plugin-types": "node ../plugins/types/generate.js",
