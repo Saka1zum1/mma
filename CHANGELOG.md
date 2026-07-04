@@ -1,3 +1,6 @@
+## v0.7.2 — 2026-07-03
+- Fixed sidecar plugins opening a console window on Windows
+
 ## v0.7.1 — 2026-07-03
 - Poisson disk, blue line coverage, and BFS kernel sampling modes for the map generator
 - Vali generate and download can now be cancelled mid-operation
