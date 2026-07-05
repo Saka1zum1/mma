@@ -6,27 +6,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Export ONNX model + character dict (once, platform-independent).
-  # Deps are pinned and export_models.py verifies model/dict class agreement,
-  # so a toolchain drift fails the release instead of shipping a broken bundle.
-  export-models:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Python deps
-        run: pip install paddlepaddle==3.3.1 paddleocr==3.7.0 paddle2onnx==2.1.0 onnx==1.17.0
-      - name: Export ONNX model
-        working-directory: plugins/copyright/sidecar
-        run: python export_models.py --output-dir models
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ocr-models
-          path: plugins/copyright/sidecar/models/
-          if-no-files-found: error
-
   # Build sidecar binary for each platform (GPU backend where available)
   build-sidecar:
     uses: ./.github/workflows/build-sidecar.yml
@@ -38,7 +17,7 @@ jobs:
 
   # Bundle everything into release archives
   package:
-    needs: [export-models, build-sidecar]
+    needs: [build-sidecar]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -57,10 +36,11 @@ jobs:
           name: mma-copyright-${{ matrix.label }}
           path: bundle/
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: ocr-models
-          path: bundle/models/
+      - name: Add trained CNN model to bundle
+        run: |
+          mkdir -p bundle/models
+          cp plugins/copyright/sidecar/models/wm_cls.onnx \
+             plugins/copyright/sidecar/models/wm_template.bin bundle/models/
 
       - name: Create archive
         run: |
