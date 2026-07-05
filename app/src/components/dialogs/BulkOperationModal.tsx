@@ -560,29 +560,56 @@ function BulkProgress({
 	const [progress, setProgress] = useState(0);
 	const [total, setTotal] = useState(0);
 	const [done, setDone] = useState(0);
+	const [rate, setRate] = useState<number | null>(null);
+	const [elapsed, setElapsed] = useState<number | null>(null);
 	const [phaseLabel, setPhaseLabel] = useState<string | null>(null);
 	const [status, setStatus] = useState<"running" | "done" | "cancelled" | "error">("running");
 	const [error, setError] = useState<string | null>(null);
 	const [result, setResult] = useState<BulkRunResult>({});
 	const controllerRef = useRef<AbortController | null>(null);
+	const rateRef = useRef<{ t: number; done: number; ema: number | null }>({
+		t: 0,
+		done: 0,
+		ema: null,
+	});
 
 	const run = useCallback(async () => {
 		const controller = new AbortController();
 		controllerRef.current = controller;
 
 		const locations = applyScope(scope, await fetchAllLocations());
+		const runStart = performance.now();
+		rateRef.current = { t: runStart, done: 0, ema: null };
+		setRate(null);
+		setElapsed(null);
 
 		const onProgress: ProgressFn = (d, t, label) => {
 			setPhaseLabel(label ?? null);
 			setTotal(t);
 			setDone(d);
 			setProgress(t > 0 ? d / t : 1);
+
+			// Smoothed items/s. `d` resets between enrich waves; on a reset just
+			// re-anchor rather than emit a negative spike.
+			const now = performance.now();
+			const prev = rateRef.current;
+			const dd = d - prev.done;
+			const dt = (now - prev.t) / 1000;
+			if (dd < 0) {
+				rateRef.current = { ...prev, t: now, done: d };
+			} else if (dt >= 0.25 && dd > 0) {
+				const inst = dd / dt;
+				const ema = prev.ema == null ? inst : prev.ema * 0.7 + inst * 0.3;
+				rateRef.current = { t: now, done: d, ema };
+				setRate(ema);
+			}
 		};
 
 		try {
 			const r = await runner({ locations, signal: controller.signal, onProgress });
 			setResult(r);
 			setProgress(1);
+			setElapsed((performance.now() - runStart) / 1000);
 			setStatus("done");
 		} catch (e: unknown) {
 			if (e instanceof Error && e.name === "AbortError") {
@@ -607,11 +634,17 @@ function BulkProgress({
 		<div className="bulk-operation">
 			<div className="bulk-operation__status">
 				{status === "running" &&
-					`${phaseLabel ? `${phaseLabel}: ` : ""}${fmt.format(done)} / ${fmt.format(total)} (${pct}%)`}
+					`${phaseLabel ? `${phaseLabel}: ` : ""}${fmt.format(done)} / ${fmt.format(total)} (${pct}%)${
+						rate != null ? ` -- ${fmt.format(Math.round(rate))}/s` : ""
+					}`}
 				{status === "done" &&
 					(result.doneContent ??
 						result.doneMessage ??
-						`Done -- ${fmt.format(total)} locations processed.`)}
+						`Done -- ${fmt.format(total)} locations processed${
+							elapsed != null && elapsed > 0
+								? ` in ${elapsed.toFixed(1)}s (${fmt.format(Math.round(total / elapsed))}/s)`
+								: ""
+						}.`)}
 				{status === "cancelled" && `Cancelled at ${fmt.format(done)} / ${fmt.format(total)}.`}
 				{status === "error" && `Error: ${error}`}
 			</div>
