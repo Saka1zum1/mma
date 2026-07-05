@@ -1,42 +1,125 @@
 use super::*;
 
-#[test]
-fn extract_year_finds_valid_year() {
-    assert_eq!(extract_year("© 2019 Google", 2026), Some(2019));
+fn win(year_idx: usize, p: f32) -> [f32; NUM_CLASSES] {
+    let mut w = [0.0f32; NUM_CLASSES];
+    w[0] = 0.01;
+    w[year_idx] = p;
+    w
 }
 
 #[test]
-fn extract_year_finds_year_in_garbage_ocr_text() {
-    assert_eq!(extract_year("32019 Gnogle", 2026), Some(2019));
+fn luma601_matches_pil_fixed_point() {
+    assert_eq!(luma601(0, 0, 0), 0);
+    assert_eq!(luma601(255, 255, 255), 255);
+    // pure channels: PIL (R*19595+G*38470+B*7471+0x8000)>>16
+    assert_eq!(luma601(255, 0, 0), 76);
+    assert_eq!(luma601(0, 255, 0), 150);
+    assert_eq!(luma601(0, 0, 255), 29);
 }
 
 #[test]
-fn extract_year_supports_2030s() {
-    assert_eq!(extract_year("© 2031 Google", 2035), Some(2031));
+fn year_of_maps_class_indices() {
+    assert_eq!(year_of(1), 2017);
+    assert_eq!(year_of(2), 2018);
+    assert_eq!(year_of(10), 2026);
 }
 
 #[test]
-fn extract_year_no_match_returns_none() {
-    assert_eq!(extract_year("no year here", 2026), None);
-    assert_eq!(extract_year("", 2026), None);
+fn classes_table_is_none_then_years() {
+    assert_eq!(CLASSES.len(), NUM_CLASSES);
+    assert_eq!(CLASSES[0], "none");
+    assert_eq!(CLASSES[1], "2017");
+    assert_eq!(CLASSES[10], "2026");
 }
 
 #[test]
-fn extract_year_rejects_out_of_range_decade() {
-    assert_eq!(extract_year("© 2050 Google", 2060), None);
-    assert_eq!(extract_year("© 1999 Google", 2026), None);
+fn softmax_sums_to_one_and_peaks_at_argmax() {
+    let mut logits = [0.0f32; NUM_CLASSES];
+    logits[3] = 5.0;
+    let p = softmax(&logits);
+    let sum: f32 = p.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-5);
+    let amax = (0..NUM_CLASSES).max_by(|&a, &b| p[a].partial_cmp(&p[b]).unwrap()).unwrap();
+    assert_eq!(amax, 3);
 }
 
 #[test]
-fn extract_year_rejects_future_year() {
-    assert_eq!(extract_year("© 2028 Google", 2026), None);
-    assert_eq!(extract_year("© 2026 Google", 2026), Some(2026));
+fn tier_a_fires_on_two_votes() {
+    let probs = vec![win(2, 0.6), win(2, 0.7), win(5, 0.55)];
+    assert_eq!(tier_a_vote(&probs), Some(2018));
 }
 
 #[test]
-fn current_year_is_sane() {
-    let y = current_year();
-    assert!((2026..2100).contains(&y), "current_year() = {y}");
+fn tier_a_fires_on_solo_threshold() {
+    // single window, one class above solo_thresh (0.9)
+    let probs = vec![win(3, 0.95)];
+    assert_eq!(tier_a_vote(&probs), Some(2019));
+}
+
+#[test]
+fn tier_a_falls_through_without_votes_or_solo() {
+    // single mid-confidence window: one vote, solo below 0.9
+    assert_eq!(tier_a_vote(&[win(4, 0.6)]), None);
+    // nothing above thresh at all
+    assert_eq!(tier_a_vote(&[win(4, 0.4)]), None);
+    assert_eq!(tier_a_vote(&[]), None);
+}
+
+#[test]
+fn tier_a_picks_year_with_most_votes() {
+    let probs = vec![win(2, 0.6), win(5, 0.9), win(5, 0.8)];
+    assert_eq!(tier_a_vote(&probs), Some(2021));
+}
+
+#[test]
+fn tier_b_requires_two_votes() {
+    assert_eq!(tier_b_vote(&[win(2, 0.6)]), None);
+    assert_eq!(tier_b_vote(&[win(2, 0.6), win(2, 0.7)]), Some(2018));
+}
+
+#[test]
+fn tier_b_skips_none_predictions_and_low_conf() {
+    // pred==none (year prob below the 0.01 none floor) is skipped
+    let mut none_win = [0.0f32; NUM_CLASSES];
+    none_win[0] = 0.9;
+    none_win[6] = 0.05;
+    assert_eq!(tier_b_vote(&[none_win, none_win]), None);
+    // year predicted but below thresh -> skipped
+    assert_eq!(tier_b_vote(&[win(6, 0.4), win(6, 0.45)]), None);
+}
+
+#[test]
+fn ncc_output_dims_are_valid_region() {
+    assert_eq!(OH, TILE - TH + 1);
+    assert_eq!(OW, TILE - TW + 1);
+    assert_eq!(OH, 494);
+    assert_eq!(OW, 389);
+}
+
+#[test]
+fn gaussian_blur_of_flat_is_flat() {
+    let flat = vec![120u8; TILE * TILE];
+    let blur = gaussian_blur_u8(&flat);
+    assert!(blur.iter().all(|&v| v == 120));
+    // high-pass of a flat plane is ~zero
+    let h = high_pass(&flat);
+    assert!(h.iter().all(|&v| v.abs() < 1e-6));
+}
+
+#[test]
+fn top6_returns_six_largest() {
+    let mut ncc = vec![0f64; OH * OW];
+    // plant six ascending peaks at known flat indices
+    let spots = [(0usize, 0usize), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5)];
+    for (k, &(y, x)) in spots.iter().enumerate() {
+        ncc[y * OW + x] = 10.0 + k as f64;
+    }
+    let peaks = top6(&ncc);
+    assert_eq!(peaks.len(), 6);
+    // every planted (x,y) must be present as a window top-left
+    for &(y, x) in &spots {
+        assert!(peaks.iter().any(|&(_, px, py)| px == x && py == y));
+    }
 }
 
 #[test]
@@ -63,78 +146,23 @@ fn official_pano_regex_rejects_wrong_suffix() {
 }
 
 #[test]
-fn shift_crop_applies_positive_and_negative_offsets() {
-    let base = [50, 350, 180, 45];
-    assert_eq!(shift_crop(base, 0), [50, 350, 180, 45]);
-    assert_eq!(shift_crop(base, -30), [50, 320, 180, 45]);
-    assert_eq!(shift_crop(base, 60), [50, 410, 180, 45]);
-}
-
-#[test]
-fn shift_crop_clamps_to_tile_bounds() {
-    let base = [50, 10, 180, 45];
-    // -60 would go negative, must clamp to 0
-    assert_eq!(shift_crop(base, -60), [50, 0, 180, 45]);
-
-    let base_near_bottom = [50, 500, 180, 45];
-    // +60 would exceed TILE_DIM - h, must clamp to max
-    let shifted = shift_crop(base_near_bottom, 60);
-    assert_eq!(shifted[1], TILE_DIM - 45);
-}
-
-#[test]
-fn ordered_candidate_indices_defaults_to_bucket_order() {
-    assert_eq!(ordered_candidate_indices(0), vec![0, 1, 2]);
-}
-
-#[test]
-fn ordered_candidate_indices_reorders_after_adaptive_hit() {
-    // simulating "last successful bucket = gen1 (index 2)"
-    assert_eq!(ordered_candidate_indices(2), vec![2, 0, 1]);
-    assert_eq!(ordered_candidate_indices(1), vec![1, 0, 2]);
-}
-
-#[test]
-fn ordered_indices_defaults_to_original_order() {
-    assert_eq!(ordered_indices(5, 0), vec![0, 1, 2, 3, 4]);
-}
-
-#[test]
-fn ordered_indices_puts_start_idx_first() {
-    assert_eq!(ordered_indices(5, 3), vec![3, 0, 1, 2, 4]);
-    assert_eq!(ordered_indices(5, 4), vec![4, 0, 1, 2, 3]);
-}
-
-#[test]
-fn ordered_candidate_indices_is_ordered_indices_for_candidates_len() {
-    for start in 0..CANDIDATES.len() {
-        assert_eq!(ordered_candidate_indices(start), ordered_indices(CANDIDATES.len(), start));
-    }
-}
-
-#[test]
-fn bundled_model_class_count_matches_dict() {
-    // models/ is an exported artifact (export_models.py), absent in fresh clones
+fn bundled_template_has_expected_size() {
+    // models/ is an exported artifact, absent in fresh clones
     let model_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/models");
-    if !std::path::Path::new(model_dir).join("rec_model.onnx").exists() {
+    if !std::path::Path::new(model_dir).join("wm_template.bin").exists() {
         eprintln!("skipping: no models/ present");
         return;
     }
-    let mut sessions = load_rec_sessions(model_dir, 1);
-    let char_dict = load_char_dict(model_dir);
-    assert_eq!(model_num_classes(&mut sessions[0]), Some(char_dict.len()));
+    assert_eq!(load_template(model_dir).len(), TH * TW);
 }
 
 #[test]
-fn candidates_table_matches_calibration() {
-    assert_eq!(CANDIDATES.len(), 3);
-    assert_eq!(CANDIDATES[0].name, "gen4");
-    assert_eq!((CANDIDATES[0].zoom, CANDIDATES[0].x, CANDIDATES[0].y), (4, 9, 6));
-    assert_eq!(CANDIDATES[0].crop, [50, 350, 180, 45]);
-    assert_eq!(CANDIDATES[1].name, "gen2_3");
-    assert_eq!((CANDIDATES[1].zoom, CANDIDATES[1].x, CANDIDATES[1].y), (4, 7, 5));
-    assert_eq!(CANDIDATES[1].crop, [75, 12, 170, 45]);
-    assert_eq!(CANDIDATES[2].name, "gen1");
-    assert_eq!((CANDIDATES[2].zoom, CANDIDATES[2].x, CANDIDATES[2].y), (3, 4, 2));
-    assert_eq!(CANDIDATES[2].crop, [225, 225, 150, 45]);
+fn bundled_model_class_count_is_eleven() {
+    let model_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/models");
+    if !std::path::Path::new(model_dir).join("wm_cls.onnx").exists() {
+        eprintln!("skipping: no models/ present");
+        return;
+    }
+    let mut session = load_session(model_dir);
+    assert_eq!(wm_num_classes(&mut session), Some(NUM_CLASSES));
 }
