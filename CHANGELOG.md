@@ -1,3 +1,12 @@
+## v0.7.3 - 2026-07-05
+- Bulk operations now show throughput (items/sec) and elapsed time
+- Copyright plugin is more accurate
+- Plugin sidecar downloads are now verified against release checksums
+- Fixed deleted metadata fields reappearing after saving
+- Fixed unofficial panoramas failing to load
+- Fixed metadata field labels showing incorrect capitalization
+- Fixed plugin sidecar processes not always shutting down on exit
+
 ## v0.7.2 — 2026-07-03
 - Fixed sidecar plugins opening a console window on Windows
 
