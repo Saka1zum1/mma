@@ -4,7 +4,9 @@ import {
 	buildStyledTileUrl,
 	createRoadmapTileConfig,
 	createLegacyTileConfig,
+	createLegacyTerrainTileConfig,
 	createLabelsTileConfig,
+	createSatelliteLabelsTileConfig,
 	createSatelliteTileConfig,
 	createSvTileConfig,
 	createSvBlobbyTileConfig,
@@ -73,7 +75,7 @@ export function mapStackOptsFromPrefs(
 export function buildMapStack(opts: MapStackOpts): MapStackResult {
 	const tileSize = new google.maps.Size(256, 256);
 	const layers: google.maps.ImageMapType[] = [];
-	const legacyBase = opts.style === "legacy" && opts.type === "map" && !opts.terrain;
+	const legacyMap = opts.style === "legacy" && opts.type === "map";
 
 	const extraStyles: MapStyle[] = [];
 	const builtinStyles = BUILTIN_STYLE_MAP[opts.style as keyof typeof BUILTIN_STYLE_MAP];
@@ -133,32 +135,39 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 		);
 	} else {
 		if (opts.terrain) {
-			const cfg = createTerrainBasemapTileConfig([
-				{ elementType: "labels", stylers: [{ visibility: "off" }] },
-				{
-					elementType: "geometry.stroke",
-					featureType: "administrative",
-					stylers: [{ visibility: "off" }],
-				},
-				...extraStyles,
-			]);
-			layers.push(
-				new google.maps.ImageMapType({
-					getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(cfg, coord.x, coord.y, zoom),
-					tileSize,
-					minZoom: 0,
-					maxZoom: 20,
-				}),
-			);
-		} else if (legacyBase) {
-			// Legacy style renders labels in the base tile (toggled via stylers),
-			// so the separate labels layer is skipped below.
-			const cfg = createLegacyTileConfig([
-				...(opts.labels
-					? []
-					: [{ elementType: "labels", stylers: [{ visibility: "off" }] } as MapStyle]),
-				...extraStyles,
-			]);
+			if (legacyMap) {
+				const cfg = createLegacyTerrainTileConfig();
+				layers.push(
+					new google.maps.ImageMapType({
+						getTileUrl: (coord: TileCoord, zoom: number) =>
+							buildStyledTileUrl(cfg, LEGACY_STYLE_MAP_ID, coord.x, coord.y, zoom),
+						tileSize,
+						minZoom: 0,
+						maxZoom: 20,
+					}),
+				);
+			} else {
+				const cfg = createTerrainBasemapTileConfig([
+					{ elementType: "labels", stylers: [{ visibility: "off" }] },
+					{
+						elementType: "geometry.stroke",
+						featureType: "administrative",
+						stylers: [{ visibility: "off" }],
+					},
+					...extraStyles,
+				]);
+				layers.push(
+					new google.maps.ImageMapType({
+						getTileUrl: (coord: TileCoord, zoom: number) =>
+							buildTileUrl(cfg, coord.x, coord.y, zoom),
+						tileSize,
+						minZoom: 0,
+						maxZoom: 20,
+					}),
+				);
+			}
+		} else if (legacyMap) {
+			const cfg = createLegacyTileConfig(extraStyles);
 			layers.push(
 				new google.maps.ImageMapType({
 					getTileUrl: (coord: TileCoord, zoom: number) =>
@@ -205,8 +214,10 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 	svLayer.setOpacity(blobbySingleType ? opts.svOpacity * 0.6 : opts.svOpacity);
 	layers.push(svLayer);
 
-	if (opts.labels && opts.type !== "osm" && !legacyBase) {
-		const labelCfg = createLabelsTileConfig(extraStyles);
+	if (opts.labels && opts.type !== "osm") {
+		const labelCfg =
+			opts.type === "satellite"
+				? createSatelliteLabelsTileConfig(extraStyles) : createLabelsTileConfig(extraStyles);
 		layers.push(
 			new google.maps.ImageMapType({
 				getTileUrl: (coord: TileCoord, zoom: number) =>
