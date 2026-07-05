@@ -87,10 +87,3 @@ jobs:
           files: |
             mma-copyright-*.zip
             checksums.txt
-          body: |
-            **SHA-256 digests** (copy into manifest.json / registry.json):
-            ```
-            "sha256-windows-x64": "${{ steps.sha.outputs.sha256-windows-x64 }}",
-            "sha256-macos-arm64": "${{ steps.sha.outputs.sha256-macos-arm64 }}",
-            "sha256-linux-x64": "${{ steps.sha.outputs.sha256-linux-x64 }}"
-            ```
