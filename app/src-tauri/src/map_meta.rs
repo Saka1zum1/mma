@@ -562,14 +562,27 @@ pub fn store_update_map_meta(
     );
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|b| b.as_ref()).collect();
     let conn = storage::open_db()?;
+    let old_extra = if patch.extra.is_some() {
+        let s: String = conn
+            .query_row("SELECT extra FROM maps WHERE id = ?", [&id_clone], |r| r.get(0))
+            .unwrap_or_default();
+        serde_json::from_str::<MapExtra>(&s).ok()
+    } else {
+        None
+    };
     conn.execute(&sql, param_refs.as_slice())?;
-    // Merge user-defined field keys into the runtime set (add-only -- never erase
-    // data-derived keys that happen to lack a persisted field definition).
     if let Some(ref extra) = patch.extra {
         let mut mgr = state.lock()?;
         if let Ok(store) = mgr.store_for_map(&id_clone) {
-            if let Some(ref fields) = extra.fields {
-                for key in fields.keys() {
+            if let Some(ref new_fields) = extra.fields {
+                if let Some(ref old_fields) = old_extra.and_then(|e| e.fields) {
+                    for key in old_fields.keys() {
+                        if !new_fields.contains_key(key) {
+                            store.known_field_keys.remove(key);
+                        }
+                    }
+                }
+                for key in new_fields.keys() {
                     store.known_field_keys.insert(key.clone());
                 }
             }
