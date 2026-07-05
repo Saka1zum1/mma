@@ -47,4 +47,11 @@ CLAUDE.md
 mma-source
 *.bin
 # sidecar ONNX models (exported/downloaded, not committed)
-plugins/*/sidecar/models/
+plugins/*/sidecar/models/*
+
+plugins/copyright/eval/
+plugins/copyright/sidecar/_parity_ref.json
+plugins/copyright/sidecar/verify_parity.py
+
+!plugins/copyright/sidecar/models/wm_cls.onnx
+!plugins/copyright/sidecar/models/wm_template.bin
