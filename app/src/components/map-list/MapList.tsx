@@ -1160,17 +1160,19 @@ export function MapList() {
 								}
 								if (e.key !== "Enter") return;
 								e.preventDefault();
-								const first = listRef.current?.querySelector<HTMLAnchorElement>(
-									"[data-filter-name]:not([hidden]) .map-link",
+								const name = filterInputRef.current?.value.trim();
+								if (!name) return;
+								const entries = listRef.current?.querySelectorAll<HTMLElement>(
+									"[data-filter-name]:not([hidden])",
 								);
-								if (first) {
-									first.click();
+								const exact = entries
+									? [...entries].find((el) => el.dataset.filterName === name.toLowerCase())
+									: undefined;
+								if (exact) {
+									exact.querySelector<HTMLAnchorElement>(".map-link")?.click();
 									return;
 								}
-								const name = filterInputRef.current?.value.trim();
-								if (name) {
-									createMap(name).then((m) => openMapWindow(m.id, m.name));
-								}
+								createMap(name).then((m) => openMapWindow(m.id, m.name));
 							}}
 							className="input"
 							type="text"
