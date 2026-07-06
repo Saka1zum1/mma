@@ -289,14 +289,14 @@ pub fn auto_register_field_defs(
 ) -> Option<HashMap<String, ExtraFieldDef>> {
     let mut new_defs: HashMap<String, ExtraFieldDef> = HashMap::new();
     for extra in extras {
-        // Shallow parse: keys + raw value slices, no deep value tree. A value is only
-        // deep-parsed for genuinely new keys (the common case short-circuits on known_keys).
-        for (key, raw_value) in extra.shallow() {
-            if known_keys.contains(&key) || new_defs.contains_key(&key) {
-                continue;
+        // Byte key-scan (no per-loc map alloc). A value is only deep-parsed for genuinely
+        // new keys — the common case short-circuits on known_keys.
+        extra.for_each_field(|key, raw_value| {
+            if known_keys.contains(key) || new_defs.contains_key(key) {
+                return;
             }
-            let def = known_field_def(&key).unwrap_or_else(|| {
-                let value: serde_json::Value = serde_json::from_str(raw_value.get()).unwrap_or(serde_json::Value::Null);
+            let def = known_field_def(key).unwrap_or_else(|| {
+                let value: serde_json::Value = serde_json::from_str(raw_value).unwrap_or(serde_json::Value::Null);
                 ExtraFieldDef {
                     field_type: infer_field_type(&value),
                     label: None,
@@ -305,8 +305,8 @@ pub fn auto_register_field_defs(
                     comparison: None,
                 }
             });
-            new_defs.insert(key, def);
-        }
+            new_defs.insert(key.to_owned(), def);
+        });
     }
     if new_defs.is_empty() { None } else { Some(new_defs) }
 }
@@ -905,6 +905,22 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains_key("foo"));
         assert!(result.contains_key("bar"));
+    }
+
+    #[test]
+    fn for_each_field_skips_nested_and_handles_specials() {
+        // Only depth-1 keys are visited; nested object/array keys are jumped over. Value
+        // slices capture strings (incl. braces/commas/escaped quotes) and nested structures whole.
+        let e = raw(r#"{"a":1,"b":"x,y}z","c":{"nested":true,"tags":[1]},"d":[1,2],"e":"q\"r"}"#);
+        let mut fields: Vec<(String, String)> = Vec::new();
+        e.for_each_field(|k, v| fields.push((k.to_owned(), v.trim().to_owned())));
+        let keys: Vec<&str> = fields.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, vec!["a", "b", "c", "d", "e"], "nested keys must not be visited");
+        assert_eq!(fields[0].1, "1");
+        assert_eq!(fields[1].1, r#""x,y}z""#);
+        assert_eq!(fields[2].1, r#"{"nested":true,"tags":[1]}"#);
+        assert_eq!(fields[3].1, "[1,2]");
+        assert_eq!(fields[4].1, r#""q\"r""#);
     }
 
     #[test]

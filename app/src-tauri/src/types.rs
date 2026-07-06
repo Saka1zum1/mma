@@ -91,6 +91,77 @@ impl RawExtra {
             .get(key)
             .and_then(|rv| serde_json::from_str(rv.get()).ok())
     }
+
+    /// Visit each top-level `(key, raw_value)` without allocating a map. `raw_value` is
+    /// the value's raw JSON slice. Cheap field discovery / counting; nested keys are not
+    /// visited (the scan jumps over object/array values). String/escape aware.
+    pub fn for_each_field(&self, mut f: impl FnMut(&str, &str)) {
+        let s = self.0.get();
+        let b = s.as_bytes();
+        let mut i = 0usize;
+        let mut depth = 0i32;
+        while i < b.len() {
+            match b[i] {
+                b'{' | b'[' => { depth += 1; i += 1; }
+                b'}' | b']' => { depth -= 1; i += 1; }
+                b'"' => {
+                    let cstart = i + 1;
+                    let cend = str_close(b, cstart); // index of the closing quote
+                    if depth == 1 {
+                        let mut j = cend + 1;
+                        while j < b.len() && b[j].is_ascii_whitespace() { j += 1; }
+                        if j < b.len() && b[j] == b':' {
+                            let mut v = j + 1;
+                            while v < b.len() && b[v].is_ascii_whitespace() { v += 1; }
+                            let vend = skip_value(b, v);
+                            f(&s[cstart..cend], &s[v..vend]);
+                            i = vend;
+                            continue;
+                        }
+                    }
+                    i = cend + 1;
+                }
+                _ => i += 1,
+            }
+        }
+    }
+}
+
+/// Index of the closing quote, given `from` = first content byte after the opening `"`.
+fn str_close(b: &[u8], from: usize) -> usize {
+    let mut i = from;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => i += 2,
+            b'"' => return i,
+            _ => i += 1,
+        }
+    }
+    b.len()
+}
+
+/// Index just past the JSON value starting at `from` (string, object/array, or scalar).
+fn skip_value(b: &[u8], from: usize) -> usize {
+    match b.get(from) {
+        Some(b'"') => str_close(b, from + 1) + 1,
+        Some(b'{') | Some(b'[') => {
+            let (mut i, mut d) = (from + 1, 1i32);
+            while i < b.len() && d > 0 {
+                match b[i] {
+                    b'"' => i = str_close(b, i + 1) + 1,
+                    b'{' | b'[' => { d += 1; i += 1; }
+                    b'}' | b']' => { d -= 1; i += 1; }
+                    _ => i += 1,
+                }
+            }
+            i
+        }
+        _ => {
+            let mut i = from;
+            while i < b.len() && !matches!(b[i], b',' | b'}' | b']') { i += 1; }
+            i
+        }
+    }
 }
 
 fn is_empty_object(s: &str) -> bool {

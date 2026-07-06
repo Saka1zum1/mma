@@ -523,33 +523,6 @@ fn match_bracket(b: &[u8], open: usize) -> usize {
     b.len()
 }
 
-/// Visit each depth-1 key of a raw JSON object `s` (string/escape aware). Used to count
-/// extra field presence without building a map per location.
-fn for_each_top_level_key(s: &str, mut f: impl FnMut(&str)) {
-    let b = s.as_bytes();
-    let mut i = 0usize;
-    let mut depth = 0i32;
-    while i < b.len() {
-        match b[i] {
-            b'{' | b'[' => { depth += 1; i += 1; }
-            b'}' | b']' => { depth -= 1; i += 1; }
-            b'"' => {
-                let start = i;
-                let end = skip_string(b, i + 1);
-                if depth == 1 {
-                    let mut j = end;
-                    while j < b.len() && is_ws(b[j]) { j += 1; }
-                    if j < b.len() && b[j] == b':' {
-                        f(&s[start + 1..end - 1]);
-                    }
-                }
-                i = end;
-            }
-            _ => i += 1,
-        }
-    }
-}
-
 /// Fast path: strip the top-level `tags` array from raw extra JSON `s`, interning its
 /// strings into the chunk-local tag table, and return the remaining object as `RawExtra`
 /// (the exact bytes minus the `tags` member; `None` if nothing is left). `tags` are
@@ -1145,7 +1118,7 @@ fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
         if let Some(extra) = &loc.extra {
             // Byte key-scan (no per-loc map alloc); only allocate a String the first
             // time each distinct key is seen.
-            for_each_top_level_key(extra.as_str(), |k| {
+            extra.for_each_field(|k, _| {
                 if let Some(c) = extra_counts.get_mut(k) { *c += 1; }
                 else { extra_counts.insert(k.to_owned(), 1); }
             });
@@ -1283,6 +1256,8 @@ fn add_parsed_to_store(
     parsed: &mut ParsedMap,
     bulk_tag: Option<&str>,
 ) -> AppResult<location_store::MutationResult> {
+    let _t = std::time::Instant::now();
+    let n = parsed.locations.len();
     let tag_id_remap = {
         let tags = &mut store.tags;
         let before = tags.all.len();
@@ -1297,6 +1272,7 @@ fn add_parsed_to_store(
         loc.id = store.alloc_id();
         loc.tags = loc.tags.iter().filter_map(|&old| tag_id_remap.get(&old).copied()).collect();
     }
+    let t_reconcile = _t.elapsed();
 
     // Find-or-create the bulk tag (case-insensitive) and apply it to every location.
     if let Some(name) = bulk_tag.map(str::trim).filter(|n| !n.is_empty()) {
@@ -1322,6 +1298,7 @@ fn add_parsed_to_store(
     }
 
     store.add_tag_counts(&parsed.locations);
+    let t_counts = _t.elapsed();
 
     // Discover new extra-field defs from the locations now, before we consume them.
     let new_field_defs = {
@@ -1330,6 +1307,7 @@ fn add_parsed_to_store(
             .collect();
         crate::map_meta::auto_register_field_defs(&store.known_field_keys, &extras)
     };
+    let t_autoreg = _t.elapsed();
 
     // Small imports keep a reversible undo entry (needs a copy of the locations). Large
     // imports autocommit and skip undo, so the locations are MOVED into the overlay
@@ -1342,11 +1320,14 @@ fn add_parsed_to_store(
     }
     store.edits.redo.clear();
 
+    let t_undo = _t.elapsed();
+
     for loc in std::mem::take(&mut parsed.locations) {
         let ci = location_store::render_cell_idx(loc.lat, loc.lng);
         store.cell_add_render(ci, loc.id);
         store.overlay_add(loc);
     }
+    let t_overlay = _t.elapsed();
 
     let mut result = store.finish_mutation(
         location_store::ChangeSet { full_reset: true, ..Default::default() }
@@ -1356,6 +1337,9 @@ fn add_parsed_to_store(
     if let Some(new_defs) = new_field_defs {
         location_store::apply_field_defs(store, new_defs, &mut result);
     }
+    log::debug!("[import-insert] n={n} reconcile+alloc={:.0}ms counts={:.0}ms auto_reg={:.0}ms undo={:.0}ms overlay_add={:.0}ms finish={:.0}ms total={:.0}ms",
+        t_reconcile.as_millis(), (t_counts - t_reconcile).as_millis(), (t_autoreg - t_counts).as_millis(),
+        (t_undo - t_autoreg).as_millis(), (t_overlay - t_undo).as_millis(), (_t.elapsed() - t_overlay).as_millis(), _t.elapsed().as_millis());
     Ok(result)
 }
 
