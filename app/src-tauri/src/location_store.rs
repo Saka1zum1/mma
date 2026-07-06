@@ -2522,15 +2522,21 @@ pub(crate) fn save_arrow_inner(store: &Store, map_id: &str) -> AppResult<()> {
 /// location count + dirty tags. Used by `store_commit` so a commit builds
 /// the batch only once.
 pub(crate) fn bake_and_save_inner(store: &mut Store, map_id: &str) -> AppResult<()> {
+    let _t = std::time::Instant::now();
     store.bake_overlay();
+    let t_bake = _t.elapsed();
     store.mmap_handle = None;
     save_arrow_inner(store, map_id)?;
+    let t_write = _t.elapsed();
     let path = storage::arrow_path(map_id)?;
     if path.exists() {
         let (batch, handle) = storage::read_arrow_ipc_mmap(&path)?;
         store.batch = Some(batch);
         store.mmap_handle = Some(handle);
     }
+    let t_mmap = _t.elapsed();
+    log::debug!("[bake_and_save] bake={:.0}ms base-write={:.0}ms remmap={:.0}ms total={:.0}ms",
+        t_bake.as_millis(), (t_write - t_bake).as_millis(), (t_mmap - t_write).as_millis(), _t.elapsed().as_millis());
     let count = store.batch.as_ref().map_or(0, |b| b.num_rows());
     let conn = storage::open_db()?;
     conn.execute("UPDATE maps SET location_count = ?1 WHERE id = ?2", rusqlite::params![count, map_id])?;

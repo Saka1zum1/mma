@@ -58,6 +58,7 @@ import {
 	type ReadonlyIdSet,
 	type SelCellEntry,
 } from "@/lib/render/CellManager";
+import { whenSceneSettled } from "@/lib/render/sceneStore";
 
 /** Minimal pub/sub bus. `.on()` returns an unsubscribe function. */
 function createBus<T extends (...args: never[]) => void>() {
@@ -308,7 +309,7 @@ export function useCommitDiff() {
 
 // --- Autosave ---
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
-let inflightSave: Promise<void> | null = null;
+let inflightPersist: Promise<void> | null = null;
 const AUTOSAVE_DELAY_MS = 2000;
 
 export async function getDirtyCount(): Promise<number> {
@@ -326,8 +327,9 @@ export function scheduleSave() {
 
 async function doSave(): Promise<void> {
 	if (!currentMapId || !currentMap) return;
+	if (inflightPersist) await inflightPersist;
 	const t = trace("save");
-	inflightSave = cmd
+	inflightPersist = cmd
 		.storeSaveDirty()
 		.then(() => {
 			t.end();
@@ -338,15 +340,15 @@ async function doSave(): Promise<void> {
 			log.error("Autosave failed, will retry:", err);
 		})
 		.finally(() => {
-			inflightSave = null;
+			inflightPersist = null;
 		});
-	await inflightSave;
+	await inflightPersist;
 }
 
 export async function flushSave(): Promise<void> {
 	if (autosaveTimer) clearTimeout(autosaveTimer);
 	autosaveTimer = null;
-	if (inflightSave) await inflightSave;
+	if (inflightPersist) await inflightPersist;
 	await doSave();
 }
 
@@ -373,7 +375,7 @@ export async function openMap(id: string) {
 		clearTimeout(autosaveTimer);
 		autosaveTimer = null;
 	}
-	if (inflightSave) await inflightSave;
+	if (inflightPersist) await inflightPersist;
 	const t = trace("openMap");
 	currentMapId = id;
 	currentMap = null;
@@ -739,6 +741,7 @@ function applySelectionSync(sync: SelectionSync) {
 /** Await a mutation IPC, emit its render delta, sync JS state, and schedule a save. */
 export async function mutate(p: Promise<MutationResult>): Promise<MutationResult> {
 	const r = await p;
+	if (inflightPersist) await inflightPersist;
 	renderDeltaBus.emit(r.delta);
 	syncMutationResult(r);
 	refreshAfterMutation();
@@ -1437,6 +1440,7 @@ export async function beginImportPaste(text: string) {
 /** Commit the staged import, optionally dropping fields and applying a bulk tag. */
 export async function confirmImport(droppedFields: string[], tagName?: string) {
 	if (!importStaging) return null;
+	if (inflightPersist) await inflightPersist; // don't overlap a prior import's backgrounded commit
 	const r = await cmd.storeImportFile(droppedFields, tagName?.trim() || null);
 	cancelImport();
 	await mutate(Promise.resolve(r));
@@ -1445,20 +1449,30 @@ export async function confirmImport(droppedFields: string[], tagName?: string) {
 	if (currentMap && r.settings && Object.keys(r.settings).length) {
 		await updateMapMeta({ settings: { ...currentMap.meta.settings, ...r.settings } });
 	}
-	// Large imports skip the undo stack (Rust); commit them so the baseline advances
-	// with a recorded history entry instead of silently diverging from HEAD. Use the
-	// single-pass commit+bake (builds the Arrow batch once) instead of commitMap.
+
 	if (r.autoCommit && currentMapId) {
-		// A pending autosave would write a delta the bake deletes (wasted + races it).
+		const mapId = currentMapId;
+		// Let the full render finish (markers on screen) before kicking off the commit --
+		// otherwise the commit's ~1s of Arrow writes stall the render-buffer fetch and the
+		// map stays blank for seconds after the import "returns".
+		await whenSceneSettled();
 		if (autosaveTimer) {
 			clearTimeout(autosaveTimer);
 			autosaveTimer = null;
 		}
-		if (inflightSave) await inflightSave;
-		await cmd.storeCommit(currentMapId, `Import ${r.importedCount} locations`);
-		undoRedoState = { canUndo: false, canRedo: false };
-		cachedCommitDiff = { added: 0, removed: 0, modified: 0 };
-		bump();
+
+		if (inflightPersist) await inflightPersist;
+		inflightPersist = cmd
+			.storeCommit(mapId, `Import ${r.importedCount} locations`)
+			.then(() => {
+				undoRedoState = { canUndo: false, canRedo: false };
+				cachedCommitDiff = { added: 0, removed: 0, modified: 0 };
+			})
+			.catch((e) => log.error("[import] background commit failed:", e))
+			.finally(() => {
+				inflightPersist = null;
+				bump();
+			});
 	}
 	return r;
 }
@@ -1512,21 +1526,18 @@ export const useUndoRedo = makeStoreHook(() => undoRedoState);
 export async function commitMap(message?: string): Promise<string> {
 	if (!currentMapId) throw new Error("No map open");
 	const t = trace("commit");
-	// A pending/inflight autosave would write a delta sidecar the bake immediately deletes
-	// -- wasted I/O, and its async write can race the delete and leave a stale sidecar.
-	// The commit persists everything, so cancel the autosave first.
 	if (autosaveTimer) {
 		clearTimeout(autosaveTimer);
 		autosaveTimer = null;
 	}
-	if (inflightSave) await inflightSave;
-	// One Rust call: build the delta from the overlay, bake it into the base, record the
-	// commit, and clear undo. A null message is auto-formatted (+a -r ~m) Rust-side.
+	if (inflightPersist) await inflightPersist;
+
 	const id = await cmd.storeCommit(currentMapId, message ?? null);
 	t.step("commit");
 	t.end();
 	undoRedoState = { canUndo: false, canRedo: false };
 	cachedCommitDiff = { added: 0, removed: 0, modified: 0 };
+
 	// Commit clears the overlay; commit-sensitive selections (e.g. Uncommitted) must
 	// re-resolve against the new baseline instead of showing now-committed rows.
 	if (selections.length > 0) {

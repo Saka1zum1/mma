@@ -117,8 +117,19 @@ export function getMarkerDefaultColor(): [number, number, number, number] {
 	return markerDefault;
 }
 
+let sceneSettled: Promise<void> = Promise.resolve();
+
+/** Resolves when the most recently started full scene load has finished (or immediately if none is in flight). */
+export function whenSceneSettled(): Promise<void> {
+	return sceneSettled;
+}
+
 /** Full (re)load from Rust for the whole world. Editor-driven on open / marker-style change. */
-export async function loadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
+export function loadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
+	return (sceneSettled = doLoadScene(markerStyle, mc));
+}
+
+async function doLoadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
 	lastMarkerStyle = markerStyle;
 	if (mc) setMarkerDefaultColor(mc.r, mc.g, mc.b);
 	const token = ++loadToken;
@@ -135,8 +146,9 @@ export async function loadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<voi
 		t.step("fill");
 		const resp = await fetch(mmaBufUrl(filePath));
 		if (!resp.ok) throw new Error(`render fetch ${resp.status}: ${await resp.text()}`);
+		t.step("fetch-headers");
 		const buf = await resp.arrayBuffer();
-		t.step("fetch");
+		t.step("arraybuffer");
 		if (token !== loadToken) return; // superseded by a newer load
 		scene.initFromBinary(buf);
 		t.step("parse");
