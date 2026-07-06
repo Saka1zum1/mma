@@ -117,7 +117,7 @@ async function enrich(
 MMA.registerPlugin({
 	activate() {
 		MMA.registerEnrichFields([
-			{ key: "copyrightYear", label: "Copyright year", defaultOff: true },
+			{ key: "copyrightYear", label: "Copyright year" },
 		]);
 		MMA.registerEnrichmentProvider({
 			id: "copyright",
