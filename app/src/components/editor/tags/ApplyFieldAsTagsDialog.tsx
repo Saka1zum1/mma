@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { NSelect } from "@/components/primitives/NSelect";
 import type {
 	ExtraFieldDef,
 	KeySpec,
@@ -113,8 +114,8 @@ export function ApplyFieldAsTagsDialog({
 				>
 					<ScopeSelector ctl={scopeCtl} />
 					<div style={{ display: "flex", gap: "0.5rem" }}>
-						<select
-							className="nselect nselect--compact"
+						<NSelect
+							className="nselect--compact"
 							value={field}
 							onChange={(e) => handleFieldChange(e.target.value)}
 							style={{ flex: 1 }}
@@ -126,10 +127,10 @@ export function ApplyFieldAsTagsDialog({
 									{f.label}
 								</option>
 							))}
-						</select>
+						</NSelect>
 						{field && projOptions.length > 1 && (
-							<select
-								className="nselect nselect--compact"
+							<NSelect
+								className="nselect--compact"
 								value={projectionId}
 								onChange={(e) => setProjectionId(e.target.value)}
 							>
@@ -138,7 +139,7 @@ export function ApplyFieldAsTagsDialog({
 										{p.label}
 									</option>
 								))}
-							</select>
+							</NSelect>
 						)}
 					</div>
 					{showWidth && (

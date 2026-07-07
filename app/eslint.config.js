@@ -35,6 +35,13 @@ export default defineConfig([
 			"react-hooks/preserve-manual-memoization": "off",
 			"no-console": "error",
 			"local/no-ipc-in-loop": "warn",
+			"no-restricted-syntax": [
+				"error",
+				{
+					selector: "JSXOpeningElement[name.name='select']",
+					message: "Use <NSelect> (@/components/primitives/NSelect) instead of a raw <select>.",
+				},
+			],
 			"@typescript-eslint/no-unused-vars": [
 				"error",
 				{
@@ -49,6 +56,11 @@ export default defineConfig([
 	{
 		files: ["src/store/commandDefs.ts"],
 		rules: { "local/no-duplicate-command-icons": "error" },
+	},
+	{
+		// The one sanctioned raw <select>: NSelect wraps it.
+		files: ["src/components/primitives/NSelect.tsx"],
+		rules: { "no-restricted-syntax": "off" },
 	},
 	{
 		files: [

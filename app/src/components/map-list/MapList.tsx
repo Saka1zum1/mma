@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { NSelect } from "@/components/primitives/NSelect";
 import {
 	useMapList,
 	createMap,
@@ -1203,8 +1204,8 @@ export function MapList() {
 							</button>
 						)}
 					</span>
-					<select
-						className="nselect map-list__sort"
+					<NSelect
+						className="map-list__sort"
 						value={sortMode}
 						onChange={(e) => setSortMode(e.target.value as SortMode)}
 					>
@@ -1213,7 +1214,7 @@ export function MapList() {
 								{o.label}
 							</option>
 						))}
-					</select>
+					</NSelect>
 					<button
 						className="icon-button"
 						onClick={() => {

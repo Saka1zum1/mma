@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { NSelect } from "@/components/primitives/NSelect";
 import {
 	setMapExtraFields,
 	getKnownFieldKeys,
@@ -277,8 +278,7 @@ export function ManageFieldsModal({ onClose }: { onClose: () => void }) {
 										/>
 									</td>
 									<td>
-										<select
-											className="nselect"
+										<NSelect
 											value={row.type}
 											onChange={(e) =>
 												updateRow(row.key, { type: e.target.value as ExtraFieldDef["type"] })
@@ -289,11 +289,10 @@ export function ManageFieldsModal({ onClose }: { onClose: () => void }) {
 													{TYPE_LABELS[t]}
 												</option>
 											))}
-										</select>
+										</NSelect>
 									</td>
 									<td>
-										<select
-											className="nselect"
+										<NSelect
 											value={compToToken(row.comparison)}
 											onChange={(e) => {
 												const token = e.target.value as CompToken;
@@ -319,7 +318,7 @@ export function ManageFieldsModal({ onClose }: { onClose: () => void }) {
 														: o.label}
 												</option>
 											))}
-										</select>
+										</NSelect>
 									</td>
 									<td className="manage-fields-table__actions">
 										<button
