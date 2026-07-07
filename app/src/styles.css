@@ -5973,3 +5973,8 @@ body {
 	opacity: 0.4;
 	cursor: not-allowed;
 }
+
+.gmnoprint:has([title="Map Data"]),
+.gmnoprint:has([aria-label^="Terms"]) {
+	display: none;
+}

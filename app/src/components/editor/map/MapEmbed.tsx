@@ -449,7 +449,7 @@ export function MapEmbed({
 						/>
 					</div>
 				</div>
-				<div className="embed-controls__control" style={{ right: 0, bottom: 0 }}>
+				<div className="embed-controls__control" style={{ right: 0, bottom: 10 }}>
 					<div className="map-control map-control--button white">
 						<Tooltip content="Zoom in" side="left">
 							<button onClick={zoomIn} aria-label="Zoom in">
