@@ -20,7 +20,7 @@ use crate::util::{now_iso, now_unix};
 use crate::arrow_bridge;
 use crate::storage;
 use crate::location_store;
-use crate::types::{Tag, Location, LocationFlags};
+use crate::types::{is_ws, skip_string, Tag, Location, LocationFlags};
 
 /// Read a file with sequential-scan hints for better OS prefetch on cold reads.
 fn read_sequential(path: &str) -> std::io::Result<Vec<u8>> {
@@ -282,27 +282,6 @@ fn parse_single_json(text: &str) -> ParsedMap {
     parse_single_json_mut(&mut buf)
 }
 
-/// Given the index just past an opening `"`, return the index just past the
-/// matching closing `"`, honoring backslash escapes. Uses memchr (SIMD) to jump
-/// between quote candidates instead of inspecting every byte.
-#[inline]
-fn skip_string(bytes: &[u8], from: usize) -> usize {
-    let mut search = from;
-    while let Some(off) = memchr::memchr(b'"', &bytes[search..]) {
-        let q = search + off;
-        // Count consecutive backslashes immediately before the quote (down to,
-        // but not past, the first content byte `from`). Even count => the quote
-        // is unescaped and closes the string.
-        let mut k = q;
-        while k > from && bytes[k - 1] == b'\\' { k -= 1; }
-        if (q - k) % 2 == 0 {
-            return q + 1;
-        }
-        search = q + 1;
-    }
-    bytes.len()
-}
-
 /// Scan raw bytes for `{...}` object boundaries inside a JSON array.
 /// Returns `(ranges, array_end)` where `array_end` is the offset of the array's
 /// closing `]` (or `bytes.len()` if unterminated). Stops there so trailing
@@ -357,9 +336,6 @@ fn find_object_boundaries(bytes: &[u8]) -> (Vec<(usize, usize)>, usize) {
     }
     (ranges, bytes.len())
 }
-
-#[inline]
-fn is_ws(b: u8) -> bool { matches!(b, b' ' | b'\t' | b'\r' | b'\n') }
 
 /// Boundary scan of `[start, limit)` for depth-0 `{...}` objects (absolute offsets).
 /// Returns `(ranges, end_depth, terminated_close)`. `terminated_close` is `Some`
@@ -476,53 +452,6 @@ fn parallel_find_object_boundaries(bytes: &[u8]) -> (Vec<(usize, usize)>, usize)
 // as structure), so this is correct on arbitrary extra content.
 // ---------------------------------------------------------------------------
 
-/// Within object bytes `b` (`{...}`), find a depth-1 key equal to `key`. Returns
-/// `(key_quote_start, value_start)` where `value_start` is the first non-ws byte after
-/// the `:`. Skips string bodies and nested objects/arrays, so a matching key inside a
-/// value or a nested object is not mistaken for a top-level one.
-fn find_top_level_key(b: &[u8], key: &[u8]) -> Option<(usize, usize)> {
-    let mut i = 0usize;
-    let mut depth = 0i32;
-    while i < b.len() {
-        match b[i] {
-            b'{' | b'[' => { depth += 1; i += 1; }
-            b'}' | b']' => { depth -= 1; i += 1; }
-            b'"' => {
-                let start = i;
-                let end = skip_string(b, i + 1); // index just past the closing quote
-                if depth == 1 && end >= start + 2 && &b[start + 1..end - 1] == key {
-                    let mut j = end;
-                    while j < b.len() && is_ws(b[j]) { j += 1; }
-                    if j < b.len() && b[j] == b':' {
-                        let mut v = j + 1;
-                        while v < b.len() && is_ws(b[v]) { v += 1; }
-                        return Some((start, v));
-                    }
-                }
-                i = end;
-            }
-            _ => i += 1,
-        }
-    }
-    None
-}
-
-/// Given `b[open] == '['` (or `'{'`), return the index just past the matching close,
-/// honoring strings/escapes. Returns `b.len()` if unterminated.
-fn match_bracket(b: &[u8], open: usize) -> usize {
-    let mut i = open + 1;
-    let mut depth = 1i32;
-    while i < b.len() {
-        match b[i] {
-            b'"' => { i = skip_string(b, i + 1); }
-            b'[' | b'{' => { depth += 1; i += 1; }
-            b']' | b'}' => { depth -= 1; i += 1; if depth == 0 { return i; } }
-            _ => i += 1,
-        }
-    }
-    b.len()
-}
-
 /// Fast path: strip the top-level `tags` array from raw extra JSON `s`, interning its
 /// strings into the chunk-local tag table, and return the remaining object as `RawExtra`
 /// (the exact bytes minus the `tags` member; `None` if nothing is left). `tags` are
@@ -535,12 +464,17 @@ fn strip_tags_fast(
     tags: &mut Vec<u32>,
 ) -> Result<Option<crate::types::RawExtra>, ()> {
     let b = s.as_bytes();
-    let Some((kstart, vstart)) = find_top_level_key(b, b"tags") else {
+    let mut span: Option<(usize, usize, usize)> = None;
+    crate::types::scan_fields(b, |fs| {
+        let hit = &b[fs.key.clone()] == b"tags";
+        if hit { span = Some((fs.key.start - 1, fs.value.start, fs.value.end)); }
+        hit
+    });
+    let Some((kstart, vstart, vend)) = span else {
         // No tags key: keep the extra bytes verbatim.
         return Ok(crate::types::RawExtra::from_string(s.to_owned()));
     };
     if b.get(vstart) != Some(&b'[') { return Err(()); }
-    let vend = match_bracket(b, vstart);
     let Ok(list) = serde_json::from_str::<Vec<&str>>(&s[vstart..vend]) else { return Err(()) };
     for name in list {
         let id = match name_to_local.get(name) {

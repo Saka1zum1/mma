@@ -31,6 +31,28 @@ fn reads_legacy_map_encoded_blob() {
 }
 
 #[test]
+fn get_scans_only_top_level_keys() {
+    let e = extra(
+        r#"{ "a" : 1, "nested": {"a": 99, "deep": [{"a": 5}]}, "arr": [1, 2], "s": "not:{\"a\":7}", "tz": "Asia/Tokyo" }"#,
+    );
+    assert_eq!(e.get("a"), Some(serde_json::json!(1)));
+    assert_eq!(e.get("arr"), Some(serde_json::json!([1, 2])));
+    assert_eq!(e.get("tz"), Some(serde_json::json!("Asia/Tokyo")));
+    assert_eq!(e.get("s"), Some(serde_json::json!("not:{\"a\":7}")));
+    assert_eq!(e.get("deep"), None); // exists only nested
+    assert_eq!(e.get("missing"), None);
+}
+
+#[test]
+fn get_handles_escapes_and_non_objects() {
+    let e = extra(r#"{"q\"uote": 1, "b": "ends with \\", "c": true}"#);
+    assert_eq!(e.get("b"), Some(serde_json::json!("ends with \\")));
+    assert_eq!(e.get("c"), Some(serde_json::json!(true)));
+    // Non-object extra (legacy passthrough): no fields to find.
+    assert_eq!(extra(r#""just a string""#).get("a"), None);
+}
+
+#[test]
 fn human_readable_json_round_trips_transparently() {
     let field: ExtraField = Some(Some(extra(r#"{"k":[1,2,3]}"#)));
     let json = serde_json::to_string(&field).unwrap();

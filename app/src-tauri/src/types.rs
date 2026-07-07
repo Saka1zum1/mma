@@ -37,9 +37,9 @@ fn default_visible() -> bool {
 /// Over IPC/JSON and into the Arrow `extra` string column it emits transparently, so
 /// those formats are unchanged. The binary (rmp) encoding used for delta sidecars and
 /// undo blobs now writes a plain string; legacy shipped builds wrote a map there, so the
-/// `Deserialize` impl accepts both (see [`BinRawExtraVisitor`]). Parsing to a map happens
-/// only when a consumer needs keyed access, via [`RawExtra::to_map`] (deep) or
-/// [`RawExtra::shallow`]/[`RawExtra::get`] (cheap, no value tree).
+/// `Deserialize` impl accepts both (see [`BinRawExtraVisitor`]). Parsing happens only
+/// when a consumer needs keyed access, via [`RawExtra::to_map`] (deep) or
+/// [`RawExtra::get`]/[`RawExtra::for_each_field`] (zero-alloc byte scan).
 #[derive(Clone, Debug)]
 pub struct RawExtra(Box<serde_json::value::RawValue>);
 
@@ -80,17 +80,22 @@ impl RawExtra {
         serde_json::from_str(self.0.get()).unwrap_or_default()
     }
 
-    /// Shallow parse: keys mapped to their raw JSON value slices (no deep value tree).
-    /// Cheap -- use for key discovery or single-field extraction.
-    pub fn shallow(&self) -> std::collections::HashMap<String, Box<serde_json::value::RawValue>> {
-        serde_json::from_str(self.0.get()).unwrap_or_default()
-    }
-
-    /// One field's value, parsed on demand.
+    /// One field's value, parsed on demand. Zero-alloc scan to the key; only the
+    /// matching value slice is parsed. Keys are matched on raw bytes (a key written
+    /// with JSON escapes won't match its unescaped form).
     pub fn get(&self, key: &str) -> Option<serde_json::Value> {
-        self.shallow()
-            .get(key)
-            .and_then(|rv| serde_json::from_str(rv.get()).ok())
+        let s = self.0.get();
+        let b = s.as_bytes();
+        let mut out = None;
+        scan_fields(b, |fs| {
+            if &b[fs.key.clone()] == key.as_bytes() {
+                out = serde_json::from_str(&s[fs.value.clone()]).ok();
+                true
+            } else {
+                false
+            }
+        });
+        out
     }
 
     /// Visit each top-level `(key, raw_value)` without allocating a map. `raw_value` is
@@ -99,57 +104,84 @@ impl RawExtra {
     pub fn for_each_field(&self, mut f: impl FnMut(&str, &str)) {
         let s = self.0.get();
         let b = s.as_bytes();
-        let mut i = 0usize;
-        let mut depth = 0i32;
-        while i < b.len() {
-            match b[i] {
-                b'{' | b'[' => { depth += 1; i += 1; }
-                b'}' | b']' => { depth -= 1; i += 1; }
-                b'"' => {
-                    let cstart = i + 1;
-                    let cend = str_close(b, cstart); // index of the closing quote
-                    if depth == 1 {
-                        let mut j = cend + 1;
-                        while j < b.len() && b[j].is_ascii_whitespace() { j += 1; }
-                        if j < b.len() && b[j] == b':' {
-                            let mut v = j + 1;
-                            while v < b.len() && b[v].is_ascii_whitespace() { v += 1; }
-                            let vend = skip_value(b, v);
-                            f(&s[cstart..cend], &s[v..vend]);
-                            i = vend;
-                            continue;
-                        }
-                    }
-                    i = cend + 1;
-                }
-                _ => i += 1,
-            }
-        }
+        scan_fields(b, |fs| {
+            f(&s[fs.key.clone()], &s[fs.value.clone()]);
+            false
+        });
     }
 }
 
-/// Index of the closing quote, given `from` = first content byte after the opening `"`.
-fn str_close(b: &[u8], from: usize) -> usize {
-    let mut i = from;
+/// One top-level member found by [`scan_fields`]: the key's content bytes (without
+/// quotes; the opening quote is at `key.start - 1`) and the value's exact byte range.
+pub(crate) struct FieldSpan {
+    pub key: std::ops::Range<usize>,
+    pub value: std::ops::Range<usize>,
+}
+
+/// Walk the top-level members of object JSON `b`, calling `f` for each; `f` returns
+/// `true` to stop early. String/escape aware, and nested objects/arrays are skipped
+/// wholesale, so a matching key inside a value is never yielded.
+pub(crate) fn scan_fields(b: &[u8], mut f: impl FnMut(&FieldSpan) -> bool) {
+    let mut i = 0usize;
+    let mut depth = 0i32;
     while i < b.len() {
         match b[i] {
-            b'\\' => i += 2,
-            b'"' => return i,
+            b'{' | b'[' => { depth += 1; i += 1; }
+            b'}' | b']' => { depth -= 1; i += 1; }
+            b'"' => {
+                let kstart = i + 1;
+                let kend = skip_string(b, kstart); // just past the closing quote
+                i = kend;
+                if depth == 1 && kend > kstart {
+                    let mut j = kend;
+                    while j < b.len() && is_ws(b[j]) { j += 1; }
+                    if j < b.len() && b[j] == b':' {
+                        let mut v = j + 1;
+                        while v < b.len() && is_ws(b[v]) { v += 1; }
+                        let vend = skip_value(b, v);
+                        if f(&FieldSpan { key: kstart..kend - 1, value: v..vend }) { return; }
+                        i = vend;
+                    }
+                }
+            }
             _ => i += 1,
         }
     }
-    b.len()
+}
+
+#[inline]
+pub(crate) fn is_ws(b: u8) -> bool { matches!(b, b' ' | b'\t' | b'\r' | b'\n') }
+
+/// Given the index just past an opening `"`, return the index just past the
+/// matching closing `"`, honoring backslash escapes. Uses memchr (SIMD) to jump
+/// between quote candidates instead of inspecting every byte.
+#[inline]
+pub(crate) fn skip_string(bytes: &[u8], from: usize) -> usize {
+    let mut search = from;
+    while let Some(off) = memchr::memchr(b'"', &bytes[search..]) {
+        let q = search + off;
+        // Count consecutive backslashes immediately before the quote (down to,
+        // but not past, the first content byte `from`). Even count => the quote
+        // is unescaped and closes the string.
+        let mut k = q;
+        while k > from && bytes[k - 1] == b'\\' { k -= 1; }
+        if (q - k) % 2 == 0 {
+            return q + 1;
+        }
+        search = q + 1;
+    }
+    bytes.len()
 }
 
 /// Index just past the JSON value starting at `from` (string, object/array, or scalar).
-fn skip_value(b: &[u8], from: usize) -> usize {
+pub(crate) fn skip_value(b: &[u8], from: usize) -> usize {
     match b.get(from) {
-        Some(b'"') => str_close(b, from + 1) + 1,
+        Some(b'"') => skip_string(b, from + 1),
         Some(b'{') | Some(b'[') => {
             let (mut i, mut d) = (from + 1, 1i32);
             while i < b.len() && d > 0 {
                 match b[i] {
-                    b'"' => i = str_close(b, i + 1) + 1,
+                    b'"' => i = skip_string(b, i + 1),
                     b'{' | b'[' => { d += 1; i += 1; }
                     b'}' | b']' => { d -= 1; i += 1; }
                     _ => i += 1,
