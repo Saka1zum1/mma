@@ -987,6 +987,58 @@ impl Store {
         })
     }
 
+    /// Evenly spaced subset of the current selection: `target_count` thins to N ids
+    /// maximizing spacing; `min_distance_m` keeps as many as fit at that spacing.
+    pub(crate) fn pick_spaced(
+        &self,
+        target_count: Option<u32>,
+        min_distance_m: Option<u32>,
+    ) -> AppResult<SpacedPickResult> {
+        match (target_count, min_distance_m) {
+            (Some(_), Some(_)) => {
+                return Err(AppError::from("pick_spaced: pass exactly one of target_count or min_distance_m, not both"))
+            }
+            (None, None) => {
+                return Err(AppError::from("pick_spaced: pass exactly one of target_count or min_distance_m"))
+            }
+            (_, Some(0)) => return Err(AppError::from("pick_spaced: min_distance_m must be greater than 0")),
+            _ => {}
+        }
+
+        let mut candidates: Vec<(u32, f64, f64)> = self
+            .selections
+            .ids
+            .iter()
+            .filter_map(|id| {
+                let (lat, lng) = self.coords_of(id)?;
+                (lat.is_finite() && lng.is_finite()).then_some((id, lat, lng))
+            })
+            .collect();
+        fastrand::shuffle(&mut candidates);
+
+        if let Some(n) = target_count {
+            if n as usize >= candidates.len() {
+                return Ok(SpacedPickResult {
+                    ids: candidates.iter().map(|c| c.0).collect(),
+                    distance_m: 0,
+                });
+            }
+            let coords: Vec<(f64, f64)> = candidates.iter().map(|c| (c.1, c.2)).collect();
+            let (idxs, distance_m) = vali_geo::with_max_min_distance(&coords, n as usize, None, &[]);
+            let ids = idxs.into_iter().map(|i| candidates[i as usize].0).collect();
+            return Ok(SpacedPickResult { ids, distance_m });
+        }
+
+        let d = min_distance_m.unwrap() as i32;
+        if candidates.is_empty() {
+            return Ok(SpacedPickResult { ids: Vec::new(), distance_m: 0 });
+        }
+        let coords: Vec<(f64, f64)> = candidates.iter().map(|c| (c.1, c.2)).collect();
+        let idxs = vali_geo::place_spaced(&coords, candidates.len(), d, &[]);
+        let ids = idxs.into_iter().map(|i| candidates[i as usize].0).collect();
+        Ok(SpacedPickResult { ids, distance_m: d })
+    }
+
     /// Collect all alive locations (batch + overlay) into a Vec. O(N) time and space.
     pub(crate) fn collect_all_locations(&self) -> Vec<Location> {
         let view = self.loc_view();
@@ -3140,6 +3192,37 @@ pub async fn store_sync_selections(
 pub fn store_get_selected_ids_list(webview: tauri::Webview, state: tauri::State<'_, StoreState>) -> AppResult<Vec<u32>> {
     with_store!(webview, state, |store| {
         Ok(store.selections.ids.iter().collect())
+    })
+}
+
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SpacedPickResult {
+    pub ids: Vec<u32>,
+    pub distance_m: i32,
+}
+
+/// Pick an evenly spaced subset of the current selection. Exactly one of `target_count`
+/// (thin to N, maximizing spacing) or `min_distance_m` (keep as many as fit at that spacing)
+/// must be provided.
+#[tauri::command]
+#[specta::specta]
+pub fn store_pick_spaced(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    target_count: Option<u32>,
+    min_distance_m: Option<u32>,
+) -> AppResult<SpacedPickResult> {
+    let _t = std::time::Instant::now();
+    with_store!(webview, state, |store| {
+        let candidate_count = store.selections.ids.len();
+        let result = store.pick_spaced(target_count, min_distance_m)?;
+        let mode = if target_count.is_some() { "count" } else { "distance" };
+        log::debug!(
+            "[cmd] store_pick_spaced mode={} candidates={} picked={} distance_m={} total={}ms",
+            mode, candidate_count, result.ids.len(), result.distance_m, _t.elapsed().as_millis()
+        );
+        Ok(result)
     })
 }
 

@@ -13,6 +13,7 @@ import {
 	selectFilter,
 	selectTopK,
 	selectRandomFromSelection,
+	selectSpacedFromSelection,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { sortTagsByMode } from "@/lib/util/util";
@@ -62,6 +63,49 @@ function RandomPickPanel() {
 				onChange={(e) => setValue(e.target.value)}
 			/>
 			<span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>
+			<button className="button" type="submit" disabled={!valid}>
+				Pick
+			</button>
+		</form>
+	);
+}
+
+function SpacedPickPanel() {
+	const [mode, setMode] = useState<"count" | "distance">("count");
+	const [value, setValue] = useState("");
+	const total = useSelectedLocationIds().size;
+	const parsed = Math.floor(Number(value));
+	const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
+
+	const handleSubmit = (e: React.FormEvent) => {
+		e.preventDefault();
+		if (!valid) return;
+		const opts = mode === "count" ? { count: Math.min(parsed, total) } : { minDistanceM: parsed };
+		selectSpacedFromSelection(opts)
+			.then(({ picked, distanceM }) => {
+				if (picked === 0) return;
+				const spacing = distanceM > 0 ? `, at least ${fmt.format(distanceM)}m apart` : "";
+				toast(`Selected ${fmt.format(picked)} location${picked !== 1 ? "s" : ""}${spacing}`);
+			})
+			.catch((err) => toast(String(err)));
+	};
+
+	return (
+		<form className="selection-manager__inline-form" onSubmit={handleSubmit}>
+			<NSelect value={mode} onChange={(e) => setMode(e.target.value as "count" | "distance")}>
+				<option value="count">Count</option>
+				<option value="distance">Min distance</option>
+			</NSelect>
+			<input
+				className="input"
+				type="number"
+				min={1}
+				style={{ width: "7rem" }}
+				placeholder={mode === "count" ? "Count" : "Meters"}
+				value={value}
+				onChange={(e) => setValue(e.target.value)}
+			/>
+			{mode === "count" && <span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>}
 			<button className="button" type="submit" disabled={!valid}>
 				Pick
 			</button>
@@ -245,6 +289,9 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 					panels={{
 						"select-random": {
 							render: () => <RandomPickPanel />,
+						},
+						"select-spaced": {
+							render: () => <SpacedPickPanel />,
 						},
 						"find-duplicates": {
 							render: () => (

@@ -2428,3 +2428,101 @@ fn spatial_any_within() {
     assert!(!store.any_within(10.0004, 10.0, 10.0));
     assert!(!store.any_within(-45.0, 100.0, 1000.0));
 }
+
+// -----------------------------------------------------------------------
+// pick_spaced
+// -----------------------------------------------------------------------
+
+// 4x5 grid at the equator, 100m spacing. Ids 1..=20.
+fn spaced_grid_store() -> Store {
+    let step = 100.0 / 111_320.0; // ~100m in degrees at the equator
+    let mut locs = Vec::new();
+    let mut id = 1u32;
+    for r in 0..4 {
+        for c in 0..5 {
+            locs.push(loc(id, r as f64 * step, c as f64 * step));
+            id += 1;
+        }
+    }
+    let mut store = setup_store_with(&locs);
+    for l in &locs {
+        store.selections.ids.insert(l.id);
+    }
+    store
+}
+
+fn coord_lookup(store: &Store) -> std::collections::HashMap<u32, (f64, f64)> {
+    store.selections.ids.iter().filter_map(|id| store.coords_of(id).map(|c| (id, c))).collect()
+}
+
+fn min_pairwise(ids: &[u32], coords: &std::collections::HashMap<u32, (f64, f64)>) -> f64 {
+    let mut min = f64::MAX;
+    for i in 0..ids.len() {
+        for j in i + 1..ids.len() {
+            let (a, b) = (coords[&ids[i]], coords[&ids[j]]);
+            min = min.min(selections::haversine_m(a.0, a.1, b.0, b.1));
+        }
+    }
+    min
+}
+
+#[test]
+fn pick_spaced_count_returns_exactly_n_subset() {
+    let store = spaced_grid_store();
+    let res = store.pick_spaced(Some(8), None).unwrap();
+    assert_eq!(res.ids.len(), 8);
+    let uniq: std::collections::HashSet<u32> = res.ids.iter().copied().collect();
+    assert_eq!(uniq.len(), 8, "no duplicates");
+    for id in &res.ids {
+        assert!(store.selections.ids.contains(*id), "id {} not in selection", id);
+    }
+}
+
+#[test]
+fn pick_spaced_count_ge_size_returns_all() {
+    let store = spaced_grid_store();
+    let res = store.pick_spaced(Some(50), None).unwrap();
+    assert_eq!(res.ids.len(), 20);
+    assert_eq!(res.distance_m, 0);
+    let uniq: std::collections::HashSet<u32> = res.ids.iter().copied().collect();
+    assert_eq!(uniq.len(), 20);
+}
+
+#[test]
+fn pick_spaced_count_pairwise_spacing_meets_returned_distance() {
+    let store = spaced_grid_store();
+    let coords = coord_lookup(&store);
+    let res = store.pick_spaced(Some(6), None).unwrap();
+    let min = min_pairwise(&res.ids, &coords);
+    assert!(min >= res.distance_m as f64 - 1e-6, "min pairwise {} < distance_m {}", min, res.distance_m);
+}
+
+#[test]
+fn pick_spaced_distance_enforces_threshold() {
+    let store = spaced_grid_store();
+    let coords = coord_lookup(&store);
+    let res = store.pick_spaced(None, Some(250)).unwrap();
+    assert_eq!(res.distance_m, 250);
+    assert!(!res.ids.is_empty());
+    let min = min_pairwise(&res.ids, &coords);
+    assert!(min >= 250.0 - 1e-6, "min pairwise {} < 250", min);
+}
+
+#[test]
+fn pick_spaced_arg_validation() {
+    let store = spaced_grid_store();
+    assert!(store.pick_spaced(Some(5), Some(100)).is_err(), "both set");
+    assert!(store.pick_spaced(None, None).is_err(), "neither set");
+    assert!(store.pick_spaced(None, Some(0)).is_err(), "zero distance");
+}
+
+#[test]
+fn pick_spaced_empty_selection() {
+    let store = setup_store_with(&[]);
+    let count = store.pick_spaced(Some(5), None).unwrap();
+    assert!(count.ids.is_empty());
+    assert_eq!(count.distance_m, 0);
+    let dist = store.pick_spaced(None, Some(100)).unwrap();
+    assert!(dist.ids.is_empty());
+    assert_eq!(dist.distance_m, 0);
+}

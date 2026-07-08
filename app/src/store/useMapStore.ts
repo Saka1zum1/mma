@@ -1022,6 +1022,19 @@ export function selectRandomFromSelection(count: number): number {
 	return picked.length;
 }
 
+/** Replace the current selection with a single Manual selection of ids picked from the
+ *  current selection, spaced apart in Rust: either `count` ids maximizing spacing, or as
+ *  many as fit at `minDistanceM`. No-op when the pick returns nothing. */
+export async function selectSpacedFromSelection(opts: {
+	count?: number;
+	minDistanceM?: number;
+}): Promise<{ picked: number; distanceM: number }> {
+	const result = await cmd.storePickSpaced(opts.count ?? null, opts.minDistanceM ?? null);
+	if (result.ids.length === 0) return { picked: 0, distanceM: 0 };
+	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: result.ids }));
+	return { picked: result.ids.length, distanceM: result.distanceM };
+}
+
 export function selectEverything() {
 	return addSelections([{ type: "Everything" }]);
 }

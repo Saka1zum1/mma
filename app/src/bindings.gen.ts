@@ -232,6 +232,12 @@ export const commands = {
 	/**  Return the union of all currently selected location IDs. */
 	storeGetSelectedIdsList: () => typedError<number[], string>(__TAURI_INVOKE("store_get_selected_ids_list")),
 	/**
+	 *  Pick an evenly spaced subset of the current selection. Exactly one of `target_count`
+	 *  (thin to N, maximizing spacing) or `min_distance_m` (keep as many as fit at that spacing)
+	 *  must be provided.
+	 */
+	storePickSpaced: (targetCount: number | null, minDistanceM: number | null) => typedError<SpacedPickResult, string>(__TAURI_INVOKE("store_pick_spaced", { targetCount, minDistanceM })),
+	/**
 	 *  Resolve a single selection to its matching location IDs without persisting it.
 	 *  Used by plugins and one-off queries (e.g., tag merge, export filtered).
 	 */
@@ -1110,6 +1116,11 @@ export type SelectionSync = {
 	counts: { [key in string]: number },
 	bitmask: number[] | null,
 	selectedCount: number,
+};
+
+export type SpacedPickResult = {
+	ids: number[],
+	distanceM: number,
 };
 
 /**
