@@ -12,6 +12,9 @@ export interface MapEmbedPrefs {
 	boldCountryBorders: boolean;
 	boldSubdivisionBorders: boolean;
 	hideRoadLabels: boolean;
+	hidePoi: boolean;
+	hideTransit: boolean;
+	hideHighways: boolean;
 	mapStyleName: string;
 	mapType: MapTypeKey;
 	markerStyle: MarkerStyle;
@@ -35,6 +38,9 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 	boldCountryBorders: false,
 	boldSubdivisionBorders: false,
 	hideRoadLabels: false,
+	hidePoi: false,
+	hideTransit: false,
+	hideHighways: false,
 	mapStyleName: "default",
 	mapType: "map",
 	markerStyle: "pin",

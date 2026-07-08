@@ -71,6 +71,19 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 			stylers: [{ visibility: "off" }],
 		});
 	}
+	if (prefs.hidePoi) {
+		extraStyles.push({ featureType: "poi", stylers: [{ visibility: "off" }] });
+	}
+	if (prefs.hideTransit) {
+		extraStyles.push({ featureType: "transit", stylers: [{ visibility: "off" }] });
+	}
+	if (prefs.hideHighways) {
+		extraStyles.push({
+			featureType: "road.highway",
+			elementType: "geometry",
+			stylers: [{ visibility: "off" }],
+		});
+	}
 
 	if (prefs.mapType === "satellite") {
 		const cfg = createSatelliteTileConfig();

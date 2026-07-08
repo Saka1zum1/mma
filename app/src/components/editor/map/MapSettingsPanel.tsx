@@ -212,6 +212,33 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 					/>
 					Hide road labels
 				</label>
+				<label className="layer-config__item">
+					<input
+						role="menuitemcheckbox"
+						type="checkbox"
+						checked={p.hidePoi}
+						onChange={(ev) => setPref("hidePoi")(ev.target.checked)}
+					/>
+					Hide points of interest
+				</label>
+				<label className="layer-config__item">
+					<input
+						role="menuitemcheckbox"
+						type="checkbox"
+						checked={p.hideTransit}
+						onChange={(ev) => setPref("hideTransit")(ev.target.checked)}
+					/>
+					Hide transit
+				</label>
+				<label className="layer-config__item">
+					<input
+						role="menuitemcheckbox"
+						type="checkbox"
+						checked={p.hideHighways}
+						onChange={(ev) => setPref("hideHighways")(ev.target.checked)}
+					/>
+					Hide highways
+				</label>
 			</fieldset>
 			{/* Map style */}
 			<fieldset className="layer-config__group">
