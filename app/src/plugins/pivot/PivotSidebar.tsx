@@ -6,7 +6,7 @@ import { selectionDisplayName } from "@/store/selections";
 import { savedToSelectionProps, describeRule, type SavedSelection } from "@/store/savedSelections";
 import { Sidebar, Field, EmptyState } from "@/components/primitives/Sidebar";
 import type { ExtraFieldDef } from "@/bindings.gen";
-import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
+import { fieldLabel, getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { binNumeric, compareNatural } from "@/lib/util/util";
 import type { LocationStore } from "@/api";
 import "./pivot.css";
@@ -31,11 +31,7 @@ type RowSource = "all" | "active" | string; // "all", "active", or saved selecti
 
 const TAGS_FIELD_KEY = "__tags__";
 
-interface FieldOption {
-	key: string;
-	label: string;
-	def: ExtraFieldDef | undefined;
-}
+import type { FieldEntry } from "@/components/editor/map/FilterBuilder";
 
 async function computePivot(
 	rowSource: RowSource,
@@ -190,16 +186,16 @@ async function computePivot(
 	return { rows: pivotRows, columns, columnLabels, columnTotals };
 }
 
-function buildPivotFields(knownKeys: ReadonlySet<string>): FieldOption[] {
-	const result: FieldOption[] = [{ key: TAGS_FIELD_KEY, label: "Tags", def: undefined }];
+function buildPivotFields(knownKeys: ReadonlySet<string>): FieldEntry[] {
+	const result: FieldEntry[] = [{ key: TAGS_FIELD_KEY, label: "Tags", def: { type: "enum" } }];
 	for (const key of knownKeys) {
 		const def = getFieldDef(key);
-		result.push({ key, label: fieldLabel(key), def });
+		if (def) result.push({ key, label: fieldLabel(key), def });
 	}
 	return result;
 }
 
-function defaultPivotField(fields: FieldOption[]): string {
+function defaultPivotField(fields: FieldEntry[]): string {
 	return (fields.find((f) => f.key === "cameraType") ?? fields[0])?.key ?? "";
 }
 

@@ -2,8 +2,9 @@ import { useState, useMemo, useCallback } from "react";
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import { NSelect } from "@/components/primitives/NSelect";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
-import type { ExtraFieldDef, ExtraFieldType, KeySpec, DatePart } from "@/bindings.gen";
+import type { ExtraFieldType, KeySpec, DatePart } from "@/bindings.gen";
 import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
+import type { FieldEntry } from "@/components/editor/map/FilterBuilder";
 import { partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { isNumericField, colorPartition } from "./gradientMath";
 import { partition, useScope } from "@/store/useMapStore";
@@ -60,13 +61,6 @@ const PRESETS: GradientPreset[] = [
 
 const BUCKET_COUNTS = [5, 10, 15, 20];
 
-interface FieldOption {
-	key: string;
-	label: string;
-	def: ExtraFieldDef | undefined;
-	numeric: boolean;
-}
-
 // Gradient offers Range for numbers and dates (count bins); numeric defaults to Range.
 const gradientOptions = (type: ExtraFieldType) => partitionKeyOptions(type, true);
 function defaultProjection(type: ExtraFieldType): string {
@@ -75,19 +69,24 @@ function defaultProjection(type: ExtraFieldType): string {
 		: (gradientOptions(type)[0]?.id ?? "value");
 }
 
-function buildGradientFields(knownKeys: ReadonlySet<string>): FieldOption[] {
-	const result: FieldOption[] = [];
+function buildGradientFields(knownKeys: ReadonlySet<string>): FieldEntry[] {
+	const result: FieldEntry[] = [];
 	for (const key of knownKeys) {
 		const def = getFieldDef(key);
-		const numeric = isNumericField(def);
-		if (!def || numeric || def.type === "enum" || def.type === "string" || def.type === "month") {
-			result.push({ key, label: fieldLabel(key), def, numeric });
+		if (
+			!def ||
+			isNumericField(def) ||
+			def.type === "enum" ||
+			def.type === "string" ||
+			def.type === "month"
+		) {
+			if (def) result.push({ key, label: fieldLabel(key), def });
 		}
 	}
 	return result;
 }
 
-function defaultGradientField(fields: FieldOption[]): string {
+function defaultGradientField(fields: FieldEntry[]): string {
 	return (fields.find((f) => f.key === "altitude") ?? fields[0])?.key ?? "";
 }
 

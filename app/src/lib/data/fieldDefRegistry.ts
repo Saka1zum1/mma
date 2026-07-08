@@ -26,6 +26,22 @@
 import { useSyncExternalStore } from "react";
 import type { ExtraFieldDef } from "@/bindings.gen";
 
+const VIRTUAL_FIELDS: Record<string, ExtraFieldDef> = {
+	createdAt: { type: "date", label: "Created" },
+	modifiedAt: { type: "date", label: "Modified" },
+	tagCount: { type: "number", label: "Tag count" },
+	heading: { type: "number", label: "Heading", comparison: { type: "circular", period: 360 } },
+	pitch: { type: "number", label: "Pitch" },
+	zoom: { type: "number", label: "Zoom" },
+};
+
+const TOP_LEVEL_KEYS = new Set(["heading", "pitch", "zoom"]);
+
+/** True when `key` is a built-in top-level Location field (not nested under `extra`). */
+export function isTopLevelField(key: string): boolean {
+	return TOP_LEVEL_KEYS.has(key);
+}
+
 let pluginDefs: Record<string, ExtraFieldDef> = {};
 let userDefs: Record<string, ExtraFieldDef> = {};
 
@@ -107,7 +123,7 @@ function mergeDef(
 
 /** Look up metadata for a single field key. Returns `undefined` if no metadata exists. */
 export function getFieldDef(key: string): ExtraFieldDef | undefined {
-	return mergeDef(userDefs[key], pluginDefs[key]);
+	return mergeDef(mergeDef(userDefs[key], pluginDefs[key]), VIRTUAL_FIELDS[key]);
 }
 
 /** Display label for a field key: registered label if known, otherwise sentence-cased from camelCase/snake_case. */
@@ -124,11 +140,14 @@ export function fieldLabel(key: string): string {
 /** Merged view of all field definitions across all layers. */
 export function getAllFieldDefs(): Record<string, ExtraFieldDef> {
 	const out: Record<string, ExtraFieldDef> = {};
-	for (const key of new Set([...Object.keys(pluginDefs), ...Object.keys(userDefs)])) {
-		const merged = mergeDef(userDefs[key], pluginDefs[key]);
-		if (merged) {
-			out[key] = merged;
-		}
+	const allKeys = new Set([
+		...Object.keys(VIRTUAL_FIELDS),
+		...Object.keys(pluginDefs),
+		...Object.keys(userDefs),
+	]);
+	for (const key of allKeys) {
+		const merged = getFieldDef(key);
+		if (merged) out[key] = merged;
 	}
 	return out;
 }

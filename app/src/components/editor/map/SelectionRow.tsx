@@ -154,7 +154,7 @@ export function SelectionRow({
 	const stepFilter = (() => {
 		const p = selection.props;
 		if (p.type !== "Filter") return null;
-		const ft = fieldEntries.find((f) => f.key === p.field)?.fieldType;
+		const ft = fieldEntries.find((f) => f.key === p.field)?.def.type;
 		const wallClock = p.tzLocal ?? false;
 		if (stepFilterWindow(ft, p.op, p.value, p.value2, 1, wallClock) == null) return null;
 		return (dir: 1 | -1) => {

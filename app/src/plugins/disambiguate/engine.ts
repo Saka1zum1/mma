@@ -3,6 +3,7 @@
 // Pure, store-free port of the Rust reference (disambiguate.rs); tested in engine.test.ts.
 
 import type { Location, ExtraFieldDef, ComparisonType } from "@/bindings.gen";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import {
 	kruskalEps2,
 	circularEta2,
@@ -89,11 +90,9 @@ function emptyGroup(n: number, present: number): GroupSummary {
 }
 
 /** Resolve how a field is compared. An explicit `comparison` on the def wins;
- *  otherwise inferred. Built-in numeric columns resolve by key (heading=circular360). */
-export function resolvedComparison(key: string, def: ExtraFieldDef | undefined): ComparisonType {
+ *  otherwise inferred from `type`. */
+export function resolvedComparison(def: ExtraFieldDef | undefined): ComparisonType {
 	if (def?.comparison) return def.comparison;
-	if (key === "heading") return { type: "circular", period: 360 };
-	if (key === "pitch" || key === "zoom") return { type: "linear" };
 	switch (def?.type) {
 		case "number":
 		case "date":
@@ -312,16 +311,8 @@ export function computeDivergence(
 
 	// Built-in numeric columns worth analyzing (lat/lng/timestamps intentionally excluded).
 	for (const key of ["heading", "pitch", "zoom"]) {
-		fields.push(
-			numericField(
-				key,
-				labeled,
-				numGroups,
-				groupSizes,
-				resolvedComparison(key, undefined),
-				undefined,
-			),
-		);
+		const def = getFieldDef(key);
+		fields.push(numericField(key, labeled, numGroups, groupSizes, resolvedComparison(def), def));
 	}
 
 	// Extra fields: registered defs plus any key discovered on the locations.
@@ -332,7 +323,7 @@ export function computeDivergence(
 	const sortedKeys = [...extraKeys].filter((k) => !EXCLUDED_FIELDS.has(k)).sort();
 	for (const key of sortedKeys) {
 		const def = fieldDefs[key] ?? sampleDef(key, labeled);
-		const comparison = resolvedComparison(key, def);
+		const comparison = resolvedComparison(def);
 		if (comparison.type === "categorical") {
 			fields.push(categoricalField(key, labeled, numGroups, groupSizes, def));
 		} else {

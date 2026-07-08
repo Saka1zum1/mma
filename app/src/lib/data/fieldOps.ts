@@ -6,7 +6,6 @@
 
 import type {
 	Location,
-	ExtraFieldDef,
 	ExtraFieldType,
 	Selection,
 	SelectionProps,
@@ -14,22 +13,16 @@ import type {
 	LocationPatch_Deserialize as LocationPatch,
 } from "@/bindings.gen";
 import { buildSelection } from "@/store/selections";
+import { isTopLevelField } from "@/lib/data/fieldDefRegistry";
 
 /** When a move target already holds a value, which field's value survives. */
 export type MergeWinner = "from" | "to";
-
-/** Built-in top-level Location fields offered in the bulk "Set field" picker, with display metadata. */
-export const TOP_LEVEL_SET_FIELDS: Record<string, ExtraFieldDef> = {
-	heading: { type: "number", label: "Heading" },
-	pitch: { type: "number", label: "Pitch" },
-	zoom: { type: "number", label: "Zoom" },
-};
 
 /** Shape a single field assignment into a patch: built-in keys patch the top-level
  *  field, every other key nests under `extra`. The one place that knows the difference. */
 export function fieldPatch(key: string, value: unknown): Partial<Location> {
 	return (
-		key in TOP_LEVEL_SET_FIELDS ? { [key]: value } : { extra: { [key]: value } }
+		isTopLevelField(key) ? { [key]: value } : { extra: { [key]: value } }
 	) as Partial<Location>;
 }
 
@@ -245,7 +238,7 @@ export function parseFieldExpr(src: string): FieldExpr {
 }
 
 /** Top-level Location fields readable in expressions (writable set + coordinates). */
-const TOP_LEVEL_READ_FIELDS = new Set(["lat", "lng", ...Object.keys(TOP_LEVEL_SET_FIELDS)]);
+const TOP_LEVEL_READ_FIELDS = new Set(["lat", "lng", "heading", "pitch", "zoom"]);
 
 /** Read field `key` from a location: built-in top-level keys or `extra`. The read-side
  *  mirror of `fieldPatch`. */
