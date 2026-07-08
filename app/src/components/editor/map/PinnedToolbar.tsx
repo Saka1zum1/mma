@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
-import { useAllSelections, useSelectedLocationIds } from "@/store/useMapStore";
+import { useMapVersion } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
 import {
 	getCommand,
@@ -28,8 +28,7 @@ export function PinnedToolbar({
 	const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
 	const [dragIdx, setDragIdx] = useState<number | null>(null);
 	const [dropIdx, setDropIdx] = useState<number | null>(null);
-	useAllSelections();
-	useSelectedLocationIds();
+	useMapVersion();
 
 	const handleInlinePanel = useCallback(
 		(e: Event) => {

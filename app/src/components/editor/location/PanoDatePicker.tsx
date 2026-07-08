@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { memo, useRef, useCallback } from "react";
 import { useSetting } from "@/store/settings";
 import { dateFmt } from "@/lib/util/format";
 import { type PanoReference } from "@/lib/sv/lookup";
@@ -40,7 +40,11 @@ function PanoOption({ pano }: { pano: PanoReference }) {
 	);
 }
 
-export function PanoDatePicker({ onChange }: { onChange: (panoId: string | null) => void }) {
+export const PanoDatePicker = memo(function PanoDatePicker({
+	onChange,
+}: {
+	onChange: (panoId: string | null) => void;
+}) {
 	const { selectedPanoId, dateState, exactDate, resolvedTz } = usePanoViewer();
 	const { defaultEntry, sorted, isDefault, displayDate, triggerPanoId } = dateState;
 	const prevLabelRef = useRef("");
@@ -135,4 +139,4 @@ export function PanoDatePicker({ onChange }: { onChange: (panoId: string | null)
 			</Select.Portal>
 		</Select.Root>
 	);
-}
+});

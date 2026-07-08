@@ -1,4 +1,4 @@
-import { useState, createElement } from "react";
+import { memo, useState, createElement } from "react";
 import { useSyncExternalStore } from "react";
 import { getEnabledPlugins, subscribeRegistry, getRegistrySnapshot } from "@/plugins/registry";
 import { useCurrentMap } from "@/store/useMapStore";
@@ -50,7 +50,7 @@ export function PluginToolbar() {
 	);
 }
 
-export function PluginLocationPanels() {
+export const PluginLocationPanels = memo(function PluginLocationPanels() {
 	useSyncExternalStore(subscribeRegistry, getRegistrySnapshot);
 
 	const plugins = getEnabledPlugins().filter((p) => p.locationPanel);
@@ -87,4 +87,4 @@ export function PluginLocationPanels() {
 			))}
 		</>
 	);
-}
+});

@@ -38,6 +38,22 @@ import { getStyleBackgroundColor } from "@/lib/geo/mapStyles";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
 
+/** Live zoom text with its own zoom_changed subscription, so zooming doesn't re-render MapEmbed. */
+function ZoomReadout({ map }: { map: google.maps.Map | null }) {
+	const [zoom, setZoom] = useState(() => map?.getZoom() ?? 2);
+	useEffect(() => {
+		if (!map) return;
+		setZoom(map.getZoom() ?? 2);
+		const listener = map.addListener("zoom_changed", () => {
+			setZoom(map.getZoom() ?? 0);
+		});
+		return () => {
+			google?.maps?.event?.removeListener(listener);
+		};
+	}, [map]);
+	return <> · zoom {zoom}</>;
+}
+
 export function MapEmbed({
 	onAddLocation,
 }: {
@@ -63,7 +79,9 @@ export function MapEmbed({
 		selectOnly,
 	} = prefs;
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
-	const [mapZoom, setMapZoom] = useState(2);
+	// Boolean, not the raw zoom: re-renders only when crossing the blobby threshold.
+	// The live zoom readout subscribes itself (ZoomReadout).
+	const [belowBlobbyZoom, setBelowBlobbyZoom] = useState(2 <= BLOBBY_ZOOM_THRESHOLD);
 
 	const [customStyles, setCustomStyles] = useLocalStorage<CustomStyle[]>(CUSTOM_STYLES_KEY, []);
 	const [showStylesDialog, setShowStylesDialog] = useState(false);
@@ -148,7 +166,7 @@ export function MapEmbed({
 					}
 				});
 				gMapRef.current.addListener("zoom_changed", () => {
-					setMapZoom(gMapRef.current?.getZoom() ?? 0);
+					setBelowBlobbyZoom((gMapRef.current?.getZoom() ?? 0) <= BLOBBY_ZOOM_THRESHOLD);
 				});
 				setMapReady(true);
 				mapOpen.mark("map-ready");
@@ -178,9 +196,9 @@ export function MapEmbed({
 	useEffect(() => {
 		if (!svLayerRef.current) return;
 		const blobbySingleType =
-			prefs.svBlobby && mapZoom <= BLOBBY_ZOOM_THRESHOLD && prefs.svCoverageType !== "default";
+			prefs.svBlobby && belowBlobbyZoom && prefs.svCoverageType !== "default";
 		svLayerRef.current.setOpacity(blobbySingleType ? svOpacity * 0.6 : svOpacity);
-	}, [svOpacity, prefs.svBlobby, mapZoom, prefs.svCoverageType]);
+	}, [svOpacity, prefs.svBlobby, belowBlobbyZoom, prefs.svCoverageType]);
 
 	// The editor map drives the single scene engine (delta/selection/active subscriptions)
 	useEffect(() => startSceneEngine(), []);
@@ -262,7 +280,7 @@ export function MapEmbed({
 		};
 	}, [showPreviews]);
 
-	const useBlobby = prefs.svBlobby && mapZoom <= BLOBBY_ZOOM_THRESHOLD;
+	const useBlobby = prefs.svBlobby && belowBlobbyZoom;
 
 	useEffect(() => {
 		if (!gMapRef.current) return;
@@ -457,7 +475,8 @@ export function MapEmbed({
 				<MeasurementBar />
 				<div className="embed-controls__control" style={{ bottom: 0, left: 0 }}>
 					<div className="map-control coordinate-control">
-						<span ref={coordDisplayRef} /> · zoom {mapZoom}
+						<span ref={coordDisplayRef} />
+						<ZoomReadout map={mapReady ? gMapRef.current : null} />
 						{showFps && (
 							<>
 								<span style={{ margin: "0 4px" }}>·</span>

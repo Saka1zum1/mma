@@ -8,8 +8,8 @@ import {
 	addTagToLocations,
 	createTags,
 	selectDuplicates,
-	getVisibleTags,
-	getTagCounts,
+	useVisibleTags,
+	useTagCounts,
 	selectFilter,
 	selectTopK,
 	selectRandomFromSelection,
@@ -172,6 +172,8 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	const map = useCurrentMap();
 	const selected = useSelectedLocationIds();
 	const selections = useAllSelections();
+	const visibleTags = useVisibleTags();
+	const tagCounts = useTagCounts();
 	const [bulkTagInput, setBulkTagInput] = useState("");
 	const tagSortMode = useSetting("tagSortMode");
 	const [selectionsCollapsed, setSelectionsCollapsed] = useState(false);
@@ -212,7 +214,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	};
 
 	const bulkSuggestions = (() => {
-		const all = sortTagsByMode(getVisibleTags(), tagSortMode, getTagCounts());
+		const all = sortTagsByMode(visibleTags, tagSortMode, tagCounts);
 		const q = bulkTagInput.trim().toLowerCase();
 		return (q ? all.filter((t) => t.name.toLowerCase().includes(q)) : all).slice(0, 15);
 	})();

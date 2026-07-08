@@ -81,6 +81,8 @@ export function useLatLngAnchor() {
 	return useSyncExternalStore(aStore.subscribe, aSnap);
 }
 
+export const subscribeLatLngAnchor = aStore.subscribe;
+
 export function getLatLngAnchor() {
 	return anchor;
 }

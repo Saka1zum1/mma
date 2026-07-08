@@ -4,27 +4,19 @@ import type { GoogleMapsOverlayProps } from "@deck.gl/google-maps";
 import type { PickingInfo } from "@deck.gl/core";
 import { google } from "@/lib/sv/opensv";
 import { buildSceneLayers, type PolyGeom } from "@/lib/render/buildSceneLayers";
-import { getScene, useScene } from "@/lib/render/sceneStore";
+import { getScene, subscribeScene } from "@/lib/render/sceneStore";
 
 import { useSetting, getSettings } from "@/store/settings";
-import { useScoreMaxError, useLatLngAnchor } from "@/lib/sv/measure";
+import { useScoreMaxError, subscribeLatLngAnchor } from "@/lib/sv/measure";
 import { handleMapClick, handleMapHover } from "@/lib/map/mapClick";
-import {
-	useMapVersion,
-	useSelectedLocationIds,
-	useSelectedTagIds,
-	useAllSelections,
-	useImportMarkerVersion,
-	useDiffMarkerVersion,
-	getActiveLocation,
-} from "@/store/useMapStore";
+import { subscribeStore, getActiveLocation } from "@/store/useMapStore";
 import { subscribe } from "@/lib/events";
 import { getReviewSession } from "@/lib/review/review";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useMapKeyboardNav } from "@/lib/hooks/useMapKeyboardNav";
-import { useTrailVersion } from "@/lib/sv/svTrail";
-import { useSeenOverlayVersion } from "@/lib/seen/seenOverlay";
+import { subscribeTrail } from "@/lib/sv/svTrail";
+import { subscribeSeenOverlay } from "@/lib/seen/seenOverlay";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 
 type OverlayEvent = { srcEvent?: { domEvent?: Event } };
@@ -61,18 +53,6 @@ export function useMapSurface(
 	const panoDotColor = useSetting("panoDotColor");
 	const panoDotScaled = useSetting("panoDotScaled");
 	const scoreMaxError = useScoreMaxError();
-
-	// Visual signals that should repaint the scene.
-	const sceneVersion = useScene();
-	const mapVer = useMapVersion();
-	const selectedIds = useSelectedLocationIds();
-	const selectedTags = useSelectedTagIds();
-	const allSelections = useAllSelections();
-	const trailVersion = useTrailVersion();
-	const importMarkerVersion = useImportMarkerVersion();
-	const diffMarkerVersion = useDiffMarkerVersion();
-	const seenOverlayVersion = useSeenOverlayVersion();
-	const latLngAnchor = useLatLngAnchor();
 
 	const rebuild = useCallback(() => {
 		const overlay = overlayRef.current;
@@ -127,6 +107,30 @@ export function useMapSurface(
 	// Latest rebuild, so the rAF-delayed creation paints the first frame with current values.
 	const rebuildLatest = useEffectEvent(() => rebuild());
 
+	// Repaint on every visual signal WITHOUT rendering the host component — these buses
+	// used to be render subscriptions serving purely as effect triggers. Same-tick bursts
+	// coalesce into one rebuild (React's batching did this implicitly before).
+	const rebuildQueued = useRef(false);
+	const scheduleRebuild = useEffectEvent(() => {
+		if (rebuildQueued.current) return;
+		rebuildQueued.current = true;
+		queueMicrotask(() => {
+			rebuildQueued.current = false;
+			rebuildLatest();
+		});
+	});
+
+	useEffect(() => {
+		const unsubs = [
+			subscribeStore(scheduleRebuild),
+			subscribeScene(scheduleRebuild),
+			subscribeTrail(scheduleRebuild),
+			subscribeSeenOverlay(scheduleRebuild),
+			subscribeLatLngAnchor(scheduleRebuild),
+		];
+		return () => unsubs.forEach((u) => u());
+	}, []);
+
 	const externalOverlay = opts.overlay ?? null;
 
 	useEffect(() => {
@@ -155,21 +159,10 @@ export function useMapSurface(
 		};
 	}, [map, externalOverlay]);
 
+	// Rebuild when the layer inputs themselves change (settings, prefs, measuring, ...).
 	useEffect(() => {
 		rebuild();
-	}, [
-		rebuild,
-		sceneVersion,
-		mapVer,
-		selectedIds,
-		selectedTags,
-		allSelections,
-		trailVersion,
-		importMarkerVersion,
-		diffMarkerVersion,
-		seenOverlayVersion,
-		latLngAnchor,
-	]);
+	}, [rebuild]);
 
 	// Follow the active location into view while reviewing.
 	useEffect(() => {
