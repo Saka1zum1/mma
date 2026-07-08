@@ -11,6 +11,7 @@ export interface MapEmbedPrefs {
 	svBlobby: boolean;
 	boldCountryBorders: boolean;
 	boldSubdivisionBorders: boolean;
+	hideRoadLabels: boolean;
 	mapStyleName: string;
 	mapType: MapTypeKey;
 	markerStyle: MarkerStyle;
@@ -33,6 +34,7 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 	svBlobby: false,
 	boldCountryBorders: false,
 	boldSubdivisionBorders: false,
+	hideRoadLabels: false,
 	mapStyleName: "default",
 	mapType: "map",
 	markerStyle: "pin",

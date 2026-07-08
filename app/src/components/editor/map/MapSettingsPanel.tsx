@@ -48,6 +48,8 @@ export interface LayerConfig {
 	setBoldCountryBorders: (v: boolean) => void;
 	boldSubdivisionBorders: boolean;
 	setBoldSubdivisionBorders: (v: boolean) => void;
+	hideRoadLabels: boolean;
+	setHideRoadLabels: (v: boolean) => void;
 	mapStyleName: string;
 	setMapStyleName: (v: string) => void;
 	customStyles: { name: string; style: MapStyle[] }[];
@@ -229,6 +231,15 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 						onChange={(ev) => e.setBoldSubdivisionBorders(ev.target.checked)}
 					/>
 					Emphasise subdivision borders
+				</label>
+				<label className="layer-config__item">
+					<input
+						role="menuitemcheckbox"
+						type="checkbox"
+						checked={e.hideRoadLabels}
+						onChange={(ev) => e.setHideRoadLabels(ev.target.checked)}
+					/>
+					Hide road labels
 				</label>
 			</fieldset>
 			{/* Map style */}

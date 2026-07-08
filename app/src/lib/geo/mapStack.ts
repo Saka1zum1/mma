@@ -30,6 +30,7 @@ export interface MapStackOpts {
 	useBlobby: boolean;
 	boldCountry: boolean;
 	boldSubdivision: boolean;
+	hideRoadLabels: boolean;
 	style: string;
 	customStyles?: MapStyle[];
 	svOpacity: number;
@@ -64,6 +65,7 @@ export function mapStackOptsFromPrefs(
 		useBlobby: opts.useBlobby,
 		boldCountry: prefs.boldCountryBorders,
 		boldSubdivision: prefs.boldSubdivisionBorders,
+		hideRoadLabels: prefs.hideRoadLabels,
 		style: prefs.mapStyleName,
 		customStyles: opts.customStyles,
 		svOpacity: prefs.svOpacity,
@@ -98,6 +100,13 @@ export function buildMapStack(opts: MapStackOpts): MapStackResult {
 			featureType: "administrative.province",
 			elementType: "geometry.stroke",
 			stylers: [{ weight: 3 }],
+		});
+	}
+	if (opts.hideRoadLabels) {
+		extraStyles.push({
+			featureType: "road",
+			elementType: "labels",
+			stylers: [{ visibility: "off" }],
 		});
 	}
 
