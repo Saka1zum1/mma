@@ -682,8 +682,28 @@ fn finish_mutation_reports_correct_state() {
     assert_eq!(result.status.location_count, 1);
     assert!(result.status.can_undo);
     assert!(!result.status.can_redo);
-    assert_eq!(result.status.tag_counts.get(&10), Some(&1));
+    // Setup added tagged locations, so this first mutation ships counts.
+    assert_eq!(result.status.tag_counts.as_ref().unwrap().get(&10), Some(&1));
     assert_eq!(result.status.version, 1);
+}
+
+#[test]
+fn tag_counts_shipped_only_when_changed() {
+    let l = loc_with_tags(1, 0.0, 0.0, vec![10]);
+    let mut store = setup_store_with(&[l.clone()]);
+
+    // Setup's add_tag_counts left counts dirty: first mutation ships them once.
+    let result = store.finish_mutation(ChangeSet::default());
+    assert!(result.status.tag_counts.is_some());
+
+    // A mutation that touches no tags must not ship counts.
+    let result = store.finish_mutation(ChangeSet::default());
+    assert!(result.status.tag_counts.is_none());
+
+    // A tag-touching edit ships fresh counts again.
+    let changes = apply_edit(&mut store, std::slice::from_ref(&l), &[]);
+    let result = store.finish_mutation(changes);
+    assert_eq!(result.status.tag_counts.as_ref().unwrap().get(&10), Some(&0));
 }
 
 #[test]

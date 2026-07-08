@@ -682,8 +682,9 @@ fn add_copied_reconciles_tags_and_reports_counts() {
     assert!(two_tag.tags.contains(&unique.id));
 
     // Counts in the result match membership: Shared on both copies, Unique on one.
-    assert_eq!(r.status.tag_counts[&5], 2);
-    assert_eq!(r.status.tag_counts[&unique.id], 1);
+    let counts = r.status.tag_counts.as_ref().expect("import changes counts");
+    assert_eq!(counts[&5], 2);
+    assert_eq!(counts[&unique.id], 1);
 
     // The new tag def is shipped on the result (the receiver needs it to render).
     assert!(r.tags.as_ref().and_then(|m| m.get(&unique.id)).is_some());

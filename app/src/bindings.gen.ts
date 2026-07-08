@@ -1135,7 +1135,11 @@ export type StoreStatus = {
 	locationCount: number,
 	canUndo: boolean,
 	canRedo: boolean,
-	tagCounts: { [key in number]: number },
+	/**
+	 *  `None` when the mutation did not change any tag count (`finish_mutation`
+	 *  strips it), so JS keeps its reference and consumers skip re-rendering.
+	 */
+	tagCounts: { [key in number]: number } | null,
 	knownFieldKeys: string[],
 };
 

@@ -399,7 +399,7 @@ export async function openMap(id: string) {
 			t.step("store_open_map");
 			mapOpen.mark("data");
 			currentMap = meta;
-			tagCounts = openResult.tagCounts;
+			tagCounts = openResult.tagCounts ?? {};
 			undoRedoState = { canUndo: openResult.canUndo, canRedo: openResult.canRedo };
 			knownFieldKeys = new Set(openResult.knownFieldKeys);
 			setUserFieldDefs(meta.meta.extra?.fields ?? {});
@@ -689,13 +689,6 @@ export async function setMapExtraFields(fields: Record<string, ExtraFieldDef>) {
 	await cmd.storeUpdateMapMeta(currentMapId, { extra: replaced } as Partial<MapMeta>);
 }
 
-function sameCounts(a: Record<number, number>, b: Record<number, number>): boolean {
-	const aKeys = Object.keys(a);
-	if (aKeys.length !== Object.keys(b).length) return false;
-	for (const k of aKeys) if (a[Number(k)] !== b[Number(k)]) return false;
-	return true;
-}
-
 /** Sync JS-side state (location count, undo/redo, tag counts, field keys, selections) from a Rust MutationResult. */
 function syncMutationResult(r: MutationResult) {
 	if (!currentMap) return;
@@ -705,7 +698,8 @@ function syncMutationResult(r: MutationResult) {
 		undoRedoState.canUndo !== r.canUndo ||
 		undoRedoState.canRedo !== r.canRedo ||
 		hasNewDefs ||
-		r.tags != null;
+		r.tags != null ||
+		r.tagCounts != null;
 	if (hasNewDefs) {
 		knownFieldKeys = new Set(knownFieldKeys);
 		for (const key of Object.keys(r.newFieldDefs!)) knownFieldKeys.add(key);
@@ -725,7 +719,7 @@ function syncMutationResult(r: MutationResult) {
 	if (undoRedoState.canUndo !== r.canUndo || undoRedoState.canRedo !== r.canRedo) {
 		undoRedoState = { canUndo: r.canUndo, canRedo: r.canRedo };
 	}
-	if (!sameCounts(tagCounts, r.tagCounts)) tagCounts = r.tagCounts;
+	if (r.tagCounts) tagCounts = r.tagCounts;
 	if (needsNotify) {
 		bump();
 	}

@@ -299,6 +299,7 @@ impl SelectionState {
 pub(crate) struct TagState {
     pub all: HashMap<u32, Tag>,
     pub dirty: bool,
+    pub counts_dirty: bool,
     pub next_id: u32,
     /// `tag_id -> set of member location ids`. Lets a `Tag` selection resolve by
     /// cloning a set instead of scanning every row's tag list. Maintained
@@ -478,6 +479,7 @@ impl Store {
             tags: TagState {
                 all: HashMap::new(),
                 dirty: false,
+                counts_dirty: false,
                 next_id: 1,
                 sets: HashMap::new(),
             },
@@ -504,7 +506,7 @@ impl Store {
             location_count: self.alive_count,
             can_undo: !self.edits.undo.is_empty(),
             can_redo: !self.edits.redo.is_empty(),
-            tag_counts: self.tags.all.iter().map(|(&id, t)| (id, t.count)).collect(),
+            tag_counts: Some(self.tags.all.iter().map(|(&id, t)| (id, t.count)).collect()),
             known_field_keys: self.known_field_keys.iter().cloned().collect(),
         }
     }
@@ -606,8 +608,13 @@ impl Store {
             tags = Some(self.tags.all.clone());
         }
 
+        let mut status = self.store_status();
+        if !std::mem::take(&mut self.tags.counts_dirty) {
+            status.tag_counts = None;
+        }
+
         MutationResult {
-            status: self.store_status(),
+            status,
             delta,
             selection_sync,
             new_field_defs: None,
@@ -949,6 +956,9 @@ impl Store {
 
     /// Adjust tag counts by `delta` (+1 for adds, -1 for removes). O(L * T) where L = locs, T = avg tags per loc.
     pub(crate) fn update_tag_counts(&mut self, locs: &[Location], delta: isize) {
+        if locs.iter().any(|l| !l.tags.is_empty()) {
+            self.tags.counts_dirty = true;
+        }
         // Pre-aggregate membership changes per tag for bulk bitmap operations.
         let mut members: HashMap<u32, Vec<u32>> = HashMap::new();
         for loc in locs {
@@ -1737,7 +1747,9 @@ pub struct StoreStatus {
     pub location_count: usize,
     pub can_undo: bool,
     pub can_redo: bool,
-    pub tag_counts: HashMap<u32, usize>,
+    /// `None` when the mutation did not change any tag count (`finish_mutation`
+    /// strips it), so JS keeps its reference and consumers skip re-rendering.
+    pub tag_counts: Option<HashMap<u32, usize>>,
     pub known_field_keys: Vec<String>,
 }
 
