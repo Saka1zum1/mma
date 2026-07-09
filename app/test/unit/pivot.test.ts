@@ -43,6 +43,16 @@ describe("stripNa", () => {
 		const data = pivot([row("a", { x: 1 })], ["x"]);
 		expect(stripNa(data)).toBe(data);
 	});
+
+	it("keeps columnProps aligned with the remaining columns", () => {
+		const data: PivotData = {
+			...pivot([row("a", { x: 1, __na__: 2 })], ["x", "__na__"]),
+			columnProps: [{ type: "Filter", field: "f", op: "eq", value: "x", value2: null }, null],
+		};
+		const stripped = stripNa(data);
+		expect(stripped.columnProps).toHaveLength(1);
+		expect(stripped.columnProps![0]).toMatchObject({ op: "eq", value: "x" });
+	});
 });
 
 describe("pivotCellValue", () => {

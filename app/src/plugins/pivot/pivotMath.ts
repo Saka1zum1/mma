@@ -1,3 +1,5 @@
+import type { SelectionProps } from "@/bindings.gen";
+
 export interface PivotRow {
 	label: string;
 	color: [number, number, number];
@@ -12,6 +14,8 @@ export interface PivotData {
 	columnTotals: number[];
 	/** Distinct raw values of the numeric field (absent for non-numeric fields). */
 	numericDistinct?: number;
+	/** Per-column selection props for header toggling (null = not expressible, e.g. N/A). */
+	columnProps?: (SelectionProps | null)[];
 }
 
 export type ValueMode = "count" | "rowPct" | "colPct";
@@ -40,6 +44,7 @@ export function stripNa(data: PivotData): PivotData {
 		columns: data.columns.filter((_, i) => i !== naIdx),
 		columnLabels: data.columnLabels.filter((_, i) => i !== naIdx),
 		columnTotals: data.columnTotals.filter((_, i) => i !== naIdx),
+		columnProps: data.columnProps?.filter((_, i) => i !== naIdx),
 		rows: data.rows.map((r) => ({ ...r, total: r.total - (r.counts.get(NA_KEY) ?? 0) })),
 	};
 }

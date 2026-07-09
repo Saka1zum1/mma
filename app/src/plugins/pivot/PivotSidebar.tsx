@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Selection, SelectionProps } from "@/bindings.gen";
 import { NSelect } from "@/components/primitives/NSelect";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
-import { selectionDisplayName } from "@/store/selections";
+import { selectionDisplayName, buildSelection } from "@/store/selections";
 import { savedToSelectionProps, describeRule, type SavedSelection } from "@/store/savedSelections";
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import type { ExtraFieldDef } from "@/bindings.gen";
@@ -189,7 +189,19 @@ async function computePivot(
 		return extraLabels[c] ?? c;
 	});
 
-	return { rows: pivotRows, columns, columnLabels, columnTotals, numericDistinct };
+	// Selection props per column (same shapes gradient emits): tag columns map to Tag
+	// selections, buckets to `between` filters, plain values to `eq` filters.
+	const columnProps: (SelectionProps | null)[] = columns.map((col, i) => {
+		if (col === NA_KEY) return null;
+		if (isTags) return { type: "Tag", tagId: Number(col) };
+		if (buckets) {
+			const [lo, hi] = buckets.bounds[i];
+			return { type: "Filter", field: fieldKey, op: "between", value: lo, value2: hi };
+		}
+		return { type: "Filter", field: fieldKey, op: "eq", value: col, value2: null };
+	});
+
+	return { rows: pivotRows, columns, columnLabels, columnTotals, numericDistinct, columnProps };
 }
 
 function buildPivotFields(knownKeys: ReadonlySet<string>): FieldEntry[] {
@@ -352,8 +364,8 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 								: "Saved selection could not be resolved."}
 					</EmptyState>
 				)}
-				{loading && <EmptyState>Computing...</EmptyState>}
-				{view && <PivotTable data={view} mode={valueMode} />}
+				{loading && !view && <EmptyState>Computing...</EmptyState>}
+				{view && <PivotTable data={view} mode={valueMode} stale={loading} />}
 			</div>
 		</Sidebar>
 	);
@@ -361,9 +373,31 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 
 type SortKey = "label" | "total" | string; // column key or "label" or "total"
 
-function PivotTable({ data, mode }: { data: PivotData; mode: ValueMode }) {
+function PivotTable({ data, mode, stale }: { data: PivotData; mode: ValueMode; stale?: boolean }) {
 	const [sortKey, setSortKey] = useState<SortKey>("label");
 	const [sortAsc, setSortAsc] = useState(true);
+
+	// Deterministic selection key per column; parent recomputes on selection:change,
+	// so live-state highlighting stays in sync through the data prop.
+	const columnKeys = useMemo(
+		() => data.columnProps?.map((p) => (p ? buildSelection(p).key : null)),
+		[data],
+	);
+	const liveKeys = new Set(MMA.getSelections().map((s) => s.key));
+
+	const toggleColumnSelection = useCallback(
+		(i: number) => {
+			const props = data.columnProps?.[i];
+			if (!props) return;
+			const key = columnKeys?.[i];
+			if (key && MMA.getSelections().some((s) => s.key === key)) {
+				MMA.removeSelections([key]);
+			} else {
+				MMA.addSelections([props]);
+			}
+		},
+		[data, columnKeys],
+	);
 
 	const handleSort = useCallback((key: SortKey) => {
 		setSortKey((prev) => {
@@ -417,7 +451,7 @@ function PivotTable({ data, mode }: { data: PivotData; mode: ValueMode }) {
 	const arrow = (key: SortKey) => (sortKey === key ? (sortAsc ? " ▴" : " ▾") : "");
 
 	return (
-		<div className="pivot-sidebar__table-wrap">
+		<div className={`pivot-sidebar__table-wrap${stale ? " pivot-sidebar__table-wrap--stale" : ""}`}>
 			<table className="pivot-sidebar__table">
 				<thead>
 					<tr>
@@ -427,16 +461,28 @@ function PivotTable({ data, mode }: { data: PivotData; mode: ValueMode }) {
 						>
 							Selection{arrow("label")}
 						</th>
-						{data.columnLabels.map((label, i) => (
-							<th
-								key={data.columns[i]}
-								className="pivot-sidebar__th-sort"
-								onClick={() => handleSort(data.columns[i])}
-							>
-								{label}
-								{arrow(data.columns[i])}
-							</th>
-						))}
+						{data.columnLabels.map((label, i) => {
+							const selectable = !!data.columnProps?.[i];
+							const selected = !!columnKeys?.[i] && liveKeys.has(columnKeys[i]!);
+							return (
+								<th
+									key={data.columns[i]}
+									className={`pivot-sidebar__th-sort${selected ? " pivot-sidebar__th-selected" : ""}`}
+									title={
+										selectable
+											? "Click to sort. Ctrl+Click to select matching locations."
+											: undefined
+									}
+									onClick={(e) => {
+										if ((e.ctrlKey || e.metaKey) && selectable) toggleColumnSelection(i);
+										else handleSort(data.columns[i]);
+									}}
+								>
+									{label}
+									{arrow(data.columns[i])}
+								</th>
+							);
+						})}
 						<th className="pivot-sidebar__th-sort" onClick={() => handleSort("total")}>
 							Total{arrow("total")}
 						</th>
