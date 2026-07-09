@@ -23,6 +23,8 @@ export const commands = {
 	setDataLocation: (path: string | null) => typedError<null, string>(__TAURI_INVOKE("set_data_location", { path })),
 	/**  Open the app data directory in the OS file explorer. */
 	openDataFolder: () => typedError<null, string>(__TAURI_INVOKE("open_data_folder")),
+	/**  Open the current log file in the OS default handler. */
+	openLogFile: () => typedError<null, string>(__TAURI_INVOKE("open_log_file")),
 	/**  Scan the `plugins/` directory under app data and return manifests for all installed plugins. */
 	listUserPlugins: () => __TAURI_INVOKE<PluginManifest[]>("list_user_plugins"),
 	/**

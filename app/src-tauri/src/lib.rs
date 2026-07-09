@@ -147,6 +147,26 @@ fn open_data_folder() -> AppResult<()> {
     Ok(())
 }
 
+/// Open the current log file in the OS default handler.
+#[tauri::command]
+#[specta::specta]
+fn open_log_file(app: tauri::AppHandle) -> AppResult<()> {
+    let path = app.path().app_log_dir()?.join("mma.log");
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer").arg(&path).spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(&path).spawn()?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(&path).spawn()?;
+    }
+    Ok(())
+}
+
 /// A plugin's declared sidecar binary (downloaded from GitHub Releases on install).
 #[derive(serde::Serialize, Clone, specta::Type)]
 struct PluginSidecar {
@@ -529,6 +549,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             get_data_location,
             set_data_location,
             open_data_folder,
+            open_log_file,
             list_user_plugins,
             install_plugin,
             uninstall_plugin,

@@ -1197,6 +1197,11 @@ function AdvancedTab() {
 					/>
 					Show FPS counter
 				</label>
+				<div style={{ display: "flex", gap: 8 }}>
+					<button className="button" onClick={() => cmd.openLogFile()}>
+						Open log file
+					</button>
+				</div>
 			</fieldset>
 			<CustomCssSection />
 			<UpdateSection />
