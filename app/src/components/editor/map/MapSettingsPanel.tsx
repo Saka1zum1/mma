@@ -268,15 +268,14 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 						))}
 					</NSelect>
 					<button
-						className="icon-button"
+						className="icon-button icon-button--inline"
 						title="Manage map styles"
-						style={{ padding: 0, color: "#888", flexShrink: 0 }}
 						onClick={(ev) => {
 							ev.preventDefault();
 							e.onManageStyles();
 						}}
 					>
-						<Icon path={mdiCogOutline} size={14} />
+						<Icon path={mdiCogOutline} size={18} />
 					</button>
 				</div>
 			</fieldset>
@@ -625,16 +624,16 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 							Enrich locations with metadata
 							<EnrichInfoButton />
 							<button
-								className="icon-button"
+								className="icon-button icon-button--inline"
 								title="Configure enrichment fields"
-								style={{ padding: 0, color: "#888", flexShrink: 0 }}
+								style={{ marginLeft: "0.4rem" }}
 								onClick={(e) => {
 									e.preventDefault();
 									setShowEnrichFields(true);
 									setIsOpen(false);
 								}}
 							>
-								<Icon path={mdiCogOutline} size={14} />
+								<Icon path={mdiCogOutline} size={18} />
 							</button>
 						</label>
 					</fieldset>

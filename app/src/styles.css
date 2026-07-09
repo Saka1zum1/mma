@@ -675,6 +675,19 @@ summary.button {
 	outline: 2px solid rgba(255, 255, 255, 0.65);
 	outline-offset: -2px;
 }
+/* Compact variant for icons inline with a setting row: no min-width padding band,
+   fixed 2rem height so a larger glyph doesn't grow the row. */
+.icon-button--inline {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	vertical-align: middle;
+	height: 2rem;
+	min-width: 0;
+	padding: 0;
+	color: #888;
+	flex-shrink: 0;
+}
 .icon-button:disabled,
 .icon-button.is-disabled {
 	opacity: 0.35;

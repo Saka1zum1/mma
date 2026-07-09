@@ -8,15 +8,15 @@ export function EnrichInfoButton() {
 	return (
 		<>
 			<button
-				className="icon-button"
+				className="icon-button icon-button--inline"
 				onClick={(e) => {
 					e.preventDefault();
 					setOpen(true);
 				}}
 				title="What is metadata enrichment?"
-				style={{ padding: 0, color: "#888", flexShrink: 0 }}
+				style={{ marginLeft: "0.4rem" }}
 			>
-				<Icon path={mdiInformationOutline} size={14} />
+				<Icon path={mdiInformationOutline} size={18} />
 			</button>
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogContent title="Metadata Enrichment">
