@@ -13,6 +13,11 @@
 	flex-shrink: 0;
 }
 
+.pivot-sidebar__opt-builtin {
+	color: var(--blue-3);
+	font-style: italic;
+}
+
 .pivot-sidebar__check {
 	display: flex;
 	align-items: center;

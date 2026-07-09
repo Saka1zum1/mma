@@ -10,11 +10,25 @@ export interface PivotData {
 	columns: string[];
 	columnLabels: string[];
 	columnTotals: number[];
+	/** Distinct raw values of the numeric field (absent for non-numeric fields). */
+	numericDistinct?: number;
 }
 
 export type ValueMode = "count" | "rowPct" | "colPct";
 
 export const NA_KEY = "__na__";
+
+export const BUCKET_MIN_DISTINCT = 10;
+export const BUCKET_FORCE_DISTINCT = 100;
+export const DEFAULT_BUCKETS = 10;
+
+/** Bucketing policy for numeric fields: few distinct values need no buckets,
+ *  too many force them; in between the user's choice (null = off) wins. */
+export function resolveBucketCount(distinct: number, chosen: number | null): number | null {
+	if (distinct < BUCKET_MIN_DISTINCT) return null;
+	if (distinct >= BUCKET_FORCE_DISTINCT) return chosen ?? DEFAULT_BUCKETS;
+	return chosen;
+}
 
 /** Drop the N/A column and shrink row totals, so percentages are relative to
  *  locations that actually have the field. */
@@ -22,6 +36,7 @@ export function stripNa(data: PivotData): PivotData {
 	const naIdx = data.columns.indexOf(NA_KEY);
 	if (naIdx === -1) return data;
 	return {
+		...data,
 		columns: data.columns.filter((_, i) => i !== naIdx),
 		columnLabels: data.columnLabels.filter((_, i) => i !== naIdx),
 		columnTotals: data.columnTotals.filter((_, i) => i !== naIdx),

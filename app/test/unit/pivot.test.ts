@@ -3,6 +3,10 @@ import {
 	stripNa,
 	pivotCellValue,
 	formatPct,
+	resolveBucketCount,
+	BUCKET_MIN_DISTINCT,
+	BUCKET_FORCE_DISTINCT,
+	DEFAULT_BUCKETS,
 	type PivotData,
 	type PivotRow,
 } from "@/plugins/pivot/pivotMath";
@@ -79,5 +83,23 @@ describe("formatPct", () => {
 		expect(formatPct(0.123)).toBe("12.3%");
 		expect(formatPct(0)).toBe("0%");
 		expect(formatPct(1)).toBe("100%");
+	});
+});
+
+describe("resolveBucketCount", () => {
+	it("forces buckets off below the minimum cardinality", () => {
+		expect(resolveBucketCount(BUCKET_MIN_DISTINCT - 1, 10)).toBeNull();
+		expect(resolveBucketCount(3, null)).toBeNull();
+	});
+
+	it("respects the user's choice in the middle range", () => {
+		expect(resolveBucketCount(BUCKET_MIN_DISTINCT, null)).toBeNull();
+		expect(resolveBucketCount(50, 15)).toBe(15);
+		expect(resolveBucketCount(BUCKET_FORCE_DISTINCT - 1, null)).toBeNull();
+	});
+
+	it("forces buckets on at high cardinality, defaulting when off was chosen", () => {
+		expect(resolveBucketCount(BUCKET_FORCE_DISTINCT, null)).toBe(DEFAULT_BUCKETS);
+		expect(resolveBucketCount(5000, 20)).toBe(20);
 	});
 });

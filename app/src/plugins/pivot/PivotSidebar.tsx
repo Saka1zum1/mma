@@ -13,7 +13,11 @@ import {
 	stripNa,
 	pivotCellValue,
 	formatPct,
+	resolveBucketCount,
 	NA_KEY,
+	BUCKET_MIN_DISTINCT,
+	BUCKET_FORCE_DISTINCT,
+	DEFAULT_BUCKETS,
 	type PivotRow,
 	type PivotData,
 	type ValueMode,
@@ -88,18 +92,24 @@ async function computePivot(
 	const tagMap = map.meta.tags;
 	const isNumeric = !isTags && (fieldDef?.type === "number" || fieldDef?.type === "date");
 
-	// Numeric fields explode into one column per distinct value; bucket them into a
-	// fixed histogram of ranges when a bucket count is given.
+	// Numeric fields explode into one column per distinct value; bucket them into
+	// a fixed histogram of ranges. resolveBucketCount arbitrates between the
+	// user's choice and the field's cardinality.
+	const numericVals = isNumeric
+		? allLocs.flatMap((loc) => {
+				const v = loc.extra?.[fieldKey];
+				const n = v == null ? NaN : Number(v);
+				return Number.isFinite(n) ? [n] : [];
+			})
+		: null;
+	const numericDistinct = numericVals ? new Set(numericVals).size : undefined;
+	const effectiveBuckets =
+		numericVals && numericDistinct != null
+			? resolveBucketCount(numericDistinct, bucketCount)
+			: null;
 	const buckets =
-		isNumeric && bucketCount
-			? binNumeric(
-					allLocs.flatMap((loc) => {
-						const v = loc.extra?.[fieldKey];
-						const n = v == null ? NaN : Number(v);
-						return Number.isFinite(n) ? [n] : [];
-					}),
-					{ by: "count", n: bucketCount },
-				)
+		numericVals && effectiveBuckets
+			? binNumeric(numericVals, { by: "count", n: effectiveBuckets })
 			: null;
 
 	// Build field index: locId -> field value(s). Tags are multi-valued.
@@ -179,7 +189,7 @@ async function computePivot(
 		return extraLabels[c] ?? c;
 	});
 
-	return { rows: pivotRows, columns, columnLabels, columnTotals };
+	return { rows: pivotRows, columns, columnLabels, columnTotals, numericDistinct };
 }
 
 function buildPivotFields(knownKeys: ReadonlySet<string>): FieldEntry[] {
@@ -253,6 +263,12 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 
 	const hasNa = data?.columns.includes(NA_KEY) ?? false;
 
+	// Cardinality-aware bucketing (mirrors resolveBucketCount in computePivot):
+	// few distinct values -> no bucket control at all; too many -> "Off" disabled.
+	const distinct = isNumericField ? data?.numericDistinct : undefined;
+	const bucketHidden = distinct != null && distinct < BUCKET_MIN_DISTINCT;
+	const bucketForced = distinct != null && distinct >= BUCKET_FORCE_DISTINCT;
+
 	const view = useMemo(() => (data && !includeNa ? stripNa(data) : data), [data, includeNa]);
 
 	return (
@@ -260,8 +276,12 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 			<div className="pivot-sidebar__controls">
 				<Field label="Rows">
 					<NSelect value={rowSource} onChange={(e) => setRowSource(e.target.value)}>
-						<option value="all">All Locations</option>
-						<option value="active">Active Selections</option>
+						<option value="all" className="pivot-sidebar__opt-builtin">
+							All locations
+						</option>
+						<option value="active" className="pivot-sidebar__opt-builtin">
+							Active selections
+						</option>
 						{savedSelections.map((s) => (
 							<option key={s.id} value={s.id}>
 								{s.name}
@@ -278,15 +298,17 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 						))}
 					</NSelect>
 				</Field>
-				{isNumericField && (
+				{isNumericField && !bucketHidden && (
 					<Field label="Bucket numeric values">
 						<NSelect
-							value={bucketCount ?? "off"}
+							value={bucketForced ? (bucketCount ?? DEFAULT_BUCKETS) : (bucketCount ?? "off")}
 							onChange={(e) =>
 								setBucketCount(e.target.value === "off" ? null : Number(e.target.value))
 							}
 						>
-							<option value="off">Off</option>
+							<option value="off" disabled={bucketForced}>
+								{bucketForced ? "Off (too many values)" : "Off"}
+							</option>
 							<option value="5">5 buckets</option>
 							<option value="10">10 buckets</option>
 							<option value="15">15 buckets</option>
