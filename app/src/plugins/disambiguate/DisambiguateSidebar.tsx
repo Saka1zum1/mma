@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useEventVersion } from "@/lib/hooks/useEditorEvents";
 import { SELECTION_EVENTS } from "@/lib/events";
-import { Sidebar } from "@/components/primitives/Sidebar";
+import { Sidebar, EmptyState } from "@/components/primitives/Sidebar";
 import type { Selection, ExtraFieldDef, Location } from "@/bindings.gen";
 import { computeDivergence, soleGroup } from "./engine";
 import type {
@@ -179,7 +179,24 @@ async function analyze(): Promise<Analysis> {
 
 export function DisambiguateSidebar({ onClose }: { onClose: () => void }) {
 	const version = useEventVersion(SELECTION_EVENTS);
-	const { data: analysis, loading, error } = useAsync(() => analyze(), [version]);
+	const selCount = MMA.getSelections().length;
+	// Synchronous null short-circuit: no loading flash while under two groups.
+	const {
+		data: analysis,
+		loading,
+		error,
+	} = useAsync(() => (selCount < 2 ? null : analyze()), [version]);
+
+	if (selCount < 2) {
+		return (
+			<Sidebar title="Disambiguate selections" onBack={onClose} className="disambig">
+				<EmptyState>
+					Select at least two groups to compare - tags, polygons, or filters. Fields are then ranked
+					by how well they tell the groups apart.
+				</EmptyState>
+			</Sidebar>
+		);
+	}
 
 	return (
 		<Sidebar title="Disambiguate selections" onBack={onClose} className="disambig">
