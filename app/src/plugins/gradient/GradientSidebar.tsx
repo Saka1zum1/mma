@@ -62,6 +62,9 @@ const PRESETS: GradientPreset[] = [
 
 const BUCKET_COUNTS = [5, 10, 15, 20];
 
+// Refuse to color a partition into more groups than a human can distinguish.
+const MAX_GROUPS = 100;
+
 const gradientCss = (stops: [number, number, number][]) =>
 	`linear-gradient(to right, ${stops
 		.map((s, i) => `rgb(${s[0]},${s[1]},${s[2]}) ${(i / (stops.length - 1)) * 100}%`)
@@ -105,7 +108,7 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 	const [bucketCount, setBucketCount] = usePluginState("gradient", "bucketCount", 10);
 	const [reversed, setReversed] = usePluginState("gradient", "reversed", false);
 	const [applying, setApplying] = useState(false);
-	const [lastGroups, setLastGroups] = useState<number | null>(null);
+	const [lastResult, setLastResult] = useState<{ groups: number; applied: boolean } | null>(null);
 	const scopeCtl = useScope();
 	const dateTimezone = useSetting("dateTimezone");
 
@@ -144,7 +147,11 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							};
 
 			const groups = await partition(fieldKey, key, scopeCtl.scope);
-			setLastGroups(groups.length);
+			if (groups.length > MAX_GROUPS) {
+				setLastResult({ groups: groups.length, applied: false });
+				return;
+			}
+			setLastResult({ groups: groups.length, applied: true });
 			if (groups.length === 0) return;
 
 			const sels = colorPartition(groups, {
@@ -177,7 +184,7 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 
 	// The result line describes the last apply; stale once any input changes.
 	useEffect(() => {
-		setLastGroups(null);
+		setLastResult(null);
 	}, [fieldKey, projectionId, presetIdx, bucketCount, reversed, scopeCtl.scope]);
 
 	return (
@@ -282,11 +289,13 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 						>
 							Apply
 						</button>
-						{lastGroups != null && (
+						{lastResult != null && (
 							<span className="gradient-sidebar__result">
-								{lastGroups === 0
-									? "No groups found"
-									: `${lastGroups} group${lastGroups === 1 ? "" : "s"} applied`}
+								{!lastResult.applied
+									? `${lastResult.groups} groups. Too many to color (max ${MAX_GROUPS}).`
+									: lastResult.groups === 0
+										? "No groups found"
+										: `${lastResult.groups} group${lastResult.groups === 1 ? "" : "s"} applied`}
 							</span>
 						)}
 					</div>
