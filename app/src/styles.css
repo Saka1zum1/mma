@@ -4862,6 +4862,52 @@ body {
 	font-size: 0.85em;
 	color: #664d03;
 }
+.settings-updates__version {
+	display: inline-flex;
+	align-items: center;
+	height: 1.5rem;
+	border-radius: 0.25rem;
+	padding: 0 8px;
+	font-size: 0.8rem;
+	font-weight: 600;
+	background: #00000014;
+	cursor: default;
+}
+.settings-updates__version--latest {
+	background: var(--constructive);
+	color: #fff;
+}
+.settings-updates__version--outdated {
+	background: var(--deconstructive);
+	color: #fff;
+}
+.settings-updates__version--error {
+	background: var(--destructive);
+	color: #fff;
+}
+.settings-updates__check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 1.5rem;
+	min-width: 1.5rem;
+	line-height: normal;
+	color: inherit;
+	background: #00000008;
+	border: 1px solid #00000033;
+	border-radius: 0.25rem;
+}
+.settings-updates__check:hover:not(:disabled) {
+	background: #00000014;
+}
+.settings-updates__spin {
+	animation: settings-updates-spin 0.8s linear infinite;
+}
+@keyframes settings-updates-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
 
 /* Hotkey settings table */
 .settings-hotkey-filter {
