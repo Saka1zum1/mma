@@ -2253,7 +2253,13 @@ summary.button {
 }
 .map-type-control__basemap {
 	grid-auto-flow: column;
+	grid-auto-columns: 1fr;
 	display: grid;
+	min-width: 200px;
+}
+.settings-popup .map-type-control__basemap {
+	width: 100%;
+	min-width: 0;
 }
 .map-type-control__button {
 	cursor: pointer;

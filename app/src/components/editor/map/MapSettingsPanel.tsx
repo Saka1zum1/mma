@@ -355,15 +355,19 @@ function useMapTypeCompact(
 				}
 			}
 
+			const marginX = (n: HTMLElement) => {
+				const s = getComputedStyle(n);
+				return (parseFloat(s.marginLeft) || 0) + (parseFloat(s.marginRight) || 0);
+			};
 			let siblingsWidth = 0;
 			for (const child of Array.from(leftGroup.children)) {
 				if (child !== el && child instanceof HTMLElement) {
-					siblingsWidth += child.getBoundingClientRect().width;
+					siblingsWidth += child.getBoundingClientRect().width + marginX(child);
 				}
 			}
 
 			const available = conflictLeft - leftEdge - 8;
-			const needed = basemapWidth + siblingsWidth;
+			const needed = basemapWidth + marginX(el) + siblingsWidth;
 			setCompact((prev) => {
 				// Hysteresis avoids flip-flopping at the breakpoint.
 				if (prev) return needed > available;
@@ -416,6 +420,8 @@ export function MapTypeDropdown({ layerConfig }: { layerConfig: LayerConfig }) {
 				top: "100%",
 				left: 0,
 				zIndex: 3,
+				width: compact ? undefined : "100%",
+				boxSizing: "border-box",
 				maxHeight: "calc(100vh - 80px)",
 				overflowY: "auto",
 			}}
