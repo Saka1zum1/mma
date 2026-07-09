@@ -700,6 +700,12 @@ summary.button {
 	padding: 0 1rem;
 	line-height: 2rem;
 }
+.input:disabled {
+	color: #999;
+	background: #f3f3f3;
+	outline-color: #e0e0e0;
+	-webkit-text-fill-color: #999;
+}
 .input:focus-visible {
 	outline: 2px solid var(--blue-9);
 }
@@ -809,6 +815,24 @@ summary.button {
 .edit-map-modal {
 	width: 540px;
 	max-height: 90vh;
+}
+.enrichment-modal {
+	width: min(56rem, 92vw);
+	max-width: 92vw;
+	max-height: 90vh;
+}
+.enrichment-modal__toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	font-weight: 600;
+	cursor: pointer;
+	padding-bottom: 0.75rem;
+	margin-bottom: 0.5rem;
+	border-bottom: 1px solid #e5e5e5;
+}
+.enrichment-modal__toggle .switch {
+	vertical-align: middle;
 }
 .edit-map-modal p {
 	margin-block: 0.5rem;
@@ -1760,6 +1784,14 @@ summary.button {
 .nselect--limited::picker(select) {
 	max-height: 150px !important;
 	scrollbar-width: thin;
+}
+.nselect:disabled {
+	color: #999;
+	background: #f3f3f3;
+	box-shadow: none;
+}
+.nselect:disabled::picker-icon {
+	border-color: #bbb;
 }
 .nselect:not(:disabled) {
 	cursor: pointer;
@@ -2889,10 +2921,6 @@ summary.button {
 	font-size: 0.75rem;
 	white-space: nowrap;
 }
-.manage-fields-modal {
-	width: min(52rem, 92vw);
-	max-width: 92vw;
-}
 .manage-fields-table {
 	width: 100%;
 	border-collapse: collapse;
@@ -2911,7 +2939,7 @@ summary.button {
 	font-size: 0.8125rem;
 }
 .manage-fields-table__coverage-cell {
-	width: 14px;
+	width: 18px;
 	padding-right: 0;
 	color: var(--stone-7);
 }
@@ -2939,11 +2967,13 @@ summary.button {
 	gap: 0.5rem;
 	margin-top: 0.75rem;
 }
-.manage-fields-modal__actions {
-	display: flex;
-	justify-content: flex-end;
-	gap: 0.5rem;
-	margin-top: 0.5rem;
+.manage-fields-table__enrich {
+	text-align: center;
+}
+.manage-fields-table__enrich input[type="checkbox"] {
+	margin: 0;
+	width: 16px;
+	height: 16px;
 }
 .manage-fields-table__actions {
 	display: flex;
@@ -2961,6 +2991,13 @@ summary.button {
 	display: flex;
 	align-items: center;
 	transition: color 0.1s;
+}
+.manage-fields-table__delete:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.manage-fields-table__delete:disabled:hover {
+	color: var(--stone-6);
 }
 .manage-fields-table__delete:hover {
 	color: var(--red);

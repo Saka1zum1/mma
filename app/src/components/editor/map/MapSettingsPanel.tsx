@@ -1,8 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type RefObject } from "react";
-import { ManageFieldsModal } from "@/components/dialogs/ManageFieldsModal";
 import { NSelect } from "@/components/primitives/NSelect";
-import { getEnrichFieldOptions, getDefaultEnrichKeys } from "@/lib/data/fieldDefs";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { buildTileUrl, createRoadmapTileConfig, type MapStyle } from "@/lib/geo/tiles";
 import {
 	BUILTIN_STYLE_KEYS,
@@ -11,7 +8,6 @@ import {
 	VECTOR_STYLE_LABELS,
 } from "@/lib/geo/mapStyles";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
-import { EnrichInfoButton } from "@/components/editor/map/EnrichInfoButton";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiCogOutline } from "@mdi/js";
 import { SV_COLORS, type MapTypeKey, type SvCoverageType, type MarkerStyle } from "@/types";
@@ -552,11 +548,7 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 	const [onlyOfficial, setOnlyOfficial] = useMapSetting("onlyOfficial");
 	const [defaultPanoId, setDefaultPanoId] = useMapSetting("defaultPanoId");
 	const [searchRadius, setSearchRadius] = useMapSetting("searchRadius");
-	const [enrichMetadata, setEnrichMetadata] = useMapSetting("enrichMetadata");
-	const [enrichFields, setEnrichFields] = useMapSetting("enrichFields");
 	const [isOpen, setIsOpen] = useState(false);
-	const [showManageFields, setShowManageFields] = useState(false);
-	const [showEnrichFields, setShowEnrichFields] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -676,27 +668,6 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 							/>
 							Select-only mode
 						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={enrichMetadata}
-								onChange={(e) => setEnrichMetadata(e.target.checked)}
-							/>
-							Enrich locations with metadata
-							<EnrichInfoButton />
-							<button
-								className="icon-button icon-button--inline"
-								title="Configure enrichment fields"
-								style={{ marginLeft: "0.4rem" }}
-								onClick={(e) => {
-									e.preventDefault();
-									setShowEnrichFields(true);
-									setIsOpen(false);
-								}}
-							>
-								<Icon path={mdiCogOutline} size={18} />
-							</button>
-						</label>
 					</fieldset>
 					<ScoreBoundsEditor />
 					<fieldset className="fieldset">
@@ -743,55 +714,8 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 							Show click search radius at cursor
 						</label>
 					</fieldset>
-					<div className="settings-popup__footer">
-						<button
-							className="button"
-							type="button"
-							onClick={() => {
-								setShowManageFields(true);
-								setIsOpen(false);
-							}}
-						>
-							Manage metadata fields
-						</button>
-					</div>
 				</div>
 			)}
-			{showManageFields && <ManageFieldsModal onClose={() => setShowManageFields(false)} />}
-			<Dialog open={showEnrichFields} onOpenChange={setShowEnrichFields}>
-				<DialogContent title="Enrichment fields">
-					<p style={{ margin: "0 0 .5rem", fontSize: ".85rem", color: "#888" }}>
-						Choose which metadata fields to add when enriching locations.
-					</p>
-					{getEnrichFieldOptions().map((f) => {
-						const enabled = enrichFields ? enrichFields.includes(f.key) : !f.defaultOff;
-						return (
-							<label
-								key={f.key}
-								className="settings-popup__item"
-								style={{ display: "flex", alignItems: "center", gap: ".5rem" }}
-							>
-								<input
-									type="checkbox"
-									checked={enabled}
-									onChange={(e) => {
-										const defaultKeys = getDefaultEnrichKeys();
-										const current = enrichFields ?? [...defaultKeys];
-										const next = e.target.checked
-											? [...current, f.key]
-											: current.filter((k) => k !== f.key);
-										const isDefault =
-											next.length === defaultKeys.length &&
-											next.every((k) => defaultKeys.includes(k));
-										setEnrichFields(isDefault ? null : next);
-									}}
-								/>
-								{f.label}
-							</label>
-						);
-					})}
-				</DialogContent>
-			</Dialog>
 		</div>
 	);
 }

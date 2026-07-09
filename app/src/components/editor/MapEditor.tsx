@@ -32,6 +32,7 @@ import { DiffSidebar } from "@/components/editor/DiffSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
+import { EnrichmentButton } from "@/components/editor/map/EnrichmentDialog";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/primitives/Dialog";
 import { useHotkey, useCommandHotkeys, isEditableElement } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
@@ -369,6 +370,7 @@ export function MapEditor() {
 						<MapRenameForm mapId={map.meta.id} currentName={map.meta.name} />
 					</DialogContent>
 				</Dialog>
+				<EnrichmentButton />
 			</header>
 			<div className="side-header"></div>
 			<section className="map-embed" style={{ background: "#e5e3df" }}>
