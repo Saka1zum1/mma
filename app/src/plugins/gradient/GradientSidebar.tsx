@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import { NSelect } from "@/components/primitives/NSelect";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
@@ -62,6 +62,11 @@ const PRESETS: GradientPreset[] = [
 
 const BUCKET_COUNTS = [5, 10, 15, 20];
 
+const gradientCss = (stops: [number, number, number][]) =>
+	`linear-gradient(to right, ${stops
+		.map((s, i) => `rgb(${s[0]},${s[1]},${s[2]}) ${(i / (stops.length - 1)) * 100}%`)
+		.join(", ")})`;
+
 // Gradient offers Range for numbers and dates (count bins); numeric defaults to Range.
 const gradientOptions = (type: ExtraFieldType) => partitionKeyOptions(type, true);
 function defaultProjection(type: ExtraFieldType): string {
@@ -98,7 +103,9 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 	const [projectionIdRaw, setProjectionId] = usePluginState("gradient", "projectionId", RANGE_ID);
 	const [presetIdxRaw, setPresetIdx] = usePluginState("gradient", "presetIdx", 0);
 	const [bucketCount, setBucketCount] = usePluginState("gradient", "bucketCount", 10);
+	const [reversed, setReversed] = usePluginState("gradient", "reversed", false);
 	const [applying, setApplying] = useState(false);
+	const [lastGroups, setLastGroups] = useState<number | null>(null);
 	const scopeCtl = useScope();
 	const dateTimezone = useSetting("dateTimezone");
 
@@ -113,6 +120,7 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 		: defaultGradientField(fields);
 	const presetIdx = presetIdxRaw < PRESETS.length ? presetIdxRaw : 0;
 	const preset = PRESETS[presetIdx];
+	const stops = reversed ? [...preset.stops].reverse() : preset.stops;
 	const fieldOpt = fields.find((f) => f.key === fieldKey);
 	const fieldType = (fieldOpt?.def?.type ?? "string") as ExtraFieldType;
 	const projOptions = useMemo(() => gradientOptions(fieldType), [fieldType]);
@@ -136,12 +144,13 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							};
 
 			const groups = await partition(fieldKey, key, scopeCtl.scope);
+			setLastGroups(groups.length);
 			if (groups.length === 0) return;
 
 			const sels = colorPartition(groups, {
 				fieldKey: fieldKey,
 				fieldType,
-				stops: preset.stops,
+				stops,
 				scoped: scopeCtl.scope.kind === "selected",
 				ordinal: projectionId === RANGE_ID,
 				eqFilter: projectionId === "value",
@@ -161,10 +170,15 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 		projectionId,
 		map,
 		bucketCount,
-		preset,
+		stops,
 		scopeCtl.scope,
 		dateTimezone,
 	]);
+
+	// The result line describes the last apply; stale once any input changes.
+	useEffect(() => {
+		setLastGroups(null);
+	}, [fieldKey, projectionId, presetIdx, bucketCount, reversed, scopeCtl.scope]);
 
 	return (
 		<Sidebar title="Gradient" onBack={onClose} className="gradient-sidebar">
@@ -175,31 +189,31 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 					<Field label="Apply to">
 						<ScopeSelector ctl={scopeCtl} />
 					</Field>
-					<Field label="Field">
-						<NSelect
-							value={fieldKey}
-							onChange={(e) => {
-								const key = e.target.value;
-								setFieldKey(key);
-								const ft = (fields.find((f) => f.key === key)?.def?.type ??
-									"string") as ExtraFieldType;
-								const opts = gradientOptions(ft);
-								if (!opts.some((p) => p.id === projectionId))
-									setProjectionId(defaultProjection(ft));
-							}}
-						>
-							{fields.map((f) => (
-								<option key={f.key} value={f.key}>
-									{f.label}
-								</option>
-							))}
-						</NSelect>
-					</Field>
-
-					{projOptions.length > 1 && (
+					<div className="gradient-sidebar__row">
+						<Field label="Field">
+							<NSelect
+								value={fieldKey}
+								onChange={(e) => {
+									const key = e.target.value;
+									setFieldKey(key);
+									const ft = (fields.find((f) => f.key === key)?.def?.type ??
+										"string") as ExtraFieldType;
+									const opts = gradientOptions(ft);
+									if (!opts.some((p) => p.id === projectionId))
+										setProjectionId(defaultProjection(ft));
+								}}
+							>
+								{fields.map((f) => (
+									<option key={f.key} value={f.key}>
+										{f.label}
+									</option>
+								))}
+							</NSelect>
+						</Field>
 						<Field label="Group by">
 							<NSelect
 								value={projectionId}
+								disabled={projOptions.length <= 1}
 								onChange={(e) => {
 									setProjectionId(e.target.value);
 								}}
@@ -211,7 +225,20 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 								))}
 							</NSelect>
 						</Field>
-					)}
+					</div>
+
+					<Field label="Buckets">
+						<SegmentedControl
+							value={bucketCount}
+							onChange={setBucketCount}
+							options={BUCKET_COUNTS.map((n) => ({
+								value: n,
+								label: String(n),
+								disabled: projectionId !== RANGE_ID,
+								title: projectionId !== RANGE_ID ? "Only applies to Range grouping" : undefined,
+							}))}
+						/>
+					</Field>
 
 					<Field label="Gradient">
 						<div className="gradient-sidebar__presets">
@@ -227,55 +254,42 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 									<div
 										className="gradient-sidebar__preset-bar"
 										style={{
-											background: `linear-gradient(to right, ${p.stops
-												.map(
-													(s, si) =>
-														`rgb(${s[0]},${s[1]},${s[2]}) ${(si / (p.stops.length - 1)) * 100}%`,
-												)
-												.join(", ")})`,
+											background: gradientCss(reversed ? [...p.stops].reverse() : p.stops),
 										}}
 									/>
 								</button>
 							))}
 						</div>
-					</Field>
-
-					{projectionId === RANGE_ID && (
-						<Field label="Buckets">
-							<SegmentedControl
-								value={bucketCount}
-								onChange={setBucketCount}
-								options={BUCKET_COUNTS.map((n) => ({ value: n, label: String(n) }))}
-							/>
-						</Field>
-					)}
-
-					<div className="gradient-sidebar__preview">
-						<span className="gradient-sidebar__control-label">Preview</span>
-						<div
-							className="gradient-sidebar__preview-bar"
-							style={{
-								background: `linear-gradient(to right, ${preset.stops
-									.map(
-										(s, i) =>
-											`rgb(${s[0]},${s[1]},${s[2]}) ${(i / (preset.stops.length - 1)) * 100}%`,
-									)
-									.join(", ")})`,
-							}}
-						/>
 						<div className="gradient-sidebar__preview-labels">
 							<span>Low</span>
 							<span>High</span>
 						</div>
-					</div>
+						<label className="gradient-sidebar__check">
+							<input
+								type="checkbox"
+								checked={reversed}
+								onChange={(e) => setReversed(e.target.checked)}
+							/>
+							Reverse
+						</label>
+					</Field>
 
-					<button
-						className="button button--primary gradient-sidebar__apply"
-						onClick={applyGradient}
-						disabled={applying || !fieldKey}
-					>
-						Apply
-					</button>
+					<div className="gradient-sidebar__apply-row">
+						<button
+							className="button button--primary gradient-sidebar__apply"
+							onClick={applyGradient}
+							disabled={applying || !fieldKey}
+						>
+							Apply
+						</button>
+						{lastGroups != null && (
+							<span className="gradient-sidebar__result">
+								{lastGroups === 0
+									? "No groups found"
+									: `${lastGroups} group${lastGroups === 1 ? "" : "s"} applied`}
+							</span>
+						)}
+					</div>
 				</>
 			)}
 		</Sidebar>
