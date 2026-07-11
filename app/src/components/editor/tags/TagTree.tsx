@@ -4,6 +4,7 @@ import {
 	useMemo,
 	useCallback,
 	useEffectEvent,
+	useLayoutEffect,
 	useRef,
 	forwardRef,
 	useImperativeHandle,
@@ -586,6 +587,46 @@ function leafDisplayOrder(
 	return without;
 }
 
+/** FLIP: while a drag reorders the group, displaced pills glide to their new slot
+ *  instead of teleporting. Children are matched to `display` by index (the ul renders
+ *  exactly that order); the dragged pill itself is hidden, so it's skipped. */
+function useSwapAnimation(
+	ulRef: React.RefObject<HTMLUListElement | null>,
+	display: TagTreeNode[],
+	dragPath: string | null,
+) {
+	const prevRects = useRef(new Map<string, DOMRect>());
+	useLayoutEffect(() => {
+		const ul = ulRef.current;
+		const rects = new Map<string, DOMRect>();
+		if (ul) {
+			display.forEach((node, i) => {
+				const el = ul.children[i] as HTMLElement | undefined;
+				if (!el) return;
+				el.getAnimations().forEach((a) => a.cancel());
+				rects.set(node.fullPath, el.getBoundingClientRect());
+			});
+			if (dragPath) {
+				display.forEach((node, i) => {
+					if (node.fullPath === dragPath) return;
+					const prev = prevRects.current.get(node.fullPath);
+					const next = rects.get(node.fullPath);
+					if (!prev || !next) return;
+					const dx = prev.left - next.left;
+					const dy = prev.top - next.top;
+					if (dx || dy) {
+						(ul.children[i] as HTMLElement).animate(
+							[{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+							{ duration: 150, easing: "ease" },
+						);
+					}
+				});
+			}
+		}
+		prevRects.current = rects;
+	});
+}
+
 /** A group of terminal tags rendered as flat pills, indented to sit under their parent
  *  folder row (depth 0 for root leaves and the whole flat view). */
 const TagLeafGroup = memo(function TagLeafGroup({
@@ -615,10 +656,13 @@ const TagLeafGroup = memo(function TagLeafGroup({
 	dragPath: string | null;
 	dropTarget: DropTarget | null;
 }) {
-	if (nodes.length === 0) return null;
 	const display = leafDisplayOrder(nodes, dragPath, dropTarget);
+	const ulRef = useRef<HTMLUListElement>(null);
+	useSwapAnimation(ulRef, display, dragPath);
+	if (nodes.length === 0) return null;
 	return (
 		<ul
+			ref={ulRef}
 			className="tag-list tag-tree__leaves"
 			style={depth > 0 ? { marginLeft: `${depth * 1.25}rem` } : undefined}
 		>
