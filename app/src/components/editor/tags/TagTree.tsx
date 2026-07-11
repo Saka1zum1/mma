@@ -333,6 +333,9 @@ export const TagTreeView = forwardRef<TagTreeHandle, TagTreeViewProps>(function 
 
 	const rootPills = filteredTree.filter(isLeafTag);
 	const rootRows = filteredTree.filter((n) => !isLeafTag(n));
+	const displayRootRows = spliceDisplayOrder(rootRows, dragPath, dropTarget);
+	const rootRowsRef = useRef<HTMLUListElement>(null);
+	useSwapAnimation(rootRowsRef, displayRootRows, dragPath);
 
 	return (
 		<>
@@ -351,8 +354,8 @@ export const TagTreeView = forwardRef<TagTreeHandle, TagTreeViewProps>(function 
 				dropTarget={dropTarget}
 			/>
 			{rootRows.length > 0 && (
-				<ul className="tag-tree">
-					{rootRows.map((node) => (
+				<ul className="tag-tree" ref={rootRowsRef}>
+					{displayRootRows.map((node) => (
 						<TagTreeNodeRow
 							key={node.fullPath}
 							node={node}
@@ -442,6 +445,9 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 	const isOpen = forceExpanded || expandedPaths.has(node.fullPath);
 	const childPills = hasChildren ? node.children.filter(isLeafTag) : [];
 	const childRows = hasChildren ? node.children.filter((n) => !isLeafTag(n)) : [];
+	const displayChildRows = spliceDisplayOrder(childRows, dragPath, dropTarget);
+	const childRowsRef = useRef<HTMLUListElement>(null);
+	useSwapAnimation(childRowsRef, displayChildRows, dragPath);
 
 	const isSelected = node.tag ? selectedTagIds.has(node.tag.id) : false;
 	const allChildrenSelected =
@@ -474,7 +480,6 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 							marginLeft: `${depth * 1.25}rem`,
 							cursor: "pointer",
 						}}
-						data-drop={dropTarget?.path === node.fullPath ? dropTarget.position : undefined}
 						onClick={(e) => onRowClick(node, e.shiftKey, e.altKey)}
 						onMouseDown={(e) => drag.onMouseDown(e, node)}
 						onMouseMove={(e) => drag.onMouseMove(e, node, e.currentTarget)}
@@ -538,8 +543,8 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 						dropTarget={dropTarget}
 					/>
 					{childRows.length > 0 && (
-						<ul className="tag-tree__children">
-							{childRows.map((child) => (
+						<ul className="tag-tree__children" ref={childRowsRef}>
+							{displayChildRows.map((child) => (
 								<TagTreeNodeRow
 									key={child.fullPath}
 									node={child}
@@ -568,10 +573,11 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 	);
 });
 
-/** Live drag order: the dragged pill is spliced to its prospective slot so the group
- *  visibly opens a gap there (the dragged pill itself is hidden via `is-dragging`). Returns
- *  `nodes` unchanged when the drag/drop isn't within this group. */
-function leafDisplayOrder(
+/** Live drag order: the dragged node is spliced to its prospective slot so the list
+ *  visibly reorders while dragging (pills open a gap via the hidden `is-dragging` pill;
+ *  folder rows move whole subtrees). Returns `nodes` unchanged when the drag/drop isn't
+ *  within this sibling group. */
+function spliceDisplayOrder(
 	nodes: TagTreeNode[],
 	dragPath: string | null,
 	dropTarget: DropTarget | null,
@@ -587,9 +593,10 @@ function leafDisplayOrder(
 	return without;
 }
 
-/** FLIP: while a drag reorders the group, displaced pills glide to their new slot
- *  instead of teleporting. Children are matched to `display` by index (the ul renders
- *  exactly that order); the dragged pill itself is hidden, so it's skipped. */
+/** FLIP: while a drag reorders a sibling list, nodes glide to their new slot instead of
+ *  teleporting. Children are matched to `display` by index (the ul renders exactly that
+ *  order). The dragged node glides too — visible folder rows move with the cursor; the
+ *  dragged pill is hidden anyway. */
 function useSwapAnimation(
 	ulRef: React.RefObject<HTMLUListElement | null>,
 	display: TagTreeNode[],
@@ -608,7 +615,6 @@ function useSwapAnimation(
 			});
 			if (dragPath) {
 				display.forEach((node, i) => {
-					if (node.fullPath === dragPath) return;
 					const prev = prevRects.current.get(node.fullPath);
 					const next = rects.get(node.fullPath);
 					if (!prev || !next) return;
@@ -656,7 +662,7 @@ const TagLeafGroup = memo(function TagLeafGroup({
 	dragPath: string | null;
 	dropTarget: DropTarget | null;
 }) {
-	const display = leafDisplayOrder(nodes, dragPath, dropTarget);
+	const display = spliceDisplayOrder(nodes, dragPath, dropTarget);
 	const ulRef = useRef<HTMLUListElement>(null);
 	useSwapAnimation(ulRef, display, dragPath);
 	if (nodes.length === 0) return null;

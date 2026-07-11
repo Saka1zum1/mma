@@ -3850,12 +3850,6 @@ body.mm-tag-dragging * {
 .tag-tree__row.is-dragging {
 	opacity: 0.4;
 }
-.tag-tree__row[data-drop="before"] {
-	box-shadow: 0 -2px 0 0 #4a9eff;
-}
-.tag-tree__row[data-drop="after"] {
-	box-shadow: 0 2px 0 0 #4a9eff;
-}
 .tag-tree__row.is-selected {
 	opacity: 1;
 	outline: 2px solid #fff;
