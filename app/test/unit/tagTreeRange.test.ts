@@ -94,11 +94,11 @@ describe("reorderSiblingsFlatOrder", () => {
 	const tree: N[] = [leaf("a", 1), leaf("b", 2), leaf("c", 3)];
 
 	it("moves a root sibling after another", () => {
-		expect(reorderSiblingsFlatOrder(tree, "a", "c", "after")).toEqual([2, 3, 1]);
+		expect(reorderSiblingsFlatOrder(tree, "a", "c", "after", "")).toEqual([2, 3, 1]);
 	});
 
 	it("moves a root sibling before another", () => {
-		expect(reorderSiblingsFlatOrder(tree, "c", "a", "before")).toEqual([3, 1, 2]);
+		expect(reorderSiblingsFlatOrder(tree, "c", "a", "before", "")).toEqual([3, 1, 2]);
 	});
 
 	it("reorders within a parent and preserves other subtrees + relative order", () => {
@@ -111,16 +111,16 @@ describe("reorderSiblingsFlatOrder", () => {
 			leaf("q", 20),
 		];
 		// move p/z before p/x -> z,x,y under p; q untouched
-		expect(reorderSiblingsFlatOrder(nested, "p/z", "p/x", "before")).toEqual([12, 10, 11, 20]);
+		expect(reorderSiblingsFlatOrder(nested, "p/z", "p/x", "before", "p")).toEqual([12, 10, 11, 20]);
 	});
 
-	it("returns null for non-siblings (different parent)", () => {
+	it("returns null when the target isn't a sibling under the given parent", () => {
 		const nested: N[] = [{ fullPath: "p", tag: null, children: [leaf("p/x", 10)] }, leaf("q", 20)];
-		expect(reorderSiblingsFlatOrder(nested, "p/x", "q", "after")).toBeNull();
+		expect(reorderSiblingsFlatOrder(nested, "p/x", "q", "after", "p")).toBeNull();
 	});
 
 	it("returns null when source equals target", () => {
-		expect(reorderSiblingsFlatOrder(tree, "a", "a", "after")).toBeNull();
+		expect(reorderSiblingsFlatOrder(tree, "a", "a", "after", "")).toBeNull();
 	});
 
 	it("does not emit an alias leaf's id (the real leaf owns it)", () => {
@@ -130,7 +130,13 @@ describe("reorderSiblingsFlatOrder", () => {
 			leaf("c", 3),
 		];
 		// Reordering real siblings must not duplicate/emit the alias's id 1.
-		expect(reorderSiblingsFlatOrder(withAlias, "a", "c", "after")).toEqual([3, 1]);
+		expect(reorderSiblingsFlatOrder(withAlias, "a", "c", "after", "")).toEqual([3, 1]);
+	});
+
+	it("treats a root leaf whose name contains '/' as a root sibling (no-split flat view)", () => {
+		// Flat view: "Europe/France" is one leaf at root, not a child of "Europe".
+		const flat: N[] = [leaf("Europe/France", 1), leaf("Red", 2), leaf("Blue", 3)];
+		expect(reorderSiblingsFlatOrder(flat, "Europe/France", "Blue", "after", "")).toEqual([2, 3, 1]);
 	});
 });
 
@@ -232,6 +238,36 @@ describe("buildTagTree", () => {
 		expect(d.tag?.id).toBe(2); // still the real tag, not the alias
 		expect(d.isAlias).toBe(false);
 		expect(d.children).toHaveLength(0);
+	});
+
+	it("sets structural parentPath on every node", () => {
+		const tree = buildTagTree([mkTag(1, "a/b/c"), mkTag(2, "d")], "default", {});
+		const a = tree.find((n) => n.segment === "a")!;
+		expect(a.parentPath).toBe("");
+		expect(a.children[0].parentPath).toBe("a");
+		expect(a.children[0].children[0].parentPath).toBe("a/b");
+		expect(tree.find((n) => n.segment === "d")!.parentPath).toBe("");
+	});
+
+	it("split=false keeps '/' names as single root leaves and ignores aliases", () => {
+		const tags = [mkTag(1, "Europe/France"), mkTag(2, "Red")];
+		const tree = buildTagTree(tags, "default", {}, {}, { "Fav/France": 1 }, false);
+		expect(tree).toHaveLength(2);
+		for (const n of tree) {
+			expect(n.children).toHaveLength(0);
+			expect(n.parentPath).toBe("");
+			expect(n.isAlias).toBe(false);
+		}
+		const france = tree.find((n) => n.tag?.id === 1)!;
+		expect(france.segment).toBe("Europe/France");
+		expect(france.fullPath).toBe("Europe/France");
+		expect(france.descendantTagIds).toEqual([1]);
+	});
+
+	it("split=false matches flat default sort (order, then name)", () => {
+		const tags = [mkTag(1, "b", 2), mkTag(2, "a", 2), mkTag(3, "c", 1)];
+		const tree = buildTagTree(tags, "default", {}, {}, {}, false);
+		expect(segs(tree)).toEqual(["c", "a", "b"]);
 	});
 });
 

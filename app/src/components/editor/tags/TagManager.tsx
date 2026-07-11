@@ -4,11 +4,9 @@ import {
 	useEffect,
 	useRef,
 	useCallback,
-	memo,
 	useOptimistic,
 	startTransition,
 } from "react";
-import { createPortal } from "react-dom";
 import { cmd } from "@/lib/commands";
 import { HslColorPicker } from "react-colorful";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -17,10 +15,8 @@ import {
 	getCurrentMap,
 	useSelectedTagIds,
 	useTagCounts,
-	toggleTagSelections,
 	updateTags,
 	deleteTags,
-	reorderTags,
 	removeTagFromAllLocations,
 	getSelectedLocationIds,
 	getVisibleTags,
@@ -30,8 +26,6 @@ import type { TagSortMode } from "@/types";
 import type { Tag, VirtualTag } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
-import { Icon } from "@/components/primitives/Icon";
-import { mdiPencil } from "@mdi/js";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
 import { fmt } from "@/lib/util/format";
 import { textColorFor, hexToHsl, hslToHex } from "@/lib/util/color";
@@ -54,9 +48,8 @@ export function TagManager() {
 	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags");
 	const [aliases, setAliases] = useMapSetting("aliases");
 	const [addingAliasFor, setAddingAliasFor] = useState<{ id: number; name: string } | null>(null);
-	const [editingTagId, setEditingTagId] = useState<number | null>(null);
-	// Tree-mode tag edit carries the node so the dialog can offer a descendant-cascade
-	// rename; flat-mode edits stay on editingTagId (no folder context).
+	// The edited node carries descendant context so the dialog can offer a cascade rename
+	// (descendantCount is 0 for every leaf, including all of flat mode).
 	const [editingTreeTag, setEditingTreeTag] = useState<{
 		tag: Tag;
 		descendantCount: number;
@@ -65,17 +58,12 @@ export function TagManager() {
 	const treeRef = useRef<TagTreeHandle>(null);
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
-	const [dragTagId, setDragTagId] = useState<number | null>(null);
-	// Insertion index into the sorted list with the dragged tag removed.
-	const [dropIdx, setDropIdx] = useState<number | null>(null);
-	// Holds the dropped order until the store mutation lands, so the list
-	// doesn't flash back to the old order for a frame after mouseup.
-	const [pendingOrder, setPendingOrder] = useState<Tag[] | null>(null);
 
 	// New array identity only when the map object changes (mutations), NOT on selection
 	// toggles -- keeps sortedTags stable so memoized rows can skip re-rendering.
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const storeTags = useMemo(() => getVisibleTags(), [map]);
+
 	// Optimistic overlay: `commitTags` applies pending name/color patches over the store tags
 	// for the lifetime of the mutation; React drops them once the transition settles (by which
 	// point the store reflects the change), so a rename/recolor renders in the same frame as the
@@ -140,8 +128,7 @@ export function TagManager() {
 		[setAliases],
 	);
 
-	const lastShiftClickRef = useRef<number | null>(null);
-
+	// Collapsed-state pill preview only; the open list is rendered by TagTreeView.
 	const sortedTags = useMemo(() => {
 		let filtered = tags;
 		if (filterText) {
@@ -151,144 +138,7 @@ export function TagManager() {
 		return sortTagsByMode(filtered, sortMode, tagCounts);
 	}, [tags, filterText, sortMode, tagCounts]);
 
-	// Live preview: render the list as it would look after the drop, with the
-	// dragged tag occupying (invisibly) its prospective slot.
-	const displayTags = useMemo(() => {
-		if (pendingOrder) return pendingOrder;
-		if (dragTagId == null || dropIdx == null) return sortedTags;
-		const dragTag = sortedTags.find((t) => t.id === dragTagId);
-		if (!dragTag) return sortedTags;
-		const without = sortedTags.filter((t) => t.id !== dragTagId);
-		without.splice(dropIdx, 0, dragTag);
-		return without;
-	}, [sortedTags, dragTagId, dropIdx, pendingOrder]);
-
-	const dragTag = dragTagId != null ? (sortedTags.find((t) => t.id === dragTagId) ?? null) : null;
-
-	// Refs mirror volatile state so the row handlers below can stay identity-stable
-	// (memoized TagRows only re-render when their own props change).
-	const sortedTagsRef = useRef(sortedTags);
-	sortedTagsRef.current = sortedTags;
-	const sortModeRef = useRef(sortMode);
-	sortModeRef.current = sortMode;
-	const filterTextRef = useRef(filterText);
-	filterTextRef.current = filterText;
-	const dragTagIdRef = useRef<number | null>(null);
-	const dropIdxRef = useRef<number | null>(null);
-	const suppressClickRef = useRef(false);
-	const previewRef = useRef<HTMLUListElement>(null);
-	const dragPosRef = useRef({ x: 0, y: 0 });
-
-	const setDrag = useCallback((v: number | null) => {
-		dragTagIdRef.current = v;
-		setDragTagId(v);
-	}, []);
-	const setDrop = useCallback((v: number | null) => {
-		dropIdxRef.current = v;
-		setDropIdx(v);
-	}, []);
-
-	const handleTagClick = useCallback((e: React.MouseEvent, tagId: number) => {
-		if (dragTagIdRef.current != null || suppressClickRef.current) {
-			suppressClickRef.current = false;
-			return;
-		}
-		const sorted = sortedTagsRef.current;
-		if (e.shiftKey && lastShiftClickRef.current != null) {
-			const anchorIdx = sorted.findIndex((t) => t.id === lastShiftClickRef.current);
-			const targetIdx = sorted.findIndex((t) => t.id === tagId);
-			if (anchorIdx !== -1 && targetIdx !== -1) {
-				const lo = Math.min(anchorIdx, targetIdx);
-				const hi = Math.max(anchorIdx, targetIdx);
-				const ids: number[] = [];
-				for (let i = lo; i <= hi; i++) {
-					if (i === anchorIdx) continue;
-					ids.push(sorted[i].id);
-				}
-				toggleTagSelections(ids);
-			}
-		} else {
-			toggleTagSelections([tagId]);
-		}
-		lastShiftClickRef.current = tagId;
-	}, []);
-
-	const handleTagMouseDown = useCallback(
-		(e: React.MouseEvent, tagId: number) => {
-			if (e.button !== 0 || sortModeRef.current !== "default" || filterTextRef.current) return;
-			if ((e.target as HTMLElement).closest("button")) return;
-			e.preventDefault();
-			suppressClickRef.current = false;
-			const startX = e.clientX;
-			const startY = e.clientY;
-			let started = false;
-
-			const onMove = (me: MouseEvent) => {
-				if (!started && (Math.abs(me.clientX - startX) > 4 || Math.abs(me.clientY - startY) > 4)) {
-					started = true;
-					document.body.style.userSelect = "none";
-					document.body.classList.add("mm-tag-dragging");
-					setDrag(tagId);
-					setDrop(sortedTagsRef.current.findIndex((t) => t.id === tagId));
-				}
-				if (started) {
-					dragPosRef.current = { x: me.clientX, y: me.clientY };
-					const el = previewRef.current;
-					if (el) {
-						el.style.left = `${me.clientX + 12}px`;
-						el.style.top = `${me.clientY + 12}px`;
-					}
-				}
-			};
-			const onUp = () => {
-				window.removeEventListener("mousemove", onMove);
-				window.removeEventListener("mouseup", onUp);
-				if (!started) return;
-				document.body.style.userSelect = "";
-				document.body.classList.remove("mm-tag-dragging");
-				suppressClickRef.current = true;
-				const dragId = dragTagIdRef.current;
-				const idx = dropIdxRef.current;
-				if (dragId != null && idx != null) {
-					const sorted = sortedTagsRef.current;
-					const fromIdx = sorted.findIndex((t) => t.id === dragId);
-					if (fromIdx !== -1 && idx !== fromIdx) {
-						const ordered = sorted.filter((t) => t.id !== dragId);
-						ordered.splice(idx, 0, sorted[fromIdx]);
-						setPendingOrder(ordered);
-						reorderTags(ordered.map((t) => t.id)).finally(() => setPendingOrder(null));
-					}
-				}
-				setDrop(null);
-				setDrag(null);
-			};
-			window.addEventListener("mousemove", onMove);
-			window.addEventListener("mouseup", onUp);
-		},
-		[setDrag, setDrop],
-	);
-
-	const handleTagMouseMove = useCallback(
-		(e: React.MouseEvent, tagId: number, el: HTMLElement) => {
-			const dragId = dragTagIdRef.current;
-			if (dragId == null || dragId === tagId) return;
-			const rect = el.getBoundingClientRect();
-			const after = (e.clientX - rect.left) / rect.width >= 0.5;
-			// Index of the hovered tag within the list-without-dragged-tag.
-			let idx = 0;
-			for (const t of sortedTagsRef.current) {
-				if (t.id === tagId) break;
-				if (t.id !== dragId) idx++;
-			}
-			if (after) idx++;
-			if (dropIdxRef.current !== idx) setDrop(idx);
-		},
-		[setDrop],
-	);
-
 	if (!map) return null;
-
-	const editingTag = editingTagId ? map.meta.tags[editingTagId] : null;
 
 	return (
 		<>
@@ -335,79 +185,23 @@ export function TagManager() {
 					</>
 				}
 			>
-				{tagViewMode === "tree" ? (
-					<TagTreeView
-						ref={treeRef}
-						tags={tags}
-						selectedTagIds={selectedTagIds}
-						tagCounts={tagCounts}
-						sortMode={sortMode}
-						virtualTags={virtualTags ?? {}}
-						aliases={aliases ?? {}}
-						onEditTag={handleEditTreeTag}
-						onEditVirtual={setEditingVirtualPath}
-						onRenameTag={setRenamingTag}
-						onAddAlias={addAlias}
-						onRemoveAlias={removeAlias}
-						filterText={filterText}
-					/>
-				) : (
-					displayTags.length > 0 && (
-						<ul className="tag-list">
-							{displayTags.map((tag) => (
-								<TagRow
-									key={tag.id}
-									tag={tag}
-									count={tagCounts[tag.id] ?? 0}
-									isSelected={selectedTagIds.has(tag.id)}
-									isDragging={dragTagId === tag.id}
-									onClick={handleTagClick}
-									onMouseDown={handleTagMouseDown}
-									onMouseMove={handleTagMouseMove}
-									onEdit={setEditingTagId}
-									onRename={setRenamingTag}
-									onAddAlias={addAlias}
-								/>
-							))}
-						</ul>
-					)
-				)}
-			</ToolBlock>
-
-			{dragTag &&
-				createPortal(
-					<ul
-						className="tag-list tag-drag-preview"
-						ref={previewRef}
-						style={{ left: dragPosRef.current.x + 12, top: dragPosRef.current.y + 12 }}
-					>
-						<li
-							className="tag has-button"
-							style={{ backgroundColor: dragTag.color, color: textColorFor(dragTag.color) }}
-						>
-							<button className="button tag__button tag__button--edit" type="button" tabIndex={-1}>
-								<Icon path={mdiPencil} />
-							</button>
-							<label className="tag__text">
-								{dragTag.name}
-								<small style={{ marginLeft: ".375rem", fontWeight: 600, verticalAlign: "middle" }}>
-									{fmt.format(tagCounts[dragTag.id] ?? 0)}
-								</small>
-							</label>
-						</li>
-					</ul>,
-					document.body,
-				)}
-
-			{editingTag && (
-				<EditTagDialog
-					tag={editingTag}
-					commit={commitTags}
+				<TagTreeView
+					ref={treeRef}
+					split={tagViewMode === "tree"}
+					tags={tags}
+					selectedTagIds={selectedTagIds}
+					tagCounts={tagCounts}
+					sortMode={sortMode}
+					virtualTags={virtualTags ?? {}}
 					aliases={aliases ?? {}}
-					setAliases={setAliases}
-					onClose={() => setEditingTagId(null)}
+					onEditTag={handleEditTreeTag}
+					onEditVirtual={setEditingVirtualPath}
+					onRenameTag={setRenamingTag}
+					onAddAlias={addAlias}
+					onRemoveAlias={removeAlias}
+					filterText={filterText}
 				/>
-			)}
+			</ToolBlock>
 
 			{editingTreeTag && (
 				<EditTagDialog
@@ -498,86 +292,6 @@ export function TagManager() {
 		</>
 	);
 }
-
-/** One tag row. Memoized so toggling a selection re-renders only the affected row --
- *  with thousands of tags, re-rendering every Radix ContextMenu wrapper per click is
- *  the difference between instant and a visible stall. All callbacks must be
- *  identity-stable (see the refs in TagManager). */
-const TagRow = memo(function TagRow({
-	tag,
-	count,
-	isSelected,
-	isDragging,
-	onClick,
-	onMouseDown,
-	onMouseMove,
-	onEdit,
-	onRename,
-	onAddAlias,
-}: {
-	tag: Tag;
-	count: number;
-	isSelected: boolean;
-	isDragging: boolean;
-	onClick: (e: React.MouseEvent, tagId: number) => void;
-	onMouseDown: (e: React.MouseEvent, tagId: number) => void;
-	onMouseMove: (e: React.MouseEvent, tagId: number, el: HTMLElement) => void;
-	onEdit: (tagId: number) => void;
-	onRename: (tag: { id: number; name: string }) => void;
-	onAddAlias: (tag: { id: number; name: string }) => void;
-}) {
-	const bg = tag.color;
-	const fg = textColorFor(bg);
-	return (
-		<ContextMenu.Root modal={false}>
-			<ContextMenu.Trigger asChild>
-				<li
-					className={`tag has-button${isSelected ? " is-selected" : ""}${isDragging ? " is-dragging" : ""}`}
-					style={{
-						backgroundColor: bg,
-						color: fg,
-						cursor: "pointer",
-					}}
-					data-tag-id={tag.id}
-					onClick={(e) => onClick(e, tag.id)}
-					onMouseDown={(e) => onMouseDown(e, tag.id)}
-					onMouseMove={(e) => onMouseMove(e, tag.id, e.currentTarget)}
-				>
-					<button
-						className="button tag__button tag__button--edit"
-						onClick={(e) => {
-							e.stopPropagation();
-							onEdit(tag.id);
-						}}
-						type="button"
-					>
-						<Icon path={mdiPencil} />
-					</button>
-					<label className="tag__text">
-						{tag.name}
-						<small
-							style={{
-								marginLeft: ".375rem",
-								fontWeight: 600,
-								verticalAlign: "middle",
-							}}
-						>
-							{fmt.format(count)}
-						</small>
-					</label>
-				</li>
-			</ContextMenu.Trigger>
-			<ContextMenu.Portal>
-				<TagContextMenuContent
-					tagId={tag.id}
-					totalCount={count}
-					onRename={() => onRename({ id: tag.id, name: tag.name })}
-					onAddAlias={() => onAddAlias({ id: tag.id, name: tag.name })}
-				/>
-			</ContextMenu.Portal>
-		</ContextMenu.Root>
-	);
-});
 
 export function TagContextMenuContent({
 	tagId,

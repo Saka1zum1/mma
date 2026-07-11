@@ -4,6 +4,9 @@ import type { TagSortMode } from "@/types";
 export interface TagTreeNode {
 	segment: string;
 	fullPath: string;
+	/** Structural parent path ("" at root). Never derive this by splitting fullPath on "/" --
+	 *  in no-split mode a tag name containing "/" is a single segment. */
+	parentPath: string;
 	tag: Tag | null;
 	inheritedColor: string;
 	children: TagTreeNode[];
@@ -28,23 +31,27 @@ export function sumCounts(node: TagTreeNode, tagCounts: Record<number, number>):
 
 /** Build the nested tag tree from `/`-delimited tag names. Within each level, leaf tags
  *  are floated above sub-branches so they render as a flat pill group above folder rows.
- *  `virtualTags` colors folder nodes that have no underlying tag (keyed by full path). */
+ *  `virtualTags` colors folder nodes that have no underlying tag (keyed by full path).
+ *  `split: false` renders the flat view: each tag name is a single leaf ("/" is literal
+ *  text, no folders), and aliases/virtualTags don't apply. */
 export function buildTagTree(
 	tags: Tag[],
 	sortMode: TagSortMode,
 	tagCounts: Record<number, number>,
 	virtualTags: Record<string, VirtualTag> = {},
 	aliases: Record<string, number> = {},
+	split = true,
 ): TagTreeNode[] {
 	const root: TagTreeNode[] = [];
 
 	for (const tag of tags) {
-		const parts = tag.name.split("/");
+		const parts = split ? tag.name.split("/") : [tag.name];
 		let level = root;
 		let pathSoFar = "";
 
 		for (let i = 0; i < parts.length; i++) {
 			const segment = parts[i];
+			const parentPath = pathSoFar;
 			pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
 			const isLeaf = i === parts.length - 1;
 
@@ -53,6 +60,7 @@ export function buildTagTree(
 				existing = {
 					segment,
 					fullPath: pathSoFar,
+					parentPath,
 					tag: isLeaf ? tag : null,
 					inheritedColor: "",
 					children: [],
@@ -72,42 +80,46 @@ export function buildTagTree(
 	// Insert alias leaves: a real tag placed at a second path. Skip a dangling alias
 	// (tag deleted) or one whose path is already occupied by any real node — an alias only
 	// fills a free leaf slot, never clobbers (and never leaves a stray empty folder).
-	const tagById = new Map(tags.map((t) => [t.id, t]));
-	const resolve = (path: string): TagTreeNode | null => {
-		let level = root;
-		let found: TagTreeNode | null = null;
-		for (const segment of path.split("/")) {
-			found = level.find((n) => n.segment === segment) ?? null;
-			if (!found) return null;
-			level = found.children;
-		}
-		return found;
-	};
-	for (const [aliasPath, tagId] of Object.entries(aliases)) {
-		const tag = tagById.get(tagId);
-		if (!tag || resolve(aliasPath)) continue;
-		const parts = aliasPath.split("/");
-		let level = root;
-		let pathSoFar = "";
-		for (let i = 0; i < parts.length; i++) {
-			const segment = parts[i];
-			pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
-			const isLeaf = i === parts.length - 1;
-			let existing = level.find((n) => n.segment === segment);
-			if (!existing) {
-				existing = {
-					segment,
-					fullPath: pathSoFar,
-					tag: isLeaf ? tag : null,
-					inheritedColor: "",
-					children: [],
-					descendantTagIds: [],
-					sortOrder: 0,
-					isAlias: isLeaf,
-				};
-				level.push(existing);
+	if (split) {
+		const tagById = new Map(tags.map((t) => [t.id, t]));
+		const resolve = (path: string): TagTreeNode | null => {
+			let level = root;
+			let found: TagTreeNode | null = null;
+			for (const segment of path.split("/")) {
+				found = level.find((n) => n.segment === segment) ?? null;
+				if (!found) return null;
+				level = found.children;
 			}
-			level = existing.children;
+			return found;
+		};
+		for (const [aliasPath, tagId] of Object.entries(aliases)) {
+			const tag = tagById.get(tagId);
+			if (!tag || resolve(aliasPath)) continue;
+			const parts = aliasPath.split("/");
+			let level = root;
+			let pathSoFar = "";
+			for (let i = 0; i < parts.length; i++) {
+				const segment = parts[i];
+				const parentPath = pathSoFar;
+				pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
+				const isLeaf = i === parts.length - 1;
+				let existing = level.find((n) => n.segment === segment);
+				if (!existing) {
+					existing = {
+						segment,
+						fullPath: pathSoFar,
+						parentPath,
+						tag: isLeaf ? tag : null,
+						inheritedColor: "",
+						children: [],
+						descendantTagIds: [],
+						sortOrder: 0,
+						isAlias: isLeaf,
+					};
+					level.push(existing);
+				}
+				level = existing.children;
+			}
 		}
 	}
 
@@ -304,11 +316,6 @@ interface OrderNode {
 	isAlias?: boolean;
 }
 
-function parentPathOf(path: string): string {
-	const i = path.lastIndexOf("/");
-	return i === -1 ? "" : path.slice(0, i);
-}
-
 function siblingsAt<T extends OrderNode>(tree: T[], parent: string): T[] {
 	if (parent === "") return tree;
 	let result: T[] = tree;
@@ -327,16 +334,18 @@ function siblingsAt<T extends OrderNode>(tree: T[], parent: string): T[] {
 }
 
 /** Full DFS tag-id order reflecting an in-level move of `dragPath` to before/after
- *  `dropPath`. Returns null if the two paths aren't siblings (same parent) or aren't found.
+ *  `dropPath`. `parent` is the drag node's structural parentPath ("" at root) -- it can't
+ *  be derived from the path string, which may contain literal "/" in no-split mode.
+ *  Returns null if the two paths aren't siblings under `parent` or aren't found.
  *  Every other node keeps its relative order; the moved node carries its whole subtree. */
 export function reorderSiblingsFlatOrder<T extends OrderNode>(
 	tree: T[],
 	dragPath: string,
 	dropPath: string,
 	position: "before" | "after",
+	parent: string,
 ): number[] | null {
-	const parent = parentPathOf(dragPath);
-	if (dragPath === dropPath || parentPathOf(dropPath) !== parent) return null;
+	if (dragPath === dropPath) return null;
 
 	const siblings = siblingsAt(tree, parent);
 	const dragNode = siblings.find((n) => n.fullPath === dragPath);
