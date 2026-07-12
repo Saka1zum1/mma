@@ -28,6 +28,9 @@ import type { RGB } from "@/lib/util/color";
 
 export const LOCATION_LAYER_ID = "locations";
 export const PERFECT_SCORE_LAYER_ID = "perfect-score";
+// Screen-pixel hit radius for "click the first vertex to close the loop" — also
+// the node's drawn radius, so the visible circle matches what's actually clickable.
+export const POLYGON_CLOSE_VERTEX_PX = 10;
 export type PolyGeom = { poly: object; fill: Position[][][]; stroke: Position[][] };
 
 export function normalizeRing<T extends number[]>(ring: T[]): T[] {
@@ -61,6 +64,8 @@ interface SceneContext {
 	polygonGeomCache: Map<string, PolyGeom>;
 	// In-progress freehand selection path; null for views without freehand drawing (the minimap).
 	freehandPath: number[][] | null;
+	// Placed vertices of an in-progress click-vertex polygon (excludes the live cursor point).
+	polygonVertices: number[][] | null;
 }
 
 // Assembles the full deck.gl layer set from shared state + per-view context. Pure: it reads the
@@ -331,6 +336,27 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				widthUnits: "pixels" as const,
 				jointRounded: true,
 				capRounded: true,
+				pickable: false,
+			}),
+		);
+	}
+
+	const polygonVertices = ctx.polygonVertices;
+	if (polygonVertices && polygonVertices.length > 0) {
+		const closable = polygonVertices.length >= 3;
+		layers.push(
+			new ScatterplotLayer({
+				id: "polygon-vertices",
+				data: polygonVertices,
+				getPosition: (d) => d,
+				radiusUnits: "pixels",
+				getRadius: (_d, { index }) => (closable && index === 0 ? POLYGON_CLOSE_VERTEX_PX : 4),
+				getFillColor: (_d, { index }) =>
+					closable && index === 0 ? [255, 255, 255, 90] : [255, 255, 255, 220],
+				stroked: true,
+				lineWidthUnits: "pixels",
+				getLineWidth: 1,
+				getLineColor: [0, 0, 0, 180],
 				pickable: false,
 			}),
 		);

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useEffectEvent } from "react";
-import { google } from "@/lib/sv/opensv";
 import { Icon, polygonOutline, rectangleOutline } from "@/components/primitives/Icon";
 import { mdiPencil } from "@mdi/js";
-import { hostInstance, type MapHost } from "@/lib/map/host";
+import type { MapHost } from "@/lib/map/host";
 import { addClickInterceptor } from "@/lib/map/mapState";
+import { latLngToWorld } from "@/lib/geo/mercator";
+import { POLYGON_CLOSE_VERTEX_PX } from "@/lib/render/buildSceneLayers";
 
 type DrawMode = "polygon" | "rectangle" | "freehand" | null;
 
@@ -47,95 +48,21 @@ export function PolygonTools({
 	host,
 	onDraw,
 	freehandPathRef,
+	polygonVerticesRef,
 	requestOverlayUpdate,
 }: {
 	host: MapHost | null;
 	onDraw: (rings: number[][][]) => void;
 	freehandPathRef: React.RefObject<number[][] | null>;
+	polygonVerticesRef: React.RefObject<number[][] | null>;
 	requestOverlayUpdate: () => void;
 }) {
 	const [mode, setMode] = useState<DrawMode>(null);
-	const managerRef = useRef<google.maps.drawing.DrawingManager>(null);
 	const isDrawingRef = useRef(false);
 	const emitDraw = useEffectEvent((rings: number[][][]) => onDraw(rings));
 	const emitUpdate = useEffectEvent(() => requestOverlayUpdate());
-	const gMap = hostInstance(host, "google");
 
-	// Google host: polygon/rectangle via the native DrawingManager (editable rubber band).
-	useEffect(() => {
-		if (!gMap) return;
-		if (!google?.maps) return;
-
-		let cancelled = false;
-		let listener: google.maps.MapsEventListener | null = null;
-		let dm: google.maps.drawing.DrawingManager | null = null;
-
-		(async () => {
-			try {
-				await google.maps.importLibrary("drawing");
-			} catch {
-				return;
-			}
-			if (cancelled || !google.maps.drawing?.DrawingManager) return;
-
-			dm = new google.maps.drawing.DrawingManager({
-				drawingControl: false,
-				polygonOptions: { editable: true },
-			});
-			dm.setMap(gMap);
-			managerRef.current = dm;
-
-			listener = google.maps.event.addListener(
-				dm,
-				"overlaycomplete",
-				(e: google.maps.drawing.OverlayCompleteEvent) => {
-					const Ym = google.maps.drawing.OverlayType;
-					e.overlay?.setMap(null);
-					dm!.setDrawingMode(null);
-					setMode(null);
-
-					if (e.type === Ym.POLYGON) {
-						const path = (e.overlay as google.maps.Polygon).getPath().getArray();
-						const ring = path.map((ll) => [ll.lng(), ll.lat()]);
-						if (ring.length > 0) emitDraw([closeRing(ring)]);
-					} else if (e.type === Ym.RECTANGLE) {
-						const b = (e.overlay as google.maps.Rectangle).getBounds()!.toJSON();
-						let east = b.east;
-						const west = b.west;
-						if (east < west) east += 360;
-						const ring = [
-							[west, b.south],
-							[east, b.south],
-							[east, b.north],
-							[west, b.north],
-							[west, b.south],
-						];
-						emitDraw([ring]);
-					}
-				},
-			);
-		})();
-
-		return () => {
-			cancelled = true;
-			if (listener) google.maps.event.removeListener(listener);
-			if (dm) dm.setMap(null);
-			managerRef.current = null;
-		};
-	}, [gMap]);
-
-	useEffect(() => {
-		if (!gMap) return;
-		const dm = managerRef.current;
-		if (!dm) return;
-		const Ym = google?.maps?.drawing?.OverlayType;
-		if (!Ym) return;
-		if (mode === "polygon") dm.setDrawingMode(Ym.POLYGON);
-		else if (mode === "rectangle") dm.setDrawingMode(Ym.RECTANGLE);
-		else dm.setDrawingMode(null);
-	}, [gMap, mode]);
-
-	// All hosts: freehand via host events.
+	// Freehand via host events.
 	useEffect(() => {
 		if (!host || mode !== "freehand") return;
 
@@ -179,9 +106,9 @@ export function PolygonTools({
 		};
 	}, [host, mode, freehandPathRef]);
 
-	// Non-Google hosts: click-vertex polygon (double-click closes, Escape cancels).
+	// Click-vertex polygon (click the first vertex or double-click to close, Escape cancels).
 	useEffect(() => {
-		if (!host || gMap || mode !== "polygon") return;
+		if (!host || mode !== "polygon") return;
 
 		const points: number[][] = [];
 		let cursor: number[] | null = null;
@@ -189,6 +116,7 @@ export function PolygonTools({
 		const preview = () => {
 			freehandPathRef.current =
 				points.length > 0 ? (cursor ? [...points, cursor] : [...points]) : null;
+			polygonVerticesRef.current = points.length > 0 ? [...points] : null;
 			emitUpdate();
 		};
 		const finish = (commit: boolean) => {
@@ -196,12 +124,23 @@ export function PolygonTools({
 			points.length = 0;
 			cursor = null;
 			freehandPathRef.current = null;
+			polygonVerticesRef.current = null;
 			emitUpdate();
 			setMode(null);
 			if (commit && ring.length >= 3) emitDraw([closeRing(ring)]);
 		};
 
 		const offClick = addClickInterceptor((lat, lng) => {
+			if (points.length >= 3) {
+				const start = points[0];
+				const scale = 2 ** host.getZoom();
+				const a = latLngToWorld({ lat, lng });
+				const b = latLngToWorld({ lat: start[1], lng: start[0] });
+				if (Math.hypot((a.x - b.x) * scale, (a.y - b.y) * scale) <= POLYGON_CLOSE_VERTEX_PX) {
+					finish(true);
+					return true;
+				}
+			}
 			const prev = points[points.length - 1];
 			if (!prev || prev[0] !== lng || prev[1] !== lat) points.push([lng, lat]);
 			preview();
@@ -229,13 +168,14 @@ export function PolygonTools({
 			document.removeEventListener("keydown", onKey, true);
 			host.setDoubleClickZoom(true);
 			freehandPathRef.current = null;
+			polygonVerticesRef.current = null;
 			emitUpdate();
 		};
-	}, [host, gMap, mode, freehandPathRef]);
+	}, [host, mode, freehandPathRef, polygonVerticesRef]);
 
-	// Non-Google hosts: drag rectangle.
+	// Drag rectangle.
 	useEffect(() => {
-		if (!host || gMap || mode !== "rectangle") return;
+		if (!host || mode !== "rectangle") return;
 
 		host.setDraggable(false);
 		let anchor: number[] | null = null;
@@ -283,7 +223,7 @@ export function PolygonTools({
 			host.setDraggable(true);
 			freehandPathRef.current = null;
 		};
-	}, [host, gMap, mode, freehandPathRef]);
+	}, [host, mode, freehandPathRef]);
 
 	return (
 		<div className="map-control map-control--button white">

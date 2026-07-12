@@ -88,6 +88,7 @@ export function MapEmbed({
 	const previewAbortRef = useRef<AbortController | null>(null);
 	const [opacityTarget, setOpacityTarget] = useState<"sv" | "markers">("sv");
 	const freehandPathRef = useRef<number[][] | null>(null);
+	const polygonVerticesRef = useRef<number[][] | null>(null);
 	const contextTriggerRef = useRef<HTMLSpanElement>(null);
 	const { isMeasuring } = useMeasure();
 
@@ -103,6 +104,7 @@ export function MapEmbed({
 		measuring: isMeasuring,
 		onContextMenu: dispatchContextMenu,
 		freehandPathRef,
+		polygonVerticesRef,
 		onError: (e: unknown) => log.error("[deck.gl overlay error]", e),
 		followActive: true,
 		panToActiveHotkey: true,
@@ -366,6 +368,7 @@ export function MapEmbed({
 								selectPolygon({ coordinates: rings as [number, number][][] });
 							}}
 							freehandPathRef={freehandPathRef}
+							polygonVerticesRef={polygonVerticesRef}
 							requestOverlayUpdate={requestUpdate}
 						/>
 					</div>

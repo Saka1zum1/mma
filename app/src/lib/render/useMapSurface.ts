@@ -23,6 +23,8 @@ export interface MapSurfaceOpts {
 	onContextMenu?: (clientX: number, clientY: number) => void;
 	// In-progress freehand selection path, read live on every rebuild (the editor map only).
 	freehandPathRef?: RefObject<number[][] | null>;
+	// Placed vertices of an in-progress click-vertex polygon (the editor map only).
+	polygonVerticesRef?: RefObject<number[][] | null>;
 	onError?: (e: unknown) => void;
 	// Camera behaviors. Pan this map to the active location while reviewing.
 	followActive?: boolean;
@@ -74,6 +76,7 @@ export function useMapSurface(
 			importPreviewColor,
 			polygonGeomCache: polygonGeomCache.current,
 			freehandPath: opts.freehandPathRef?.current ?? null,
+			polygonVertices: opts.polygonVerticesRef?.current ?? null,
 		});
 		overlay.setProps({
 			layers,
@@ -98,6 +101,7 @@ export function useMapSurface(
 		opts.onContextMenu,
 		opts.onError,
 		opts.freehandPathRef,
+		opts.polygonVerticesRef,
 	]);
 
 	// Latest rebuild, so overlay creation paints the first frame with current values.
