@@ -4,8 +4,10 @@ const path = require("path");
 
 const out = path.resolve(__dirname, "mma.d.ts");
 
+// Invoke the copy installed in app/node_modules so it resolves app's pinned
+// typescript; bare npx from repo root installs typescript@latest (TS 7, no JS API).
 execSync(
-  `npx dts-bundle-generator --project app/tsconfig.app.json --no-check --external-inlines @tauri-apps/api @tauri-apps/plugin-shell @tauri-apps/plugin-dialog --external-imports react -o "${out}" plugins/types/entrypoint.ts`,
+  `node app/node_modules/dts-bundle-generator/dist/bin/dts-bundle-generator.js --project app/tsconfig.app.json --no-check --external-inlines @tauri-apps/api @tauri-apps/plugin-shell @tauri-apps/plugin-dialog --external-imports react -o "${out}" plugins/types/entrypoint.ts`,
   { cwd: path.resolve(__dirname, "../.."), stdio: "inherit" }
 );
 
