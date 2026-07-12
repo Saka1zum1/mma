@@ -3,7 +3,7 @@
 // Pure, store-free port of the Rust reference (disambiguate.rs); tested in engine.test.ts.
 
 import type { Location, ExtraFieldDef, ComparisonType } from "@/bindings.gen";
-import { getFieldDef, getWritableBuiltinKeys } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef, isWritableField, getBuiltinKeys } from "@/lib/data/fieldDefRegistry";
 import {
 	kruskalEps2,
 	circularEta2,
@@ -309,7 +309,7 @@ export function computeDivergence(
 
 	const fields: FieldDivergence[] = [];
 
-	for (const key of getWritableBuiltinKeys()) {
+	for (const key of getBuiltinKeys().filter(isWritableField)) {
 		const def = getFieldDef(key);
 		fields.push(numericField(key, labeled, numGroups, groupSizes, resolvedComparison(def), def));
 	}

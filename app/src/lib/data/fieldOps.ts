@@ -13,7 +13,7 @@ import type {
 	LocationPatch_Deserialize as LocationPatch,
 } from "@/bindings.gen";
 import { buildSelection } from "@/store/selections";
-import { isWritableBuiltinField, isBuiltinField } from "@/lib/data/fieldDefRegistry";
+import { isBuiltinField, isWritableField } from "@/lib/data/fieldDefRegistry";
 
 /** When a move target already holds a value, which field's value survives. */
 export type MergeWinner = "from" | "to";
@@ -22,7 +22,7 @@ export type MergeWinner = "from" | "to";
  *  field, every other key nests under `extra`. The one place that knows the difference. */
 export function fieldPatch(key: string, value: unknown): Partial<Location> {
 	return (
-		isWritableBuiltinField(key) ? { [key]: value } : { extra: { [key]: value } }
+		isWritableField(key) && isBuiltinField(key) ? { [key]: value } : { extra: { [key]: value } }
 	) as Partial<Location>;
 }
 

@@ -18,7 +18,12 @@ import type {
 } from "@/bindings.gen";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { isPinnedToPano } from "@/types";
-import { getFieldDef, fieldLabel, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
+import {
+	getFieldDef,
+	fieldLabel,
+	getAllFieldDefs,
+	isWritableField,
+} from "@/lib/data/fieldDefRegistry";
 import { planFieldSet, planFieldExpr, parseFieldExpr, fieldPatch } from "@/lib/data/fieldOps";
 import { ValidationState } from "@/store/selections";
 import { validateLocations } from "@/lib/sv/validate";
@@ -334,7 +339,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 
 function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 	const sortedKeys = useMemo(() => {
-		const known = new Set<string>(Object.keys(getAllFieldDefs()));
+		const known = new Set<string>(Object.keys(getAllFieldDefs()).filter(isWritableField));
 		for (const loc of locs) {
 			if (loc.extra) for (const k of Object.keys(loc.extra)) known.add(k);
 		}

@@ -8,15 +8,55 @@ import {
 	mergeUserFieldDefs,
 	resetForMapChange,
 	getFieldDefsVersion,
+	isBuiltinField,
+	isWritableField,
+	isListableField,
+	getBuiltinKeys,
 } from "@/lib/data/fieldDefRegistry";
 
 beforeEach(() => {
 	resetForMapChange();
 });
 
-// Core field defs live in Rust (`known_field_def`) and reach the registry only via
-// the user layer (persisted into a map's `extra.fields`). The JS registry itself has
-// no hardcoded core layer — it resolves user > plugin only.
+// SV field defs live in Rust (`known_field_def`) and reach the registry via the user
+// layer (persisted into a map's `extra.fields`). The registry itself hardcodes only
+// the builtin/virtual Location fields; user > plugin > builtin resolution.
+
+describe("field kinds", () => {
+	it("identity fields are builtin, readable, but never writable or listable", () => {
+		for (const key of ["lat", "lng"]) {
+			expect(isBuiltinField(key)).toBe(true);
+			expect(getFieldDef(key)).toBeDefined();
+			expect(isWritableField(key)).toBe(false);
+			expect(isListableField(key)).toBe(false);
+		}
+	});
+
+	it("virtual fields are not builtin and not writable", () => {
+		expect(isBuiltinField("tagCount")).toBe(false);
+		expect(isWritableField("tagCount")).toBe(false);
+		expect(isListableField("tagCount")).toBe(true);
+		expect(getBuiltinKeys()).not.toContain("tagCount");
+	});
+
+	it("kindless builtins are listable and readable but not writable", () => {
+		for (const key of ["createdAt", "modifiedAt"]) {
+			expect(isBuiltinField(key)).toBe(true);
+			expect(isWritableField(key)).toBe(false);
+			expect(isListableField(key)).toBe(true);
+		}
+	});
+
+	it("writable builtins are exactly heading, pitch, zoom", () => {
+		expect(getBuiltinKeys().filter(isWritableField).sort()).toEqual(["heading", "pitch", "zoom"]);
+	});
+
+	it("extra fields are writable and listable", () => {
+		expect(isWritableField("countryCode")).toBe(true);
+		expect(isListableField("countryCode")).toBe(true);
+		expect(isBuiltinField("countryCode")).toBe(false);
+	});
+});
 
 describe("lookup", () => {
 	it("returns undefined for keys with no def in any layer", () => {

@@ -3,7 +3,12 @@ import { useState, useEffect, useMemo } from "react";
 import type { Selection, FilterOp, ExtraFieldDef } from "@/bindings.gen";
 import { cmd } from "@/lib/commands";
 import { NSelect } from "@/components/primitives/NSelect";
-import { fieldLabel, useFieldDefsVersion, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
+import {
+	fieldLabel,
+	useFieldDefsVersion,
+	getAllFieldDefs,
+	isListableField,
+} from "@/lib/data/fieldDefRegistry";
 import { pickPeriodEnd, hasTimeOfDay, dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { useKnownFieldKeys, selectFilter } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
@@ -75,7 +80,8 @@ export function useExtraFieldKeys(): FieldEntry[] {
 			entries.push({ key, label: fieldLabel(key), def: allDefs[key] ?? { type: "string" } });
 		}
 		for (const [key, def] of Object.entries(allDefs)) {
-			if (!seen.has(key)) entries.push({ key, label: fieldLabel(key), def });
+			if (!seen.has(key) && isListableField(key))
+				entries.push({ key, label: fieldLabel(key), def });
 		}
 		entries.sort((a, b) => a.label.localeCompare(b.label));
 		return entries;

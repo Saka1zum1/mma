@@ -26,47 +26,54 @@
 import { useSyncExternalStore } from "react";
 import type { ExtraFieldDef } from "@/bindings.gen";
 
-interface BuiltinFieldDef extends ExtraFieldDef {
-	writable?: boolean;
+/**
+ * What a registry field *is*, which determines how it may be accessed:
+ * - "identity": composes the location itself (position). Never writable through the
+ *   field system, never offered in pickers; resolvable by exact key only.
+ * - "virtual": derived, not stored on the location. Never writable.
+ * - "writable": explicitly bulk-editable top-level field.
+ * - undefined: on the location, listable and filterable, but read-only.
+ * Extra (user/plugin) fields live outside this map and are always writable and listable.
+ */
+type FieldKind = "identity" | "virtual" | "writable";
+
+interface RegistryFieldDef extends ExtraFieldDef {
+	kind?: FieldKind;
 }
 
-const BUILTIN_FIELDS: Record<string, BuiltinFieldDef> = {
-	lat: { type: "number", label: "Latitude" },
-	lng: { type: "number", label: "Longitude" },
+const FIELDS: Record<string, RegistryFieldDef> = {
+	lat: { type: "number", label: "Latitude", kind: "identity" },
+	lng: { type: "number", label: "Longitude", kind: "identity" },
 	heading: {
 		type: "number",
 		label: "Heading",
 		comparison: { type: "circular", period: 360 },
-		writable: true,
+		kind: "writable",
 	},
-	pitch: { type: "number", label: "Pitch", writable: true },
-	zoom: { type: "number", label: "Zoom", writable: true },
+	pitch: { type: "number", label: "Pitch", kind: "writable" },
+	zoom: { type: "number", label: "Zoom", kind: "writable" },
 	createdAt: { type: "date", label: "Created" },
 	modifiedAt: { type: "date", label: "Modified" },
+	tagCount: { type: "number", label: "Tag count", kind: "virtual" },
 };
 
-const VIRTUAL_FIELDS: Record<string, ExtraFieldDef> = {
-	tagCount: { type: "number", label: "Tag count" },
-};
-
-/** True when `key` is a built-in Location field (not nested under `extra`). */
+/** True when `key` is a built-in Location field (stored top-level, not under `extra`). */
 export function isBuiltinField(key: string): boolean {
-	return key in BUILTIN_FIELDS;
+	return key in FIELDS && FIELDS[key].kind !== "virtual";
 }
 
-/** True when `key` is a writable built-in field (heading, pitch, zoom). */
-export function isWritableBuiltinField(key: string): boolean {
-	return BUILTIN_FIELDS[key]?.writable === true;
+export function isWritableField(key: string): boolean {
+	return key in FIELDS ? FIELDS[key].kind === "writable" : true;
 }
 
-/** All writable built-in field keys. */
-export function getWritableBuiltinKeys(): string[] {
-	return Object.keys(BUILTIN_FIELDS).filter((k) => BUILTIN_FIELDS[k].writable);
+/** False only for identity fields (lat/lng), which pickers must not offer. */
+export function isListableField(key: string): boolean {
+	return key in FIELDS ? FIELDS[key].kind !== "identity" : true;
 }
 
-/** All built-in field keys (writable + read-only, excluding virtual). */
+/** All built-in field keys (excluding virtual). */
 export function getBuiltinKeys(): string[] {
-	return Object.keys(BUILTIN_FIELDS);
+	return Object.keys(FIELDS).filter(isBuiltinField);
 }
 
 let pluginDefs: Record<string, ExtraFieldDef> = {};
@@ -150,10 +157,7 @@ function mergeDef(
 
 /** Look up metadata for a single field key. Returns `undefined` if no metadata exists. */
 export function getFieldDef(key: string): ExtraFieldDef | undefined {
-	return mergeDef(
-		mergeDef(userDefs[key], pluginDefs[key]),
-		BUILTIN_FIELDS[key] ?? VIRTUAL_FIELDS[key],
-	);
+	return mergeDef(mergeDef(userDefs[key], pluginDefs[key]), FIELDS[key]);
 }
 
 /** Display label for a field key: registered label if known, otherwise sentence-cased from camelCase/snake_case. */
@@ -171,8 +175,7 @@ export function fieldLabel(key: string): string {
 export function getAllFieldDefs(): Record<string, ExtraFieldDef> {
 	const out: Record<string, ExtraFieldDef> = {};
 	const allKeys = new Set([
-		...Object.keys(BUILTIN_FIELDS),
-		...Object.keys(VIRTUAL_FIELDS),
+		...Object.keys(FIELDS),
 		...Object.keys(pluginDefs),
 		...Object.keys(userDefs),
 	]);
