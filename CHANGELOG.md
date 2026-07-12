@@ -1,3 +1,24 @@
+## v0.7.4 - 2026-07-12
+- New vector basemap and a redesigned thumbnail basemap picker
+- Legacy map style now works with terrain and satellite, with labels drawn above Street View coverage
+- New map styles: Arctic, Ember, Forest, Noir, Dusk
+- Map settings toggles to hide POIs, transit, highways, and road labels
+- Bulk panorama download
+- Command to pick an evenly spaced subset of a selection
+- Pivot plugin: percentage modes, value shading, smarter bucketing, ctrl-click column selection
+- Gradient plugin: reverse toggle and steadier layout
+- Plugin sidebars remember their state between visits
+- Enrichment and field management unified into a single dialog in the editor header
+- Animated tag reordering, with improved drag UX
+- Faster large-file imports, and the map no longer stalls while an import auto-commits
+- Cleaned up settings, status bar, and map-type menus
+- Fixed one failing location aborting bulk validation
+- Fixed mouse wheel not scrolling dropdowns inside dialogs
+- Fixed clicks while measuring opening locations instead
+- Fixed Enter in the map list opening a loosely-matching map
+- Fixed pasting a single location zooming all the way in
+- Fixed overlapping zoom buttons in the panorama viewer
+
 ## v0.7.3 - 2026-07-05
 - Bulk operations now show throughput (items/sec) and elapsed time
 - Copyright plugin is more accurate
