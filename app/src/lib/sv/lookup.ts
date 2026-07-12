@@ -1,5 +1,6 @@
 import { distMeters } from "@/lib/geo/geo";
-import { fetchPanoDotsWithIds, latLngToWorldCoord } from "@/lib/geo/photometa";
+import { fetchPanoDotsWithIds } from "@/lib/geo/photometa";
+import { latLngToWorld, worldToTile } from "@/lib/geo/mercator";
 import { google } from "@/lib/sv/opensv";
 import { cameraTypeFromHeight, fetchSvMetadata } from "@/lib/sv/svMeta";
 import { LocationFlag, hasLoadAsPanoId, createLocation } from "@/types";
@@ -214,8 +215,8 @@ export async function photometaSnap(
 	radius: number,
 ): Promise<google.maps.StreetViewResolvedPanoramaData | null> {
 	try {
-		const wc = latLngToWorldCoord(click.lat, click.lng);
-		const tile = { x: Math.floor((wc.x * 2 ** 17) / 256), y: Math.floor((wc.y * 2 ** 17) / 256) };
+		const wc = latLngToWorld(click);
+		const tile = worldToTile(wc.x, wc.y, 17);
 		const dots = await fetchPanoDotsWithIds(tile);
 		if (!dots.length) return null;
 		let best: { panoId: string; dist: number } | null = null;

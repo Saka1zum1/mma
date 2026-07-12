@@ -1,30 +1,10 @@
 import { pointInPolygon } from "@/lib/geo/geo";
-import { latLngToWorldCoord } from "@/lib/geo/photometa";
 import type { LatLng } from "@/types";
 
 const DEG_TO_RAD = Math.PI / 180;
 const M_PER_DEG_LAT = 111_320;
-const TILE_SIZE = 256;
 
-export function worldToTileAtZoom(wx: number, wy: number, zoom: number) {
-	const scale = 1 << zoom;
-	return {
-		x: Math.floor((wx * scale) / TILE_SIZE),
-		y: Math.floor((wy * scale) / TILE_SIZE),
-	};
-}
-
-export function pixelToLatLng(globalPx: number, globalPy: number, zoom: number): LatLng {
-	const scale = 1 << zoom;
-	const worldX = globalPx / scale;
-	const worldY = globalPy / scale;
-	const lng = (worldX / TILE_SIZE - 0.5) * 360;
-	const latRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * worldY) / TILE_SIZE)));
-	const lat = (latRad * 180) / Math.PI;
-	return { lat, lng };
-}
-
-export { latLngToWorldCoord };
+export { latLngToWorld, worldToTile as worldToTileAtZoom, pixelToLatLng } from "@/lib/geo/mercator";
 
 export function randomPointInBounds(
 	south: number,

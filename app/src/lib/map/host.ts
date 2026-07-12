@@ -115,26 +115,6 @@ export async function createMapHost(
 	return createGoogleMapHost(container, prefs, opts);
 }
 
-// --- Web Mercator world coordinates (256px world, Google projection scale) ---
-
-const WORLD_SIZE = 256;
-
-export function latLngToWorld(p: LatLng): { x: number; y: number } {
-	const siny = Math.min(Math.max(Math.sin((p.lat * Math.PI) / 180), -0.9999), 0.9999);
-	return {
-		x: (p.lng / 360 + 0.5) * WORLD_SIZE,
-		y: (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * WORLD_SIZE,
-	};
-}
-
-export function worldToLatLng(x: number, y: number): LatLng {
-	const n = Math.PI * (1 - (2 * y) / WORLD_SIZE);
-	return {
-		lat: (Math.atan(Math.sinh(n)) * 180) / Math.PI,
-		lng: (x / WORLD_SIZE - 0.5) * 360,
-	};
-}
-
 /** Axis-aligned bounds of [lng, lat] coords (or LatLng points). */
 export function boundsOfCoords(coords: Iterable<LatLng>): Bounds | null {
 	let west = Infinity,

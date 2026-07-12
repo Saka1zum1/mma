@@ -1,11 +1,6 @@
 import { TileConfig, LayerType, buildSvCoverageConfig, buildTileUrl } from "@/lib/geo/tiles";
-import {
-	getBoundingBox,
-	pointInGeoJsonGeometry,
-	latLngToWorldCoord,
-	worldToTileAtZoom,
-	pixelToLatLng,
-} from "./geo";
+import { getBoundingBox, pointInGeoJsonGeometry } from "./geo";
+import { latLngToWorld, worldToTile, pixelToLatLng } from "@/lib/geo/mercator";
 import { log } from "@/lib/util/log";
 import type { LatLng } from "@/types";
 
@@ -20,22 +15,20 @@ function calculateZoom(
 	north: number,
 	maxPerAxis: number,
 ) {
+	const nwWorld = latLngToWorld({ lat: north, lng: west });
+	const seWorld = latLngToWorld({ lat: south, lng: east });
 	for (let zoom = 16; zoom >= 0; zoom--) {
-		const nw = worldToTileAtZoom(...vals(latLngToWorldCoord(north, west)), zoom);
-		const se = worldToTileAtZoom(...vals(latLngToWorldCoord(south, east)), zoom);
+		const nw = worldToTile(nwWorld.x, nwWorld.y, zoom);
+		const se = worldToTile(seWorld.x, seWorld.y, zoom);
 		const cols = se.x - nw.x + 1;
 		const rows = se.y - nw.y + 1;
 		if (cols <= maxPerAxis && rows <= maxPerAxis) {
 			return { zoom, nwTile: nw, seTile: se, cols, rows };
 		}
 	}
-	const nw = worldToTileAtZoom(...vals(latLngToWorldCoord(north, west)), 0);
-	const se = worldToTileAtZoom(...vals(latLngToWorldCoord(south, east)), 0);
+	const nw = worldToTile(nwWorld.x, nwWorld.y, 0);
+	const se = worldToTile(seWorld.x, seWorld.y, 0);
 	return { zoom: 0, nwTile: nw, seTile: se, cols: se.x - nw.x + 1, rows: se.y - nw.y + 1 };
-}
-
-function vals(o: { x: number; y: number }): [number, number] {
-	return [o.x, o.y];
 }
 
 function buildSamplerTileConfig(): TileConfig {

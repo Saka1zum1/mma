@@ -3,31 +3,17 @@
 import type { Location } from "@/bindings.gen";
 import type { LatLng } from "@/types";
 import type { RequireNonNull } from "@/types/util";
+import { latLngToWorld, worldToTile } from "@/lib/geo/mercator";
 
 const TILE_ZOOM = 17;
-const TILE_SIZE = 256;
 
 export type PanoDot = LatLng & RequireNonNull<Pick<Location, "panoId">>;
 
-export function latLngToWorldCoord(lat: number, lng: number) {
-	let n = Math.sin((lat * Math.PI) / 180);
-	n = Math.min(Math.max(n, -0.9999), 0.9999);
-	return {
-		x: TILE_SIZE * (0.5 + lng / 360),
-		y: TILE_SIZE * (0.5 - Math.log((1 + n) / (1 - n)) / (4 * Math.PI)),
-	};
-}
-
-export function worldToTile(wx: number, wy: number) {
-	return {
-		x: Math.floor((wx * 2 ** TILE_ZOOM) / TILE_SIZE),
-		y: Math.floor((wy * 2 ** TILE_ZOOM) / TILE_SIZE),
-	};
-}
-
 export function boundsToTiles(west: number, south: number, east: number, north: number) {
-	const tl = worldToTile(...(Object.values(latLngToWorldCoord(north, west)) as [number, number]));
-	const br = worldToTile(...(Object.values(latLngToWorldCoord(south, east)) as [number, number]));
+	const nw = latLngToWorld({ lat: north, lng: west });
+	const se = latLngToWorld({ lat: south, lng: east });
+	const tl = worldToTile(nw.x, nw.y, TILE_ZOOM);
+	const br = worldToTile(se.x, se.y, TILE_ZOOM);
 	const tiles: { x: number; y: number }[] = [];
 	for (let x = tl.x; x <= br.x; x++) for (let y = tl.y; y <= br.y; y++) tiles.push({ x, y });
 	return tiles;

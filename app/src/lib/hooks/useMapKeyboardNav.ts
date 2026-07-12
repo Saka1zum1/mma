@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import { getSettings } from "@/store/settings";
 import { parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
 import { getBinding } from "@/lib/util/hotkeys";
-import { latLngToWorld, worldToLatLng, type MapHost } from "@/lib/map/host";
+import type { MapHost } from "@/lib/map/host";
+import { latLngToWorld, worldToLatLng } from "@/lib/geo/mercator";
 import { FRAME_MS } from "@/lib/sv/constants";
 
 /** Held-key map panning/zooming (pan*, mapZoomIn/Out) via an RAF tick loop, scoped to the

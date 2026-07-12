@@ -1,19 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { worldToTile, boundsToTiles, tileKey } from "@/lib/geo/photometa";
-
-describe("worldToTile", () => {
-	it("returns integer tile coordinates", () => {
-		const t = worldToTile(128, 128);
-		expect(Number.isInteger(t.x)).toBe(true);
-		expect(Number.isInteger(t.y)).toBe(true);
-	});
-
-	it("origin maps to tile 0,0 area", () => {
-		const t = worldToTile(0.001, 0.001);
-		expect(t.x).toBe(0);
-		expect(t.y).toBe(0);
-	});
-});
+import { boundsToTiles, tileKey } from "@/lib/geo/photometa";
 
 describe("boundsToTiles", () => {
 	it("returns at least one tile for a small area", () => {
