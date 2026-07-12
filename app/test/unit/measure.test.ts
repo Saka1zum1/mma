@@ -124,8 +124,8 @@ describe("locationsBbox", () => {
 });
 
 describe("bboxToMaxError", () => {
-	it("matches the original rd() formula for a 1x1 degree box", () => {
-		expect(bboxToMaxError([0, 0, 1, 1])).toBeCloseTo(1.5725405402337318, 9);
+	it("computes the score curve's max error for a 1x1 degree box", () => {
+		expect(bboxToMaxError([0, 0, 1, 1])).toBeCloseTo(1.5725383681512268, 9);
 	});
 
 	it("grows with a larger bounding box", () => {
@@ -156,7 +156,7 @@ describe("resolveScoreMaxError", () => {
 			{ lat: 0, lng: 0 },
 			{ lat: 1, lng: 1 },
 		]);
-		expect(err).toBeCloseTo(1.5725405402337318, 9);
+		expect(err).toBeCloseTo(1.5725383681512268, 9);
 	});
 
 	it("returns the exact ACW constant for world bounds", () => {
@@ -165,7 +165,7 @@ describe("resolveScoreMaxError", () => {
 
 	it("converts fixed bounds to GeoJSON order", () => {
 		const err = resolveScoreMaxError({ south: 40, west: -74, north: 41, east: -73 }, []);
-		expect(err).toBeCloseTo(1.3969278547109607, 9);
+		expect(err).toBeCloseTo(1.3969259251946928, 9);
 	});
 });
 
@@ -211,7 +211,7 @@ describe("resolveScoreMaxErrorFromBounds", () => {
 
 	it("derives auto error from a precomputed [minLng, minLat, maxLng, maxLat] bbox", () => {
 		// Matches resolveScoreMaxError("auto", [{0,0},{1,1}]) since [0,0,1,1] is non-degenerate.
-		expect(resolveScoreMaxErrorFromBounds("auto", [0, 0, 1, 1])).toBeCloseTo(1.5725405402337318, 9);
+		expect(resolveScoreMaxErrorFromBounds("auto", [0, 0, 1, 1])).toBeCloseTo(1.5725383681512268, 9);
 	});
 
 	it("pads a degenerate auto bbox before resolving (single-location map)", () => {

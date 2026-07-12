@@ -9,6 +9,7 @@ import { createSyncStore } from "@/lib/util/syncStore";
 import { useCurrentMap } from "@/store/useMapStore";
 import { cmd } from "@/lib/commands";
 import { subscribeMany, LOCATION_DATA_EVENTS } from "@/lib/events";
+import { distMeters } from "@/lib/geo/geo";
 
 // --- Measure tool state ---
 
@@ -143,21 +144,10 @@ export function computeScore(
 export const WORLD_MAX_ERROR = DEFAULT_MAX_ERROR;
 type Bbox = [minLng: number, minLat: number, maxLng: number, maxLat: number];
 const BBOX_TO_ERROR_DIVISOR = 7.458421;
-const TURF_EARTH_RADIUS_M = 6371008.8;
-
-/** Great-circle distance in km between two [lng, lat] points (turf-compatible). */
-function haversineKm(a: [number, number], b: [number, number]): number {
-	const toRad = (d: number) => (d * Math.PI) / 180;
-	const dLat = toRad(b[1] - a[1]);
-	const dLng = toRad(b[0] - a[0]);
-	const lat1 = toRad(a[1]);
-	const lat2 = toRad(b[1]);
-	const h = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-	return (2 * TURF_EARTH_RADIUS_M * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))) / 1000;
-}
 
 export function bboxToMaxError(bbox: Bbox): number {
-	const diagonalKm = haversineKm([bbox[0], bbox[1]], [bbox[2], bbox[3]]);
+	const diagonalKm =
+		distMeters({ lat: bbox[1], lng: bbox[0] }, { lat: bbox[3], lng: bbox[2] }) / 1000;
 	return diagonalKm / BBOX_TO_ERROR_DIVISOR / -1e4 / Math.log(SCORE_BASE);
 }
 

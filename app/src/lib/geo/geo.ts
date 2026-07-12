@@ -20,14 +20,14 @@ export function pointInPolygon(lng: number, lat: number, coordinates: number[][]
 	return true;
 }
 
+const EARTH_RADIUS_M = 6371000;
+
+/** Great-circle (haversine) distance in meters. */
 export function distMeters(a: LatLng, b: LatLng): number {
-	const { lat: lat1, lng: lng1 } = a;
-	const { lat: lat2, lng: lng2 } = b;
-	const R = 6371000;
-	const f1 = (lat1 * Math.PI) / 180;
-	const f2 = (lat2 * Math.PI) / 180;
-	const df = ((lat2 - lat1) * Math.PI) / 180;
-	const dl = ((lng2 - lng1) * Math.PI) / 180;
+	const f1 = (a.lat * Math.PI) / 180;
+	const f2 = (b.lat * Math.PI) / 180;
+	const df = ((b.lat - a.lat) * Math.PI) / 180;
+	const dl = ((b.lng - a.lng) * Math.PI) / 180;
 	const x = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
-	return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+	return 2 * EARTH_RADIUS_M * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
