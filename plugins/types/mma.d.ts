@@ -196,6 +196,20 @@ export declare const commands: {
 	 *  Always returns `Some` -- the GeoNames dataset covers every landmass.
 	 */
 	reverseGeocode: (lat: number, lng: number) => Promise<GeoResult | null>;
+	discordPresenceSet: (activity: PresenceActivity) => Promise<{
+		status: "error";
+		error: string;
+	} | {
+		status: "ok";
+		data: null;
+	}>;
+	discordPresenceClear: () => Promise<{
+		status: "error";
+		error: string;
+	} | {
+		status: "ok";
+		data: null;
+	}>;
 	/**
 	 *  Load a map's Arrow data from disk, rebuild all indexes, and return initial state
 	 *  (tag counts, undo/redo availability). Must be called before any other store commands.
@@ -1585,6 +1599,20 @@ export type PolygonGeometry = {
 	properties?: any | null;
 };
 /**
+ *  Activity payload from JS. All fields optional so the privacy tiers can send
+ *  progressively less (generic omits the map name/count).
+ */
+export type PresenceActivity = {
+	details: string | null;
+	state: string | null;
+	largeImage: string | null;
+	largeText: string | null;
+	smallImage: string | null;
+	smallText: string | null;
+	/**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
+	start: number | null;
+};
+/**
  *  Incremental render update sent to JS after a mutation. Contains adds, position/heading
  *  patches, swap-removals, and color patches (for selection overlay changes).
  *  `full_reset` signals JS to discard all cell data and re-fetch via `store_fill_render_file`.
@@ -2935,6 +2963,11 @@ declare const MAP_LIST_FIELDS: {
 	readonly lastOpened: "Last opened";
 	readonly created: "Date created";
 };
+declare const DISCORD_PRESENCE_MODES: {
+	readonly off: "Off";
+	readonly generic: "Generic (no map name)";
+	readonly full: "Full (map name + count)";
+};
 declare const GEOCODE_PROVIDERS: {
 	readonly local: "Local (offline)";
 	readonly nominatim: "Nominatim";
@@ -2966,6 +2999,7 @@ export type ExactDateFormat = keyof typeof EXACT_DATE_FORMATS;
 export type DateTimezone = keyof typeof DATE_TIMEZONES;
 export type SeenResolution = keyof typeof SEEN_RESOLUTIONS;
 export type MapListField = keyof typeof MAP_LIST_FIELDS;
+export type DiscordPresenceMode = keyof typeof DISCORD_PRESENCE_MODES;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
@@ -3009,6 +3043,8 @@ declare const DEFAULTS: {
 	mapListFields: MapListField[];
 	/** Reopen the maps that were open when the session last ended (main window closed). */
 	restoreSession: boolean;
+	/** Discord Rich Presence: off, generic (no map name), or full (map name + count). */
+	discordPresence: DiscordPresenceMode;
 	/** Per-label color overrides (hex), keyed by lowercased label name. Shared across all maps. */
 	labelColors: Record<string, string>;
 	geocodeProvider: GeocodeProvider;
@@ -3028,6 +3064,7 @@ declare const DEFAULTS: {
 	tagSortMode: TagSortMode;
 	/** Gap between tag pills (px), shared by flat and tree views via `--tag-gap`. */
 	tagGap: number;
+	animateTagReorder: boolean;
 	borderDetail: BorderDetail;
 	subdivisionDetail: SubdivisionDetail;
 	previewAspectRatio: PreviewAspectRatio;
@@ -3100,6 +3137,8 @@ declare const mma: {
 		downloadBorderFile: (level: string) => Promise<null>;
 		borderLookup: (lat: number, lng: number, level: string) => Promise<PolygonGeometry | null>;
 		reverseGeocode: (lat: number, lng: number) => Promise<GeoResult | null>;
+		discordPresenceSet: (activity: PresenceActivity) => Promise<null>;
+		discordPresenceClear: () => Promise<null>;
 		storeOpenMap: (mapId: string) => Promise<StoreStatus>;
 		storeCloseMap: () => Promise<null>;
 		storeSaveDirty: () => Promise<SaveResult>;
@@ -3271,6 +3310,7 @@ declare const mma: {
 		showFps: boolean;
 		mapListFields: MapListField[];
 		restoreSession: boolean;
+		discordPresence: DiscordPresenceMode;
 		labelColors: Record<string, string>;
 		geocodeProvider: GeocodeProvider;
 		nominatimApiKey: string;
@@ -3286,6 +3326,7 @@ declare const mma: {
 		truncateTagPaths: boolean;
 		tagSortMode: TagSortMode;
 		tagGap: number;
+		animateTagReorder: boolean;
 		borderDetail: BorderDetail;
 		subdivisionDetail: SubdivisionDetail;
 		previewAspectRatio: PreviewAspectRatio;

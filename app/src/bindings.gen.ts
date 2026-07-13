@@ -57,6 +57,8 @@ export const commands = {
 	 *  Always returns `Some` -- the GeoNames dataset covers every landmass.
 	 */
 	reverseGeocode: (lat: number, lng: number) => __TAURI_INVOKE<GeoResult | null>("reverse_geocode", { lat, lng }),
+	discordPresenceSet: (activity: PresenceActivity) => typedError<null, string>(__TAURI_INVOKE("discord_presence_set", { activity })),
+	discordPresenceClear: () => typedError<null, string>(__TAURI_INVOKE("discord_presence_clear")),
 	/**
 	 *  Load a map's Arrow data from disk, rebuild all indexes, and return initial state
 	 *  (tag counts, undo/redo availability). Must be called before any other store commands.
@@ -926,6 +928,17 @@ export type PolygonGeometry = {
 	coordinates: (([number, number])[])[],
 	extraPolygons?: ((([number, number])[])[])[] | null,
 	properties?: any | null,
+};
+
+export type PresenceActivity = {
+	details: string | null,
+	state: string | null,
+	largeImage: string | null,
+	largeText: string | null,
+	smallImage: string | null,
+	smallText: string | null,
+	/**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
+	start: number | null,
 };
 
 /**

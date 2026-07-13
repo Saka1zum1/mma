@@ -28,6 +28,7 @@ import { ToastContainer } from "@/components/primitives/Toast";
 import { TooltipProvider } from "@/components/primitives/Tooltip";
 import { useUpdateState, dismissUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { APP_NAME } from "@/lib/util/format";
+import { useDiscordPresence } from "@/lib/discord/presence";
 import "@/plugins";
 
 // Dynamic import (deck.gl/luma.gl out of the initial bundle) WITHOUT React.lazy/Suspense —
@@ -57,6 +58,7 @@ export default function App() {
 	useSelfDestruct(closing);
 	useCustomCss();
 	useCssVarSettings();
+	useDiscordPresence();
 
 	return (
 		<TooltipProvider>

@@ -28,6 +28,11 @@ export const MAP_LIST_FIELDS = {
 	lastOpened: "Last opened",
 	created: "Date created",
 } as const;
+export const DISCORD_PRESENCE_MODES = {
+	off: "Off",
+	generic: "Generic (no map name)",
+	full: "Full (map name + count)",
+} as const;
 export const GEOCODE_PROVIDERS = {
 	local: "Local (offline)",
 	nominatim: "Nominatim",
@@ -68,6 +73,7 @@ export type DateTimezone = keyof typeof DATE_TIMEZONES;
 export type SeenResolution = keyof typeof SEEN_RESOLUTIONS;
 
 export type MapListField = keyof typeof MAP_LIST_FIELDS;
+export type DiscordPresenceMode = keyof typeof DISCORD_PRESENCE_MODES;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
@@ -112,6 +118,8 @@ const DEFAULTS = {
 	mapListFields: ["locationCount"] as MapListField[],
 	/** Reopen the maps that were open when the session last ended (main window closed). */
 	restoreSession: true,
+	/** Discord Rich Presence: off, generic (no map name), or full (map name + count). */
+	discordPresence: "off" as DiscordPresenceMode,
 	/** Per-label color overrides (hex), keyed by lowercased label name. Shared across all maps. */
 	labelColors: {} as Record<string, string>,
 	geocodeProvider: "local" as GeocodeProvider,

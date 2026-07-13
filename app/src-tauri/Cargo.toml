@@ -63,6 +63,7 @@ fastrand = "2"
 memchr = "2"
 rustc-hash = "2"
 mimalloc = "0.1"
+discord-rich-presence = "0.2"
 tauri-plugin-webserve = { path = "crates/tauri-plugin-webserve", optional = true }
 vali-core = { path = "crates/vali/vali-core" }
 vali-data = { path = "crates/vali/vali-data" }

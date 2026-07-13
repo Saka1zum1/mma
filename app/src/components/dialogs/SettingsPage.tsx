@@ -33,6 +33,7 @@ import {
 	DATE_TIMEZONES,
 	MAP_LIST_FIELDS,
 	GEOCODE_PROVIDERS,
+	DISCORD_PRESENCE_MODES,
 	TAG_VIEW_MODES,
 	TAG_SUGGESTION_LIMITS,
 	BORDER_DETAILS,
@@ -1253,11 +1254,29 @@ function StartupSection() {
 	);
 }
 
+function DiscordSection() {
+	return (
+		<fieldset className="fieldset">
+			<legend className="fieldset__header">
+				Discord <span className="fieldset__divider" />
+			</legend>
+			<label className="settings-popup__item">
+				Rich Presence
+				<SettingSelect setting="discordPresence" options={DISCORD_PRESENCE_MODES} />
+			</label>
+			<p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#888" }}>
+				Show what you're editing on your Discord profile. Generic hides the map name.
+			</p>
+		</fieldset>
+	);
+}
+
 function AdvancedTab() {
 	const showFps = useSetting("showFps");
 	return (
 		<>
 			<StartupSection />
+			<DiscordSection />
 			<MapListSection />
 			<SeenSection />
 			<CustomCssSection />
