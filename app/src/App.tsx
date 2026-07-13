@@ -97,6 +97,7 @@ function AppChrome() {
 	});
 
 	const hasSeenWelcome = useSetting("hasSeenWelcome");
+	const fullscreenMap = useSetting("fullscreenMap");
 
 	return (
 		<>
@@ -122,7 +123,7 @@ function AppChrome() {
 				open={!map && !hasSeenWelcome}
 				onDismiss={() => setSetting("hasSeenWelcome", true)}
 			/>
-			{!showSettings && !showPlugins && (
+			{!showSettings && !showPlugins && !(map && fullscreenMap) && (
 				<div
 					className="bottom-bar"
 					style={{ position: "fixed", bottom: 12, right: 12, zIndex: 5, display: "flex", gap: 4 }}

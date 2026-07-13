@@ -795,9 +795,29 @@ function ControlsTab() {
 	);
 }
 
+function FullscreenMapSection() {
+	const s = useSettings();
+	return (
+		<fieldset className="fieldset">
+			<legend className="fieldset__header">
+				Fullscreen<span className="fieldset__divider" />
+			</legend>
+			<label className="settings-popup__item">
+				<input
+					type="checkbox"
+					checked={s.showFullscreenMapMeta}
+					onChange={(e) => setSetting("showFullscreenMapMeta", e.target.checked)}
+				/>
+				Show map meta bar in fullscreen
+			</label>
+		</fieldset>
+	);
+}
+
 function MapTab() {
 	return (
 		<>
+			<FullscreenMapSection />
 			<MapNavigationSection />
 			<MarkersSection />
 			<PanoDotsSection />

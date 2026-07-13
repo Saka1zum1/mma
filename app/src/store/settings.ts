@@ -97,6 +97,7 @@ const DEFAULTS = {
 	showGroundArrow: true,
 	hidePanoUI: false,
 	fullscreenMap: false,
+	showFullscreenMapMeta: false,
 	showFullscreenMinimap: true,
 	fullscreenMinimapScale: 1,
 	showFullscreenTagbar: true,

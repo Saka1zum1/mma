@@ -286,6 +286,13 @@ export function MapEditor() {
 		setSetting("fullscreenMap", !getSettings().fullscreenMap);
 	});
 	useHotkey(
+		"escape",
+		() => {
+			if (getSettings().fullscreenMap) setSetting("fullscreenMap", false);
+		},
+		{ bubble: true },
+	);
+	useHotkey(
 		useBinding("locationDelete"),
 		() => {
 			const ids = getSelectedLocationIds();
@@ -342,7 +349,7 @@ export function MapEditor() {
 					: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
 			}}
 		>
-			<SplitHandle onSplitChange={setSplit} />
+			{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
 			<header>
 				<Tooltip content="Back to map list" side="bottom" align="start">
 					<a
@@ -377,9 +384,11 @@ export function MapEditor() {
 				<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
 				{showMapCursor && <div className="map-cursor-crosshair" />}
 			</section>
-			<section className="map-meta">
-				<MapMetaBar />
-			</section>
+			{(!appSettings.fullscreenMap || appSettings.showFullscreenMapMeta) && (
+				<section className="map-meta">
+					<MapMetaBar />
+				</section>
+			)}
 			<MapOverview hidden={workArea !== "overview"} />
 			{workArea === "location" && <LocationPreview />}
 			{workArea === "duplicates" && <SameLocation />}

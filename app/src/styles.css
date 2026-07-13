@@ -5285,14 +5285,26 @@ body {
 
 /* Fullscreen map mode: map takes full area, sidebar hidden */
 .page-map-editor.fullscreen-map {
-	grid-template: "map-embed map-embed" 1fr "map-meta map-meta" min-content/1fr;
+	height: 100vh;
+	margin: 0;
+	grid-gap: 0;
+	grid-template: "map-embed map-embed" 1fr/1fr;
 }
+.page-map-editor.fullscreen-map:has(> .map-meta) {
+	grid-template: "map-embed map-embed" 1fr "map-meta map-meta" min-content/1fr;
+	row-gap: 0.5rem;
+	padding: 0.5rem;
+}
+.page-map-editor.fullscreen-map > .split-handle,
 .page-map-editor.fullscreen-map > header,
 .page-map-editor.fullscreen-map > .side-header,
 .page-map-editor.fullscreen-map > .location-preview,
 .page-map-editor.fullscreen-map > .map-overview,
 .page-map-editor.fullscreen-map > .duplicates,
-.page-map-editor.fullscreen-map > .importer {
+.page-map-editor.fullscreen-map > .importer,
+.page-map-editor.fullscreen-map > .import-sidebar,
+.page-map-editor.fullscreen-map > .map-sidebar,
+.page-map-editor.fullscreen-map > .plugin-sidebar {
 	display: none;
 }
 
