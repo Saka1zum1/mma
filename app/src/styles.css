@@ -5385,6 +5385,69 @@ body {
 	opacity: 0.4;
 	cursor: default;
 }
+
+/* Fullscreen-map floating location preview (Street View chip) */
+.fullscreen-mini-location {
+	position: absolute;
+	bottom: 8px;
+	right: 8px;
+	width: 250px;
+	height: 140px;
+	border: 2px solid rgba(255, 255, 255, 0.4);
+	border-radius: 4px;
+	z-index: 12;
+	pointer-events: auto;
+	overflow: hidden;
+	opacity: 0.45;
+	transition:
+		width 0.2s,
+		height 0.2s,
+		opacity 0.2s;
+}
+.fullscreen-mini-location.is-expanded {
+	width: min(var(--fs-mini-loc-w, 480px), calc(100% - 16px));
+	height: min(var(--fs-mini-loc-h, 270px), calc(100% - 16px));
+	opacity: 1;
+}
+.fullscreen-mini-location__pano {
+	position: absolute;
+	inset: 0;
+}
+.fullscreen-mini-location__size {
+	position: absolute;
+	top: 6px;
+	left: 6px;
+	z-index: 1;
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.fullscreen-mini-location.is-expanded .fullscreen-mini-location__size {
+	opacity: 1;
+}
+.fullscreen-mini-location__size-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: rgba(30, 30, 30, 0.75);
+	color: #fff;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.fullscreen-mini-location__size-btn:hover {
+	background: rgba(30, 30, 30, 0.95);
+}
+.fullscreen-mini-location__size-btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
 /* Fullscreen bottom tray (date picker + tag bar) */
 .fullscreen-bottom-tray {
 	position: absolute;

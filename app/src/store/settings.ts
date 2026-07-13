@@ -98,6 +98,8 @@ const DEFAULTS = {
 	hidePanoUI: false,
 	fullscreenMap: false,
 	showFullscreenMapMeta: false,
+	showFullscreenMiniLocationPreview: true,
+	fullscreenMiniLocationScale: 1,
 	showFullscreenMinimap: true,
 	fullscreenMinimapScale: 1,
 	showFullscreenTagbar: true,

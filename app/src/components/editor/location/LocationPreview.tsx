@@ -250,6 +250,8 @@ function LocationPreviewInner() {
 		if (geoResult) seenUpdateGeo(geoResult);
 	}, [geoResult]);
 	const appSettings = useSettings();
+	const yieldPanoToMini =
+		appSettings.fullscreenMap && appSettings.showFullscreenMiniLocationPreview;
 	const bottomTrayRef = useRef<HTMLDivElement>(null);
 	const [bottomTrayHeight, setBottomTrayHeight] = useState(0);
 	useLayoutEffect(() => {
@@ -269,12 +271,13 @@ function LocationPreviewInner() {
 		if (!singletonPano) return;
 		const noMove = appSettings.defaultMovementMode !== "moving";
 		singletonPano.setOptions({
-			linksControl: noMove ? false : appSettings.showLinksControl,
+			linksControl: yieldPanoToMini ? false : noMove ? false : appSettings.showLinksControl,
 			clickToGo: noMove ? false : appSettings.clickToGo,
 			showRoadLabels: appSettings.showRoadLabels,
 			scrollwheel: appSettings.defaultMovementMode !== "nmpz",
 		});
 	}, [
+		yieldPanoToMini,
 		appSettings.showLinksControl,
 		appSettings.clickToGo,
 		appSettings.showRoadLabels,
@@ -299,16 +302,21 @@ function LocationPreviewInner() {
 	}, [appSettings.showCrosshair]);
 
 	// Mount/unmount: move the persistent div in/out of the container.
-	// useLayoutEffect so setVisible(false) + appendChild run before paint.
+	// useLayoutEffect so appendChild runs before paint.
+	// Yield to FullscreenMiniLocationPreview while fullscreen-map mode owns the chip.
 	useLayoutEffect(() => {
+		if (yieldPanoToMini) return;
 		const container = panoContainerRef.current;
 		if (!container) return;
-		if (singletonPano) singletonPano.setVisible(false);
 		container.appendChild(singletonDiv);
+		if (singletonPano) {
+			singletonPano.setVisible(true);
+			if (google?.maps) google.maps.event.trigger(singletonPano, "resize");
+		}
 		return () => {
 			if (container.contains(singletonDiv)) container.removeChild(singletonDiv);
 		};
-	}, []);
+	}, [yieldPanoToMini]);
 
 	useEffect(() => {
 		if (!location || !panoContainerRef.current) return;

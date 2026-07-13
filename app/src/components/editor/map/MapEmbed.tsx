@@ -311,6 +311,7 @@ export function MapEmbed({
 	}, []);
 
 	const showFps = useSetting("showFps");
+	const fullscreenMap = useSetting("fullscreenMap");
 
 	useHotkey(useBinding("mapZoomReset"), () => {
 		hostRef.current?.moveCamera({ zoom: 1 });
@@ -432,7 +433,10 @@ export function MapEmbed({
 						/>
 					</div>
 				</div>
-				<div className="embed-controls__control" style={{ right: 0, bottom: 10 }}>
+				<div
+					className="embed-controls__control"
+					style={fullscreenMap ? { left: 0, bottom: 10 } : { right: 0, bottom: 10 }}
+				>
 					<div className="map-control map-control--button white">
 						<Tooltip content="Zoom in" side="left">
 							<button onClick={zoomIn} aria-label="Zoom in">

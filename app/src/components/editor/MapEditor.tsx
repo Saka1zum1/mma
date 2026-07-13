@@ -30,6 +30,7 @@ import { MapOverview } from "@/components/editor/map/MapOverview";
 import { ImportSidebar } from "@/components/editor/ImportSidebar";
 import { DiffSidebar } from "@/components/editor/DiffSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
+import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
 import { EnrichmentButton } from "@/components/editor/map/EnrichmentDialog";
@@ -383,6 +384,9 @@ export function MapEditor() {
 			<section className="map-embed" style={{ background: "#e5e3df" }}>
 				<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
 				{showMapCursor && <div className="map-cursor-crosshair" />}
+				{appSettings.fullscreenMap &&
+					appSettings.showFullscreenMiniLocationPreview &&
+					workArea === "location" && <FullscreenMiniLocationPreview />}
 			</section>
 			{(!appSettings.fullscreenMap || appSettings.showFullscreenMapMeta) && (
 				<section className="map-meta">

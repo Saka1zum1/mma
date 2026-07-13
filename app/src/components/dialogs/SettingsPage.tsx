@@ -810,6 +810,14 @@ function FullscreenMapSection() {
 				/>
 				Show map meta bar in fullscreen
 			</label>
+			<label className="settings-popup__item">
+				<input
+					type="checkbox"
+					checked={s.showFullscreenMiniLocationPreview}
+					onChange={(e) => setSetting("showFullscreenMiniLocationPreview", e.target.checked)}
+				/>
+				Show mini location preview in fullscreen map
+			</label>
 		</fieldset>
 	);
 }
