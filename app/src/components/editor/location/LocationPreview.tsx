@@ -61,7 +61,8 @@ import { FullscreenTagBar } from "@/components/editor/location/FullscreenTagBar"
 import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
 import { seenPanoChanged, seenFlush, seenSetCanvas, seenUpdateGeo } from "@/lib/seen/seen";
 import { useReverseGeocode, type GeoDisplay } from "@/components/editor/location/useReverseGeocode";
-import { PanoViewerProvider, usePanoViewer, setPanoAltitude } from "./PanoViewerContext";
+import { usePanoViewer, setPanoAltitude } from "./PanoViewerContext";
+import { togglePanoFullscreenState } from "./useFullscreenModeHotkeys";
 import {
 	applyViewportLock,
 	getViewportLockInfo,
@@ -208,11 +209,7 @@ const TagEditor = memo(function TagEditor({
 });
 
 export function LocationPreview() {
-	return (
-		<PanoViewerProvider>
-			<LocationPreviewInner />
-		</PanoViewerProvider>
-	);
+	return <LocationPreviewInner />;
 }
 
 function LocationPreviewInner() {
@@ -579,8 +576,8 @@ function LocationPreviewInner() {
 	}, []);
 
 	const handleFullscreen = useCallback(() => {
-		setIsFullscreen((v) => !v);
-	}, []);
+		togglePanoFullscreenState(location, isFullscreen, setIsFullscreen);
+	}, [location, isFullscreen, setIsFullscreen]);
 
 	useEffect(() => {
 		if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
@@ -619,7 +616,6 @@ function LocationPreviewInner() {
 		handleClose,
 		handleDelete,
 		handleReturnToSpawn,
-		handleFullscreen,
 		handleDateChange,
 	});
 

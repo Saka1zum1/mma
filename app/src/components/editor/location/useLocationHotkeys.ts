@@ -52,7 +52,6 @@ interface LocationHotkeyDeps {
 	handleClose: () => void;
 	handleDelete: () => void;
 	handleReturnToSpawn: () => void;
-	handleFullscreen: () => void;
 	handleDateChange: (panoId: string | null) => void;
 }
 
@@ -72,7 +71,6 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleClose,
 		handleDelete,
 		handleReturnToSpawn,
-		handleFullscreen,
 		handleDateChange,
 	} = deps;
 
@@ -90,9 +88,6 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	});
 	useHotkey(useBinding("reviewPrev"), () => {
 		if (isReviewMode) reviewPrev();
-	});
-	useHotkey(useBinding("toggleFullscreen"), () => {
-		handleFullscreen();
 	});
 	useHotkey(useBinding("returnToSpawn"), () => {
 		handleReturnToSpawn();

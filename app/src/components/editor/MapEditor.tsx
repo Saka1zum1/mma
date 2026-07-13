@@ -31,6 +31,8 @@ import { ImportSidebar } from "@/components/editor/ImportSidebar";
 import { DiffSidebar } from "@/components/editor/DiffSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
 import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
+import { PanoViewerProvider } from "@/components/editor/location/PanoViewerContext";
+import { useFullscreenModeHotkeys } from "@/components/editor/location/useFullscreenModeHotkeys";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
 import { EnrichmentButton } from "@/components/editor/map/EnrichmentDialog";
@@ -234,6 +236,11 @@ function SplitHandle({ onSplitChange }: { onSplitChange: (v: number) => void }) 
 	);
 }
 
+function FullscreenModeHotkeys() {
+	useFullscreenModeHotkeys();
+	return null;
+}
+
 export function MapEditor() {
 	const map = useCurrentMap();
 	const workArea = useWorkArea();
@@ -283,9 +290,6 @@ export function MapEditor() {
 	useMapKeyBindings(() => getCurrentMap()?.meta.settings.keyBindings ?? []);
 	useCountrySelect();
 	useDeletePolygon();
-	useHotkey(useBinding("toggleFullscreenMap"), () => {
-		setSetting("fullscreenMap", !getSettings().fullscreenMap);
-	});
 	useHotkey(
 		"escape",
 		() => {
@@ -342,14 +346,16 @@ export function MapEditor() {
 	const editorClasses = `page-map-editor${appSettings.fullscreenMap ? " fullscreen-map" : ""}`;
 
 	return (
-		<div
-			className={editorClasses}
-			style={{
-				gridTemplateColumns: appSettings.fullscreenMap
-					? undefined
-					: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
-			}}
-		>
+		<PanoViewerProvider>
+			<FullscreenModeHotkeys />
+			<div
+				className={editorClasses}
+				style={{
+					gridTemplateColumns: appSettings.fullscreenMap
+						? undefined
+						: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
+				}}
+			>
 			{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
 			<header>
 				<Tooltip content="Back to map list" side="bottom" align="start">
@@ -406,5 +412,6 @@ export function MapEditor() {
 				</div>
 			)}
 		</div>
+		</PanoViewerProvider>
 	);
 }
