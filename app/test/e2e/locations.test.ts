@@ -155,15 +155,15 @@ describe("Location CRUD", () => {
 		expect(loc.extra.city).toBe("London");
 	});
 
-	it("patch extra replace mode", async () => {
+	it("patch extra deletes key with null", async () => {
 		await withApi(async (api, id) => {
-			await api.updateLocations([{ id: id, patch: { extra: { only: "this" } } }], {
+			await api.updateLocations([{ id: id, patch: { extra: { altitude: null } } }], {
 				undoable: false,
 			});
 		}, singleLocId);
 		const loc = await getLoc(singleLocId);
-		expect(loc.extra.only).toBe("this");
 		expect(loc.extra.altitude).toBeUndefined();
+		expect(loc.extra.city).toBe("London");
 	});
 
 	// --- Duplicate ---

@@ -200,8 +200,8 @@ describe("Enrichment — single location via preview", () => {
 
 		const after = await readLocation(enrichExistingMetaId);
 		expect(after.extra.imageDate).not.toBe("2099-01");
-		expect(after.extra.datetime).toBeNull();
-		expect(after.extra.timezone).toBeNull();
+		expect(after.extra.datetime).toBeUndefined();
+		expect(after.extra.timezone).toBeUndefined();
 	});
 
 	it("location without panoId resolves pano from coords and enriches", async () => {
