@@ -87,6 +87,11 @@ export default defineConfig([
 		rules: { "no-restricted-syntax": "off" },
 	},
 	{
+		// Node-side runner config: console reporting + ANSI stripping are legitimate.
+		files: ["wdio.conf.ts"],
+		rules: { "no-console": "off", "no-control-regex": "off" },
+	},
+	{
 		files: [
 			"test/e2e/benchmarks.test.ts",
 			"test/e2e/bulk-import-rust.test.ts",
