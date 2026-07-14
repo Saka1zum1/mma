@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { boundsToTiles, tileKey } from "@/lib/geo/photometa";
+import { describe, it, expect, vi } from "vitest";
+import { boundsToTiles, fetchPanoDots, peekPanoDots, tileKey } from "@/lib/geo/photometa";
 
 describe("boundsToTiles", () => {
 	it("returns at least one tile for a small area", () => {
@@ -25,5 +25,32 @@ describe("boundsToTiles", () => {
 describe("tileKey", () => {
 	it("produces comma-separated string", () => {
 		expect(tileKey({ x: 10, y: 20 })).toBe("10,20");
+	});
+});
+
+describe("peekPanoDots", () => {
+	const body =
+		")]}'\n" + JSON.stringify([null, [null, [[[[null, "pid1"], null, [[null, null, 1.5, 2.5]]]]]]]);
+
+	it("is undefined before fetch, undefined in flight, stable array after resolve", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({ ok: true, text: async () => body })),
+		);
+		try {
+			const tile = { x: 111111, y: 222222 };
+			expect(peekPanoDots(tile)).toBeUndefined();
+
+			const pending = fetchPanoDots(tile);
+			expect(pending).toBeInstanceOf(Promise);
+			expect(peekPanoDots(tile)).toBeUndefined();
+
+			const dots = await pending;
+			expect(dots).toEqual([{ lat: 1.5, lng: 2.5, panoId: "pid1" }]);
+			expect(peekPanoDots(tile)).toBe(dots);
+			expect(fetchPanoDots(tile)).toBe(dots);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

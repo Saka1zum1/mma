@@ -9,17 +9,19 @@ const TILE_ZOOM = 17;
 
 export type PanoDot = LatLng & RequireNonNull<Pick<Location, "panoId">>;
 
-export function boundsToTiles(west: number, south: number, east: number, north: number) {
+export type Tile = { x: number; y: number };
+
+export function boundsToTiles(west: number, south: number, east: number, north: number): Tile[] {
 	const nw = latLngToWorld({ lat: north, lng: west });
 	const se = latLngToWorld({ lat: south, lng: east });
 	const tl = worldToTile(nw.x, nw.y, TILE_ZOOM);
 	const br = worldToTile(se.x, se.y, TILE_ZOOM);
-	const tiles: { x: number; y: number }[] = [];
+	const tiles: Tile[] = [];
 	for (let x = tl.x; x <= br.x; x++) for (let y = tl.y; y <= br.y; y++) tiles.push({ x, y });
 	return tiles;
 }
 
-export function tileKey(t: { x: number; y: number }) {
+export function tileKey(t: Tile) {
 	return `${t.x},${t.y}`;
 }
 
@@ -65,6 +67,12 @@ export async function fetchPanoDotsWithIds(tile: { x: number; y: number }): Prom
 
 const cache = new Map<string, PanoDot[] | Promise<PanoDot[]>>();
 const CACHE_MAX = 2000;
+
+/** Resolved dots for a tile, or undefined while unfetched/in flight. */
+export function peekPanoDots(tile: Tile): PanoDot[] | undefined {
+	const cached = cache.get(tileKey(tile));
+	return Array.isArray(cached) ? cached : undefined;
+}
 
 export function fetchPanoDots(tile: { x: number; y: number }): PanoDot[] | Promise<PanoDot[]> {
 	const key = tileKey(tile);
