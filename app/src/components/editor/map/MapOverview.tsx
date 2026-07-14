@@ -94,7 +94,7 @@ function SpacedPickPanel() {
 		<form className="selection-manager__inline-form" onSubmit={handleSubmit}>
 			<NSelect value={mode} onChange={(e) => setMode(e.target.value as "count" | "distance")}>
 				<option value="count">Count</option>
-				<option value="distance">Min distance</option>
+				<option value="distance">Min distance (m)</option>
 			</NSelect>
 			<input
 				className="input"
