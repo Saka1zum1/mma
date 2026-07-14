@@ -4680,6 +4680,7 @@ body {
 .context-menu {
 	color: #000;
 	width: max-content;
+	z-index: 10000;
 	box-shadow: var(--shadow-2);
 	background: #fff;
 	border-radius: 2px 0 2px 2px;
