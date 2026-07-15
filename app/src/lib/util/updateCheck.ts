@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { log } from "@/lib/util/log";
+import { getSettings } from "@/store/settings";
+import { saveSession } from "@/store/session";
+import { openMapWindowIds } from "@/lib/window";
 
 type Phase = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
 
@@ -54,9 +57,24 @@ export async function checkForUpdate() {
 	}
 }
 
+// Updating never fires onCloseRequested (the installer kills the app
+// inside downloadAndInstall), so snapshot the session here or the post-update
+// restore reopens the stale list from the last normal quit.
+async function snapshotSessionForRestart() {
+	if (!getSettings().restoreSession) return;
+	try {
+		const ids = await openMapWindowIds();
+		saveSession(ids);
+		log.info(`[session] saved ${ids.length} open map(s) before restart: ${ids.join(", ")}`);
+	} catch (e) {
+		log.warn("[session] snapshot before restart failed:", e);
+	}
+}
+
 export async function installUpdate() {
 	if (!pendingUpdate) return;
 	if (state.phase === "downloading" || state.phase === "ready") return;
+	await snapshotSessionForRestart();
 	set({ phase: "downloading", percent: 0, error: null });
 	try {
 		let totalBytes = 0;
@@ -81,6 +99,7 @@ export async function installUpdate() {
 }
 
 export async function relaunchApp() {
+	await snapshotSessionForRestart();
 	const { relaunch } = await import("@tauri-apps/plugin-process");
 	await relaunch();
 }
