@@ -816,7 +816,7 @@ function FullscreenMapSection() {
 					checked={s.showFullscreenMiniLocationPreview}
 					onChange={(e) => setSetting("showFullscreenMiniLocationPreview", e.target.checked)}
 				/>
-				Show mini location preview in fullscreen map
+				Show mini location preview in fullscreen
 			</label>
 		</fieldset>
 	);

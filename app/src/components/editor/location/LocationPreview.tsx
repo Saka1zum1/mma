@@ -49,7 +49,7 @@ import {
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 
-import { useSettings, useSetting, getSettings, setSetting, GEOCODE_PROVIDER_LABELS } from "@/store/settings";
+import { useSettings, useSetting, getSettings, GEOCODE_PROVIDER_LABELS } from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
 import { textColorFor } from "@/lib/util/color";
