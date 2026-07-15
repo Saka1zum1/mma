@@ -315,6 +315,18 @@ const STATIC_HOTKEY_DEFS = [
 		group: "Map Navigation",
 		defaultBinding: "o",
 	},
+	{
+		action: "toggleSvOpacity",
+		label: "Toggle Street View layer opacity",
+		group: "Map Navigation",
+		defaultBinding: "p",
+	},
+	{
+		action: "toggleMarkerOpacity",
+		label: "Toggle marker layer opacity",
+		group: "Map Navigation",
+		defaultBinding: "m",
+	},
 ] as const satisfies readonly (Omit<HotkeyDef, "action"> & { action: string })[];
 
 const RAW_HOTKEY_DEFS: HotkeyDef[] = [

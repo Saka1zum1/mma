@@ -319,6 +319,12 @@ export function MapEmbed({
 	useHotkey(useBinding("toggleSelectOnly"), () => {
 		setPrefs((p) => ({ ...p, selectOnly: !p.selectOnly }));
 	});
+	useHotkey(useBinding("toggleSvOpacity"), () => {
+		setPrefs((p) => ({ ...p, svOpacity: p.svOpacity > 0 ? 0 : 1 }));
+	});
+	useHotkey(useBinding("toggleMarkerOpacity"), () => {
+		setPrefs((p) => ({ ...p, markerOpacity: p.markerOpacity > 0 ? 0 : 1 }));
+	});
 	useHotkey(useBinding("mapZoomBounds"), () => {
 		cmd.storeBounds(false).then((bounds) => {
 			if (!hostRef.current || !bounds) return;
