@@ -2994,6 +2994,9 @@ declare const DEFAULTS: {
 	showGroundArrow: boolean;
 	hidePanoUI: boolean;
 	fullscreenMap: boolean;
+	showFullscreenMapMeta: boolean;
+	showFullscreenMiniLocationPreview: boolean;
+	fullscreenMiniLocationScale: number;
 	showFullscreenMinimap: boolean;
 	fullscreenMinimapScale: number;
 	showFullscreenTagbar: boolean;
@@ -3257,6 +3260,9 @@ declare const mma: {
 		showGroundArrow: boolean;
 		hidePanoUI: boolean;
 		fullscreenMap: boolean;
+		showFullscreenMapMeta: boolean;
+		showFullscreenMiniLocationPreview: boolean;
+		fullscreenMiniLocationScale: number;
 		showFullscreenMinimap: boolean;
 		fullscreenMinimapScale: number;
 		showFullscreenTagbar: boolean;

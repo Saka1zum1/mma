@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
 import { useActiveLocation } from "@/store/useMapStore";
-import { useSetting, setSetting, getSettings } from "@/store/settings";
+import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
 import { singletonDiv, singletonPano } from "@/lib/sv/panoSingleton";
 import { google } from "@/lib/sv/opensv";
@@ -12,6 +12,10 @@ const PREVIEW_SCALE_STEP = 0.5;
 const PREVIEW_BASE_W = 480;
 const PREVIEW_BASE_H = 270;
 const PREVIEW_CLOSE_DELAY = 500;
+
+function resizePano() {
+	if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
+}
 
 /** Floating Street View chip for fullscreen-map mode. Reuses the singleton pano
  *  (LocationPreview yields ownership while this is mounted). No embed controls. */
@@ -28,29 +32,18 @@ export function FullscreenMiniLocationPreview() {
 		container.appendChild(singletonDiv);
 		if (singletonPano) {
 			singletonPano.setVisible(true);
-			if (google?.maps) google.maps.event.trigger(singletonPano, "resize");
+			resizePano();
 		}
 		return () => {
 			if (container.contains(singletonDiv)) container.removeChild(singletonDiv);
 		};
 	}, [location?.id]);
 
-	useEffect(() => {
-		if (!singletonPano) return;
-		singletonPano.setOptions({ linksControl: false });
-		return () => {
-			if (!singletonPano) return;
-			const noMove = getSettings().defaultMovementMode !== "moving";
-			singletonPano.setOptions({
-				linksControl: noMove ? false : getSettings().showLinksControl,
-			});
-		};
-	}, []);
-
-	useEffect(() => {
-		if (!singletonPano || !google?.maps) return;
-		google.maps.event.trigger(singletonPano, "resize");
-	}, [expanded, scale]);
+	// Size changes are not CSS-animated (avoids canvas stretch mid-transition).
+	// Resize once after layout commits — never during a transition.
+	useLayoutEffect(() => {
+		resizePano();
+	}, [expanded, scale, location?.id]);
 
 	const setScale = (next: number) => {
 		const clamped = clamp(next, PREVIEW_SCALE);

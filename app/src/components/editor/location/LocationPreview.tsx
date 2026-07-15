@@ -63,6 +63,7 @@ import { seenPanoChanged, seenFlush, seenSetCanvas, seenUpdateGeo } from "@/lib/
 import { useReverseGeocode, type GeoDisplay } from "@/components/editor/location/useReverseGeocode";
 import { usePanoViewer, setPanoAltitude } from "./PanoViewerContext";
 import { togglePanoFullscreenState } from "./useFullscreenModeHotkeys";
+import { resumeFullscreenMapAfterPano, exitFullscreenMap } from "./fullscreenModeState";
 import {
 	applyViewportLock,
 	getViewportLockInfo,
@@ -268,7 +269,7 @@ function LocationPreviewInner() {
 		if (!singletonPano) return;
 		const noMove = appSettings.defaultMovementMode !== "moving";
 		singletonPano.setOptions({
-			linksControl: yieldPanoToMini ? false : noMove ? false : appSettings.showLinksControl,
+			linksControl: noMove ? false : appSettings.showLinksControl,
 			clickToGo: noMove ? false : appSettings.clickToGo,
 			showRoadLabels: appSettings.showRoadLabels,
 			scrollwheel: appSettings.defaultMovementMode !== "nmpz",
@@ -317,6 +318,10 @@ function LocationPreviewInner() {
 
 	useEffect(() => {
 		if (!location || !panoContainerRef.current) return;
+		setPanoReady(false);
+		setCurrentPano(null);
+		if (singletonPano) singletonPano.setVisible(false);
+
 		let cancelled = false;
 		let statusListener: google.maps.MapsEventListener | null = null;
 		let lockListener: google.maps.MapsEventListener | null = null;
@@ -541,10 +546,11 @@ function LocationPreviewInner() {
 	const handleClose = useCallback(() => {
 		if (isFullscreen) {
 			setIsFullscreen(false);
+			resumeFullscreenMapAfterPano();
 			return;
 		}
 		if (getSettings().fullscreenMap) {
-			setSetting("fullscreenMap", false);
+			exitFullscreenMap(setIsFullscreen);
 			return;
 		}
 		if (isReviewMode) {

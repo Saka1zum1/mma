@@ -15,6 +15,7 @@ import { useTimezone } from "@/lib/util/timezone";
 import type { PanoReference } from "@/lib/sv/lookup";
 import { useExactDate } from "./useExactDate";
 import { derivePanoDateState, type PanoDateState } from "./panoDate";
+import { restoreSuspendedFullscreenMap, registerPanoFullscreenSetter, clearAllFullscreenSuspensions } from "./fullscreenModeState";
 
 // Altitude lives outside React: its only reader is the imperative coordinate
 // readout, so routing it through context would re-render every consumer.
@@ -95,6 +96,16 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 		if (!loc || loc.extra?.datetime != null) return;
 		patchLocationExtra(loc, { datetime: exactDate.ts, timezone: resolvedTz });
 	}, [exactDate.ts, resolvedTz]);
+
+	useEffect(() => registerPanoFullscreenSetter(setIsFullscreen), []);
+
+	// Location cleared: drop pano fullscreen and restore whichever mode was suspended.
+	useEffect(() => {
+		if (location) return;
+		setIsFullscreen(false);
+		clearAllFullscreenSuspensions();
+		restoreSuspendedFullscreenMap();
+	}, [location]);
 
 	const value = useMemo(
 		() => ({

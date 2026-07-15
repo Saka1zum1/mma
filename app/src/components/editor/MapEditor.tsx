@@ -32,6 +32,7 @@ import { DiffSidebar } from "@/components/editor/DiffSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
 import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
 import { PanoViewerProvider } from "@/components/editor/location/PanoViewerContext";
+import { exitFullscreenMap } from "@/components/editor/location/fullscreenModeState";
 import { useFullscreenModeHotkeys } from "@/components/editor/location/useFullscreenModeHotkeys";
 import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
@@ -293,7 +294,7 @@ export function MapEditor() {
 	useHotkey(
 		"escape",
 		() => {
-			if (getSettings().fullscreenMap) setSetting("fullscreenMap", false);
+			exitFullscreenMap();
 		},
 		{ bubble: true },
 	);
