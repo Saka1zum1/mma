@@ -2415,6 +2415,48 @@ fn bitmask_cell_chars(buf: &[u8]) -> Vec<char> {
 }
 
 #[test]
+fn tag_patch_applies_set_fields_only() {
+    let mut tag = Tag {
+        id: 1,
+        name: "A".into(),
+        color: "#ff0000".into(),
+        visible: true,
+        order: None,
+        count: 0,
+        doclinks: vec!["https://old".into()],
+    };
+    // Unset fields untouched; blank name ignored.
+    apply_tag_patch(
+        &mut tag,
+        &TagPatch {
+            name: Some("  ".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(tag.name, "A");
+    assert_eq!(tag.doclinks, vec!["https://old".to_string()]);
+
+    // doclinks is a full replacement; empty vec clears.
+    apply_tag_patch(
+        &mut tag,
+        &TagPatch {
+            doclinks: Some(vec!["https://a".into(), "https://b".into()]),
+            ..Default::default()
+        },
+    );
+    assert_eq!(tag.doclinks.len(), 2);
+    apply_tag_patch(
+        &mut tag,
+        &TagPatch {
+            doclinks: Some(Vec::new()),
+            ..Default::default()
+        },
+    );
+    assert!(tag.doclinks.is_empty());
+    assert_eq!(tag.name, "A");
+}
+
+#[test]
 fn partial_bitmask_only_contains_affected_cells() {
     // Two locations in different geohash cells
     let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
@@ -2429,6 +2471,7 @@ fn partial_bitmask_only_contains_affected_cells() {
             visible: true,
             order: None,
             count: 2,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2467,6 +2510,7 @@ fn membership_delta_reports_gained_on_tag_add() {
             visible: true,
             order: None,
             count: 0,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2502,6 +2546,7 @@ fn membership_delta_no_colorpatch_when_membership_unchanged() {
             visible: true,
             order: None,
             count: 1,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2539,6 +2584,7 @@ fn removal_bitmask_includes_affected_cell() {
             visible: true,
             order: None,
             count: 2,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2918,6 +2964,7 @@ fn tag(id: u32, name: &str, color: &str) -> Tag {
         visible: true,
         order: None,
         count: 0,
+        doclinks: Vec::new(),
     }
 }
 

@@ -1237,12 +1237,20 @@ export type Tag = {
 	 *  fast sidebar display -- kept in sync by callers after batch edits.
 	 */
 	count?: number,
+	/**
+	 *  Document links from the map JSON's `extra.tags[name].doclinks` --
+	 *  URLs into external docs (e.g. Google Docs heading links). Read-only
+	 *  in the app; round-trips through import/export.
+	 */
+	doclinks?: string[],
 };
 
 /**  Patchable fields of a `Tag`. Subset by design: id/count/visible aren't editable here. */
 export type TagPatch = {
 	name?: string | null,
 	color?: string | null,
+	/**  Full replacement for the tag's doclink URLs (empty vec clears). */
+	doclinks?: string[] | null,
 };
 
 /**

@@ -105,6 +105,9 @@ fn register_web_schemes() {
             req.body,
         ))
     });
+    register_scheme("gdoc", |req: SchemeRequest| {
+        relay(crate::gdoc::fetch_gdoc(&req.path))
+    });
     register_scheme("googl", |req: SchemeRequest| {
         let mapsapp = req.query.split('&').any(|kv| kv == "source=mapsapp");
         relay(crate::resolve_googl(&req.path, mapsapp))

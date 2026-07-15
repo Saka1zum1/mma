@@ -9,6 +9,7 @@ fn tag(id: u32, name: &str) -> Tag {
         visible: true,
         order: None,
         count: 0,
+        doclinks: Vec::new(),
     }
 }
 
@@ -242,6 +243,36 @@ fn tag_meta_missing_color() {
     let tag = &meta["OnlyOrder"];
     assert_eq!(tag.color, None);
     assert_eq!(tag.order, Some(5));
+}
+
+#[test]
+fn tag_meta_reads_doclinks_array() {
+    let json = br#"{"extra":{"tags":{"Antenna":{"color":[1,2,3],"doclinks":["https://docs.google.com/document/d/abc/edit#heading=h.x1","https://docs.google.com/document/d/def/edit#heading=h.y2"]}}}}"#;
+    let meta = tag_meta(json);
+    assert_eq!(
+        meta["Antenna"].doclinks,
+        vec![
+            "https://docs.google.com/document/d/abc/edit#heading=h.x1",
+            "https://docs.google.com/document/d/def/edit#heading=h.y2"
+        ]
+    );
+}
+
+#[test]
+fn tag_meta_accepts_bare_doclink_string() {
+    let json = br#"{"extra":{"tags":{"Pole":{"doclink":"https://docs.google.com/document/d/abc/edit#heading=h.z"}}}}"#;
+    let meta = tag_meta(json);
+    assert_eq!(
+        meta["Pole"].doclinks,
+        vec!["https://docs.google.com/document/d/abc/edit#heading=h.z"]
+    );
+}
+
+#[test]
+fn tag_meta_no_doclinks() {
+    let json = br#"{"extra":{"tags":{"Plain":{"order":1}}}}"#;
+    let meta = tag_meta(json);
+    assert!(meta["Plain"].doclinks.is_empty());
 }
 
 #[test]

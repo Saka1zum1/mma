@@ -39,6 +39,7 @@ mod util;
 mod location_store;
 mod borders;
 mod export;
+mod gdoc;
 mod geocoder;
 mod import;
 mod map_meta;
@@ -409,8 +410,8 @@ fn build_http_client(follow_redirects: bool) -> reqwest::blocking::Client {
         .expect("failed to build http client")
 }
 
-/// Follows redirects (svtile tiles, gmaps RPC).
-fn proxy_client() -> &'static reqwest::blocking::Client {
+/// Follows redirects (svtile tiles, gmaps RPC, gdoc).
+pub(crate) fn proxy_client() -> &'static reqwest::blocking::Client {
     static C: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
     C.get_or_init(|| build_http_client(true))
 }
@@ -422,7 +423,7 @@ fn resolve_client() -> &'static reqwest::blocking::Client {
 }
 
 /// Build a 502 error response with CORS headers for failed proxy requests.
-fn proxy_error(msg: String) -> tauri::http::Response<Vec<u8>> {
+pub(crate) fn proxy_error(msg: String) -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
         .status(502)
         .header("Access-Control-Allow-Origin", "*")
@@ -431,7 +432,10 @@ fn proxy_error(msg: String) -> tauri::http::Response<Vec<u8>> {
 }
 
 /// Relays an upstream response body + content-type back to the webview with CORS.
-fn relay(resp: reqwest::blocking::Response, default_ct: &str) -> tauri::http::Response<Vec<u8>> {
+pub(crate) fn relay(
+    resp: reqwest::blocking::Response,
+    default_ct: &str,
+) -> tauri::http::Response<Vec<u8>> {
     let status = resp.status().as_u16();
     let content_type = resp
         .headers()
@@ -825,6 +829,10 @@ pub fn run() {
             std::thread::spawn(move || {
                 responder.respond(proxy_gmaps(method, &url, content_type, user_agent, body))
             });
+        })
+        .register_asynchronous_uri_scheme_protocol("gdoc", |_ctx, req, responder| {
+            let doc_id = req.uri().path().trim_start_matches('/').to_string();
+            std::thread::spawn(move || responder.respond(gdoc::fetch_gdoc(&doc_id)));
         })
         .register_asynchronous_uri_scheme_protocol("googl", |_ctx, req, responder| {
             let id = req.uri().path().trim_start_matches('/').to_string();

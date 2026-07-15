@@ -45,6 +45,7 @@ import {
 	mdiEyeCheckOutline,
 	mdiBookOpenOutline,
 	mdiDownloadBoxOutline,
+	mdiFileDocumentOutline,
 } from "@mdi/js";
 import { registerCommand, type CommandDef } from "./commands";
 import {
@@ -450,6 +451,14 @@ const COMMANDS = {
 		group: "Tags",
 		aliases: ["group by field", "metadata to tags"],
 		execute: () => document.dispatchEvent(new CustomEvent("open-apply-field-as-tags")),
+		enabled: () => getCurrentMap() !== null,
+	},
+	"assign-doclinks": {
+		label: "Assign document links...",
+		icon: mdiFileDocumentOutline,
+		group: "Tags",
+		aliases: ["doclinks", "link document"],
+		execute: () => document.dispatchEvent(new CustomEvent("open-doclink-assign")),
 		enabled: () => getCurrentMap() !== null,
 	},
 } satisfies Record<string, CommandDef>;

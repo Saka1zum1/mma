@@ -941,6 +941,7 @@ impl Store {
                             visible: true,
                             order: None,
                             count: delta as usize,
+                            doclinks: Vec::new(),
                         },
                     );
                     self.tags.dirty = true;
@@ -2067,6 +2068,7 @@ pub async fn store_open_map(
                             visible: true,
                             order: None,
                             count,
+                            doclinks: Vec::new(),
                         },
                     );
                 }
@@ -2342,6 +2344,25 @@ pub struct Update<P> {
 pub struct TagPatch {
     pub name: Option<String>,
     pub color: Option<String>,
+    /// Full replacement for the tag's doclink URLs (empty vec clears).
+    pub doclinks: Option<Vec<String>>,
+}
+
+/// Apply a TagPatch's set fields in place. Blank names are ignored; `doclinks`
+/// is a full-list replacement (empty vec clears).
+pub(crate) fn apply_tag_patch(t: &mut Tag, patch: &TagPatch) {
+    if let Some(n) = &patch.name {
+        let trimmed = n.trim();
+        if !trimmed.is_empty() {
+            t.name = trimmed.to_string();
+        }
+    }
+    if let Some(c) = &patch.color {
+        t.color = c.clone();
+    }
+    if let Some(d) = &patch.doclinks {
+        t.doclinks = d.clone();
+    }
 }
 
 /// Update name and/or color for one or more tags in a single mutation. A new name
@@ -2398,15 +2419,7 @@ pub async fn store_update_tags(
                 }
                 all_updated.extend(store.commit_tag_update(updated).updated);
             } else if let Some(t) = store.tags.all.get_mut(&u.id) {
-                if let Some(n) = &u.patch.name {
-                    let trimmed = n.trim();
-                    if !trimmed.is_empty() {
-                        t.name = trimmed.to_string();
-                    }
-                }
-                if let Some(c) = &u.patch.color {
-                    t.color = c.clone();
-                }
+                apply_tag_patch(t, &u.patch);
             }
         }
 
@@ -3763,6 +3776,7 @@ pub fn store_create_tags(
                     visible: true,
                     order,
                     count: 0,
+                    doclinks: Vec::new(),
                 };
                 store.tags.all.insert(id, tag.clone());
                 name_to_id.insert(name.to_lowercase(), id);

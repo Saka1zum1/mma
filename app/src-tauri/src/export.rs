@@ -76,6 +76,11 @@ fn tag_color_meta(
             if let Some(order) = v.get("order").and_then(|o| o.as_u64()) {
                 entry.insert("order".into(), serde_json::json!(order));
             }
+            if let Some(links) = v.get("doclinks").and_then(|d| d.as_array()) {
+                if !links.is_empty() {
+                    entry.insert("doclinks".into(), serde_json::Value::Array(links.clone()));
+                }
+            }
             converted.insert(name.to_string(), serde_json::Value::Object(entry));
         }
     }
