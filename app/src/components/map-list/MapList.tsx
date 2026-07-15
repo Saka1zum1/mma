@@ -43,6 +43,7 @@ import { useSetting, setSetting, getSettings, type MapListField } from "@/store/
 import { ColorPicker } from "@/components/primitives/ColorPicker";
 import { labelColor, rgbToHex, hexToRgb, textColorFor } from "@/lib/util/color";
 import { toast, progressToast } from "@/lib/util/toast";
+import { parseMapQuery, mapMatchesQuery, toggleLabelInQuery } from "./mapQuery";
 
 // --- What's new (latest release notes) ---
 
@@ -466,12 +467,14 @@ const MapEntry = React.memo(function MapEntry({
 	isDragging,
 	onDragStart,
 	onAction,
+	onLabelClick,
 	fields,
 }: {
 	meta: MapMeta;
 	isDragging: boolean;
 	onDragStart: (item: DragItem, e: React.PointerEvent) => void;
 	onAction: (action: MapAction) => void;
+	onLabelClick: (label: string) => void;
 	fields: MapListField[];
 }) {
 	const labelColors = useSetting("labelColors");
@@ -486,7 +489,7 @@ const MapEntry = React.memo(function MapEntry({
 			className={clsx("map-list__entry", isDragging && "is-dragging")}
 			style={isDragging ? { opacity: 0.4 } : undefined}
 			data-filter-name={meta.name.toLowerCase()}
-			data-filter-labels={meta.labels.join(" ")}
+			data-filter-labels={meta.labels.join("\n")}
 		>
 			<button
 				className="map-list__drag-handle icon-button"
@@ -526,7 +529,9 @@ const MapEntry = React.memo(function MapEntry({
 					<span
 						key={l}
 						className="map-label map-label--inline"
-						style={{ backgroundColor: hex, color: textColorFor(hex) }}
+						style={{ backgroundColor: hex, color: textColorFor(hex), cursor: "pointer" }}
+						title="Filter by this label"
+						onClick={() => onLabelClick(l)}
 					>
 						{l}
 					</span>
@@ -565,6 +570,7 @@ const FolderEntry = React.memo(function FolderEntry({
 	onDragStart,
 	onMapAction,
 	onFolderAction,
+	onLabelClick,
 	fields,
 }: {
 	name: string;
@@ -573,6 +579,7 @@ const FolderEntry = React.memo(function FolderEntry({
 	onDragStart: (item: DragItem, e: React.PointerEvent) => void;
 	onMapAction: (action: MapAction) => void;
 	onFolderAction: (action: FolderAction) => void;
+	onLabelClick: (label: string) => void;
 	fields: MapListField[];
 }) {
 	const triggerId = `folder:${name}-trig`;
@@ -626,6 +633,7 @@ const FolderEntry = React.memo(function FolderEntry({
 								isDragging={dragId === m.id}
 								onDragStart={onDragStart}
 								onAction={onMapAction}
+								onLabelClick={onLabelClick}
 								fields={fields}
 							/>
 						))}
@@ -996,14 +1004,14 @@ function applyFilter(listEl: HTMLElement | null, query: string) {
 	if (!listEl) return;
 	const entries = listEl.querySelectorAll<HTMLElement>("[data-filter-name]");
 	const folders = listEl.querySelectorAll<HTMLElement>("[data-filter-folder]");
-	if (!query) {
+	const q = parseMapQuery(query);
+	if (q.text.length === 0 && q.labels.length === 0) {
 		for (const el of entries) el.hidden = false;
 		for (const el of folders) el.hidden = false;
 	} else {
 		for (const el of entries) {
-			const nameMatch = el.dataset.filterName!.includes(query);
-			const labelMatch = (el.dataset.filterLabels ?? "").includes(query);
-			el.hidden = !nameMatch && !labelMatch;
+			const labels = (el.dataset.filterLabels ?? "").split("\n").filter(Boolean);
+			el.hidden = !mapMatchesQuery(el.dataset.filterName!, labels, q);
 		}
 		for (const el of folders) {
 			const hasVisible = el.querySelector<HTMLElement>("[data-filter-name]:not([hidden])") !== null;
@@ -1032,6 +1040,15 @@ export function MapList() {
 		setHasFilter(false);
 		applyFilter(listRef.current, "");
 		filterInputRef.current?.focus();
+	}, []);
+
+	const toggleLabelFilter = useCallback((label: string) => {
+		const input = filterInputRef.current;
+		if (!input) return;
+		input.value = toggleLabelInQuery(input.value, label);
+		filterRef.current = input.value.toLowerCase();
+		setHasFilter(input.value.length > 0);
+		applyFilter(listRef.current, filterRef.current);
 	}, []);
 
 	useEffect(() => {
@@ -1178,6 +1195,7 @@ export function MapList() {
 							className="input"
 							type="text"
 							placeholder="Search maps..."
+							title={'Filter by name, or by label with label:name / label:"two words"'}
 							style={{ flexGrow: 1, paddingRight: hasFilter ? "1.75rem" : undefined }}
 							autoFocus
 						/>
@@ -1255,6 +1273,7 @@ export function MapList() {
 							onDragStart={handleDragStart}
 							onMapAction={handleMapAction}
 							onFolderAction={handleFolderAction}
+							onLabelClick={toggleLabelFilter}
 							fields={mapListFields}
 						/>
 					))}
@@ -1265,6 +1284,7 @@ export function MapList() {
 							isDragging={dragItem?.id === m.id}
 							onDragStart={handleDragStart}
 							onAction={handleMapAction}
+							onLabelClick={toggleLabelFilter}
 							fields={mapListFields}
 						/>
 					))}
