@@ -62,7 +62,17 @@ export default function App() {
 
 	return (
 		<TooltipProvider>
-			{closing ? <Blank /> : targetMapId ? <EditorRoot /> : !manualOpen && <MapList />}
+			{closing ? (
+				<Blank />
+			) : targetMapId ? (
+				<EditorRoot />
+			) : (
+				!manualOpen && (
+					<div className="page-scroll">
+						<MapList />
+					</div>
+				)
+			)}
 			{!closing && <AppChrome />}
 			<ToastContainer />
 		</TooltipProvider>
@@ -85,7 +95,9 @@ function EditorRoot() {
  *  app-level dialogs. Hidden by App while a window is self-destructing. */
 function AppChrome() {
 	const map = useCurrentMap();
+	const isMapList = !useTargetMapId();
 	const manualChapter = useManualChapter();
+
 	const update = useUpdateState();
 	const [showStats, setShowStats] = useState(false);
 	const [showSettings, setShowSettings] = useState(false);
@@ -102,10 +114,8 @@ function AppChrome() {
 
 	return (
 		<>
-			{!map && !showSettings && !showPlugins && (
-				<div
-					style={{ position: "fixed", bottom: 12, left: 12, zIndex: 5, display: "flex", gap: 4 }}
-				>
+			{isMapList && !showSettings && !showPlugins && (
+				<div className="bottom-bar bottom-bar--left">
 					<a
 						className="settings-gear"
 						href="https://discord.gg/4wPNJTuzD8"
@@ -121,14 +131,11 @@ function AppChrome() {
 				</div>
 			)}
 			<WelcomeDialog
-				open={!map && !hasSeenWelcome}
+				open={isMapList && !hasSeenWelcome}
 				onDismiss={() => setSetting("hasSeenWelcome", true)}
 			/>
 			{!showSettings && !showPlugins && (
-				<div
-					className="bottom-bar"
-					style={{ position: "fixed", bottom: 12, right: 12, zIndex: 5, display: "flex", gap: 4 }}
-				>
+				<div className="bottom-bar">
 					{update.version && !update.dismissed && (
 						<div className="update-pill">
 							{update.phase === "available" && (
@@ -161,7 +168,7 @@ function AppChrome() {
 							)}
 						</div>
 					)}
-					{!map && <BulkActions />}
+					{isMapList && <BulkActions />}
 					<button className="settings-gear" onClick={() => setShowPlugins(true)} title="Plugins">
 						<Icon path={mdiPuzzle} />
 					</button>
