@@ -145,6 +145,9 @@ const DEFAULTS = {
 	previewAspectRatio: "16 / 9" as PreviewAspectRatio,
 	tagSuggestionLimit: 0 as number,
 	savedSelections: [] as SavedSelection[],
+	/** Local REST transport for window.MMA (Settings > Advanced). */
+	remoteApi: false,
+	remoteApiKey: "",
 	pinnedCommands: [
 		"deselectAll",
 		"selection-delete-locations",

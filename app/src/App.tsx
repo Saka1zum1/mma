@@ -29,6 +29,9 @@ import { TooltipProvider } from "@/components/primitives/Tooltip";
 import { useUpdateState, dismissUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { APP_NAME } from "@/lib/util/format";
 import { useDiscordPresence } from "@/lib/discord/presence";
+import { initRemoteHost } from "@/lib/remote/host";
+import { cmd } from "@/lib/commands";
+import { log } from "@/lib/util/log";
 import "@/plugins";
 
 // Dynamic import (deck.gl/luma.gl out of the initial bundle) WITHOUT React.lazy/Suspense —
@@ -59,6 +62,7 @@ export default function App() {
 	useCustomCss();
 	useCssVarSettings();
 	useDiscordPresence();
+	useRemoteApi();
 
 	return (
 		<TooltipProvider>
@@ -206,6 +210,18 @@ function useSelfDestruct(closing: boolean) {
 				getCurrentWindow().destroy();
 			});
 	}, [closing]);
+}
+
+/** Start/stop the local MMA REST transport with its setting, and host incoming
+ *  calls in this window. Start is idempotent across windows (re-keys if running). */
+function useRemoteApi() {
+	const enabled = useSetting("remoteApi");
+	const key = useSetting("remoteApiKey");
+	useEffect(() => initRemoteHost(), []);
+	useEffect(() => {
+		const call = enabled && key ? cmd.remoteApiStart(key) : cmd.remoteApiStop();
+		call.catch((e) => log.warn(`[remote-api] ${e}`));
+	}, [enabled, key]);
 }
 
 /** Mirror the CSS-var-backed app settings (see `CSS_VAR_SETTINGS`) onto `:root`. */

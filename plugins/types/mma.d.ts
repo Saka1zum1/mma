@@ -211,6 +211,30 @@ export declare const commands: {
 		data: null;
 	}>;
 	/**
+	 *  Start (or re-key) the remote API server. Idempotent: a running server just
+	 *  picks up the new key. Returns the base URL.
+	 */
+	remoteApiStart: (key: string) => Promise<{
+		status: "ok";
+		data: string;
+	} | {
+		status: "error";
+		error: string;
+	}>;
+	remoteApiStop: () => Promise<{
+		status: "error";
+		error: string;
+	} | {
+		status: "ok";
+		data: null;
+	}>;
+	/**
+	 *  Webview -> HTTP reply path: resolves the parked request for `id`.
+	 *  `payload` is JSON text, not a typed value -- specta cannot export the
+	 *  recursive `serde_json::Value` type (stack overflow at bindings export).
+	 */
+	remoteApiRespond: (id: number, ok: boolean, payload: string) => Promise<void>;
+	/**
 	 *  Load a map's Arrow data from disk, rebuild all indexes, and return initial state
 	 *  (tag counts, undo/redo availability). Must be called before any other store commands.
 	 */
@@ -3071,6 +3095,9 @@ declare const DEFAULTS: {
 	previewAspectRatio: PreviewAspectRatio;
 	tagSuggestionLimit: number;
 	savedSelections: SavedSelection[];
+	/** Local REST transport for window.MMA (Settings > Advanced). */
+	remoteApi: boolean;
+	remoteApiKey: string;
 	pinnedCommands: PinnedEntry[];
 	hasSeenWelcome: boolean;
 };
@@ -3140,6 +3167,9 @@ declare const mma: {
 		reverseGeocode: (lat: number, lng: number) => Promise<GeoResult | null>;
 		discordPresenceSet: (activity: PresenceActivity) => Promise<null>;
 		discordPresenceClear: () => Promise<null>;
+		remoteApiStart: (key: string) => Promise<string>;
+		remoteApiStop: () => Promise<null>;
+		remoteApiRespond: (id: number, ok: boolean, payload: string) => Promise<void>;
 		storeOpenMap: (mapId: string) => Promise<StoreStatus>;
 		storeCloseMap: () => Promise<null>;
 		storeSaveDirty: () => Promise<SaveResult>;
@@ -3333,6 +3363,8 @@ declare const mma: {
 		previewAspectRatio: PreviewAspectRatio;
 		tagSuggestionLimit: number;
 		savedSelections: SavedSelection[];
+		remoteApi: boolean;
+		remoteApiKey: string;
 		pinnedCommands: PinnedEntry[];
 		hasSeenWelcome: boolean;
 	};

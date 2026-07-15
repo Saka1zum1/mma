@@ -1271,6 +1271,49 @@ function DiscordSection() {
 	);
 }
 
+function generateApiKey(): string {
+	const bytes = new Uint8Array(24);
+	crypto.getRandomValues(bytes);
+	return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function RemoteApiSection() {
+	const enabled = useSetting("remoteApi");
+	const key = useSetting("remoteApiKey");
+	return (
+		<fieldset className="fieldset">
+			<legend className="fieldset__header">
+				Remote API <span className="fieldset__divider" />
+			</legend>
+			<label className="settings-popup__item">
+				<input
+					type="checkbox"
+					checked={enabled}
+					onChange={(e) => {
+						if (e.target.checked && !key) setSetting("remoteApiKey", generateApiKey());
+						setSetting("remoteApi", e.target.checked);
+					}}
+				/>
+				Enable local REST API
+			</label>
+			{enabled && (
+				<div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+					<input
+						type="text"
+						readOnly
+						value={key}
+						style={{ flex: 1, fontFamily: "monospace" }}
+						onFocus={(e) => e.target.select()}
+					/>
+					<button className="button" onClick={() => setSetting("remoteApiKey", generateApiKey())}>
+						Regenerate
+					</button>
+				</div>
+			)}
+		</fieldset>
+	);
+}
+
 function AdvancedTab() {
 	const showFps = useSetting("showFps");
 	return (
@@ -1280,6 +1323,7 @@ function AdvancedTab() {
 			<MapListSection />
 			<SeenSection />
 			<CustomCssSection />
+			<RemoteApiSection />
 			<UpdateSection />
 			<DataSection />
 			<fieldset className="fieldset">

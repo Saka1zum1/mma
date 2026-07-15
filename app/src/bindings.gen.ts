@@ -60,6 +60,18 @@ export const commands = {
 	discordPresenceSet: (activity: PresenceActivity) => typedError<null, string>(__TAURI_INVOKE("discord_presence_set", { activity })),
 	discordPresenceClear: () => typedError<null, string>(__TAURI_INVOKE("discord_presence_clear")),
 	/**
+	 *  Start (or re-key) the remote API server. Idempotent: a running server just
+	 *  picks up the new key. Returns the base URL.
+	 */
+	remoteApiStart: (key: string) => typedError<string, string>(__TAURI_INVOKE("remote_api_start", { key })),
+	remoteApiStop: () => typedError<null, string>(__TAURI_INVOKE("remote_api_stop")),
+	/**
+	 *  Webview -> HTTP reply path: resolves the parked request for `id`.
+	 *  `payload` is JSON text, not a typed value -- specta cannot export the
+	 *  recursive `serde_json::Value` type (stack overflow at bindings export).
+	 */
+	remoteApiRespond: (id: number, ok: boolean, payload: string) => __TAURI_INVOKE<void>("remote_api_respond", { id, ok, payload }),
+	/**
 	 *  Load a map's Arrow data from disk, rebuild all indexes, and return initial state
 	 *  (tag counts, undo/redo availability). Must be called before any other store commands.
 	 */
