@@ -91,29 +91,40 @@ export default class PanoCoverageLayer extends CompositeLayer<Required<_PanoCove
 		this.setState({ tiles: inView });
 	}
 
+	// All in-view dots flattened into ONE layer with a binary position buffer:
+	// per-tile sublayers caused constant deck layer creation (model/buffer setup)
+	// as fetches trickled in, which is far costlier than rebuilding this small
+	// buffer (in-view dots only, once per flush).
 	renderLayers() {
 		const { color, scaled } = this.props;
-		const layers = [];
+		const resolved: PanoDot[][] = [];
+		let n = 0;
 		for (const t of this.state.tiles) {
 			const dots = peekPanoDots(t);
 			if (!dots?.length) continue;
-			layers.push(
-				new ScatterplotLayer<PanoDot>({
-					id: `${this.props.id}:${tileKey(t)}`,
-					data: dots,
-					getPosition: (d: PanoDot) => [d.lng, d.lat],
-					getFillColor: color,
-					radiusUnits: scaled ? "meters" : "pixels",
-					getRadius: scaled ? 2 : 4,
-					radiusMaxPixels: scaled ? 24 : 4,
-					stroked: false,
-					filled: true,
-					opacity: 0.7,
-					pickable: false,
-					updateTriggers: { getFillColor: color },
-				}),
-			);
+			resolved.push(dots);
+			n += dots.length;
 		}
-		return layers;
+		if (!n) return [];
+		const positions = new Float32Array(n * 2);
+		let i = 0;
+		for (const dots of resolved) {
+			for (const d of dots) {
+				positions[i++] = d.lng;
+				positions[i++] = d.lat;
+			}
+		}
+		return new ScatterplotLayer({
+			id: `${this.props.id}-dots`,
+			data: { length: n, attributes: { getPosition: { value: positions, size: 2 } } },
+			getFillColor: color,
+			radiusUnits: scaled ? "meters" : "pixels",
+			getRadius: scaled ? 2 : 4,
+			radiusMaxPixels: scaled ? 24 : 4,
+			stroked: false,
+			filled: true,
+			opacity: 0.7,
+			pickable: false,
+		});
 	}
 }
