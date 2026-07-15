@@ -37,7 +37,14 @@ fn loc_with_tags(id: u32, tags: Vec<u32>) -> Location {
 /// Run the core against a store's tag table, as add_parsed_to_store does.
 fn reconcile(store: &mut Store, tags: &[Tag]) -> HashMap<u32, u32> {
     let t = &mut store.tags;
-    location_store::reconcile_tags_by_name(tags, &mut t.all, &mut t.next_id)
+    location_store::reconcile_tags_by_name(tags, &mut t.all, &mut t.next_id).0
+}
+
+fn ordered_tag(id: u32, name: &str, order: u32) -> Tag {
+    Tag {
+        order: Some(order),
+        ..tag(id, name)
+    }
 }
 
 fn store_with_tags(tags: &[Tag]) -> Store {
@@ -126,6 +133,74 @@ fn reconcile_location_tags_remapped_correctly() {
     assert_eq!(loc.tags.len(), 2);
     assert!(loc.tags.contains(&10), "Urban should map to existing ID 10");
     assert!(loc.tags.contains(&remap[&2]), "Rural should map to new ID");
+}
+
+// Order semantics: source order values are never stored verbatim; ordered
+// source tags land dense after the target's max order, and existing unordered
+// (order: None) tags are claimable by an ordered import of the same name.
+
+#[test]
+fn reconcile_rebases_new_ordered_tags_dense_from_one() {
+    let mut store = store_with_tags(&[]);
+    let remap = reconcile(
+        &mut store,
+        &[
+            ordered_tag(1, "Zebra", 131),
+            ordered_tag(2, "Mango", 132),
+            ordered_tag(3, "Apple", 133),
+        ],
+    );
+    assert_eq!(store.tags.all[&remap[&1]].order, Some(1));
+    assert_eq!(store.tags.all[&remap[&2]].order, Some(2));
+    assert_eq!(store.tags.all[&remap[&3]].order, Some(3));
+}
+
+#[test]
+fn reconcile_appends_new_ordered_tags_after_existing_max() {
+    let mut store = store_with_tags(&[ordered_tag(5, "Kept", 4)]);
+    let remap = reconcile(&mut store, &[ordered_tag(1, "New", 131)]);
+    assert_eq!(store.tags.all[&remap[&1]].order, Some(5));
+}
+
+#[test]
+fn reconcile_ordered_source_claims_unordered_existing() {
+    // Existing same-name tag with no order (e.g. imported without app data,
+    // possibly now at count 0) must adopt the incoming file's ordering.
+    let mut store = store_with_tags(&[tag(5, "Zebra"), tag(6, "Apple"), ordered_tag(7, "Kept", 2)]);
+    reconcile(
+        &mut store,
+        &[ordered_tag(1, "Zebra", 131), ordered_tag(2, "Apple", 132)],
+    );
+    assert_eq!(store.tags.all[&7].order, Some(2), "ordered tag untouched");
+    assert_eq!(store.tags.all[&5].order, Some(3), "Zebra first per file");
+    assert_eq!(store.tags.all[&6].order, Some(4), "Apple second per file");
+}
+
+#[test]
+fn reconcile_ordered_source_does_not_override_concrete_order() {
+    let mut store = store_with_tags(&[ordered_tag(5, "Urban", 2)]);
+    reconcile(&mut store, &[ordered_tag(1, "Urban", 131)]);
+    assert_eq!(store.tags.all[&5].order, Some(2));
+}
+
+#[test]
+fn reconcile_unordered_source_tags_stay_unordered() {
+    let mut store = store_with_tags(&[]);
+    let remap = reconcile(&mut store, &[tag(1, "Bare")]);
+    assert_eq!(store.tags.all[&remap[&1]].order, None);
+}
+
+#[test]
+fn renumber_ordered_tags_dense_and_leaves_none() {
+    let mut tags = vec![
+        ordered_tag(1, "C", 140),
+        tag(2, "Bare"),
+        ordered_tag(3, "A", 131),
+    ];
+    renumber_ordered_tags(&mut tags);
+    assert_eq!(tags[0].order, Some(2), "C after A");
+    assert_eq!(tags[1].order, None);
+    assert_eq!(tags[2].order, Some(1), "A first");
 }
 
 /// Scan `extra` from a buffer and pull tag meta, as the parse path does internally.

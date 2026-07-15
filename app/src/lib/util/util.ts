@@ -163,7 +163,9 @@ export function sortTagsByMode(
 	const sorted = [...tags];
 	if (mode === "name") return sorted.sort((a, b) => a.name.localeCompare(b.name));
 	if (mode === "amount") return sorted.sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0));
-	return sorted.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+	return sorted.sort(
+		(a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name),
+	);
 }
 
 /** Style for a staged tag chip. An existing tag uses its stored color. */

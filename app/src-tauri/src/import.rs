@@ -1134,7 +1134,25 @@ fn merge_settings(
 
 /// Persist a parsed map as a new database entry + Arrow IPC file.
 /// Assigns sequential u32 location IDs starting at 1.
+/// Rebase ordered tags to dense 1..k, keeping their relative (order, name)
+/// ordering; unordered tags stay `None`. Source order values are never stored.
+fn renumber_ordered_tags(tags: &mut [Tag]) {
+    let mut ordered: Vec<usize> = (0..tags.len())
+        .filter(|&i| tags[i].order.is_some())
+        .collect();
+    ordered.sort_by(|&a, &b| {
+        tags[a]
+            .order
+            .cmp(&tags[b].order)
+            .then_with(|| tags[a].name.cmp(&tags[b].name))
+    });
+    for (n, i) in ordered.into_iter().enumerate() {
+        tags[i].order = Some(n as u32 + 1);
+    }
+}
+
 fn write_map_to_db(conn: &Connection, mut map: ParsedMap) -> AppResult<ImportedMapInfo> {
+    renumber_ordered_tags(&mut map.tags);
     let map_id = Uuid::new_v4().to_string();
     let now = now_iso();
     let loc_count = map.locations.len() as u32;
@@ -1566,10 +1584,9 @@ fn add_parsed_to_store(
     let n = parsed.locations.len();
     let tag_id_remap = {
         let tags = &mut store.tags;
-        let before = tags.all.len();
-        let remap =
+        let (remap, changed) =
             location_store::reconcile_tags_by_name(&parsed.tags, &mut tags.all, &mut tags.next_id);
-        if tags.all.len() > before {
+        if changed {
             tags.dirty = true;
         }
         remap

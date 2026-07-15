@@ -2926,8 +2926,10 @@ fn reconcile_tags_match_by_name_case_insensitive() {
     let mut target_tags: HashMap<u32, Tag> =
         [(3, tag(3, "rural", "#222222"))].into_iter().collect();
     let mut next = 4;
-    let remap = reconcile_tags_by_name(&[tag(7, "Rural", "#111111")], &mut target_tags, &mut next);
+    let (remap, changed) =
+        reconcile_tags_by_name(&[tag(7, "Rural", "#111111")], &mut target_tags, &mut next);
     assert_eq!(remap.get(&7), Some(&3));
+    assert!(!changed, "pure match mutates nothing");
     assert_eq!(next, 4);
     assert_eq!(target_tags.len(), 1);
     // The existing target tag keeps its own color.
@@ -2938,7 +2940,7 @@ fn reconcile_tags_match_by_name_case_insensitive() {
 fn reconcile_tags_create_missing_with_source_color() {
     let mut target_tags: HashMap<u32, Tag> = Default::default();
     let mut next = 10;
-    let remap = reconcile_tags_by_name(
+    let (remap, changed) = reconcile_tags_by_name(
         &[Tag {
             count: 42,
             ..tag(7, "Trekker", "#abcdef")
@@ -2946,6 +2948,7 @@ fn reconcile_tags_create_missing_with_source_color() {
         &mut target_tags,
         &mut next,
     );
+    assert!(changed);
     assert_eq!(remap.get(&7), Some(&10));
     assert_eq!(next, 11);
     let new_tag = target_tags.get(&10).unwrap();
@@ -2958,7 +2961,7 @@ fn reconcile_tags_create_missing_with_source_color() {
 fn reconcile_tags_dedupes_same_name_within_batch() {
     let mut target_tags: HashMap<u32, Tag> = Default::default();
     let mut next = 1;
-    let remap = reconcile_tags_by_name(
+    let (remap, _) = reconcile_tags_by_name(
         &[tag(7, "urban", "#111111"), tag(8, "Urban", "#222222")],
         &mut target_tags,
         &mut next,

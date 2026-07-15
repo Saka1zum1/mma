@@ -23,8 +23,13 @@ describe("sortTagsByMode", () => {
 
 	it("default sorts by order, name-tiebreak, without mutating input", () => {
 		const input = [...tags];
-		expect(sortTagsByMode(input, "default", counts).map((t) => t.id)).toEqual([3, 2, 1]);
+		expect(sortTagsByMode(input, "default", counts).map((t) => t.id)).toEqual([2, 1, 3]);
 		expect(input).toEqual(tags);
+	});
+
+	it("default sorts unordered tags last, alphabetically among themselves", () => {
+		const mixed = [tag(1, "zeta"), tag(2, "beta", 5), tag(3, "alpha")];
+		expect(sortTagsByMode(mixed, "default", {}).map((t) => t.id)).toEqual([2, 3, 1]);
 	});
 
 	it("name sorts alphabetically", () => {

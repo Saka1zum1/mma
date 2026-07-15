@@ -2645,20 +2645,31 @@ pub(crate) fn split_new_locations(
 /// Merge `source_tags` into `target_tags` by case-insensitive name matching:
 /// matches remap to the existing target id; misses are inserted as a clone of
 /// the source tag (count reset) under a fresh id from `next_id`. Returns the
-/// `{source_id -> target_id}` remap table. Single source of truth for tag
-/// reconciliation — used by import and cross-map copy.
+/// `{source_id -> target_id}` remap table and whether `target_tags` changed.
+/// Single source of truth for tag reconciliation — used by import and
+/// cross-map copy.
+///
+/// Order semantics: source order values are never stored verbatim. Every
+/// ordered source tag whose target has no order yet (newly created, or an
+/// existing tag with `order: None`) is appended after the target's max order,
+/// dense, sorted by (source order, name). Targets with a concrete order keep
+/// it; unordered source tags stay unordered.
 pub(crate) fn reconcile_tags_by_name(
     source_tags: &[Tag],
     target_tags: &mut HashMap<u32, Tag>,
     next_id: &mut u32,
-) -> HashMap<u32, u32> {
+) -> (HashMap<u32, u32>, bool) {
     let mut name_to_id: HashMap<String, u32> = target_tags
         .values()
         .map(|t| (t.name.to_lowercase(), t.id))
         .collect();
     let mut remap: HashMap<u32, u32> = HashMap::new();
+    let mut created = false;
+    let mut claims: Vec<(u32, u32, String)> = Vec::new();
+    let mut claimed: std::collections::HashSet<u32> = std::collections::HashSet::new();
     for tag in source_tags {
-        let target_id = match name_to_id.get(&tag.name.to_lowercase()) {
+        let lower = tag.name.to_lowercase();
+        let target_id = match name_to_id.get(&lower) {
             Some(&id) => id,
             None => {
                 let id = *next_id;
@@ -2668,16 +2679,34 @@ pub(crate) fn reconcile_tags_by_name(
                     Tag {
                         id,
                         count: 0,
+                        order: None,
                         ..tag.clone()
                     },
                 );
-                name_to_id.insert(tag.name.to_lowercase(), id);
+                name_to_id.insert(lower.clone(), id);
+                created = true;
                 id
             }
         };
+        if let Some(src_order) = tag.order {
+            if target_tags[&target_id].order.is_none() && claimed.insert(target_id) {
+                claims.push((target_id, src_order, lower));
+            }
+        }
         remap.insert(tag.id, target_id);
     }
-    remap
+    claims.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
+    let changed = created || !claims.is_empty();
+    let mut next_order = target_tags
+        .values()
+        .filter_map(|t| t.order)
+        .max()
+        .map_or(1, |m| m + 1);
+    for (id, _, _) in claims {
+        target_tags.get_mut(&id).unwrap().order = Some(next_order);
+        next_order += 1;
+    }
+    (remap, changed)
 }
 
 /// Copy locations from the current window's map into another map (routing
@@ -2794,7 +2823,8 @@ pub fn store_copy_locations_to_map(
     if copied > 0 {
         let mut target_tags = read_tags_json(&conn, &target_map_id);
         let mut next_tag = target_tags.keys().max().copied().unwrap_or(0) + 1;
-        let remap = reconcile_tags_by_name(&used_tags(&fresh), &mut target_tags, &mut next_tag);
+        let (remap, _) =
+            reconcile_tags_by_name(&used_tags(&fresh), &mut target_tags, &mut next_tag);
         for loc in &mut fresh {
             loc.tags = loc
                 .tags
@@ -3634,7 +3664,15 @@ pub fn store_create_tags(
             } else {
                 let id = store.alloc_tag_id();
                 let color = util::color_for_name(name);
-                let order = Some(store.tags.all.len() as u32);
+                let order = Some(
+                    store
+                        .tags
+                        .all
+                        .values()
+                        .filter_map(|t| t.order)
+                        .max()
+                        .map_or(1, |m| m + 1),
+                );
                 let tag = Tag {
                     id,
                     name: name.clone(),
