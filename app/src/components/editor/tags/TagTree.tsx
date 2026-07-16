@@ -347,7 +347,12 @@ export function TagTreeView({
 			}
 			// Anything else over a folder row is an "into" move target (drag into folder).
 			if (node.children.length === 0 || !block) return;
-			if (!canDropInto(treeRef.current, [...block], node.fullPath)) return;
+			if (!canDropInto(treeRef.current, [...block], node.fullPath)) {
+				// An invalid folder (the origin parent, own subtree, collision) disarms a
+				// pending into-move, so drifting back home and releasing is a clean no-op.
+				if (dropTargetRef.current?.position === "into") applyDropTarget(null);
+				return;
+			}
 			if (
 				dropTargetRef.current?.path !== node.fullPath ||
 				dropTargetRef.current.position !== "into"
