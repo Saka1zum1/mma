@@ -13,7 +13,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiChevronDown, mdiChevronRight, mdiPencil, mdiFolder } from "@mdi/js";
 import { textColorFor } from "@/lib/util/color";
 import { fmt } from "@/lib/util/format";
-import { toggleTagSelections, reorderTags } from "@/store/useMapStore";
+import { toggleTagSelections } from "@/store/useMapStore";
 import { useStableHandler } from "@/lib/hooks/useStableHandler";
 import { useSetting } from "@/store/settings";
 import { TagContextMenuContent } from "./TagManager";
@@ -78,6 +78,9 @@ interface TagTreeViewProps {
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	onAddAlias: (tag: { id: number; name: string }) => void;
 	onRemoveAlias: (aliasPath: string) => void;
+	/** Commit a drag reorder (full DFS tag-id order). Must render the new order
+	 *  optimistically -- the drop handler clears its drag state synchronously. */
+	onReorder: (orderedIds: number[]) => void;
 	filterText: string;
 }
 
@@ -96,6 +99,7 @@ export function TagTreeView({
 	onRenameTag,
 	onAddAlias,
 	onRemoveAlias,
+	onReorder,
 	filterText,
 	ref,
 }: TagTreeViewProps & { ref?: React.Ref<TagTreeHandle> }) {
@@ -287,10 +291,10 @@ export function TagTreeView({
 							node.parentPath,
 						)
 					: null;
-			// Hold the preview/hidden state until the async reorder lands, so the pill doesn't
-			// flash back to its old slot before the new order arrives.
-			if (order) reorderTags(order).finally(clear);
-			else clear();
+			// onReorder renders the new order optimistically, so clearing in the same
+			// batch settles the drop instantly with no flash back to the old slot.
+			if (order) onReorder(order);
+			clear();
 		};
 		window.addEventListener("mousemove", onMove);
 		window.addEventListener("mouseup", onUp);

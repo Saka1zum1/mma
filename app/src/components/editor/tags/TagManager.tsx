@@ -16,6 +16,7 @@ import {
 	useSelectedTagIds,
 	useTagCounts,
 	updateTags,
+	reorderTags,
 	deleteTags,
 	removeTagFromAllLocations,
 	getSelectedLocationIds,
@@ -64,15 +65,18 @@ export function TagManager() {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const storeTags = useMemo(() => getVisibleTags(), [map]);
 
-	// Optimistic overlay: `commitTags` applies pending name/color patches over the store tags
-	// for the lifetime of the mutation; React drops them once the transition settles (by which
-	// point the store reflects the change), so a rename/recolor renders in the same frame as the
-	// virtualTags/expansion updates
+	// Optimistic overlay: `commitTags`/`commitReorder` apply pending name/color/order patches
+	// over the store tags for the lifetime of the mutation; React drops them once the transition
+	// settles (by which point the store reflects the change), so a rename/recolor/drag-reorder
+	// renders in the same frame as the virtualTags/expansion updates
 	const [tags, addOptimisticTags] = useOptimistic(
 		storeTags,
 		(
 			cur: Tag[],
-			updates: { id: number; patch: { name?: string | null; color?: string | null } }[],
+			updates: {
+				id: number;
+				patch: { name?: string | null; color?: string | null; order?: number };
+			}[],
 		) =>
 			cur.map((t) => {
 				const u = updates.find((x) => x.id === t.id);
@@ -81,6 +85,7 @@ export function TagManager() {
 					...t,
 					...(u.patch.name != null ? { name: u.patch.name } : {}),
 					...(u.patch.color != null ? { color: u.patch.color } : {}),
+					...(u.patch.order != null ? { order: u.patch.order } : {}),
 				};
 			}),
 	);
@@ -89,6 +94,15 @@ export function TagManager() {
 			startTransition(async () => {
 				addOptimisticTags(updates);
 				await updateTags(updates);
+			});
+		},
+		[addOptimisticTags],
+	);
+	const commitReorder = useCallback(
+		(orderedIds: number[]) => {
+			startTransition(async () => {
+				addOptimisticTags(orderedIds.map((id, i) => ({ id, patch: { order: i } })));
+				await reorderTags(orderedIds);
 			});
 		},
 		[addOptimisticTags],
@@ -199,6 +213,7 @@ export function TagManager() {
 					onRenameTag={setRenamingTag}
 					onAddAlias={addAlias}
 					onRemoveAlias={removeAlias}
+					onReorder={commitReorder}
 					filterText={filterText}
 				/>
 			</ToolBlock>

@@ -3760,6 +3760,7 @@ input.date-picker__trigger:focus {
 	pointer-events: none;
 	z-index: 1000;
 	opacity: 0.9;
+	overflow: visible;
 }
 /* Count bubble on the drag preview when a ctrl+drag carries extra tags. */
 .tag-drag-preview__count {
