@@ -1264,9 +1264,6 @@ function DiscordSection() {
 				Rich Presence
 				<SettingSelect setting="discordPresence" options={DISCORD_PRESENCE_MODES} />
 			</label>
-			<p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#888" }}>
-				Show what you're editing on your Discord profile. Generic hides the map name.
-			</p>
 		</fieldset>
 	);
 }
