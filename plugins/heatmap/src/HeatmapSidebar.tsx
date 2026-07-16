@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
-	getSettings,
-	updateSettings,
+	getLayers,
+	updateLayer,
+	addLayer,
+	removeLayer,
+	resetLayers,
 	scopeHandle,
-	getLocationCount,
 	setOnSettingsChange,
-	DEFAULT_SETTINGS,
 	GRADIENTS,
-	type HeatmapSettings,
+	type HeatmapLayerSettings,
 } from "./heatmap";
 
 const CSS = `
@@ -29,6 +30,10 @@ const CSS = `
   font-size: 11px; font-weight: 600; text-transform: uppercase;
   color: var(--text-secondary, #999); margin: 0 0 6px;
 }
+.heatmap-sidebar__layer-header {
+  display: flex; align-items: center; gap: 8px; padding: 2px 0 6px;
+}
+.heatmap-sidebar__layer-title { flex: 1; font-size: 13px; font-weight: 600; }
 .heatmap-sidebar__control {
   display: flex; align-items: center; gap: 8px; padding: 2px 0;
 }
@@ -42,17 +47,24 @@ const CSS = `
   min-width: 36px; text-align: right; font-size: 12px;
   color: var(--text-secondary, #999); font-variant-numeric: tabular-nums;
 }
-.heatmap-sidebar__count {
-  font-size: 12px; color: var(--text-secondary, #999);
-  padding: 4px 0;
-}
 .heatmap-sidebar__reset {
   font-size: 12px; color: var(--text-secondary, #999);
   background: none; border: none; cursor: pointer; padding: 0;
   text-decoration: underline;
 }
 .heatmap-sidebar__reset:hover { color: var(--text-primary, #fff); }
-.heatmap-sidebar__gradients { display: flex; flex-direction: column; gap: 4px; }
+.heatmap-sidebar__add {
+  width: 100%; padding: 6px; font-size: 13px; cursor: pointer;
+  background: none; border: 1px dashed var(--color-divider, #444);
+  border-radius: 4px; color: var(--text-secondary, #999);
+}
+.heatmap-sidebar__add:hover {
+  color: var(--text-primary, #fff);
+  border-color: var(--text-secondary, #999);
+}
+.heatmap-sidebar__gradients {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+}
 .heatmap-sidebar__gradient {
   background: none; border: 2px solid transparent; border-radius: 4px;
   padding: 2px; cursor: pointer; width: 100%;
@@ -89,7 +101,7 @@ function Icon({ path, size = 20 }: { path: string; size?: number }) {
 
 export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 	const [, rerender] = useState(0);
-	const s = getSettings();
+	const layers = getLayers();
 	const scopeCtl = scopeHandle.use();
 
 	useEffect(() => {
@@ -101,17 +113,6 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 		};
 	}, []);
 
-	const setSlider = useCallback(
-		(key: keyof HeatmapSettings, value: number) => updateSettings({ [key]: value }),
-		[],
-	);
-
-	const reset = useCallback(() => {
-		updateSettings({ ...DEFAULT_SETTINGS });
-	}, []);
-
-	const count = getLocationCount();
-
 	return (
 		<section className="map-sidebar heatmap-sidebar">
 			<header className="heatmap-sidebar__header">
@@ -120,66 +121,79 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 				</button>
 				<h2 className="heatmap-sidebar__title">Heatmap</h2>
 				<span style={{ flex: 1 }} />
-				<button className="heatmap-sidebar__reset" onClick={reset}>
+				<button className="heatmap-sidebar__reset" onClick={resetLayers}>
 					Reset
 				</button>
 			</header>
 
 			<div className="heatmap-sidebar__body">
-				<div className="heatmap-sidebar__control">
-					<label htmlFor="heatmap-visible">Show heatmap</label>
-					<input
-						id="heatmap-visible"
-						type="checkbox"
-						checked={s.visible}
-						onChange={(e) => updateSettings({ visible: e.target.checked })}
-					/>
-				</div>
-
 				<div className="heatmap-sidebar__section">
 					<p className="heatmap-sidebar__section-title">Apply to</p>
 					<MMA.ui.ScopeSelector ctl={scopeCtl} />
 				</div>
 
-				<div className="heatmap-sidebar__section">
-					<p className="heatmap-sidebar__section-title">Settings</p>
-					<Slider label="Intensity" value={s.intensity} min={0.1} max={10} step={0.1}
-						onChange={(v) => setSlider("intensity", v)} />
-					<Slider label="Radius" value={s.radiusPixels} min={1} max={100} step={1}
-						onChange={(v) => setSlider("radiusPixels", v)} format={(v) => `${v}px`} />
-					<Slider label="Opacity" value={s.opacity} min={0} max={1} step={0.05}
-						onChange={(v) => setSlider("opacity", v)} />
-					<Slider label="Threshold" value={s.threshold} min={0} max={1} step={0.01}
-						onChange={(v) => setSlider("threshold", v)} />
-				</div>
+				{layers.map((l, i) => (
+					<LayerControls key={l.id} layer={l} index={i} />
+				))}
 
-				<div className="heatmap-sidebar__section">
-					<p className="heatmap-sidebar__section-title">Gradient</p>
-					<div className="heatmap-sidebar__gradients">
-						{GRADIENTS.map((g, i) => (
-							<button
-								key={g.name}
-								className={`heatmap-sidebar__gradient ${i === s.gradientIndex ? "heatmap-sidebar__gradient--active" : ""}`}
-								onClick={() => updateSettings({ gradientIndex: i })}
-								title={g.name}
-							>
-								<div
-									className="heatmap-sidebar__gradient-bar"
-									style={{
-										background: `linear-gradient(to right, ${g.stops
-											.map(
-												(c, si) =>
-													`rgb(${c[0]},${c[1]},${c[2]}) ${(si / (g.stops.length - 1)) * 100}%`,
-											)
-											.join(", ")})`,
-									}}
-								/>
-							</button>
-						))}
-					</div>
-				</div>
+				<button className="heatmap-sidebar__add" onClick={addLayer}>
+					Add heatmap
+				</button>
 			</div>
 		</section>
+	);
+}
+
+function LayerControls({ layer: l, index }: { layer: HeatmapLayerSettings; index: number }) {
+	const set = (patch: Partial<HeatmapLayerSettings>) => updateLayer(l.id, patch);
+
+	return (
+		<div className="heatmap-sidebar__section">
+			<div className="heatmap-sidebar__layer-header">
+				<input
+					type="checkbox"
+					checked={l.visible}
+					onChange={(e) => set({ visible: e.target.checked })}
+				/>
+				<span className="heatmap-sidebar__layer-title">Heatmap {index + 1}</span>
+				<button className="heatmap-sidebar__reset" onClick={() => removeLayer(l.id)}>
+					Remove
+				</button>
+			</div>
+
+			<Slider label="Intensity" value={l.intensity} min={0.1} max={10} step={0.1}
+				onChange={(v) => set({ intensity: v })} />
+			<Slider label="Radius" value={l.radiusPixels} min={1} max={100} step={1}
+				onChange={(v) => set({ radiusPixels: v })} format={(v) => `${v}px`} />
+			<Slider label="Opacity" value={l.opacity} min={0} max={1} step={0.05}
+				onChange={(v) => set({ opacity: v })} />
+			<Slider label="Threshold" value={l.threshold} min={0} max={1} step={0.01}
+				onChange={(v) => set({ threshold: v })} />
+
+			<p className="heatmap-sidebar__section-title" style={{ marginTop: 8 }}>Gradient</p>
+			<div className="heatmap-sidebar__gradients">
+				{GRADIENTS.map((g, i) => (
+					<button
+						key={g.name}
+						className={`heatmap-sidebar__gradient ${i === l.gradientIndex ? "heatmap-sidebar__gradient--active" : ""}`}
+						onClick={() => set({ gradientIndex: i })}
+						title={g.name}
+					>
+						<div
+							className="heatmap-sidebar__gradient-bar"
+							style={{
+								background: `linear-gradient(to right, ${g.stops
+									.map(
+										(c, si) =>
+											`rgb(${c[0]},${c[1]},${c[2]}) ${(si / (g.stops.length - 1)) * 100}%`,
+									)
+									.join(", ")})`,
+							}}
+						/>
+					</button>
+				))}
+			</div>
+		</div>
 	);
 }
 

@@ -923,7 +923,7 @@ HeatmapLayer.defaultProps = defaultProps;
 var heatmap_layer_default = HeatmapLayer;
 
 // heatmap/src/heatmap.ts
-var DEFAULT_SETTINGS = {
+var LAYER_DEFAULTS = {
   visible: true,
   intensity: 1,
   radiusPixels: 30,
@@ -932,20 +932,31 @@ var DEFAULT_SETTINGS = {
   gradientIndex: 0
 };
 var store = MMA.storage("heatmap");
-function loadSettings() {
-  return { ...DEFAULT_SETTINGS, ...store.get("settings") ?? {} };
+function newLayer() {
+  return { id: crypto.randomUUID(), ...LAYER_DEFAULTS };
 }
-function saveSettings(s) {
-  store.set("settings", s);
+function loadLayers() {
+  const stored = store.get("layers");
+  if (stored?.length) return stored.map((l) => ({ ...newLayer(), ...l }));
+  const legacy = store.get("settings");
+  return [{ ...newLayer(), ...legacy ?? {} }];
 }
 var GRADIENTS = [
   // deck.gl's built-in default colorRange (6-step ColorBrewer YlOrRd) — the original look.
   { name: "Classic", stops: [[255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60], [240, 59, 32], [189, 0, 38]] },
   { name: "Viridis", stops: [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]] },
+  { name: "Inferno", stops: [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]] },
+  { name: "Plasma", stops: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]] },
+  { name: "Magma", stops: [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]] },
+  { name: "Cividis", stops: [[0, 32, 76], [87, 92, 109], [170, 156, 116], [255, 234, 70]] },
   { name: "Heat", stops: [[0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 255, 0], [255, 0, 0]] },
   { name: "Blue-Red", stops: [[66, 133, 244], [234, 67, 53]] },
   { name: "Green-Yellow-Red", stops: [[52, 168, 83], [251, 188, 4], [234, 67, 53]] },
-  { name: "Purple-Orange", stops: [[136, 84, 208], [255, 152, 0]] }
+  { name: "Purple-Orange", stops: [[136, 84, 208], [255, 152, 0]] },
+  { name: "Blues", stops: [[222, 235, 247], [158, 202, 225], [49, 130, 189]] },
+  { name: "Reds", stops: [[254, 224, 210], [252, 146, 114], [222, 45, 38]] },
+  { name: "Greens", stops: [[229, 245, 224], [161, 217, 155], [49, 163, 84]] },
+  { name: "Purples", stops: [[239, 237, 245], [188, 189, 220], [117, 107, 177]] }
 ];
 function sampleColorRange(stops, n = 6) {
   if (stops.length === 1) return Array.from({ length: n }, () => stops[0]);
@@ -966,14 +977,11 @@ function sampleColorRange(stops, n = 6) {
 }
 var overlay = null;
 var locStore = null;
-var settings = loadSettings();
+var layers = loadLayers();
 var onSettingsChange = null;
 var scopeHandle = MMA.createScope();
-function getSettings() {
-  return settings;
-}
-function getLocationCount() {
-  return scopedLocations().length;
+function getLayers() {
+  return layers;
 }
 function scopedLocations() {
   if (!locStore) return [];
@@ -982,32 +990,45 @@ function scopedLocations() {
 function setOnSettingsChange(cb) {
   onSettingsChange = cb;
 }
-function updateSettings(patch) {
-  settings = { ...settings, ...patch };
-  saveSettings(settings);
+function commit() {
+  store.set("layers", layers);
   rebuild();
   onSettingsChange?.();
 }
+function updateLayer(id, patch) {
+  layers = layers.map((l) => l.id === id ? { ...l, ...patch } : l);
+  commit();
+}
+function addLayer() {
+  layers = [...layers, newLayer()];
+  commit();
+}
+function removeLayer(id) {
+  layers = layers.filter((l) => l.id !== id);
+  commit();
+}
+function resetLayers() {
+  layers = [newLayer()];
+  commit();
+}
 function rebuild() {
   if (!overlay) return;
-  if (!settings.visible) {
-    overlay.setProps({ layers: [] });
-    return;
-  }
   const data = scopedLocations();
-  const layer = new heatmap_layer_default({
-    id: "mma-heatmap",
-    data,
-    getPosition: (d) => [d.lng, d.lat],
-    getWeight: 1,
-    radiusPixels: settings.radiusPixels,
-    intensity: settings.intensity,
-    threshold: settings.threshold,
-    opacity: settings.opacity,
-    colorRange: sampleColorRange((GRADIENTS[settings.gradientIndex] ?? GRADIENTS[0]).stops),
-    debounceTimeout: 100
-  });
-  overlay.setProps({ layers: [layer] });
+  const deckLayers = layers.filter((l) => l.visible).map(
+    (l) => new heatmap_layer_default({
+      id: `mma-heatmap-${l.id}`,
+      data,
+      getPosition: (d) => [d.lng, d.lat],
+      getWeight: 1,
+      radiusPixels: l.radiusPixels,
+      intensity: l.intensity,
+      threshold: l.threshold,
+      opacity: l.opacity,
+      colorRange: sampleColorRange((GRADIENTS[l.gradientIndex] ?? GRADIENTS[0]).stops),
+      debounceTimeout: 100
+    })
+  );
+  overlay.setProps({ layers: deckLayers });
 }
 async function init() {
   const map = MMA.getGoogleMap();
@@ -1035,7 +1056,7 @@ async function init() {
       overlay.finalize();
       overlay = null;
     }
-    settings = loadSettings();
+    layers = loadLayers();
     onSettingsChange = null;
   };
 }
@@ -1062,6 +1083,10 @@ var CSS = `
   font-size: 11px; font-weight: 600; text-transform: uppercase;
   color: var(--text-secondary, #999); margin: 0 0 6px;
 }
+.heatmap-sidebar__layer-header {
+  display: flex; align-items: center; gap: 8px; padding: 2px 0 6px;
+}
+.heatmap-sidebar__layer-title { flex: 1; font-size: 13px; font-weight: 600; }
 .heatmap-sidebar__control {
   display: flex; align-items: center; gap: 8px; padding: 2px 0;
 }
@@ -1075,17 +1100,24 @@ var CSS = `
   min-width: 36px; text-align: right; font-size: 12px;
   color: var(--text-secondary, #999); font-variant-numeric: tabular-nums;
 }
-.heatmap-sidebar__count {
-  font-size: 12px; color: var(--text-secondary, #999);
-  padding: 4px 0;
-}
 .heatmap-sidebar__reset {
   font-size: 12px; color: var(--text-secondary, #999);
   background: none; border: none; cursor: pointer; padding: 0;
   text-decoration: underline;
 }
 .heatmap-sidebar__reset:hover { color: var(--text-primary, #fff); }
-.heatmap-sidebar__gradients { display: flex; flex-direction: column; gap: 4px; }
+.heatmap-sidebar__add {
+  width: 100%; padding: 6px; font-size: 13px; cursor: pointer;
+  background: none; border: 1px dashed var(--color-divider, #444);
+  border-radius: 4px; color: var(--text-secondary, #999);
+}
+.heatmap-sidebar__add:hover {
+  color: var(--text-primary, #fff);
+  border-color: var(--text-secondary, #999);
+}
+.heatmap-sidebar__gradients {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+}
 .heatmap-sidebar__gradient {
   background: none; border: 2px solid transparent; border-radius: 4px;
   padding: 2px; cursor: pointer; width: 100%;
@@ -1112,7 +1144,7 @@ function Icon({ path, size = 20 }) {
 }
 function HeatmapSidebar({ onClose }) {
   const [, rerender] = (0, import_react.useState)(0);
-  const s = getSettings();
+  const layers2 = getLayers();
   const scopeCtl = scopeHandle.use();
   (0, import_react.useEffect)(() => {
     injectCSS();
@@ -1122,110 +1154,107 @@ function HeatmapSidebar({ onClose }) {
       removeCSS();
     };
   }, []);
-  const setSlider = (0, import_react.useCallback)(
-    (key, value) => updateSettings({ [key]: value }),
-    []
-  );
-  const reset = (0, import_react.useCallback)(() => {
-    updateSettings({ ...DEFAULT_SETTINGS });
-  }, []);
-  const count = getLocationCount();
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { className: "map-sidebar heatmap-sidebar", children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", { className: "heatmap-sidebar__header", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "icon-button", onClick: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { path: ARROW_LEFT }) }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "heatmap-sidebar__title", children: "Heatmap" }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: reset, children: "Reset" })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: resetLayers, children: "Reset" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__body", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__control", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { htmlFor: "heatmap-visible", children: "Show heatmap" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "input",
-          {
-            id: "heatmap-visible",
-            type: "checkbox",
-            checked: s.visible,
-            onChange: (e) => updateSettings({ visible: e.target.checked })
-          }
-        )
-      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", children: "Apply to" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MMA.ui.ScopeSelector, { ctl: scopeCtl })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", children: "Settings" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          Slider,
+      layers2.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LayerControls, { layer: l, index: i }, l.id)),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__add", onClick: addLayer, children: "Add heatmap" })
+    ] })
+  ] });
+}
+function LayerControls({ layer: l, index }) {
+  const set = (patch) => updateLayer(l.id, patch);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__layer-header", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "input",
+        {
+          type: "checkbox",
+          checked: l.visible,
+          onChange: (e) => set({ visible: e.target.checked })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "heatmap-sidebar__layer-title", children: [
+        "Heatmap ",
+        index + 1
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => removeLayer(l.id), children: "Remove" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Slider,
+      {
+        label: "Intensity",
+        value: l.intensity,
+        min: 0.1,
+        max: 10,
+        step: 0.1,
+        onChange: (v) => set({ intensity: v })
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Slider,
+      {
+        label: "Radius",
+        value: l.radiusPixels,
+        min: 1,
+        max: 100,
+        step: 1,
+        onChange: (v) => set({ radiusPixels: v }),
+        format: (v) => `${v}px`
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Slider,
+      {
+        label: "Opacity",
+        value: l.opacity,
+        min: 0,
+        max: 1,
+        step: 0.05,
+        onChange: (v) => set({ opacity: v })
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Slider,
+      {
+        label: "Threshold",
+        value: l.threshold,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        onChange: (v) => set({ threshold: v })
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", style: { marginTop: 8 }, children: "Gradient" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "heatmap-sidebar__gradients", children: GRADIENTS.map((g, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      "button",
+      {
+        className: `heatmap-sidebar__gradient ${i === l.gradientIndex ? "heatmap-sidebar__gradient--active" : ""}`,
+        onClick: () => set({ gradientIndex: i }),
+        title: g.name,
+        children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "div",
           {
-            label: "Intensity",
-            value: s.intensity,
-            min: 0.1,
-            max: 10,
-            step: 0.1,
-            onChange: (v) => setSlider("intensity", v)
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          Slider,
-          {
-            label: "Radius",
-            value: s.radiusPixels,
-            min: 1,
-            max: 100,
-            step: 1,
-            onChange: (v) => setSlider("radiusPixels", v),
-            format: (v) => `${v}px`
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          Slider,
-          {
-            label: "Opacity",
-            value: s.opacity,
-            min: 0,
-            max: 1,
-            step: 0.05,
-            onChange: (v) => setSlider("opacity", v)
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          Slider,
-          {
-            label: "Threshold",
-            value: s.threshold,
-            min: 0,
-            max: 1,
-            step: 0.01,
-            onChange: (v) => setSlider("threshold", v)
+            className: "heatmap-sidebar__gradient-bar",
+            style: {
+              background: `linear-gradient(to right, ${g.stops.map(
+                (c, si) => `rgb(${c[0]},${c[1]},${c[2]}) ${si / (g.stops.length - 1) * 100}%`
+              ).join(", ")})`
+            }
           }
         )
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", children: "Gradient" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "heatmap-sidebar__gradients", children: GRADIENTS.map((g, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "button",
-          {
-            className: `heatmap-sidebar__gradient ${i === s.gradientIndex ? "heatmap-sidebar__gradient--active" : ""}`,
-            onClick: () => updateSettings({ gradientIndex: i }),
-            title: g.name,
-            children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-              "div",
-              {
-                className: "heatmap-sidebar__gradient-bar",
-                style: {
-                  background: `linear-gradient(to right, ${g.stops.map(
-                    (c, si) => `rgb(${c[0]},${c[1]},${c[2]}) ${si / (g.stops.length - 1) * 100}%`
-                  ).join(", ")})`
-                }
-              }
-            )
-          },
-          g.name
-        )) })
-      ] })
-    ] })
+      },
+      g.name
+    )) })
   ] });
 }
 function Slider({

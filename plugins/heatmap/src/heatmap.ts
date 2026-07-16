@@ -2,7 +2,8 @@ import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import type { LatLng, LocationStore, ScopeHandle } from "mma-plugin-types";
 
-export interface HeatmapSettings {
+export interface HeatmapLayerSettings {
+	id: string;
 	visible: boolean;
 	intensity: number;
 	radiusPixels: number;
@@ -11,7 +12,7 @@ export interface HeatmapSettings {
 	gradientIndex: number;
 }
 
-export const DEFAULT_SETTINGS: HeatmapSettings = {
+export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id"> = {
 	visible: true,
 	intensity: 1,
 	radiusPixels: 30,
@@ -22,12 +23,16 @@ export const DEFAULT_SETTINGS: HeatmapSettings = {
 
 const store = MMA.storage("heatmap");
 
-function loadSettings(): HeatmapSettings {
-	return { ...DEFAULT_SETTINGS, ...(store.get<Partial<HeatmapSettings>>("settings") ?? {}) };
+function newLayer(): HeatmapLayerSettings {
+	return { id: crypto.randomUUID(), ...LAYER_DEFAULTS };
 }
 
-function saveSettings(s: HeatmapSettings) {
-	store.set("settings", s);
+// Pre-1.1 versions stored a single settings object under "settings".
+function loadLayers(): HeatmapLayerSettings[] {
+	const stored = store.get<Partial<HeatmapLayerSettings>[]>("layers");
+	if (stored?.length) return stored.map((l) => ({ ...newLayer(), ...l }));
+	const legacy = store.get<Partial<Omit<HeatmapLayerSettings, "id">>>("settings");
+	return [{ ...newLayer(), ...(legacy ?? {}) }];
 }
 
 type RGB = [number, number, number];
@@ -41,10 +46,18 @@ export const GRADIENTS: HeatmapGradient[] = [
 	// deck.gl's built-in default colorRange (6-step ColorBrewer YlOrRd) — the original look.
 	{ name: "Classic", stops: [[255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60], [240, 59, 32], [189, 0, 38]] },
 	{ name: "Viridis", stops: [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]] },
+	{ name: "Inferno", stops: [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]] },
+	{ name: "Plasma", stops: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]] },
+	{ name: "Magma", stops: [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]] },
+	{ name: "Cividis", stops: [[0, 32, 76], [87, 92, 109], [170, 156, 116], [255, 234, 70]] },
 	{ name: "Heat", stops: [[0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 255, 0], [255, 0, 0]] },
 	{ name: "Blue-Red", stops: [[66, 133, 244], [234, 67, 53]] },
 	{ name: "Green-Yellow-Red", stops: [[52, 168, 83], [251, 188, 4], [234, 67, 53]] },
 	{ name: "Purple-Orange", stops: [[136, 84, 208], [255, 152, 0]] },
+	{ name: "Blues", stops: [[222, 235, 247], [158, 202, 225], [49, 130, 189]] },
+	{ name: "Reds", stops: [[254, 224, 210], [252, 146, 114], [222, 45, 38]] },
+	{ name: "Greens", stops: [[229, 245, 224], [161, 217, 155], [49, 163, 84]] },
+	{ name: "Purples", stops: [[239, 237, 245], [188, 189, 220], [117, 107, 177]] },
 ];
 
 // deck.gl's HeatmapLayer builds a continuous color texture from colorRange, so a
@@ -69,19 +82,15 @@ function sampleColorRange(stops: RGB[], n = 6): RGB[] {
 
 let overlay: GoogleMapsOverlay | null = null;
 let locStore: LocationStore | null = null;
-let settings: HeatmapSettings = loadSettings();
+let layers: HeatmapLayerSettings[] = loadLayers();
 let onSettingsChange: (() => void) | null = null;
 
 // Externalized scope: the sidebar drives it via scopeHandle.use(), the renderer reads it
 // synchronously and rebuilds via subscribe() — no hand-rolled state, no React bridge.
 export const scopeHandle: ScopeHandle = MMA.createScope();
 
-export function getSettings(): HeatmapSettings {
-	return settings;
-}
-
-export function getLocationCount(): number {
-	return scopedLocations().length;
+export function getLayers(): HeatmapLayerSettings[] {
+	return layers;
 }
 
 // The renderer's pool is the plugin's own LocationStore; the scope just narrows it.
@@ -94,35 +103,55 @@ export function setOnSettingsChange(cb: (() => void) | null) {
 	onSettingsChange = cb;
 }
 
-export function updateSettings(patch: Partial<HeatmapSettings>) {
-	settings = { ...settings, ...patch };
-	saveSettings(settings);
+function commit() {
+	store.set("layers", layers);
 	rebuild();
 	onSettingsChange?.();
 }
 
+export function updateLayer(id: string, patch: Partial<HeatmapLayerSettings>) {
+	layers = layers.map((l) => (l.id === id ? { ...l, ...patch } : l));
+	commit();
+}
+
+export function addLayer() {
+	layers = [...layers, newLayer()];
+	commit();
+}
+
+export function removeLayer(id: string) {
+	layers = layers.filter((l) => l.id !== id);
+	commit();
+}
+
+export function resetLayers() {
+	layers = [newLayer()];
+	commit();
+}
+
 function rebuild() {
 	if (!overlay) return;
-	if (!settings.visible) {
-		overlay.setProps({ layers: [] });
-		return;
-	}
 	const data = scopedLocations();
 
-	const layer = new HeatmapLayer({
-		id: "mma-heatmap",
-		data,
-		getPosition: (d: LatLng) => [d.lng, d.lat],
-		getWeight: 1,
-		radiusPixels: settings.radiusPixels,
-		intensity: settings.intensity,
-		threshold: settings.threshold,
-		opacity: settings.opacity,
-		colorRange: sampleColorRange((GRADIENTS[settings.gradientIndex] ?? GRADIENTS[0]).stops),
-		debounceTimeout: 100,
-	});
+	const deckLayers = layers
+		.filter((l) => l.visible)
+		.map(
+			(l) =>
+				new HeatmapLayer({
+					id: `mma-heatmap-${l.id}`,
+					data,
+					getPosition: (d: LatLng) => [d.lng, d.lat],
+					getWeight: 1,
+					radiusPixels: l.radiusPixels,
+					intensity: l.intensity,
+					threshold: l.threshold,
+					opacity: l.opacity,
+					colorRange: sampleColorRange((GRADIENTS[l.gradientIndex] ?? GRADIENTS[0]).stops),
+					debounceTimeout: 100,
+				}),
+		);
 
-	overlay.setProps({ layers: [layer] });
+	overlay.setProps({ layers: deckLayers });
 }
 
 export async function init(): Promise<() => void> {
@@ -156,7 +185,7 @@ export async function init(): Promise<() => void> {
 			overlay.finalize();
 			overlay = null;
 		}
-		settings = loadSettings();
+		layers = loadLayers();
 		onSettingsChange = null;
 	};
 }
