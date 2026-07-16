@@ -1,11 +1,6 @@
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import type { LatLng, LocationStore } from "mma-plugin-types";
-
-export type HeatmapSource =
-	| { kind: "all" }
-	| { kind: "selected" }
-	| { kind: "saved"; id: string };
+import type { LatLng, LocationStore, SourceScope } from "mma-plugin-types";
 
 export interface HeatmapLayerSettings {
 	id: string;
@@ -15,7 +10,7 @@ export interface HeatmapLayerSettings {
 	opacity: number;
 	threshold: number;
 	gradientIndex: number;
-	source: HeatmapSource;
+	source: SourceScope;
 }
 
 export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
@@ -29,7 +24,7 @@ export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
 
 const store = MMA.storage("heatmap");
 
-function defaultSource(): HeatmapSource {
+function defaultSource(): SourceScope {
 	return MMA.getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" };
 }
 
@@ -129,47 +124,11 @@ export function resetLayers() {
 	commit();
 }
 
-// Saved-selection resolution is async (Rust round-trip); cache per saved id and
-// invalidate whenever location data changes (tag membership rides location updates).
-const savedIdCache = new Map<string, Set<number>>();
-
-async function resolveSaved(savedId: string): Promise<Set<number>> {
-	const cached = savedIdCache.get(savedId);
-	if (cached) return cached;
-	const ids = new Set<number>();
-	const saved = MMA.getSavedSelections().find((s) => s.id === savedId);
-	if (saved) {
-		const propsList = saved.items
-			.map((item) => MMA.savedToSelectionProps(item.props))
-			.filter((p) => p !== null);
-		const resolved = await Promise.all(
-			propsList.map((p) => MMA.cmd.storeResolveSelection(p)),
-		);
-		for (const arr of resolved) for (const id of arr) ids.add(id);
-	}
-	savedIdCache.set(savedId, ids);
-	return ids;
-}
-
-async function sourceData(source: HeatmapSource): Promise<LatLng[]> {
+async function sourceData(source: SourceScope): Promise<LatLng[]> {
 	if (!locStore) return [];
 	const pool = locStore.get();
-	let subset;
-	switch (source.kind) {
-		case "all":
-			subset = pool;
-			break;
-		case "selected": {
-			const ids = MMA.getSelectedLocationIds();
-			subset = pool.filter((l) => ids.has(l.id));
-			break;
-		}
-		case "saved": {
-			const ids = await resolveSaved(source.id);
-			subset = pool.filter((l) => ids.has(l.id));
-			break;
-		}
-	}
+	const ids = await MMA.resolveScopeIds(source);
+	const subset = ids ? pool.filter((l) => ids.has(l.id)) : pool;
 	return subset.map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 
@@ -212,24 +171,18 @@ export async function init(): Promise<() => void> {
 	overlay.setMap(map);
 	void rebuild();
 
-	const onSelectionChange = () => {
+	const onChange = () => {
 		void rebuild();
 		onSettingsChange?.();
 	};
-	const onStoreChange = () => {
-		savedIdCache.clear();
-		void rebuild();
-		onSettingsChange?.();
-	};
-	const unsubStore = locStore.onChange(onStoreChange);
-	const unsubSel = MMA.on("selection:change", onSelectionChange);
+	const unsubStore = locStore.onChange(onChange);
+	const unsubSel = MMA.on("selection:change", onChange);
 
 	return () => {
 		unsubStore();
 		unsubSel();
 		locStore?.destroy();
 		locStore = null;
-		savedIdCache.clear();
 		if (overlay) {
 			overlay.setMap(null);
 			overlay.finalize();

@@ -8,8 +8,8 @@ import {
 	setOnSettingsChange,
 	GRADIENTS,
 	type HeatmapLayerSettings,
-	type HeatmapSource,
 } from "./heatmap";
+import type { SourceScope } from "mma-plugin-types";
 
 const CSS = `
 .heatmap-sidebar { overflow: auto; }
@@ -62,12 +62,7 @@ const CSS = `
   color: var(--text-primary, #fff);
   border-color: var(--text-secondary, #999);
 }
-.heatmap-sidebar__control select {
-  flex: 1; min-width: 0; font-size: 12px;
-  background: var(--color-input-background, #222);
-  color: inherit; border: 1px solid var(--color-divider, #444);
-  border-radius: 4px; padding: 3px 4px;
-}
+.heatmap-sidebar .scope-selector { padding: 2px 0 6px; font-size: 13px; }
 .heatmap-sidebar__gradients {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
 }
@@ -118,6 +113,10 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 		};
 	}, []);
 
+	const map = MMA.useCurrentMap();
+	const selectedIds = MMA.useSelectedLocationIds();
+	const allCount = map?.meta.locationCount ?? 0;
+
 	return (
 		<section className="map-sidebar heatmap-sidebar">
 			<header className="heatmap-sidebar__header">
@@ -133,7 +132,13 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 
 			<div className="heatmap-sidebar__body">
 				{layers.map((l, i) => (
-					<LayerControls key={l.id} layer={l} index={i} />
+					<LayerControls
+						key={l.id}
+						layer={l}
+						index={i}
+						allCount={allCount}
+						selectionCount={selectedIds.size}
+					/>
 				))}
 
 				<button className="heatmap-sidebar__add" onClick={addLayer}>
@@ -144,44 +149,17 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 	);
 }
 
-function sourceValue(source: HeatmapSource): string {
-	return source.kind === "saved" ? `saved:${source.id}` : source.kind;
-}
-
-function parseSourceValue(value: string): HeatmapSource {
-	if (value.startsWith("saved:")) return { kind: "saved", id: value.slice("saved:".length) };
-	return { kind: value as "all" | "selected" };
-}
-
-function SourceSelect({ layer: l }: { layer: HeatmapLayerSettings }) {
-	const saved = MMA.getSavedSelections();
-	const src = l.source;
-	const missing = src.kind === "saved" && !saved.some((s) => s.id === src.id);
-	return (
-		<div className="heatmap-sidebar__control">
-			<label>Source</label>
-			<select
-				value={sourceValue(l.source)}
-				onChange={(e) => updateLayer(l.id, { source: parseSourceValue(e.target.value) })}
-			>
-				<option value="all">All locations</option>
-				<option value="selected">Current selection</option>
-				{missing && <option value={sourceValue(l.source)}>(deleted selection)</option>}
-				{saved.length > 0 && (
-					<optgroup label="Saved selections">
-						{saved.map((s) => (
-							<option key={s.id} value={`saved:${s.id}`}>
-								{s.name}
-							</option>
-						))}
-					</optgroup>
-				)}
-			</select>
-		</div>
-	);
-}
-
-function LayerControls({ layer: l, index }: { layer: HeatmapLayerSettings; index: number }) {
+function LayerControls({
+	layer: l,
+	index,
+	allCount,
+	selectionCount,
+}: {
+	layer: HeatmapLayerSettings;
+	index: number;
+	allCount: number;
+	selectionCount: number;
+}) {
 	const set = (patch: Partial<HeatmapLayerSettings>) => updateLayer(l.id, patch);
 
 	return (
@@ -198,7 +176,15 @@ function LayerControls({ layer: l, index }: { layer: HeatmapLayerSettings; index
 				</button>
 			</div>
 
-			<SourceSelect layer={l} />
+			<MMA.ui.ScopeSelector
+				ctl={{
+					scope: l.source,
+					setScope: (s: SourceScope) => set({ source: s }),
+					allCount,
+					selectionCount,
+					saved: true,
+				}}
+			/>
 
 			<Slider label="Intensity" value={l.intensity} min={0.1} max={10} step={0.1}
 				onChange={(v) => set({ intensity: v })} />

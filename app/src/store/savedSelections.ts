@@ -3,6 +3,7 @@ import { buildSelection, UNARY_TYPES } from "./selections";
 import { isVariant } from "@/types/util";
 import { getSettings, setSetting } from "./settings";
 import { addSelections, getTag, getVisibleTags } from "./useMapStore";
+import { cmd } from "@/lib/commands";
 
 export interface SavedSelectionItem {
 	props: SavedSelectionProps;
@@ -95,6 +96,22 @@ export function savedToSelectionProps(saved: SavedSelectionProps): SelectionProp
 		default:
 			return saved as SelectionProps;
 	}
+}
+
+// Resolution
+
+/** Resolve a saved selection to the union of its items' matching location ids. */
+export async function resolveSavedSelectionIds(id: string): Promise<Set<number>> {
+	const ids = new Set<number>();
+	const saved = getSavedSelections().find((s) => s.id === id);
+	if (saved) {
+		const propsList = saved.items
+			.map((item) => savedToSelectionProps(item.props))
+			.filter((p): p is SelectionProps => p !== null);
+		const resolved = await Promise.all(propsList.map((p) => cmd.storeResolveSelection(p)));
+		for (const arr of resolved) for (const locId of arr) ids.add(locId);
+	}
+	return ids;
 }
 
 // Display

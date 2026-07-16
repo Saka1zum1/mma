@@ -5936,7 +5936,8 @@ body {
 /* --- Scope selector --- */
 .scope-selector {
 	display: flex;
-	gap: 1rem;
+	flex-wrap: wrap;
+	gap: 0.375rem 1rem;
 	font-size: 0.875rem;
 }
 .scope-selector__option {
@@ -5944,6 +5945,10 @@ body {
 	align-items: center;
 	gap: 0.375rem;
 	cursor: pointer;
+}
+.scope-selector__option select {
+	max-width: 10rem;
+	font-size: inherit;
 }
 
 /* --- Plugin sidebar primitives --- */

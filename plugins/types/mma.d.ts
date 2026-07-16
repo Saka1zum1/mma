@@ -2081,11 +2081,20 @@ export interface CommitDiffPreview {
 	removed: Float32Array;
 	modified: Float32Array;
 }
-export interface ScopeController {
-	scope: Scope;
-	setScope: (s: Scope) => void;
+/** The user-facing "which locations" concept: Rust's mechanical Scope widened with
+ *  saved selections, which resolve to ids in JS (Rust never sees saved definitions). */
+export type SourceScope = Scope | {
+	kind: "saved";
+	id: string;
+};
+export interface ScopeController<S extends SourceScope = Scope> {
+	scope: S;
+	setScope(s: S): void;
 	allCount: number;
 	selectionCount: number;
+	/** Opt-in: ScopeSelector offers saved selections. Only for consumers that
+	 *  narrow via resolveScopeIds rather than passing the scope to Rust. */
+	saved?: boolean;
 }
 /** A per-consumer scope store that lives outside React, so an imperative renderer can read it
  *  synchronously and subscribe to changes while a React sidebar drives it via `use()`. Mirrors
@@ -2148,8 +2157,8 @@ declare function SegmentedControl<T extends string | number>({ options, value, o
 	onChange: (value: T) => void;
 	className?: string;
 }): import("react/jsx-runtime").JSX.Element;
-declare function ScopeSelector({ ctl, className }: {
-	ctl: ScopeController;
+declare function ScopeSelector({ ctl, className, }: {
+	ctl: ScopeController<SourceScope>;
 	className?: string;
 }): import("react/jsx-runtime").JSX.Element;
 declare function toast(message: string, duration?: number): void;
@@ -3450,6 +3459,10 @@ declare const mma: {
 	applyScope<T extends {
 		id: number;
 	}>(scope: Scope, pool: T[]): T[];
+	resolveScopeIds(scope: SourceScope): Promise<{
+		has(id: number): boolean;
+		size: number;
+	} | null>;
 	partition(field: string, key: KeySpec, scope: Scope): Promise<PartitionBucket[]>;
 	useScope(initial?: Scope): ScopeController;
 	createScope(initial?: Scope): ScopeHandle;

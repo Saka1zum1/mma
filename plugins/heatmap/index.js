@@ -1009,41 +1009,11 @@ function resetLayers() {
   layers = [newLayer()];
   commit();
 }
-var savedIdCache = /* @__PURE__ */ new Map();
-async function resolveSaved(savedId) {
-  const cached = savedIdCache.get(savedId);
-  if (cached) return cached;
-  const ids = /* @__PURE__ */ new Set();
-  const saved = MMA.getSavedSelections().find((s) => s.id === savedId);
-  if (saved) {
-    const propsList = saved.items.map((item) => MMA.savedToSelectionProps(item.props)).filter((p) => p !== null);
-    const resolved = await Promise.all(
-      propsList.map((p) => MMA.cmd.storeResolveSelection(p))
-    );
-    for (const arr of resolved) for (const id of arr) ids.add(id);
-  }
-  savedIdCache.set(savedId, ids);
-  return ids;
-}
 async function sourceData(source) {
   if (!locStore) return [];
   const pool = locStore.get();
-  let subset;
-  switch (source.kind) {
-    case "all":
-      subset = pool;
-      break;
-    case "selected": {
-      const ids = MMA.getSelectedLocationIds();
-      subset = pool.filter((l) => ids.has(l.id));
-      break;
-    }
-    case "saved": {
-      const ids = await resolveSaved(source.id);
-      subset = pool.filter((l) => ids.has(l.id));
-      break;
-    }
-  }
+  const ids = await MMA.resolveScopeIds(source);
+  const subset = ids ? pool.filter((l) => ids.has(l.id)) : pool;
   return subset.map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 var rebuildToken = 0;
@@ -1076,23 +1046,17 @@ async function init() {
   overlay = new import_google_maps.GoogleMapsOverlay({ layers: [] });
   overlay.setMap(map);
   void rebuild();
-  const onSelectionChange = () => {
+  const onChange = () => {
     void rebuild();
     onSettingsChange?.();
   };
-  const onStoreChange = () => {
-    savedIdCache.clear();
-    void rebuild();
-    onSettingsChange?.();
-  };
-  const unsubStore = locStore.onChange(onStoreChange);
-  const unsubSel = MMA.on("selection:change", onSelectionChange);
+  const unsubStore = locStore.onChange(onChange);
+  const unsubSel = MMA.on("selection:change", onChange);
   return () => {
     unsubStore();
     unsubSel();
     locStore?.destroy();
     locStore = null;
-    savedIdCache.clear();
     if (overlay) {
       overlay.setMap(null);
       overlay.finalize();
@@ -1157,12 +1121,7 @@ var CSS = `
   color: var(--text-primary, #fff);
   border-color: var(--text-secondary, #999);
 }
-.heatmap-sidebar__control select {
-  flex: 1; min-width: 0; font-size: 12px;
-  background: var(--color-input-background, #222);
-  color: inherit; border: 1px solid var(--color-divider, #444);
-  border-radius: 4px; padding: 3px 4px;
-}
+.heatmap-sidebar .scope-selector { padding: 2px 0 6px; font-size: 13px; }
 .heatmap-sidebar__gradients {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
 }
@@ -1201,6 +1160,9 @@ function HeatmapSidebar({ onClose }) {
       removeCSS();
     };
   }, []);
+  const map = MMA.useCurrentMap();
+  const selectedIds = MMA.useSelectedLocationIds();
+  const allCount = map?.meta.locationCount ?? 0;
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { className: "map-sidebar heatmap-sidebar", children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", { className: "heatmap-sidebar__header", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "icon-button", onClick: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { path: ARROW_LEFT }) }),
@@ -1209,40 +1171,26 @@ function HeatmapSidebar({ onClose }) {
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: resetLayers, children: "Reset" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__body", children: [
-      layers2.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LayerControls, { layer: l, index: i }, l.id)),
+      layers2.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        LayerControls,
+        {
+          layer: l,
+          index: i,
+          allCount,
+          selectionCount: selectedIds.size
+        },
+        l.id
+      )),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__add", onClick: addLayer, children: "Add heatmap" })
     ] })
   ] });
 }
-function sourceValue(source) {
-  return source.kind === "saved" ? `saved:${source.id}` : source.kind;
-}
-function parseSourceValue(value) {
-  if (value.startsWith("saved:")) return { kind: "saved", id: value.slice("saved:".length) };
-  return { kind: value };
-}
-function SourceSelect({ layer: l }) {
-  const saved = MMA.getSavedSelections();
-  const src = l.source;
-  const missing = src.kind === "saved" && !saved.some((s) => s.id === src.id);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__control", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { children: "Source" }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-      "select",
-      {
-        value: sourceValue(l.source),
-        onChange: (e) => updateLayer(l.id, { source: parseSourceValue(e.target.value) }),
-        children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: "all", children: "All locations" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: "selected", children: "Current selection" }),
-          missing && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: sourceValue(l.source), children: "(deleted selection)" }),
-          saved.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("optgroup", { label: "Saved selections", children: saved.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: `saved:${s.id}`, children: s.name }, s.id)) })
-        ]
-      }
-    )
-  ] });
-}
-function LayerControls({ layer: l, index }) {
+function LayerControls({
+  layer: l,
+  index,
+  allCount,
+  selectionCount
+}) {
   const set = (patch) => updateLayer(l.id, patch);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__layer-header", children: [
@@ -1260,7 +1208,18 @@ function LayerControls({ layer: l, index }) {
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => removeLayer(l.id), children: "Remove" })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SourceSelect, { layer: l }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      MMA.ui.ScopeSelector,
+      {
+        ctl: {
+          scope: l.source,
+          setScope: (s) => set({ source: s }),
+          allCount,
+          selectionCount,
+          saved: true
+        }
+      }
+    ),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       Slider,
       {

@@ -51,7 +51,11 @@ import {
 	type MergeWinner,
 } from "@/lib/data/fieldOps";
 import type { LocationPatch_Deserialize as LocationPatch, Update, TagPatch } from "@/bindings.gen";
-import { getSavedSelections, rewriteSavedSelectionFields } from "./savedSelections";
+import {
+	getSavedSelections,
+	rewriteSavedSelectionFields,
+	resolveSavedSelectionIds,
+} from "./savedSelections";
 import type { RenderDelta } from "@/bindings.gen";
 import {
 	SelectedIds,
@@ -524,11 +528,20 @@ export async function syncSelections(): Promise<{ ids: number[] }> {
 	return { ids };
 }
 
-export interface ScopeController {
-	scope: Scope;
-	setScope: (s: Scope) => void;
+/** The user-facing "which locations" concept: Rust's mechanical Scope widened with
+ *  saved selections, which resolve to ids in JS (Rust never sees saved definitions). */
+export type SourceScope = Scope | { kind: "saved"; id: string };
+
+export interface ScopeController<S extends SourceScope = Scope> {
+	scope: S;
+	// Method syntax on purpose: bivariance lets a plain ScopeController flow into
+	// ScopeSelector's wider ScopeController<SourceScope> prop.
+	setScope(s: S): void;
 	allCount: number;
 	selectionCount: number;
+	/** Opt-in: ScopeSelector offers saved selections. Only for consumers that
+	 *  narrow via resolveScopeIds rather than passing the scope to Rust. */
+	saved?: boolean;
 }
 
 /** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side). */
@@ -536,6 +549,20 @@ export function applyScope<T extends { id: number }>(scope: Scope, pool: T[]): T
 	if (scope.kind === "all") return pool;
 	const ids = getSelectedLocationIds();
 	return pool.filter((item) => ids.has(item.id));
+}
+
+/** The id-set a scope narrows to, or null for "all". Saved scopes resolve in Rust. */
+export async function resolveScopeIds(
+	scope: SourceScope,
+): Promise<{ has(id: number): boolean; size: number } | null> {
+	switch (scope.kind) {
+		case "all":
+			return null;
+		case "selected":
+			return getSelectedLocationIds();
+		case "saved":
+			return resolveSavedSelectionIds(scope.id);
+	}
 }
 
 /** Group the scoped location set by a derived key — entirely in Rust, no locations fetched.

@@ -4,11 +4,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // The store binds tag lookups internally; back them with a settable fake tag set.
 const h = vi.hoisted(() => ({
 	tags: {} as Record<number, { id: number; name: string; color: string; visible: boolean }>,
+	saved: [] as unknown[],
+	resolve: undefined as unknown as ReturnType<typeof vi.fn>,
 }));
 vi.mock("@/store/useMapStore", () => ({
 	addSelections: vi.fn(),
 	getTag: (id: number) => h.tags[id],
 	getVisibleTags: () => Object.values(h.tags).filter((t) => t.visible !== false),
+}));
+vi.mock("@/store/settings", () => ({
+	getSettings: () => ({ savedSelections: h.saved }),
+	setSetting: vi.fn(),
+}));
+vi.mock("@/lib/commands", () => ({
+	cmd: { storeResolveSelection: (props: unknown) => h.resolve(props) },
 }));
 
 import {
@@ -16,6 +25,7 @@ import {
 	savedToSelectionProps,
 	describeRule,
 	rewriteSavedSelectionFields,
+	resolveSavedSelectionIds,
 	type SavedSelection,
 	type SavedSelectionProps,
 } from "@/store/savedSelections";
@@ -23,6 +33,8 @@ import type { Selection } from "@/bindings.gen";
 
 beforeEach(() => {
 	h.tags = {};
+	h.saved = [];
+	h.resolve = vi.fn();
 });
 
 function makeSel(props: Selection["props"]): Selection {
@@ -315,5 +327,40 @@ describe("describeRule", () => {
 			selections: [{ type: "Everything" }],
 		});
 		expect(result).toBe("NOT (All)");
+	});
+});
+
+// ============================================================================
+// resolveSavedSelectionIds
+// ============================================================================
+
+describe("resolveSavedSelectionIds", () => {
+	const entry = (items: SavedSelectionProps[]): SavedSelection => ({
+		id: "s1",
+		name: "n",
+		items: items.map((props) => ({ props, color: [0, 0, 0] as [number, number, number] })),
+		createdAt: 0,
+	});
+
+	it("unions the ids of all items", async () => {
+		h.saved = [entry([{ type: "Untagged" }, { type: "Unpanned" }])];
+		h.resolve.mockResolvedValueOnce([1, 2]).mockResolvedValueOnce([2, 3]);
+		const ids = await resolveSavedSelectionIds("s1");
+		expect([...ids].sort()).toEqual([1, 2, 3]);
+		expect(h.resolve).toHaveBeenCalledTimes(2);
+	});
+
+	it("skips items that no longer resolve", async () => {
+		h.saved = [entry([{ type: "TagName", tagName: "gone" }, { type: "Untagged" }])];
+		h.resolve.mockResolvedValueOnce([7]);
+		const ids = await resolveSavedSelectionIds("s1");
+		expect([...ids]).toEqual([7]);
+		expect(h.resolve).toHaveBeenCalledTimes(1);
+	});
+
+	it("returns an empty set for an unknown id", async () => {
+		const ids = await resolveSavedSelectionIds("nope");
+		expect(ids.size).toBe(0);
+		expect(h.resolve).not.toHaveBeenCalled();
 	});
 });
