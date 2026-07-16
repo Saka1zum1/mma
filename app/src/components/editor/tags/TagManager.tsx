@@ -61,6 +61,8 @@ export function TagManager() {
 		descendantCount: number;
 	} | null>(null);
 	const [editingVirtualPath, setEditingVirtualPath] = useState<string | null>(null);
+	// Parent path for a pending new declared folder ("" = root, null = dialog closed).
+	const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
 	const treeRef = useRef<TagTreeHandle>(null);
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
@@ -166,6 +168,18 @@ export function TagManager() {
 		},
 		[setAliases],
 	);
+	// Deletes the declared subtree (only reachable when no tags live under `path`).
+	const deleteFolder = useCallback(
+		(path: string) => {
+			const vt = getCurrentMap()?.meta.settings.virtualTags ?? {};
+			const next: Record<string, VirtualTag> = {};
+			for (const [k, v] of Object.entries(vt)) {
+				if (k !== path && !k.startsWith(`${path}/`)) next[k] = v;
+			}
+			setVirtualTags(next);
+		},
+		[setVirtualTags],
+	);
 
 	// Collapsed-state pill preview only; the open list is rendered by TagTreeView.
 	const sortedTags = useMemo(() => {
@@ -208,6 +222,11 @@ export function TagManager() {
 							onChange={(e) => setFilterText(e.target.value)}
 						/>
 						<span className="tag-manager__spacer"></span>
+						{tagViewMode === "tree" && (
+							<button className="button" onClick={() => setNewFolderParent("")}>
+								New folder
+							</button>
+						)}
 						<span className="tag-manager__sort button-group">
 							Sort by{" "}
 							{(["default", "name", "amount"] as TagSortMode[]).map((mode) => (
@@ -240,6 +259,8 @@ export function TagManager() {
 					onRemoveAlias={removeAlias}
 					onReorder={commitReorder}
 					onMoveInto={commitMoveInto}
+					onNewFolder={setNewFolderParent}
+					onDeleteFolder={deleteFolder}
 					filterText={filterText}
 				/>
 			</ToolBlock>
@@ -317,6 +338,20 @@ export function TagManager() {
 				/>
 			)}
 
+			{newFolderParent != null && (
+				<NewFolderDialog
+					parentPath={newFolderParent}
+					tags={tags}
+					virtualTags={virtualTags ?? {}}
+					aliases={aliases ?? {}}
+					onClose={() => setNewFolderParent(null)}
+					onSave={(path) => {
+						setVirtualTags({ ...(virtualTags ?? {}), [path]: {} });
+						setNewFolderParent(null);
+					}}
+				/>
+			)}
+
 			{addingAliasFor && (
 				<AddAliasDialog
 					tag={addingAliasFor}
@@ -340,6 +375,7 @@ export function TagContextMenuContent({
 	onRename,
 	onAddAlias,
 	onRemoveAlias,
+	onNewSubfolder,
 }: {
 	tagId: number;
 	totalCount: number;
@@ -348,6 +384,8 @@ export function TagContextMenuContent({
 	onAddAlias?: () => void;
 	/** Tree mode only: present on an alias leaf to remove it. */
 	onRemoveAlias?: () => void;
+	/** Tree mode only: present on folder rows to create a declared subfolder. */
+	onNewSubfolder?: () => void;
 }) {
 	const [selCount, setSelCount] = useState<number | null>(null);
 
@@ -387,6 +425,11 @@ export function TagContextMenuContent({
 			{onAddAlias && (
 				<ContextMenu.Item className="context-menu__item" onSelect={onAddAlias}>
 					Add alias...
+				</ContextMenu.Item>
+			)}
+			{onNewSubfolder && (
+				<ContextMenu.Item className="context-menu__item" onSelect={onNewSubfolder}>
+					New subfolder...
 				</ContextMenu.Item>
 			)}
 			{onRemoveAlias && (
@@ -734,6 +777,96 @@ function VirtualTagDialog({
 	);
 }
 
+/** Create a declared empty folder: a `MapSettings.virtualTags` entry whose path no tag
+ *  passes through. buildTagTree seeds a folder node for it, so it persists until deleted.
+ *  Slashes in the name create the whole chain at once. */
+function NewFolderDialog({
+	parentPath,
+	tags,
+	virtualTags,
+	aliases,
+	onClose,
+	onSave,
+}: {
+	parentPath: string;
+	tags: Tag[];
+	virtualTags: Record<string, VirtualTag>;
+	aliases: Record<string, number>;
+	onClose: () => void;
+	onSave: (path: string) => void;
+}) {
+	const [name, setName] = useState("");
+
+	// Every existing tree path — a new folder must claim a free slot.
+	const occupied = useMemo(() => {
+		const set = new Set<string>();
+		const addPrefixes = (path: string) => {
+			let p = "";
+			for (const s of path.split("/")) {
+				p = p ? `${p}/${s}` : s;
+				set.add(p);
+			}
+		};
+		for (const t of tags) addPrefixes(t.name);
+		for (const k of Object.keys(aliases)) addPrefixes(k);
+		for (const k of Object.keys(virtualTags)) addPrefixes(k);
+		return set;
+	}, [tags, aliases, virtualTags]);
+
+	const segment = name
+		.trim()
+		.replace(/^\/+|\/+$/g, "")
+		.replace(/\/{2,}/g, "/");
+	const path = segment ? (parentPath ? `${parentPath}/${segment}` : segment) : "";
+	const collision = !!path && occupied.has(path);
+
+	return (
+		<Dialog open onOpenChange={(open) => !open && onClose()}>
+			<DialogContent title={parentPath ? `New folder in "${parentPath}"` : "New folder"}>
+				<form
+					onSubmit={(e) => {
+						e.preventDefault();
+						if (path && !collision) onSave(path);
+					}}
+					style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
+				>
+					<div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+						<input
+							className="input"
+							type="text"
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							placeholder="Folder name"
+							autoFocus
+						/>
+						{path && (
+							<span style={{ fontSize: "0.85em", opacity: 0.7 }}>
+								{collision ? (
+									<span style={{ color: "var(--red, #f87171)" }}>
+										"{path}" already exists in the tree
+									</span>
+								) : (
+									<>
+										Creates <strong>{path}</strong>
+									</>
+								)}
+							</span>
+						)}
+					</div>
+					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+						<button className="button" type="button" onClick={onClose}>
+							Cancel
+						</button>
+						<button className="button button--primary" type="submit" disabled={!path || collision}>
+							Create
+						</button>
+					</div>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 /** Place an existing tag at a second tree location. The alias keeps the tag's leaf name;
  *  the user picks the target folder. Persists to `MapSettings.aliases` (path -> tag id). */
 function AddAliasDialog({
@@ -754,8 +887,8 @@ function AddAliasDialog({
 	const [folder, setFolder] = useState("");
 	const segment = tag.name.split("/").pop() || tag.name;
 
-	// Every existing tree path (tag paths + their ancestors + alias paths) — the alias
-	// slot must be free, matching buildTagTree's occupancy check.
+	// Every existing tree path (tags, aliases, declared folders + their ancestors) — the
+	// alias slot must be free, matching buildTagTree's occupancy check.
 	const occupied = useMemo(() => {
 		const set = new Set<string>();
 		const addPrefixes = (path: string) => {
@@ -767,8 +900,9 @@ function AddAliasDialog({
 		};
 		for (const t of tags) addPrefixes(t.name);
 		for (const k of Object.keys(aliases)) addPrefixes(k);
+		for (const k of Object.keys(virtualTags)) addPrefixes(k);
 		return set;
-	}, [tags, aliases]);
+	}, [tags, aliases, virtualTags]);
 
 	// Folder paths the user can nest under: ancestors of tags + virtual/alias folder nodes.
 	const folderSuggestions = useMemo(() => {

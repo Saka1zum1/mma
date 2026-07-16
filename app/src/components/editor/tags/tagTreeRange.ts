@@ -11,7 +11,8 @@ export interface TagTreeNode {
 	inheritedColor: string;
 	children: TagTreeNode[];
 	descendantTagIds: number[];
-	/** Min `order` across descendant tags — used for "default" sort parity with flat mode. */
+	/** Min `order` across descendant tags — used for "default" sort parity with flat mode.
+	 *  MAX_SAFE_INTEGER for a subtree with no tags (declared empty folders), sorting it last. */
 	sortOrder: number;
 	/** A synthetic leaf placing a real tag at a second tree location. Reuses `tag`, but is
 	 *  not draggable and never contributes its id to reorder (the real leaf owns that). */
@@ -19,8 +20,8 @@ export interface TagTreeNode {
 }
 
 /** A terminal tag — no children — renders as a flat pill, not a folder row. A childless
- *  node always carries a tag (it's where some tag's path ends); the `tag` guard only
- *  matters for the transient tagless nodes that filtering can leave behind. */
+ *  tagless node is a declared empty folder (a virtualTags key no tag passes through) and
+ *  renders as a folder row; filtering can also leave transient tagless nodes behind. */
 export const isLeafTag = (n: TagTreeNode) => n.children.length === 0 && n.tag != null;
 
 export function sumCounts(node: TagTreeNode, tagCounts: Record<number, number>): number {
@@ -121,6 +122,33 @@ export function buildTagTree(
 				level = existing.children;
 			}
 		}
+
+		// Seed declared folders: every virtualTags key gets a folder node even when no
+		// tag path passes through it, so empty folders exist without scaffolding tags.
+		for (const path of Object.keys(virtualTags)) {
+			let level = root;
+			let pathSoFar = "";
+			for (const segment of path.split("/")) {
+				const parentPath = pathSoFar;
+				pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
+				let existing = level.find((n) => n.segment === segment);
+				if (!existing) {
+					existing = {
+						segment,
+						fullPath: pathSoFar,
+						parentPath,
+						tag: null,
+						inheritedColor: "",
+						children: [],
+						descendantTagIds: [],
+						sortOrder: 0,
+						isAlias: false,
+					};
+					level.push(existing);
+				}
+				level = existing.children;
+			}
+		}
 	}
 
 	function propagateColor(nodes: TagTreeNode[], parentColor: string | null) {
@@ -143,7 +171,7 @@ export function buildTagTree(
 			if (c.minOrder < minOrder) minOrder = c.minOrder;
 		}
 		node.descendantTagIds = ids;
-		node.sortOrder = minOrder === Number.POSITIVE_INFINITY ? 0 : minOrder;
+		node.sortOrder = minOrder === Number.POSITIVE_INFINITY ? Number.MAX_SAFE_INTEGER : minOrder;
 		return { ids, minOrder: node.sortOrder };
 	}
 
@@ -162,8 +190,8 @@ export function buildTagTree(
 			}
 			return a.segment.localeCompare(b.segment);
 		});
-		const leaves = nodes.filter((n) => n.children.length === 0);
-		const branches = nodes.filter((n) => n.children.length > 0);
+		const leaves = nodes.filter(isLeafTag);
+		const branches = nodes.filter((n) => !isLeafTag(n));
 		if (leaves.length > 0 && branches.length > 0) {
 			nodes.splice(0, nodes.length, ...leaves, ...branches);
 		}
@@ -319,11 +347,12 @@ function findByPath(tree: TagTreeNode[], path: string): TagTreeNode | null {
 }
 
 /** Whether the sibling block `dragPaths` may drop INTO folder `targetPath`: the target is
- *  a real branch outside the block and its subtrees, isn't the block's current parent
- *  (no-op), and none of its children collide with a dragged node's segment. */
+ *  a folder (branch or declared empty folder) outside the block and its subtrees, isn't
+ *  the block's current parent (no-op), and none of its children collide with a dragged
+ *  node's segment. */
 export function canDropInto(tree: TagTreeNode[], dragPaths: string[], targetPath: string): boolean {
 	const target = findByPath(tree, targetPath);
-	if (!target || target.children.length === 0 || target.isAlias) return false;
+	if (!target || isLeafTag(target) || target.isAlias) return false;
 	const nodes = dragPaths.map((p) => findByPath(tree, p));
 	if (nodes.length === 0 || nodes.some((n) => !n || n.isAlias)) return false;
 	if (dragPaths.some((p) => targetPath === p || targetPath.startsWith(`${p}/`))) return false;
@@ -426,9 +455,10 @@ function siblingsAt<T extends OrderNode>(tree: T[], parent: string): T[] {
 }
 
 // Mirrors row highlighting: own tag selected, or a branch with every descendant selected.
+// The length guard keeps empty folders out ([].every is vacuously true).
 const isEffectivelySelected = (n: TagTreeNode, sel: ReadonlySet<number>): boolean =>
 	(n.tag != null && sel.has(n.tag.id)) ||
-	(n.children.length > 0 && n.descendantTagIds.every((id) => sel.has(id)));
+	(n.descendantTagIds.length > 0 && n.descendantTagIds.every((id) => sel.has(id)));
 
 /** The sibling paths a ctrl+drag carries as one block: the grabbed node plus every
  *  effectively-selected sibling of the same kind (pill vs folder row), in sibling order.
@@ -438,14 +468,12 @@ export function collectDragBlock(
 	grabbed: TagTreeNode,
 	selectedTagIds: ReadonlySet<number>,
 ): string[] {
-	const grabbedIsLeaf = grabbed.children.length === 0;
+	const grabbedIsLeaf = isLeafTag(grabbed);
 	return siblingsAt(tree, grabbed.parentPath)
 		.filter(
 			(n) =>
 				n.fullPath === grabbed.fullPath ||
-				(!n.isAlias &&
-					(n.children.length === 0) === grabbedIsLeaf &&
-					isEffectivelySelected(n, selectedTagIds)),
+				(!n.isAlias && isLeafTag(n) === grabbedIsLeaf && isEffectivelySelected(n, selectedTagIds)),
 		)
 		.map((n) => n.fullPath);
 }

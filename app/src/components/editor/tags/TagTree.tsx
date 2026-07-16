@@ -87,6 +87,10 @@ interface TagTreeViewProps {
 	/** Commit a drag-into-folder move (renames + settings rewrites + order rebase).
 	 *  Same optimistic contract as onReorder. */
 	onMoveInto: (move: TagMoveResult) => void;
+	/** Open the new-folder dialog under `parentPath` ("" = root). */
+	onNewFolder: (parentPath: string) => void;
+	/** Delete a declared folder subtree (only offered when it holds no tags). */
+	onDeleteFolder: (path: string) => void;
 	filterText: string;
 }
 
@@ -107,6 +111,8 @@ export function TagTreeView({
 	onRemoveAlias,
 	onReorder,
 	onMoveInto,
+	onNewFolder,
+	onDeleteFolder,
 	filterText,
 	ref,
 }: TagTreeViewProps & { ref?: React.Ref<TagTreeHandle> }) {
@@ -325,9 +331,13 @@ export function TagTreeView({
 			const block = dragBlockRef.current;
 			if (block?.has(node.fullPath)) return; // block members travel with the drag
 			// In-level, same-kind (pills among pills, rows among rows): live reorder.
+			// Empty folders sit outside the persisted tag order, so they neither reorder
+			// nor serve as before/after targets — for them only "into" applies.
 			if (
 				src.parentPath === node.parentPath &&
-				(src.children.length === 0) === (node.children.length === 0)
+				isLeafTag(src) === isLeafTag(node) &&
+				src.descendantTagIds.length > 0 &&
+				node.descendantTagIds.length > 0
 			) {
 				const rect = el.getBoundingClientRect();
 				const position = horizontal
@@ -346,7 +356,7 @@ export function TagTreeView({
 				return;
 			}
 			// Anything else over a folder row is an "into" move target (drag into folder).
-			if (node.children.length === 0 || !block) return;
+			if (isLeafTag(node) || !block) return;
 			if (!canDropInto(treeRef.current, [...block], node.fullPath)) {
 				// An invalid folder (the origin parent, own subtree, collision) disarms a
 				// pending into-move, so drifting back home and releasing is a clean no-op.
@@ -434,6 +444,8 @@ export function TagTreeView({
 							onRenameTag={onRenameTag}
 							onAddAlias={onAddAlias}
 							onRemoveAlias={onRemoveAlias}
+							onNewFolder={onNewFolder}
+							onDeleteFolder={onDeleteFolder}
 							forceExpanded={forceExpanded}
 							expandedPaths={expandedPaths}
 							onToggleExpanded={toggleExpanded}
@@ -486,6 +498,8 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 	onRenameTag,
 	onAddAlias,
 	onRemoveAlias,
+	onNewFolder,
+	onDeleteFolder,
 	forceExpanded,
 	expandedPaths,
 	onToggleExpanded,
@@ -503,6 +517,8 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	onAddAlias: (tag: { id: number; name: string }) => void;
 	onRemoveAlias: (aliasPath: string) => void;
+	onNewFolder: (parentPath: string) => void;
+	onDeleteFolder: (path: string) => void;
 	forceExpanded: boolean;
 	expandedPaths: Set<string>;
 	onToggleExpanded: (path: string) => void;
@@ -585,14 +601,34 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 						</button>
 					</div>
 				</ContextMenu.Trigger>
-				{node.tag && (
+				{node.tag ? (
 					<ContextMenu.Portal>
 						<TagContextMenuContent
 							tagId={node.tag!.id}
 							totalCount={sumCounts(node, tagCounts)}
 							onRename={() => onRenameTag({ id: node.tag!.id, name: node.tag!.name })}
 							onAddAlias={() => onAddAlias({ id: node.tag!.id, name: node.tag!.name })}
+							onNewSubfolder={() => onNewFolder(node.fullPath)}
 						/>
+					</ContextMenu.Portal>
+				) : (
+					<ContextMenu.Portal>
+						<ContextMenu.Content className="context-menu">
+							<ContextMenu.Item
+								className="context-menu__item"
+								onSelect={() => onNewFolder(node.fullPath)}
+							>
+								New subfolder...
+							</ContextMenu.Item>
+							{node.descendantTagIds.length === 0 && (
+								<ContextMenu.Item
+									className="context-menu__item"
+									onSelect={() => onDeleteFolder(node.fullPath)}
+								>
+									Delete folder
+								</ContextMenu.Item>
+							)}
+						</ContextMenu.Content>
 					</ContextMenu.Portal>
 				)}
 			</ContextMenu.Root>
@@ -626,6 +662,8 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 									onRenameTag={onRenameTag}
 									onAddAlias={onAddAlias}
 									onRemoveAlias={onRemoveAlias}
+									onNewFolder={onNewFolder}
+									onDeleteFolder={onDeleteFolder}
 									forceExpanded={forceExpanded}
 									expandedPaths={expandedPaths}
 									onToggleExpanded={onToggleExpanded}

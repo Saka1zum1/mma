@@ -531,3 +531,88 @@ describe("canDropInto / moveIntoFolder", () => {
 		expect(moveIntoFolder(tree(), ["Cars"], "Cars/Old", baseTags, {}, {})).toBeNull();
 	});
 });
+
+describe("declared empty folders (virtualTags)", () => {
+	const mkTag = (id: number, name: string, order = id): Tag => ({
+		id,
+		name,
+		color: "#888888",
+		order,
+	});
+	const segs = (nodes: TagTreeNode[]) => nodes.map((n) => n.segment);
+	function findNode(nodes: TagTreeNode[], path: string): TagTreeNode | null {
+		for (const n of nodes) {
+			if (n.fullPath === path) return n;
+			const hit = findNode(n.children, path);
+			if (hit) return hit;
+		}
+		return null;
+	}
+
+	it("seeds a tagless folder node from a virtualTags key no tag passes through", () => {
+		const tree = buildTagTree([mkTag(1, "a")], "default", {}, { F: {} });
+		const f = findNode(tree, "F")!;
+		expect(f.tag).toBeNull();
+		expect(f.children).toEqual([]);
+		expect(isLeafTag(f)).toBe(false); // renders as a folder row, not a pill
+	});
+
+	it("seeds the whole chain for a nested key", () => {
+		const tree = buildTagTree([], "default", {}, { "F/Sub": {} });
+		expect(segs(tree)).toEqual(["F"]);
+		expect(segs(tree[0].children)).toEqual(["Sub"]);
+		expect(tree[0].tag).toBeNull();
+	});
+
+	it("does not duplicate nodes when the key path already exists via tags", () => {
+		const tree = buildTagTree([mkTag(1, "F/x")], "default", {}, { F: {} });
+		expect(tree).toHaveLength(1);
+		expect(segs(tree[0].children)).toEqual(["x"]);
+	});
+
+	it("sorts empty folders after tag-derived branches in default mode", () => {
+		const tree = buildTagTree([mkTag(1, "G/x")], "default", {}, { A: {} });
+		expect(segs(tree)).toEqual(["G", "A"]); // A is alphabetically first but empty
+		expect(findNode(tree, "A")!.sortOrder).toBe(Number.MAX_SAFE_INTEGER);
+	});
+
+	it("keeps empty folders out of the leaf pill float (they group with branches)", () => {
+		const tree = buildTagTree([mkTag(1, "a"), mkTag(2, "G/x")], "default", {}, { E: {} });
+		expect(segs(tree)).toEqual(["a", "G", "E"]); // pill first, then branches, empty last
+	});
+
+	it("does not seed folders in flat view", () => {
+		const tree = buildTagTree([mkTag(1, "a")], "default", {}, { F: {} }, {}, false);
+		expect(segs(tree)).toEqual(["a"]);
+	});
+
+	it("ctrl+drag block never sweeps empty sibling folders ([].every footgun)", () => {
+		const tags = [mkTag(1, "F/u"), mkTag(2, "G/v")];
+		const tree = buildTagTree(tags, "default", {}, { E: {} });
+		const g = findNode(tree, "G")!;
+		expect(collectDragBlock(tree, g, new Set([1]))).toEqual(["F", "G"]);
+	});
+
+	it("canDropInto allows an empty folder as target but not a leaf tag", () => {
+		const tree = buildTagTree([mkTag(1, "x"), mkTag(2, "y")], "default", {}, { E: {} });
+		expect(canDropInto(tree, ["x"], "E")).toBe(true);
+		expect(canDropInto(tree, ["x"], "y")).toBe(false);
+	});
+
+	it("moveIntoFolder into an empty folder renames the tag under it", () => {
+		const tags = [mkTag(1, "x")];
+		const tree = buildTagTree(tags, "default", {}, { E: {} });
+		const move = moveIntoFolder(tree, ["x"], "E", tags, { E: {} }, {});
+		expect(move!.tagRenames).toEqual([{ id: 1, name: "E/x" }]);
+		expect(move!.virtualTags).toEqual({ E: {} });
+	});
+
+	it("moveIntoFolder moves an empty folder as a pure virtualTags rewrite", () => {
+		const tags = [mkTag(1, "F/u")];
+		const tree = buildTagTree(tags, "default", {}, { E: {} });
+		const move = moveIntoFolder(tree, ["E"], "F", tags, { E: {} }, {});
+		expect(move!.tagRenames).toEqual([]);
+		expect(move!.virtualTags).toEqual({ "F/E": {} });
+		expect(move!.orderedIds).toEqual([1]);
+	});
+});
