@@ -37,7 +37,12 @@ import { HotkeyInput } from "@/components/primitives/HotkeyInput";
 import { getConflicts } from "@/lib/util/hotkeys";
 import { getTagBindingKey, withTagKeyBinding } from "@/lib/map/mapKeyBindings";
 import { TagTreeView, type TagTreeHandle } from "./TagTree";
-import { cascadeRename, syncAliasSegments, type TagTreeNode } from "./tagTreeRange";
+import {
+	cascadeRename,
+	syncAliasSegments,
+	type TagTreeNode,
+	type TagMoveResult,
+} from "./tagTreeRange";
 
 export function TagManager() {
 	const map = useCurrentMap();
@@ -106,6 +111,26 @@ export function TagManager() {
 			});
 		},
 		[addOptimisticTags],
+	);
+	const commitMoveInto = useCallback(
+		(move: TagMoveResult) => {
+			startTransition(async () => {
+				// One merged patch per id -- the optimistic reducer applies the first match only.
+				const patchById = new Map<number, { name?: string; order?: number }>();
+				move.orderedIds.forEach((id, i) => patchById.set(id, { order: i }));
+				for (const r of move.tagRenames)
+					patchById.set(r.id, { ...patchById.get(r.id), name: r.name });
+				addOptimisticTags([...patchById].map(([id, patch]) => ({ id, patch })));
+				if (move.tagRenames.length)
+					await updateTags(move.tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
+				await reorderTags(move.orderedIds);
+			});
+			setVirtualTags(move.virtualTags);
+			setAliases(move.aliases);
+			for (const [oldPath, newPath] of move.pathRemaps)
+				treeRef.current?.remapExpanded(oldPath, newPath);
+		},
+		[addOptimisticTags, setVirtualTags, setAliases],
 	);
 
 	// Stamp `color` onto every tag AND folder node at or under `root` (overrides existing
@@ -214,6 +239,7 @@ export function TagManager() {
 					onAddAlias={addAlias}
 					onRemoveAlias={removeAlias}
 					onReorder={commitReorder}
+					onMoveInto={commitMoveInto}
 					filterText={filterText}
 				/>
 			</ToolBlock>

@@ -309,6 +309,98 @@ export function cascadeRename(
 	return { tagRenames, virtualTags: nextVirtual, aliases: nextAliases };
 }
 
+/** Resolve a split-mode tree node by full path (paths are `/`-joined segments). */
+function findByPath(tree: TagTreeNode[], path: string): TagTreeNode | null {
+	for (const n of tree) {
+		if (n.fullPath === path) return n;
+		if (path.startsWith(`${n.fullPath}/`)) return findByPath(n.children, path);
+	}
+	return null;
+}
+
+/** Whether the sibling block `dragPaths` may drop INTO folder `targetPath`: the target is
+ *  a real branch outside the block and its subtrees, isn't the block's current parent
+ *  (no-op), and none of its children collide with a dragged node's segment. */
+export function canDropInto(tree: TagTreeNode[], dragPaths: string[], targetPath: string): boolean {
+	const target = findByPath(tree, targetPath);
+	if (!target || target.children.length === 0 || target.isAlias) return false;
+	const nodes = dragPaths.map((p) => findByPath(tree, p));
+	if (nodes.length === 0 || nodes.some((n) => !n || n.isAlias)) return false;
+	if (dragPaths.some((p) => targetPath === p || targetPath.startsWith(`${p}/`))) return false;
+	if (nodes[0]!.parentPath === targetPath) return false;
+	const childSegments = new Set(target.children.map((c) => c.segment));
+	return !nodes.some((n) => childSegments.has(n!.segment));
+}
+
+export interface TagMoveResult {
+	tagRenames: TagNameChange[];
+	virtualTags: Record<string, VirtualTag>;
+	aliases: Record<string, number>;
+	/** Full DFS tag-id order with the block appended at the end of the target's children. */
+	orderedIds: number[];
+	/** Old -> new path for each moved branch, for remapExpanded. */
+	pathRemaps: [string, string][];
+}
+
+/** Move the sibling block `dragPaths` into folder `targetPath`: cascadeRename each block
+ *  member to `targetPath/<segment>` (tags, virtualTags, and alias keys all follow), and
+ *  rebase the global order so the block lands contiguously at the end of the target's
+ *  children, keeping its relative order. Returns null when the drop isn't allowed. */
+export function moveIntoFolder(
+	tree: TagTreeNode[],
+	dragPaths: string[],
+	targetPath: string,
+	tags: Tag[],
+	virtualTags: Record<string, VirtualTag>,
+	aliases: Record<string, number>,
+): TagMoveResult | null {
+	if (!canDropInto(tree, dragPaths, targetPath)) return null;
+	const nodes = dragPaths.map((p) => findByPath(tree, p)!);
+
+	// Block members are siblings (disjoint prefixes), so the cascades never overlap.
+	let workingTags = tags;
+	let workingVT = virtualTags;
+	let workingAliases = aliases;
+	const renameById = new Map<number, string>();
+	const pathRemaps: [string, string][] = [];
+	for (const node of nodes) {
+		const newPath = `${targetPath}/${node.segment}`;
+		const res = cascadeRename(node.fullPath, newPath, workingTags, workingVT, workingAliases);
+		for (const r of res.tagRenames) renameById.set(r.id, r.name);
+		workingTags = workingTags.map((t) => {
+			const next = res.tagRenames.find((r) => r.id === t.id);
+			return next ? { ...t, name: next.name } : t;
+		});
+		workingVT = res.virtualTags;
+		workingAliases = res.aliases;
+		if (node.children.length > 0) pathRemaps.push([node.fullPath, newPath]);
+	}
+
+	const dragSet = new Set(dragPaths);
+	const orderedIds: number[] = [];
+	const emitSubtree = (n: TagTreeNode) => {
+		if (n.tag && !n.isAlias) orderedIds.push(n.tag.id);
+		for (const c of n.children) emitSubtree(c);
+	};
+	const walk = (level: TagTreeNode[]) => {
+		for (const n of level) {
+			if (dragSet.has(n.fullPath)) continue;
+			if (n.tag && !n.isAlias) orderedIds.push(n.tag.id);
+			walk(n.children);
+			if (n.fullPath === targetPath) for (const b of nodes) emitSubtree(b);
+		}
+	};
+	walk(tree);
+
+	return {
+		tagRenames: [...renameById].map(([id, name]) => ({ id, name })),
+		virtualTags: workingVT,
+		aliases: workingAliases,
+		orderedIds,
+		pathRemaps,
+	};
+}
+
 interface OrderNode {
 	fullPath: string;
 	tag: { id: number } | null;

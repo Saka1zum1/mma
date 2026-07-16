@@ -3884,6 +3884,12 @@ body.mm-tag-dragging * {
 	opacity: 0.85;
 	outline: 1px dashed rgba(255, 255, 255, 0.5);
 }
+/* Folder row currently hovered as a drag-into target. */
+.tag-tree__row.is-drop-into {
+	opacity: 1;
+	outline: 2px dashed #fff;
+	outline-offset: -2px;
+}
 /* No hover feedback mid-drag: rows gliding under the cursor would flash. */
 body:not(.mm-tag-dragging) .tag-tree__row:hover {
 	opacity: 1;

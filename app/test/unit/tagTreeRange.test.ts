@@ -3,6 +3,8 @@ import {
 	rangeToggleTagIds,
 	reorderSiblingsFlatOrder,
 	collectDragBlock,
+	canDropInto,
+	moveIntoFolder,
 	buildTagTree,
 	cascadeRename,
 	syncAliasSegments,
@@ -452,5 +454,80 @@ describe("syncAliasSegments", () => {
 	it("returns null when no alias points at a renamed tag", () => {
 		const aliases = { "Fav/c": 1 };
 		expect(syncAliasSegments(aliases, [{ id: 2, oldName: "x", newName: "y" }])).toBeNull();
+	});
+});
+
+describe("canDropInto / moveIntoFolder", () => {
+	const mkTag = (id: number, name: string, order = id): Tag => ({
+		id,
+		name,
+		color: "#888888",
+		order,
+	});
+	// Root pills Red(1), Blue(2); folder Cars { a(3), b(4), Old { c(5) } }.
+	const baseTags = [
+		mkTag(1, "Red"),
+		mkTag(2, "Blue"),
+		mkTag(3, "Cars/a"),
+		mkTag(4, "Cars/b"),
+		mkTag(5, "Cars/Old/c"),
+	];
+	const tree = (tags = baseTags, aliases = {}) => buildTagTree(tags, "default", {}, {}, aliases);
+
+	it("allows a pill into a folder, rejects its own parent and block members", () => {
+		expect(canDropInto(tree(), ["Red"], "Cars")).toBe(true);
+		expect(canDropInto(tree(), ["Cars/a"], "Cars")).toBe(false); // no-op: already there
+		expect(canDropInto(tree(), ["Cars"], "Cars")).toBe(false); // itself
+		expect(canDropInto(tree(), ["Cars"], "Cars/Old")).toBe(false); // own descendant
+	});
+
+	it("rejects a segment collision with the target's children", () => {
+		const tags = [...baseTags, mkTag(6, "Cars/Red")];
+		expect(canDropInto(tree(tags), ["Red"], "Cars")).toBe(false);
+	});
+
+	it("rejects pills as targets", () => {
+		expect(canDropInto(tree(), ["Red"], "Blue")).toBe(false);
+	});
+
+	it("moves a pill into a folder: rename + order appended at the end of the folder", () => {
+		const move = moveIntoFolder(tree(), ["Red"], "Cars", baseTags, {}, {});
+		expect(move).not.toBeNull();
+		expect(move!.tagRenames).toEqual([{ id: 1, name: "Cars/Red" }]);
+		expect(move!.orderedIds).toEqual([2, 3, 4, 5, 1]);
+		expect(move!.pathRemaps).toEqual([]);
+	});
+
+	it("moves a block of pills keeping relative order", () => {
+		const move = moveIntoFolder(tree(), ["Red", "Blue"], "Cars", baseTags, {}, {});
+		expect(move!.tagRenames).toEqual([
+			{ id: 1, name: "Cars/Red" },
+			{ id: 2, name: "Cars/Blue" },
+		]);
+		expect(move!.orderedIds).toEqual([3, 4, 5, 1, 2]);
+	});
+
+	it("moves a folder: cascades descendants, remaps the path, rewrites settings keys", () => {
+		const tags = [...baseTags, mkTag(6, "Misc/x")];
+		const aliases = { "Misc/redAlias": 1 };
+		const move = moveIntoFolder(
+			tree(tags, aliases),
+			["Misc"],
+			"Cars",
+			tags,
+			{ Misc: { color: "#aaa" } },
+			aliases,
+		);
+		expect(move!.tagRenames).toEqual([{ id: 6, name: "Cars/Misc/x" }]);
+		expect(move!.pathRemaps).toEqual([["Misc", "Cars/Misc"]]);
+		expect(move!.virtualTags).toEqual({ "Cars/Misc": { color: "#aaa" } });
+		expect(move!.aliases).toEqual({ "Cars/Misc/redAlias": 1 });
+		// Alias leaf never contributes its id: Red's id appears exactly once.
+		expect(move!.orderedIds.filter((id) => id === 1)).toEqual([1]);
+		expect(move!.orderedIds).toEqual([1, 2, 3, 4, 5, 6]);
+	});
+
+	it("returns null on an invalid drop", () => {
+		expect(moveIntoFolder(tree(), ["Cars"], "Cars/Old", baseTags, {}, {})).toBeNull();
 	});
 });
