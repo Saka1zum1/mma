@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
 	rangeToggleTagIds,
 	reorderSiblingsFlatOrder,
+	collectDragBlock,
 	buildTagTree,
 	cascadeRename,
 	syncAliasSegments,
@@ -94,11 +95,11 @@ describe("reorderSiblingsFlatOrder", () => {
 	const tree: N[] = [leaf("a", 1), leaf("b", 2), leaf("c", 3)];
 
 	it("moves a root sibling after another", () => {
-		expect(reorderSiblingsFlatOrder(tree, "a", "c", "after", "")).toEqual([2, 3, 1]);
+		expect(reorderSiblingsFlatOrder(tree, ["a"], "c", "after", "")).toEqual([2, 3, 1]);
 	});
 
 	it("moves a root sibling before another", () => {
-		expect(reorderSiblingsFlatOrder(tree, "c", "a", "before", "")).toEqual([3, 1, 2]);
+		expect(reorderSiblingsFlatOrder(tree, ["c"], "a", "before", "")).toEqual([3, 1, 2]);
 	});
 
 	it("reorders within a parent and preserves other subtrees + relative order", () => {
@@ -111,16 +112,18 @@ describe("reorderSiblingsFlatOrder", () => {
 			leaf("q", 20),
 		];
 		// move p/z before p/x -> z,x,y under p; q untouched
-		expect(reorderSiblingsFlatOrder(nested, "p/z", "p/x", "before", "p")).toEqual([12, 10, 11, 20]);
+		expect(reorderSiblingsFlatOrder(nested, ["p/z"], "p/x", "before", "p")).toEqual([
+			12, 10, 11, 20,
+		]);
 	});
 
 	it("returns null when the target isn't a sibling under the given parent", () => {
 		const nested: N[] = [{ fullPath: "p", tag: null, children: [leaf("p/x", 10)] }, leaf("q", 20)];
-		expect(reorderSiblingsFlatOrder(nested, "p/x", "q", "after", "p")).toBeNull();
+		expect(reorderSiblingsFlatOrder(nested, ["p/x"], "q", "after", "p")).toBeNull();
 	});
 
 	it("returns null when source equals target", () => {
-		expect(reorderSiblingsFlatOrder(tree, "a", "a", "after", "")).toBeNull();
+		expect(reorderSiblingsFlatOrder(tree, ["a"], "a", "after", "")).toBeNull();
 	});
 
 	it("does not emit an alias leaf's id (the real leaf owns it)", () => {
@@ -130,13 +133,98 @@ describe("reorderSiblingsFlatOrder", () => {
 			leaf("c", 3),
 		];
 		// Reordering real siblings must not duplicate/emit the alias's id 1.
-		expect(reorderSiblingsFlatOrder(withAlias, "a", "c", "after", "")).toEqual([3, 1]);
+		expect(reorderSiblingsFlatOrder(withAlias, ["a"], "c", "after", "")).toEqual([3, 1]);
 	});
 
 	it("treats a root leaf whose name contains '/' as a root sibling (no-split flat view)", () => {
 		// Flat view: "Europe/France" is one leaf at root, not a child of "Europe".
 		const flat: N[] = [leaf("Europe/France", 1), leaf("Red", 2), leaf("Blue", 3)];
-		expect(reorderSiblingsFlatOrder(flat, "Europe/France", "Blue", "after", "")).toEqual([2, 3, 1]);
+		expect(reorderSiblingsFlatOrder(flat, ["Europe/France"], "Blue", "after", "")).toEqual([
+			2, 3, 1,
+		]);
+	});
+
+	it("moves a non-contiguous block after a target, preserving relative order", () => {
+		const five: N[] = [leaf("a", 1), leaf("b", 2), leaf("c", 3), leaf("d", 4), leaf("e", 5)];
+		expect(reorderSiblingsFlatOrder(five, ["b", "d"], "e", "after", "")).toEqual([1, 3, 5, 2, 4]);
+	});
+
+	it("moves a block before the first sibling", () => {
+		const five: N[] = [leaf("a", 1), leaf("b", 2), leaf("c", 3), leaf("d", 4), leaf("e", 5)];
+		expect(reorderSiblingsFlatOrder(five, ["c", "e"], "a", "before", "")).toEqual([3, 5, 1, 2, 4]);
+	});
+
+	it("returns null when the target is part of the block", () => {
+		expect(reorderSiblingsFlatOrder(tree, ["a", "c"], "c", "after", "")).toBeNull();
+	});
+
+	it("ignores block paths outside the sibling group", () => {
+		const nested: N[] = [
+			{ fullPath: "p", tag: null, children: [leaf("p/x", 10), leaf("p/y", 11)] },
+			leaf("q", 20),
+			leaf("r", 30),
+		];
+		// p/x isn't a root sibling; only q moves.
+		expect(reorderSiblingsFlatOrder(nested, ["q", "p/x"], "r", "after", "")).toEqual([
+			10, 11, 30, 20,
+		]);
+	});
+});
+
+describe("collectDragBlock", () => {
+	const mkTag = (id: number, name: string, order = id): Tag => ({
+		id,
+		name,
+		color: "#888888",
+		order,
+	});
+	function findNode(nodes: TagTreeNode[], path: string): TagTreeNode | null {
+		for (const n of nodes) {
+			if (n.fullPath === path) return n;
+			const hit = findNode(n.children, path);
+			if (hit) return hit;
+		}
+		return null;
+	}
+
+	it("carries the grabbed pill plus selected sibling pills, in sibling order", () => {
+		const tree = buildTagTree(
+			[mkTag(1, "a"), mkTag(2, "b"), mkTag(3, "c"), mkTag(4, "d")],
+			"default",
+			{},
+		);
+		expect(collectDragBlock(tree, findNode(tree, "d")!, new Set([1, 3]))).toEqual(["a", "c", "d"]);
+	});
+
+	it("keeps the block single when nothing else is selected", () => {
+		const tree = buildTagTree([mkTag(1, "a"), mkTag(2, "b")], "default", {});
+		expect(collectDragBlock(tree, findNode(tree, "a")!, new Set())).toEqual(["a"]);
+	});
+
+	it("excludes selected folder rows from a pill block (kind mismatch)", () => {
+		const tags = [mkTag(1, "a"), mkTag(2, "F/u"), mkTag(3, "F/v"), mkTag(4, "b")];
+		const tree = buildTagTree(tags, "default", {});
+		// F is fully selected but is a folder row; the pill block takes only a.
+		expect(collectDragBlock(tree, findNode(tree, "b")!, new Set([1, 2, 3]))).toEqual(["a", "b"]);
+	});
+
+	it("joins fully-selected sibling folder rows to a row block", () => {
+		const tags = [mkTag(1, "F/u"), mkTag(2, "G/v"), mkTag(3, "H/w")];
+		const tree = buildTagTree(tags, "default", {});
+		expect(collectDragBlock(tree, findNode(tree, "G")!, new Set([1]))).toEqual(["F", "G"]);
+	});
+
+	it("joins a branch whose own tag is selected, even with unselected children", () => {
+		const tags = [mkTag(1, "F"), mkTag(2, "F/u"), mkTag(3, "G/x")];
+		const tree = buildTagTree(tags, "default", {});
+		expect(collectDragBlock(tree, findNode(tree, "G")!, new Set([1]))).toEqual(["F", "G"]);
+	});
+
+	it("excludes alias leaves and non-siblings", () => {
+		const tags = [mkTag(1, "a"), mkTag(2, "b"), mkTag(3, "F/u")];
+		// Alias "c" points at tag 2 (selected) but never joins; F/u is not a root sibling.
+		const tree = buildTagTree(tags, "default", {}, {}, { c: 2 });
+		expect(collectDragBlock(tree, findNode(tree, "a")!, new Set([2, 3]))).toEqual(["a", "b"]);
 	});
 });
 

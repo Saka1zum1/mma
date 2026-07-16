@@ -333,30 +333,57 @@ function siblingsAt<T extends OrderNode>(tree: T[], parent: string): T[] {
 	return result;
 }
 
-/** Full DFS tag-id order reflecting an in-level move of `dragPath` to before/after
- *  `dropPath`. `parent` is the drag node's structural parentPath ("" at root) -- it can't
+// Mirrors row highlighting: own tag selected, or a branch with every descendant selected.
+const isEffectivelySelected = (n: TagTreeNode, sel: ReadonlySet<number>): boolean =>
+	(n.tag != null && sel.has(n.tag.id)) ||
+	(n.children.length > 0 && n.descendantTagIds.every((id) => sel.has(id)));
+
+/** The sibling paths a ctrl+drag carries as one block: the grabbed node plus every
+ *  effectively-selected sibling of the same kind (pill vs folder row), in sibling order.
+ *  Alias leaves never join (the real leaf owns the id). */
+export function collectDragBlock(
+	tree: TagTreeNode[],
+	grabbed: TagTreeNode,
+	selectedTagIds: ReadonlySet<number>,
+): string[] {
+	const grabbedIsLeaf = grabbed.children.length === 0;
+	return siblingsAt(tree, grabbed.parentPath)
+		.filter(
+			(n) =>
+				n.fullPath === grabbed.fullPath ||
+				(!n.isAlias &&
+					(n.children.length === 0) === grabbedIsLeaf &&
+					isEffectivelySelected(n, selectedTagIds)),
+		)
+		.map((n) => n.fullPath);
+}
+
+/** Full DFS tag-id order reflecting an in-level move of the `dragPaths` block to
+ *  before/after `dropPath`. The block keeps its relative sibling order and lands as one
+ *  contiguous run. `parent` is the block's structural parentPath ("" at root) -- it can't
  *  be derived from the path string, which may contain literal "/" in no-split mode.
- *  Returns null if the two paths aren't siblings under `parent` or aren't found.
- *  Every other node keeps its relative order; the moved node carries its whole subtree. */
+ *  Returns null if the target isn't a sibling under `parent`, is part of the block, or
+ *  no block member is found. Every other node keeps its relative order; moved nodes
+ *  carry their whole subtrees. */
 export function reorderSiblingsFlatOrder<T extends OrderNode>(
 	tree: T[],
-	dragPath: string,
+	dragPaths: string[],
 	dropPath: string,
 	position: "before" | "after",
 	parent: string,
 ): number[] | null {
-	if (dragPath === dropPath) return null;
+	const dragSet = new Set(dragPaths);
+	if (dragSet.has(dropPath)) return null;
 
 	const siblings = siblingsAt(tree, parent);
-	const dragNode = siblings.find((n) => n.fullPath === dragPath);
+	const block = siblings.filter((n) => dragSet.has(n.fullPath));
 	const targetNode = siblings.find((n) => n.fullPath === dropPath);
-	if (!dragNode || !targetNode) return null;
+	if (block.length === 0 || !targetNode) return null;
 
-	const without = siblings.filter((n) => n !== dragNode);
+	const without = siblings.filter((n) => !dragSet.has(n.fullPath));
 	let idx = without.indexOf(targetNode);
-	if (idx === -1) return null;
 	if (position === "after") idx++;
-	without.splice(idx, 0, dragNode);
+	without.splice(idx, 0, ...block);
 
 	const out: number[] = [];
 	const dfs = (nodes: OrderNode[], cur: string) => {
