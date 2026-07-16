@@ -1357,10 +1357,11 @@ export async function updateTags(updates: Update<TagPatch>[]) {
 	if (!currentMapId || !currentMap || updates.length === 0) return;
 	await mutate(cmd.storeUpdateTags(updates));
 	emitEvent("tag:update", updates);
+	// ONLY resync on color change, everything else is resolved by Rust
 	if (
 		selections.some((s) => {
 			const p = s.props;
-			return p.type === "Tag" && updates.some((q) => q.id === p.tagId);
+			return p.type === "Tag" && updates.some((q) => q.id === p.tagId && q.patch.color != null);
 		})
 	) {
 		applySelectionUpdate((sels) => sels);
