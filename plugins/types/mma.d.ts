@@ -2634,6 +2634,9 @@ export type SavedSelectionProps = {
 	type: "Invert";
 	selections: SavedSelectionProps[];
 };
+declare function savedToSelectionProps(saved: SavedSelectionProps): SelectionProps | null;
+declare function describeRule(props: SavedSelectionProps): string;
+declare function getSavedSelections(): SavedSelection[];
 declare function loadGeoJSON(): Promise<void>;
 declare const COMMANDS: {
 	save: {
@@ -3368,6 +3371,9 @@ declare const mma: {
 		pinnedCommands: PinnedEntry[];
 		hasSeenWelcome: boolean;
 	};
+	getSavedSelections: typeof getSavedSelections;
+	savedToSelectionProps: typeof savedToSelectionProps;
+	describeRule: typeof describeRule;
 	on<E extends EditorEvent>(event: E, handler: EventHandler<E>): () => void;
 	getSeenEntries: typeof getSeenEntries;
 	getSeenCount: typeof getSeenCount;

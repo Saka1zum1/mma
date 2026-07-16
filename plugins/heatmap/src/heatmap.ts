@@ -1,6 +1,11 @@
 import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import type { LatLng, LocationStore, ScopeHandle } from "mma-plugin-types";
+import type { LatLng, LocationStore } from "mma-plugin-types";
+
+export type HeatmapSource =
+	| { kind: "all" }
+	| { kind: "selected" }
+	| { kind: "saved"; id: string };
 
 export interface HeatmapLayerSettings {
 	id: string;
@@ -10,9 +15,10 @@ export interface HeatmapLayerSettings {
 	opacity: number;
 	threshold: number;
 	gradientIndex: number;
+	source: HeatmapSource;
 }
 
-export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id"> = {
+export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
 	visible: true,
 	intensity: 1,
 	radiusPixels: 30,
@@ -23,8 +29,12 @@ export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id"> = {
 
 const store = MMA.storage("heatmap");
 
+function defaultSource(): HeatmapSource {
+	return MMA.getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" };
+}
+
 function newLayer(): HeatmapLayerSettings {
-	return { id: crypto.randomUUID(), ...LAYER_DEFAULTS };
+	return { id: crypto.randomUUID(), source: defaultSource(), ...LAYER_DEFAULTS };
 }
 
 // Pre-1.1 versions stored a single settings object under "settings".
@@ -85,18 +95,8 @@ let locStore: LocationStore | null = null;
 let layers: HeatmapLayerSettings[] = loadLayers();
 let onSettingsChange: (() => void) | null = null;
 
-// Externalized scope: the sidebar drives it via scopeHandle.use(), the renderer reads it
-// synchronously and rebuilds via subscribe() — no hand-rolled state, no React bridge.
-export const scopeHandle: ScopeHandle = MMA.createScope();
-
 export function getLayers(): HeatmapLayerSettings[] {
 	return layers;
-}
-
-// The renderer's pool is the plugin's own LocationStore; the scope just narrows it.
-function scopedLocations(): LatLng[] {
-	if (!locStore) return [];
-	return locStore.get(scopeHandle.get()).map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 
 export function setOnSettingsChange(cb: (() => void) | null) {
@@ -129,27 +129,75 @@ export function resetLayers() {
 	commit();
 }
 
-function rebuild() {
-	if (!overlay) return;
-	const data = scopedLocations();
+// Saved-selection resolution is async (Rust round-trip); cache per saved id and
+// invalidate whenever location data changes (tag membership rides location updates).
+const savedIdCache = new Map<string, Set<number>>();
 
-	const deckLayers = layers
-		.filter((l) => l.visible)
-		.map(
-			(l) =>
-				new HeatmapLayer({
-					id: `mma-heatmap-${l.id}`,
-					data,
-					getPosition: (d: LatLng) => [d.lng, d.lat],
-					getWeight: 1,
-					radiusPixels: l.radiusPixels,
-					intensity: l.intensity,
-					threshold: l.threshold,
-					opacity: l.opacity,
-					colorRange: sampleColorRange((GRADIENTS[l.gradientIndex] ?? GRADIENTS[0]).stops),
-					debounceTimeout: 100,
-				}),
+async function resolveSaved(savedId: string): Promise<Set<number>> {
+	const cached = savedIdCache.get(savedId);
+	if (cached) return cached;
+	const ids = new Set<number>();
+	const saved = MMA.getSavedSelections().find((s) => s.id === savedId);
+	if (saved) {
+		const propsList = saved.items
+			.map((item) => MMA.savedToSelectionProps(item.props))
+			.filter((p) => p !== null);
+		const resolved = await Promise.all(
+			propsList.map((p) => MMA.cmd.storeResolveSelection(p)),
 		);
+		for (const arr of resolved) for (const id of arr) ids.add(id);
+	}
+	savedIdCache.set(savedId, ids);
+	return ids;
+}
+
+async function sourceData(source: HeatmapSource): Promise<LatLng[]> {
+	if (!locStore) return [];
+	const pool = locStore.get();
+	let subset;
+	switch (source.kind) {
+		case "all":
+			subset = pool;
+			break;
+		case "selected": {
+			const ids = MMA.getSelectedLocationIds();
+			subset = pool.filter((l) => ids.has(l.id));
+			break;
+		}
+		case "saved": {
+			const ids = await resolveSaved(source.id);
+			subset = pool.filter((l) => ids.has(l.id));
+			break;
+		}
+	}
+	return subset.map((l) => ({ lat: l.lat, lng: l.lng }));
+}
+
+let rebuildToken = 0;
+
+async function rebuild() {
+	if (!overlay) return;
+	const token = ++rebuildToken;
+
+	const visible = layers.filter((l) => l.visible);
+	const datas = await Promise.all(visible.map((l) => sourceData(l.source)));
+	if (token !== rebuildToken || !overlay) return;
+
+	const deckLayers = visible.map(
+		(l, i) =>
+			new HeatmapLayer({
+				id: `mma-heatmap-${l.id}`,
+				data: datas[i],
+				getPosition: (d: LatLng) => [d.lng, d.lat],
+				getWeight: 1,
+				radiusPixels: l.radiusPixels,
+				intensity: l.intensity,
+				threshold: l.threshold,
+				opacity: l.opacity,
+				colorRange: sampleColorRange((GRADIENTS[l.gradientIndex] ?? GRADIENTS[0]).stops),
+				debounceTimeout: 100,
+			}),
+	);
 
 	overlay.setProps({ layers: deckLayers });
 }
@@ -159,27 +207,29 @@ export async function init(): Promise<() => void> {
 	if (!map) throw new Error("No map instance");
 
 	locStore = await MMA.createLocationStore();
-	// Default to the current selection if there is one, else all locations.
-	scopeHandle.set(MMA.getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" });
 
 	overlay = new GoogleMapsOverlay({ layers: [] });
 	overlay.setMap(map);
-	rebuild();
+	void rebuild();
 
-	const onChange = () => {
-		rebuild();
+	const onSelectionChange = () => {
+		void rebuild();
 		onSettingsChange?.();
 	};
-	const unsubStore = locStore.onChange(onChange);
-	const unsubSel = MMA.on("selection:change", onChange);
-	const unsubScope = scopeHandle.subscribe(onChange);
+	const onStoreChange = () => {
+		savedIdCache.clear();
+		void rebuild();
+		onSettingsChange?.();
+	};
+	const unsubStore = locStore.onChange(onStoreChange);
+	const unsubSel = MMA.on("selection:change", onSelectionChange);
 
 	return () => {
 		unsubStore();
 		unsubSel();
-		unsubScope();
 		locStore?.destroy();
 		locStore = null;
+		savedIdCache.clear();
 		if (overlay) {
 			overlay.setMap(null);
 			overlay.finalize();

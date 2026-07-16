@@ -35,6 +35,7 @@ import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialo
 import { getGoogleMap, waitForGoogleMap } from "@/lib/map/mapState";
 import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings";
+import { getSavedSelections, savedToSelectionProps, describeRule } from "@/store/savedSelections";
 import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen";
 import { loadSeenPano } from "@/lib/sv/panoSingleton";
 import { enrichAll, needsEnrichment } from "@/lib/sv/enrich";
@@ -207,6 +208,11 @@ const mma = {
 	// --- Settings ---
 	setSetting,
 	getSettings: () => ({ ...getSettings() }),
+
+	// --- Saved selections ---
+	getSavedSelections,
+	savedToSelectionProps,
+	describeRule,
 
 	// --- Events (for plugins) ---
 	on<E extends EditorEvent>(event: E, handler: EventHandler<E>) {

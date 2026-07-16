@@ -932,8 +932,11 @@ var LAYER_DEFAULTS = {
   gradientIndex: 0
 };
 var store = MMA.storage("heatmap");
+function defaultSource() {
+  return MMA.getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" };
+}
 function newLayer() {
-  return { id: crypto.randomUUID(), ...LAYER_DEFAULTS };
+  return { id: crypto.randomUUID(), source: defaultSource(), ...LAYER_DEFAULTS };
 }
 function loadLayers() {
   const stored = store.get("layers");
@@ -979,13 +982,8 @@ var overlay = null;
 var locStore = null;
 var layers = loadLayers();
 var onSettingsChange = null;
-var scopeHandle = MMA.createScope();
 function getLayers() {
   return layers;
-}
-function scopedLocations() {
-  if (!locStore) return [];
-  return locStore.get(scopeHandle.get()).map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 function setOnSettingsChange(cb) {
   onSettingsChange = cb;
@@ -1011,13 +1009,54 @@ function resetLayers() {
   layers = [newLayer()];
   commit();
 }
-function rebuild() {
+var savedIdCache = /* @__PURE__ */ new Map();
+async function resolveSaved(savedId) {
+  const cached = savedIdCache.get(savedId);
+  if (cached) return cached;
+  const ids = /* @__PURE__ */ new Set();
+  const saved = MMA.getSavedSelections().find((s) => s.id === savedId);
+  if (saved) {
+    const propsList = saved.items.map((item) => MMA.savedToSelectionProps(item.props)).filter((p) => p !== null);
+    const resolved = await Promise.all(
+      propsList.map((p) => MMA.cmd.storeResolveSelection(p))
+    );
+    for (const arr of resolved) for (const id of arr) ids.add(id);
+  }
+  savedIdCache.set(savedId, ids);
+  return ids;
+}
+async function sourceData(source) {
+  if (!locStore) return [];
+  const pool = locStore.get();
+  let subset;
+  switch (source.kind) {
+    case "all":
+      subset = pool;
+      break;
+    case "selected": {
+      const ids = MMA.getSelectedLocationIds();
+      subset = pool.filter((l) => ids.has(l.id));
+      break;
+    }
+    case "saved": {
+      const ids = await resolveSaved(source.id);
+      subset = pool.filter((l) => ids.has(l.id));
+      break;
+    }
+  }
+  return subset.map((l) => ({ lat: l.lat, lng: l.lng }));
+}
+var rebuildToken = 0;
+async function rebuild() {
   if (!overlay) return;
-  const data = scopedLocations();
-  const deckLayers = layers.filter((l) => l.visible).map(
-    (l) => new heatmap_layer_default({
+  const token = ++rebuildToken;
+  const visible = layers.filter((l) => l.visible);
+  const datas = await Promise.all(visible.map((l) => sourceData(l.source)));
+  if (token !== rebuildToken || !overlay) return;
+  const deckLayers = visible.map(
+    (l, i) => new heatmap_layer_default({
       id: `mma-heatmap-${l.id}`,
-      data,
+      data: datas[i],
       getPosition: (d) => [d.lng, d.lat],
       getWeight: 1,
       radiusPixels: l.radiusPixels,
@@ -1034,23 +1073,26 @@ async function init() {
   const map = MMA.getGoogleMap();
   if (!map) throw new Error("No map instance");
   locStore = await MMA.createLocationStore();
-  scopeHandle.set(MMA.getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" });
   overlay = new import_google_maps.GoogleMapsOverlay({ layers: [] });
   overlay.setMap(map);
-  rebuild();
-  const onChange = () => {
-    rebuild();
+  void rebuild();
+  const onSelectionChange = () => {
+    void rebuild();
     onSettingsChange?.();
   };
-  const unsubStore = locStore.onChange(onChange);
-  const unsubSel = MMA.on("selection:change", onChange);
-  const unsubScope = scopeHandle.subscribe(onChange);
+  const onStoreChange = () => {
+    savedIdCache.clear();
+    void rebuild();
+    onSettingsChange?.();
+  };
+  const unsubStore = locStore.onChange(onStoreChange);
+  const unsubSel = MMA.on("selection:change", onSelectionChange);
   return () => {
     unsubStore();
     unsubSel();
-    unsubScope();
     locStore?.destroy();
     locStore = null;
+    savedIdCache.clear();
     if (overlay) {
       overlay.setMap(null);
       overlay.finalize();
@@ -1115,6 +1157,12 @@ var CSS = `
   color: var(--text-primary, #fff);
   border-color: var(--text-secondary, #999);
 }
+.heatmap-sidebar__control select {
+  flex: 1; min-width: 0; font-size: 12px;
+  background: var(--color-input-background, #222);
+  color: inherit; border: 1px solid var(--color-divider, #444);
+  border-radius: 4px; padding: 3px 4px;
+}
 .heatmap-sidebar__gradients {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
 }
@@ -1145,7 +1193,6 @@ function Icon({ path, size = 20 }) {
 function HeatmapSidebar({ onClose }) {
   const [, rerender] = (0, import_react.useState)(0);
   const layers2 = getLayers();
-  const scopeCtl = scopeHandle.use();
   (0, import_react.useEffect)(() => {
     injectCSS();
     setOnSettingsChange(() => rerender((n) => n + 1));
@@ -1162,13 +1209,37 @@ function HeatmapSidebar({ onClose }) {
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: resetLayers, children: "Reset" })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__body", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__section", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", children: "Apply to" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MMA.ui.ScopeSelector, { ctl: scopeCtl })
-      ] }),
       layers2.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LayerControls, { layer: l, index: i }, l.id)),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__add", onClick: addLayer, children: "Add heatmap" })
     ] })
+  ] });
+}
+function sourceValue(source) {
+  return source.kind === "saved" ? `saved:${source.id}` : source.kind;
+}
+function parseSourceValue(value) {
+  if (value.startsWith("saved:")) return { kind: "saved", id: value.slice("saved:".length) };
+  return { kind: value };
+}
+function SourceSelect({ layer: l }) {
+  const saved = MMA.getSavedSelections();
+  const src = l.source;
+  const missing = src.kind === "saved" && !saved.some((s) => s.id === src.id);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__control", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { children: "Source" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+      "select",
+      {
+        value: sourceValue(l.source),
+        onChange: (e) => updateLayer(l.id, { source: parseSourceValue(e.target.value) }),
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: "all", children: "All locations" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: "selected", children: "Current selection" }),
+          missing && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: sourceValue(l.source), children: "(deleted selection)" }),
+          saved.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("optgroup", { label: "Saved selections", children: saved.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: `saved:${s.id}`, children: s.name }, s.id)) })
+        ]
+      }
+    )
   ] });
 }
 function LayerControls({ layer: l, index }) {
@@ -1189,6 +1260,7 @@ function LayerControls({ layer: l, index }) {
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => removeLayer(l.id), children: "Remove" })
     ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SourceSelect, { layer: l }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       Slider,
       {
