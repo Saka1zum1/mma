@@ -1,31 +1,32 @@
 import type { Layer } from "@deck.gl/core";
-import { ScatterplotLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
 import type { MarkerStyle } from "@/types";
 import type { CellManager } from "@/lib/render/CellManager";
 
 export type MarkerBuf = { positions: Float32Array; colors: Uint8Array; angles: Float32Array };
 
-// Per-style layer class + shape constants. `idSuffix` keeps deck.gl layer ids stable across styles.
+// Layer-level translucency: markers composite against each other at full alpha
+// (the SDF shader outputs premultiplied color pre-scaled by the target opacity),
+// while the constant alpha blend factor caps the canvas alpha at that opacity.
+// Overlap then reads uniformly instead of stacking back to opaque. blendColor is
+// the legacy-style key luma needs to supply the 'constant' factor's value.
+function flattenParameters(op: number) {
+	return {
+		blend: true,
+		blendColorOperation: "add",
+		blendColorSrcFactor: "one",
+		blendColorDstFactor: "one-minus-src-alpha",
+		blendAlphaOperation: "add",
+		blendAlphaSrcFactor: "constant",
+		blendAlphaDstFactor: "one-minus-src-alpha",
+		blendColor: [0, 0, 0, op],
+	} as Record<string, unknown>;
+}
+
 export const MARKER_STYLE = {
-	circle: {
-		Layer: ScatterplotLayer,
-		idSuffix: "s",
-		angle: false,
-		base: { getRadius: 6, radiusUnits: "pixels", radiusMinPixels: 3 },
-	},
-	arrow: {
-		Layer: SDFMarkerLayer,
-		idSuffix: "d",
-		angle: true,
-		base: { shape: "arrow", radiusPixels: 12 },
-	},
-	pin: {
-		Layer: SDFMarkerLayer,
-		idSuffix: "d",
-		angle: false,
-		base: { shape: "pin", radiusPixels: 16 },
-	},
+	circle: { shape: "circle", radiusPixels: 6 / 0.7, angle: false },
+	arrow: { shape: "arrow", radiusPixels: 12, angle: true },
+	pin: { shape: "pin", radiusPixels: 16, angle: false },
 } as const;
 
 export function buildMarkerLayer(
@@ -38,25 +39,28 @@ export function buildMarkerLayer(
 	opacity?: number,
 	sizeScale = 1,
 ): Layer {
+	const flatten = opacity != null && opacity > 0 && opacity < 1;
 	const s = MARKER_STYLE[markerStyle];
 	const attributes: Record<string, unknown> = {
 		getPosition: { value: buf.positions, size: 2 },
 		getFillColor: { value: buf.colors, size: 4 },
 	};
 	if (s.angle) attributes.getAngle = { value: buf.angles, size: 1 };
-	const LayerClass = s.Layer as new (props: Record<string, unknown>) => Layer;
-	const sizeProps: Record<string, unknown> = {};
-	if ("radiusPixels" in s.base) sizeProps.radiusPixels = s.base.radiusPixels * sizeScale;
-	if ("getRadius" in s.base) sizeProps.getRadius = s.base.getRadius * sizeScale;
+	const LayerClass = SDFMarkerLayer as unknown as new (props: Record<string, unknown>) => Layer;
+	// Same gamma deck applies to its own opacity prop, so the slider feels identical.
+	const flatOpacity = flatten ? Math.pow(opacity, 1 / 2.2) : 0;
 	return new LayerClass({
-		id: `${idBase}:${s.idSuffix}`,
+		id: idBase,
 		data: { length: count, attributes },
-		...s.base,
-		...sizeProps,
+		shape: s.shape,
+		radiusPixels: s.radiusPixels * sizeScale,
 		pickable: true,
-		...(opacity != null ? { opacity } : {}),
+		...(flatten
+			? { flattenOpacity: flatOpacity, parameters: flattenParameters(flatOpacity) }
+			: opacity != null
+				? { opacity }
+				: {}),
 		updateTriggers: {
-			...(opacity != null ? { opacity: [opacity] } : {}),
 			getFillColor: [colorVer],
 			getPosition: [posVer],
 			...(s.angle ? { getAngle: [posVer] } : {}),

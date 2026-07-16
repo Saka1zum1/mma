@@ -29,19 +29,19 @@ describe("resolvePickedId (shared pick resolution)", () => {
 
 	it("reads a selection-overlay pick from selOverlayIds", async () => {
 		const cm = fakeCm({ selOverlayIds: new Uint32Array([10, 20, 30]) });
-		expect(await resolvePickedId(cm, pick("sel-overlay:red", 1))).toBe(20);
+		expect(await resolvePickedId(cm, pick("sel-overlay", 1))).toBe(20);
 	});
 
 	it("resolves a cell pick locally without hitting Rust", async () => {
 		const cm = fakeCm({ resolvePickFromCell: (key, i) => (key === "abc" && i === 2 ? 99 : null) });
-		expect(await resolvePickedId(cm, pick("cell:abc:0", 2))).toBe(99);
+		expect(await resolvePickedId(cm, pick("cell:abc", 2))).toBe(99);
 		expect(storeResolvePick).not.toHaveBeenCalled();
 	});
 
 	it("falls back to Rust when the cell is not materialized in JS", async () => {
 		storeResolvePick.mockResolvedValue(777);
 		const cm = fakeCm({ resolvePickFromCell: () => null });
-		expect(await resolvePickedId(cm, pick("cell:xyz:1", 5))).toBe(777);
+		expect(await resolvePickedId(cm, pick("cell:xyz", 5))).toBe(777);
 		expect(storeResolvePick).toHaveBeenCalledWith("xyz", 5);
 	});
 

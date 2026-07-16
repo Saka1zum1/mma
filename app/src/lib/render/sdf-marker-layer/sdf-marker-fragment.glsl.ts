@@ -75,6 +75,9 @@ void main(void) {
 
   fragColor = vFillColor;
   fragColor.a *= alpha;
+  if (sdfMarker.flattenOpacity > 0.0) {
+    fragColor = vec4(fragColor.rgb * fragColor.a * sdfMarker.flattenOpacity, fragColor.a);
+  }
   DECKGL_FILTER_COLOR(fragColor, geometry);
 }
 `;

@@ -1,7 +1,7 @@
 import type { Layer, Position } from "@deck.gl/core";
 import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
-import { baseMarkerLayers, buildMarkerLayer } from "@/lib/render/markerLayer";
+import { baseMarkerLayers, buildMarkerLayer, MARKER_STYLE } from "@/lib/render/markerLayer";
 import PanoCoverageLayer from "@/lib/render/PanoCoverageLayer";
 import type { CellManager } from "@/lib/render/CellManager";
 import type { MarkerStyle } from "@/types";
@@ -238,48 +238,22 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 			ctx.activeLocationColor.b,
 			255,
 		];
-		if (ctx.markerStyle === "arrow") {
-			layers.push(
-				new SDFMarkerLayer<Location>({
-					id: `${LOCATION_LAYER_ID}-current-sdf`,
-					data: [activeLoc],
-					getPosition: (d) => [d.lng, d.lat],
-					shape: "arrow",
-					radiusPixels: 12 * ctx.markerSize,
-					getFillColor: activeColor,
-					getAngle: (d: Location) => -d.heading,
-					pickable: true,
-					updateTriggers: {
-						getAngle: [ctx.markerStyle],
-					},
-				}),
-			);
-		} else if (ctx.markerStyle === "circle") {
-			layers.push(
-				new ScatterplotLayer<Location>({
-					id: `${LOCATION_LAYER_ID}-current-scatter`,
-					data: [activeLoc],
-					getPosition: (d) => [d.lng, d.lat],
-					getRadius: 6 * ctx.markerSize,
-					radiusUnits: "pixels",
-					radiusMinPixels: 3,
-					getFillColor: activeColor,
-					pickable: true,
-				}),
-			);
-		} else {
-			layers.push(
-				new SDFMarkerLayer<Location>({
-					id: `${LOCATION_LAYER_ID}-current-sdf`,
-					data: [activeLoc],
-					getPosition: (d) => [d.lng, d.lat],
-					shape: "pin",
-					radiusPixels: 16 * ctx.markerSize,
-					getFillColor: activeColor,
-					pickable: true,
-				}),
-			);
-		}
+		const s = MARKER_STYLE[ctx.markerStyle];
+		layers.push(
+			new SDFMarkerLayer<Location>({
+				id: `${LOCATION_LAYER_ID}-current-sdf`,
+				data: [activeLoc],
+				getPosition: (d) => [d.lng, d.lat],
+				shape: s.shape,
+				radiusPixels: s.radiusPixels * ctx.markerSize,
+				getFillColor: activeColor,
+				...(s.angle ? { getAngle: (d: Location) => -d.heading } : {}),
+				pickable: true,
+				updateTriggers: {
+					getAngle: [ctx.markerStyle],
+				},
+			}),
+		);
 	}
 
 	if (ctx.showPerfectScoreCircle && activeLoc && cm.totalCount > 0) {

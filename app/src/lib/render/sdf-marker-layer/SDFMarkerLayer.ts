@@ -26,6 +26,7 @@ type _SDFMarkerLayerProps<DataT> = {
 	data: LayerDataSource<DataT>;
 	shape?: SDFShape;
 	radiusPixels?: number;
+	flattenOpacity?: number;
 	getPosition?: Accessor<DataT, Position>;
 	getFillColor?: Accessor<DataT, Color>;
 	getAngle?: Accessor<DataT, number>;
@@ -37,6 +38,7 @@ export type SDFMarkerLayerProps<DataT = unknown> = _SDFMarkerLayerProps<DataT> &
 const defaultProps: DefaultProps<SDFMarkerLayerProps> = {
 	shape: "circle",
 	radiusPixels: { type: "number", min: 0, value: 12 },
+	flattenOpacity: { type: "number", min: 0, max: 1, value: 0 },
 	getPosition: { type: "accessor", value: [0, 0] },
 	getFillColor: { type: "accessor", value: [0, 0, 0, 255] },
 	getAngle: { type: "accessor", value: 0 },
@@ -95,11 +97,12 @@ export default class SDFMarkerLayer<
 	}
 
 	draw() {
-		const { radiusPixels, shape } = this.props;
+		const { radiusPixels, shape, flattenOpacity } = this.props;
 		const model = this.state.model!;
 		const sdfProps: SDFMarkerProps = {
 			radiusPixels,
 			shapeType: SHAPE_TO_INT[shape!] ?? 0,
+			flattenOpacity,
 		};
 		model.shaderInputs.setProps({ sdfMarker: sdfProps });
 		model.draw(this.context.renderPass);

@@ -25,7 +25,7 @@ import type { Location } from "@/bindings.gen";
 export const isLocationLayer = (id?: string) =>
 	id?.startsWith(LOCATION_LAYER_ID) ||
 	id?.startsWith("cell:") ||
-	id?.startsWith("sel-overlay:") ||
+	id === "sel-overlay" ||
 	id === "import-preview";
 
 // Resolve a deck.gl pick to a location id from the shared cell/selection buffers.
@@ -34,7 +34,7 @@ export const isLocationLayer = (id?: string) =>
 export async function resolvePickedId(cm: CellManager, info: PickingInfo): Promise<number | null> {
 	if (typeof info.index !== "number" || info.index < 0) return null;
 	const layerId = info.layer?.id ?? "";
-	if (layerId.startsWith("sel-overlay:")) return cm.selOverlayIds[info.index] ?? null;
+	if (layerId === "sel-overlay") return cm.selOverlayIds[info.index] ?? null;
 	if (layerId.startsWith("cell:")) {
 		const cellKey = layerId.split(":")[1];
 		const local = cm.resolvePickFromCell(cellKey, info.index);
