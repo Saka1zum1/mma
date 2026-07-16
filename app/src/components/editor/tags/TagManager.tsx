@@ -828,7 +828,7 @@ function NewFolderDialog({
 						e.preventDefault();
 						if (path && !collision) onSave(path);
 					}}
-					style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
+					style={{ display: "flex", flexDirection: "column", gap: "0.75rem", paddingTop: "0.5rem" }}
 				>
 					<div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
 						<input
@@ -839,19 +839,16 @@ function NewFolderDialog({
 							placeholder="Folder name"
 							autoFocus
 						/>
-						{path && (
-							<span style={{ fontSize: "0.85em", opacity: 0.7 }}>
-								{collision ? (
-									<span style={{ color: "var(--red, #f87171)" }}>
-										"{path}" already exists in the tree
-									</span>
-								) : (
-									<>
-										Creates <strong>{path}</strong>
-									</>
-								)}
-							</span>
-						)}
+						<span
+							style={{
+								fontSize: "0.85em",
+								minHeight: "1.25em",
+								lineHeight: "1.25em",
+								color: "var(--red, #f87171)",
+							}}
+						>
+							{collision ? `"${path}" already exists in the tree` : ""}
+						</span>
 					</div>
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
 						<button className="button" type="button" onClick={onClose}>

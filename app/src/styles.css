@@ -3848,6 +3848,11 @@ body.mm-tag-dragging * {
 	flex-direction: column;
 	gap: 0.25rem;
 }
+/* Rows/pills are drag targets; stray text selection from a missed drag is never wanted. */
+.tag-manager .tag-list,
+.tag-tree {
+	user-select: none;
+}
 .tag-tree__children {
 	list-style: none;
 	margin: 0;
