@@ -1,5 +1,6 @@
 import type { Tag, VirtualTag } from "@/bindings.gen";
 import type { TagSortMode } from "@/types";
+import type { TagFolderColorMode } from "@/store/settings";
 
 export interface TagTreeNode {
 	segment: string;
@@ -30,6 +31,14 @@ export function sumCounts(node: TagTreeNode, tagCounts: Record<number, number>):
 	return total;
 }
 
+/** How a colorless folder row gets its color: `direct` uses `color` as-is; `firstChild`
+ *  inherits the first own-colored descendant in display order, `color` as fallback. */
+export interface FolderColorOpts {
+	mode: TagFolderColorMode;
+	color: string;
+}
+const DEFAULT_FOLDER_COLOR: FolderColorOpts = { mode: "direct", color: "#888888" };
+
 /** Build the nested tag tree from `/`-delimited tag names. Within each level, leaf tags
  *  are floated above sub-branches so they render as a flat pill group above folder rows.
  *  `virtualTags` colors folder nodes that have no underlying tag (keyed by full path).
@@ -42,6 +51,7 @@ export function buildTagTree(
 	virtualTags: Record<string, VirtualTag> = {},
 	aliases: Record<string, number> = {},
 	split = true,
+	folderColor: FolderColorOpts = DEFAULT_FOLDER_COLOR,
 ): TagTreeNode[] {
 	const root: TagTreeNode[] = [];
 
@@ -151,11 +161,28 @@ export function buildTagTree(
 		}
 	}
 
+	const ownColorOf = (node: TagTreeNode) =>
+		node.tag?.color ?? virtualTags[node.fullPath]?.color ?? null;
+
+	// First own-colored node in the (sorted) subtree, DFS in display order.
+	function firstDescendantColor(node: TagTreeNode): string | null {
+		const own = ownColorOf(node);
+		if (own) return own;
+		for (const child of node.children) {
+			const color = firstDescendantColor(child);
+			if (color) return color;
+		}
+		return null;
+	}
+
+	// Runs after sortNodes so firstChild mode sees children in display order.
 	function propagateColor(nodes: TagTreeNode[], parentColor: string | null) {
 		for (const node of nodes) {
-			// Real tag color wins; otherwise a virtual-tag color for this path; else inherit.
-			const ownColor = node.tag?.color ?? virtualTags[node.fullPath]?.color ?? null;
-			const effectiveColor = ownColor ?? parentColor ?? "#888888";
+			// Real tag color wins; otherwise a virtual-tag color for this path; else derive.
+			const ownColor = ownColorOf(node);
+			const derived =
+				ownColor ?? (folderColor.mode === "firstChild" ? firstDescendantColor(node) : null);
+			const effectiveColor = derived ?? parentColor ?? folderColor.color;
 			node.inheritedColor = effectiveColor;
 			propagateColor(node.children, effectiveColor);
 		}
@@ -198,9 +225,9 @@ export function buildTagTree(
 		for (const node of nodes) sortNodes(node.children);
 	}
 
-	propagateColor(root, null);
 	for (const node of root) collectMeta(node);
 	sortNodes(root);
+	propagateColor(root, null);
 
 	return root;
 }

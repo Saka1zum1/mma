@@ -35,6 +35,7 @@ import {
 	GEOCODE_PROVIDERS,
 	DISCORD_PRESENCE_MODES,
 	TAG_VIEW_MODES,
+	TAG_FOLDER_COLOR_MODES,
 	TAG_SUGGESTION_LIMITS,
 	BORDER_DETAILS,
 	SUBDIVISION_DETAILS,
@@ -853,14 +854,29 @@ function TagsSection() {
 				<SettingSelect setting="tagViewMode" options={TAG_VIEW_MODES} />
 			</label>
 			{s.tagViewMode === "tree" && (
-				<label className="settings-popup__item">
-					<input
-						type="checkbox"
-						checked={s.truncateTagPaths}
-						onChange={(e) => setSetting("truncateTagPaths", e.target.checked)}
-					/>
-					Truncate tag names to shortest unique path
-				</label>
+				<>
+					<div className="settings-popup__item">
+						Folder color
+						<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+							<SettingSelect setting="tagFolderColorMode" options={TAG_FOLDER_COLOR_MODES} />
+							{s.tagFolderColorMode === "direct" && (
+								<ColorPicker
+									color={s.tagFolderColor}
+									onChange={(color) => setSetting("tagFolderColor", color)}
+									ariaLabel="Default folder color"
+								/>
+							)}
+						</span>
+					</div>
+					<label className="settings-popup__item">
+						<input
+							type="checkbox"
+							checked={s.truncateTagPaths}
+							onChange={(e) => setSetting("truncateTagPaths", e.target.checked)}
+						/>
+						Truncate tag names to shortest unique path
+					</label>
+				</>
 			)}
 			<label className="settings-popup__item">
 				<input

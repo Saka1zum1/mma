@@ -12,8 +12,9 @@ import {
 	sumCounts,
 	shortestUniqueSuffixes,
 	type TagTreeNode,
+	type FolderColorOpts,
 } from "@/components/editor/tags/tagTreeRange";
-import type { Tag } from "@/bindings.gen";
+import type { Tag, VirtualTag } from "@/bindings.gen";
 
 interface N {
 	fullPath: string;
@@ -358,6 +359,79 @@ describe("buildTagTree", () => {
 		const tags = [mkTag(1, "b", 2), mkTag(2, "a", 2), mkTag(3, "c", 1)];
 		const tree = buildTagTree(tags, "default", {}, {}, {}, false);
 		expect(segs(tree)).toEqual(["c", "a", "b"]);
+	});
+});
+
+describe("folder colors", () => {
+	const mkTag = (id: number, name: string, color: string, order = id): Tag => ({
+		id,
+		name,
+		color,
+		order,
+	});
+	const build = (
+		tags: Tag[],
+		folderColor: FolderColorOpts,
+		virtualTags: Record<string, VirtualTag> = {},
+	) => buildTagTree(tags, "default", {}, virtualTags, {}, true, folderColor);
+
+	it("direct mode paints colorless folders with the configured color", () => {
+		const tree = build([mkTag(1, "F/x", "#ff0000")], { mode: "direct", color: "#123456" });
+		expect(tree[0].inheritedColor).toBe("#123456");
+		expect(tree[0].children[0].inheritedColor).toBe("#ff0000");
+	});
+
+	it("firstChild mode takes the first displayed child's color", () => {
+		// Display order at each level: leaf pills float above branch rows, so the
+		// pill's color wins even though the branch's subtree holds the lower order.
+		const tags = [
+			mkTag(1, "F/Sub/deep", "#0000ff", 1),
+			mkTag(2, "F/pill", "#00ff00", 2),
+			mkTag(3, "F/pill2", "#ff0000", 3),
+		];
+		const tree = build(tags, { mode: "firstChild", color: "#888888" });
+		expect(tree[0].inheritedColor).toBe("#00ff00");
+	});
+
+	it("firstChild mode follows display order under each sort mode", () => {
+		const tags = [mkTag(1, "F/b", "#0000ff", 1), mkTag(2, "F/a", "#ff0000", 2)];
+		const byOrder = buildTagTree(tags, "default", {}, {}, {}, true, {
+			mode: "firstChild",
+			color: "#888888",
+		});
+		expect(byOrder[0].inheritedColor).toBe("#0000ff"); // b first by order
+		const byName = buildTagTree(tags, "name", {}, {}, {}, true, {
+			mode: "firstChild",
+			color: "#888888",
+		});
+		expect(byName[0].inheritedColor).toBe("#ff0000"); // a first by name
+	});
+
+	it("firstChild mode recurses through colorless subfolders", () => {
+		const tree = build([mkTag(1, "F/Sub/x", "#ff0000")], { mode: "firstChild", color: "#888888" });
+		expect(tree[0].inheritedColor).toBe("#ff0000");
+		expect(tree[0].children[0].inheritedColor).toBe("#ff0000");
+	});
+
+	it("firstChild mode: an own virtual color still wins over the first child", () => {
+		const tree = build(
+			[mkTag(1, "F/x", "#ff0000")],
+			{ mode: "firstChild", color: "#888888" },
+			{
+				F: { color: "#00ff00" },
+			},
+		);
+		expect(tree[0].inheritedColor).toBe("#00ff00");
+	});
+
+	it("firstChild mode: declared empty folders fall back to the configured color", () => {
+		const tree = build([], { mode: "firstChild", color: "#123456" }, { Empty: {} });
+		expect(tree[0].inheritedColor).toBe("#123456");
+	});
+
+	it("defaults preserve the original gray fallback", () => {
+		const tree = buildTagTree([mkTag(1, "F/x", "#ff0000")], "default", {});
+		expect(tree[0].inheritedColor).toBe("#888888");
 	});
 });
 

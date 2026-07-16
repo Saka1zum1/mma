@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiChevronDown, mdiChevronRight, mdiPencil, mdiFolder } from "@mdi/js";
-import { textColorFor } from "@/lib/util/color";
+import { textColorFor, rgbToHex } from "@/lib/util/color";
 import { fmt } from "@/lib/util/format";
 import { toggleTagSelections } from "@/store/useMapStore";
 import { useStableHandler } from "@/lib/hooks/useStableHandler";
@@ -116,9 +116,15 @@ export function TagTreeView({
 	filterText,
 	ref,
 }: TagTreeViewProps & { ref?: React.Ref<TagTreeHandle> }) {
+	const folderColorMode = useSetting("tagFolderColorMode");
+	const folderColorRgb = useSetting("tagFolderColor");
 	const tree = useMemo(
-		() => buildTagTree(tags, sortMode, tagCounts, virtualTags, aliases, split),
-		[tags, sortMode, tagCounts, virtualTags, aliases, split],
+		() =>
+			buildTagTree(tags, sortMode, tagCounts, virtualTags, aliases, split, {
+				mode: folderColorMode,
+				color: rgbToHex(folderColorRgb),
+			}),
+		[tags, sortMode, tagCounts, virtualTags, aliases, split, folderColorMode, folderColorRgb],
 	);
 	const [expandedPaths, setExpandedPaths] = useState(loadExpanded);
 

@@ -47,6 +47,10 @@ export const TAG_VIEW_MODES = {
 	flat: "Flat",
 	tree: "Tree",
 } as const;
+export const TAG_FOLDER_COLOR_MODES = {
+	direct: "Fixed color",
+	firstChild: "Inherit first child",
+} as const;
 export const BORDER_DETAILS = {
 	light: "Standard (bundled)",
 	medium: "High (~10MB)",
@@ -76,6 +80,7 @@ export type MapListField = keyof typeof MAP_LIST_FIELDS;
 export type DiscordPresenceMode = keyof typeof DISCORD_PRESENCE_MODES;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
+export type TagFolderColorMode = keyof typeof TAG_FOLDER_COLOR_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
 export type SubdivisionDetail = keyof typeof SUBDIVISION_DETAILS;
 export type PreviewAspectRatio = keyof typeof PREVIEW_ASPECT_RATIOS;
@@ -136,6 +141,11 @@ const DEFAULTS = {
 	tagViewMode: "flat" as TagViewMode,
 	/** Tree view only: render each tag as the shortest path suffix that's still unique. */
 	truncateTagPaths: true,
+	/** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
+	 *  `firstChild` inherits the first own-colored descendant in display order,
+	 *  with tagFolderColor as the fallback for colorless subtrees. */
+	tagFolderColorMode: "direct" as TagFolderColorMode,
+	tagFolderColor: { r: 136, g: 136, b: 136 } as RGB,
 	tagSortMode: "default" as TagSortMode,
 	/** Gap between tag pills (px), shared by flat and tree views via `--tag-gap`. */
 	tagGap: 6 as number,
