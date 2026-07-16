@@ -24,7 +24,6 @@ import {
 	selectionToSaved,
 	savedToSelectionProps,
 	describeRule,
-	rewriteSavedSelectionFields,
 	resolveSavedSelectionIds,
 	type SavedSelection,
 	type SavedSelectionProps,
@@ -42,48 +41,62 @@ function makeSel(props: Selection["props"]): Selection {
 }
 
 // ============================================================================
-// rewriteSavedSelectionFields
+// INVARIANT: saved selections are global name-based rules, resolved fresh
+// against the open map. Map-local renames/deletes never rewrite them — an
+// unresolvable rule is skipped at resolution, never mutated or dropped.
 // ============================================================================
 
-describe("rewriteSavedSelectionFields", () => {
-	const wrap = (props: SavedSelectionProps): SavedSelection => ({
-		id: "s1",
-		name: "n",
-		items: [{ props, color: [0, 0, 0] }],
-		createdAt: 0,
+describe("saved selections survive map-local renames untouched", () => {
+	const deepFreeze = <T>(obj: T): T => {
+		if (obj && typeof obj === "object") {
+			Object.values(obj).forEach(deepFreeze);
+			Object.freeze(obj);
+		}
+		return obj;
+	};
+
+	it("a TagName rule tracks the current map's tags, not a snapshot", () => {
+		const rule = deepFreeze<SavedSelectionProps>({ type: "TagName", tagName: "Japan" });
+
+		h.tags = { 1: { id: 1, name: "Japan", color: "#f00", visible: true } };
+		expect(savedToSelectionProps(rule)).toEqual({ type: "Tag", tagId: 1 });
+
+		// Rename in the "current map": the rule is not rewritten, it just stops resolving.
+		h.tags = { 1: { id: 1, name: "Asia/Japan", color: "#f00", visible: true } };
+		expect(savedToSelectionProps(rule)).toBeNull();
+		expect(rule).toEqual({ type: "TagName", tagName: "Japan" });
+
+		// A map where the name exists (or the rename is undone) resolves again.
+		h.tags = { 9: { id: 9, name: "japan", color: "#0f0", visible: true } };
+		expect(savedToSelectionProps(rule)).toEqual({ type: "Tag", tagId: 9 });
 	});
 
-	it("renames a Filter field", () => {
-		const out = rewriteSavedSelectionFields(
-			[wrap({ type: "Filter", field: "a", op: "eq", value: 1 })],
-			"a",
-			"b",
-		);
-		expect((out[0].items[0].props as any).field).toBe("b");
+	it("a Filter rule outlives its field's deletion in the current map", () => {
+		// JS holds no field registry per rule: the Filter passes through verbatim and
+		// Rust treats a missing field as non-matching. Deletion must not drop the rule.
+		const rule = deepFreeze<SavedSelectionProps>({
+			type: "Filter",
+			field: "deleted-everywhere",
+			op: "eq",
+			value: 1,
+		});
+		expect(savedToSelectionProps(rule)).toEqual(rule);
 	});
 
-	it("drops a saved selection whose only Filter is deleted", () => {
-		const out = rewriteSavedSelectionFields(
-			[wrap({ type: "Filter", field: "a", op: "eq", value: 1 })],
-			"a",
-			null,
-		);
-		expect(out).toEqual([]);
-	});
-
-	it("rewrites filters nested in a composite and collapses singletons", () => {
-		const out = rewriteSavedSelectionFields(
-			[
-				wrap({
-					type: "Union",
-					selections: [{ type: "Filter", field: "a", op: "eq", value: 1 }, { type: "Untagged" }],
-				}),
+	it("resolution never mutates the saved definition", async () => {
+		const saved: SavedSelection = deepFreeze({
+			id: "s1",
+			name: "n",
+			items: [
+				{ props: { type: "TagName", tagName: "Gone" }, color: [0, 0, 0] },
+				{ props: { type: "Untagged" }, color: [0, 0, 0] },
 			],
-			"a",
-			null,
-		);
-		// Union loses its Filter child, collapsing to the lone Untagged
-		expect(out[0].items[0].props.type).toBe("Untagged");
+		} as SavedSelection);
+		h.saved = [saved];
+		h.resolve.mockResolvedValueOnce([1]);
+		const ids = await resolveSavedSelectionIds("s1");
+		expect([...ids]).toEqual([1]);
+		expect(saved.items).toHaveLength(2);
 	});
 });
 

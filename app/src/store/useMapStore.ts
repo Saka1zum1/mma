@@ -38,7 +38,7 @@ import { nowUnix } from "@/lib/util/format";
 import { mmaBufUrl, compareNatural } from "@/lib/util/util";
 import { compareMonthOrder } from "@/lib/util/date";
 import { fitMapToBounds } from "@/lib/map/mapState";
-import { getSettings, setSetting } from "@/store/settings";
+import { getSettings } from "@/store/settings";
 import {
 	setUserFieldDefs,
 	mergeUserFieldDefs,
@@ -51,11 +51,7 @@ import {
 	type MergeWinner,
 } from "@/lib/data/fieldOps";
 import type { LocationPatch_Deserialize as LocationPatch, Update, TagPatch } from "@/bindings.gen";
-import {
-	getSavedSelections,
-	rewriteSavedSelectionFields,
-	resolveSavedSelectionIds,
-} from "./savedSelections";
+import { resolveSavedSelectionIds } from "./savedSelections";
 import type { RenderDelta } from "@/bindings.gen";
 import {
 	SelectedIds,
@@ -888,7 +884,10 @@ export async function deleteField(key: string) {
 	await migrateFieldReferences(key, null);
 }
 
-/** Migrate field definition + active/saved selection references after a data move. */
+/** Migrate field definition + active selection references after a data move.
+ *  Saved selections are deliberately NOT rewritten: they are global name-based
+ *  rules resolved against whichever map is open, so a map-local rename/delete
+ *  must not mutate them (the rule simply stops resolving here). */
 async function migrateFieldReferences(from: string, to: string | null) {
 	if (!currentMap) return;
 	const defs = { ...(currentMap.meta.extra?.fields ?? {}) };
@@ -897,7 +896,6 @@ async function migrateFieldReferences(from: string, to: string | null) {
 		delete defs[from];
 		await setMapExtraFields(defs);
 	}
-	setSetting("savedSelections", rewriteSavedSelectionFields(getSavedSelections(), from, to));
 	await applySelectionUpdate((sels) => rewriteSelectionFields(sels, from, to));
 }
 
