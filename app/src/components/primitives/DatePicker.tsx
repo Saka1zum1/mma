@@ -3,6 +3,7 @@ import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import * as Popover from "@radix-ui/react-popover";
 import { Icon } from "@/components/primitives/Icon";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { mdiClose } from "@mdi/js";
 import { dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { MONTHS, parseTypedDate } from "@/lib/util/date";
@@ -420,8 +421,7 @@ export function DatePicker({
 						<div className="date-picker__toggles">
 							{showAnyYear && (
 								<label className="date-picker__any-year">
-									<input
-										type="checkbox"
+									<Checkbox
 										checked={anyYear ?? false}
 										onChange={(e) => onAnyYearToggle?.(e.target.checked)}
 									/>
@@ -430,8 +430,7 @@ export function DatePicker({
 							)}
 							{showAnyTime && (
 								<label className="date-picker__any-year">
-									<input
-										type="checkbox"
+									<Checkbox
 										checked={anyTime ?? false}
 										onChange={(e) => onAnyTimeToggle?.(e.target.checked)}
 									/>
@@ -440,8 +439,7 @@ export function DatePicker({
 							)}
 							{showTzLocal && (
 								<label className="date-picker__any-year">
-									<input
-										type="checkbox"
+									<Checkbox
 										checked={tzLocal ?? false}
 										onChange={(e) => onTzLocalToggle?.(e.target.checked)}
 									/>

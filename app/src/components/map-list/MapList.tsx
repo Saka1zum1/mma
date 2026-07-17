@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { NSelect } from "@/components/primitives/NSelect";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import {
 	useMapList,
 	createMap,
@@ -749,7 +750,7 @@ function ImportPreviewModal({
 							)}
 							onClick={() => toggle(i)}
 						>
-							<input type="checkbox" checked={entry.selected} readOnly />
+							<Checkbox checked={entry.selected} readOnly />
 							<span className="import-preview__name">{entry.name}</span>
 							<span className="import-preview__meta">
 								{fmt.format(entry.locationCount)} loc

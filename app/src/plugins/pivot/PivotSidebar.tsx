@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Selection, SelectionProps } from "@/bindings.gen";
 import { NSelect } from "@/components/primitives/NSelect";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
 import { selectionDisplayName, buildSelection } from "@/store/selections";
 import { savedToSelectionProps, describeRule, type SavedSelection } from "@/store/savedSelections";
@@ -341,11 +342,7 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 				</Field>
 				{hasNa && (
 					<label className="pivot-sidebar__check">
-						<input
-							type="checkbox"
-							checked={includeNa}
-							onChange={(e) => setIncludeNa(e.target.checked)}
-						/>
+						<Checkbox checked={includeNa} onChange={(e) => setIncludeNa(e.target.checked)} />
 						Include N/A
 					</label>
 				)}

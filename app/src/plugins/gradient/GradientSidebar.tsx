@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import { NSelect } from "@/components/primitives/NSelect";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import type { ExtraFieldType, KeySpec, DatePart } from "@/bindings.gen";
 import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
@@ -272,11 +273,7 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							<span>High</span>
 						</div>
 						<label className="gradient-sidebar__check">
-							<input
-								type="checkbox"
-								checked={reversed}
-								onChange={(e) => setReversed(e.target.checked)}
-							/>
+							<Checkbox checked={reversed} onChange={(e) => setReversed(e.target.checked)} />
 							Reverse
 						</label>
 					</Field>

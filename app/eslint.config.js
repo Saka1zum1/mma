@@ -54,6 +54,21 @@ export default defineConfig([
 					message: "Use <NSelect> (@/components/primitives/NSelect) instead of a raw <select>.",
 				},
 				{
+					selector:
+						"JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='radio']",
+					message: 'Use <Radio> (@/components/primitives/Radio) instead of a raw <input type="radio">.',
+				},
+				{
+					selector:
+						"JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='checkbox']",
+					message:
+						'Use <Checkbox> (@/components/primitives/Checkbox) instead of a raw <input type="checkbox">.',
+				},
+				{
+					selector: "CallExpression[callee.name=/^(confirm|alert)$/]",
+					message: "Native confirm()/alert() hang in WebView2 - use a Radix dialog instead.",
+				},
+				{
 					selector: "AssignmentExpression[left.property.name='innerHTML']",
 					message: "No raw innerHTML - use React or textContent.",
 				},
@@ -82,8 +97,12 @@ export default defineConfig([
 		rules: { "local/no-duplicate-command-icons": "error" },
 	},
 	{
-		// The one sanctioned raw <select>: NSelect wraps it.
-		files: ["src/components/primitives/NSelect.tsx"],
+		// The sanctioned raw form builtins: these primitives wrap them.
+		files: [
+			"src/components/primitives/NSelect.tsx",
+			"src/components/primitives/Radio.tsx",
+			"src/components/primitives/Checkbox.tsx",
+		],
 		rules: { "no-restricted-syntax": "off" },
 	},
 	{

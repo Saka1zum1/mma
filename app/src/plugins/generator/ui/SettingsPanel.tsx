@@ -2,6 +2,7 @@ import type { GeneratorSettings } from "../engine/types";
 import { DatePicker } from "@/components/primitives/DatePicker";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Radio } from "@/components/primitives/Radio";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { Section, SegmentedControl } from "@/components/primitives/Sidebar";
 
 function Check({
@@ -17,7 +18,7 @@ function Check({
 }) {
 	return (
 		<label className="generator-settings__check" title={title}>
-			<input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+			<Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)} />
 			{label}
 		</label>
 	);
