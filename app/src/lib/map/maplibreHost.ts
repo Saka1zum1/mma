@@ -44,7 +44,15 @@ const PREFETCH_MARGIN = 128;
 // vector tiles don't, so the basemap outruns SV coverage without this.
 maplibregl.setMaxParallelImageRequests(64);
 
-type MlEventName = "mousemove" | "mousedown" | "mouseup" | "mouseout" | "zoom" | "move" | "load";
+type MlEventName =
+	| "mousemove"
+	| "mousedown"
+	| "mouseup"
+	| "mouseout"
+	| "zoom"
+	| "move"
+	| "moveend"
+	| "load";
 
 const EVENT_NAMES: Record<keyof MapHostEvents, MlEventName> = {
 	mousemove: "mousemove",
@@ -53,6 +61,7 @@ const EVENT_NAMES: Record<keyof MapHostEvents, MlEventName> = {
 	mouseout: "mouseout",
 	zoom: "zoom",
 	camera: "move",
+	idle: "moveend",
 	tilesloaded: "load",
 };
 

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { CellManager } from "@/lib/render/CellManager";
+import { CellManager, LOD_BANDS, LOD_MIN_TOTAL } from "@/lib/render/CellManager";
+import type { CellBuffer } from "@/lib/render/CellManager";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
 import type { RGB } from "@/lib/util/color";
@@ -34,6 +35,48 @@ let listeners: Array<() => void> = [];
 function bumpScene() {
 	version++;
 	for (const l of listeners) l();
+	scheduleLodWarm();
+}
+
+// Warm the LOD pyramid at idle after any scene change, sliced so no single idle
+// callback blocks an interaction that follows it: one (cell, band) build per
+// slice, finest bands first (the finest is the only O(N) scan — usually seeded
+// from the Rust blob — and coarser bands cascade from it in O(reps)). warmLod is
+// position-only: already-warm bands are skipped without touching colors.
+let lodWarmPending = false;
+let lodWarmDirty = false;
+function idleSlice(fn: () => void) {
+	if (typeof requestIdleCallback === "function") requestIdleCallback(fn, { timeout: 2000 });
+	else setTimeout(fn, 200);
+}
+function scheduleLodWarm() {
+	if (lodWarmPending) {
+		lodWarmDirty = true; // a bump landed mid-warm; re-queue when this run finishes
+		return;
+	}
+	if (scene.totalCount < LOD_MIN_TOTAL) return;
+	lodWarmPending = true;
+	lodWarmDirty = false;
+	const work: Array<[CellBuffer, number]> = [];
+	for (let b = LOD_BANDS.length - 1; b >= 0; b--) {
+		for (const cb of scene.cells.values()) work.push([cb, b]);
+	}
+	let i = 0;
+	const slice = () => {
+		if (scene.totalCount < LOD_MIN_TOTAL) {
+			lodWarmPending = false;
+			return;
+		}
+		const [cb, b] = work[i++];
+		if (cb.count > 0) cb.warmLod(b);
+		if (i < work.length) {
+			idleSlice(slice);
+		} else {
+			lodWarmPending = false;
+			if (lodWarmDirty) scheduleLodWarm();
+		}
+	};
+	idleSlice(slice);
 }
 
 export function getScene(): CellManager {

@@ -97,6 +97,17 @@ impl SpatialIndex {
         let d_lng = radius_m / (111_320.0 * cos_lat);
         let (cx0, cy0) = cell_for(lat - d_lat, lng - d_lng);
         let (cx1, cy1) = cell_for(lat + d_lat, lng + d_lng);
+        // A wide query (large radius or low zoom) would walk mostly-empty grid cells;
+        // when the rectangle exceeds the occupied-cell count, scan those instead.
+        let span = (cx1 as i64 - cx0 as i64 + 1) * (cy1 as i64 - cy0 as i64 + 1);
+        if span > self.cells.len() as i64 {
+            for (&(cx, cy), v) in self.cells.iter() {
+                if cx >= cx0 && cx <= cx1 && cy >= cy0 && cy <= cy1 {
+                    out.extend_from_slice(v);
+                }
+            }
+            return;
+        }
         if (cx1 as i64 - cx0 as i64) > MAX_AXIS_CELLS || (cy1 as i64 - cy0 as i64) > MAX_AXIS_CELLS
         {
             log::warn!(

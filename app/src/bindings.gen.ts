@@ -201,6 +201,14 @@ export const commands = {
 	 */
 	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => typedError<boolean[], string>(__TAURI_INVOKE("store_near_any", { lats: lats.map(i=>i), lngs: lngs.map(i=>i), radiusM })),
 	/**
+	 *  CPU hit-test replacing deck.gl GPU picking for the marker layers. Returns
+	 *  covering markers topmost-first, resolving overlaps by draw order (selection
+	 *  overlay/active above base; within base, cell order then index within cell),
+	 *  which reproduces the painter's-order stacking the renderer draws.
+	 *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the surface.
+	 */
+	storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => typedError<PickHit[], string>(__TAURI_INVOKE("store_pick", { lat, lng, zoom, markerStyle, sizeScale })),
+	/**
 	 *  Collect all distinct values for an `extra` field across all alive locations. O(N).
 	 *  Used by the filter UI to populate dropdown options.
 	 */
@@ -892,6 +900,15 @@ export type PartitionBucket = {
 	key: string,
 	ids: number[],
 	bin: [number, number] | null,
+};
+
+/**
+ *  One marker under the cursor. `selected` = drawn in the selection overlay
+ *  (or as the active marker), i.e. above every base cell marker.
+ */
+export type PickHit = {
+	id: number,
+	selected: boolean,
 };
 
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
