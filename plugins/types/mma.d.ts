@@ -538,6 +538,20 @@ export declare const commands: {
 		data: boolean[];
 	}>;
 	/**
+	 *  CPU hit-test replacing deck.gl GPU picking for the marker layers. Returns
+	 *  covering markers topmost-first, resolving overlaps by draw order (selection
+	 *  overlay/active above base; within base, cell order then index within cell),
+	 *  which reproduces the painter's-order stacking the renderer draws.
+	 *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the surface.
+	 */
+	storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => Promise<{
+		status: "error";
+		error: string;
+	} | {
+		status: "ok";
+		data: PickHit[];
+	}>;
+	/**
 	 *  Collect all distinct values for an `extra` field across all alive locations. O(N).
 	 *  Used by the filter UI to populate dropdown options.
 	 */
@@ -1574,6 +1588,14 @@ export type PartitionBucket = {
 		number,
 		number
 	] | null;
+};
+/**
+ *  One marker under the cursor. `selected` = drawn in the selection overlay
+ *  (or as the active marker), i.e. above every base cell marker.
+ */
+export type PickHit = {
+	id: number;
+	selected: boolean;
 };
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
@@ -3231,6 +3253,7 @@ declare const mma: {
 		] | null>;
 		storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location[]>;
 		storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
+		storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => Promise<PickHit[]>;
 		storeExtraFieldValues: (field: string) => Promise<string[]>;
 		storeCreateTags: (names: string[]) => Promise<MutationResult>;
 		storeUpdateTags: (updates: Update<TagPatch>[]) => Promise<MutationResult>;

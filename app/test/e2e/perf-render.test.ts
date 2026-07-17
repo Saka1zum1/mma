@@ -139,11 +139,28 @@ async function runScenario(kind: ScenarioKind): Promise<ScenarioRaw> {
 describe("Render perf baseline", () => {
 	let mapId: string;
 	const results: Record<string, ScenarioResult> = {};
+	// Settle time of each config switch. Entries where the style actually changed
+	// time a full scene reload (fill + fetch + parse + LOD seed) at N markers - the
+	// proxy for the map-open cost; no-op switches just measure the 300ms grace sleep.
+	const settles: Record<string, number> = {};
 
 	before(async function () {
 		this.timeout(600000); // seeding 1M through the IPC bridge takes a while
 		await waitForReady();
 		mapId = await createAndOpenMap("Perf Render Baseline");
+
+		// Seed under full-detail zoom: at world zoom an LOD-capable renderer re-bins
+		// the whole dataset on every added chunk, inflating seeding many-fold.
+		await browser.waitUntil(
+			async () =>
+				browser.execute(() => {
+					const host = window.__mmaPerf?.host();
+					if (!host) return false;
+					host.moveCamera({ center: { lat: 47.6, lng: 2.9 }, zoom: 13 });
+					return true;
+				}),
+			{ timeout: 30000, timeoutMsg: "map host never appeared" },
+		);
 
 		for (let c = 0; c < N / CHUNK; c++) {
 			await withApi(
@@ -193,7 +210,13 @@ describe("Render perf baseline", () => {
 				BASELINE_PATH,
 				JSON.stringify(
 					{
-						meta: { markers: N, seed: SEED, v: BASELINE_V, date: new Date().toISOString() },
+						meta: {
+							markers: N,
+							seed: SEED,
+							v: BASELINE_V,
+							date: new Date().toISOString(),
+							settles,
+						},
 						scenarios: results,
 					},
 					null,
@@ -207,19 +230,23 @@ describe("Render perf baseline", () => {
 	for (const { style, size, kinds } of MATRIX) {
 		describe(`style: ${style} x${size}`, () => {
 			before(async () => {
-				await withApi(
+				const ms = await withApi(
 					async (_api, style: "pin" | "circle", size: number) => {
 						const P = window.__mmaPerf!;
+						const t0 = performance.now();
 						P.setMarkerStyle(style);
 						P.setMarkerSize(size);
 						// A style change triggers a full scene reload via a React effect;
 						// give the effect a beat to start before awaiting the load promise.
 						await new Promise((res) => setTimeout(res, 300));
 						await P.settled();
+						return performance.now() - t0;
 					},
 					style,
 					size,
 				);
+				settles[`${style}:x${size}`] = Math.round(ms);
+				console.log(`  [PERF] settle ${style}:x${size}: ${Math.round(ms)}ms`);
 				await browser.waitUntil(
 					async () =>
 						browser.execute((n: number) => {
