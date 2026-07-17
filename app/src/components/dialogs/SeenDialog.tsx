@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import * as Select from "@radix-ui/react-select";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { NSelect } from "@/components/primitives/NSelect";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 import {
 	getSeenEntries,
 	getSeenCount,
@@ -49,7 +51,7 @@ function SeenEntryCard({
 					)}
 					{entry.address || `${entry.lat.toFixed(4)}, ${entry.lng.toFixed(4)}`}
 				</span>
-				<span className="seen-entry__time">{formatDateTime(entry.enteredAt)}</span>
+				<span className="seen-entry__time mono">{formatDateTime(entry.enteredAt)}</span>
 			</div>
 		</button>
 	);
@@ -148,52 +150,32 @@ export function SeenDialog({
 		<Dialog open={open && ready} onOpenChange={onOpenChange}>
 			<DialogContent title={`Seen (${total})`} className="seen-dialog">
 				<div className="seen-dialog__filters">
-					<Select.Root
+					<NSelect
+						className="seen-dialog__select"
 						value={filterCountry || "_all"}
-						onValueChange={(v) => setFilterCountry(v === "_all" ? "" : v)}
+						onChange={(e) => setFilterCountry(e.target.value === "_all" ? "" : e.target.value)}
 					>
-						<Select.Trigger className="select__input seen-dialog__select">
-							<Select.Value placeholder="All countries" />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content className="select__content" position="popper" sideOffset={6}>
-								<Select.Viewport>
-									<Select.Item value="_all" className="select__option">
-										<Select.ItemText>All countries</Select.ItemText>
-									</Select.Item>
-									{countries.map((c) => (
-										<Select.Item key={c} value={c} className="select__option">
-											<Select.ItemText>{c.toUpperCase()}</Select.ItemText>
-										</Select.Item>
-									))}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
-					<Select.Root
+						<option value="_all">All countries</option>
+						{countries.map((c) => (
+							<option key={c} value={c}>
+								{c.toUpperCase()}
+							</option>
+						))}
+					</NSelect>
+					<NSelect
+						className="seen-dialog__select"
 						value={filterMap || "_all"}
-						onValueChange={(v) => setFilterMap(v === "_all" ? "" : v)}
+						onChange={(e) => setFilterMap(e.target.value === "_all" ? "" : e.target.value)}
 					>
-						<Select.Trigger className="select__input seen-dialog__select">
-							<Select.Value placeholder="All maps" />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content className="select__content" position="popper" sideOffset={6}>
-								<Select.Viewport>
-									<Select.Item value="_all" className="select__option">
-										<Select.ItemText>All maps</Select.ItemText>
-									</Select.Item>
-									{maps.map((m) => (
-										<Select.Item key={m.id} value={m.id} className="select__option">
-											<Select.ItemText>{m.name}</Select.ItemText>
-										</Select.Item>
-									))}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
-					<input
-						className="input seen-dialog__search"
+						<option value="_all">All maps</option>
+						{maps.map((m) => (
+							<option key={m.id} value={m.id}>
+								{m.name}
+							</option>
+						))}
+					</NSelect>
+					<TextInput
+						className="seen-dialog__search"
 						type="text"
 						placeholder="Search address..."
 						value={filterSearch}
@@ -208,29 +190,24 @@ export function SeenDialog({
 					)}
 				</div>
 				<div className="seen-dialog__footer">
-					<button
-						className="button button--danger"
+					<Button
+						variant="destructive"
 						onClick={handleClear}
 						onBlur={() => setConfirmingClear(false)}
 					>
 						{confirmingClear ? "Are you sure?" : "Clear"}
-					</button>
+					</Button>
 					<div className="seen-dialog__pagination">
-						<button
-							className="button"
-							disabled={page === 0 || loading}
-							onClick={() => load(page - 1, buildFilter())}
-						>
+						<Button disabled={page === 0 || loading} onClick={() => load(page - 1, buildFilter())}>
 							Prev
-						</button>
-						<span>{totalPages > 0 ? `${page + 1} / ${totalPages}` : "0 / 0"}</span>
-						<button
-							className="button"
+						</Button>
+						<span className="mono">{totalPages > 0 ? `${page + 1} / ${totalPages}` : "0 / 0"}</span>
+						<Button
 							disabled={page >= totalPages - 1 || loading}
 							onClick={() => load(page + 1, buildFilter())}
 						>
 							Next
-						</button>
+						</Button>
 					</div>
 				</div>
 			</DialogContent>

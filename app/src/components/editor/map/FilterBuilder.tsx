@@ -15,6 +15,8 @@ import { useSetting } from "@/store/settings";
 import { OP_LABELS } from "@/store/selections";
 import { DatePicker } from "@/components/primitives/DatePicker";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 import { mdiArrowRight, mdiArrowLeft } from "@mdi/js";
 
 const ALL_OPS: FilterOp[] = ["eq", "neq", "gt", "lt", "gte", "lte", "between", "has", "nothas"];
@@ -189,8 +191,7 @@ function FilterValueInput({
 
 	if (type === "array" && (op === "contains" || op === "notcontains")) {
 		return (
-			<input
-				className="input"
+			<TextInput
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				placeholder={placeholder ?? "Value"}
@@ -200,8 +201,7 @@ function FilterValueInput({
 
 	if (type === "number" || type === "array") {
 		return (
-			<input
-				className="input"
+			<TextInput
 				type="number"
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
@@ -211,8 +211,7 @@ function FilterValueInput({
 	}
 
 	return (
-		<input
-			className="input"
+		<TextInput
 			value={value}
 			onChange={(e) => onChange(e.target.value)}
 			placeholder={placeholder ?? "Value"}
@@ -551,14 +550,8 @@ export function FilterForm({
 					tzLocal={tzLocal}
 				/>
 			)}
-			<button className="button" type="submit">
-				{submitLabel}
-			</button>
-			{onClose && (
-				<button className="button" type="button" onClick={onClose}>
-					Cancel
-				</button>
-			)}
+			<Button type="submit">{submitLabel}</Button>
+			{onClose && <Button onClick={onClose}>Cancel</Button>}
 		</form>
 	);
 }

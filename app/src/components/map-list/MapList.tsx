@@ -1361,7 +1361,7 @@ export function MapList() {
 										Cancel
 									</button>
 									<button
-										className="button button--danger"
+										className="button button--destructive"
 										onClick={() => {
 											deleteMap(activeAction.id);
 											setActiveAction(null);
@@ -1391,7 +1391,7 @@ export function MapList() {
 										Cancel
 									</button>
 									<button
-										className="button button--danger"
+										className="button button--destructive"
 										onClick={async () => {
 											const name = activeAction.name;
 											setActiveAction(null);

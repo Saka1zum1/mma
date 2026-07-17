@@ -19,6 +19,7 @@ import {
 } from "@/types";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
 import { mdiChevronLeft, mdiChevronRight, mdiClose, mdiPlus } from "@mdi/js";
 import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
 import type { Tag } from "@/bindings.gen";
@@ -647,8 +648,9 @@ function LocationPreviewInner() {
 						)}
 						{lockInfo && (
 							<div className="viewport-lock-badge">
-								VIEWPORT LOCK h {lockInfo.relHeading.toFixed(1)} p {lockInfo.relPitch.toFixed(1)} z{" "}
-								{lockInfo.lockedZoom.toFixed(1)}
+								VIEWPORT LOCK h <span className="mono">{lockInfo.relHeading.toFixed(1)}</span> p{" "}
+								<span className="mono">{lockInfo.relPitch.toFixed(1)}</span> z{" "}
+								<span className="mono">{lockInfo.lockedZoom.toFixed(1)}</span>
 							</div>
 						)}
 					</div>
@@ -703,45 +705,39 @@ function LocationPreviewInner() {
 						<PanoDatePicker onChange={handleDateChange} />
 					</div>
 					<div className="location-preview__actions">
-						<button className="button button--primary" onClick={handleSave} data-qa="location-save">
+						<Button variant="primary" onClick={handleSave} data-qa="location-save">
 							{isSeenPreview(location) ? "Add to map" : "Save"}
-						</button>
+						</Button>
 						{isReviewMode ? (
 							<div style={{ display: "flex", justifyContent: "space-around" }}>
 								<Tooltip content="Go to previous location (Control+Left)">
-									<button
-										className="button"
+									<Button
 										onClick={() => reviewPrev()}
 										disabled={reviewSession ? isAtStart(reviewSession) : true}
 										aria-label="Go to previous location (Control+Left)"
 										data-qa="review-prev"
 									>
 										<Icon path={mdiChevronLeft} />
-									</button>
+									</Button>
 								</Tooltip>
 								<Tooltip content="Go to next location (Control+Right)">
-									<button
-										className="button"
+									<Button
 										onClick={handleClose}
 										aria-label="Go to next location (Control+Right)"
 										data-qa="review-next"
 									>
 										<Icon path={mdiChevronRight} />
-									</button>
+									</Button>
 								</Tooltip>
 							</div>
 						) : (
-							<button className="button" onClick={handleClose} data-qa="location-close">
+							<Button onClick={handleClose} data-qa="location-close">
 								Close
-							</button>
+							</Button>
 						)}
-						<button
-							className="button button--destructive"
-							onClick={handleDelete}
-							data-qa="location-delete"
-						>
+						<Button variant="destructive" onClick={handleDelete} data-qa="location-delete">
 							Delete
-						</button>
+						</Button>
 					</div>
 					<div className="location-preview__tags">
 						<TagEditor

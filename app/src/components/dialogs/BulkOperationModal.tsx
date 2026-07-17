@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { NSelect } from "@/components/primitives/NSelect";
+import { Button } from "@/components/primitives/Button";
+import { Checkbox } from "@/components/primitives/Checkbox";
+import { TextInput } from "@/components/primitives/TextInput";
 import {
 	getCurrentMap,
 	addSelections,
@@ -89,9 +92,8 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 		<div className="bulk-operation">
 			<ScopeSelector ctl={scopeCtl} />
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
 							const results = await validateLocations(locations, {
@@ -123,7 +125,7 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 					}
 				>
 					Start
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -184,13 +186,12 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 				</div>
 			)}
 			<label className="bulk-operation__option">
-				<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+				<Checkbox checked={force} onChange={(e) => setForce(e.target.checked)} />
 				Re-enrich already enriched locations
 			</label>
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
 							const er = await enrichAll(locations, { signal, force, onProgress });
@@ -207,7 +208,7 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 					disabled={enabledFields.length === 0 || (!force && !needsAny)}
 				>
 					Start
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -226,21 +227,16 @@ function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
 				{fmt.format(unpinned)} locations not pinned to a pano ID.
 			</div>
 			<label className="bulk-operation__option">
-				<input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+				<Checkbox checked={force} onChange={(e) => setForce(e.target.checked)} />
 				Re-pin already pinned locations
 			</label>
 			<label className="bulk-operation__option">
-				<input
-					type="checkbox"
-					checked={useLatest}
-					onChange={(e) => setUseLatest(e.target.checked)}
-				/>
+				<Checkbox checked={useLatest} onChange={(e) => setUseLatest(e.target.checked)} />
 				Use latest timeline coverage
 			</label>
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
 							const count = await bulkPinToPano(locations, {
@@ -255,7 +251,7 @@ function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
 					disabled={!force && !useLatest && unpinned === 0}
 				>
 					Start
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -293,7 +289,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 						const count = scopedWithData(key);
 						return (
 							<label key={key} className="bulk-operation__field-item">
-								<input type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} />
+								<Checkbox checked={selected.has(key)} onChange={() => toggle(key)} />
 								<span className="bulk-operation__field-label">{fieldLabel(key)}</span>
 								{def?.label && def.label !== key && (
 									<span className="bulk-operation__field-key">{key}</span>
@@ -307,9 +303,8 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 				</div>
 			)}
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					onClick={() => {
 						const keys = [...selected];
 						onReady(async ({ locations }) => {
@@ -332,7 +327,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 					disabled={selected.size === 0}
 				>
 					Clear {selected.size > 0 ? `${selected.size} field${selected.size !== 1 ? "s" : ""}` : ""}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -397,8 +392,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 			{creatingNew && (
 				<label className="bulk-operation__option">
 					New field name
-					<input
-						className="input"
+					<TextInput
 						value={newKey}
 						onChange={(e) => setNewKey(e.target.value)}
 						placeholder="field name"
@@ -418,8 +412,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 						))}
 					</NSelect>
 				) : (
-					<input
-						className="input"
+					<TextInput
 						type="text"
 						value={raw}
 						onChange={(e) => setRaw(e.target.value)}
@@ -435,9 +428,8 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 				</div>
 			)}
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					disabled={invalid}
 					onClick={() => {
 						const ek = effectiveKey;
@@ -459,7 +451,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 					}}
 				>
 					Set field
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -492,9 +484,8 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 				</label>
 			</div>
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
 							const count = await bulkPanHeading(locations, direction, { signal, onProgress });
@@ -503,7 +494,7 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 					}
 				>
 					Start
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -553,8 +544,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 				<>
 					<label className="bulk-operation__option">
 						Tile X
-						<input
-							className="input"
+						<TextInput
 							type="number"
 							min={0}
 							step={1}
@@ -565,8 +555,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 					</label>
 					<label className="bulk-operation__option">
 						Tile Y
-						<input
-							className="input"
+						<TextInput
 							type="number"
 							min={0}
 							step={1}
@@ -578,9 +567,8 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 				</>
 			)}
 			<div className="bulk-operation__actions">
-				<button
-					className="button button--primary"
-					type="button"
+				<Button
+					variant="primary"
 					onClick={() => {
 						const config = { mode, zoom, tileX, tileY };
 						onReady(async ({ locations, signal, onProgress }) => {
@@ -608,7 +596,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 					}}
 				>
 					Start
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -653,21 +641,19 @@ function DownloadDoneActions({
 	return (
 		<>
 			{result.outputPath != null && !saved && (
-				<button className="button button--primary" type="button" onClick={() => void save()}>
+				<Button variant="primary" onClick={() => void save()}>
 					{result.fileCount === 1 ? "Save image" : "Save ZIP"}
-				</button>
+				</Button>
 			)}
 			{result.failed.length > 0 && (
-				<button
-					className="button"
-					type="button"
+				<Button
 					onClick={() => {
 						addSelections([{ type: "Manual", locations: result.failed }]);
 						toast(`Selected ${fmt.format(result.failed.length)} failed locations`);
 					}}
 				>
 					Select failed
-				</button>
+				</Button>
 			)}
 		</>
 	);
@@ -694,14 +680,12 @@ function EnrichSummary({
 					{r.label}: {fmt.format(r.success.length)} updated
 					{r.failed.length > 0 && <>, {fmt.format(r.failed.length)} failed</>}
 					{r.failed.length > 0 && (
-						<button
-							className="button"
-							type="button"
+						<Button
 							style={{ marginLeft: 8 }}
 							onClick={() => onSelect(r.failed, `${r.label} failed`)}
 						>
 							Select failed
-						</button>
+						</Button>
 					)}
 				</div>
 			))}
@@ -816,19 +800,15 @@ function BulkProgress({
 			<progress className="bulk-operation__bar" value={progress} max={1} />
 			<div className="bulk-operation__actions">
 				{status === "running" ? (
-					<button
-						className="button button--destructive"
-						type="button"
-						onClick={() => controllerRef.current?.abort()}
-					>
+					<Button variant="destructive" onClick={() => controllerRef.current?.abort()}>
 						Cancel
-					</button>
+					</Button>
 				) : (
 					<>
 						{status === "done" && result.doneActions}
-						<button className="button button--primary" type="button" onClick={onClose}>
+						<Button variant="primary" onClick={onClose}>
 							Close
-						</button>
+						</Button>
 					</>
 				)}
 			</div>

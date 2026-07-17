@@ -44,6 +44,12 @@ export function DialogContent({
 					if ((e.target as Element | null)?.closest?.(".suggest-portal")) e.preventDefault();
 					else props.onInteractOutside?.(e);
 				}}
+				onCloseAutoFocus={(e) => {
+					// Radix refocuses the trigger on close; the focus ring reads as a stuck
+					// hover state on the opening button.
+					props.onCloseAutoFocus?.(e);
+					e.preventDefault();
+				}}
 			>
 				<div className={clsx("modal__dialog", className)}>
 					<header className={clsx("modal__header", className ? `${className}__header` : null)}>

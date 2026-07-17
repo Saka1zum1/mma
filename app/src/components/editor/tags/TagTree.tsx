@@ -479,7 +479,10 @@ export function TagTreeView({
 							</button>
 							<label className="tag__text">
 								{dragLeaf.label}
-								<small style={{ marginLeft: ".375rem", fontWeight: 600, verticalAlign: "middle" }}>
+								<small
+									className="mono"
+									style={{ marginLeft: ".375rem", fontWeight: 600, verticalAlign: "middle" }}
+								>
 									{fmt.format(dragLeaf.count)}
 								</small>
 							</label>
@@ -592,7 +595,7 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 						{!node.tag && (
 							<Icon path={mdiFolder} size={13} style={{ color: fg, opacity: 0.5, flexShrink: 0 }} />
 						)}
-						<small className="tag-tree__count">{fmt.format(count)}</small>
+						<small className="tag-tree__count mono">{fmt.format(count)}</small>
 						<button
 							className="button tag-tree__edit"
 							onClick={(e) => {
@@ -861,7 +864,10 @@ const TagTreeLeaf = memo(function TagTreeLeaf({
 					</button>
 					<label className="tag__text">
 						{node.segment}
-						<small style={{ marginLeft: ".375rem", fontWeight: 600, verticalAlign: "middle" }}>
+						<small
+							className="mono"
+							style={{ marginLeft: ".375rem", fontWeight: 600, verticalAlign: "middle" }}
+						>
 							{fmt.format(count)}
 						</small>
 					</label>

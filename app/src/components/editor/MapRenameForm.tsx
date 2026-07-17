@@ -1,6 +1,8 @@
 import { updateMapMeta, deleteMap } from "@/store/useMapStore";
 import { useId, useState } from "react";
 import { useCloseDialog } from "../primitives/Dialog";
+import { Button } from "../primitives/Button";
+import { TextInput } from "../primitives/TextInput";
 
 function DeleteMapSection({ mapId, name }: { mapId: string; name: string }) {
 	const [confirming, setConfirming] = useState(false);
@@ -8,9 +10,9 @@ function DeleteMapSection({ mapId, name }: { mapId: string; name: string }) {
 	if (!confirming) {
 		return (
 			<div className="edit-map-modal__delete">
-				<button type="button" className="button button--danger" onClick={() => setConfirming(true)}>
+				<Button variant="destructive" onClick={() => setConfirming(true)}>
 					Delete map
-				</button>
+				</Button>
 			</div>
 		);
 	}
@@ -22,16 +24,10 @@ function DeleteMapSection({ mapId, name }: { mapId: string; name: string }) {
 				history.
 			</p>
 			<div className="edit-map-modal__actions">
-				<button type="button" className="button" onClick={() => setConfirming(false)}>
-					Cancel
-				</button>
-				<button
-					type="button"
-					className="button button--danger"
-					onClick={() => void deleteMap(mapId)}
-				>
+				<Button onClick={() => setConfirming(false)}>Cancel</Button>
+				<Button variant="destructive" onClick={() => void deleteMap(mapId)}>
 					Delete map
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -53,9 +49,8 @@ export function MapRenameForm({ mapId, currentName }: { mapId: string; currentNa
 			>
 				<p className="edit-map-modal__name">
 					<label htmlFor={`${id}name`}>Map name:</label>
-					<input
+					<TextInput
 						id={`${id}name`}
-						className="input"
 						type="text"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
@@ -65,13 +60,9 @@ export function MapRenameForm({ mapId, currentName }: { mapId: string; currentNa
 					/>
 				</p>
 				<div className="edit-map-modal__actions">
-					<button
-						type="submit"
-						className="button button--primary"
-						disabled={name.trim().length === 0}
-					>
+					<Button variant="primary" type="submit" disabled={name.trim().length === 0}>
 						Save
-					</button>
+					</Button>
 				</div>
 			</form>
 			<DeleteMapSection mapId={mapId} name={currentName} />

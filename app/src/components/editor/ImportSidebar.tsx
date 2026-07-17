@@ -6,6 +6,8 @@ import { trace } from "@/lib/util/debug";
 import { textColorFor } from "@/lib/util/color";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { mdiClose } from "@mdi/js";
 
 const FIELD_PREFS_KEY = "import-field-prefs";
@@ -107,7 +109,8 @@ export function ImportSidebar() {
 			<header className="import-sidebar__header">
 				<h2 className="import-sidebar__title">Import</h2>
 				<span className="import-sidebar__count">
-					{fmt.format(preview.locationCount)} location{preview.locationCount !== 1 ? "s" : ""}
+					<span className="mono">{fmt.format(preview.locationCount)}</span> location
+					{preview.locationCount !== 1 ? "s" : ""}
 				</span>
 			</header>
 
@@ -134,13 +137,9 @@ export function ImportSidebar() {
 					<div className="importer__fields">
 						{sortedFields.map((f) => (
 							<label key={f.key} className="importer__field">
-								<input
-									type="checkbox"
-									checked={!droppedFields.has(f.key)}
-									onChange={() => toggleField(f.key)}
-								/>
+								<Checkbox checked={!droppedFields.has(f.key)} onChange={() => toggleField(f.key)} />
 								{f.key.startsWith("extra.") ? f.key.slice(6) : f.key}
-								<small>({fmt.format(f.count)})</small>
+								<small className="mono">({fmt.format(f.count)})</small>
 							</label>
 						))}
 					</div>
@@ -194,12 +193,12 @@ export function ImportSidebar() {
 			{error && <p className="importer__error">Error: {error}</p>}
 
 			<div className="import-sidebar__actions">
-				<button className="button button--primary" onClick={requestImport} disabled={importing}>
+				<Button variant="primary" onClick={requestImport} disabled={importing}>
 					{importing ? "Importing…" : "Import"}
-				</button>
-				<button className="button" onClick={cancelImport} disabled={importing}>
+				</Button>
+				<Button onClick={cancelImport} disabled={importing}>
 					Discard
-				</button>
+				</Button>
 			</div>
 
 			<Dialog open={confirmAutoCommit} onOpenChange={setConfirmAutoCommit}>
@@ -210,20 +209,17 @@ export function ImportSidebar() {
 						afterward. You can still restore it later from history.
 					</p>
 					<label className="import-sidebar__ack">
-						<input
-							type="checkbox"
+						<Checkbox
 							checked={dontWarnAgain}
 							onChange={(e) => setDontWarnAgain(e.target.checked)}
 						/>
 						Don't warn me again
 					</label>
 					<div className="import-sidebar__actions">
-						<button className="button button--primary" onClick={proceedAutoCommit}>
+						<Button variant="primary" onClick={proceedAutoCommit}>
 							Import and commit
-						</button>
-						<button className="button" onClick={() => setConfirmAutoCommit(false)}>
-							Cancel
-						</button>
+						</Button>
+						<Button onClick={() => setConfirmAutoCommit(false)}>Cancel</Button>
 					</div>
 				</DialogContent>
 			</Dialog>

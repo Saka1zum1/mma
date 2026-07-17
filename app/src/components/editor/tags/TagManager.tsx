@@ -28,6 +28,9 @@ import type { Tag, VirtualTag } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { fmt } from "@/lib/util/format";
 import { textColorFor, hexToHsl, hslToHex } from "@/lib/util/color";
 import { useSetting, setSetting } from "@/store/settings";
@@ -215,29 +218,25 @@ export function TagManager() {
 				}
 				addons={
 					<>
-						<input
-							className="input"
+						<TextInput
 							placeholder="Filter tags..."
 							value={filterText}
 							onChange={(e) => setFilterText(e.target.value)}
 						/>
 						<span className="tag-manager__spacer"></span>
 						{tagViewMode === "tree" && (
-							<button className="button" onClick={() => setNewFolderParent("")}>
-								New folder
-							</button>
+							<Button onClick={() => setNewFolderParent("")}>New folder</Button>
 						)}
 						<span className="tag-manager__sort button-group">
-							Sort by{" "}
 							{(["default", "name", "amount"] as TagSortMode[]).map((mode) => (
-								<button
+								<Button
 									key={mode}
-									className="button button-group__button"
+									className="button-group__button"
 									aria-checked={sortMode === mode}
 									onClick={() => setSetting("tagSortMode", mode)}
 								>
 									{mode}
-								</button>
+								</Button>
 							))}
 						</span>
 					</>
@@ -480,20 +479,12 @@ function RenameInSelectionDialog({
 					}}
 					style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
 				>
-					<input
-						className="input"
-						type="text"
-						value={name}
-						onChange={(e) => setName(e.target.value)}
-						autoFocus
-					/>
+					<TextInput type="text" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-						<button className="button" type="button" onClick={onClose}>
-							Cancel
-						</button>
-						<button className="button button--primary" type="submit">
+						<Button onClick={onClose}>Cancel</Button>
+						<Button variant="primary" type="submit">
 							Rename
-						</button>
+						</Button>
 					</div>
 				</form>
 			</DialogContent>
@@ -596,8 +587,7 @@ function EditTagDialog({
 				>
 					<div className="edit-tag-modal__name">
 						Rename:{" "}
-						<input
-							className="input"
+						<TextInput
 							type="text"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
@@ -605,11 +595,7 @@ function EditTagDialog({
 						/>
 						{cascade && (
 							<label className="edit-tag-modal__cascade">
-								<input
-									type="checkbox"
-									checked={cascadeOn}
-									onChange={(e) => setCascadeOn(e.target.checked)}
-								/>
+								<Checkbox checked={cascadeOn} onChange={(e) => setCascadeOn(e.target.checked)} />
 								Rename {cascade.descendantCount} tag{cascade.descendantCount === 1 ? "" : "s"}{" "}
 								inside
 							</label>
@@ -635,9 +621,8 @@ function EditTagDialog({
 							onChange={setHsl}
 						/>
 						{cascade && cascade.descendantCount > 0 && (
-							<button
-								type="button"
-								className="button edit-tag-modal__apply-color"
+							<Button
+								className="edit-tag-modal__apply-color"
 								onClick={() => {
 									cascade.onApplyColor(hexValue);
 									onClose();
@@ -645,20 +630,15 @@ function EditTagDialog({
 							>
 								Apply to {cascade.descendantCount} tag{cascade.descendantCount === 1 ? "" : "s"}{" "}
 								inside
-							</button>
+							</Button>
 						)}
 					</div>
 					<div className="edit-tag-modal__hotkey">
 						<span>Hotkey:</span>
 						<HotkeyInput value={hotkey} onChange={setHotkey} />
-						<button
-							type="button"
-							className="button"
-							disabled={!hotkey}
-							onClick={() => setHotkey("")}
-						>
+						<Button disabled={!hotkey} onClick={() => setHotkey("")}>
 							Clear
-						</button>
+						</Button>
 						{(holderTag || globalConflicts.length > 0) && (
 							<p className="edit-tag-modal__hotkey-note">
 								{holderTag && <>Takes the key from "{holderTag.name}". </>}
@@ -669,17 +649,12 @@ function EditTagDialog({
 						)}
 					</div>
 					<div className="edit-tag-modal__actions">
-						<button
-							className="button button--destructive"
-							type="button"
-							onClick={handleDelete}
-							data-qa="tag-delete"
-						>
+						<Button variant="destructive" onClick={handleDelete} data-qa="tag-delete">
 							Delete
-						</button>
-						<button className="button button--primary" type="submit" data-qa="tag-save">
+						</Button>
+						<Button variant="primary" type="submit" data-qa="tag-save">
 							Save
-						</button>
+						</Button>
 					</div>
 				</form>
 			</DialogContent>
@@ -723,8 +698,7 @@ function VirtualTagDialog({
 				>
 					<div className="edit-tag-modal__name">
 						Rename:{" "}
-						<input
-							className="input"
+						<TextInput
 							type="text"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
@@ -749,27 +723,21 @@ function VirtualTagDialog({
 							onChange={setHsl}
 						/>
 						{descendantCount > 0 && (
-							<button
-								type="button"
-								className="button edit-tag-modal__apply-color"
+							<Button
+								className="edit-tag-modal__apply-color"
 								onClick={() => onApplyColor(hexValue)}
 							>
 								Apply to {descendantCount} tag{descendantCount === 1 ? "" : "s"} inside
-							</button>
+							</Button>
 						)}
 					</div>
 					<div className="edit-tag-modal__actions">
-						<button
-							className="button button--destructive"
-							type="button"
-							onClick={onReset}
-							disabled={color == null}
-						>
+						<Button variant="destructive" onClick={onReset} disabled={color == null}>
 							Reset
-						</button>
-						<button className="button button--primary" type="submit">
+						</Button>
+						<Button variant="primary" type="submit">
 							Save
-						</button>
+						</Button>
 					</div>
 				</form>
 			</DialogContent>
@@ -831,8 +799,7 @@ function NewFolderDialog({
 					style={{ display: "flex", flexDirection: "column", gap: "0.75rem", paddingTop: "0.5rem" }}
 				>
 					<div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-						<input
-							className="input"
+						<TextInput
 							type="text"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
@@ -844,19 +811,17 @@ function NewFolderDialog({
 								fontSize: "0.85em",
 								minHeight: "1.25em",
 								lineHeight: "1.25em",
-								color: "var(--red, #f87171)",
+								color: "var(--destructive)",
 							}}
 						>
 							{collision ? `"${path}" already exists in the tree` : ""}
 						</span>
 					</div>
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-						<button className="button" type="button" onClick={onClose}>
-							Cancel
-						</button>
-						<button className="button button--primary" type="submit" disabled={!path || collision}>
+						<Button onClick={onClose}>Cancel</Button>
+						<Button variant="primary" type="submit" disabled={!path || collision}>
 							Create
-						</button>
+						</Button>
 					</div>
 				</form>
 			</DialogContent>
@@ -952,7 +917,7 @@ function AddAliasDialog({
 						/>
 						<span style={{ fontSize: "0.85em", opacity: 0.7 }}>
 							{collision ? (
-								<span style={{ color: "var(--red, #f87171)" }}>
+								<span style={{ color: "var(--destructive)" }}>
 									"{aliasPath}" already exists in the tree
 								</span>
 							) : (
@@ -963,12 +928,10 @@ function AddAliasDialog({
 						</span>
 					</div>
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-						<button className="button" type="button" onClick={onClose}>
-							Cancel
-						</button>
-						<button className="button button--primary" type="submit" disabled={collision}>
+						<Button onClick={onClose}>Cancel</Button>
+						<Button variant="primary" type="submit" disabled={collision}>
 							Add alias
-						</button>
+						</Button>
 					</div>
 				</form>
 			</DialogContent>

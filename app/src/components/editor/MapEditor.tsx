@@ -373,7 +373,7 @@ export function MapEditor() {
 				<EnrichmentButton />
 			</header>
 			<div className="side-header"></div>
-			<section className="map-embed" style={{ background: "#e5e3df" }}>
+			<section className="map-embed" style={{ background: "var(--surface-0)" }}>
 				<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
 				{showMapCursor && <div className="map-cursor-crosshair" />}
 			</section>

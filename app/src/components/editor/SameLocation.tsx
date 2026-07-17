@@ -11,6 +11,8 @@ import {
 } from "@/store/useMapStore";
 import { svThumbnailUrl } from "@/lib/sv/lookup";
 import { textColorFor } from "@/lib/util/color";
+import { Button } from "@/components/primitives/Button";
+import { Checkbox } from "@/components/primitives/Checkbox";
 
 function DuplicateItem({
 	location,
@@ -32,7 +34,7 @@ function DuplicateItem({
 	return (
 		<li className="duplicate-item">
 			<label className="duplicate-item__select">
-				<input type="checkbox" checked={selected} onChange={(e) => onSelect(e.target.checked)} />
+				<Checkbox checked={selected} onChange={(e) => onSelect(e.target.checked)} />
 			</label>
 			<button className="duplicate-item__thumbnail" onClick={onClick}>
 				{thumbSrc ? (
@@ -68,9 +70,9 @@ function DuplicateItem({
 			</div>
 			<div className="duplicate-item__meta">{Math.round(location.heading)}&deg;</div>
 			<div className="duplicate-item__actions">
-				<button className="button button--destructive" onClick={onDelete}>
+				<Button variant="destructive" onClick={onDelete}>
 					Delete
-				</button>
+				</Button>
 			</div>
 		</li>
 	);
@@ -130,7 +132,9 @@ export default function SameLocation() {
 
 	return (
 		<section className="duplicates">
-			<h2>{locations.length} locations</h2>
+			<h2>
+				<span className="mono">{locations.length}</span> locations
+			</h2>
 			<p>
 				Multiple locations were selected around this coordinate. Click one of the thumbnails below
 				to view that location.
@@ -150,26 +154,16 @@ export default function SameLocation() {
 			</ul>
 			<div className="duplicates__actions">
 				<Tooltip content="Delete all duplicate locations, except the selected ones" side="bottom">
-					<button
-						className="button button--destructive"
-						disabled={selected.size === 0}
-						onClick={keepSelected}
-					>
+					<Button variant="destructive" disabled={selected.size === 0} onClick={keepSelected}>
 						Keep selected
-					</button>
+					</Button>
 				</Tooltip>
 				<Tooltip content="Delete selected locations" side="bottom">
-					<button
-						className="button button--destructive"
-						disabled={selected.size === 0}
-						onClick={deleteSelected}
-					>
+					<Button variant="destructive" disabled={selected.size === 0} onClick={deleteSelected}>
 						Delete selected
-					</button>
+					</Button>
 				</Tooltip>
-				<button className="button" onClick={closeDuplicates}>
-					Cancel
-				</button>
+				<Button onClick={closeDuplicates}>Cancel</Button>
 			</div>
 		</section>
 	);

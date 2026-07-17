@@ -9,6 +9,7 @@ import {
 	useScoreMaxError,
 	WORLD_MAX_ERROR,
 } from "@/lib/sv/measure";
+import { TextInput } from "@/components/primitives/TextInput";
 
 type Mode = "auto" | "world" | "fixed";
 
@@ -117,8 +118,7 @@ export function ScoreBoundsEditor() {
 					{(["S", "W", "N", "E"] as const).map((label, i) => (
 						<Fragment key={label}>
 							<span style={{ fontSize: ".8rem" }}>{label}</span>
-							<input
-								className="input"
+							<TextInput
 								type="text"
 								inputMode="decimal"
 								value={draft[i]}

@@ -4,7 +4,7 @@ import { dateFmt } from "@/lib/util/format";
 import { type PanoReference } from "@/lib/sv/lookup";
 import { useCameraType } from "./useCameraType";
 import { usePanoViewer } from "./PanoViewerContext";
-import * as Select from "@radix-ui/react-select";
+import { NSelect } from "@/components/primitives/NSelect";
 
 function PanoBadge({ cameraType }: { cameraType: FullCameraType | null }) {
 	switch (cameraType) {
@@ -31,12 +31,10 @@ function PanoOption({ pano }: { pano: PanoReference }) {
 	const showBadges = useSetting("showCameraBadges");
 	const cameraType = useCameraType(pano.pano);
 	return (
-		<Select.Item value={pano.pano} className="select__option pano-option">
-			<Select.ItemText>
-				<span className="pano-option__name">{dateFmt.format(pano.date)}</span>
-				{(cameraType === "unofficial" || showBadges) && <PanoBadge cameraType={cameraType} />}
-			</Select.ItemText>
-		</Select.Item>
+		<option value={pano.pano} className="pano-option">
+			<span className="pano-option__name">{dateFmt.format(pano.date)}</span>
+			{(cameraType === "unofficial" || showBadges) && <PanoBadge cameraType={cameraType} />}
+		</option>
 	);
 }
 
@@ -88,55 +86,48 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 
 	if (sorted.length === 0) {
 		return (
-			<Select.Root disabled>
-				<Select.Trigger className="select__input">
-					<Select.Value placeholder="No dates" />
-				</Select.Trigger>
-			</Select.Root>
+			<NSelect className="pano-date-select" disabled>
+				<button type="button" className="pano-date-select__trigger">
+					<span className="pano-value">No dates</span>
+				</button>
+			</NSelect>
 		);
 	}
 
 	return (
-		<Select.Root value={selectedPanoId ?? "default"} onValueChange={handleValueChange}>
-			<Select.Trigger className="select__input">
-				<Select.Value>
-					<span className="pano-value">
-						{exactDate.loading ? displayLabel : (exactLabel ?? displayLabel)}
-						<span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-							{exactDate.loading && <span className="badge badge--loading">...</span>}
-							{(triggerCameraType === "unofficial" || showBadges) && (
-								<PanoBadge cameraType={triggerCameraType} />
-							)}
-						</span>
-						<span className="badge badge--number">{sorted.length}</span>
+		<NSelect
+			className="pano-date-select"
+			data-side="top"
+			value={selectedPanoId ?? "default"}
+			onChange={(e) => handleValueChange(e.target.value)}
+		>
+			<button type="button" className="pano-date-select__trigger">
+				<span className="pano-value">
+					{exactDate.loading ? displayLabel : (exactLabel ?? displayLabel)}
+					<span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+						{exactDate.loading && <span className="badge badge--loading">...</span>}
+						{(triggerCameraType === "unofficial" || showBadges) && (
+							<PanoBadge cameraType={triggerCameraType} />
+						)}
 					</span>
-				</Select.Value>
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content className="select__content" position="popper" side="top">
-					<Select.Viewport>
-						<Select.Group>
-							<Select.Label className="select__group-header">Specific Panorama</Select.Label>
-							{sorted.map((d) => (
-								<PanoOption key={d.pano} pano={d} />
-							))}
-						</Select.Group>
-						<Select.Group>
-							<Select.Label className="select__group-header">Default / auto-updating</Select.Label>
-							<Select.Item value="default" className="select__option pano-option">
-								<Select.ItemText>
-									<span className="pano-option__name">
-										Default
-										{(defaultEntry?.date ?? sorted[sorted.length - 1]?.date)
-											? ` (${dateFmt.format((defaultEntry?.date ?? sorted[sorted.length - 1]?.date)!)})`
-											: ""}
-									</span>
-								</Select.ItemText>
-							</Select.Item>
-						</Select.Group>
-					</Select.Viewport>
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
+					<span className="badge badge--number">{sorted.length}</span>
+				</span>
+			</button>
+			<optgroup label="Specific Panorama">
+				{sorted.map((d) => (
+					<PanoOption key={d.pano} pano={d} />
+				))}
+			</optgroup>
+			<optgroup label="Default / auto-updating">
+				<option value="default" className="pano-option">
+					<span className="pano-option__name">
+						Default
+						{(defaultEntry?.date ?? sorted[sorted.length - 1]?.date)
+							? ` (${dateFmt.format((defaultEntry?.date ?? sorted[sorted.length - 1]?.date)!)})`
+							: ""}
+					</span>
+				</option>
+			</optgroup>
+		</NSelect>
 	);
 });

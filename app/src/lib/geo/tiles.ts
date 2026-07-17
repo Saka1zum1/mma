@@ -2,6 +2,8 @@
 // Protobuf tile URL builder
 // Constructs Google Maps Vector Tile URLs with protobuf-encoded parameters.
 
+import { resolveSvColorHex, hexToHsl, hslToHex } from "@/lib/util/color";
+
 // --- Protobuf encoding primitives ---
 
 function pbEscape(s: string): string {
@@ -926,9 +928,9 @@ export function createSvTileConfig(opts: {
 	thickness: "default" | "high";
 	useDetailedLines?: boolean;
 }): TileConfig {
-	const style = getComputedStyle(document.body);
-	const fill = style.getPropertyValue(`--${opts.color}-7`).trim();
-	const stroke = style.getPropertyValue(`--${opts.color}-2`).trim();
+	const fill = resolveSvColorHex(opts.color);
+	const { h, s, l } = hexToHsl(fill);
+	const stroke = hslToHex(h, s, Math.min(l + 40, 90));
 	const w = opts.thickness === "high" ? 0.5 : 1;
 	const sw = opts.thickness === "high" ? 0.5 : 3;
 
@@ -967,8 +969,7 @@ export function createSvBlobbyTileConfig(opts: {
 	showUnofficial?: boolean;
 	color: string;
 }): TileConfig {
-	const style = getComputedStyle(document.body);
-	const fill = style.getPropertyValue(`--${opts.color}-7`).trim();
+	const fill = resolveSvColorHex(opts.color);
 	const showBoth = (opts.showOfficial ?? true) && (opts.showUnofficial ?? true);
 
 	const svStyles: MapStyle[] = showBoth

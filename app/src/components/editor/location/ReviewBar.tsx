@@ -22,10 +22,13 @@ export const ReviewBar = memo(function ReviewBar() {
 		<div className="review-header">
 			<span>
 				Reviewing{" "}
-				<span style={{ color: reviewedHere ? "#3fb950" : undefined, fontWeight: 600 }}>
+				<span
+					className="mono"
+					style={{ color: reviewedHere ? "var(--constructive)" : undefined, fontWeight: 600 }}
+				>
 					{pos} / {s.order.length}
 				</span>{" "}
-				&middot; {s.reviewed.length} reviewed
+				&middot; <span className="mono">{s.reviewed.length}</span> reviewed
 			</span>
 			<span style={{ display: "flex", alignItems: "center", gap: ".5rem" }}>
 				<Tooltip content="Exit review" side="bottom">

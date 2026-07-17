@@ -15,6 +15,26 @@ export function textColorFor(bg: string): string {
 	return r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
 }
 
+/** SV line colors were historically Open Props ramp names ("cyan"); stored
+ *  prefs may still hold one. Hex passes through. */
+export function resolveSvColorHex(color: string): string {
+	if (color.startsWith("#")) return color;
+	return (
+		getComputedStyle(document.documentElement).getPropertyValue(`--${color}-7`).trim() || "#1098ad"
+	);
+}
+
+/** The app accent follows the SV coverage line color. Derives the full accent
+ *  token family and stamps it on :root. */
+export function applyAccentColor(hex: string) {
+	const { h, s, l } = hexToHsl(hex);
+	const root = document.documentElement.style;
+	root.setProperty("--accent", hex);
+	root.setProperty("--accent-hover", hslToHex(h, s, Math.min(l + 8, 95)));
+	root.setProperty("--accent-muted", `${hex}26`);
+	root.setProperty("--on-accent", textColorFor(hex));
+}
+
 export function hexToHsl(hex: string): { h: number; s: number; l: number } {
 	const [r8, g8, b8] = hexToRgb(hex);
 	const r = r8 / 255;

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Button } from "@/components/primitives/Button";
 import { useCurrentMap, checkoutCommit, beginCommitDiffPreview } from "@/store/useMapStore";
 import { cmd } from "@/lib/commands";
 import type { CommitInfo } from "@/bindings.gen";
@@ -14,24 +15,26 @@ function diffLabel(c: CommitInfo): ReactNode | null {
 	const parts: ReactNode[] = [];
 	if (c.added > 0)
 		parts.push(
-			<span key="a" style={{ color: "var(--green-11)" }}>
+			<span key="a" style={{ color: "var(--constructive)" }}>
 				+{c.added}
 			</span>,
 		);
 	if (c.removed > 0)
 		parts.push(
-			<span key="r" style={{ color: "var(--red-11)" }}>
+			<span key="r" style={{ color: "var(--destructive)" }}>
 				-{c.removed}
 			</span>,
 		);
 	if (c.modified > 0)
 		parts.push(
-			<span key="m" style={{ color: "var(--amber-11)" }}>
+			<span key="m" style={{ color: "var(--accent)" }}>
 				~{c.modified}
 			</span>,
 		);
 	return parts.length > 0 ? (
-		<span style={{ display: "inline-flex", gap: 6, fontFamily: "monospace" }}>{parts}</span>
+		<span className="mono" style={{ display: "inline-flex", gap: 6 }}>
+			{parts}
+		</span>
 	) : null;
 }
 
@@ -73,9 +76,7 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
 			<DialogContent title="Version history" className="version-history-modal">
 				{commits.length === 0 && (
-					<p style={{ color: "var(--stone-9)" }}>
-						No commits yet. Press Commit to create your first version.
-					</p>
+					<p className="text-muted">No commits yet. Press Commit to create your first version.</p>
 				)}
 				{commits.length > 0 && (
 					<div style={{ maxHeight: 400, overflowY: "auto" }}>
@@ -84,7 +85,7 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 								<tr
 									style={{
 										textAlign: "left",
-										borderBottom: "1px solid var(--stone-5)",
+										borderBottom: "1px solid var(--border-subtle)",
 									}}
 								>
 									<th style={{ padding: "6px 8px" }}>Date</th>
@@ -105,19 +106,18 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 											onClick={() => hasDiff && viewDiff(c)}
 											title={hasDiff ? "View changes on the map" : undefined}
 											style={{
-												borderBottom: "1px solid var(--stone-3)",
+												borderBottom: "1px solid var(--border-subtle)",
 												cursor: hasDiff ? "pointer" : "default",
 											}}
 										>
-											<td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
+											<td className="mono" style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
 												{dateFmt.format(new Date(c.createdAt))}
 											</td>
 											<td
+												className="mono"
 												style={{
 													padding: "6px 8px",
-													fontFamily: "monospace",
-													fontSize: "0.85em",
-													color: "var(--stone-9)",
+													color: "var(--text-2)",
 												}}
 											>
 												{c.id.slice(0, 7)}
@@ -125,17 +125,17 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 											<td
 												style={{
 													padding: "6px 8px",
-													color: diff ? undefined : msg ? undefined : "var(--stone-7)",
+													color: diff ? undefined : msg ? undefined : "var(--text-3)",
 												}}
 											>
 												{diff ?? msg ?? (i === 0 ? "(latest)" : "(no changes)")}
 											</td>
-											<td style={{ padding: "6px 8px", textAlign: "right" }}>
+											<td className="mono" style={{ padding: "6px 8px", textAlign: "right" }}>
 												{fmt.format(c.locationCount)}
 											</td>
 											<td style={{ padding: "6px 8px" }}>
-												<button
-													className={`button${confirmingId === c.id ? " button--destructive" : ""}`}
+												<Button
+													variant={confirmingId === c.id ? "destructive" : undefined}
 													disabled={restoring !== null}
 													onClick={(e) => {
 														e.stopPropagation();
@@ -150,7 +150,7 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 															: i === 0
 																? "Revert"
 																: "Restore"}
-												</button>
+												</Button>
 											</td>
 										</tr>
 									);

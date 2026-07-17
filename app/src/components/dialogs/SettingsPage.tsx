@@ -1,7 +1,15 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { NSelect } from "@/components/primitives/NSelect";
-import { DatabaseManager } from "@/components/dialogs/DatabaseManager";
+import { Slider as SliderInput } from "@/components/primitives/Slider";
+import { Checkbox } from "@/components/primitives/Checkbox";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
+import {
+	SettingRow,
+	SettingsSearchContext,
+	useSettingsSearch,
+} from "@/components/primitives/SettingRow";
 import {
 	getAllBindings,
 	useBinding,
@@ -49,6 +57,60 @@ import { log } from "@/lib/util/log";
 import type { DataLocation } from "@/bindings.gen";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
+
+/** A non-row auxiliary block (table, textarea, note, button group). Hidden while
+ *  searching unless the section title matched; its presence keeps a matched
+ *  section alive (see the `:has` rule in styles.css). */
+/** Non-row section content. Hidden during search unless the section title
+ *  matched, or `match` (a keyword string for content with no SettingRows)
+ *  contains the query. */
+function Aux({ children, match }: { children: ReactNode; match?: string }) {
+	const { query, auxVisible } = useSettingsSearch();
+	if (!auxVisible && !(match && query && match.toLowerCase().includes(query))) return null;
+	return <div className="settings-aux">{children}</div>;
+}
+
+/** A sub-group heading inside a section. Visible only when the section is fully
+ *  shown (not searching, or section title matched) so search results collapse
+ *  cleanly under the section breadcrumb. */
+function GroupHeading({ children }: { children: ReactNode }) {
+	const { auxVisible } = useSettingsSearch();
+	if (!auxVisible) return null;
+	return <h3 className="settings-group">{children}</h3>;
+}
+
+function Slider({
+	value,
+	min,
+	max,
+	step,
+	onChange,
+	format,
+	disabled,
+}: {
+	value: number;
+	min: number;
+	max: number;
+	step: number;
+	onChange: (v: number) => void;
+	format?: (v: number) => string;
+	disabled?: boolean;
+}) {
+	return (
+		<>
+			<SliderInput
+				className="setting-slider"
+				min={min}
+				max={max}
+				step={step}
+				value={value}
+				disabled={disabled}
+				onChange={(e) => onChange(Number(e.target.value))}
+			/>
+			<span className="mono setting-slider__value">{format ? format(value) : value}</span>
+		</>
+	);
+}
 
 function SettingSelect<K extends keyof AppSettings>({
 	setting,
@@ -175,15 +237,15 @@ function HotkeyRow({
 					pending ? (
 						<div className="hotkey-reassign" onKeyDown={(e) => e.key === "Escape" && cancel()}>
 							<span className="hotkey-reassign__msg">
-								<code>{formatBinding(pending.combo)}</code> is bound to{" "}
+								<code className="mono">{formatBinding(pending.combo)}</code> is bound to{" "}
 								<strong>{pending.conflicts.map((c) => c.label).join(", ")}</strong>
 							</span>
-							<button className="button button--primary hotkey-reset" autoFocus onClick={reassign}>
+							<Button variant="primary" className="hotkey-reset" autoFocus onClick={reassign}>
 								Reassign
-							</button>
-							<button className="button hotkey-reset" onClick={cancel}>
+							</Button>
+							<Button className="hotkey-reset" onClick={cancel}>
 								Cancel
-							</button>
+							</Button>
 						</div>
 					) : (
 						<>
@@ -203,11 +265,11 @@ function HotkeyRow({
 					)
 				) : (
 					<code
-						className={`hotkey-display${!binding ? " hotkey-display--empty" : ""}`}
+						className={`hotkey-display mono${!binding ? " hotkey-display--empty" : ""}`}
 						onClick={() => setRecording(true)}
 						title="Click to rebind"
 					>
-						{binding ? formatBinding(binding) : " "}
+						{binding ? formatBinding(binding) : " "}
 					</code>
 				)}
 				{!recording &&
@@ -216,7 +278,7 @@ function HotkeyRow({
 							key={c.action}
 							className="hotkey-conflict"
 							onClick={() => onJump(c.action)}
-							title={`Also bound to "${c.label}" — click to jump there`}
+							title={`Also bound to "${c.label}" - click to jump there`}
 						>
 							<Icon path={mdiAlertCircleOutline} className="hotkey-conflict__icon" />
 							{c.label}
@@ -225,13 +287,13 @@ function HotkeyRow({
 			</td>
 			<td>
 				{custom && (
-					<button
-						className="button hotkey-reset"
+					<Button
+						className="hotkey-reset"
 						onClick={() => resetBinding(action)}
 						title="Reset to default"
 					>
 						Reset
-					</button>
+					</Button>
 				)}
 			</td>
 		</tr>
@@ -247,7 +309,7 @@ const GROUPS: HotkeyGroup[] = [
 	"Review",
 ];
 
-function KeyboardShortcutsSection() {
+function KeyboardBody() {
 	const [filter, setFilter] = useState("");
 	const [flash, setFlash] = useState<string | null>(null);
 	const lower = filter.toLowerCase();
@@ -262,14 +324,9 @@ function KeyboardShortcutsSection() {
 	}, []);
 
 	return (
-		// div, not fieldset: Chromium ignores position:sticky inside <fieldset>
-		<div className="fieldset">
-			<div className="fieldset__header">
-				Keyboard shortcuts <span className="fieldset__divider" />
-			</div>
+		<Aux>
 			<div className="settings-hotkey-filter">
-				<input
-					className="input"
+				<TextInput
 					type="text"
 					placeholder="Filter shortcuts..."
 					value={filter}
@@ -288,7 +345,7 @@ function KeyboardShortcutsSection() {
 				if (defs.length === 0) return null;
 				return (
 					<div key={group}>
-						<h3 style={{ margin: ".5rem 0 .25rem", fontSize: ".85rem", color: "#888" }}>{group}</h3>
+						<h3 className="settings-group">{group}</h3>
 						<table className="settings-hotkey-table">
 							<thead>
 								<tr>
@@ -313,112 +370,13 @@ function KeyboardShortcutsSection() {
 				);
 			})}
 			<div style={{ marginTop: ".5rem" }}>
-				<button className="button" onClick={resetAllBindings}>
-					Reset all to defaults
-				</button>
+				<Button onClick={resetAllBindings}>Reset all to defaults</Button>
 			</div>
-		</div>
+		</Aux>
 	);
 }
 
-function StreetViewSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Street View <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showLinksControl}
-					onChange={(e) => setSetting("showLinksControl", e.target.checked)}
-				/>
-				Show link arrows (ground navigation)
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.clickToGo}
-					onChange={(e) => setSetting("clickToGo", e.target.checked)}
-				/>
-				Show click-to-go navigation
-			</label>
-			{s.clickToGo && (
-				<div className="settings-popup__sub">
-					<label className="settings-popup__item">
-						<input
-							type="checkbox"
-							checked={s.showNavArrow}
-							onChange={(e) => setSetting("showNavArrow", e.target.checked)}
-						/>
-						Show navigation X
-					</label>
-					<label className="settings-popup__item">
-						<input
-							type="checkbox"
-							checked={s.showGroundArrow}
-							onChange={(e) => setSetting("showGroundArrow", e.target.checked)}
-						/>
-						Show ground arrow
-					</label>
-				</div>
-			)}
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showRoadLabels}
-					onChange={(e) => setSetting("showRoadLabels", e.target.checked)}
-				/>
-				Show road labels
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showCar}
-					onChange={(e) => setSetting("showCar", e.target.checked)}
-				/>
-				Show car
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showCrosshair}
-					onChange={(e) => setSetting("showCrosshair", e.target.checked)}
-				/>
-				Show crosshair
-			</label>
-			<label className="settings-popup__item">
-				Default movement mode
-				<SettingSelect setting="defaultMovementMode" options={MOVEMENT_MODES} />
-			</label>
-			<label
-				className="settings-popup__item"
-				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-			>
-				Pano look speed
-				<input
-					type="range"
-					min={1}
-					max={10}
-					step={1}
-					value={s.panoLookSpeed}
-					onChange={(e) => setSetting("panoLookSpeed", Number(e.target.value))}
-					style={{ flex: 1 }}
-				/>
-				<span style={{ minWidth: "1.5rem", textAlign: "right", fontSize: "0.85rem" }}>
-					{s.panoLookSpeed}
-				</span>
-			</label>
-			<label className="settings-popup__item">
-				Preview aspect ratio
-				<SettingSelect setting="previewAspectRatio" options={PREVIEW_ASPECT_RATIOS} />
-			</label>
-		</fieldset>
-	);
-}
-
-function ViewerControlsSection() {
+function StreetViewBody() {
 	const s = useSettings();
 	const controls: { key: keyof typeof s; label: string }[] = [
 		{ key: "showFullscreenButton", label: "Fullscreen button" },
@@ -433,502 +391,231 @@ function ViewerControlsSection() {
 	];
 
 	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Viewer controls <span className="fieldset__divider" />
-			</legend>
-			{controls.map(({ key, label }) => (
-				<label key={key} className="settings-popup__item">
-					<input
-						type="checkbox"
-						checked={s[key] as boolean}
-						onChange={(e) => setSetting(key, e.target.checked)}
-					/>
-					{label}
-				</label>
-			))}
-		</fieldset>
-	);
-}
-
-function FullscreenSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Fullscreen <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showFullscreenMinimap}
-					onChange={(e) => setSetting("showFullscreenMinimap", e.target.checked)}
-				/>
-				Show minimap in fullscreen
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showFullscreenTagbar}
-					onChange={(e) => setSetting("showFullscreenTagbar", e.target.checked)}
-				/>
-				Show tag bar in fullscreen
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showFullscreenDatePicker}
-					onChange={(e) => setSetting("showFullscreenDatePicker", e.target.checked)}
-				/>
-				Show date picker in fullscreen
-			</label>
-		</fieldset>
-	);
-}
-
-function DatePickerSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Date picker <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.showCameraBadges}
-					onChange={(e) => setSetting("showCameraBadges", e.target.checked)}
-				/>
-				Show camera type badges (Gen1, Gen2, etc.)
-			</label>
-			<label className="settings-popup__item">
-				Exact date format
-				<SettingSelect setting="exactDateFormat" options={EXACT_DATE_FORMATS} />
-			</label>
-			<label className="settings-popup__item">
-				Exact date timezone
-				<SettingSelect setting="dateTimezone" options={DATE_TIMEZONES} />
-			</label>
-		</fieldset>
-	);
-}
-
-function SeenSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Seen <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.enableSeen}
-					onChange={(e) => setSetting("enableSeen", e.target.checked)}
-				/>
-				Log viewed panos
-			</label>
-			{s.enableSeen && (
-				<>
-					<label className="settings-popup__item">
-						<input
-							type="checkbox"
-							checked={s.enableSeenThumbnails}
-							onChange={(e) => setSetting("enableSeenThumbnails", e.target.checked)}
-						/>
-						Save thumbnails
-					</label>
-					{s.enableSeenThumbnails && (
-						<label className="settings-popup__item">
-							Thumbnail resolution
-							<SettingSelect setting="seenResolution" options={SEEN_RESOLUTIONS} />
-						</label>
-					)}
-				</>
-			)}
-		</fieldset>
-	);
-}
-
-function MapNavigationSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Map navigation <span className="fieldset__divider" />
-			</legend>
-			<label
-				className="settings-popup__item"
-				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-			>
-				Pan speed
-				<input
-					type="range"
-					min={1}
-					max={20}
-					step={1}
-					value={s.mapPanSpeed}
-					onChange={(e) => setSetting("mapPanSpeed", Number(e.target.value))}
-					style={{ flex: 1 }}
-				/>
-				<span style={{ minWidth: "1.5rem", textAlign: "right", fontSize: "0.85rem" }}>
-					{s.mapPanSpeed}
-				</span>
-			</label>
-			<label
-				className="settings-popup__item"
-				style={{
-					display: "flex",
-					alignItems: "center",
-					gap: "0.5rem",
-					opacity: s.panToImported ? 1 : 0.5,
-				}}
-			>
-				Paste zoom padding
-				<input
-					type="range"
-					min={0.001}
-					max={0.05}
-					step={0.001}
-					value={s.pastePadding}
-					disabled={!s.panToImported}
-					onChange={(e) => setSetting("pastePadding", Number(e.target.value))}
-					style={{ flex: 1 }}
-				/>
-				<span style={{ minWidth: "2.5rem", textAlign: "right", fontSize: "0.85rem" }}>
-					{s.pastePadding.toFixed(3)}&deg;
-				</span>
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.panToImported}
-					onChange={(e) => setSetting("panToImported", e.target.checked)}
-				/>
-				Pan to imported locations
-			</label>
-		</fieldset>
-	);
-}
-
-function NavigationSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Navigation <span className="fieldset__divider" />
-			</legend>
-			<p style={{ margin: "0 0 0.25rem", fontSize: "0.85rem", color: "#888" }}>
-				Hold Alt to slow down map panning and pano look.
-			</p>
-			<label
-				className="settings-popup__item"
-				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-			>
-				Alt slow-down
-				<input
-					type="range"
-					min={2}
-					max={10}
-					step={1}
-					value={s.slowModifier}
-					onChange={(e) => setSetting("slowModifier", Number(e.target.value))}
-					style={{ flex: 1 }}
-				/>
-				<span style={{ minWidth: "1.5rem", textAlign: "right", fontSize: "0.85rem" }}>
-					{s.slowModifier}x
-				</span>
-			</label>
-		</fieldset>
-	);
-}
-
-function MarkersSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Markers <span className="fieldset__divider" />
-			</legend>
-			<div className="settings-popup__item">
-				Default marker color
-				<ColorPicker
-					color={s.markerColor}
-					onChange={(color) => setSetting("markerColor", color)}
-					ariaLabel="Default marker color"
-				/>
-			</div>
-			<div className="settings-popup__item">
-				Active marker color
-				<ColorPicker
-					color={s.activeLocationColor}
-					onChange={(color) => setSetting("activeLocationColor", color)}
-					ariaLabel="Active location marker color"
-				/>
-			</div>
-			<div className="settings-popup__item">
-				Staged marker color
-				<ColorPicker
-					color={s.importPreviewColor}
-					onChange={(color) => setSetting("importPreviewColor", color)}
-					ariaLabel="Staged import marker color"
-				/>
-			</div>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.followActiveInReview}
-					onChange={(e) => setSetting("followActiveInReview", e.target.checked)}
-				/>
-				Center map on active location during review
-			</label>
-		</fieldset>
-	);
-}
-
-function PanoDotsSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Panorama dots <span className="fieldset__divider" />
-			</legend>
-			<div className="settings-popup__item">
-				Dot color
-				<ColorPicker
-					color={s.panoDotColor}
-					onChange={(color) => setSetting("panoDotColor", color)}
-					ariaLabel="Panorama dot color"
-				/>
-			</div>
-			<label className="settings-popup__item">
-				<input
-					type="radio"
-					name="panodotsize"
-					checked={!s.panoDotScaled}
-					onChange={() => setSetting("panoDotScaled", false)}
-				/>
-				Constant size on screen
-			</label>
-			<label className="settings-popup__item">
-				<input
-					type="radio"
-					name="panodotsize"
-					checked={s.panoDotScaled}
-					onChange={() => setSetting("panoDotScaled", true)}
-				/>
-				Grow when zoomed in
-			</label>
-		</fieldset>
-	);
-}
-
-function MapListSection() {
-	const s = useSettings();
-	const fields = s.mapListFields;
-
-	const toggle = (field: MapListField) => {
-		if (fields.includes(field)) {
-			setSetting(
-				"mapListFields",
-				fields.filter((f) => f !== field),
-			);
-		} else {
-			setSetting("mapListFields", [...fields, field]);
-		}
-	};
-
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Map List <span className="fieldset__divider" />
-			</legend>
-			<p style={{ margin: "0.25rem 0", fontSize: "0.85rem", color: "#888" }}>
-				Fields shown on each map row (labels are always shown)
-			</p>
-			{Object.entries(MAP_LIST_FIELDS).map(([value, label]) => (
-				<label key={value} className="settings-popup__item">
-					<input
-						type="checkbox"
-						checked={fields.includes(value as MapListField)}
-						onChange={() => toggle(value as MapListField)}
-					/>
-					{label}
-				</label>
-			))}
-		</fieldset>
-	);
-}
-
-function CustomCssSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Custom CSS <span className="fieldset__divider" />
-			</legend>
-			<textarea
-				className="settings-css-editor"
-				value={s.customCss}
-				onChange={(e) => setSetting("customCss", e.target.value)}
-				placeholder="/* Your custom CSS here */
-.location-preview__panorama { border: 2px solid red; }"
-				spellCheck={false}
+		<>
+			<GroupHeading>Navigation</GroupHeading>
+			<SettingRow
+				checked={s.showLinksControl}
+				onChange={(v) => setSetting("showLinksControl", v)}
+				label="Show link arrows (ground navigation)"
 			/>
-		</fieldset>
-	);
-}
+			<SettingRow
+				checked={s.clickToGo}
+				onChange={(v) => setSetting("clickToGo", v)}
+				label="Show click-to-go navigation"
+			/>
+			{s.clickToGo && (
+				<>
+					<SettingRow
+						sub
+						checked={s.showNavArrow}
+						onChange={(v) => setSetting("showNavArrow", v)}
+						label="Show navigation X"
+					/>
+					<SettingRow
+						sub
+						checked={s.showGroundArrow}
+						onChange={(v) => setSetting("showGroundArrow", v)}
+						label="Show ground arrow"
+					/>
+				</>
+			)}
+			<SettingRow
+				checked={s.showRoadLabels}
+				onChange={(v) => setSetting("showRoadLabels", v)}
+				label="Show road labels"
+			/>
+			<SettingRow checked={s.showCar} onChange={(v) => setSetting("showCar", v)} label="Show car" />
+			<SettingRow
+				checked={s.showCrosshair}
+				onChange={(v) => setSetting("showCrosshair", v)}
+				label="Show crosshair"
+			/>
+			<SettingRow
+				label="Default movement mode"
+				control={<SettingSelect setting="defaultMovementMode" options={MOVEMENT_MODES} />}
+			/>
+			<SettingRow
+				label="Pano look speed"
+				control={
+					<Slider
+						value={s.panoLookSpeed}
+						min={1}
+						max={10}
+						step={1}
+						onChange={(v) => setSetting("panoLookSpeed", v)}
+					/>
+				}
+			/>
+			<SettingRow
+				label="Preview aspect ratio"
+				control={<SettingSelect setting="previewAspectRatio" options={PREVIEW_ASPECT_RATIOS} />}
+			/>
 
-type SettingsTab = "controls" | "map" | "streetview" | "advanced";
+			<GroupHeading>Viewer controls</GroupHeading>
+			{controls.map(({ key, label }) => (
+				<SettingRow
+					key={key}
+					checked={s[key] as boolean}
+					onChange={(v) => setSetting(key, v)}
+					label={label}
+				/>
+			))}
 
-const TABS: { id: SettingsTab; label: string }[] = [
-	{ id: "controls", label: "Controls" },
-	{ id: "map", label: "Map" },
-	{ id: "streetview", label: "Street View" },
-	{ id: "advanced", label: "Advanced" },
-];
+			<GroupHeading>Fullscreen</GroupHeading>
+			<SettingRow
+				checked={s.showFullscreenMinimap}
+				onChange={(v) => setSetting("showFullscreenMinimap", v)}
+				label="Show minimap in fullscreen"
+			/>
+			<SettingRow
+				checked={s.showFullscreenTagbar}
+				onChange={(v) => setSetting("showFullscreenTagbar", v)}
+				label="Show tag bar in fullscreen"
+			/>
+			<SettingRow
+				checked={s.showFullscreenDatePicker}
+				onChange={(v) => setSetting("showFullscreenDatePicker", v)}
+				label="Show date picker in fullscreen"
+			/>
 
-function ControlsTab() {
-	return (
-		<>
-			<KeyboardShortcutsSection />
-			<NavigationSection />
+			<GroupHeading>Date picker</GroupHeading>
+			<SettingRow
+				checked={s.showCameraBadges}
+				onChange={(v) => setSetting("showCameraBadges", v)}
+				label="Show camera type badges (Gen1, Gen2, etc.)"
+			/>
+			<SettingRow
+				label="Exact date format"
+				control={<SettingSelect setting="exactDateFormat" options={EXACT_DATE_FORMATS} />}
+			/>
+			<SettingRow
+				label="Exact date timezone"
+				control={<SettingSelect setting="dateTimezone" options={DATE_TIMEZONES} />}
+			/>
 		</>
 	);
 }
 
-function MapTab() {
+function MarkersBody() {
+	const s = useSettings();
 	return (
 		<>
-			<MapNavigationSection />
-			<MarkersSection />
-			<PanoDotsSection />
+			<GroupHeading>Navigation</GroupHeading>
+			<SettingRow
+				label="Pan speed"
+				control={
+					<Slider
+						value={s.mapPanSpeed}
+						min={1}
+						max={20}
+						step={1}
+						onChange={(v) => setSetting("mapPanSpeed", v)}
+					/>
+				}
+			/>
+			<SettingRow
+				checked={s.panToImported}
+				onChange={(v) => setSetting("panToImported", v)}
+				label="Pan to imported locations"
+			/>
+			<SettingRow
+				sub
+				disabled={!s.panToImported}
+				label="Paste zoom padding"
+				control={
+					<Slider
+						value={s.pastePadding}
+						min={0.001}
+						max={0.05}
+						step={0.001}
+						disabled={!s.panToImported}
+						onChange={(v) => setSetting("pastePadding", v)}
+						format={(v) => `${v.toFixed(3)}°`}
+					/>
+				}
+			/>
+			<SettingRow
+				label="Alt slow-down"
+				description="Hold Alt to slow down map panning and pano look."
+				control={
+					<Slider
+						value={s.slowModifier}
+						min={2}
+						max={10}
+						step={1}
+						onChange={(v) => setSetting("slowModifier", v)}
+						format={(v) => `${v}x`}
+					/>
+				}
+			/>
+
+			<GroupHeading>Markers</GroupHeading>
+			<SettingRow
+				label="Default marker color"
+				control={
+					<ColorPicker
+						color={s.markerColor}
+						onChange={(color) => setSetting("markerColor", color)}
+						ariaLabel="Default marker color"
+					/>
+				}
+			/>
+			<SettingRow
+				label="Active marker color"
+				control={
+					<ColorPicker
+						color={s.activeLocationColor}
+						onChange={(color) => setSetting("activeLocationColor", color)}
+						ariaLabel="Active location marker color"
+					/>
+				}
+			/>
+			<SettingRow
+				label="Staged marker color"
+				control={
+					<ColorPicker
+						color={s.importPreviewColor}
+						onChange={(color) => setSetting("importPreviewColor", color)}
+						ariaLabel="Staged import marker color"
+					/>
+				}
+			/>
+			<SettingRow
+				checked={s.followActiveInReview}
+				onChange={(v) => setSetting("followActiveInReview", v)}
+				label="Center map on active location during review"
+			/>
+
+			<GroupHeading>Panorama dots</GroupHeading>
+			<SettingRow
+				label="Dot color"
+				control={
+					<ColorPicker
+						color={s.panoDotColor}
+						onChange={(color) => setSetting("panoDotColor", color)}
+						ariaLabel="Panorama dot color"
+					/>
+				}
+			/>
+			<SettingRow
+				label="Dot size"
+				control={
+					<NSelect
+						value={s.panoDotScaled ? "scaled" : "constant"}
+						onChange={(e) => setSetting("panoDotScaled", e.target.value === "scaled")}
+					>
+						<option value="constant">Constant on screen</option>
+						<option value="scaled">Grow when zoomed in</option>
+					</NSelect>
+				}
+			/>
+
+			<BorderDetailGroup />
 		</>
 	);
 }
 
-function GeocodingSection() {
-	const s = useSettings();
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Geocoding <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				Provider
-				<SettingSelect setting="geocodeProvider" options={GEOCODE_PROVIDERS} />
-			</label>
-			{s.geocodeProvider === "nominatim" && (
-				<>
-					<p className="settings-popup__warning">
-						Without an API key, requests may be rate-limited by Nominatim's usage policy.
-					</p>
-					<label className="settings-popup__item">
-						API key (optional)
-						<input
-							type="text"
-							className="input"
-							value={s.nominatimApiKey}
-							onChange={(e) => setSetting("nominatimApiKey", e.target.value)}
-						/>
-					</label>
-				</>
-			)}
-		</fieldset>
-	);
-}
-
-function TagsSection() {
-	const s = useSettings();
-	const limitIndex = Math.max(
-		0,
-		(TAG_SUGGESTION_LIMITS as readonly number[]).indexOf(s.tagSuggestionLimit),
-	);
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Tags <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				View mode
-				<SettingSelect setting="tagViewMode" options={TAG_VIEW_MODES} />
-			</label>
-			{s.tagViewMode === "tree" && (
-				<>
-					<div className="settings-popup__item">
-						Folder color
-						<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-							<SettingSelect setting="tagFolderColorMode" options={TAG_FOLDER_COLOR_MODES} />
-							{s.tagFolderColorMode === "direct" && (
-								<ColorPicker
-									color={s.tagFolderColor}
-									onChange={(color) => setSetting("tagFolderColor", color)}
-									ariaLabel="Default folder color"
-								/>
-							)}
-						</span>
-					</div>
-					<label className="settings-popup__item">
-						<input
-							type="checkbox"
-							checked={s.truncateTagPaths}
-							onChange={(e) => setSetting("truncateTagPaths", e.target.checked)}
-						/>
-						Truncate tag names to shortest unique path
-					</label>
-				</>
-			)}
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={s.animateTagReorder}
-					onChange={(e) => setSetting("animateTagReorder", e.target.checked)}
-				/>
-				Animate tags during drag reorder
-			</label>
-			<label
-				className="settings-popup__item"
-				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-			>
-				Tag gap
-				<input
-					type="range"
-					min={0}
-					max={16}
-					step={1}
-					value={s.tagGap}
-					onChange={(e) => setSetting("tagGap", Number(e.target.value))}
-					style={{ flex: 1 }}
-				/>
-				<span style={{ minWidth: "2rem", textAlign: "right", fontSize: "0.85rem" }}>
-					{s.tagGap}px
-				</span>
-			</label>
-			<label
-				className="settings-popup__item"
-				style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-			>
-				Suggestions shown
-				<input
-					type="range"
-					min={0}
-					max={TAG_SUGGESTION_LIMITS.length - 1}
-					step={1}
-					value={limitIndex}
-					onChange={(e) =>
-						setSetting("tagSuggestionLimit", TAG_SUGGESTION_LIMITS[Number(e.target.value)])
-					}
-					style={{ flex: 1 }}
-				/>
-				<span style={{ minWidth: "2rem", textAlign: "right", fontSize: "0.85rem" }}>
-					{s.tagSuggestionLimit === 0 ? "All" : s.tagSuggestionLimit}
-				</span>
-			</label>
-		</fieldset>
-	);
-}
-
-function BorderDetailSection() {
+function BorderDetailGroup() {
 	const s = useSettings();
 	const [mediumReady, setMediumReady] = useState<boolean | null>(null);
 	const [heavyReady, setHeavyReady] = useState<boolean | null>(null);
@@ -1011,63 +698,212 @@ function BorderDetailSection() {
 	};
 
 	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Border select <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				Country data
-				<NSelect
-					className="nselect--compact"
-					value={s.borderDetail}
-					onChange={(e) => handleChange(e.target.value as BorderDetail)}
-					disabled={downloading !== null}
-				>
-					{Object.entries(BORDER_DETAILS).map(([value, label]) => (
-						<option key={value} value={value}>
-							{label}
-							{value !== "light" && statusLabel(value as "medium" | "heavy")}
-						</option>
-					))}
-				</NSelect>
-			</label>
-			<label className="settings-popup__item">
-				Subdivision data
-				<NSelect
-					className="nselect--compact"
-					value={s.subdivisionDetail}
-					onChange={(e) => handleSubdivisionChange(e.target.value as SubdivisionDetail)}
-					disabled={downloading !== null}
-				>
-					{Object.entries(SUBDIVISION_DETAILS).map(([value, label]) => (
-						<option key={value} value={value}>
-							{label}
-							{value !== "off" && subdivisionStatus()}
-						</option>
-					))}
-				</NSelect>
-			</label>
-			{downloading && (
-				<p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", opacity: 0.7 }}>
-					Downloading border data...
-				</p>
+		<>
+			<GroupHeading>Borders</GroupHeading>
+			<SettingRow
+				label="Country data"
+				control={
+					<NSelect
+						className="nselect--compact"
+						value={s.borderDetail}
+						onChange={(e) => handleChange(e.target.value as BorderDetail)}
+						disabled={downloading !== null}
+					>
+						{Object.entries(BORDER_DETAILS).map(([value, label]) => (
+							<option key={value} value={value}>
+								{label}
+								{value !== "light" && statusLabel(value as "medium" | "heavy")}
+							</option>
+						))}
+					</NSelect>
+				}
+			/>
+			<SettingRow
+				label="Subdivision data"
+				control={
+					<NSelect
+						className="nselect--compact"
+						value={s.subdivisionDetail}
+						onChange={(e) => handleSubdivisionChange(e.target.value as SubdivisionDetail)}
+						disabled={downloading !== null}
+					>
+						{Object.entries(SUBDIVISION_DETAILS).map(([value, label]) => (
+							<option key={value} value={value}>
+								{label}
+								{value !== "off" && subdivisionStatus()}
+							</option>
+						))}
+					</NSelect>
+				}
+			/>
+			{(downloading || error) && (
+				<Aux>
+					{downloading && (
+						<p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", opacity: 0.7 }}>
+							Downloading border data...
+						</p>
+					)}
+					{error && <p className="settings-popup__warning">{error}</p>}
+				</Aux>
 			)}
-			{error && <p className="settings-popup__warning">{error}</p>}
-		</fieldset>
+		</>
 	);
 }
 
-function StreetViewTab() {
+function EditingBody() {
+	const s = useSettings();
+	const limitIndex = Math.max(
+		0,
+		(TAG_SUGGESTION_LIMITS as readonly number[]).indexOf(s.tagSuggestionLimit),
+	);
 	return (
 		<>
-			<StreetViewSection />
-			<ViewerControlsSection />
-			<FullscreenSection />
-			<TagsSection />
-			<DatePickerSection />
-			<GeocodingSection />
-			<BorderDetailSection />
+			<GroupHeading>Tags</GroupHeading>
+			<SettingRow
+				label="View mode"
+				control={<SettingSelect setting="tagViewMode" options={TAG_VIEW_MODES} />}
+			/>
+			{s.tagViewMode === "tree" && (
+				<>
+					<SettingRow
+						sub
+						label="Folder color"
+						control={
+							<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+								<SettingSelect setting="tagFolderColorMode" options={TAG_FOLDER_COLOR_MODES} />
+								{s.tagFolderColorMode === "direct" && (
+									<ColorPicker
+										color={s.tagFolderColor}
+										onChange={(color) => setSetting("tagFolderColor", color)}
+										ariaLabel="Default folder color"
+									/>
+								)}
+							</span>
+						}
+					/>
+					<SettingRow
+						sub
+						checked={s.truncateTagPaths}
+						onChange={(v) => setSetting("truncateTagPaths", v)}
+						label="Truncate tag names to shortest unique path"
+					/>
+				</>
+			)}
+			<SettingRow
+				checked={s.animateTagReorder}
+				onChange={(v) => setSetting("animateTagReorder", v)}
+				label="Animate tags during drag reorder"
+			/>
+			<SettingRow
+				label="Tag gap"
+				control={
+					<Slider
+						value={s.tagGap}
+						min={0}
+						max={16}
+						step={1}
+						onChange={(v) => setSetting("tagGap", v)}
+						format={(v) => `${v}px`}
+					/>
+				}
+			/>
+			<SettingRow
+				label="Suggestions shown"
+				control={
+					<Slider
+						value={limitIndex}
+						min={0}
+						max={TAG_SUGGESTION_LIMITS.length - 1}
+						step={1}
+						onChange={(v) => setSetting("tagSuggestionLimit", TAG_SUGGESTION_LIMITS[v])}
+						format={() => (s.tagSuggestionLimit === 0 ? "All" : String(s.tagSuggestionLimit))}
+					/>
+				}
+			/>
+
+			<GroupHeading>Seen</GroupHeading>
+			<SettingRow
+				checked={s.enableSeen}
+				onChange={(v) => setSetting("enableSeen", v)}
+				label="Log viewed panos"
+			/>
+			{s.enableSeen && (
+				<>
+					<SettingRow
+						sub
+						checked={s.enableSeenThumbnails}
+						onChange={(v) => setSetting("enableSeenThumbnails", v)}
+						label="Save thumbnails"
+					/>
+					{s.enableSeenThumbnails && (
+						<SettingRow
+							sub
+							label="Thumbnail resolution"
+							control={<SettingSelect setting="seenResolution" options={SEEN_RESOLUTIONS} />}
+						/>
+					)}
+				</>
+			)}
+
+			<GroupHeading>Geocoding</GroupHeading>
+			<SettingRow
+				label="Provider"
+				control={<SettingSelect setting="geocodeProvider" options={GEOCODE_PROVIDERS} />}
+			/>
+			{s.geocodeProvider === "nominatim" && (
+				<>
+					<Aux>
+						<p className="settings-popup__warning">
+							Without an API key, requests may be rate-limited by Nominatim's usage policy.
+						</p>
+					</Aux>
+					<SettingRow
+						sub
+						label="API key (optional)"
+						control={
+							<TextInput
+								type="text"
+								value={s.nominatimApiKey}
+								onChange={(e) => setSetting("nominatimApiKey", e.target.value)}
+							/>
+						}
+					/>
+				</>
+			)}
 		</>
+	);
+}
+
+function MapListBlock() {
+	const s = useSettings();
+	const fields = s.mapListFields;
+
+	const toggle = (field: MapListField) => {
+		if (fields.includes(field)) {
+			setSetting(
+				"mapListFields",
+				fields.filter((f) => f !== field),
+			);
+		} else {
+			setSetting("mapListFields", [...fields, field]);
+		}
+	};
+
+	return (
+		<Aux match="map list fields columns row">
+			<p className="text-muted" style={{ margin: "0.25rem 0", fontSize: "0.85rem" }}>
+				Fields shown on each map row (labels are always shown)
+			</p>
+			{Object.entries(MAP_LIST_FIELDS).map(([value, label]) => (
+				<label key={value} className="settings-checkbox-item">
+					<Checkbox
+						checked={fields.includes(value as MapListField)}
+						onChange={() => toggle(value as MapListField)}
+					/>
+					{label}
+				</label>
+			))}
+		</Aux>
 	);
 }
 
@@ -1081,18 +917,11 @@ const UPDATE_STATUS: Record<string, string> = {
 	ready: "Update installed. Restart to apply.",
 };
 
-function UpdateSection() {
+function UpdateBlock() {
 	const update = useUpdateState();
 	const version = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 	const checking = update.phase === "checking";
-	const badgeMod =
-		update.phase === "up-to-date"
-			? " settings-updates__version--latest"
-			: update.phase === "available" || update.phase === "ready"
-				? " settings-updates__version--outdated"
-				: update.phase === "error"
-					? " settings-updates__version--error"
-					: "";
+	const badgeMod = update.phase === "up-to-date" ? " settings-updates__version--latest" : "";
 	const status =
 		update.phase === "available"
 			? `Version ${update.version} is available.`
@@ -1101,10 +930,7 @@ function UpdateSection() {
 				: UPDATE_STATUS[update.phase];
 
 	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Updates <span className="fieldset__divider" />
-			</legend>
+		<Aux match="update version check release restart install">
 			<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 					<span
@@ -1127,6 +953,11 @@ function UpdateSection() {
 							className={checking ? "settings-updates__spin" : undefined}
 						/>
 					</button>
+					{(update.phase === "error" || update.phase === "up-to-date") && (
+						<span className="text-muted" style={{ fontSize: "0.8rem" }}>
+							{status}
+						</span>
+					)}
 				</div>
 				{update.phase === "available" && (
 					<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1144,9 +975,9 @@ function UpdateSection() {
 								{update.notes}
 							</pre>
 						)}
-						<button className="button button--primary" onClick={installUpdate}>
+						<Button variant="primary" onClick={installUpdate}>
 							Download and install
-						</button>
+						</Button>
 					</div>
 				)}
 				{update.phase === "downloading" && (
@@ -1158,18 +989,101 @@ function UpdateSection() {
 				{update.phase === "ready" && (
 					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 						<span>Update installed. Restart to apply.</span>
-						<button className="button button--primary" onClick={relaunchApp}>
+						<Button variant="primary" onClick={relaunchApp}>
 							Restart now
-						</button>
+						</Button>
 					</div>
 				)}
 			</div>
-		</fieldset>
+		</Aux>
 	);
 }
 
-function DataSection() {
-	const [showDbManager, setShowDbManager] = useState(false);
+function ApplicationBody() {
+	const restoreSession = useSetting("restoreSession");
+	return (
+		<>
+			<GroupHeading>Startup</GroupHeading>
+			<SettingRow
+				checked={restoreSession}
+				onChange={(v) => setSetting("restoreSession", v)}
+				label="Restore open maps on startup"
+			/>
+
+			<GroupHeading>Map list</GroupHeading>
+			<MapListBlock />
+
+			<GroupHeading>Updates</GroupHeading>
+			<UpdateBlock />
+
+			<GroupHeading>Data</GroupHeading>
+			<DataBody />
+		</>
+	);
+}
+
+function CustomCssBlock() {
+	const s = useSettings();
+	return (
+		<Aux match="custom css stylesheet style theme">
+			<textarea
+				className="settings-css-editor"
+				value={s.customCss}
+				onChange={(e) => setSetting("customCss", e.target.value)}
+				placeholder="/* Your custom CSS here */
+.location-preview__panorama { border: 2px solid red; }"
+				spellCheck={false}
+			/>
+		</Aux>
+	);
+}
+
+function generateApiKey(): string {
+	const bytes = new Uint8Array(24);
+	crypto.getRandomValues(bytes);
+	return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function IntegrationsBody() {
+	const enabled = useSetting("remoteApi");
+	const key = useSetting("remoteApiKey");
+	return (
+		<>
+			<GroupHeading>Discord</GroupHeading>
+			<SettingRow
+				label="Rich Presence"
+				control={<SettingSelect setting="discordPresence" options={DISCORD_PRESENCE_MODES} />}
+			/>
+
+			<GroupHeading>Remote API</GroupHeading>
+			<SettingRow
+				checked={enabled}
+				onChange={(v) => {
+					if (v && !key) setSetting("remoteApiKey", generateApiKey());
+					setSetting("remoteApi", v);
+				}}
+				label="Enable local REST API"
+			/>
+			{enabled && (
+				<Aux match="api key regenerate remote token">
+					<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+						<TextInput
+							type="text"
+							readOnly
+							className="mono"
+							value={key}
+							style={{ flex: 1 }}
+							onFocus={(e) => e.target.select()}
+						/>
+						<Button onClick={() => setSetting("remoteApiKey", generateApiKey())}>Regenerate</Button>
+					</div>
+				</Aux>
+			)}
+		</>
+	);
+}
+
+function DataBody() {
 	const [loc, setLoc] = useState<DataLocation | null>(null);
 	// undefined = no dialog; string = chosen folder; null = reset to default.
 	const [pending, setPending] = useState<string | null | undefined>(undefined);
@@ -1202,30 +1116,15 @@ function DataSection() {
 	const target = pending ?? loc?.default_path ?? "";
 
 	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Data <span className="fieldset__divider" />
-			</legend>
+		<Aux match="data location folder storage">
 			<code style={{ display: "block", wordBreak: "break-all", marginBottom: 8 }}>
 				{loc?.path ?? "..."}
 			</code>
 			<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-				<button className="button" onClick={pick}>
-					Change folder...
-				</button>
-				<button className="button" onClick={() => cmd.openDataFolder()}>
-					Open data folder
-				</button>
-				{loc?.is_custom && (
-					<button className="button" onClick={() => setPending(null)}>
-						Reset to default
-					</button>
-				)}
-				<button className="button" onClick={() => setShowDbManager(true)}>
-					Database management
-				</button>
+				<Button onClick={pick}>Change folder...</Button>
+				<Button onClick={() => cmd.openDataFolder()}>Open data folder</Button>
+				{loc?.is_custom && <Button onClick={() => setPending(null)}>Reset to default</Button>}
 			</div>
-			<DatabaseManager open={showDbManager} onOpenChange={setShowDbManager} />
 
 			<Dialog open={pending !== undefined} onOpenChange={(o) => !o && setPending(undefined)}>
 				<DialogContent title="Change data folder">
@@ -1233,131 +1132,89 @@ function DataSection() {
 					<code style={{ display: "block", wordBreak: "break-all", margin: "8px 0" }}>
 						{target}
 					</code>
-					<p style={{ color: "#888" }}>
+					<p className="text-muted">
 						Existing maps are not moved automatically. Copy them from the current folder if you want
 						to keep them. The app must relaunch to apply.
 					</p>
 					<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-						<button className="button" onClick={() => setPending(undefined)} disabled={busy}>
+						<Button onClick={() => setPending(undefined)} disabled={busy}>
 							Cancel
-						</button>
-						<button className="button button--primary" onClick={apply} disabled={busy}>
+						</Button>
+						<Button variant="primary" onClick={apply} disabled={busy}>
 							Relaunch now
-						</button>
+						</Button>
 					</div>
 				</DialogContent>
 			</Dialog>
-		</fieldset>
+		</Aux>
 	);
 }
 
-function StartupSection() {
-	const restoreSession = useSetting("restoreSession");
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Startup <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={restoreSession}
-					onChange={(e) => setSetting("restoreSession", e.target.checked)}
-				/>
-				Restore open maps on startup
-			</label>
-		</fieldset>
-	);
-}
-
-function DiscordSection() {
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Discord <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				Rich Presence
-				<SettingSelect setting="discordPresence" options={DISCORD_PRESENCE_MODES} />
-			</label>
-		</fieldset>
-	);
-}
-
-function generateApiKey(): string {
-	const bytes = new Uint8Array(24);
-	crypto.getRandomValues(bytes);
-	return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function RemoteApiSection() {
-	const enabled = useSetting("remoteApi");
-	const key = useSetting("remoteApiKey");
-	return (
-		<fieldset className="fieldset">
-			<legend className="fieldset__header">
-				Remote API <span className="fieldset__divider" />
-			</legend>
-			<label className="settings-popup__item">
-				<input
-					type="checkbox"
-					checked={enabled}
-					onChange={(e) => {
-						if (e.target.checked && !key) setSetting("remoteApiKey", generateApiKey());
-						setSetting("remoteApi", e.target.checked);
-					}}
-				/>
-				Enable local REST API
-			</label>
-			{enabled && (
-				<div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-					<input
-						type="text"
-						readOnly
-						value={key}
-						style={{ flex: 1, fontFamily: "monospace" }}
-						onFocus={(e) => e.target.select()}
-					/>
-					<button className="button" onClick={() => setSetting("remoteApiKey", generateApiKey())}>
-						Regenerate
-					</button>
-				</div>
-			)}
-		</fieldset>
-	);
-}
-
-function AdvancedTab() {
+function AdvancedBody() {
 	const showFps = useSetting("showFps");
 	return (
 		<>
-			<StartupSection />
-			<DiscordSection />
-			<MapListSection />
-			<SeenSection />
-			<CustomCssSection />
-			<RemoteApiSection />
-			<UpdateSection />
-			<DataSection />
-			<fieldset className="fieldset">
-				<legend className="fieldset__header">
-					Debug <span className="fieldset__divider" />
-				</legend>
-				<label className="settings-popup__item">
-					<input
-						type="checkbox"
-						checked={showFps}
-						onChange={(e) => setSetting("showFps", e.target.checked)}
-					/>
-					Show FPS counter
-				</label>
+			<GroupHeading>Custom CSS</GroupHeading>
+			<CustomCssBlock />
+
+			<GroupHeading>Debug</GroupHeading>
+			<SettingRow
+				checked={showFps}
+				onChange={(v) => setSetting("showFps", v)}
+				label="Show FPS counter"
+			/>
+			<Aux match="log file logs diagnostics">
 				<div style={{ display: "flex", gap: 8 }}>
-					<button className="button" onClick={() => cmd.openLogFile()}>
-						Open log file
-					</button>
+					<Button onClick={() => cmd.openLogFile()}>Open log file</Button>
 				</div>
-			</fieldset>
+			</Aux>
 		</>
+	);
+}
+
+type Section = {
+	id: string;
+	title: string;
+	Body: () => ReactNode;
+};
+
+const SECTIONS: Section[] = [
+	{ id: "keyboard", title: "Keyboard", Body: KeyboardBody },
+	{ id: "streetview", title: "Street View", Body: StreetViewBody },
+	{ id: "map", title: "Map", Body: MarkersBody },
+	{ id: "editing", title: "Editing", Body: EditingBody },
+	{ id: "application", title: "Application", Body: ApplicationBody },
+	{ id: "integrations", title: "Integrations", Body: IntegrationsBody },
+	{ id: "advanced", title: "Advanced", Body: AdvancedBody },
+];
+
+function SectionShell({
+	section,
+	mode,
+	query,
+	hidden,
+}: {
+	section: Section;
+	mode: "single" | "search";
+	query: string;
+	hidden?: boolean;
+}) {
+	const sectionMatched =
+		mode === "single" || query === "" || section.title.toLowerCase().includes(query);
+	const Body = section.Body;
+	return (
+		<SettingsSearchContext.Provider value={{ query, searching: mode === "search", sectionMatched }}>
+			<section
+				className={`settings-section${mode === "search" ? " settings-section--search" : ""}`}
+				data-qa={`settings-section-${section.id}`}
+				style={hidden ? { display: "none" } : undefined}
+			>
+				<div className="settings-section__head">
+					<h2 className="settings-section__title">{section.title}</h2>
+				</div>
+				<Body />
+			</section>
+		</SettingsSearchContext.Provider>
 	);
 }
 
@@ -1368,26 +1225,62 @@ export function SettingsPage({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
-	const [tab, setTab] = useState<SettingsTab>("controls");
+	const [selected, setSelected] = useState<string>(SECTIONS[0].id);
+	const [query, setQuery] = useState("");
+	const q = query.trim().toLowerCase();
+	const searching = q !== "";
+
+	useEffect(() => {
+		if (open) setQuery("");
+	}, [open]);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent title="Settings" className="settings-page">
-				<div className="settings-tabs">
-					{TABS.map((t) => (
-						<button
-							key={t.id}
-							className={`settings-tabs__tab${tab === t.id ? " settings-tabs__tab--active" : ""}`}
-							onClick={() => setTab(t.id)}
-						>
-							{t.label}
-						</button>
+				<nav className="settings-rail">
+					<TextInput
+						type="text"
+						className="settings-rail__search"
+						placeholder="Search settings..."
+						value={query}
+						onChange={(e) => setQuery(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Escape" && query) {
+								e.stopPropagation();
+								setQuery("");
+							}
+						}}
+					/>
+					<div className="settings-nav-list">
+						{SECTIONS.map((s) => (
+							<button
+								key={s.id}
+								type="button"
+								data-qa={`settings-nav-${s.id}`}
+								className={`settings-nav-item${!searching && s.id === selected ? " settings-nav-item--active" : ""}`}
+								onClick={() => {
+									setSelected(s.id);
+									setQuery("");
+								}}
+							>
+								{s.title}
+							</button>
+						))}
+					</div>
+				</nav>
+				<div className={`settings-content${searching ? " settings-content--search" : ""}`}>
+					{/* All sections stay mounted so search-mode transitions and section
+					    switches never reset body state (hotkey recording, IPC-backed status). */}
+					{SECTIONS.map((s) => (
+						<SectionShell
+							key={s.id}
+							section={s}
+							mode={searching ? "search" : "single"}
+							query={searching ? q : ""}
+							hidden={!searching && s.id !== selected}
+						/>
 					))}
 				</div>
-				{tab === "controls" && <ControlsTab />}
-				{tab === "map" && <MapTab />}
-				{tab === "streetview" && <StreetViewTab />}
-				{tab === "advanced" && <AdvancedTab />}
 			</DialogContent>
 		</Dialog>
 	);

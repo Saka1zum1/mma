@@ -127,16 +127,15 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 		>
 			<div
 				style={{
-					background: "#1a1a1a",
-					color: "#e0e0e0",
+					background: "var(--surface-2)",
+					color: "var(--text-1)",
 					borderRadius: 8,
 					padding: "20px 28px",
 					minWidth: 420,
 					maxWidth: 600,
-					fontFamily: "monospace",
 					fontSize: 13,
 					lineHeight: 1.7,
-					border: "1px solid #333",
+					border: "1px solid var(--border-subtle)",
 				}}
 			>
 				<div
@@ -147,13 +146,15 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 						marginBottom: 16,
 					}}
 				>
-					<span style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>Stats for Nerds</span>
+					<span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-1)" }}>
+						Stats for Nerds
+					</span>
 					<button
 						onClick={onClose}
 						style={{
 							background: "none",
 							border: "none",
-							color: "#888",
+							color: "var(--text-2)",
 							cursor: "pointer",
 							fontSize: 18,
 							padding: "0 4px",
@@ -162,7 +163,7 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 						x
 					</button>
 				</div>
-				{error && <div style={{ color: "#f44" }}>{error}</div>}
+				{error && <div style={{ color: "var(--destructive)" }}>{error}</div>}
 				{stats && (
 					<table style={{ width: "100%", borderCollapse: "collapse" }}>
 						<tbody>
@@ -188,8 +189,8 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 							].map(([label, value]) => (
 								<tr key={label}>
 									<td
+										className="text-muted"
 										style={{
-											color: "#888",
 											paddingRight: 16,
 											whiteSpace: "nowrap",
 											verticalAlign: "top",
@@ -197,7 +198,9 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 									>
 										{label}
 									</td>
-									<td style={{ wordBreak: "break-all" }}>{value}</td>
+									<td className="mono" style={{ wordBreak: "break-all" }}>
+										{value}
+									</td>
 								</tr>
 							))}
 						</tbody>

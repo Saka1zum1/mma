@@ -29,7 +29,7 @@ export interface MapEmbedPrefs {
 
 export const DEFAULT_PREFS: MapEmbedPrefs = {
 	svOpacity: 0.5,
-	svColor: "cyan",
+	svColor: "#1098ad",
 	showLabels: true,
 	showTerrain: false,
 	svPanoramas: false,

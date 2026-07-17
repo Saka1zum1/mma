@@ -10,6 +10,8 @@ import {
 } from "@/store/savedSelections";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 import { mdiClose } from "@mdi/js";
 
 export function SaveSelectionsDialog({
@@ -58,8 +60,7 @@ export function SaveSelectionsDialog({
 						}}
 						style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}
 					>
-						<input
-							className="input"
+						<TextInput
 							value={name}
 							onChange={(e) => onNameChange(e.target.value)}
 							placeholder="Name this selection..."
@@ -79,12 +80,10 @@ export function SaveSelectionsDialog({
 							))}
 						</div>
 						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-							<button className="button" type="button" onClick={() => onOpenChange(false)}>
-								Cancel
-							</button>
-							<button className="button button--primary" type="submit" disabled={!name.trim()}>
+							<Button onClick={() => onOpenChange(false)}>Cancel</Button>
+							<Button variant="primary" type="submit" disabled={!name.trim()}>
 								Save
-							</button>
+							</Button>
 						</div>
 					</form>
 				)}

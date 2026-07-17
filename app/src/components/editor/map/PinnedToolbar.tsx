@@ -9,6 +9,7 @@ import {
 	reorderPinned,
 } from "@/store/commands";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -153,16 +154,15 @@ export function PinnedToolbar({
 							<Icon path={command.icon} />
 						</button>
 					) : (
-						<button
-							className={`button${isOpen ? " is-active" : ""}${disabled ? " is-disabled" : ""}${dragIdx === i ? " is-dragging" : ""}`}
-							type="button"
+						<Button
+							className={`${isOpen ? "is-active " : ""}${disabled ? "is-disabled " : ""}${dragIdx === i ? "is-dragging" : ""}`}
 							data-drop={dropIdx === i ? "" : undefined}
 							onClick={disabled ? undefined : handleClick}
 							onMouseDown={(e) => handleDragStart(i, e)}
 							onMouseMove={() => handleDragOver(i)}
 						>
 							{command.label}
-						</button>
+						</Button>
 					);
 
 					return (
@@ -189,7 +189,7 @@ export function PinnedToolbar({
 										</ContextMenu.Item>
 									)}
 									<ContextMenu.Separator
-										style={{ height: 1, background: "#0000001a", margin: "4px 0" }}
+										style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }}
 									/>
 									<ContextMenu.Item
 										className="context-menu__item"
@@ -204,7 +204,7 @@ export function PinnedToolbar({
 										Add separator after
 									</ContextMenu.Item>
 									<ContextMenu.Separator
-										style={{ height: 1, background: "#0000001a", margin: "4px 0" }}
+										style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }}
 									/>
 									<ContextMenu.Item
 										className="context-menu__item"

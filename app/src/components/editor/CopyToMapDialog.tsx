@@ -5,6 +5,7 @@ import type { MapMeta } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { HotkeyInput } from "@/components/primitives/HotkeyInput";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
+import { Button } from "@/components/primitives/Button";
 import { useMapSetting } from "@/store/useMapSetting";
 import { getMapCopyBindingKey, withMapCopyBinding } from "@/lib/map/mapKeyBindings";
 import { getCurrentMapId } from "@/store/useMapStore";
@@ -95,9 +96,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 											{meta?.folder && <small> · {meta.folder}</small>}
 										</span>
 										<HotkeyInput value={key} onChange={(combo) => setRowKey(id, combo)} />
-										<button type="button" className="button" onClick={() => removeRow(id)}>
-											Remove
-										</button>
+										<Button onClick={() => removeRow(id)}>Remove</Button>
 									</li>
 								);
 							})}

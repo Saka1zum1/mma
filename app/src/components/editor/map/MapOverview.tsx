@@ -29,6 +29,8 @@ import { MergeDuplicatesModal } from "@/components/dialogs/MergeDuplicatesModal"
 import { ReviewSessionsModal } from "@/components/dialogs/ReviewSessions";
 import { beginReview } from "@/lib/review/review";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 import { PluginToolbar } from "@/plugins/PluginPanels";
 import { fmt } from "@/lib/util/format";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
@@ -53,8 +55,7 @@ function RandomPickPanel() {
 					toast(`Selected ${fmt.format(picked)} random location${picked !== 1 ? "s" : ""}`);
 			}}
 		>
-			<input
-				className="input"
+			<TextInput
 				type="number"
 				min={1}
 				style={{ width: "7rem" }}
@@ -63,9 +64,9 @@ function RandomPickPanel() {
 				onChange={(e) => setValue(e.target.value)}
 			/>
 			<span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>
-			<button className="button" type="submit" disabled={!valid}>
+			<Button type="submit" disabled={!valid}>
 				Pick
-			</button>
+			</Button>
 		</form>
 	);
 }
@@ -96,8 +97,7 @@ function SpacedPickPanel() {
 				<option value="count">Count</option>
 				<option value="distance">Min distance (m)</option>
 			</NSelect>
-			<input
-				className="input"
+			<TextInput
 				type="number"
 				min={1}
 				style={{ width: "7rem" }}
@@ -106,9 +106,9 @@ function SpacedPickPanel() {
 				onChange={(e) => setValue(e.target.value)}
 			/>
 			{mode === "count" && <span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>}
-			<button className="button" type="submit" disabled={!valid}>
+			<Button type="submit" disabled={!valid}>
 				Pick
-			</button>
+			</Button>
 		</form>
 	);
 }
@@ -153,17 +153,16 @@ function TopKPanel({
 				<option value="top">Top</option>
 				<option value="bottom">Bottom</option>
 			</NSelect>
-			<input
-				className="input"
+			<TextInput
 				type="number"
 				min={1}
 				style={{ width: "5rem" }}
 				value={count}
 				onChange={(e) => setCount(Math.max(1, Number(e.target.value)))}
 			/>
-			<button className="button" type="submit" disabled={!field}>
+			<Button type="submit" disabled={!field}>
 				Select
-			</button>
+			</Button>
 		</form>
 	);
 }
@@ -237,18 +236,21 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				title="Selections"
 				isCollapsed={selectionsCollapsed}
 				onCollapse={setSelectionsCollapsed}
-				collapsedAddons={<span>{fmt.format(selected.size)} selected</span>}
+				collapsedAddons={
+					<span>
+						<span className="mono">{fmt.format(selected.size)}</span> selected
+					</span>
+				}
 				addons={
 					<>
-						<span className="selection-manager__count">{fmt.format(selected.size)} selected</span>
+						<span className="selection-manager__count">
+							<span className="mono">{fmt.format(selected.size)}</span> selected
+						</span>
 						<span className="selection-manager__space" />
 						<PluginToolbar />
-						<button
-							className="button"
-							onClick={() => document.dispatchEvent(new CustomEvent("open-command-palette"))}
-						>
+						<Button onClick={() => document.dispatchEvent(new CustomEvent("open-command-palette"))}>
 							Commands...
-						</button>
+						</Button>
 					</>
 				}
 			>
@@ -306,25 +308,16 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 								>
 									<label>
 										Distance (m):{" "}
-										<input
+										<TextInput
 											type="number"
-											className="input"
 											min="0"
 											style={{ width: "5rem" }}
 											value={dupDistance}
 											onChange={(e) => setDupDistance(Number(e.target.value))}
 										/>
 									</label>
-									<button className="button" type="submit">
-										Find
-									</button>
-									<button
-										className="button"
-										type="button"
-										onClick={() => setShowMergeDuplicates(true)}
-									>
-										Merge
-									</button>
+									<Button type="submit">Find</Button>
+									<Button onClick={() => setShowMergeDuplicates(true)}>Merge</Button>
 								</form>
 							),
 						},

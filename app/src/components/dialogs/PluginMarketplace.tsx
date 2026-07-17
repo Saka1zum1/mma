@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 import {
 	getPlugin,
 	getPlugins,
@@ -72,22 +74,22 @@ function PluginSettings({ pluginId }: { pluginId: string }) {
 				};
 				if (def.type === "boolean") {
 					return (
-						<label key={def.key} className="plugin-card__setting">
-							<input
-								type="checkbox"
-								checked={Boolean(value)}
-								onChange={(e) => update(e.target.checked)}
-							/>
+						<SwitchRow
+							key={def.key}
+							className="plugin-card__setting"
+							checked={Boolean(value)}
+							onChange={(v) => update(v)}
+							label={def.label}
+						>
 							<span>{def.label}</span>
-						</label>
+						</SwitchRow>
 					);
 				}
 				return (
 					<label key={def.key} className="plugin-card__setting">
 						<span>{def.label}</span>
-						<input
+						<TextInput
 							type={def.type === "number" ? "number" : "text"}
-							className="input"
 							value={def.type === "number" ? Number(value ?? 0) : String(value ?? "")}
 							onChange={(e) =>
 								update(def.type === "number" ? Number(e.target.value) : e.target.value)
@@ -102,6 +104,7 @@ function PluginSettings({ pluginId }: { pluginId: string }) {
 
 import { mdiDownload, mdiRefresh, mdiTrashCanOutline } from "@mdi/js";
 import { Switch } from "@/components/primitives/Switch";
+import { SwitchRow } from "@/components/primitives/SwitchRow";
 
 function CoreCard({ plugin }: { plugin: Plugin }) {
 	const [enabled, setEnabled] = useState(() => isPluginEnabled(plugin.id));
@@ -499,9 +502,9 @@ export function PluginMarketplace({
 							<div className="plugin-marketplace__empty">
 								Failed to load registry: {fetchError}
 								<br />
-								<button className="button" onClick={fetchRegistry} style={{ marginTop: 8 }}>
+								<Button onClick={fetchRegistry} style={{ marginTop: 8 }}>
 									Retry
-								</button>
+								</Button>
 							</div>
 						)}
 						{registryEntries.map((e) => (

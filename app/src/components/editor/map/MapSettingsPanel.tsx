@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo, type RefObject } from "react";
 import { NSelect } from "@/components/primitives/NSelect";
+import { SwitchRow } from "@/components/primitives/SwitchRow";
+import { Button } from "@/components/primitives/Button";
 import { buildTileUrl, createRoadmapTileConfig, type MapStyle } from "@/lib/geo/tiles";
 import {
 	BUILTIN_STYLE_KEYS,
@@ -10,7 +12,11 @@ import {
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiCogOutline } from "@mdi/js";
-import { SV_COLORS, type MapTypeKey, type SvCoverageType, type MarkerStyle } from "@/types";
+import type { MapTypeKey, SvCoverageType, MarkerStyle } from "@/types";
+import { ColorPicker } from "@/components/primitives/ColorPicker";
+import { useClickOutside } from "@/lib/hooks/useClickOutside";
+import { Slider } from "@/components/primitives/Slider";
+import { hexToRgb, rgbToHex, resolveSvColorHex } from "@/lib/util/color";
 import { useMapSetting } from "@/store/useMapSetting";
 import { ScoreBoundsEditor } from "./ScoreBoundsEditor";
 
@@ -61,8 +67,7 @@ function SearchRadiusSlider({
 	return (
 		<label className="settings-popup__item settings-popup__select">
 			Min search radius:{" "}
-			<input
-				type="range"
+			<Slider
 				min={10}
 				max={500}
 				step={10}
@@ -77,7 +82,7 @@ function SearchRadiusSlider({
 				}}
 				style={{ width: 80, verticalAlign: "middle" }}
 			/>{" "}
-			{display}m
+			<span className="mono">{display}m</span>
 		</label>
 	);
 }
@@ -91,39 +96,33 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 				<legend className="layer-config__header">
 					Layers <span className="layer-config__divider" />
 				</legend>
-				<label className="layer-config__item" role="menuitem">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.showTerrain}
-						disabled={!e.supportsTerrain}
-						onChange={(ev) => setPref("showTerrain")(ev.target.checked)}
-					/>
-					Terrain
-				</label>
-				<label className="layer-config__item">
-					<input role="menuitemcheckbox" type="checkbox" checked disabled />
-					Street View
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.showLabels}
-						disabled={!e.supportsLabels}
-						onChange={(ev) => setPref("showLabels")(ev.target.checked)}
-					/>
-					Labels
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.svPanoramas}
-						onChange={(ev) => setPref("svPanoramas")(ev.target.checked)}
-					/>
-					Panoramas (requires close zoom)
-				</label>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.showTerrain}
+					disabled={!e.supportsTerrain}
+					onChange={(v) => setPref("showTerrain")(v)}
+					label="Terrain"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked
+					disabled
+					onChange={() => {}}
+					label="Street View"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.showLabels}
+					disabled={!e.supportsLabels}
+					onChange={(v) => setPref("showLabels")(v)}
+					label="Labels"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.svPanoramas}
+					onChange={(v) => setPref("svPanoramas")(v)}
+					label="Panoramas (requires close zoom)"
+				/>
 			</fieldset>
 			{/* Street View */}
 			<fieldset className="layer-config__group">
@@ -135,120 +134,90 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 					style={{ display: "flex", justifyContent: "space-between" }}
 				>
 					<span>Show lines:</span>
-					<div className="button-group">
-						{[
-							{ value: "official" as SvCoverageType, name: "Official" },
-							{ value: "unofficial" as SvCoverageType, name: "Unofficial" },
-							{ value: "default" as SvCoverageType, name: "All" },
-						].map((opt) => (
-							<button
-								key={opt.value}
-								className="button button-group__button"
-								aria-checked={p.svCoverageType === opt.value}
-								onClick={() => setPref("svCoverageType")(opt.value)}
-							>
-								{opt.name}
-							</button>
-						))}
+					<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+						<div className="button-group">
+							{[
+								{ value: "official" as SvCoverageType, name: "Official" },
+								{ value: "unofficial" as SvCoverageType, name: "Unofficial" },
+								{ value: "default" as SvCoverageType, name: "All" },
+							].map((opt) => (
+								<Button
+									key={opt.value}
+									className="button-group__button"
+									aria-checked={p.svCoverageType === opt.value}
+									onClick={() => setPref("svCoverageType")(opt.value)}
+								>
+									{opt.name}
+								</Button>
+							))}
+						</div>
+						<ColorPicker
+							color={(([r, g, b]) => ({ r, g, b }))(hexToRgb(resolveSvColorHex(p.svColor)))}
+							onChange={(c) => setPref("svColor")(rgbToHex(c))}
+							ariaLabel="Coverage line color"
+						/>
 					</div>
 				</div>
-				<label className="layer-config__item">
-					<div className="color-swatch">
-						{SV_COLORS.map((c) => (
-							<button
-								key={c}
-								type="button"
-								className="color-swatch__block"
-								data-state={p.svColor === c ? "on" : "off"}
-								onClick={() => setPref("svColor")(c)}
-							>
-								<div className="color-block" style={{ backgroundColor: `var(--${c}-7)` }} />
-							</button>
-						))}
-					</div>
-				</label>
-				<label className="layer-config__item">
-					<input
-						type="checkbox"
-						checked={p.svThickness === "high"}
-						onChange={(ev) => setPref("svThickness")(ev.target.checked ? "high" : "default")}
-					/>{" "}
-					Make the lines thinner
-				</label>
-				<label className="layer-config__item">
-					<input
-						type="checkbox"
-						checked={p.svBlobby}
-						onChange={(ev) => setPref("svBlobby")(ev.target.checked)}
-					/>{" "}
-					Use blobby layer while zoomed out
-				</label>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.svThickness === "high"}
+					onChange={(v) => setPref("svThickness")(v ? "high" : "default")}
+					label="Make the lines thinner"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.svBlobby}
+					onChange={(v) => setPref("svBlobby")(v)}
+					label="Use blobby layer while zoomed out"
+				/>
 			</fieldset>
 			{/* Settings */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
 					Settings <span className="layer-config__divider" />
 				</legend>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.boldCountryBorders}
-						disabled={!e.supportsStyling}
-						onChange={(ev) => setPref("boldCountryBorders")(ev.target.checked)}
-					/>
-					Emphasise country borders
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.boldSubdivisionBorders}
-						disabled={!e.supportsStyling}
-						onChange={(ev) => setPref("boldSubdivisionBorders")(ev.target.checked)}
-					/>
-					Emphasise subdivision borders
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.hideRoadLabels}
-						disabled={!e.supportsStyling}
-						onChange={(ev) => setPref("hideRoadLabels")(ev.target.checked)}
-					/>
-					Hide road labels
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.hidePoi}
-						disabled={!e.supportsStyling}
-						onChange={(ev) => setPref("hidePoi")(ev.target.checked)}
-					/>
-					Hide points of interest
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.hideTransit}
-						disabled={!e.supportsStyling}
-						onChange={(ev) => setPref("hideTransit")(ev.target.checked)}
-					/>
-					Hide transit
-				</label>
-				<label className="layer-config__item">
-					<input
-						role="menuitemcheckbox"
-						type="checkbox"
-						checked={p.hideHighways}
-						disabled={!e.supportsStyling}
-						onChange={(ev) => setPref("hideHighways")(ev.target.checked)}
-					/>
-					Hide highways
-				</label>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.boldCountryBorders}
+					disabled={!e.supportsStyling}
+					onChange={(v) => setPref("boldCountryBorders")(v)}
+					label="Emphasise country borders"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.boldSubdivisionBorders}
+					disabled={!e.supportsStyling}
+					onChange={(v) => setPref("boldSubdivisionBorders")(v)}
+					label="Emphasise subdivision borders"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.hideRoadLabels}
+					disabled={!e.supportsStyling}
+					onChange={(v) => setPref("hideRoadLabels")(v)}
+					label="Hide road labels"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.hidePoi}
+					disabled={!e.supportsStyling}
+					onChange={(v) => setPref("hidePoi")(v)}
+					label="Hide points of interest"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.hideTransit}
+					disabled={!e.supportsStyling}
+					onChange={(v) => setPref("hideTransit")(v)}
+					label="Hide transit"
+				/>
+				<SwitchRow
+					className="layer-config__item"
+					checked={p.hideHighways}
+					disabled={!e.supportsStyling}
+					onChange={(v) => setPref("hideHighways")(v)}
+					label="Hide highways"
+				/>
 			</fieldset>
 			{/* Map style */}
 			<fieldset className="layer-config__group">
@@ -443,16 +412,7 @@ export function MapTypeDropdown({ layerConfig }: { layerConfig: LayerConfig }) {
 		return () => obs.disconnect();
 	}, [compact]);
 
-	useEffect(() => {
-		if (!isOpen) return;
-		const handler = (e: MouseEvent) => {
-			if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-				setIsOpen(false);
-			}
-		};
-		document.addEventListener("mousedown", handler);
-		return () => document.removeEventListener("mousedown", handler);
-	}, [isOpen]);
+	useClickOutside(containerRef, () => setIsOpen(false), isOpen);
 
 	const previewUrls: Record<MapTypeKey, string> = {
 		map: mapPreviewUrl,
@@ -551,16 +511,7 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 	const [isOpen, setIsOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 
-	useEffect(() => {
-		if (!isOpen) return;
-		const handler = (e: MouseEvent) => {
-			if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-				setIsOpen(false);
-			}
-		};
-		document.addEventListener("mousedown", handler);
-		return () => document.removeEventListener("mousedown", handler);
-	}, [isOpen]);
+	useClickOutside(containerRef, () => setIsOpen(false), isOpen);
 
 	return (
 		<div
@@ -587,14 +538,11 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 						<legend className="fieldset__header">
 							Selecting new locations <span className="fieldset__divider" />
 						</legend>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={pointAlongRoad}
-								onChange={(e) => setPointAlongRoad(e.target.checked)}
-							/>
-							Point view along the road by default
-						</label>
+						<SwitchRow
+							checked={pointAlongRoad}
+							onChange={setPointAlongRoad}
+							label="Point view along the road by default"
+						/>
 						{pointAlongRoad && (
 							<label className="settings-popup__item settings-popup__select">
 								Direction:{" "}
@@ -614,60 +562,38 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 								</NSelect>
 							</label>
 						)}
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={preferOfficial}
-								onChange={(e) => setPreferOfficial(e.target.checked)}
-							/>
-							Prefer official coverage over unofficial
-						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={preferHigherQuality}
-								onChange={(e) => setPreferHigherQuality(e.target.checked)}
-							/>
-							Prefer higher quality over newer images
-						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={onlyOfficial}
-								onChange={(e) => setOnlyOfficial(e.target.checked)}
-							/>
-							Disallow unofficial coverage
-						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={defaultPanoId}
-								onChange={(e) => setDefaultPanoId(e.target.checked)}
-							/>
-							Use Pano ID locations by default
-						</label>
+						<SwitchRow
+							checked={preferOfficial}
+							onChange={setPreferOfficial}
+							label="Prefer official coverage over unofficial"
+						/>
+						<SwitchRow
+							checked={preferHigherQuality}
+							onChange={setPreferHigherQuality}
+							label="Prefer higher quality over newer images"
+						/>
+						<SwitchRow
+							checked={onlyOfficial}
+							onChange={setOnlyOfficial}
+							label="Disallow unofficial coverage"
+						/>
+						<SwitchRow
+							checked={defaultPanoId}
+							onChange={setDefaultPanoId}
+							label="Use Pano ID locations by default"
+						/>
 						<SearchRadiusSlider value={searchRadius} onChange={setSearchRadius} />
 					</fieldset>
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">
 							Map behaviour <span className="fieldset__divider" />
 						</legend>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={s.showPreviews}
-								onChange={(e) => s.setShowPreviews(e.target.checked)}
-							/>
-							Show location previews when hovering the map
-						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={s.selectOnly}
-								onChange={(e) => s.setSelectOnly(e.target.checked)}
-							/>
-							Select-only mode
-						</label>
+						<SwitchRow
+							checked={s.showPreviews}
+							onChange={s.setShowPreviews}
+							label="Show location previews when hovering the map"
+						/>
+						<SwitchRow checked={s.selectOnly} onChange={s.setSelectOnly} label="Select-only mode" />
 					</fieldset>
 					<ScoreBoundsEditor />
 					<fieldset className="fieldset">
@@ -688,8 +614,7 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 						</label>
 						<label className="settings-popup__item settings-popup__slider">
 							Marker size:{" "}
-							<input
-								type="range"
+							<Slider
 								min={0.5}
 								max={3}
 								step={0.25}
@@ -697,22 +622,16 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 								onChange={(e) => s.setMarkerSize(Number(e.target.value))}
 							/>
 						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={s.showPerfectScoreCircle}
-								onChange={(e) => s.setShowPerfectScoreCircle(e.target.checked)}
-							/>
-							Display 5K radius
-						</label>
-						<label className="settings-popup__item">
-							<input
-								type="checkbox"
-								checked={s.showSearchRadiusCursor}
-								onChange={(e) => s.setShowSearchRadiusCursor(e.target.checked)}
-							/>
-							Show click search radius at cursor
-						</label>
+						<SwitchRow
+							checked={s.showPerfectScoreCircle}
+							onChange={s.setShowPerfectScoreCircle}
+							label="Display 5K radius"
+						/>
+						<SwitchRow
+							checked={s.showSearchRadiusCursor}
+							onChange={s.setShowSearchRadiusCursor}
+							label="Show click search radius at cursor"
+						/>
 					</fieldset>
 				</div>
 			)}

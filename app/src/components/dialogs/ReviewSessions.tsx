@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
 import { mdiCheckCircleOutline, mdiCircleOutline, mdiPlay, mdiDelete } from "@mdi/js";
 import {
 	listSessions,
@@ -188,14 +189,15 @@ export function ReviewSessionsModal({
 											<Icon path={mdiCircleOutline} size={18} />
 										</button>
 										{filter === "active" && (
-											<button
-												className="button button--primary review-sessions__resume"
+											<Button
+												variant="primary"
+												className="review-sessions__resume"
 												onClick={() => handleResume(s)}
 												data-qa="review-resume"
 											>
 												<Icon path={mdiPlay} size={16} />
 												Resume
-											</button>
+											</Button>
 										)}
 										<button
 											className="icon-button review-sessions__delete"

@@ -18,6 +18,7 @@ import { CopyToMapDialog } from "@/components/editor/CopyToMapDialog";
 import { QuickCopyToMapDialog } from "@/components/editor/QuickCopyToMapDialog";
 import { loadSeenPano } from "@/lib/sv/panoSingleton";
 import { Icon } from "@/components/primitives/Icon";
+import { Button } from "@/components/primitives/Button";
 import { mdiUndo, mdiRedo } from "@mdi/js";
 import { fmt } from "@/lib/util/format";
 
@@ -43,18 +44,15 @@ export function MapMetaBar() {
 
 	return (
 		<>
-			<span className="map-meta__total">{fmt.format(map.meta.locationCount)} locations</span>
+			<span className="map-meta__total">
+				<span className="mono">{fmt.format(map.meta.locationCount)}</span> locations
+			</span>
 			<span className="map-meta__actions">
-				<button
-					className="button button--primary"
-					type="button"
-					disabled={!hasDiff}
-					onClick={() => commitMap()}
-				>
+				<Button variant="primary" disabled={!hasDiff} onClick={() => commitMap()}>
 					Commit
-				</button>
+				</Button>
 				{hasDiff && (
-					<span className="map-meta__count">
+					<span className="map-meta__count mono">
 						<span className="map-meta__count--added">+{fmt.format(diff.added)}</span>{" "}
 						<span className="map-meta__count--removed">-{fmt.format(diff.removed)}</span>{" "}
 						<span className="map-meta__count--updated">&plusmn;{fmt.format(diff.modified)}</span>
@@ -65,7 +63,7 @@ export function MapMetaBar() {
 						type="button"
 						className="icon-button"
 						disabled={!canUndo}
-						style={{ color: canUndo ? undefined : "var(--stone-7)" }}
+						style={{ color: canUndo ? undefined : "var(--text-3)" }}
 						aria-label="Undo"
 						onClick={undo}
 					>
@@ -77,7 +75,7 @@ export function MapMetaBar() {
 						type="button"
 						className="icon-button"
 						disabled={!canRedo}
-						style={{ color: canRedo ? undefined : "var(--stone-7)" }}
+						style={{ color: canRedo ? undefined : "var(--text-3)" }}
 						aria-label="Redo"
 						onClick={redo}
 					>
@@ -87,18 +85,10 @@ export function MapMetaBar() {
 			</span>
 			<span className="map-meta__spacer"></span>
 			<div className="map-meta__import">
-				<button className="button" type="button" onClick={() => setShowSeen(true)}>
-					Seen
-				</button>
-				<button className="button" type="button" onClick={() => setShowHistory(true)}>
-					History
-				</button>
-				<button className="button" type="button" onClick={() => beginImportFile()}>
-					Import file
-				</button>
-				<button className="button" type="button" onClick={() => setShowExport(true)}>
-					Export
-				</button>
+				<Button onClick={() => setShowSeen(true)}>Seen</Button>
+				<Button onClick={() => setShowHistory(true)}>History</Button>
+				<Button onClick={() => beginImportFile()}>Import file</Button>
+				<Button onClick={() => setShowExport(true)}>Export</Button>
 			</div>
 			{showExport && <ExportDialog onClose={() => setShowExport(false)} />}
 			{showHistory && <VersionHistory onClose={() => setShowHistory(false)} />}

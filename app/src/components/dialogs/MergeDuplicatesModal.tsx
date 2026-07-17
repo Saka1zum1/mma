@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Button } from "@/components/primitives/Button";
 import { previewDuplicateGroups, mergeDuplicates } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { fmt } from "@/lib/util/format";
@@ -71,17 +72,10 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 							Largest group: {fmt.format(preview.largest)}.
 						</p>
 						<div className="merge-duplicates__actions">
-							<button className="button" type="button" onClick={() => onOpenChange(false)}>
-								Cancel
-							</button>
-							<button
-								className="button button--primary"
-								type="button"
-								onClick={handleMerge}
-								disabled={merging}
-							>
+							<Button onClick={() => onOpenChange(false)}>Cancel</Button>
+							<Button variant="primary" onClick={handleMerge} disabled={merging}>
 								{merging ? "Merging..." : "Merge"}
-							</button>
+							</Button>
 						</div>
 					</>
 				)}

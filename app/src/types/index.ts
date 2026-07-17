@@ -123,22 +123,8 @@ export type TagSortMode = "default" | "name" | "amount";
 
 export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin" | "diff";
 
-export const SV_COLORS = [
-	"red",
-	"pink",
-	"purple",
-	"violet",
-	"indigo",
-	"blue",
-	"cyan",
-	"teal",
-	"green",
-	"lime",
-	"yellow",
-	"orange",
-	"choco",
-] as const;
-export type SvColor = (typeof SV_COLORS)[number];
+/** Hex like "#1098ad"; legacy stored prefs may hold an Open Props ramp name. */
+export type SvColor = string;
 
 export type MapTypeKey = "map" | "satellite" | "osm" | "vector";
 export type SvCoverageType = "official" | "unofficial" | "default";

@@ -22,6 +22,9 @@ import { ManualSearch } from "@/components/manual/ManualSearch";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useSetting, useSettings, setSetting, CSS_VAR_SETTINGS } from "@/store/settings";
+import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
+import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
+import { applyAccentColor, resolveSvColorHex } from "@/lib/util/color";
 import { Icon, mdiDiscord } from "@/components/primitives/Icon";
 import { mdiCog, mdiPuzzle, mdiClose, mdiBookOpenPageVariantOutline } from "@mdi/js";
 import { ToastContainer } from "@/components/primitives/Toast";
@@ -46,7 +49,7 @@ const isEditorWindow = getCurrentWindow().label.startsWith("map-");
 // tauri-plugin-window-state StateFlags::all() — size|position|maximized|visible|decorations|fullscreen
 const WINDOW_STATE_ALL = 0b111111;
 
-const BLANK_STYLE: CSSProperties = { position: "fixed", inset: 0, background: "#252521" };
+const BLANK_STYLE: CSSProperties = { position: "fixed", inset: 0, background: "var(--surface-0)" };
 const Blank = () => <div style={BLANK_STYLE} />;
 
 // The URL is the role authority — `targetMapId` picks editor vs list on BOTH Tauri and web.
@@ -78,6 +81,7 @@ export default function App() {
 				)
 			)}
 			{!closing && <AppChrome />}
+			<AccentSync />
 			<ToastContainer />
 		</TooltipProvider>
 	);
@@ -232,6 +236,17 @@ function useCssVarSettings() {
 			document.documentElement.style.setProperty(cssVar, value(settings));
 		}
 	}, [settings]);
+}
+
+/** Renders nothing. The accent follows the SV coverage line color; this isolates
+ *  the mapEmbedPrefs subscription so pref churn (opacity slider drags write prefs
+ *  per tick) re-renders only this component, never the App tree. */
+function AccentSync() {
+	const [prefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
+	useEffect(() => {
+		applyAccentColor(resolveSvColorHex(prefs.svColor));
+	}, [prefs.svColor]);
+	return null;
 }
 
 function useCustomCss() {

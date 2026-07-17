@@ -19,6 +19,9 @@ import {
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { useSetting } from "@/store/settings";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
+import { Checkbox } from "@/components/primitives/Checkbox";
 
 export function ApplyFieldAsTagsDialog({
 	open,
@@ -152,8 +155,7 @@ export function ApplyFieldAsTagsDialog({
 						)}
 					</div>
 					{showWidth && (
-						<input
-							className="input"
+						<TextInput
 							type="number"
 							min="0"
 							value={width}
@@ -171,8 +173,7 @@ export function ApplyFieldAsTagsDialog({
 							}}
 							title={hasTzData ? undefined : "No locations have timezone data"}
 						>
-							<input
-								type="checkbox"
+							<Checkbox
 								checked={tzLocal && hasTzData}
 								disabled={!hasTzData}
 								onChange={(e) => setTzLocal(e.target.checked)}
@@ -181,16 +182,10 @@ export function ApplyFieldAsTagsDialog({
 						</label>
 					)}
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-						<button className="button" type="button" onClick={() => onOpenChange(false)}>
-							Cancel
-						</button>
-						<button
-							className="button button--primary"
-							type="submit"
-							disabled={!field || !widthValid}
-						>
+						<Button onClick={() => onOpenChange(false)}>Cancel</Button>
+						<Button variant="primary" type="submit" disabled={!field || !widthValid}>
 							Apply
-						</button>
+						</Button>
 					</div>
 				</form>
 			</DialogContent>

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { getVisibleTags, updateTags } from "@/store/useMapStore";
 import { textColorFor } from "@/lib/util/color";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 
 export function TagFindReplaceDialog({
 	open,
@@ -47,8 +49,7 @@ export function TagFindReplaceDialog({
 				<div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}>
 					<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
 						<span style={{ width: 60 }}>Find</span>
-						<input
-							className="input"
+						<TextInput
 							style={{ flex: 1 }}
 							value={find}
 							onChange={(e) => {
@@ -61,8 +62,7 @@ export function TagFindReplaceDialog({
 					</label>
 					<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
 						<span style={{ width: 60 }}>Replace</span>
-						<input
-							className="input"
+						<TextInput
 							style={{ flex: 1 }}
 							value={replace}
 							onChange={(e) => {
@@ -74,7 +74,7 @@ export function TagFindReplaceDialog({
 					</label>
 					{find && (
 						<div>
-							<p style={{ margin: "0 0 0.25rem", fontSize: "0.85rem", color: "#888" }}>
+							<p style={{ margin: "0 0 0.25rem", fontSize: "0.85rem", color: "var(--text-2)" }}>
 								{matches.length} tag{matches.length !== 1 ? "s" : ""} will be affected:
 							</p>
 							<ul
@@ -116,25 +116,24 @@ export function TagFindReplaceDialog({
 							</ul>
 						</div>
 					)}
-					<p style={{ margin: 0, fontSize: "0.8rem", color: "#e5a33e" }}>
+					<p style={{ margin: 0, fontSize: "0.8rem", color: "var(--accent)" }}>
 						Tag renames cannot be undone.
 					</p>
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-						<button className="button" type="button" onClick={() => handleOpenChange(false)}>
-							{applied ? "Close" : "Cancel"}
-						</button>
+						<Button onClick={() => handleOpenChange(false)}>{applied ? "Close" : "Cancel"}</Button>
 						{!applied && (
-							<button
-								className="button button--primary"
-								type="button"
+							<Button
+								variant="primary"
 								disabled={!find || matches.length === 0}
 								onClick={handleApply}
 							>
 								Replace {matches.length} tag{matches.length !== 1 ? "s" : ""}
-							</button>
+							</Button>
 						)}
 						{applied && (
-							<span style={{ alignSelf: "center", color: "#2fcc8b", fontSize: "0.85rem" }}>
+							<span
+								style={{ alignSelf: "center", color: "var(--constructive)", fontSize: "0.85rem" }}
+							>
 								Done!
 							</span>
 						)}
