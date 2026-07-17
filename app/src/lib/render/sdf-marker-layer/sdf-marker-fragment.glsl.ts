@@ -58,16 +58,20 @@ void main(void) {
   geometry.uv = unitPosition;
 
   float d;
+  float ramp = 1.0 / outerRadiusPixels;
   if (sdfMarker.shapeType == 1) {
     d = sdArrow(unitPosition);
   } else if (sdfMarker.shapeType == 2) {
     d = sdPin(unitPosition);
   } else {
-    d = sdCircle(unitPosition, 0.7);
+    // Circle inscribes the quad (no padding needed for rotation/tip geometry),
+    // halving overdraw vs the padded shapes. Half-pixel ramp so the AA edge
+    // stays inside the quad's SMOOTH_EDGE_RADIUS margin.
+    d = sdCircle(unitPosition, 1.0);
+    ramp *= 0.5;
   }
 
-  float pixelWidth = 1.0 / outerRadiusPixels;
-  float alpha = 1.0 - smoothstep(-pixelWidth, pixelWidth, d);
+  float alpha = 1.0 - smoothstep(-ramp, ramp, d);
 
   if (alpha < 0.01) {
     discard;
