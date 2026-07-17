@@ -24,6 +24,7 @@ import { useBinding } from "@/lib/util/hotkeys";
 import { useSetting, useSettings, setSetting, CSS_VAR_SETTINGS } from "@/store/settings";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
+import "@/lib/render/renderStats"; // installs the window.__mmaPerf harness bridge
 import { applyAccentColor, resolveSvColorHex } from "@/lib/util/color";
 import { Icon, mdiDiscord } from "@/components/primitives/Icon";
 import { mdiCog, mdiPuzzle, mdiClose, mdiBookOpenPageVariantOutline } from "@mdi/js";

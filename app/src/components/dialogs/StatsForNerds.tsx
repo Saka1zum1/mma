@@ -3,6 +3,18 @@ import { cmd } from "@/lib/commands";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
 import { getDirtyCount, getCurrentMap } from "@/store/useMapStore";
+import {
+	startFrameMeter,
+	stopFrameMeter,
+	frameStats,
+	type FrameStats,
+} from "@/lib/render/frameMeter";
+import {
+	computeRenderStats,
+	getDeckMetrics,
+	type DeckMetrics,
+	type RenderStats,
+} from "@/lib/render/renderStats";
 
 declare const __APP_VERSION__: string;
 
@@ -94,14 +106,71 @@ async function gatherStats(): Promise<Stats> {
 	};
 }
 
+interface LiveStats {
+	frame: FrameStats;
+	deck: DeckMetrics | null;
+	scene: RenderStats | null;
+}
+
+const fmtInt = (n: number) => Math.round(n).toLocaleString();
+const fmtMB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+function liveRows(live: LiveStats): [string, string][] {
+	const { frame, deck, scene } = live;
+	const rows: [string, string][] = [
+		["FPS", `${frame.fps} (p95 ${frame.p95.toFixed(1)} ms, worst ${frame.worst.toFixed(0)} ms)`],
+		["Long tasks", `${frame.longTasks} (${fmtInt(frame.longTaskMs)} ms)`],
+	];
+	if (scene) {
+		rows.push(
+			["Markers", `${fmtInt(scene.totalMarkers)} (${fmtInt(scene.onScreenMarkers)} on screen)`],
+			["Selection overlay", fmtInt(scene.selOverlay)],
+			["Layers", String(scene.layers)],
+			[
+				"Marker quad",
+				`${scene.quadSidePx.toFixed(1)}px ${scene.markerStyle} x${scene.markerSize} @ ${scene.dpr}dpr`,
+			],
+			["Est fragments", `${(scene.estFragments / 1e6).toFixed(1)}M / frame`],
+			["Overdraw", `${scene.overdraw.toFixed(2)}x viewport`],
+		);
+	} else {
+		rows.push(["Markers", "no map open"]);
+	}
+	if (deck) {
+		rows.push(
+			["Deck layers drawn", `${deck.drawLayersCount} of ${deck.layersCount}`],
+			["CPU / frame", `${deck.cpuTimePerFrame.toFixed(2)} ms`],
+			["GPU / frame", deck.gpuTimePerFrame > 0 ? `${deck.gpuTimePerFrame.toFixed(2)} ms` : "n/a"],
+			[
+				"GPU memory",
+				`${fmtMB(deck.gpuMemory)} (buf ${fmtMB(deck.bufferMemory)}, tex ${fmtMB(deck.textureMemory)})`,
+			],
+		);
+	}
+	return rows;
+}
+
 export function StatsForNerds({ onClose }: { onClose: () => void }) {
 	const [stats, setStats] = useState<Stats | null>(null);
+	const [live, setLive] = useState<LiveStats | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		gatherStats()
 			.then(setStats)
 			.catch((e) => setError(String(e)));
+	}, []);
+
+	useEffect(() => {
+		startFrameMeter();
+		const tick = () =>
+			setLive({ frame: frameStats(), deck: getDeckMetrics(), scene: computeRenderStats() });
+		const iv = setInterval(tick, 1000);
+		tick();
+		return () => {
+			clearInterval(iv);
+			stopFrameMeter();
+		};
 	}, []);
 
 	useDomEvent("keydown", (e) => {
@@ -205,6 +274,43 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 							))}
 						</tbody>
 					</table>
+				)}
+				{live && (
+					<>
+						<div
+							style={{
+								fontSize: 12,
+								fontWeight: 600,
+								color: "var(--text-2)",
+								margin: "12px 0 4px",
+								textTransform: "uppercase",
+								letterSpacing: "0.05em",
+							}}
+						>
+							Rendering (live)
+						</div>
+						<table style={{ width: "100%", borderCollapse: "collapse" }}>
+							<tbody>
+								{liveRows(live).map(([label, value]) => (
+									<tr key={label}>
+										<td
+											className="text-muted"
+											style={{
+												paddingRight: 16,
+												whiteSpace: "nowrap",
+												verticalAlign: "top",
+											}}
+										>
+											{label}
+										</td>
+										<td className="mono" style={{ wordBreak: "break-all" }}>
+											{value}
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</>
 				)}
 			</div>
 		</div>
