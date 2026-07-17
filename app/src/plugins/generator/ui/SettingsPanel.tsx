@@ -1,6 +1,7 @@
 import type { GeneratorSettings } from "../engine/types";
 import { DatePicker } from "@/components/primitives/DatePicker";
 import { NSelect } from "@/components/primitives/NSelect";
+import { Radio } from "@/components/primitives/Radio";
 import { Section, SegmentedControl } from "@/components/primitives/Sidebar";
 
 function Check({
@@ -44,7 +45,7 @@ function NumberInput({
 			{label}
 			<input
 				type="number"
-				className="input"
+				className="text-input"
 				value={value}
 				onChange={(e) => onChange(Number(e.target.value))}
 				min={min}
@@ -72,12 +73,7 @@ function RadioGroup({
 		<div className={`generator-settings__radios ${indent ? "generator-settings__indent" : ""}`}>
 			{options.map((opt) => (
 				<label key={opt.value} className="generator-settings__radio">
-					<input
-						type="radio"
-						name={name}
-						checked={value === opt.value}
-						onChange={() => onChange(opt.value)}
-					/>
+					<Radio name={name} checked={value === opt.value} onChange={() => onChange(opt.value)} />
 					{opt.label}
 				</label>
 			))}
@@ -348,7 +344,7 @@ export function SettingsPanel({
 									<label className="generator-settings__date-label">
 										From month{" "}
 										<input
-											className="input"
+											className="text-input"
 											style={{ width: "3rem" }}
 											value={settings.fromMonth}
 											onChange={(e) => set("fromMonth", e.target.value)}
@@ -357,7 +353,7 @@ export function SettingsPanel({
 									<label className="generator-settings__date-label">
 										to{" "}
 										<input
-											className="input"
+											className="text-input"
 											style={{ width: "3rem" }}
 											value={settings.toMonth}
 											onChange={(e) => set("toMonth", e.target.value)}
@@ -368,7 +364,7 @@ export function SettingsPanel({
 									<label className="generator-settings__date-label">
 										Between years{" "}
 										<input
-											className="input"
+											className="text-input"
 											style={{ width: "4rem" }}
 											value={settings.fromYear}
 											onChange={(e) => set("fromYear", e.target.value)}
@@ -377,7 +373,7 @@ export function SettingsPanel({
 									<label className="generator-settings__date-label">
 										and{" "}
 										<input
-											className="input"
+											className="text-input"
 											style={{ width: "4rem" }}
 											value={settings.toYear}
 											onChange={(e) => set("toYear", e.target.value)}
@@ -458,7 +454,7 @@ export function SettingsPanel({
 							</NSelect>
 						</div>
 						<input
-							className="input"
+							className="text-input"
 							type="text"
 							placeholder="Comma-separated terms"
 							value={settings.searchTerms}

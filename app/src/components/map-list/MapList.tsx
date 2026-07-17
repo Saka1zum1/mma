@@ -344,7 +344,7 @@ function RenameForm({
 					type="text"
 					name="name"
 					defaultValue={name}
-					className="input"
+					className="text-input"
 					minLength={1}
 					maxLength={100}
 					autoFocus
@@ -393,7 +393,7 @@ function MapEditForm({ id, name, labels }: { id: string; name: string; labels: s
 					type="text"
 					name="name"
 					defaultValue={name}
-					className="input"
+					className="text-input"
 					minLength={1}
 					maxLength={100}
 					autoFocus
@@ -1192,7 +1192,7 @@ export function MapList() {
 								}
 								createMap(name).then((m) => openMapWindow(m.id, m.name));
 							}}
-							className="input"
+							className="text-input"
 							type="text"
 							placeholder="Search maps..."
 							title={'Filter by name, or by label with label:name / label:"two words"'}

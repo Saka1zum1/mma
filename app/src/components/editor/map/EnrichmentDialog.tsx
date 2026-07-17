@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/primitives/Di
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
 import { Switch } from "@/components/primitives/Switch";
+import { Radio } from "@/components/primitives/Radio";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
@@ -463,16 +464,14 @@ function FieldsTable({
 								<fieldset className="manage-fields-action__winner">
 									<legend>On conflict, keep:</legend>
 									<label>
-										<input
-											type="radio"
+										<Radio
 											checked={renamePrompt.winner === "from"}
 											onChange={() => setRenamePrompt({ ...renamePrompt, winner: "from" })}
 										/>{" "}
 										<code>{renamePrompt.key}</code>&apos;s values
 									</label>
 									<label>
-										<input
-											type="radio"
+										<Radio
 											checked={renamePrompt.winner === "to"}
 											onChange={() => setRenamePrompt({ ...renamePrompt, winner: "to" })}
 										/>{" "}

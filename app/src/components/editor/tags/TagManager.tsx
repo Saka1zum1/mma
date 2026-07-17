@@ -604,7 +604,7 @@ function EditTagDialog({
 					<div className="edit-tag-modal__color">
 						<span>Color:</span>
 						<input
-							className="input hex-color"
+							className="text-input hex-color"
 							type="text"
 							value={hexValue}
 							onChange={(e) => {
@@ -708,7 +708,7 @@ function VirtualTagDialog({
 					<div className="edit-tag-modal__color">
 						<span>Color:</span>
 						<input
-							className="input hex-color"
+							className="text-input hex-color"
 							type="text"
 							value={hexValue}
 							onChange={(e) => {

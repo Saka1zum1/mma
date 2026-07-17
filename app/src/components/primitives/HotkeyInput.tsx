@@ -12,7 +12,7 @@ export function HotkeyInput({
 	const [recording, setRecording] = useState(false);
 	return (
 		<input
-			className="input"
+			className="text-input"
 			type="text"
 			readOnly
 			value={recording ? "" : value ? formatBinding(value) : ""}

@@ -1,9 +1,9 @@
 .disambig__muted {
-	color: var(--stone-7);
+	color: var(--text-2);
 	font-size: 0.85em;
 }
 .disambig__error {
-	color: var(--red-11);
+	color: var(--destructive);
 }
 .disambig__summary {
 	display: flex;
@@ -18,7 +18,7 @@
 	padding-bottom: 4px;
 }
 .disambig__row {
-	border: 1px solid var(--stone-3);
+	border: 1px solid var(--border-subtle);
 	border-radius: 6px;
 	padding: 10px 12px;
 }
@@ -37,8 +37,8 @@
 	font-size: 0.72em;
 	padding: 1px 6px;
 	border-radius: 4px;
-	background: var(--stone-2);
-	color: var(--stone-9);
+	background: var(--surface-3);
+	color: var(--text-2);
 }
 .disambig__badge--warn {
 	background: #fde68a;
@@ -52,13 +52,13 @@
 .disambig__bar {
 	height: 6px;
 	border-radius: 3px;
-	background: var(--stone-2);
+	background: var(--surface-3);
 	margin: 6px 0;
 	overflow: hidden;
 }
 .disambig__bar-fill {
 	height: 100%;
-	background: #2563eb;
+	background: var(--accent);
 }
 .disambig__groups {
 	display: flex;

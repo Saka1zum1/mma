@@ -334,7 +334,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				<label className="settings-popup__item settings-popup__select">
 					Tag as:
 					<input
-						className="input"
+						className="text-input"
 						type="text"
 						value={tagName}
 						onChange={(e) => {

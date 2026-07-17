@@ -3,6 +3,7 @@ import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
+import { Radio } from "@/components/primitives/Radio";
 import { TextInput } from "@/components/primitives/TextInput";
 import {
 	getCurrentMap,
@@ -465,8 +466,7 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 			<ScopeSelector ctl={scopeCtl} />
 			<div className="bulk-operation__fieldset">
 				<label>
-					<input
-						type="radio"
+					<Radio
 						name="direction"
 						checked={direction === "forwards"}
 						onChange={() => setDirection("forwards")}
@@ -474,8 +474,7 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 					Forwards (along driving direction)
 				</label>
 				<label>
-					<input
-						type="radio"
+					<Radio
 						name="direction"
 						checked={direction === "backwards"}
 						onChange={() => setDirection("backwards")}

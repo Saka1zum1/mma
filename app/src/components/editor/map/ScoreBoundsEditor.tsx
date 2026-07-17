@@ -10,6 +10,7 @@ import {
 	WORLD_MAX_ERROR,
 } from "@/lib/sv/measure";
 import { TextInput } from "@/components/primitives/TextInput";
+import { Radio } from "@/components/primitives/Radio";
 
 type Mode = "auto" | "world" | "fixed";
 
@@ -74,33 +75,18 @@ export function ScoreBoundsEditor() {
 				Scoring <span className="fieldset__divider" />
 			</legend>
 			<label className="settings-popup__item">
-				<input
-					type="radio"
-					name="score-bounds"
-					checked={mode === "auto"}
-					onChange={() => setMode("auto")}
-				/>
+				<Radio name="score-bounds" checked={mode === "auto"} onChange={() => setMode("auto")} />
 				Automatic based on locations
 				{autoError != null && ` (${formatDistance(autoError)})`}
 			</label>
 
 			<label className="settings-popup__item">
-				<input
-					type="radio"
-					name="score-bounds"
-					checked={mode === "world"}
-					onChange={() => setMode("world")}
-				/>
+				<Radio name="score-bounds" checked={mode === "world"} onChange={() => setMode("world")} />
 				World map (ACW, {formatDistance(WORLD_MAX_ERROR)})
 			</label>
 
 			<label className="settings-popup__item">
-				<input
-					type="radio"
-					name="score-bounds"
-					checked={mode === "fixed"}
-					onChange={() => setMode("fixed")}
-				/>
+				<Radio name="score-bounds" checked={mode === "fixed"} onChange={() => setMode("fixed")} />
 				Fixed bounds
 				{fixedError != null && ` (${formatDistance(fixedError)})`}
 			</label>

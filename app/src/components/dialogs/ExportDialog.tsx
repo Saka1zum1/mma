@@ -2,6 +2,7 @@ import { useState, useEffect, useId } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
+import { Radio } from "@/components/primitives/Radio";
 import { TextInput } from "@/components/primitives/TextInput";
 import { useCurrentMap, useSelectedLocationIds, getVisibleTags } from "@/store/useMapStore";
 import { useMapSetting } from "@/store/useMapSetting";
@@ -116,8 +117,7 @@ export function ExportDialog({ onClose }: Props) {
 					</div>
 					<div className="export-modal__fieldset">
 						<label>
-							<input
-								type="radio"
+							<Radio
 								name="selection"
 								value={ExportScope.All}
 								checked={scope === ExportScope.All}
@@ -126,8 +126,7 @@ export function ExportDialog({ onClose }: Props) {
 							Export everything ({fmt.format(locationCount)} locations)
 						</label>
 						<label>
-							<input
-								type="radio"
+							<Radio
 								name="selection"
 								value={ExportScope.Selection}
 								checked={scope === ExportScope.Selection}

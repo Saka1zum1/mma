@@ -22,7 +22,7 @@ export function SuggestInput<T>({
 	getKey,
 	placeholder,
 	containerClassName,
-	inputClassName = "input",
+	inputClassName = "text-input",
 	listClassName = "search-results",
 	itemClassName = "search-result",
 	listStyle,

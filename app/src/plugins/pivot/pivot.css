@@ -14,7 +14,7 @@
 }
 
 .pivot-sidebar__opt-builtin {
-	color: var(--blue-3);
+	color: var(--accent);
 	font-style: italic;
 }
 
@@ -52,7 +52,7 @@
 }
 
 .pivot-sidebar__th-selected {
-	box-shadow: inset 0 -2px 0 var(--blue-4);
+	box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .pivot-sidebar__table {
@@ -64,12 +64,12 @@
 .pivot-sidebar__table thead th {
 	position: sticky;
 	top: 0;
-	background: var(--background-color, #252521);
+	background: var(--surface-0);
 	text-align: right;
 	padding: 6px 8px;
 	white-space: nowrap;
 	font-weight: 500;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+	border-bottom: 1px solid var(--border-strong);
 	z-index: 1;
 }
 
@@ -79,7 +79,7 @@
 }
 
 .pivot-sidebar__th-sort:hover {
-	background: #2f2f2b;
+	background: var(--surface-1);
 }
 
 .pivot-sidebar__th-corner {
@@ -93,14 +93,14 @@
 	padding: 5px 8px;
 	text-align: right;
 	font-variant-numeric: tabular-nums;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	border-bottom: 1px solid var(--border-subtle);
 }
 
 .pivot-sidebar__row-label {
 	text-align: left !important;
 	position: sticky;
 	left: 0;
-	background: var(--background-color, #252521);
+	background: var(--surface-0);
 	z-index: 2;
 	display: flex;
 	align-items: center;
@@ -131,12 +131,12 @@
 
 .pivot-sidebar__table tfoot td {
 	font-weight: 600;
-	border-top: 1px solid rgba(255, 255, 255, 0.12);
+	border-top: 1px solid var(--border-strong);
 	padding: 6px 8px;
 	text-align: right;
 	position: sticky;
 	bottom: 0;
-	background: var(--background-color, #252521);
+	background: var(--surface-0);
 }
 
 .pivot-sidebar__table tfoot .pivot-sidebar__row-label {

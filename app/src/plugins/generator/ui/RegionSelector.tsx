@@ -91,7 +91,7 @@ export function RegionSelector({
 					Locations per region:
 					<input
 						type="number"
-						className="input"
+						className="text-input"
 						min={1}
 						value={defaultTarget}
 						onChange={(e) => onDefaultTargetChange(Number(e.target.value) || 10)}
@@ -133,7 +133,7 @@ export function RegionSelector({
 									{found} /
 									<input
 										type="number"
-										className="input"
+										className="text-input"
 										min={found || 1}
 										value={target}
 										onChange={(e) => setTarget(sel.key, Number(e.target.value) || 1)}
