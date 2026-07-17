@@ -3014,6 +3014,10 @@ declare const TAG_VIEW_MODES: {
 	readonly flat: "Flat";
 	readonly tree: "Tree";
 };
+declare const TAG_FOLDER_COLOR_MODES: {
+	readonly direct: "Fixed color";
+	readonly firstChild: "Inherit first child";
+};
 declare const BORDER_DETAILS: {
 	readonly light: "Standard (bundled)";
 	readonly medium: "High (~10MB)";
@@ -3039,6 +3043,7 @@ export type MapListField = keyof typeof MAP_LIST_FIELDS;
 export type DiscordPresenceMode = keyof typeof DISCORD_PRESENCE_MODES;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
+export type TagFolderColorMode = keyof typeof TAG_FOLDER_COLOR_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
 export type SubdivisionDetail = keyof typeof SUBDIVISION_DETAILS;
 export type PreviewAspectRatio = keyof typeof PREVIEW_ASPECT_RATIOS;
@@ -3098,6 +3103,11 @@ declare const DEFAULTS: {
 	tagViewMode: TagViewMode;
 	/** Tree view only: render each tag as the shortest path suffix that's still unique. */
 	truncateTagPaths: boolean;
+	/** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
+	 *  `firstChild` inherits the first own-colored descendant in display order,
+	 *  with tagFolderColor as the fallback for colorless subtrees. */
+	tagFolderColorMode: TagFolderColorMode;
+	tagFolderColor: RGB;
 	tagSortMode: TagSortMode;
 	/** Gap between tag pills (px), shared by flat and tree views via `--tag-gap`. */
 	tagGap: number;
@@ -3367,6 +3377,8 @@ declare const mma: {
 		panoDotScaled: boolean;
 		tagViewMode: TagViewMode;
 		truncateTagPaths: boolean;
+		tagFolderColorMode: TagFolderColorMode;
+		tagFolderColor: RGB;
 		tagSortMode: TagSortMode;
 		tagGap: number;
 		animateTagReorder: boolean;

@@ -245,8 +245,8 @@ export function refreshAfterMutation() {
 
 export const useCurrentMap = makeStoreHook(() => currentMap);
 
-/** Tags that exist from the user's point of view. Raw `meta.tags` also holds soft-deleted ghosts (count=0, visible=false, kept for undo revival) — almost nothing outside the undo/revival machinery should enumerate those. */
 const NO_TAGS: Tag[] = [];
+/** Tags that exist from the user's point of view. Raw `meta.tags` also holds soft-deleted ghosts (count=0, visible=false, kept for undo revival) — almost nothing outside the undo/revival machinery should enumerate those. */
 export const getVisibleTags: () => Tag[] = memoOnRefs(
 	() => [currentMap?.meta.tags] as const,
 	(tags) => (tags ? Object.values(tags).filter((t) => t.visible !== false) : NO_TAGS),

@@ -47,8 +47,7 @@ export function ExportDialog({ onClose }: Props) {
 
 	const baseName = fileName || map.meta.name || "export";
 	const scopeIds = scope === ExportScope.Selection ? [...selectedIds] : undefined;
-	// Visible tags only — raw meta.tags holds soft-deleted ghosts kept for undo,
-	// which must not resurrect through an export/import round-trip.
+
 	const tagsJson = () => JSON.stringify(Object.fromEntries(getVisibleTags().map((t) => [t.id, t])));
 
 	const jsonPath = () =>
