@@ -1,5 +1,8 @@
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useSelections } from "@/store/useMapStore";
+import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
 import type { Selection } from "@/bindings.gen";
 import type { GeneratorRegionMeta } from "../engine/types";
 
@@ -26,6 +29,8 @@ export function RegionSelector({
 }) {
 	const selections = useSelections();
 	const polygonSelections = selections.filter((s) => s.props.type === "Polygon");
+	const [capDialogOpen, setCapDialogOpen] = useState(false);
+	const [capInput, setCapInput] = useState("");
 
 	const getMeta = useEffectEvent(() => meta);
 
@@ -59,9 +64,8 @@ export function RegionSelector({
 		onMetaChange(next);
 	};
 
-	const setAllTargets = () => {
-		const cap = prompt("Set locations cap for all regions:");
-		const val = Math.abs(parseInt(cap || ""));
+	const confirmCap = () => {
+		const val = Math.abs(parseInt(capInput || ""));
 		if (!isNaN(val) && val > 0) {
 			const next = new Map(meta);
 			for (const sel of polygonSelections) {
@@ -77,6 +81,7 @@ export function RegionSelector({
 			}
 			onMetaChange(next);
 		}
+		setCapDialogOpen(false);
 	};
 
 	return (
@@ -102,11 +107,38 @@ export function RegionSelector({
 					className="button"
 					style={{ fontSize: "inherit" }}
 					disabled={polygonSelections.length === 0}
-					onClick={setAllTargets}
+					onClick={() => {
+						setCapInput("");
+						setCapDialogOpen(true);
+					}}
 				>
 					Change all caps
 				</button>
 			</div>
+			<Dialog open={capDialogOpen} onOpenChange={setCapDialogOpen}>
+				<DialogContent title="Change all caps">
+					<div className="generator-cap-dialog">
+						<label className="generator-regions__target-label">
+							Locations cap for all regions:
+							<TextInput
+								type="number"
+								min={1}
+								autoFocus
+								value={capInput}
+								onChange={(e) => setCapInput(e.target.value)}
+								onKeyDown={(e) => e.key === "Enter" && confirmCap()}
+								style={{ width: "6rem" }}
+							/>
+						</label>
+						<div className="generator-cap-dialog__actions">
+							<Button variant="primary" onClick={confirmCap}>
+								Apply
+							</Button>
+							<Button onClick={() => setCapDialogOpen(false)}>Cancel</Button>
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
 			{polygonSelections.length > 0 && (
 				<div className="generator-regions__list">
 					{polygonSelections.map((sel) => {

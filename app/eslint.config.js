@@ -65,8 +65,8 @@ export default defineConfig([
 						'Use <Checkbox> (@/components/primitives/Checkbox) instead of a raw <input type="checkbox">.',
 				},
 				{
-					selector: "CallExpression[callee.name=/^(confirm|alert)$/]",
-					message: "Native confirm()/alert() hang in WebView2 - use a Radix dialog instead.",
+					selector: "CallExpression[callee.name=/^(confirm|alert|prompt)$/]",
+					message: "Native confirm()/alert()/prompt() hang in WebView2 - use a Radix dialog instead.",
 				},
 				{
 					selector: "AssignmentExpression[left.property.name='innerHTML']",
