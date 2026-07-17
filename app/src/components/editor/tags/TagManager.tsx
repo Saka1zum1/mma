@@ -24,7 +24,7 @@ import {
 	removeTagFromLocations,
 } from "@/store/useMapStore";
 import type { TagSortMode } from "@/types";
-import type { Tag, VirtualTag } from "@/bindings.gen";
+import type { Tag, TagPatch, Update, VirtualTag } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { ToolBlock } from "@/components/primitives/ToolBlock";
@@ -42,10 +42,14 @@ import { getTagBindingKey, withTagKeyBinding } from "@/lib/map/mapKeyBindings";
 import { TagTreeView, type TagTreeHandle } from "./TagTree";
 import {
 	cascadeRename,
+	collectOccupiedPaths,
 	syncAliasSegments,
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
+
+/** `order` rides the optimistic overlay only; persisted order goes through `reorderTags`. */
+type OptimisticTagPatch = TagPatch & { order?: number };
 
 export function TagManager() {
 	const map = useCurrentMap();
@@ -81,13 +85,7 @@ export function TagManager() {
 	// renders in the same frame as the virtualTags/expansion updates
 	const [tags, addOptimisticTags] = useOptimistic(
 		storeTags,
-		(
-			cur: Tag[],
-			updates: {
-				id: number;
-				patch: { name?: string | null; color?: string | null; order?: number };
-			}[],
-		) =>
+		(cur: Tag[], updates: Update<OptimisticTagPatch>[]) =>
 			cur.map((t) => {
 				const u = updates.find((x) => x.id === t.id);
 				if (!u) return t;
@@ -100,7 +98,7 @@ export function TagManager() {
 			}),
 	);
 	const commitTags = useCallback(
-		(updates: { id: number; patch: { name?: string | null; color?: string | null } }[]) => {
+		(updates: Update<TagPatch>[]) => {
 			startTransition(async () => {
 				addOptimisticTags(updates);
 				await updateTags(updates);
@@ -121,7 +119,7 @@ export function TagManager() {
 		(move: TagMoveResult) => {
 			startTransition(async () => {
 				// One merged patch per id -- the optimistic reducer applies the first match only.
-				const patchById = new Map<number, { name?: string; order?: number }>();
+				const patchById = new Map<number, OptimisticTagPatch>();
 				move.orderedIds.forEach((id, i) => patchById.set(id, { order: i }));
 				for (const r of move.tagRenames)
 					patchById.set(r.id, { ...patchById.get(r.id), name: r.name });
@@ -141,7 +139,7 @@ export function TagManager() {
 	// Stamp `color` onto every tag AND folder node at or under `root` (overrides existing
 	// colors, so it works even when descendants already have their own).
 	const applyColorToSubtree = (root: string, color: string) => {
-		const tagUpdates: { id: number; patch: { color: string } }[] = [];
+		const tagUpdates: Update<TagPatch>[] = [];
 		const folders = new Set<string>();
 		for (const t of tags) {
 			if (t.name !== root && !t.name.startsWith(`${root}/`)) continue;
@@ -449,9 +447,7 @@ function RenameInSelectionDialog({
 }: {
 	tag: { id: number; name: string };
 	onClose: () => void;
-	commit: (
-		updates: { id: number; patch: { name?: string | null; color?: string | null } }[],
-	) => void;
+	commit: (updates: Update<TagPatch>[]) => void;
 	aliases: Record<string, number>;
 	setAliases: (v: Record<string, number>) => void;
 }) {
@@ -503,9 +499,7 @@ function EditTagDialog({
 	tag: { id: number; name: string; color: string };
 	onClose: () => void;
 	/** Routes tag updates through the optimistic overlay. */
-	commit: (
-		updates: { id: number; patch: { name?: string | null; color?: string | null } }[],
-	) => void;
+	commit: (updates: Update<TagPatch>[]) => void;
 	aliases: Record<string, number>;
 	setAliases: (v: Record<string, number>) => void;
 	/** Present for a tree folder node with descendants: lets the rename cascade down. */
@@ -765,21 +759,11 @@ function NewFolderDialog({
 }) {
 	const [name, setName] = useState("");
 
-	// Every existing tree path — a new folder must claim a free slot.
-	const occupied = useMemo(() => {
-		const set = new Set<string>();
-		const addPrefixes = (path: string) => {
-			let p = "";
-			for (const s of path.split("/")) {
-				p = p ? `${p}/${s}` : s;
-				set.add(p);
-			}
-		};
-		for (const t of tags) addPrefixes(t.name);
-		for (const k of Object.keys(aliases)) addPrefixes(k);
-		for (const k of Object.keys(virtualTags)) addPrefixes(k);
-		return set;
-	}, [tags, aliases, virtualTags]);
+	// A new folder must claim a free slot.
+	const occupied = useMemo(
+		() => collectOccupiedPaths(tags, aliases, virtualTags),
+		[tags, aliases, virtualTags],
+	);
 
 	const segment = name
 		.trim()
@@ -849,22 +833,11 @@ function AddAliasDialog({
 	const [folder, setFolder] = useState("");
 	const segment = tag.name.split("/").pop() || tag.name;
 
-	// Every existing tree path (tags, aliases, declared folders + their ancestors) — the
-	// alias slot must be free, matching buildTagTree's occupancy check.
-	const occupied = useMemo(() => {
-		const set = new Set<string>();
-		const addPrefixes = (path: string) => {
-			let p = "";
-			for (const s of path.split("/")) {
-				p = p ? `${p}/${s}` : s;
-				set.add(p);
-			}
-		};
-		for (const t of tags) addPrefixes(t.name);
-		for (const k of Object.keys(aliases)) addPrefixes(k);
-		for (const k of Object.keys(virtualTags)) addPrefixes(k);
-		return set;
-	}, [tags, aliases, virtualTags]);
+	// The alias slot must be free.
+	const occupied = useMemo(
+		() => collectOccupiedPaths(tags, aliases, virtualTags),
+		[tags, aliases, virtualTags],
+	);
 
 	// Folder paths the user can nest under: ancestors of tags + virtual/alias folder nodes.
 	const folderSuggestions = useMemo(() => {

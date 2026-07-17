@@ -16,7 +16,7 @@ import type { MapTypeKey, SvCoverageType, MarkerStyle } from "@/types";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { Slider } from "@/components/primitives/Slider";
-import { hexToRgb, rgbToHex, resolveSvColorHex } from "@/lib/util/color";
+import { hexToRgbObj, rgbToHex, resolveSvColorHex } from "@/lib/util/color";
 import { useMapSetting } from "@/store/useMapSetting";
 import { ScoreBoundsEditor } from "./ScoreBoundsEditor";
 
@@ -152,7 +152,7 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 							))}
 						</div>
 						<ColorPicker
-							color={(([r, g, b]) => ({ r, g, b }))(hexToRgb(resolveSvColorHex(p.svColor)))}
+							color={hexToRgbObj(resolveSvColorHex(p.svColor))}
 							onChange={(c) => setPref("svColor")(rgbToHex(c))}
 							ariaLabel="Coverage line color"
 						/>

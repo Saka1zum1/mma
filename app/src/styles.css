@@ -4256,6 +4256,11 @@ body {
 	background: #ffffff14;
 	outline: none;
 }
+.context-menu__separator {
+	height: 1px;
+	background: var(--border-subtle);
+	margin: 4px 0;
+}
 
 /* Local additions for pano controls */
 .compass-control {
@@ -4537,6 +4542,16 @@ body {
 }
 .settings-aux {
 	padding: 0.35rem 0;
+}
+.settings-aux__row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.settings-aux__col {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
 }
 .settings-checkbox-item {
 	display: flex;

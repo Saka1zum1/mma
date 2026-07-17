@@ -438,9 +438,7 @@ export function SelectionRow({
 										)}
 										{isPoly && (
 											<>
-												<DropdownMenu.Separator
-													style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }}
-												/>
+												<DropdownMenu.Separator className="context-menu__separator" />
 												<DropdownMenu.Item
 													className="context-menu__item"
 													onSelect={handleDownloadGeoJSON}
@@ -454,9 +452,7 @@ export function SelectionRow({
 										)}
 										{onRemove && (
 											<>
-												<DropdownMenu.Separator
-													style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }}
-												/>
+												<DropdownMenu.Separator className="context-menu__separator" />
 												<DropdownMenu.Item className="context-menu__item" onSelect={onRemove}>
 													Deselect
 												</DropdownMenu.Item>

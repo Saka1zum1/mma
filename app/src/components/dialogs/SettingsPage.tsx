@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { NSelect } from "@/components/primitives/NSelect";
-import { Slider as SliderInput } from "@/components/primitives/Slider";
+import { Slider } from "@/components/primitives/Slider";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
@@ -58,9 +58,6 @@ import type { DataLocation } from "@/bindings.gen";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
 
-/** A non-row auxiliary block (table, textarea, note, button group). Hidden while
- *  searching unless the section title matched; its presence keeps a matched
- *  section alive (see the `:has` rule in styles.css). */
 /** Non-row section content. Hidden during search unless the section title
  *  matched, or `match` (a keyword string for content with no SettingRows)
  *  contains the query. */
@@ -79,7 +76,7 @@ function GroupHeading({ children }: { children: ReactNode }) {
 	return <h3 className="settings-group">{children}</h3>;
 }
 
-function Slider({
+function SettingSlider({
 	value,
 	min,
 	max,
@@ -98,7 +95,7 @@ function Slider({
 }) {
 	return (
 		<>
-			<SliderInput
+			<Slider
 				className="setting-slider"
 				min={min}
 				max={max}
@@ -437,7 +434,7 @@ function StreetViewBody() {
 			<SettingRow
 				label="Pano look speed"
 				control={
-					<Slider
+					<SettingSlider
 						value={s.panoLookSpeed}
 						min={1}
 						max={10}
@@ -504,7 +501,7 @@ function MarkersBody() {
 			<SettingRow
 				label="Pan speed"
 				control={
-					<Slider
+					<SettingSlider
 						value={s.mapPanSpeed}
 						min={1}
 						max={20}
@@ -523,7 +520,7 @@ function MarkersBody() {
 				disabled={!s.panToImported}
 				label="Paste zoom padding"
 				control={
-					<Slider
+					<SettingSlider
 						value={s.pastePadding}
 						min={0.001}
 						max={0.05}
@@ -538,7 +535,7 @@ function MarkersBody() {
 				label="Alt slow-down"
 				description="Hold Alt to slow down map panning and pano look."
 				control={
-					<Slider
+					<SettingSlider
 						value={s.slowModifier}
 						min={2}
 						max={10}
@@ -797,7 +794,7 @@ function EditingBody() {
 			<SettingRow
 				label="Tag gap"
 				control={
-					<Slider
+					<SettingSlider
 						value={s.tagGap}
 						min={0}
 						max={16}
@@ -810,7 +807,7 @@ function EditingBody() {
 			<SettingRow
 				label="Suggestions shown"
 				control={
-					<Slider
+					<SettingSlider
 						value={limitIndex}
 						min={0}
 						max={TAG_SUGGESTION_LIMITS.length - 1}
@@ -931,8 +928,8 @@ function UpdateBlock() {
 
 	return (
 		<Aux match="update version check release restart install">
-			<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+			<div className="settings-aux__col">
+				<div className="settings-aux__row">
 					<span
 						className={`settings-updates__version${badgeMod}`}
 						title={status}
@@ -960,7 +957,7 @@ function UpdateBlock() {
 					)}
 				</div>
 				{update.phase === "available" && (
-					<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+					<div className="settings-aux__col">
 						<span>Version {update.version} is available</span>
 						{update.notes && (
 							<pre
@@ -981,13 +978,13 @@ function UpdateBlock() {
 					</div>
 				)}
 				{update.phase === "downloading" && (
-					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<div className="settings-aux__row">
 						<progress value={update.percent} max={100} style={{ flex: 1 }} />
 						<span>{update.percent}%</span>
 					</div>
 				)}
 				{update.phase === "ready" && (
-					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<div className="settings-aux__row">
 						<span>Update installed. Restart to apply.</span>
 						<Button variant="primary" onClick={relaunchApp}>
 							Restart now
@@ -1066,7 +1063,7 @@ function IntegrationsBody() {
 			/>
 			{enabled && (
 				<Aux match="api key regenerate remote token">
-					<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<div className="settings-aux__row">
 						<TextInput
 							type="text"
 							readOnly

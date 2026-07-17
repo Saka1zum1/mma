@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
+import clsx from "clsx";
 import { useMapVersion } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
 import {
@@ -142,7 +143,11 @@ export function PinnedToolbar({
 
 					const btn = command.icon ? (
 						<button
-							className={`icon-button${isOpen ? " is-active" : ""}${disabled ? " is-disabled" : ""}${dragIdx === i ? " is-dragging" : ""}`}
+							className={clsx("icon-button", {
+								"is-active": isOpen,
+								"is-disabled": disabled,
+								"is-dragging": dragIdx === i,
+							})}
 							type="button"
 							aria-label={command.label}
 							data-qa={id}
@@ -155,7 +160,11 @@ export function PinnedToolbar({
 						</button>
 					) : (
 						<Button
-							className={`${isOpen ? "is-active " : ""}${disabled ? "is-disabled " : ""}${dragIdx === i ? "is-dragging" : ""}`}
+							className={clsx({
+								"is-active": isOpen,
+								"is-disabled": disabled,
+								"is-dragging": dragIdx === i,
+							})}
 							data-drop={dropIdx === i ? "" : undefined}
 							onClick={disabled ? undefined : handleClick}
 							onMouseDown={(e) => handleDragStart(i, e)}
@@ -188,9 +197,7 @@ export function PinnedToolbar({
 											Move right
 										</ContextMenu.Item>
 									)}
-									<ContextMenu.Separator
-										style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }}
-									/>
+									<ContextMenu.Separator className="context-menu__separator" />
 									<ContextMenu.Item
 										className="context-menu__item"
 										onSelect={() => insertSeparator(i, "before")}
@@ -203,9 +210,7 @@ export function PinnedToolbar({
 									>
 										Add separator after
 									</ContextMenu.Item>
-									<ContextMenu.Separator
-										style={{ height: 1, background: "var(--border-subtle)", margin: "4px 0" }}
-									/>
+									<ContextMenu.Separator className="context-menu__separator" />
 									<ContextMenu.Item
 										className="context-menu__item"
 										onSelect={() => removePinnedAt(i)}

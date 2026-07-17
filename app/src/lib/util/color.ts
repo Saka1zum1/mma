@@ -93,6 +93,11 @@ export function rgbCss([r, g, b]: [number, number, number]): string {
 	return `rgb(${r}, ${g}, ${b})`;
 }
 
+export function hexToRgbObj(hex: string): RGB {
+	const [r, g, b] = hexToRgb(hex);
+	return { r, g, b };
+}
+
 export function rgbToHex({ r, g, b }: RGB): string {
 	const h = (n: number) => Math.round(n).toString(16).padStart(2, "0");
 	return `#${h(r)}${h(g)}${h(b)}`;

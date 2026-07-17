@@ -25,6 +25,27 @@ export interface TagTreeNode {
  *  renders as a folder row; filtering can also leave transient tagless nodes behind. */
 export const isLeafTag = (n: TagTreeNode) => n.children.length === 0 && n.tag != null;
 
+/** Every occupied tree path (tags, aliases, declared folders + all their ancestors) --
+ *  mirrors buildTagTree's occupancy, so a free slot here is a free slot in the tree. */
+export function collectOccupiedPaths(
+	tags: Tag[],
+	aliases: Record<string, number>,
+	virtualTags: Record<string, VirtualTag>,
+): Set<string> {
+	const set = new Set<string>();
+	const addPrefixes = (path: string) => {
+		let p = "";
+		for (const s of path.split("/")) {
+			p = p ? `${p}/${s}` : s;
+			set.add(p);
+		}
+	};
+	for (const t of tags) addPrefixes(t.name);
+	for (const k of Object.keys(aliases)) addPrefixes(k);
+	for (const k of Object.keys(virtualTags)) addPrefixes(k);
+	return set;
+}
+
 export function sumCounts(node: TagTreeNode, tagCounts: Record<number, number>): number {
 	let total = node.tag ? (tagCounts[node.tag.id] ?? 0) : 0;
 	for (const child of node.children) total += sumCounts(child, tagCounts);

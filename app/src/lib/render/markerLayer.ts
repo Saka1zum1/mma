@@ -24,6 +24,7 @@ function flattenParameters(op: number) {
 }
 
 export const MARKER_STYLE = {
+	// sdCircle fills 0.7 of the quad, so scale up for a 6px visual radius
 	circle: { shape: "circle", radiusPixels: 6 / 0.7, angle: false },
 	arrow: { shape: "arrow", radiusPixels: 12, angle: true },
 	pin: { shape: "pin", radiusPixels: 16, angle: false },
