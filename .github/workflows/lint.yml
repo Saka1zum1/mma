@@ -1,9 +1,10 @@
 name: CI
 
+# Checks run only at release time (version tags), not on feature-branch PRs.
 on:
   push:
-    branches: [master]
-  pull_request:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
 
 jobs:
   eslint:

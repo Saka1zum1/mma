@@ -3,7 +3,15 @@
  * Ported from lookaround-map `js/viewer/LookAroundAdapter.js` (MIT).
  * JPEG-only (no HEIC worker) — lookmap serves JPEG when format is JPEG.
  */
-import { Mesh, SphereGeometry, Vector3, ShaderMaterial, GLSL3, type Texture } from "three";
+import {
+	Mesh,
+	Object3D,
+	SphereGeometry,
+	Vector3,
+	ShaderMaterial,
+	GLSL3,
+	type Texture,
+} from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { CONSTANTS, utils, AbstractAdapter } from "@photo-sphere-viewer/core";
 import type { LookaroundPano } from "../api";
@@ -37,7 +45,7 @@ type AdapterPsv = {
 	};
 	loader: { setProgress: (n: number) => void };
 	renderer: {
-		meshContainer: { children: unknown[]; remove: (m: unknown) => void; add: (m: unknown) => void };
+		meshContainer: Object3D;
 		mesh: unknown;
 		state: { vFov: number };
 	};
@@ -46,15 +54,22 @@ type AdapterPsv = {
 	addEventListener: (type: string, listener: object) => void;
 };
 
-type CrossfadeMaterial = ShaderMaterial & {
-	uniforms: {
-		texture1: { value: Texture | null; userData: Record<string, unknown> };
-		texture2: { value: Texture | null; userData: Record<string, unknown> };
-		mixAmount: { value: number; elapsed: number; active: boolean };
-	};
+type CrossfadeUniforms = {
+	texture1: { value: Texture | null; userData: Record<string, unknown> };
+	texture2: { value: Texture | null; userData: Record<string, unknown> };
+	mixAmount: { value: number; elapsed: number; active: boolean };
 };
 
-export class LookAroundAdapter extends AbstractAdapter {
+type CrossfadeMaterial = ShaderMaterial & {
+	uniforms: CrossfadeUniforms;
+};
+
+export class LookAroundAdapter extends AbstractAdapter<
+	PanoPayload,
+	unknown,
+	Texture[],
+	Mesh
+> {
 	static override id = "lookaround";
 	static override supportsDownload = false;
 
@@ -152,11 +167,11 @@ export class LookAroundAdapter extends AbstractAdapter {
 			if (fovH != null) this.previousFovH = fovH;
 			return;
 		}
-		const mesh = this.createMesh();
+		const mesh = this.createMesh(undefined);
 		(mesh as Mesh & { userData: Record<string, unknown> }).userData = {
 			photoSphereViewer: true,
 		};
-		(mesh as Mesh & { parent: unknown }).parent = this.psv.renderer.meshContainer;
+		mesh.parent = this.psv.renderer.meshContainer;
 
 		mesh.updateMatrixWorld(true);
 
@@ -167,7 +182,7 @@ export class LookAroundAdapter extends AbstractAdapter {
 		this.previousFovH = fovH;
 	}
 
-	override createMesh(_panoData?: unknown, scale = 1): Mesh {
+	override createMesh(_panoData: unknown, scale = 1): Mesh {
 		const radius = CONSTANTS.SPHERE_RADIUS * scale;
 		const geometries = [];
 		this.meshesForFrustum = [];
@@ -332,7 +347,7 @@ export class LookAroundAdapter extends AbstractAdapter {
 		for (let i = 0; i < NUM_FACES; i++) {
 			const material = this.createCrossfadeMaterial();
 			material.polygonOffset = true;
-			material.polygonOffsetUnit = 1;
+			material.polygonOffsetUnits = 1;
 			material.polygonOffsetFactor = i * 2;
 			materials[i] = material;
 		}
@@ -364,7 +379,7 @@ export class LookAroundAdapter extends AbstractAdapter {
 				texture1: { value: null, userData: {} },
 				texture2: { value: null, userData: {} },
 				mixAmount: { value: 0.0, elapsed: 0.0, active: false },
-			},
+			} as CrossfadeUniforms,
 			glslVersion: GLSL3,
 		}) as CrossfadeMaterial;
 	}
