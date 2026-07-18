@@ -39,6 +39,7 @@ import {
 	subscribeStore,
 } from "@/store/useMapStore";
 import { sortTagsByMode, tagChipStyle, appendTagName } from "@/lib/util/util";
+import { log } from "@/lib/util/log";
 import { displayTagName } from "@/store/selections";
 import { ReviewBar } from "@/components/editor/location/ReviewBar";
 import {
@@ -496,7 +497,7 @@ export function LocationPreview() {
 				})
 				.catch((err) => {
 					if (cancelled) return;
-					console.warn("[LocationPreview] pano provider failed:", err);
+					log.warn("[LocationPreview] pano provider failed:", err);
 					if (toastHost) {
 						showToast(
 							toastHost,

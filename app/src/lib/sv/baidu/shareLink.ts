@@ -19,7 +19,7 @@ export function clearBaiduShortLinkCache(): void {
  * Tauri `bmaps` scheme — same pattern as Google `gmaps` short links).
  */
 export async function shortenBaiduShareUrl(longUrl: string): Promise<string> {
-	let cacheKey = "";
+	let cacheKey: string;
 	try {
 		cacheKey = new URL(longUrl).searchParams.get("panoid") ?? longUrl;
 	} catch {
