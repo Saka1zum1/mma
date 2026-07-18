@@ -99,7 +99,7 @@ describe("Fullscreen map mode", () => {
 		await waitForFullscreenMap(false);
 		await waitForPanoFullscreen(true);
 
-		await withApi(async (api) => api.removeLocations(new Set([locA])));
+		await withApi(async (api, id) => api.removeLocations(new Set([id])), locA);
 		await waitForActive(null);
 		await waitForWorkArea("overview");
 		await waitForFullscreenMap(true);
@@ -129,11 +129,13 @@ describe("Fullscreen map mode", () => {
 		await browser.keys("f");
 		await waitForPanoFullscreen(true);
 
-		await withApi(async (api) => api.setSetting("fullscreenMap", true));
+		// Use the map-fullscreen hotkey so pano fullscreen is suspended correctly.
+		await browser.$("body").click();
+		await browser.keys(["Control", "\\"]);
 		await waitForFullscreenMap(true);
 		await waitForPanoFullscreen(false);
 
-		await withApi(async (api) => api.setSetting("fullscreenMap", false));
+		await browser.keys(["Control", "\\"]);
 		await waitForFullscreenMap(false);
 		await waitForPanoFullscreen(true);
 	});
