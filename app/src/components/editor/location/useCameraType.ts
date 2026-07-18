@@ -10,11 +10,32 @@ import { useActiveLocation } from "@/store/useMapStore";
 import { usePanoViewer } from "./PanoViewerContext";
 
 /** Google SV camera generations (+ unofficial). Provider badges are separate. */
-export type BuiltinCameraType = CameraType | "unofficial";
+export type BuiltinCameraType =
+	| "unofficial"
+	| "gen1"
+	| "gen2"
+	| "gen4"
+	| "badcam"
+	| "tripod"
+	| "trekker";
 
 export type DisplayCameraBadge =
 	| { source: "builtin"; type: BuiltinCameraType }
 	| { source: "provider"; badge: PanoCameraBadge };
+
+const BUILTIN_TYPES = new Set<string>([
+	"gen1",
+	"gen2",
+	"gen4",
+	"badcam",
+	"tripod",
+	"trekker",
+]);
+
+function asBuiltinCameraType(raw: unknown): BuiltinCameraType | null {
+	if (typeof raw !== "string") return null;
+	return BUILTIN_TYPES.has(raw) ? (raw as BuiltinCameraType) : null;
+}
 
 export function useCameraType(panoId: string | null): DisplayCameraBadge | null {
 	const active = useActiveLocation();
@@ -39,7 +60,7 @@ export function useCameraType(panoId: string | null): DisplayCameraBadge | null 
 					: undefined)
 			: undefined;
 
-	return useAsync<DisplayCameraBadge | null>(() => {
+	return useAsync<DisplayCameraBadge | null>(async () => {
 		if (!panoId || !active) return null;
 
 		if (isBaidu) return { source: "provider", badge: BAIDU_CAMERA_BADGE };
@@ -52,13 +73,12 @@ export function useCameraType(panoId: string | null): DisplayCameraBadge | null 
 		}
 
 		if (!isOfficialPano(panoId)) return { source: "builtin", type: "unofficial" };
-		return fetchSvMetadata([panoId]).then(([data]) => {
-			if (!data || !data.extra) return null;
-			if (data.extra.panoType !== PanoType.Official) {
-				return { source: "builtin", type: "unofficial" };
-			}
-			const t = data.extra.cameraType;
-			return t ? { source: "builtin", type: t } : null;
-		});
+		const [data] = await fetchSvMetadata([panoId]);
+		if (!data?.extra) return null;
+		if (data.extra.panoType !== PanoType.Official) {
+			return { source: "builtin", type: "unofficial" };
+		}
+		const t = asBuiltinCameraType(data.extra.cameraType);
+		return t ? { source: "builtin", type: t } : null;
 	}, [panoId, providerId, spawnId, fromDates, active?.id, isBaidu]).data;
 }

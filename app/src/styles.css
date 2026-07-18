@@ -1776,8 +1776,8 @@ input[type="range"]:disabled {
 		transform: translateY(var(--popover-origin)) scaleY(0.96);
 	}
 }
-/* Author-supplied base-select trigger button in the pano date picker: closed
-   control looks like the NSelect control (matches TextInput), no button chrome. */
+/* Author-supplied base-select trigger in the pano date picker: closed control
+   looks like NSelect/TextInput; option rows use grid + badge chips. */
 .pano-date-select__trigger {
 	appearance: none;
 	-webkit-appearance: none;
@@ -1812,9 +1812,6 @@ input[type="range"]:disabled {
 	mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
 		center / contain no-repeat;
 }
-/* The author-supplied trigger provides the control chrome (including its own
-   ::after chevron); strip the select's box and its UA picker icon so neither
-   doubles up. */
 .nselect.pano-date-select {
 	background: none;
 	border: none;
