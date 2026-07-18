@@ -573,6 +573,7 @@ fn app_ready() -> u32 {
 pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .dangerously_cast_bigints_to_number()
+        .error_handling(tauri_specta::ErrorHandlingMode::Throw)
         .semantic_types(
             specta_typescript::semantic::Configuration::default().enable_lossless_floats(),
         )

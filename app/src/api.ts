@@ -11,7 +11,7 @@
 import * as store from "@/store/useMapStore";
 import * as review from "@/lib/review/review";
 import type { Scope, Location } from "@/bindings.gen";
-import { cmd as commands } from "@/lib/commands";
+import { cmd as commands, type Cmd } from "@/lib/commands";
 import { goToMap, goToList } from "@/store/router";
 import { createLocation, applyLocationPatch } from "@/types";
 import { registerPlugin, createPluginStorage, usePluginState } from "@/plugins/registry";
@@ -163,7 +163,7 @@ const mma = {
 	...review,
 
 	// --- Rust IPC commands ---
-	cmd: commands,
+	cmd: commands as Cmd,
 
 	// --- Tauri primitives (for plugins) ---
 	invoke,

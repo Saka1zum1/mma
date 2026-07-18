@@ -51,183 +51,63 @@ export declare const commands: {
 	 *  Write arbitrary text content to a named temp file (`mma_{name}`). Returns the path.
 	 *  Used by JS to pass large payloads via file instead of IPC serialization.
 	 */
-	writeTempFile: (name: string, content: string) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	writeTempFile: (name: string, content: string) => Promise<string>;
 	/**  Read a file from disk as UTF-8 text. Used by JS to read temp files and plugin sources. */
-	readFile: (path: string) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	readFile: (path: string) => Promise<string>;
 	appReady: () => Promise<number>;
 	/**  Return the platform-specific app data directory path (e.g., `%LOCALAPPDATA%/app.map-making.local`). */
-	getAppDataDir: () => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	getAppDataDir: () => Promise<string>;
 	/**  Report where map data is currently stored. */
-	getDataLocation: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: DataLocation;
-	}>;
+	getDataLocation: () => Promise<DataLocation>;
 	/**
 	 *  Set (`Some`) or clear (`None`) the data-folder override. Takes effect after relaunch.
 	 *  Does not move existing data -- the caller warns the user.
 	 */
-	setDataLocation: (path: string | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	setDataLocation: (path: string | null) => Promise<null>;
 	/**  Open the app data directory in the OS file explorer. */
-	openDataFolder: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	openDataFolder: () => Promise<null>;
 	/**  Open the current log file in the OS default handler. */
-	openLogFile: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	openLogFile: () => Promise<null>;
 	/**  Scan the `plugins/` directory under app data and return manifests for all installed plugins. */
 	listUserPlugins: () => Promise<PluginManifest[]>;
 	/**
 	 *  Download a plugin from the GitHub plugin repository and install it to the local plugins directory.
 	 *  Fetches `manifest.json` and the main JS file specified in the manifest.
 	 */
-	installPlugin: (id: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: PluginManifest;
-	}>;
+	installPlugin: (id: string) => Promise<PluginManifest>;
 	/**  Remove a plugin by deleting its directory from the local plugins folder. */
-	uninstallPlugin: (id: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	uninstallPlugin: (id: string) => Promise<null>;
 	/**
 	 *  Download a plugin's sidecar bundle from GitHub Releases and extract it under
 	 *  `{appData}/plugins/{plugin_id}/sidecar/`. Emits `sidecar-install-progress`.
 	 */
-	sidecarInstall: (pluginId: string, name: string, version: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	sidecarInstall: (pluginId: string, name: string, version: string) => Promise<null>;
 	/**  Installed sidecar version for a plugin (from `sidecar/version.txt`), or `None`. */
-	sidecarInstalledVersion: (pluginId: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: string | null;
-	}>;
+	sidecarInstalledVersion: (pluginId: string) => Promise<string | null>;
 	/**
 	 *  Spawn a plugin's installed sidecar binary. Streams stdout/stderr lines as
 	 *  `sidecar-stdout` / `sidecar-stderr` events and the exit as `sidecar-exit`,
 	 *  keyed by the returned run id. Runs in the sidecar dir so co-located dlls resolve.
 	 */
-	sidecarSpawn: (pluginId: string, name: string, args: string[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number;
-	}>;
+	sidecarSpawn: (pluginId: string, name: string, args: string[]) => Promise<number>;
 	/**  Kill a running sidecar process by run id (no-op if already exited). */
-	sidecarKill: (runId: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
-	checkBorderFile: (level: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: boolean;
-	}>;
-	downloadBorderFile: (level: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
-	borderLookup: (lat: number, lng: number, level: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: PolygonGeometry | null;
-	}>;
+	sidecarKill: (runId: number) => Promise<null>;
+	checkBorderFile: (level: string) => Promise<boolean>;
+	downloadBorderFile: (level: string) => Promise<null>;
+	borderLookup: (lat: number, lng: number, level: string) => Promise<PolygonGeometry | null>;
 	/**
 	 *  Finds the nearest city/country for a coordinate. O(log n) k-d tree lookup.
 	 *  Always returns `Some` -- the GeoNames dataset covers every landmass.
 	 */
 	reverseGeocode: (lat: number, lng: number) => Promise<GeoResult | null>;
-	discordPresenceSet: (activity: PresenceActivity) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
-	discordPresenceClear: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	discordPresenceSet: (activity: PresenceActivity) => Promise<null>;
+	discordPresenceClear: () => Promise<null>;
 	/**
 	 *  Start (or re-key) the remote API server. Idempotent: a running server just
 	 *  picks up the new key. Returns the base URL.
 	 */
-	remoteApiStart: (key: string) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
-	remoteApiStop: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	remoteApiStart: (key: string) => Promise<string>;
+	remoteApiStop: () => Promise<null>;
 	/**
 	 *  Webview -> HTTP reply path: resolves the parked request for `id`.
 	 *  `payload` is JSON text, not a typed value -- specta cannot export the
@@ -238,24 +118,12 @@ export declare const commands: {
 	 *  Load a map's Arrow data from disk, rebuild all indexes, and return initial state
 	 *  (tag counts, undo/redo availability). Must be called before any other store commands.
 	 */
-	storeOpenMap: (mapId: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: StoreStatus;
-	}>;
+	storeOpenMap: (mapId: string) => Promise<StoreStatus>;
 	/**
 	 *  Close the current map: bake overlay, flush Arrow + tags + edit history to disk, then
 	 *  release all in-memory state (batch, mmap, indexes, selections, undo stacks).
 	 */
-	storeCloseMap: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeCloseMap: () => Promise<null>;
 	/**
 	 *  Autosave: serialize the overlay (uncommitted changes) to the delta sidecar, plus
 	 *  dirty tags and the location count. Skips entirely when nothing changed since the
@@ -264,13 +132,7 @@ export declare const commands: {
 	 *  wasn't mutated while the write was in flight (rev guard), so a failed or raced
 	 *  save keeps the data flagged for the next attempt.
 	 */
-	storeSaveDirty: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: SaveResult;
-	}>;
+	storeSaveDirty: () => Promise<SaveResult>;
 	/**
 	 *  Copy locations from the current window's map into another map (routing
 	 *  hotkeys). Duplicates in the target are skipped (`split_new_locations`).
@@ -280,48 +142,18 @@ export declare const commands: {
 	 *  `store-external-mutation` event tells its windows to resync; either way
 	 *  the result is persisted immediately (delta sidecar + tags + count).
 	 */
-	storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: CopyToMapResult;
-	}>;
+	storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => Promise<CopyToMapResult>;
 	/**  Lightweight status query: location count, version, and dirty flag. */
-	storeGetSummary: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: SummaryResult;
-	}>;
+	storeGetSummary: () => Promise<SummaryResult>;
 	/**  Return metadata for every map in the database. */
-	storeListMaps: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MapMeta[];
-	}>;
+	storeListMaps: () => Promise<MapMeta[]>;
 	/**  Fetch a single map's metadata by ID. Returns `None` if not found. */
-	storeGetMap: (id: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MapData | null;
-	}>;
+	storeGetMap: (id: string) => Promise<MapData | null>;
 	/**
 	 *  Create a new empty map with default settings. Returns the full metadata
 	 *  (including the generated UUID) so the frontend can navigate to it immediately.
 	 */
-	storeCreateMap: (name: string, folder: string | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MapData;
-	}>;
+	storeCreateMap: (name: string, folder: string | null) => Promise<MapData>;
 	/**
 	 *  Delete a map and all associated data: SQLite rows (maps, edit_history,
 	 *  commits) and Arrow base/delta/commit files on disk.
@@ -332,103 +164,43 @@ export declare const commands: {
 	 *  `store_open_map` of the same map can't reload it from disk mid-deletion and
 	 *  resurrect it.
 	 */
-	storeDeleteMap: (id: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeDeleteMap: (id: string) => Promise<null>;
 	/**
 	 *  Apply a partial update to a map's metadata. Dynamically builds the SQL
 	 *  UPDATE from non-`None` fields in the patch. Also syncs `known_field_keys`
 	 *  on the in-memory store when extra fields change, so auto-registration
 	 *  doesn't re-discover fields the user explicitly defined.
 	 */
-	storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => Promise<null>;
 	/**
 	 *  Update `last_opened_at` to the current timestamp. Used to sort the map
 	 *  list by recency in the dashboard.
 	 */
-	storeTouchMapOpened: (mapId: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeTouchMapOpened: (mapId: string) => Promise<null>;
 	/**  Rename a folder across all maps that reference it. */
-	storeRenameFolder: (from: string, to: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeRenameFolder: (from: string, to: string) => Promise<null>;
 	/**  Delete a folder by setting all its maps' folder to `NULL` (moves them to root). */
-	storeDeleteFolder: (name: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeDeleteFolder: (name: string) => Promise<null>;
 	/**  List all user-created tables with their row counts. Excludes SQLite internals. */
-	storeDbTableInfo: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: DbTableInfo[];
-	}>;
+	storeDbTableInfo: () => Promise<DbTableInfo[]>;
 	/**
 	 *  Add new locations. IDs are allocated server-side (monotonic). Records an undo entry
 	 *  and clears the redo stack.
 	 */
-	storeAddLocations: (locations: Location[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeAddLocations: (locations: Location[]) => Promise<MutationResult>;
 	/**  Remove locations by ID. Snapshots the full location data for undo before deleting. */
-	storeRemoveLocations: (ids: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeRemoveLocations: (ids: number[]) => Promise<MutationResult>;
 	/**
 	 *  Apply partial patches to existing locations. `record_undo` defaults to true;
 	 *  set to false for ephemeral updates (e.g., plugin-driven batch modifications
 	 *  that manage their own undo).
 	 */
-	storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null) => Promise<MutationResult>;
 	/**
 	 *  Set (or clear) the active location. Fire-and-forget from JS; no re-render triggered.
 	 *  JS patches the cell buffer synchronously to hide/show the active marker.
 	 */
-	storeSetActive: (id: number | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeSetActive: (id: number | null) => Promise<null>;
 	/**
 	 *  Set the default marker color used by the render delta path. Fire-and-forget from JS;
 	 *  the JS side recolors its cell buffers in place (no full rebuild).
@@ -437,80 +209,38 @@ export declare const commands: {
 		number,
 		number,
 		number
-	]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	]) => Promise<null>;
 	/**  Fetch a single location by ID. Returns `None` if the ID is dead or doesn't exist. */
-	storeGetLocation: (id: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: Location | null;
-	}>;
+	storeGetLocation: (id: number) => Promise<Location | null>;
 	/**  Fetch multiple locations by ID. Silently skips IDs that don't exist. */
-	storeGetLocationsByIds: (ids: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: Location[];
-	}>;
+	storeGetLocationsByIds: (ids: number[]) => Promise<Location[]>;
 	/**
 	 *  Dump every alive location to a temp JSON file. Returns the file path.
 	 *  Used by export and plugins that need the full dataset.
 	 */
-	storeGetAllLocations: () => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeGetAllLocations: () => Promise<string>;
 	/**
 	 *  Count locations by country via point-in-polygon against the border dataset (no
 	 *  network). `level` selects the border precision ("light"/"medium"/"heavy"), falling
 	 *  back to bundled "light" if unavailable. Returns unsorted (ISO-A2 code, count) pairs.
 	 *  Coords are gathered under the store lock, then classified after it's released.
 	 */
-	storeCountryDistribution: (level: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: [
-			string,
-			number
-		][];
-	}>;
+	storeCountryDistribution: (level: string) => Promise<[
+		string,
+		number
+	][]>;
 	/**  Return the number of alive locations (batch + adds - dead). */
-	storeLocationCount: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number;
-	}>;
+	storeLocationCount: () => Promise<number>;
 	/**
 	 *  Compute the bounding box [west, south, east, north]. O(N).
 	 *  When `selected_only` is true, restricts to the current selection.
 	 */
-	storeBounds: (selectedOnly: boolean) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: [
-			number,
-			number,
-			number,
-			number
-		] | null;
-	}>;
+	storeBounds: (selectedOnly: boolean) => Promise<[
+		number,
+		number,
+		number,
+		number
+	] | null>;
 	/**
 	 *  Find all locations within `radius_m` metres of (`lat`, `lng`).
 	 *
@@ -518,25 +248,13 @@ export declare const commands: {
 	 *  one-time O(N) build, maintained incrementally across mutations. Called on every
 	 *  marker click (duplicate check), so it must not scan.
 	 */
-	storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: Location[];
-	}>;
+	storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location[]>;
 	/**
 	 *  For each input point, whether any existing location lies within `radius_m` metres.
 	 *  Bulk form so callers probing many coordinates (e.g. the map generator skipping
 	 *  already-covered spots) pay one IPC round-trip, not one per point.
 	 */
-	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: boolean[];
-	}>;
+	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
 	/**
 	 *  CPU hit-test replacing deck.gl GPU picking for the marker layers. Returns
 	 *  covering markers topmost-first, resolving overlaps by draw order (selection
@@ -544,153 +262,69 @@ export declare const commands: {
 	 *  which reproduces the painter's-order stacking the renderer draws.
 	 *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the surface.
 	 */
-	storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: PickHit[];
-	}>;
+	storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => Promise<PickHit[]>;
 	/**
 	 *  Collect all distinct values for an `extra` field across all alive locations. O(N).
 	 *  Used by the filter UI to populate dropdown options.
 	 */
-	storeExtraFieldValues: (field: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: string[];
-	}>;
+	storeExtraFieldValues: (field: string) => Promise<string[]>;
 	/**
 	 *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
 	 *  already exists, it is made visible instead of creating a duplicate.
 	 */
-	storeCreateTags: (names: string[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeCreateTags: (names: string[]) => Promise<MutationResult>;
 	/**
 	 *  Update name and/or color for one or more tags in a single mutation. A new name
 	 *  that collides with an existing tag (case-insensitive) merges: locations remap from
 	 *  the renamed tag to the existing one. Batched so a folder-cascade rename lands as one
 	 *  render instead of one per tag. Returns MutationResult with `tags` populated.
 	 */
-	storeUpdateTags: (updates: Update<TagPatch>[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeUpdateTags: (updates: Update<TagPatch>[]) => Promise<MutationResult>;
 	/**
 	 *  Strip tags from all locations. Tags stay in `store.tags` with count=0 /
 	 *  visible=false so undo can revive them. Returns MutationResult with `tags`.
 	 */
-	storeDeleteTags: (tagIds: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeDeleteTags: (tagIds: number[]) => Promise<MutationResult>;
 	/**
 	 *  Persist tag ordering. `ordered_ids` specifies the desired order; each tag's
 	 *  `order` field is set to its index in the list.
 	 */
-	storeReorderTags: (orderedIds: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeReorderTags: (orderedIds: number[]) => Promise<MutationResult>;
 	/**  Pop the undo stack and reverse the last edit. Pushes the entry onto the redo stack. */
-	storeUndo: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeUndo: () => Promise<MutationResult>;
 	/**  Pop the redo stack and replay the edit forward. Pushes the entry back onto undo. */
-	storeRedo: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeRedo: () => Promise<MutationResult>;
 	/**  Clear both undo and redo stacks. Called after a commit to start fresh. */
-	storeResetUndo: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeResetUndo: () => Promise<null>;
 	/**
 	 *  Net diff since last commit for the commit dialog, derived from the overlay --
 	 *  the same changeset `store_commit` will record. The undo stack is NOT consulted:
 	 *  it is capped, and non-undoable edits (enrichment, field renames, plugin batches)
 	 *  bypass it entirely while still being part of the commit.
 	 */
-	storeCommitDiff: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: [
-			number,
-			number,
-			number
-		];
-	}>;
+	storeCommitDiff: () => Promise<[
+		number,
+		number,
+		number
+	]>;
 	/**
 	 *  Replace all selections, resolve bitmasks against current data, and write a binary
 	 *  patch file for JS to apply to the render overlay. Returns per-selection counts.
 	 */
-	storeSyncSelections: (sels: SelectionInput[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: SelectionSync;
-	}>;
+	storeSyncSelections: (sels: SelectionInput[]) => Promise<SelectionSync>;
 	/**  Return the union of all currently selected location IDs. */
-	storeGetSelectedIdsList: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number[];
-	}>;
+	storeGetSelectedIdsList: () => Promise<number[]>;
 	/**
 	 *  Pick an evenly spaced subset of the current selection. Exactly one of `target_count`
 	 *  (thin to N, maximizing spacing) or `min_distance_m` (keep as many as fit at that spacing)
 	 *  must be provided.
 	 */
-	storePickSpaced: (targetCount: number | null, minDistanceM: number | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: SpacedPickResult;
-	}>;
+	storePickSpaced: (targetCount: number | null, minDistanceM: number | null) => Promise<SpacedPickResult>;
 	/**
 	 *  Resolve a single selection to its matching location IDs without persisting it.
 	 *  Used by plugins and one-off queries (e.g., tag merge, export filtered).
 	 */
-	storeResolveSelection: (props: SelectionProps) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number[];
-	}>;
+	storeResolveSelection: (props: SelectionProps) => Promise<number[]>;
 	/**
 	 *  Partition the (optionally scoped) location set into groups by a derived key, returning
 	 *  compact `{ key, ids, bin }` per group — no hydrated locations. `scope` None partitions
@@ -698,154 +332,76 @@ export declare const commands: {
 	 *  (groups -> colored selections) and apply-as-tags (groups -> tags) surfaces without
 	 *  materializing location data into JS.
 	 */
-	storePartition: (field: string, key: KeySpec, scope: Scope) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: PartitionBucket[];
-	}>;
+	storePartition: (field: string, key: KeySpec, scope: Scope) => Promise<PartitionBucket[]>;
 	/**
 	 *  Transitive spatial duplicate groups (connected components, size >= 2) within `distance`
 	 *  metres. Read-only; used to preview a merge. Returns groups of location IDs.
 	 */
-	storeDuplicateGroups: (distance: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number[][];
-	}>;
+	storeDuplicateGroups: (distance: number) => Promise<number[][]>;
 	/**
 	 *  Merge each transitive duplicate group (size >= 2 within `distance` metres) into one
 	 *  survivor. Survivor = most tags, then earliest `created_at`, then lowest id. Tags are
 	 *  set-unioned across the group; `extra` is merged with the survivor winning key conflicts;
 	 *  all other survivor fields are kept. Applied as a single undoable edit.
 	 */
-	storeMergeDuplicates: (distance: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storeMergeDuplicates: (distance: number) => Promise<MutationResult>;
 	/**
 	 *  Prune duplicates among `ids` (a resolved selection) within `distance` metres:
 	 *  <= 25m keeps the best-scored location per cluster (`keep_tag_ids` score +5, see
 	 *  selections::prune_score); > 25m thins greedily so no two survivors remain in
 	 *  range. Informational locations are never pruned. One undoable edit.
 	 */
-	storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: MutationResult;
-	}>;
+	storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => Promise<MutationResult>;
 	/**
 	 *  Full render rebuild: single-pass over all alive locations, writes binary to a temp file.
 	 *  Returns the file path for JS to fetch via `mma-buf://`. Only called on map open or full reset.
 	 */
-	storeFillRenderFile: (req: RenderRequest) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeFillRenderFile: (req: RenderRequest) => Promise<string>;
 	/**
 	 *  Resolve a deck.gl pick result (cell key + index within cell) to a location ID.
 	 *  Called on marker click to map the GPU pick back to a logical location.
 	 */
-	storeResolvePick: (cell: string, cellIndex: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number | null;
-	}>;
+	storeResolvePick: (cell: string, cellIndex: number) => Promise<number | null>;
 	/**
 	 *  Parse a file (JSON or ZIP of JSONs) and return previews without persisting.
 	 *  Results are cached in `CACHED_PARSE` so `bulk_import_confirm` can skip re-parsing.
 	 *  ZIP files have each `.json` entry parsed in parallel via rayon.
 	 */
-	bulkImportPreview: (path: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: ImportPreviewEntry[];
-	}>;
+	bulkImportPreview: (path: string) => Promise<ImportPreviewEntry[]>;
 	/**
 	 *  Persist selected maps from a previously previewed import.
 	 *  Uses the cached parse if available; otherwise re-parses the file.
 	 *  Each map gets a new UUID, Arrow IPC file, and SQLite row.
 	 *  Emits `bulk-import-progress` events per map for UI feedback.
 	 */
-	bulkImportConfirm: (path: string, selectedIndices: number[]) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: ImportedMapInfo[];
-	}>;
+	bulkImportConfirm: (path: string, selectedIndices: number[]) => Promise<ImportedMapInfo[]>;
 	/**
 	 *  Drop the cached parse from `bulk_import_preview` when the user dismisses the
 	 *  import dialog without confirming, instead of holding it until the next preview.
 	 */
-	bulkImportCancel: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	bulkImportCancel: () => Promise<null>;
 	/**
 	 *  Parse a file and return field-level statistics + preview positions for the editor
 	 *  import sidebar. Caches the parse result for `store_import_file` to consume on commit.
 	 */
-	storeImportPreview: (path: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: EditorImportPreview;
-	}>;
+	storeImportPreview: (path: string) => Promise<EditorImportPreview>;
 	/**
 	 *  Parse pasted text (JSON or CSV) and stage it for preview, exactly like
 	 *  `store_import_preview` does for a file. Caches the parse for `store_import_file`.
 	 */
-	storeImportPastePreview: (text: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: EditorImportPreview;
-	}>;
+	storeImportPastePreview: (text: string) => Promise<EditorImportPreview>;
 	/**
 	 *  Fetch one staged (not yet imported) location by its preview index, for read-only
 	 *  preview in the editor. Indexes follow the preview positions order.
 	 */
-	storeImportStagedLocation: (index: number) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: Location;
-	}>;
+	storeImportStagedLocation: (index: number) => Promise<Location>;
 	/**
 	 *  Commit a previously previewed editor import, optionally dropping fields and/or
 	 *  applying a bulk tag to every imported location. Consumes the cached parse from
 	 *  `store_import_preview`/`store_import_paste_preview`. Fields in `dropped_fields`
 	 *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
-	storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: EditorImportResult;
-	}>;
+	storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<EditorImportResult>;
 	/**
 	 *  Export locations as a JSON file.
 	 *
@@ -854,43 +410,19 @@ export declare const commands: {
 	 *  Heading of exactly 0 is written as 0.001 when `export_unpanned` is set,
 	 *  the convention for "no heading specified".
 	 */
-	storeExportJson: (opts: ExportOpts) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeExportJson: (opts: ExportOpts) => Promise<string>;
 	/**  Export locations as a minimal lat/lng CSV file. */
-	storeExportCsv: (scope: number[] | null) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeExportCsv: (scope: number[] | null) => Promise<string>;
 	/**
 	 *  Export locations as a GeoJSON FeatureCollection of Point features.
 	 *  Each feature carries its tag names in `properties.tags`.
 	 */
-	storeExportGeojson: (scope: number[] | null, tagsJson: string) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeExportGeojson: (scope: number[] | null, tagsJson: string) => Promise<string>;
 	/**
 	 *  Copy a temp export file to the destination chosen via the native save dialog,
 	 *  then remove the temp source. `dest_path` comes from the frontend save dialog.
 	 */
-	storeSaveExportFile: (srcPath: string, destPath: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeSaveExportFile: (srcPath: string, destPath: string) => Promise<null>;
 	/**
 	 *  Export every map in the database as a deflate-compressed ZIP of JSON files.
 	 *
@@ -899,161 +431,59 @@ export declare const commands: {
 	 *  (bypasses the in-memory store). Duplicate map names get a numeric suffix.
 	 *  Runs on a blocking thread to avoid starving the async runtime.
 	 */
-	storeExportBulkZip: () => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeExportBulkZip: () => Promise<string>;
 	/**
 	 *  Create a temp session dir for binary uploads from the frontend. Files are
 	 *  written into it via `mma-buf://` POST, then packaged by [`store_upload_finish`].
 	 */
-	storeUploadBegin: () => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeUploadBegin: () => Promise<string>;
 	/**
 	 *  Package an upload session and remove its dir: a single file is moved out
 	 *  as-is, multiple are packed into a Stored ZIP (entries like JPEG/PNG are
 	 *  already compressed). Returns a temp path for [`store_save_export_file`].
 	 */
-	storeUploadFinish: (sessionDir: string) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeUploadFinish: (sessionDir: string) => Promise<string>;
 	/**  Remove an abandoned upload session dir (e.g. cancelled operation). */
-	storeUploadAbort: (sessionDir: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeUploadAbort: (sessionDir: string) => Promise<null>;
 	/**
 	 *  Delete all rows from a table. Returns the number of deleted rows.
 	 *  Used in the debug panel for cache/history cleanup.
 	 */
-	storeDbClearTable: (table: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number;
-	}>;
+	storeDbClearTable: (table: string) => Promise<number>;
 	/**
 	 *  Compute aggregate database statistics (map/location/tag/commit counts,
 	 *  database file size, journal mode). Tag count is summed across all maps
 	 *  by parsing each map's tags JSON column.
 	 */
-	storeDbStats: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: DbStats;
-	}>;
+	storeDbStats: () => Promise<DbStats>;
 	/**
 	 *  Records a panorama visit and evicts excess entries beyond `MAX_SEEN`.
 	 *
 	 *  Eviction deletes the oldest rows by `entered_at`, so the table acts as a
 	 *  bounded ring buffer without requiring explicit rotation.
 	 */
-	storeSeenWrite: (entry: SeenWriteEntry) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeSeenWrite: (entry: SeenWriteEntry) => Promise<null>;
 	/**  Returns a page of seen entries, newest first, with optional filtering. */
-	storeSeenList: (limit: number, offset: number, filter: SeenFilter | null, thumbnails: boolean) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: SeenEntry[];
-	}>;
+	storeSeenList: (limit: number, offset: number, filter: SeenFilter | null, thumbnails: boolean) => Promise<SeenEntry[]>;
 	/**  Returns the total number of seen entries matching the filter (for pagination). */
-	storeSeenCount: (filter: SeenFilter | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: number;
-	}>;
+	storeSeenCount: (filter: SeenFilter | null) => Promise<number>;
 	/**
 	 *  Returns all distinct country codes present in the seen table, sorted alphabetically.
 	 *  Used to populate the country filter dropdown.
 	 */
-	storeSeenCountries: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: string[];
-	}>;
+	storeSeenCountries: () => Promise<string[]>;
 	/**
 	 *  Returns all distinct maps that have seen entries, with resolved display names.
 	 *  Returns maps that have seen entries. Only includes maps that still exist.
 	 */
-	storeSeenMaps: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: SeenMapInfo[];
-	}>;
+	storeSeenMaps: () => Promise<SeenMapInfo[]>;
 	/**  Deletes all seen history entries. */
-	storeSeenClear: () => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
-	storeReviewCreate: (session: ReviewCreate) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: ReviewSession;
-	}>;
-	storeReviewGet: (mapId: string, sourceKey: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: ReviewSession | null;
-	}>;
-	storeReviewList: (mapId: string, status: string | null) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: ReviewSession[];
-	}>;
-	storeReviewUpdate: (update: ReviewUpdate) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
-	storeReviewDelete: (id: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeSeenClear: () => Promise<null>;
+	storeReviewCreate: (session: ReviewCreate) => Promise<ReviewSession>;
+	storeReviewGet: (mapId: string, sourceKey: string) => Promise<ReviewSession | null>;
+	storeReviewList: (mapId: string, status: string | null) => Promise<ReviewSession[]>;
+	storeReviewUpdate: (update: ReviewUpdate) => Promise<null>;
+	storeReviewDelete: (id: string) => Promise<null>;
 	/**
 	 *  Create a commit and bake the overlay in a single pass — the only commit path.
 	 *
@@ -1069,21 +499,9 @@ export declare const commands: {
 	 *  (event-loop) thread — a sync command here freezes the webview and stalls the
 	 *  queued render behind it.
 	 */
-	storeCommit: (mapId: string, message: string | null) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	storeCommit: (mapId: string, message: string | null) => Promise<string>;
 	/**  List all commits for a map, newest first. */
-	storeListCommits: (mapId: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: CommitInfo[];
-	}>;
+	storeListCommits: (mapId: string) => Promise<CommitInfo[]>;
 	/**
 	 *  Restore a map to the state captured by a previous commit.
 	 *
@@ -1091,50 +509,20 @@ export declare const commands: {
 	 *  it as the map's base Arrow file, and clears the uncommitted delta. The caller
 	 *  (`checkoutCommit` in JS) reopens the map and clears undo/redo.
 	 */
-	storeCheckoutCommit: (mapId: string, commitId: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	storeCheckoutCommit: (mapId: string, commitId: string) => Promise<null>;
 	/**  Read a single commit's delta (created/removed locations) for the diff viewer. */
-	storeGetCommitDelta: (mapId: string, commitId: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: CommitDelta;
-	}>;
+	storeGetCommitDelta: (mapId: string, commitId: string) => Promise<CommitDelta>;
 	/**
 	 *  Generate locations from a Vali map definition (JSON/JSONC text). Missing country
 	 *  data is auto-downloaded like the Vali CLI. Returns the generated locations.
 	 */
-	valiGenerate: (definition: string) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: ValiLocation[];
-	}>;
+	valiGenerate: (definition: string) => Promise<ValiLocation[]>;
 	/**  Download Vali coverage data. `country` = code/continent alias/None for all. */
-	valiDownload: (country: string | null, full: boolean, updates: boolean) => Promise<{
-		status: "error";
-		error: string;
-	} | {
-		status: "ok";
-		data: null;
-	}>;
+	valiDownload: (country: string | null, full: boolean, updates: boolean) => Promise<null>;
 	/**  Cancel an in-flight vali generate or download. */
 	valiCancel: () => Promise<void>;
 	/**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
-	valiSubdivisions: (country: string) => Promise<{
-		status: "ok";
-		data: string;
-	} | {
-		status: "error";
-		error: string;
-	}>;
+	valiSubdivisions: (country: string) => Promise<string>;
 };
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
@@ -2150,6 +1538,7 @@ export interface PruneResult {
 	session: ReviewSession | null;
 	cursorMoved: boolean;
 }
+export type Cmd = typeof commands;
 declare function Sidebar({ title, onBack, actions, className, flush, children, }: {
 	title: ReactNode;
 	onBack?: () => void;
@@ -3205,131 +2594,7 @@ export interface SidecarRun {
 }
 declare function spawnSidecar(pluginId: string, name: string, args: string[]): Promise<SidecarRun>;
 declare const mma: {
-	cmd: {
-		writeTempFile: (name: string, content: string) => Promise<string>;
-		readFile: (path: string) => Promise<string>;
-		appReady: () => Promise<number>;
-		getAppDataDir: () => Promise<string>;
-		getDataLocation: () => Promise<DataLocation>;
-		setDataLocation: (path: string | null) => Promise<null>;
-		openDataFolder: () => Promise<null>;
-		openLogFile: () => Promise<null>;
-		listUserPlugins: () => Promise<PluginManifest[]>;
-		installPlugin: (id: string) => Promise<PluginManifest>;
-		uninstallPlugin: (id: string) => Promise<null>;
-		sidecarInstall: (pluginId: string, name: string, version: string) => Promise<null>;
-		sidecarInstalledVersion: (pluginId: string) => Promise<string | null>;
-		sidecarSpawn: (pluginId: string, name: string, args: string[]) => Promise<number>;
-		sidecarKill: (runId: number) => Promise<null>;
-		checkBorderFile: (level: string) => Promise<boolean>;
-		downloadBorderFile: (level: string) => Promise<null>;
-		borderLookup: (lat: number, lng: number, level: string) => Promise<PolygonGeometry | null>;
-		reverseGeocode: (lat: number, lng: number) => Promise<GeoResult | null>;
-		discordPresenceSet: (activity: PresenceActivity) => Promise<null>;
-		discordPresenceClear: () => Promise<null>;
-		remoteApiStart: (key: string) => Promise<string>;
-		remoteApiStop: () => Promise<null>;
-		remoteApiRespond: (id: number, ok: boolean, payload: string) => Promise<void>;
-		storeOpenMap: (mapId: string) => Promise<StoreStatus>;
-		storeCloseMap: () => Promise<null>;
-		storeSaveDirty: () => Promise<SaveResult>;
-		storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => Promise<CopyToMapResult>;
-		storeGetSummary: () => Promise<SummaryResult>;
-		storeListMaps: () => Promise<MapMeta[]>;
-		storeGetMap: (id: string) => Promise<MapData | null>;
-		storeCreateMap: (name: string, folder: string | null) => Promise<MapData>;
-		storeDeleteMap: (id: string) => Promise<null>;
-		storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => Promise<null>;
-		storeTouchMapOpened: (mapId: string) => Promise<null>;
-		storeRenameFolder: (from: string, to: string) => Promise<null>;
-		storeDeleteFolder: (name: string) => Promise<null>;
-		storeDbTableInfo: () => Promise<DbTableInfo[]>;
-		storeAddLocations: (locations: Location[]) => Promise<MutationResult>;
-		storeRemoveLocations: (ids: number[]) => Promise<MutationResult>;
-		storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null) => Promise<MutationResult>;
-		storeSetActive: (id: number | null) => Promise<null>;
-		storeSetMarkerColor: (color: [
-			number,
-			number,
-			number
-		]) => Promise<null>;
-		storeGetLocation: (id: number) => Promise<Location | null>;
-		storeGetLocationsByIds: (ids: number[]) => Promise<Location[]>;
-		storeGetAllLocations: () => Promise<string>;
-		storeCountryDistribution: (level: string) => Promise<[
-			string,
-			number
-		][]>;
-		storeLocationCount: () => Promise<number>;
-		storeBounds: (selectedOnly: boolean) => Promise<[
-			number,
-			number,
-			number,
-			number
-		] | null>;
-		storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location[]>;
-		storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
-		storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => Promise<PickHit[]>;
-		storeExtraFieldValues: (field: string) => Promise<string[]>;
-		storeCreateTags: (names: string[]) => Promise<MutationResult>;
-		storeUpdateTags: (updates: Update<TagPatch>[]) => Promise<MutationResult>;
-		storeDeleteTags: (tagIds: number[]) => Promise<MutationResult>;
-		storeReorderTags: (orderedIds: number[]) => Promise<MutationResult>;
-		storeUndo: () => Promise<MutationResult>;
-		storeRedo: () => Promise<MutationResult>;
-		storeResetUndo: () => Promise<null>;
-		storeCommitDiff: () => Promise<[
-			number,
-			number,
-			number
-		]>;
-		storeSyncSelections: (sels: SelectionInput[]) => Promise<SelectionSync>;
-		storeGetSelectedIdsList: () => Promise<number[]>;
-		storePickSpaced: (targetCount: number | null, minDistanceM: number | null) => Promise<SpacedPickResult>;
-		storeResolveSelection: (props: SelectionProps) => Promise<number[]>;
-		storePartition: (field: string, key: KeySpec, scope: Scope) => Promise<PartitionBucket[]>;
-		storeDuplicateGroups: (distance: number) => Promise<number[][]>;
-		storeMergeDuplicates: (distance: number) => Promise<MutationResult>;
-		storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => Promise<MutationResult>;
-		storeFillRenderFile: (req: RenderRequest) => Promise<string>;
-		storeResolvePick: (cell: string, cellIndex: number) => Promise<number | null>;
-		bulkImportPreview: (path: string) => Promise<ImportPreviewEntry[]>;
-		bulkImportConfirm: (path: string, selectedIndices: number[]) => Promise<ImportedMapInfo[]>;
-		bulkImportCancel: () => Promise<null>;
-		storeImportPreview: (path: string) => Promise<EditorImportPreview>;
-		storeImportPastePreview: (text: string) => Promise<EditorImportPreview>;
-		storeImportStagedLocation: (index: number) => Promise<Location>;
-		storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<EditorImportResult>;
-		storeExportJson: (opts: ExportOpts) => Promise<string>;
-		storeExportCsv: (scope: number[] | null) => Promise<string>;
-		storeExportGeojson: (scope: number[] | null, tagsJson: string) => Promise<string>;
-		storeSaveExportFile: (srcPath: string, destPath: string) => Promise<null>;
-		storeExportBulkZip: () => Promise<string>;
-		storeUploadBegin: () => Promise<string>;
-		storeUploadFinish: (sessionDir: string) => Promise<string>;
-		storeUploadAbort: (sessionDir: string) => Promise<null>;
-		storeDbClearTable: (table: string) => Promise<number>;
-		storeDbStats: () => Promise<DbStats>;
-		storeSeenWrite: (entry: SeenWriteEntry) => Promise<null>;
-		storeSeenList: (limit: number, offset: number, filter: SeenFilter | null, thumbnails: boolean) => Promise<SeenEntry[]>;
-		storeSeenCount: (filter: SeenFilter | null) => Promise<number>;
-		storeSeenCountries: () => Promise<string[]>;
-		storeSeenMaps: () => Promise<SeenMapInfo[]>;
-		storeSeenClear: () => Promise<null>;
-		storeReviewCreate: (session: ReviewCreate) => Promise<ReviewSession>;
-		storeReviewGet: (mapId: string, sourceKey: string) => Promise<ReviewSession | null>;
-		storeReviewList: (mapId: string, status: string | null) => Promise<ReviewSession[]>;
-		storeReviewUpdate: (update: ReviewUpdate) => Promise<null>;
-		storeReviewDelete: (id: string) => Promise<null>;
-		storeCommit: (mapId: string, message: string | null) => Promise<string>;
-		storeListCommits: (mapId: string) => Promise<CommitInfo[]>;
-		storeCheckoutCommit: (mapId: string, commitId: string) => Promise<null>;
-		storeGetCommitDelta: (mapId: string, commitId: string) => Promise<CommitDelta>;
-		valiGenerate: (definition: string) => Promise<ValiLocation[]>;
-		valiDownload: (country: string | null, full: boolean, updates: boolean) => Promise<null>;
-		valiCancel: () => Promise<void>;
-		valiSubdivisions: (country: string) => Promise<string>;
-	};
+	cmd: Cmd;
 	invoke: typeof invoke;
 	shell: {
 		Command: typeof Command;
