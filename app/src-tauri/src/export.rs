@@ -123,6 +123,12 @@ fn location_to_coord(
             Value::Null
         },
     );
+    if let Some(ref provider) = loc.provider {
+        // Omit the default Google provider so export stays close to classic GG JSON.
+        if provider != "google" {
+            c.insert("provider".into(), json!(provider));
+        }
+    }
 
     for k in ["countryCode", "stateCode"] {
         c.insert(
@@ -157,8 +163,13 @@ fn location_to_coord(
                 .collect();
             extra.insert("tags".into(), json!(names));
         }
+        // Google historically kept unpinned panoId under extra; alt providers use top-level.
         if !pinned && loc.pano_id.is_some() {
-            extra.insert("panoId".into(), json!(loc.pano_id));
+            if loc.provider.as_deref().unwrap_or("google") == "google" {
+                extra.insert("panoId".into(), json!(loc.pano_id));
+            } else {
+                c.insert("panoId".into(), json!(loc.pano_id));
+            }
         }
         if !extra.is_empty() {
             c.insert("extra".into(), Value::Object(extra));

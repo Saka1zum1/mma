@@ -21,6 +21,7 @@ fn loc_with_tags(id: u32, tags: Vec<u32>) -> Location {
         pitch: 0.0,
         zoom: 1.0,
         pano_id: None,
+        provider: None,
         flags: crate::types::LocationFlags::empty(),
         tags,
         extra: None,

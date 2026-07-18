@@ -14,6 +14,7 @@ fn make_loc(
         pitch: 5.0,
         zoom: 3.0,
         pano_id: Some("PANO".into()),
+        provider: None,
         flags,
         tags,
         extra: extra.as_ref().and_then(crate::types::RawExtra::from_map),

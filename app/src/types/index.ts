@@ -88,6 +88,7 @@ export function createLocation(partial: Partial<Location> & LatLng): Location {
 		pitch: 0,
 		zoom: 0,
 		panoId: null,
+		provider: "google",
 		flags: LocationFlag.None,
 		tags: [],
 		extra: null,
@@ -121,7 +122,14 @@ export function applyLocationPatch(loc: Location, patch: LocationPatch): Locatio
 export type SortMode = "name" | "created" | "opened" | "amount";
 export type TagSortMode = "default" | "name" | "amount";
 
-export type WorkArea = "overview" | "location" | "duplicates" | "import" | "plugin" | "diff";
+export type WorkArea =
+	| "overview"
+	| "location"
+	| "duplicates"
+	| "import"
+	| "plugin"
+	| "providers"
+	| "diff";
 
 /** Hex like "#1098ad"; legacy stored prefs may hold an Open Props ramp name. */
 export type SvColor = string;
