@@ -620,6 +620,11 @@ input {
 	--accent-muted: #1098ad26;
 	--on-accent: #fff;
 
+	/* primary actions */
+	--action: #74b816;
+	--action-hover: #8bdb1a;
+	--on-action: #fff;
+
 	--constructive: var(--lime-7);
 	--destructive: var(--red-10);
 	--deconstructive: var(--choco-5);
@@ -705,8 +710,8 @@ summary.button {
 	display: block;
 }
 .button--primary {
-	background-color: var(--accent);
-	color: var(--on-accent);
+	background-color: var(--action);
+	color: var(--on-action);
 	border-color: transparent;
 }
 .button--destructive {
@@ -727,7 +732,7 @@ summary.button {
 	background-image: linear-gradient(#ffffff0a, #ffffff0a);
 }
 .button--primary:hover:not(:disabled) {
-	background-color: var(--accent-hover);
+	background-color: var(--action-hover);
 	background-image: none;
 }
 .button--ghost:hover:not(:disabled) {
