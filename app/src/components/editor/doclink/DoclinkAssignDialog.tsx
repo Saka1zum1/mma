@@ -112,7 +112,7 @@ export function DoclinkAssignDialog({
 						type="button"
 						className="button"
 						disabled={!docRef || assignments.size === 0}
-						title="Remove this document's links from every tag (undoable)"
+						title="Remove this document's links from every tag"
 						onClick={() => void clearDoc()}
 					>
 						Clear doc links
