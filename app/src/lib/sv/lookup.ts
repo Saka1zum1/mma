@@ -9,12 +9,17 @@ import type { Location } from "@/bindings.gen";
 import { runConcurrent } from "@/lib/util/concurrent";
 
 import { SV_SEARCH_RADIUS, SV_CONCURRENCY } from "@/lib/sv/constants";
+import { installBaiduGoogleBridge } from "@/lib/sv/baidu/inject";
+import { prefixBaidu, stripBaidu } from "@/lib/sv/baidu/prefix";
+import { getLocationProvider } from "@/lib/sv/providers/types";
 import { type RequireNonNull } from "@/types/util";
 
 /** A single historical panorama entry (pano ID + capture date). */
 export interface PanoReference {
 	pano: string;
 	date: Date;
+	/** Optional per-capture camera label (provider metadata). */
+	cameraType?: string;
 }
 
 /** Normalize the various date formats opensv returns into a Date. */
@@ -65,6 +70,27 @@ export interface ResolvedPano {
 }
 
 export async function resolvePano(loc: Location): Promise<ResolvedPano> {
+	// Baidu: native opensv lifecycle with BAIDU: ids (inject bridge, no PanoProvider).
+	if (getLocationProvider(loc) === "baidu") {
+		await installBaiduGoogleBridge();
+		const pinned = hasLoadAsPanoId(loc);
+		const viewerId = loc.panoId ? prefixBaidu(loc.panoId) : null;
+		let resolved: google.maps.StreetViewResolvedPanoramaData | null = null;
+		if (viewerId) {
+			resolved = await fetchPanoData({ pano: viewerId });
+		}
+		resolved ??= await fetchPanoData({
+			location: { lat: loc.lat, lng: loc.lng },
+			radius: SV_SEARCH_RADIUS,
+		});
+		const got = resolved?.location?.pano ?? null;
+		const isFallback =
+			Boolean(pinned && viewerId) &&
+			got != null &&
+			stripBaidu(got) !== stripBaidu(viewerId!);
+		return { pano: resolved, isFallback };
+	}
+
 	const pinned = hasLoadAsPanoId(loc);
 	let resolved: google.maps.StreetViewResolvedPanoramaData | null = null;
 	if (pinned && loc.panoId) {
@@ -354,6 +380,7 @@ export async function lookupStreetView(
 		lng: pos.lng(),
 		heading,
 		panoId: chosen.location.pano ?? null,
+		provider: "google",
 		flags: !isDefault || opts.defaultPanoId ? LocationFlag.LoadAsPanoId : LocationFlag.None,
 	});
 }
@@ -402,6 +429,7 @@ export async function followLinkedPanos(
 				lng: pos.lng(),
 				heading: best.heading,
 				panoId: best.pano,
+				provider: "google",
 				flags: LocationFlag.LoadAsPanoId,
 			}),
 		);
