@@ -62,7 +62,8 @@ jobs:
 
       # Beta/prerelease builds skip updater signing when secrets are unavailable
       # (tauri fails the whole build with "Missing comment in secret key" otherwise).
-      - name: Disable updater artifacts for unsigned prereleases
+      # Also drop MSI: WiX requires numeric-only prerelease ids (rejects "beta.1").
+      - name: Adjust tauri.conf for unsigned prereleases
         if: contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') || contains(inputs.tag, '-beta') || contains(inputs.tag, '-alpha') || contains(inputs.tag, '-rc')
         working-directory: app
         run: |
@@ -72,8 +73,10 @@ jobs:
             const c = JSON.parse(fs.readFileSync(p, 'utf8'));
             c.bundle = c.bundle || {};
             c.bundle.createUpdaterArtifacts = false;
+            // Keep NSIS/exe; MSI rejects non-numeric prerelease identifiers.
+            c.bundle.targets = ['nsis', 'app', 'dmg', 'appimage', 'deb'];
             fs.writeFileSync(p, JSON.stringify(c, null, '\t') + '\n');
-            console.log('createUpdaterArtifacts=false for prerelease build');
+            console.log('prerelease: createUpdaterArtifacts=false, targets without msi');
           "
 
       - name: Build Tauri app
