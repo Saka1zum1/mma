@@ -72,10 +72,6 @@
 	border-radius: 0 0 4px 4px;
 	background: var(--item-color);
 	position: relative;
-	scrollbar-width: none;
-}
-.doclink-panel__body::-webkit-scrollbar {
-	display: none;
 }
 
 /* Raw-HTML fallback renders the doc with Google's own (light) styling. */
