@@ -36,9 +36,13 @@ async function main() {
     fs.symlinkSync(path.join(appDir, "node_modules"), path.join(tmp, "node_modules"), "junction");
 
     // Mirror entrypoint.ts against the emitted tree ("../../app/src/X" -> "./X").
-    const entrySrc = fs
-      .readFileSync(path.join(__dirname, "entrypoint.ts"), "utf-8")
-      .replace(/(["'])\.\.\/\.\.\/app\/src\//g, "$1./");
+    // The host modules are pulled in for their `declare module "@/lib/map/host"`
+    // augmentations - without them HostInstances stays empty and MapHost = never.
+    const entrySrc =
+      fs
+        .readFileSync(path.join(__dirname, "entrypoint.ts"), "utf-8")
+        .replace(/(["'])\.\.\/\.\.\/app\/src\//g, "$1./") +
+      `import "./lib/map/googleHost";\nimport "./lib/map/maplibreHost";\n`;
     const entry = path.join(tmp, "entrypoint.d.ts");
     fs.writeFileSync(entry, entrySrc);
 
@@ -47,7 +51,7 @@ async function main() {
 
     const bundle = await rollup({
       input: entry,
-      external: [/^react/, /^@deck\.gl\//, /^@tauri-apps\//],
+      external: [/^react/, /^@deck\.gl\//, /^@tauri-apps\//, /^maplibre-gl/],
       plugins: [
         dts({
           respectExternal: true,
@@ -65,6 +69,29 @@ async function main() {
     const { output } = await bundle.generate({ format: "es" });
     await bundle.close();
     let content = output[0].code;
+
+    // Module augmentations survive the bundle verbatim, but their target path
+    // no longer exists in the flat file - hoist the members into the bundled
+    // interface and drop the `declare module` wrappers.
+    const augmented = new Map();
+    content = content.replace(
+      /declare module "[^"]+" \{\s*interface (\w+) \{([^}]*)\}\s*\}\n?/g,
+      (_m, name, members) => {
+        const lines = members
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => `    ${l}`);
+        augmented.set(name, [...(augmented.get(name) ?? []), ...lines]);
+        return "";
+      },
+    );
+    for (const [name, lines] of augmented) {
+      content = content.replace(
+        new RegExp(`(interface ${name} \\{)`),
+        `$1\n${lines.join("\n")}`,
+      );
+    }
 
     // rollup-plugin-dts appends $1 to names that collide across modules.
     for (const name of ["Location", "Selection", "Plugin", "MMA", "open"]) {
