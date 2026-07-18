@@ -1,7 +1,7 @@
 //! Tauri command layer and URI scheme proxies for the MMA desktop app.
 //!
 //! This is the application entry point. It registers all IPC commands (via tauri-specta),
-//! custom URI scheme handlers (svtile, gmaps, googl, mma-buf, mma-plugin), and Tauri plugins.
+//! custom URI scheme handlers (svtile, gmaps, bmaps, googl, mma-buf, mma-plugin), and Tauri plugins.
 //! No business logic lives here -- commands delegate to `location_store`, `map_meta`, `import`, etc.
 
 use crate::types::{AppError, AppResult};
@@ -25,6 +25,12 @@ pub fn promote_serialize_bindings(path: &std::path::Path) {
         out.push_str(&line.replace("_Serialize", ""));
         out.push('\n');
     }
+    // `MapSettings` uses `#[serde(default)]`, so specta marks every field optional —
+    // including `providers`. The generated IPC transforms then access
+    // `.providers.apple` etc. without a null check and fail `strict` TS (and
+    // dts-bundle-generator). Rust always emits `providers` (Default), so keep it
+    // required in the unified bindings type.
+    let out = out.replace("providers?: ProvidersSettings", "providers: ProvidersSettings");
     std::fs::write(path, out.as_bytes()).expect("write bindings");
 }
 
@@ -510,6 +516,14 @@ pub(crate) fn proxy_gmaps(
     }
 }
 
+/// bmaps: forward a request to j.map.baidu.com (Baidu share short-link API).
+pub(crate) fn proxy_bmaps(url: &str) -> tauri::http::Response<Vec<u8>> {
+    match proxy_client().get(url).send() {
+        Ok(resp) => relay(resp, "application/json"),
+        Err(e) => proxy_error(format!("bmaps fetch error: {e}")),
+    }
+}
+
 /// googl: resolve a goo.gl / maps.app.goo.gl short link by reading its redirect
 /// `Location` header; returns the target URL as a JSON string.
 pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
@@ -825,6 +839,17 @@ pub fn run() {
             std::thread::spawn(move || {
                 responder.respond(proxy_gmaps(method, &url, content_type, user_agent, body))
             });
+        })
+        .register_asynchronous_uri_scheme_protocol("bmaps", |_ctx, req, responder| {
+            let path = req.uri().path().to_string();
+            let query = req
+                .uri()
+                .query()
+                .map(|q| format!("?{q}"))
+                .unwrap_or_default();
+            // path is usually "/" for the short-link API
+            let url = format!("https://j.map.baidu.com{path}{query}");
+            std::thread::spawn(move || responder.respond(proxy_bmaps(&url)));
         })
         .register_asynchronous_uri_scheme_protocol("googl", |_ctx, req, responder| {
             let id = req.uri().path().trim_start_matches('/').to_string();
