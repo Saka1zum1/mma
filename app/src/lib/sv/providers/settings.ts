@@ -60,8 +60,9 @@ export const PROVIDER_CATALOG: SvProviderCatalogEntry[] = [
 		id: "tencent",
 		label: "Tencent",
 		icon: mdiEarth,
+		/** Same as Baidu — blank clicks race both; priority does not pick a winner. */
 		priority: 5,
-		available: false,
+		available: true,
 	},
 	{
 		id: "yandex",
@@ -274,7 +275,11 @@ export function subscribeProvidersSettings(cb: () => void): () => void {
 	};
 }
 
-/** Enabled alternate providers sorted by preferred + catalog priority. */
+/**
+ * Enabled alternate providers sorted by preferred + catalog priority.
+ * Baidu/Tencent blank clicks ignore relative priority and race in parallel
+ * (see createChinaLocationAtLatLng); sorting still orders China vs Apple/etc.
+ */
 export function getEnabledAltProviders(): SvProviderCatalogEntry[] {
 	return PROVIDER_CATALOG.filter((p) => {
 		if (!p.available) return false;
