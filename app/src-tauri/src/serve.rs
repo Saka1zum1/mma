@@ -113,8 +113,12 @@ fn register_web_schemes() {
         } else {
             format!("/{}", req.path)
         };
-        let url = format!("https://j.map.baidu.com{}{}", path, qs(&req.query));
-        relay(crate::proxy_bmaps(&url))
+        if req.query.split('&').any(|kv| kv == "mma_resolve=1") {
+            relay(crate::resolve_bmapslink(&path))
+        } else {
+            let url = format!("https://j.map.baidu.com{}{}", path, qs(&req.query));
+            relay(crate::proxy_bmaps(&url))
+        }
     });
     register_scheme("googl", |req: SchemeRequest| {
         let mapsapp = req.query.split('&').any(|kv| kv == "source=mapsapp");

@@ -862,8 +862,59 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
 
     let now = now_unix();
 
-    fn default_import_provider<'a>() -> Option<Cow<'a, str>> {
-        Some(Cow::Borrowed("google"))
+    /// Map JSON `source` / legacy `provider` wire values onto internal provider ids.
+    /// Also strips `APPLE:` / `BAIDU:` / `TENCENT:` / `YANDEX:` panoId prefixes
+    /// (infers provider from prefix when no source/provider is set).
+    fn normalize_import_provider(
+        source: Option<&str>,
+        provider: Option<&str>,
+        pano_id: &mut Option<String>,
+    ) -> String {
+        const PREFIXES: &[(&str, &str)] = &[
+            ("APPLE:", "apple"),
+            ("BAIDU:", "baidu"),
+            ("TENCENT:", "tencent"),
+            ("YANDEX:", "yandex"),
+        ];
+
+        let from_prefix = {
+            let mut inferred: Option<&'static str> = None;
+            if let Some(id) = pano_id.take() {
+                for (prefix, provider) in PREFIXES {
+                    if let Some(raw) = id.strip_prefix(prefix) {
+                        *pano_id = Some(raw.to_string());
+                        inferred = Some(provider);
+                        break;
+                    }
+                }
+                if pano_id.is_none() {
+                    *pano_id = Some(id);
+                }
+            }
+            inferred
+        };
+
+        let wire_to_internal = |raw: &str| -> Option<&'static str> {
+            match raw {
+                "apple_pano" | "apple" => Some("apple"),
+                "baidu_pano" | "baidu" => Some("baidu"),
+                "qq_pano" | "tencent" => Some("tencent"),
+                "yandex_pano" | "yandex" => Some("yandex"),
+                "google" => Some("google"),
+                _ => None,
+            }
+        };
+
+        if let Some(s) = source.and_then(wire_to_internal) {
+            return s.to_string();
+        }
+        if let Some(p) = provider.and_then(wire_to_internal) {
+            return p.to_string();
+        }
+        if let Some(p) = from_prefix {
+            return p.to_string();
+        }
+        "google".into()
     }
 
     #[derive(serde::Deserialize)]
@@ -880,8 +931,11 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
         zoom: f64,
         #[serde(borrow, rename = "panoId", alias = "pano", alias = "pano_id")]
         pano_id: Option<Cow<'a, str>>,
-        /// Absent on pre-provider GeoGuessr JSON ? `"google"`.
-        #[serde(borrow, default = "default_import_provider")]
+        /// GeoGuessr-style wire discriminator (`apple_pano`, `baidu_pano`, …).
+        #[serde(borrow, default)]
+        source: Option<Cow<'a, str>>,
+        /// Internal id (`apple`/`baidu`) or legacy wire values (`apple_pano`, …).
+        #[serde(borrow, default)]
         provider: Option<Cow<'a, str>>,
         // Raw slices (no value tree). `null` deserializes to `None`, so `Some` means a
         // real value that must be folded into `extra`.
@@ -923,7 +977,9 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
                 };
 
                 let has_top_pano = raw.pano_id.is_some();
-                let top_pano = raw.pano_id.map(|c| c.into_owned());
+                let mut top_pano = raw.pano_id.map(|c| c.into_owned());
+                let source = raw.source.as_deref();
+                let provider_raw = raw.provider.as_deref();
                 let extra_str = raw.extra.map(|rv| rv.get());
 
                 // Fast path unless we must edit `extra` beyond stripping tags: folding a
@@ -969,7 +1025,8 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
                     None // no extra at all
                 };
 
-                let pano_id = top_pano.or(extra_pano);
+                let mut pano_id = top_pano.take().or(extra_pano);
+                let provider = normalize_import_provider(source, provider_raw, &mut pano_id);
                 let flags = if has_top_pano {
                     LocationFlags::LOAD_AS_PANO_ID
                 } else {
@@ -984,11 +1041,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
                     pitch: raw.pitch,
                     zoom: raw.zoom,
                     pano_id,
-                    provider: Some(
-                        raw.provider
-                            .map(|c| c.into_owned())
-                            .unwrap_or_else(|| "google".into()),
-                    ),
+                    provider: Some(provider),
                     flags,
                     tags,
                     extra,

@@ -524,6 +524,41 @@ pub(crate) fn proxy_bmaps(url: &str) -> tauri::http::Response<Vec<u8>> {
     }
 }
 
+/// Expand a `j.map.baidu.com/...` short link by reading its redirect `Location`
+/// header; returns the target URL as a JSON string (same shape as `googl`).
+pub(crate) fn resolve_bmapslink(path: &str) -> tauri::http::Response<Vec<u8>> {
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    let url = format!("https://j.map.baidu.com{path}");
+    match resolve_client().get(&url).send() {
+        Ok(resp) => match resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+        {
+            Some(location) => tauri::http::Response::builder()
+                .status(200)
+                .header("Content-Type", "application/json")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(
+                    serde_json::to_string(location)
+                        .unwrap_or_default()
+                        .into_bytes(),
+                )
+                .unwrap(),
+            None => tauri::http::Response::builder()
+                .status(404)
+                .header("Access-Control-Allow-Origin", "*")
+                .body(Vec::new())
+                .unwrap(),
+        },
+        Err(e) => proxy_error(format!("bmaps resolve error: {e}")),
+    }
+}
+
 /// googl: resolve a goo.gl / maps.app.goo.gl short link by reading its redirect
 /// `Location` header; returns the target URL as a JSON string.
 pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
@@ -842,14 +877,21 @@ pub fn run() {
         })
         .register_asynchronous_uri_scheme_protocol("bmaps", |_ctx, req, responder| {
             let path = req.uri().path().to_string();
-            let query = req
-                .uri()
-                .query()
-                .map(|q| format!("?{q}"))
-                .unwrap_or_default();
-            // path is usually "/" for the short-link API
-            let url = format!("https://j.map.baidu.com{path}{query}");
-            std::thread::spawn(move || responder.respond(proxy_bmaps(&url)));
+            let query = req.uri().query().unwrap_or("").to_string();
+            let resolve = query.split('&').any(|kv| kv == "mma_resolve=1");
+            std::thread::spawn(move || {
+                if resolve {
+                    responder.respond(resolve_bmapslink(&path));
+                } else {
+                    let qs = if query.is_empty() {
+                        String::new()
+                    } else {
+                        format!("?{query}")
+                    };
+                    let url = format!("https://j.map.baidu.com{path}{qs}");
+                    responder.respond(proxy_bmaps(&url));
+                }
+            });
         })
         .register_asynchronous_uri_scheme_protocol("googl", |_ctx, req, responder| {
             let id = req.uri().path().trim_start_matches('/').to_string();
