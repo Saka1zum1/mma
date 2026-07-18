@@ -59,7 +59,6 @@ export class MovementPlugin extends AbstractPlugin {
 	private lastProcessedMoveEvent = 0;
 	private movementEnabled = true;
 	private readonly canMoveWithKeyboard: boolean;
-	private current: LookaroundPano | null = null;
 	private nearbyPanos: NearbyEntry[] = [];
 
 	constructor(psv: MovementPsv, options: { canMoveWithKeyboard?: boolean }) {
@@ -95,7 +94,6 @@ export class MovementPlugin extends AbstractPlugin {
 	}
 
 	updatePanoMarkers(refPano: LookaroundPano, panos: LookaroundPano[]): void {
-		this.current = refPano;
 		this.nearbyPanos = [];
 		const cameraHeight = this.getCameraHeight(refPano);
 		const refEle = refPano.elevation ?? 0;
@@ -258,7 +256,7 @@ export class MovementPlugin extends AbstractPlugin {
 
 	private async navigateTo(pano: LookaroundPano): Promise<void> {
 		await this.psv.navigateTo(pano);
-		this.dispatchEvent(new CustomEvent("moved", { detail: pano }));
+		this.dispatchEvent(new CustomEvent("moved", { detail: pano }) as never);
 	}
 
 	private getClosestPanoMarker(

@@ -223,13 +223,13 @@ export async function createPanoViewer(
 			navigationCrossfadeDuration: config.navigationCrossfadeDuration,
 			upgradeCrossfadeDuration: config.upgradeCrossfadeDuration,
 			imageFormat: config.imageFormat,
-		},
+		} as never,
 		minFov: config.minFov,
 		maxFov: config.maxFov,
 		defaultPitch: 0,
 		defaultYaw,
 		defaultZoomLvl: config.defaultZoomLevel,
-		navbar: null,
+		navbar: false,
 		// Custom cursor-anchored wheel handler (see installCursorAnchoredZoom).
 		mousewheel: false,
 		sphereCorrection: {

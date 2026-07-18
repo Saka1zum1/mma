@@ -46,15 +46,30 @@ type AdapterPsv = {
 	addEventListener: (type: string, listener: object) => void;
 };
 
+type LookAroundPanoData = {
+	imageFormat: ImageFormatValue;
+	apiBaseUrl: string;
+	navigationCrossfadeDisablesPanning: boolean;
+	navigationCrossfadeDuration: number;
+	upgradeCrossfadeDuration: number;
+};
+
+type MixAmountUniform = { value: number; elapsed: number; active: boolean };
+
 type CrossfadeMaterial = ShaderMaterial & {
 	uniforms: {
 		texture1: { value: Texture | null; userData: Record<string, unknown> };
 		texture2: { value: Texture | null; userData: Record<string, unknown> };
-		mixAmount: { value: number; elapsed: number; active: boolean };
+		mixAmount: MixAmountUniform;
 	};
 };
 
-export class LookAroundAdapter extends AbstractAdapter {
+export class LookAroundAdapter extends AbstractAdapter<
+	PanoPayload,
+	LookAroundPanoData,
+	Texture[],
+	Mesh
+> {
 	static override id = "lookaround";
 	static override supportsDownload = false;
 
@@ -152,11 +167,8 @@ export class LookAroundAdapter extends AbstractAdapter {
 			if (fovH != null) this.previousFovH = fovH;
 			return;
 		}
-		const mesh = this.createMesh();
-		(mesh as Mesh & { userData: Record<string, unknown> }).userData = {
-			photoSphereViewer: true,
-		};
-		(mesh as Mesh & { parent: unknown }).parent = this.psv.renderer.meshContainer;
+		const mesh = this.createMesh(this.psv.config.panoData);
+		mesh.userData = { photoSphereViewer: true };
 
 		mesh.updateMatrixWorld(true);
 
@@ -167,7 +179,7 @@ export class LookAroundAdapter extends AbstractAdapter {
 		this.previousFovH = fovH;
 	}
 
-	override createMesh(_panoData?: unknown, scale = 1): Mesh {
+	override createMesh(_panoData: LookAroundPanoData, scale = 1): Mesh {
 		const radius = CONSTANTS.SPHERE_RADIUS * scale;
 		const geometries = [];
 		this.meshesForFrustum = [];
@@ -332,7 +344,7 @@ export class LookAroundAdapter extends AbstractAdapter {
 		for (let i = 0; i < NUM_FACES; i++) {
 			const material = this.createCrossfadeMaterial();
 			material.polygonOffset = true;
-			material.polygonOffsetUnit = 1;
+			material.polygonOffsetUnits = 1;
 			material.polygonOffsetFactor = i * 2;
 			materials[i] = material;
 		}
@@ -364,7 +376,7 @@ export class LookAroundAdapter extends AbstractAdapter {
 				texture1: { value: null, userData: {} },
 				texture2: { value: null, userData: {} },
 				mixAmount: { value: 0.0, elapsed: 0.0, active: false },
-			},
+			} as CrossfadeMaterial["uniforms"],
 			glslVersion: GLSL3,
 		}) as CrossfadeMaterial;
 	}

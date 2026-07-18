@@ -193,7 +193,11 @@ async function parseBaiduLocation(url: URL): Promise<ParsedLocation | null> {
 
 	if (panoId) {
 		try {
-			const meta = await fetchBaiduMeta(panoId);
+			// Prefer sdata when online, but fall back to path coords quickly when offline.
+			const meta = await Promise.race([
+				fetchBaiduMeta(panoId),
+				new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_000)),
+			]);
 			if (meta) {
 				lat = meta.lat;
 				lng = meta.lng;
