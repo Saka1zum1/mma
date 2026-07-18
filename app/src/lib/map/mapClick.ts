@@ -9,7 +9,11 @@ import { lookupStreetView, showToast } from "@/lib/sv/lookup";
 import { tryInterceptClick } from "@/lib/map/mapState";
 import { createAppleLocationAtLatLng } from "@/lib/sv/lookaround/click";
 import { createBaiduLocationAtLatLng } from "@/lib/sv/baidu/click";
-import { getEnabledAltProviders } from "@/lib/sv/providers/settings";
+import {
+	getEnabledAltProviders,
+	getProviderSettings,
+} from "@/lib/sv/providers/settings";
+import type { AltSvProviderId } from "@/lib/sv/providers/types";
 import { openSeenEntry, isSeenOverlayActive, getSeenOverlayEntries } from "@/lib/seen/seenOverlay";
 import { openContextMenuLatLng, openContextMenuLocation } from "@/lib/sv/measure";
 import { trace } from "@/lib/util/debug";
@@ -176,12 +180,17 @@ export async function pickMarkerAt(
 // Click / hover pipeline
 // ---------------------------------------------------------------------------
 
+const NO_COVERAGE_TOAST = "No street view coverage found at this location";
+
+function toastNoCoverage(container?: HTMLElement | null): void {
+	if (container) showToast(container, NO_COVERAGE_TOAST);
+}
+
 /** Create a Google Street View location (default host). */
 async function createGoogleLocationAtLatLng(
 	lat: number,
 	lng: number,
 	zoom: number,
-	opts?: { container?: HTMLElement | null },
 ): Promise<Location | null> {
 	const ms = getCurrentMap()?.meta.settings;
 	const loc = await lookupStreetView(lat, lng, zoom, {
@@ -193,19 +202,33 @@ async function createGoogleLocationAtLatLng(
 		preferHigherQuality: ms?.preferHigherQuality,
 		minRadius: ms?.searchRadius ?? undefined,
 	});
-	if (!loc) {
-		if (opts?.container) showToast(opts.container, "No coverage found at this location.");
-		return null;
-	}
+	if (!loc) return null;
 	loc.provider = loc.provider ?? "google";
 	await addLocations([loc], { hideInDelta: true });
 	setActiveLocation(loc);
 	return loc;
 }
 
+async function tryAltProviderAtLatLng(
+	id: AltSvProviderId,
+	lat: number,
+	lng: number,
+): Promise<Location | null> {
+	switch (id) {
+		case "apple":
+			return createAppleLocationAtLatLng(lat, lng);
+		case "baidu":
+			return createBaiduLocationAtLatLng(lat, lng);
+		default:
+			return null;
+	}
+}
+
 /**
  * Create a location from a blank map click.
- * Preferred enabled alt provider wins; otherwise Google.
+ * Tries every enabled alt provider (preferred first); a miss on one never blocks
+ * the others. Google runs only when no alts are enabled, or when at least one
+ * tried alt has fallbackToGoogle. Toast only after every attempted provider misses.
  * Pin clicks never reach here — they activate via location.provider in LocationPreview.
  */
 export async function createLocationAtLatLng(
@@ -220,38 +243,31 @@ export async function createLocationAtLatLng(
 	if (active != null && isImportPreview(active)) return null;
 
 	const t = trace("add");
-	const preferred = getEnabledAltProviders()[0];
+	const alts = getEnabledAltProviders();
+	let fallbackToGoogle = false;
 
-	if (preferred?.id === "apple") {
-		const { loc, consumed } = await createAppleLocationAtLatLng(lat, lng);
-		t.step("apple");
+	for (const provider of alts) {
+		if (getProviderSettings(provider.id).fallbackToGoogle) fallbackToGoogle = true;
+		const loc = await tryAltProviderAtLatLng(provider.id, lat, lng);
+		t.step(provider.id);
 		if (loc) {
 			t.end();
 			return loc;
 		}
-		if (consumed) {
-			t.end();
-			return null;
-		}
-		// fallbackToGoogle
-	} else if (preferred?.id === "baidu") {
-		const { loc, consumed } = await createBaiduLocationAtLatLng(lat, lng);
-		t.step("baidu");
-		if (loc) {
-			t.end();
-			return loc;
-		}
-		if (consumed) {
-			t.end();
-			return null;
-		}
-		// fallbackToGoogle
 	}
 
-	const loc = await createGoogleLocationAtLatLng(lat, lng, zoom, opts);
-	t.step("google");
+	const tryGoogle = alts.length === 0 || fallbackToGoogle;
+	if (tryGoogle) {
+		const loc = await createGoogleLocationAtLatLng(lat, lng, zoom);
+		t.step("google");
+		t.end();
+		if (!loc) toastNoCoverage(opts?.container);
+		return loc;
+	}
+
 	t.end();
-	return loc;
+	toastNoCoverage(opts?.container);
+	return null;
 }
 
 // Capabilities a map surface grants its click pipeline. Behavior only — UI lives in the
