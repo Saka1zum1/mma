@@ -1,8 +1,29 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { parseDoclink, doclinkedTags } from "@/lib/doclink";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { parseDoclink, doclinkedTags, openDocHref } from "@/lib/doclink";
 import { gdocProvider } from "@/lib/doclink/gdoc";
 import type { Tag } from "@/bindings.gen";
+
+vi.mock("@tauri-apps/plugin-shell", async (orig) => ({
+	...(await orig()),
+	open: vi.fn(),
+}));
+vi.mock("@/lib/commands", async (orig) => ({
+	...(await orig()),
+	cmd: { storeFindNearby: vi.fn() },
+}));
+vi.mock("@/store/useMapStore", async (orig) => ({
+	...(await orig()),
+	setActiveLocation: vi.fn(),
+}));
+vi.mock("@/lib/map/mapClick", async (orig) => ({
+	...(await orig()),
+	addParsedLocations: vi.fn(),
+}));
+vi.mock("@/lib/data/importExport", async (orig) => ({
+	...(await orig()),
+	parseMapsUrl: vi.fn(),
+}));
 
 const DOC_ID = "1wsa06GGiq1LEGwhkiPP0FKIZJqdAiue";
 
@@ -259,5 +280,60 @@ describe("doclinkedTags", () => {
 			"3": tag(3),
 		};
 		expect(doclinkedTags(tags).map((t) => t.id)).toEqual([1]);
+	});
+});
+
+describe("openDocHref", () => {
+	const HREF = "https://www.google.com/maps/@1,2,3z";
+	const parsed = { lat: 10, lng: 20, panoId: "PANO_A", heading: 0, pitch: 0, zoom: 0 };
+	const loc = (id: number, panoId: string) => ({ id, lat: 10, lng: 20, panoId });
+
+	let openExternal: ReturnType<typeof vi.fn>;
+	let findNearby: ReturnType<typeof vi.fn>;
+	let setActive: ReturnType<typeof vi.fn>;
+	let addParsed: ReturnType<typeof vi.fn>;
+	let parseUrl: ReturnType<typeof vi.fn>;
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		openExternal = vi.mocked((await import("@tauri-apps/plugin-shell")).open);
+		findNearby = vi.mocked((await import("@/lib/commands")).cmd.storeFindNearby) as never;
+		setActive = vi.mocked((await import("@/store/useMapStore")).setActiveLocation);
+		addParsed = vi.mocked((await import("@/lib/map/mapClick")).addParsedLocations);
+		parseUrl = vi.mocked((await import("@/lib/data/importExport")).parseMapsUrl);
+		parseUrl.mockResolvedValue(parsed);
+	});
+
+	it("opens non-location hrefs externally", async () => {
+		parseUrl.mockResolvedValue(null);
+		await openDocHref("https://example.com/page");
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/page");
+		expect(findNearby).not.toHaveBeenCalled();
+		expect(addParsed).not.toHaveBeenCalled();
+	});
+
+	it("prefers the same-pano location over a nearer one", async () => {
+		const nearest = loc(1, "OTHER");
+		const samePano = loc(2, "PANO_A");
+		findNearby.mockResolvedValue([nearest, samePano]);
+		await openDocHref(HREF);
+		expect(setActive).toHaveBeenCalledWith(samePano);
+		expect(addParsed).not.toHaveBeenCalled();
+	});
+
+	it("falls back to the nearest location when no pano matches", async () => {
+		const nearest = loc(1, "OTHER");
+		findNearby.mockResolvedValue([nearest, loc(2, "ALSO_OTHER")]);
+		await openDocHref(HREF);
+		expect(setActive).toHaveBeenCalledWith(nearest);
+		expect(addParsed).not.toHaveBeenCalled();
+	});
+
+	it("adds the location when nothing is within the duplicate radius", async () => {
+		findNearby.mockResolvedValue([]);
+		await openDocHref(HREF);
+		expect(findNearby).toHaveBeenCalledWith(parsed.lat, parsed.lng, 2.0);
+		expect(setActive).not.toHaveBeenCalled();
+		expect(addParsed).toHaveBeenCalledWith([parsed]);
 	});
 });
