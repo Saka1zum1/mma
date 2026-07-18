@@ -20,9 +20,8 @@ describe("isPluginUpdatable", () => {
 		expect(isPluginUpdatable("1.0.0", undefined)).toBe(false);
 	});
 
-	// Plain inequality, not semver ordering — a downgrade still reads as "differs".
-	it("treats any mismatch as updatable, including lower registry versions", () => {
-		expect(isPluginUpdatable("1.1.0", "1.0.0")).toBe(true);
+	it("does not flag an update when the installed version is newer", () => {
+		expect(isPluginUpdatable("1.1.0", "1.0.0")).toBe(false);
 	});
 });
 

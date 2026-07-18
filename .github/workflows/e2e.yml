@@ -6,6 +6,9 @@ name: E2E Tests
 # Not a release gate — the release workflow does not wait on this.
 on:
   push:
+    branches:
+      - altproviders-integration
+      - cursor/beta-release-0bf8
     tags: ["v[0-9]*"]
   workflow_dispatch:
 
