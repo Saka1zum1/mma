@@ -41,7 +41,7 @@ export interface DocListItem {
 }
 
 export type DocBlock =
-	| { kind: "heading"; level: number; spans: InlineSpan[] }
+	| { kind: "heading"; level: number; spans: InlineSpan[]; anchor?: string }
 	| { kind: "paragraph"; align?: "center" | "right"; spans: InlineSpan[] }
 	| { kind: "list"; ordered: boolean; items: DocListItem[] }
 	| { kind: "image"; src: string; alt: string; width?: number; height?: number }

@@ -50,7 +50,7 @@ function Block({ block }: { block: DocBlock }) {
 		case "heading":
 			return createElement(
 				`h${Math.min(6, Math.max(1, block.level))}`,
-				null,
+				{ id: block.anchor },
 				<Spans spans={block.spans} />,
 			);
 		case "paragraph":

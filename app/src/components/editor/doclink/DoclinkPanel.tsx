@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
-import { mdiPin, mdiPinOutline, mdiOpenInNew, mdiClose, mdiRefresh } from "@mdi/js";
+import {
+	mdiPin,
+	mdiPinOutline,
+	mdiOpenInNew,
+	mdiClose,
+	mdiRefresh,
+	mdiBookOpenVariant,
+	mdiBookOpenOutline,
+} from "@mdi/js";
 import type { Selection, Tag } from "@/bindings.gen";
 import { useCurrentMap, useSelections } from "@/store/useMapStore";
 import {
@@ -98,6 +106,12 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 	const url: string | undefined = links[idx];
 	const docRef = url ? parseDoclink(url) : null;
 
+	// Whole-document mode: same doc, no anchor slice; scrolled to the linked
+	// section. Per-link, so it resets when the shown link changes.
+	const [wholeDoc, setWholeDoc] = useState(false);
+	useEffect(() => setWholeDoc(false), [url]);
+	const loadRef = wholeDoc && docRef ? { ...docRef, anchor: null } : docRef;
+
 	// Forced re-fetch: evict the doc's cached HTML, then bump the nonce to re-run the load.
 	const [refreshNonce, setRefreshNonce] = useState(0);
 	const onRefresh = useCallback(() => {
@@ -110,8 +124,8 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 		loading,
 		error,
 	} = useAsync(
-		() => (docRef ? loadSection(docRef).then(preloadSectionImages) : null),
-		[url, refreshNonce],
+		() => (loadRef ? loadSection(loadRef).then(preloadSectionImages) : null),
+		[url, refreshNonce, wholeDoc],
 	);
 	// Keep the previous section on screen while the next one loads (no blank flash);
 	// a small spinner overlays until the swap.
@@ -120,7 +134,14 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 	const shown = section ?? (loading ? lastSectionRef.current : null);
 	const bodyRef = useRef<HTMLDivElement>(null);
 	useLayoutEffect(() => {
-		if (section && bodyRef.current) bodyRef.current.scrollTop = 0;
+		const body = bodyRef.current;
+		if (!section || !body) return;
+		const anchor = wholeDoc ? docRef?.anchor : null;
+		const target = anchor ? body.querySelector(`#${CSS.escape(anchor)}`) : null;
+		body.scrollTop = target
+			? body.scrollTop + target.getBoundingClientRect().top - body.getBoundingClientRect().top
+			: 0;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [section]);
 
 	const onResizeDown = useCallback(
@@ -161,6 +182,20 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 						onClick={onRefresh}
 					>
 						<Icon path={mdiRefresh} />
+					</button>
+				</Tooltip>
+				<Tooltip
+					content={wholeDoc ? "Show linked section only" : "Show whole document"}
+					side="bottom"
+				>
+					<button
+						className="icon-button"
+						type="button"
+						aria-label="Toggle whole document"
+						disabled={!docRef?.anchor}
+						onClick={() => setWholeDoc((w) => !w)}
+					>
+						<Icon path={wholeDoc ? mdiBookOpenVariant : mdiBookOpenOutline} />
 					</button>
 				</Tooltip>
 				<Tooltip

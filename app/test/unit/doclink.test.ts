@@ -103,6 +103,12 @@ describe("gdoc extract", () => {
 		expect(s.html).toContain("pole text");
 	});
 
+	it("stamps heading anchors onto IR blocks (whole-doc scroll target)", () => {
+		const s = gdocProvider.extract(FIXTURE, refWith(null));
+		const anchors = (s.blocks ?? []).filter((b) => b.kind === "heading").map((b) => b.anchor);
+		expect(anchors).toEqual(["h.intro", "h.antenna", "h.sub", "h.pole"]);
+	});
+
 	it("reports a missing anchor", () => {
 		const s = gdocProvider.extract(FIXTURE, refWith("h.gone"));
 		expect(s.anchorFound).toBe(false);

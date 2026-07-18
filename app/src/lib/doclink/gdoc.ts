@@ -274,7 +274,9 @@ function convertElement(el: Element, rules: Map<string, StyleProps>, ref: DocRef
 	if (isHeading(el)) {
 		const spans: InlineSpan[] = [];
 		collectSpans(el, rules, ref, styleOf(el, rules), spans);
-		if (spansText(spans).trim()) out.push({ kind: "heading", level: headingLevel(el), spans });
+		if (spansText(spans).trim()) {
+			out.push({ kind: "heading", level: headingLevel(el), spans, anchor: el.id || undefined });
+		}
 		out.push(...imageBlocks(el));
 		return;
 	}
