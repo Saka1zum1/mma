@@ -181,7 +181,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 
 	useHotkey(useBinding("downloadPanoTile"), () => {
 		const panoId = pano()?.getPano();
-		if (panoId) downloadPano(panoId);
+		if (panoId) void downloadPano(panoId, { location, zoom: 5 });
 	});
 	useHotkey(useBinding("nextPanoDate"), () => {
 		if (!panoDates.length) return;
