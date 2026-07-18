@@ -176,9 +176,15 @@
 }
 .doclink-assign__url {
 	margin-top: 4px;
+	display: flex;
+	gap: 0.5rem;
 }
 .doclink-assign__url .input {
-	width: 100%;
+	flex: 1;
+	min-width: 0;
+}
+.doclink-assign__url .button {
+	flex-shrink: 0;
 }
 .doclink-assign__hint {
 	margin: 0.5rem 0 0;

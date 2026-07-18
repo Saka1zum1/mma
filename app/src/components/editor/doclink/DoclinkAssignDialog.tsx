@@ -65,6 +65,21 @@ export function DoclinkAssignDialog({
 		return byAnchor;
 	}, [tags, docRef]);
 
+	// Refresh path for reimports: import only adopts doclinks onto tags that
+	// have none, so clearing this doc's links first lets a reimport repopulate.
+	const clearDoc = async () => {
+		if (!docRef) return;
+		const updates = tags
+			.filter((t) => anchorsInDoc(t, docRef.docId).size > 0)
+			.map((t) => ({
+				id: t.id,
+				patch: {
+					doclinks: (t.doclinks ?? []).filter((u) => parseDoclink(u)?.docId !== docRef.docId),
+				},
+			}));
+		if (updates.length > 0) await updateTags(updates);
+	};
+
 	const toggle = async (tag: Tag, anchor: string) => {
 		if (!docRef) return;
 		const target = headingUrl(docRef.docId, anchor);
@@ -93,6 +108,15 @@ export function DoclinkAssignDialog({
 						value={url}
 						onChange={(e) => setUrlInput(e.target.value)}
 					/>
+					<button
+						type="button"
+						className="button"
+						disabled={!docRef || assignments.size === 0}
+						title="Remove this document's links from every tag (undoable)"
+						onClick={() => void clearDoc()}
+					>
+						Clear doc links
+					</button>
 				</div>
 				{!docRef ? (
 					<p className="doclink-assign__hint">Paste a link to a Google Doc to load its headings.</p>

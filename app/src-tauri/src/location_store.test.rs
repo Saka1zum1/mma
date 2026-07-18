@@ -3005,6 +3005,44 @@ fn reconcile_tags_create_missing_with_source_color() {
 }
 
 #[test]
+fn reconcile_tags_doclinks_claimed_when_target_empty() {
+    let mut target_tags: HashMap<u32, Tag> =
+        [(3, tag(3, "rural", "#222222"))].into_iter().collect();
+    let mut next = 4;
+    let source = Tag {
+        doclinks: vec!["https://docs.google.com/document/d/x/edit#heading=h.abc".into()],
+        ..tag(7, "Rural", "#111111")
+    };
+    let (_, changed) = reconcile_tags_by_name(&[source.clone()], &mut target_tags, &mut next);
+    assert!(changed, "doclink adoption must mark tags as changed");
+    assert_eq!(target_tags.get(&3).unwrap().doclinks, source.doclinks);
+}
+
+#[test]
+fn reconcile_tags_doclinks_never_overwrite_existing() {
+    let mut target_tags: HashMap<u32, Tag> = [(
+        3,
+        Tag {
+            doclinks: vec!["https://docs.google.com/document/d/kept/edit#heading=h.kept".into()],
+            ..tag(3, "rural", "#222222")
+        },
+    )]
+    .into_iter()
+    .collect();
+    let mut next = 4;
+    let source = Tag {
+        doclinks: vec!["https://docs.google.com/document/d/new/edit#heading=h.new".into()],
+        ..tag(7, "Rural", "#111111")
+    };
+    let (_, changed) = reconcile_tags_by_name(&[source], &mut target_tags, &mut next);
+    assert!(!changed, "no adoption means no tag change");
+    assert_eq!(
+        target_tags.get(&3).unwrap().doclinks,
+        vec!["https://docs.google.com/document/d/kept/edit#heading=h.kept".to_string()]
+    );
+}
+
+#[test]
 fn reconcile_tags_dedupes_same_name_within_batch() {
     let mut target_tags: HashMap<u32, Tag> = Default::default();
     let mut next = 1;

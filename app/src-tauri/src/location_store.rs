@@ -2686,6 +2686,10 @@ pub(crate) fn split_new_locations(
 /// existing tag with `order: None`) is appended after the target's max order,
 /// dense, sorted by (source order, name). Targets with a concrete order keep
 /// it; unordered source tags stay unordered.
+///
+/// Doclinks follow the same claim-if-empty rule: a matched target with no
+/// doclinks adopts the source's list; existing assignments are never
+/// overwritten by import.
 pub(crate) fn reconcile_tags_by_name(
     source_tags: &[Tag],
     target_tags: &mut HashMap<u32, Tag>,
@@ -2697,6 +2701,7 @@ pub(crate) fn reconcile_tags_by_name(
         .collect();
     let mut remap: HashMap<u32, u32> = HashMap::new();
     let mut created = false;
+    let mut adopted_doclinks = false;
     let mut claims: Vec<(u32, u32, String)> = Vec::new();
     let mut claimed: std::collections::HashSet<u32> = std::collections::HashSet::new();
     for tag in source_tags {
@@ -2725,10 +2730,17 @@ pub(crate) fn reconcile_tags_by_name(
                 claims.push((target_id, src_order, lower));
             }
         }
+        if !tag.doclinks.is_empty() {
+            let target = target_tags.get_mut(&target_id).unwrap();
+            if target.doclinks.is_empty() {
+                target.doclinks = tag.doclinks.clone();
+                adopted_doclinks = true;
+            }
+        }
         remap.insert(tag.id, target_id);
     }
     claims.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
-    let changed = created || !claims.is_empty();
+    let changed = created || adopted_doclinks || !claims.is_empty();
     let mut next_order = target_tags
         .values()
         .filter_map(|t| t.order)
