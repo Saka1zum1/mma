@@ -4,6 +4,8 @@ import { findPanoProvider, type PanoCameraBadge } from "@/lib/sv/panoProvider";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { BAIDU_CAMERA_BADGE, baiduSpawnPanoId } from "@/lib/sv/baidu/session";
 import { isBaiduPanoId } from "@/lib/sv/baidu/prefix";
+import { TENCENT_CAMERA_BADGE, tencentSpawnPanoId } from "@/lib/sv/tencent/session";
+import { isTencentPanoId } from "@/lib/sv/tencent/prefix";
 import { PanoType } from "@/types";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useActiveLocation } from "@/store/useMapStore";
@@ -43,13 +45,17 @@ export function useCameraType(panoId: string | null): DisplayCameraBadge | null 
 	const provider = active ? findPanoProvider(active) : null;
 	const isBaidu =
 		(active != null && getLocationProvider(active) === "baidu") || isBaiduPanoId(panoId);
-	const providerId = isBaidu ? "baidu" : (provider?.id ?? "");
+	const isTencent =
+		(active != null && getLocationProvider(active) === "tencent") || isTencentPanoId(panoId);
+	const providerId = isBaidu ? "baidu" : isTencent ? "tencent" : (provider?.id ?? "");
 	const spawnId = active
 		? isBaidu
 			? baiduSpawnPanoId(active)
-			: provider?.getSpawnPanoId
-				? provider.getSpawnPanoId(active)
-				: null
+			: isTencent
+				? tencentSpawnPanoId(active)
+				: provider?.getSpawnPanoId
+					? provider.getSpawnPanoId(active)
+					: null
 		: null;
 
 	const fromDates =
@@ -64,6 +70,7 @@ export function useCameraType(panoId: string | null): DisplayCameraBadge | null 
 		if (!panoId || !active) return null;
 
 		if (isBaidu) return { source: "provider", badge: BAIDU_CAMERA_BADGE };
+		if (isTencent) return { source: "provider", badge: TENCENT_CAMERA_BADGE };
 
 		if (provider?.resolveCameraBadge) {
 			const badge = provider.resolveCameraBadge(panoId, active, fromDates);
@@ -80,5 +87,5 @@ export function useCameraType(panoId: string | null): DisplayCameraBadge | null 
 		}
 		const t = asBuiltinCameraType(data.extra.cameraType);
 		return t ? { source: "builtin", type: t } : null;
-	}, [panoId, providerId, spawnId, fromDates, active?.id, isBaidu]).data;
+	}, [panoId, providerId, spawnId, fromDates, active?.id, isBaidu, isTencent]).data;
 }

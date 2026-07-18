@@ -516,7 +516,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 				</div>
 			)}
 			<div className="bulk-operation__status">
-				Supports Google, Baidu, and Apple Look Around in the same batch.
+				Supports Google, Baidu, Tencent, and Apple Look Around in the same batch.
 				Tile mode is Google-only; Apple skips thumbnail mode.
 			</div>
 			<label className="bulk-operation__option">

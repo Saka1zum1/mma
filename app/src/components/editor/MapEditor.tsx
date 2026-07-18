@@ -59,6 +59,7 @@ import { useSoleEnabledProviderId } from "@/components/editor/providers/useProvi
 import { ProviderIcon } from "@/components/editor/providers/ProviderIcon";
 import { startLookAroundProvider } from "@/lib/sv/lookaround/bootstrap";
 import { startBaiduProvider } from "@/lib/sv/baidu/bootstrap";
+import { startTencentProvider } from "@/lib/sv/tencent/bootstrap";
 import SameLocation from "@/components/editor/SameLocation";
 import { log } from "@/lib/util/log";
 import { useCountrySelect } from "@/lib/map/useCountrySelect";
@@ -259,6 +260,7 @@ export function MapEditor() {
 		let cancelled = false;
 		const stopLookaround = startLookAroundProvider();
 		const stopBaidu = startBaiduProvider();
+		const stopTencent = startTencentProvider();
 		Promise.all([pluginsReady, waitForMapHost()]).then(() => {
 			if (cancelled) return;
 			activatePlugins();
@@ -268,6 +270,7 @@ export function MapEditor() {
 			deactivatePlugins();
 			stopLookaround();
 			stopBaidu();
+			stopTencent();
 		};
 	}, [map?.meta.id]);
 

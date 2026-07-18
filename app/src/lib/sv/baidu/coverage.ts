@@ -81,7 +81,7 @@ function rgbToHue(r: number, g: number, b: number): number {
 	const min = Math.min(R, G, B);
 	if (max === min) return 0;
 	const d = max - min;
-	let h = 0;
+	let h : number;
 	switch (max) {
 		case R:
 			h = (G - B) / d + (G < B ? 6 : 0);
@@ -106,7 +106,7 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
 	if (max === min) return { h: 0, s: 0, l };
 	const d = max - min;
 	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-	let h = 0;
+	let h : number;
 	switch (max) {
 		case R:
 			h = (G - B) / d + (G < B ? 6 : 0);

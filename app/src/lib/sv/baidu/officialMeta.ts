@@ -101,7 +101,7 @@ export function buildTargetOverlay(
 	const overlay = new Uint8Array(TARGET_OVERLAY_WIDTH * TARGET_OVERLAY_HEIGHT);
 
 	for (let y = 0; y < 1; y += 1 / TARGET_OVERLAY_HEIGHT) {
-		let distance = 0;
+		let distance : number;
 		if (y > 0.48 && y <= 0.5) distance = 100;
 		else if (y > 0.5 && y <= 0.52) distance = 80;
 		else if (y > 0.52 && y <= 0.54) distance = 60;

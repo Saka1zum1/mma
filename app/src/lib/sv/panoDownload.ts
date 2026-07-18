@@ -11,6 +11,9 @@ import type { SvProvider } from "@/lib/sv/providers/types";
 import { renderBaiduLocationImage, stitchBaiduPano } from "@/lib/sv/baidu/panoDownload";
 import { resolveBaiduNear } from "@/lib/sv/baidu/api";
 import { stripBaidu } from "@/lib/sv/baidu/prefix";
+import { renderTencentLocationImage, stitchTencentPano } from "@/lib/sv/tencent/panoDownload";
+import { resolveTencentNear } from "@/lib/sv/tencent/api";
+import { stripTencent } from "@/lib/sv/tencent/prefix";
 import {
 	renderLookaroundLocationImage,
 	stitchLookaroundPano,
@@ -138,6 +141,8 @@ export async function downloadPano(
 		let canvas: HTMLCanvasElement | null = null;
 		if (provider === "baidu") {
 			canvas = await stitchBaiduPano(panoId, zoom);
+		} else if (provider === "tencent") {
+			canvas = await stitchTencentPano(panoId, zoom);
 		} else if (provider === "apple") {
 			if (!opts.location) throw new Error("Look Around download needs a location");
 			canvas = await stitchLookaroundPano(opts.location, panoId, zoom);
@@ -152,7 +157,13 @@ export async function downloadPano(
 
 		const a = document.createElement("a");
 		a.href = URL.createObjectURL(blob);
-		a.download = `${stripBaidu(panoId) || panoId}.jpg`;
+		const fileStem =
+			provider === "baidu"
+				? stripBaidu(panoId)
+				: provider === "tencent"
+					? stripTencent(panoId)
+					: panoId;
+		a.download = `${fileStem || panoId}.jpg`;
 		a.click();
 		URL.revokeObjectURL(a.href);
 		toast("Panorama downloaded");
@@ -253,6 +264,7 @@ async function renderLocationImage(
 	if (shouldSkipPanoDownload(loc, config)) return null;
 	const provider = getLocationProvider(loc);
 	if (provider === "baidu") return renderBaiduLocationImage(loc, panoId, config);
+	if (provider === "tencent") return renderTencentLocationImage(loc, panoId, config);
 	if (provider === "apple") return renderLookaroundLocationImage(loc, panoId, config);
 	return renderGoogleLocationImage(loc, panoId, meta, config);
 }
@@ -290,11 +302,15 @@ async function resolveMissingPanoIds(
 
 	const google: Location[] = [];
 	const baidu: Location[] = [];
+	const tencent: Location[] = [];
 	const apple: Location[] = [];
 	for (const loc of locations) {
 		switch (getLocationProvider(loc)) {
 			case "baidu":
 				baidu.push(loc);
+				break;
+			case "tencent":
+				tencent.push(loc);
 				break;
 			case "apple":
 				apple.push(loc);
@@ -323,12 +339,17 @@ async function resolveMissingPanoIds(
 	}
 
 	await runConcurrent(
-		[...baidu, ...apple],
+		[...baidu, ...tencent, ...apple],
 		async (loc) => {
 			signal?.throwIfAborted();
 			try {
-				if (getLocationProvider(loc) === "baidu") {
+				const prov = getLocationProvider(loc);
+				if (prov === "baidu") {
 					const meta = await resolveBaiduNear(loc.lat, loc.lng);
+					if (meta?.id) resolved.set(loc.id, meta.id);
+					else failed.push(loc.id);
+				} else if (prov === "tencent") {
+					const meta = await resolveTencentNear(loc.lat, loc.lng);
 					if (meta?.id) resolved.set(loc.id, meta.id);
 					else failed.push(loc.id);
 				} else {

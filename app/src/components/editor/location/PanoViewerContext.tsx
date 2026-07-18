@@ -16,6 +16,7 @@ import type { PanoReference } from "@/lib/sv/lookup";
 import { findPanoProvider } from "@/lib/sv/panoProvider";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { baiduSpawnPanoId } from "@/lib/sv/baidu/session";
+import { tencentSpawnPanoId } from "@/lib/sv/tencent/session";
 import { useExactDate } from "./useExactDate";
 import { derivePanoDateState, type PanoDateState } from "./panoDate";
 import {
@@ -77,27 +78,31 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 	const [coverageDefaultPanoId, setCoverageDefaultPanoId] = useState<string | null>(null);
 
 	const provider = location ? findPanoProvider(location) : null;
-	const isBaidu = location != null && getLocationProvider(location) === "baidu";
+	const injectProvider =
+		location != null ? getLocationProvider(location) : ("google" as const);
+	const isInjectAlt = injectProvider === "baidu" || injectProvider === "tencent";
 	const spawnPanoId = location
-		? isBaidu
+		? injectProvider === "baidu"
 			? baiduSpawnPanoId(location)
-			: provider?.getSpawnPanoId
-				? provider.getSpawnPanoId(location)
-				: null
+			: injectProvider === "tencent"
+				? tencentSpawnPanoId(location)
+				: provider?.getSpawnPanoId
+					? provider.getSpawnPanoId(location)
+					: null
 		: null;
 
 	useEffect(() => {
 		setCoverageDefaultPanoId(null);
 	}, [location?.id]);
 
-	// Baidu: Default tracks the live capture at the current spot (updates on move).
-	// Look Around: viewed pano is always a specific. Google: LoadAsPanoId flag.
-	const defaultPanoId = isBaidu
+	// Inject alts: Default tracks coverage default / spawn. Look Around: specific.
+	// Google: LoadAsPanoId flag.
+	const defaultPanoId = isInjectAlt
 		? (coverageDefaultPanoId ?? spawnPanoId)
 		: (spawnPanoId ?? location?.panoId ?? null);
 
 	const currentViewerPano = currentPano?.location?.pano ?? null;
-	const selectedPanoId = isBaidu
+	const selectedPanoId = isInjectAlt
 		? currentViewerPano && defaultPanoId && currentViewerPano !== defaultPanoId
 			? currentViewerPano
 			: null

@@ -1,8 +1,10 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import { ProviderIcon } from "@/components/editor/providers/ProviderIcon";
+import { Checkbox } from "@/components/primitives/Checkbox";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
 import { rebuildStyledLayers } from "@/lib/sv/lookaround/coverage";
 import { rebuildBaiduStyledLayers } from "@/lib/sv/baidu/coverage";
+import { rebuildTencentStyledLayers } from "@/lib/sv/tencent/coverage";
 import {
 	getHeaderProviderId,
 	getProviderLabel,
@@ -61,10 +63,19 @@ function providerHint(id: AltSvProviderId): { prefer: string; fallback: string; 
 	if (id === "baidu") {
 		return {
 			prefer:
-				"When preferred and enabled, blank map clicks create Baidu Street View locations first (Google is the fallback). Only one provider can be preferred at a time. Existing pins always open by their own provider field.",
+				"When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.",
 			fallback:
-				"When enabled, clicking a spot without Baidu coverage opens Google Street View instead.",
+				"When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.",
 			lines: "Lines (raster)",
+		};
+	}
+	if (id === "tencent") {
+		return {
+			prefer:
+				"When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.",
+			fallback:
+				"When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.",
+			lines: "Lines (PMTiles)",
 		};
 	}
 	return {
@@ -93,6 +104,7 @@ export function ProvidersSidebar() {
 			if (keys.some((k) => STYLE_KEYS.includes(k))) {
 				if (activeProvider === "apple") rebuildStyledLayers();
 				else if (activeProvider === "baidu") rebuildBaiduStyledLayers();
+				else if (activeProvider === "tencent") rebuildTencentStyledLayers();
 			}
 		},
 		[activeProvider],
@@ -102,6 +114,7 @@ export function ProvidersSidebar() {
 		resetProviderSettings(activeProvider);
 		if (activeProvider === "apple") rebuildStyledLayers();
 		else if (activeProvider === "baidu") rebuildBaiduStyledLayers();
+		else if (activeProvider === "tencent") rebuildTencentStyledLayers();
 	}, [activeProvider]);
 
 	return (
@@ -143,7 +156,7 @@ export function ProvidersSidebar() {
 			<Section title={label} defaultOpen>
 				<div className="providers-sidebar__control">
 					<label htmlFor={`sv-${activeProvider}-enabled`}>Enable</label>
-					<input
+					<Checkbox
 						id={`sv-${activeProvider}-enabled`}
 						type="checkbox"
 						checked={cfg.enabled}
@@ -152,7 +165,7 @@ export function ProvidersSidebar() {
 				</div>
 				<div className="providers-sidebar__control">
 					<label htmlFor={`sv-${activeProvider}-preferred`}>Prefer on map click</label>
-					<input
+					<Checkbox
 						id={`sv-${activeProvider}-preferred`}
 						type="checkbox"
 						checked={cfg.preferred}
@@ -166,7 +179,7 @@ export function ProvidersSidebar() {
 			<Section title="Coverage layers" defaultOpen>
 				<div className="providers-sidebar__control">
 					<label htmlFor={`sv-${activeProvider}-lines`}>{hints.lines}</label>
-					<input
+					<Checkbox
 						id={`sv-${activeProvider}-lines`}
 						type="checkbox"
 						checked={cfg.showLines}
@@ -177,7 +190,7 @@ export function ProvidersSidebar() {
 				{showPoints && (
 					<div className="providers-sidebar__control">
 						<label htmlFor={`sv-${activeProvider}-points`}>Panorama points (z≥16)</label>
-						<input
+						<Checkbox
 							id={`sv-${activeProvider}-points`}
 							type="checkbox"
 							checked={cfg.showPoints}
@@ -230,11 +243,11 @@ export function ProvidersSidebar() {
 				)}
 			</Section>
 
-			{(showPoints || activeProvider === "baidu") && (
+			{(showPoints || activeProvider === "baidu" || activeProvider === "tencent") && (
 				<Section title="Colors" defaultOpen>
-					{activeProvider === "baidu" ? (
+					{activeProvider === "baidu" || activeProvider === "tencent" ? (
 						<ColorRow
-							label="Coverage filter color"
+							label="Coverage line color"
 							value={cfg.lineColor}
 							disabled={!enabled}
 							onChange={(c) => setCfg({ lineColor: c })}
@@ -285,7 +298,7 @@ export function ProvidersSidebar() {
 			<Section title="Behavior" defaultOpen>
 				<div className="providers-sidebar__control">
 					<label htmlFor={`sv-${activeProvider}-fallback`}>Fallback to Google Street View</label>
-					<input
+					<Checkbox
 						id={`sv-${activeProvider}-fallback`}
 						type="checkbox"
 						checked={cfg.fallbackToGoogle}

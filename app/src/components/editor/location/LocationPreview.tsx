@@ -39,6 +39,7 @@ import {
 	subscribeStore,
 } from "@/store/useMapStore";
 import { sortTagsByMode, tagChipStyle, appendTagName } from "@/lib/util/util";
+import { log } from "@/lib/util/log";
 import { displayTagName } from "@/store/selections";
 import { ReviewBar } from "@/components/editor/location/ReviewBar";
 import {
@@ -94,7 +95,18 @@ import {
 	baiduSpawnPanoId,
 	loadBaiduDateEntries,
 } from "@/lib/sv/baidu/session";
-import { installBaiduGoogleBridge } from "@/lib/sv/baidu/inject";
+import { stripTencent, isTencentPanoId } from "@/lib/sv/tencent/prefix";
+import { buildTencentExtra } from "@/lib/sv/tencent/panoExtra";
+import {
+	tencentSaveExtra,
+	tencentSpawnPanoId,
+	loadTencentDateEntries,
+} from "@/lib/sv/tencent/session";
+import { installGoogleInjectBridge } from "@/lib/sv/providers/googleInject";
+import {
+	injectAlternatesAsDateEntries,
+	subscribeInjectAlternates,
+} from "@/lib/sv/providers/alternates";
 import { patchLocationExtra } from "@/lib/sv/lookaround/patchExtra";
 import { PanoDatePicker } from "./PanoDatePicker";
 import { usePanoNavigation } from "./usePanoNavigation";
@@ -496,7 +508,7 @@ export function LocationPreview() {
 				})
 				.catch((err) => {
 					if (cancelled) return;
-					console.warn("[LocationPreview] pano provider failed:", err);
+					log.warn("[LocationPreview] pano provider failed:", err);
 					if (toastHost) {
 						showToast(
 							toastHost,
@@ -529,10 +541,11 @@ export function LocationPreview() {
 		loadOpenSV().then(async () => {
 			if (cancelled) return;
 			if (!google?.maps) return;
-			// Baidu pins share the Google singleton; install inject before setPano.
-			if (getLocationProvider(location) === "baidu") {
-				ensureProviderEnabled("baidu");
-				await installBaiduGoogleBridge();
+			// Baidu / Tencent pins share the Google singleton; install inject before setPano.
+			const injectProvider = getLocationProvider(location);
+			if (injectProvider === "baidu" || injectProvider === "tencent") {
+				ensureProviderEnabled(injectProvider);
+				await installGoogleInjectBridge();
 			}
 			const pano = getPanorama();
 			if (!pano) return;
@@ -717,18 +730,54 @@ export function LocationPreview() {
 		const loc = currentPano.location;
 		if (!loc?.latLng) return;
 
-		// Baidu timeline / altitude via sdata (native Google date RPC does not apply).
-		if (isBaiduPanoId(loc.pano)) {
-			void loadBaiduDateEntries(loc.pano).then(({ entries, meta, defaultPanoId }) => {
+		// Baidu / Tencent timeline via provider meta (native Google date RPC does not apply).
+		// Sibling inject-provider hits from the parallel race are merged into the date picker.
+		if (isBaiduPanoId(loc.pano) || isTencentPanoId(loc.pano)) {
+			const lat = loc.latLng.lat();
+			const lng = loc.latLng.lng();
+			const applyChinaDates = (
+				entries: { pano: string; timestamp: number; cameraType?: string }[],
+			) => {
 				if (cancelled) return;
-				setPanoDates(providerEntriesToPanoDates(entries, loc.pano));
-				if (defaultPanoId) setCoverageDefaultPanoId(defaultPanoId);
-				setPanoAltitude(meta?.altitude ?? null);
-				const active = getActiveLocation();
-				if (active && meta) void patchLocationExtra(active, buildBaiduExtra(meta));
+				const merged = [
+					...entries,
+					...injectAlternatesAsDateEntries(lat, lng, loc.pano),
+				];
+				setPanoDates(providerEntriesToPanoDates(merged, loc.pano));
+			};
+
+			if (isBaiduPanoId(loc.pano)) {
+				void loadBaiduDateEntries(loc.pano).then(({ entries, meta, defaultPanoId }) => {
+					if (cancelled) return;
+					applyChinaDates(entries);
+					if (defaultPanoId) setCoverageDefaultPanoId(defaultPanoId);
+					setPanoAltitude(meta?.altitude ?? null);
+					const active = getActiveLocation();
+					if (active && meta) void patchLocationExtra(active, buildBaiduExtra(meta));
+				});
+			} else {
+				void loadTencentDateEntries(loc.pano).then(({ entries, meta, defaultPanoId }) => {
+					if (cancelled) return;
+					applyChinaDates(entries);
+					if (defaultPanoId) setCoverageDefaultPanoId(defaultPanoId);
+					setPanoAltitude(null);
+					const active = getActiveLocation();
+					if (active && meta) void patchLocationExtra(active, buildTencentExtra(meta));
+				});
+			}
+
+			const unsubAlts = subscribeInjectAlternates(() => {
+				if (cancelled) return;
+				if (isBaiduPanoId(loc.pano)) {
+					void loadBaiduDateEntries(loc.pano).then(({ entries }) => applyChinaDates(entries));
+				} else {
+					void loadTencentDateEntries(loc.pano).then(({ entries }) => applyChinaDates(entries));
+				}
 			});
+
 			return () => {
 				cancelled = true;
+				unsubAlts();
 			};
 		}
 
@@ -804,11 +853,19 @@ export function LocationPreview() {
 			// updateLocation no-ops for staged (virtual) locations at the store level.
 			if (panoId == null) {
 				updateLocations([{ id: loc.id, patch: { flags: loc.flags & ~LocationFlag.LoadAsPanoId } }]);
-				// Baidu Default = live capture at the current spot (not the original spawn pin).
+				// Inject providers: Default = coverage default / spawn pin (not Google RPC).
+				const live = singletonPano.getPano();
+				const injectProv = isBaiduPanoId(live)
+					? "baidu"
+					: isTencentPanoId(live)
+						? "tencent"
+						: getLocationProvider(loc);
 				const def =
-					getLocationProvider(loc) === "baidu"
+					injectProv === "baidu"
 						? (coverageDefaultPanoId ?? baiduSpawnPanoId(loc))
-						: loc.panoId;
+						: injectProv === "tencent"
+							? (coverageDefaultPanoId ?? tencentSpawnPanoId(loc))
+							: loc.panoId;
 				if (def) singletonPano.setPano(def);
 			} else {
 				updateLocations([{ id: loc.id, patch: { flags: loc.flags | LocationFlag.LoadAsPanoId } }]);
@@ -828,20 +885,35 @@ export function LocationPreview() {
 		const pos = effectivePano.getPosition();
 
 		const provider = findPanoProvider(location);
-		const isBaidu = getLocationProvider(location) === "baidu" || isBaiduPanoId(pano);
-		const providerId = provider?.id ?? (isBaidu ? "baidu" : (location.provider ?? "google"));
+		// Prefer the live viewer pano prefix when switching Baidu ↔ Tencent dates.
+		const liveProvider = isBaiduPanoId(pano)
+			? "baidu"
+			: isTencentPanoId(pano)
+				? "tencent"
+				: getLocationProvider(location);
+		const isBaidu = liveProvider === "baidu";
+		const isTencent = liveProvider === "tencent";
+		const isInjectAlt = isBaidu || isTencent;
+		const providerId =
+			isBaidu || isTencent
+				? liveProvider
+				: (provider?.id ?? location.provider ?? "google");
 		let savedPanoId = selectedPanoId ?? pano ?? location.panoId;
-		// Baidu viewer uses BAIDU: prefix; store raw sid on the location.
+		// Inject viewers use PREFIX: ids; store raw svid/sid on the location.
 		if (isBaidu && typeof savedPanoId === "string") {
 			savedPanoId = stripBaidu(savedPanoId);
+		} else if (isTencent && typeof savedPanoId === "string") {
+			savedPanoId = stripTencent(savedPanoId);
 		}
 		const isAltProvider = Boolean(providerSession);
 		const saveExtra =
 			pano && isBaidu
 				? baiduSaveExtra(pano)
-				: pano && provider?.buildSaveExtra
-					? provider.buildSaveExtra(location, pano)
-					: {};
+				: pano && isTencent
+					? tencentSaveExtra(pano)
+					: pano && provider?.buildSaveExtra
+						? provider.buildSaveExtra(location, pano)
+						: {};
 
 		if (isSeenPreview(location)) {
 			await addLocations([
@@ -852,7 +924,7 @@ export function LocationPreview() {
 					pitch: pov.pitch,
 					zoom,
 					panoId: savedPanoId,
-					provider: isAltProvider || isBaidu ? providerId : (location.provider ?? "google"),
+					provider: isAltProvider || isInjectAlt ? providerId : (location.provider ?? "google"),
 					flags: location.flags & ~VIRTUAL_FLAGS, // keep LoadAsPanoId; drop the preview-kind bits
 					tags: (await createTags(pendingTags)).map((t) => t.id),
 					extra: {
@@ -877,9 +949,9 @@ export function LocationPreview() {
 					lng: pos?.lng() ?? location.lng,
 					tags: (await createTags(pendingTags)).map((t) => t.id),
 					panoId: savedPanoId,
-					provider: isAltProvider || isBaidu ? providerId : (location.provider ?? "google"),
+					provider: isAltProvider || isInjectAlt ? providerId : (location.provider ?? "google"),
 					extra: {
-						...(panoChanged && !isAltProvider && !isBaidu ? {} : (location.extra ?? {})),
+						...(panoChanged && !isAltProvider && !isInjectAlt ? {} : (location.extra ?? {})),
 						...saveExtra,
 					},
 				},

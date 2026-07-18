@@ -3129,6 +3129,10 @@ input.date-picker__trigger:focus {
 	color: #fff;
 	background: #2932e1;
 }
+.badge--tencent {
+	color: #fff;
+	background: #0051da;
+}
 .badge--provider {
 	color: #fff;
 	background: #525252;

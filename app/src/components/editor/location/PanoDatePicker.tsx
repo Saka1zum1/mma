@@ -80,7 +80,9 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 	const provider = location ? findPanoProvider(location) : null;
 	// Baidu uses native Google SV lifecycle (no MMA PanoProvider) but has day-level dates.
 	const dayLevel =
-		provider?.dateGranularity === "day" || getLocationProvider(location) === "baidu";
+		provider?.dateGranularity === "day" ||
+		getLocationProvider(location) === "baidu" ||
+		getLocationProvider(location) === "tencent";
 	const { selectedPanoId, dateState, exactDate, resolvedTz } = usePanoViewer();
 	const { defaultEntry, sorted, isDefault, displayDate, triggerPanoId } = dateState;
 	const prevLabelRef = useRef("");

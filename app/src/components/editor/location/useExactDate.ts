@@ -4,6 +4,8 @@ import { findPanoProvider } from "@/lib/sv/panoProvider";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { baiduSpawnPanoId } from "@/lib/sv/baidu/session";
 import { isBaiduPanoId } from "@/lib/sv/baidu/prefix";
+import { tencentSpawnPanoId } from "@/lib/sv/tencent/session";
+import { isTencentPanoId } from "@/lib/sv/tencent/prefix";
 import { useActiveLocation } from "@/store/useMapStore";
 import { useAsync } from "@/lib/hooks/useAsync";
 
@@ -21,14 +23,18 @@ export function useExactDate(
 	const provider = location ? findPanoProvider(location) : null;
 	const isBaidu =
 		(location != null && getLocationProvider(location) === "baidu") || isBaiduPanoId(panoId);
+	const isTencent =
+		(location != null && getLocationProvider(location) === "tencent") || isTencentPanoId(panoId);
 	const spawnId = location
 		? isBaidu
 			? baiduSpawnPanoId(location)
-			: provider?.getSpawnPanoId
-				? provider.getSpawnPanoId(location)
-				: null
+			: isTencent
+				? tencentSpawnPanoId(location)
+				: provider?.getSpawnPanoId
+					? provider.getSpawnPanoId(location)
+					: null
 		: null;
-	const ownsExactDate = Boolean(provider?.ownsExactDate) || isBaidu;
+	const ownsExactDate = Boolean(provider?.ownsExactDate) || isBaidu || isTencent;
 	const panoMatchesLocation =
 		panoId != null && (panoId === location?.panoId || (spawnId != null && panoId === spawnId));
 	const captureTs =

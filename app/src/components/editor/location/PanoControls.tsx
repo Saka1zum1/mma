@@ -13,6 +13,8 @@ import {
 } from "@/lib/sv/lookaround/shareLink";
 import { buildBaiduShareUrl, shortenBaiduShareUrl } from "@/lib/sv/baidu/shareLink";
 import { stripBaidu, isBaiduPanoId } from "@/lib/sv/baidu/prefix";
+import { buildTencentShareUrl } from "@/lib/sv/tencent/shareLink";
+import { stripTencent, isTencentPanoId } from "@/lib/sv/tencent/prefix";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { useSettings } from "@/store/settings";
 import { getCurrentMap, getActiveLocation, useActiveLocation } from "@/store/useMapStore";
@@ -537,6 +539,7 @@ export const PanoControls = memo(function PanoControls({
 	const provider = getLocationProvider(location);
 	const isAppleLocation = provider === "apple";
 	const isBaiduLocation = provider === "baidu";
+	const isTencentLocation = provider === "tencent";
 
 	const buildMapsUrl = useCallback(() => {
 		const pos = panorama.getPosition();
@@ -554,6 +557,13 @@ export const PanoControls = memo(function PanoControls({
 			const sid = stripBaidu(loc?.pano ?? "");
 			if (!sid) return null;
 			return new URL(buildBaiduShareUrl(sid, pov.heading, pov.pitch));
+		}
+
+		if (isTencentLocation) {
+			const loc = panorama.getLocation();
+			const svid = stripTencent(loc?.pano ?? "");
+			if (!svid) return null;
+			return new URL(buildTencentShareUrl(svid, pov.heading, pov.pitch));
 		}
 
 		const loc = panorama.getLocation();
@@ -583,7 +593,7 @@ export const PanoControls = memo(function PanoControls({
 		url.searchParams.set("coh", "235716");
 		url.searchParams.set("entry", "tts");
 		return url;
-	}, [panorama, isAppleLocation, isBaiduLocation]);
+	}, [panorama, isAppleLocation, isBaiduLocation, isTencentLocation]);
 
 	const buildAppleShareUrl = useCallback(() => {
 		const pos = panorama.getPosition();
@@ -599,6 +609,14 @@ export const PanoControls = memo(function PanoControls({
 		const sid = stripBaidu(loc?.pano ?? "");
 		if (!sid || !pov) return null;
 		return buildBaiduShareUrl(sid, pov.heading, pov.pitch);
+	}, [panorama]);
+
+	const buildTencentCopyUrl = useCallback(() => {
+		const loc = panorama.getLocation();
+		const pov = panorama.getPov();
+		const svid = stripTencent(loc?.pano ?? "");
+		if (!svid || !pov) return null;
+		return buildTencentShareUrl(svid, pov.heading, pov.pitch);
 	}, [panorama]);
 
 	const openInMaps = useCallback(() => {
@@ -640,6 +658,15 @@ export const PanoControls = memo(function PanoControls({
 				return;
 			}
 
+			if (isTencentLocation) {
+				const link = buildTencentCopyUrl();
+				if (!link) return;
+				await navigator.clipboard.writeText(link).catch(() => {});
+				setCopyState("done");
+				setTimeout(() => setCopyState("idle"), 500);
+				return;
+			}
+
 			const url = buildMapsUrl();
 			if (!url) return;
 			const active = getActiveLocation();
@@ -668,7 +695,15 @@ export const PanoControls = memo(function PanoControls({
 			setCopyState("done");
 			setTimeout(() => setCopyState("idle"), 500);
 		},
-		[buildMapsUrl, buildAppleShareUrl, buildBaiduCopyUrl, isAppleLocation, isBaiduLocation],
+		[
+			buildMapsUrl,
+			buildAppleShareUrl,
+			buildBaiduCopyUrl,
+			buildTencentCopyUrl,
+			isAppleLocation,
+			isBaiduLocation,
+			isTencentLocation,
+		],
 	);
 
 	const jumpForwardRef = useHotkeyRef(jumpForwardKey);
@@ -718,9 +753,15 @@ export const PanoControls = memo(function PanoControls({
 			}
 
 			try {
-				// Look Around proxy / Baidu inject both own setPosition → native lifecycle.
-				// (Baidu: inject → SingleImageSearch → qsdata; Google path below.)
-				if (altProvider || isBaiduPanoId(panorama.getPano())) {
+				// Look Around proxy / Baidu+Tencent inject: setPosition → SIS → provider meta.
+				const panoId = panorama.getPano();
+				if (
+					altProvider ||
+					isBaiduPanoId(panoId) ||
+					isTencentPanoId(panoId) ||
+					isBaiduLocation ||
+					isTencentLocation
+				) {
 					panorama.setPosition(targetLit);
 					return;
 				}
@@ -740,7 +781,7 @@ export const PanoControls = memo(function PanoControls({
 				jumpPending.current = null;
 			}
 		},
-		[panorama, altProvider],
+		[panorama, altProvider, isBaiduLocation, isTencentLocation],
 	);
 
 	const jumpForward = useCallback(() => {
