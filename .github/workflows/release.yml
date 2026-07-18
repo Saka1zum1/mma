@@ -60,6 +60,22 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # Beta/prerelease builds skip updater signing when secrets are unavailable
+      # (tauri fails the whole build with "Missing comment in secret key" otherwise).
+      - name: Disable updater artifacts for unsigned prereleases
+        if: contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') || contains(inputs.tag, '-beta') || contains(inputs.tag, '-alpha') || contains(inputs.tag, '-rc')
+        working-directory: app
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            c.bundle = c.bundle || {};
+            c.bundle.createUpdaterArtifacts = false;
+            fs.writeFileSync(p, JSON.stringify(c, null, '\t') + '\n');
+            console.log('createUpdaterArtifacts=false for prerelease build');
+          "
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -135,6 +151,7 @@ jobs:
           done
 
       - name: Build latest.json for updater
+        if: ${{ !(contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') || contains(inputs.tag, '-beta') || contains(inputs.tag, '-alpha') || contains(inputs.tag, '-rc')) }}
         env:
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: |
@@ -165,16 +182,28 @@ jobs:
           }
           EOF
 
-      - name: Create draft release on ccmdi/mma
+      - name: Create draft release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          # Prefer upstream publish token when present; otherwise publish on this repo.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          THIS_REPO: ${{ github.repository }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
         run: |
           mapfile -t files < <(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.app.tar.gz" \) ! -name "*.sig")
-          files+=(latest.json)
+          if [[ -f latest.json ]]; then
+            files+=(latest.json)
+          fi
           PRERELEASE=""
           if [[ "$TAG" == *"-beta"* || "$TAG" == *"-alpha"* || "$TAG" == *"-rc"* ]]; then
             PRERELEASE="--prerelease"
           fi
-          printf 'Uploading: %s\n' "${files[@]}"
-          gh release create "$TAG" --repo ccmdi/mma --title "$TAG" --draft $PRERELEASE --notes-file notes.md "${files[@]}"
+          if [[ "$HAS_RELEASE_TOKEN" == "true" ]]; then
+            RELEASE_REPO="ccmdi/mma"
+          else
+            RELEASE_REPO="$THIS_REPO"
+          fi
+          printf 'Uploading to %s: %s\n' "$RELEASE_REPO" "${files[@]}"
+          # Replace existing draft/prerelease with the same tag if re-running.
+          gh release delete "$TAG" --repo "$RELEASE_REPO" --yes 2>/dev/null || true
+          gh release create "$TAG" --repo "$RELEASE_REPO" --title "$TAG" --draft $PRERELEASE --notes-file notes.md "${files[@]}"
