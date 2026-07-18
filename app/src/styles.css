@@ -3149,6 +3149,7 @@ input.date-picker__trigger:focus {
 	background: #ff6803;
 }
 .badge--number {
+	color: #222;
 	background: #ccc;
 }
 .map-links-control {
