@@ -5,6 +5,7 @@
  */
 
 import type { Location } from "@/bindings.gen";
+import { normalizeStoragePanoId } from "./panoIdStorage";
 
 /** Known panorama imagery providers. Google is always available and not configured here. */
 export type SvProvider =
@@ -75,13 +76,50 @@ export function isAppleLocation(loc: Pick<Location, "provider"> | null | undefin
 	return getLocationProvider(loc) === "apple";
 }
 
-/** Spawn / open pano id — top-level first. */
+/** Spawn / open pano id — top-level, always storage form (no provider prefix). */
 export function getLocationPanoId(loc: Location | null | undefined): string | null {
 	if (!loc) return null;
-	if (typeof loc.panoId === "string" && loc.panoId.length > 0) return loc.panoId;
-	return null;
+	return normalizeStoragePanoId(loc.panoId);
 }
 
 export function isGoogleProvider(provider: SvProvider): boolean {
 	return provider === "google";
+}
+
+/** Wire `source` values used in GeoGuessr-style JSON for non-Google providers. */
+export type SvWireSource =
+	| "apple_pano"
+	| "baidu_pano"
+	| "qq_pano"
+	| "yandex_pano";
+
+const PROVIDER_TO_WIRE: Record<AltSvProviderId, SvWireSource> = {
+	apple: "apple_pano",
+	baidu: "baidu_pano",
+	tencent: "qq_pano",
+	yandex: "yandex_pano",
+};
+
+const WIRE_TO_PROVIDER: Record<string, AltSvProviderId> = {
+	apple_pano: "apple",
+	baidu_pano: "baidu",
+	qq_pano: "tencent",
+	yandex_pano: "yandex",
+};
+
+/** Internal provider → JSON export `source` (null for Google). */
+export function providerToWireSource(provider: SvProvider): SvWireSource | null {
+	if (provider === "google") return null;
+	return PROVIDER_TO_WIRE[provider] ?? null;
+}
+
+/**
+ * Map a JSON `source` or legacy `provider` wire value to an internal provider id.
+ * Accepts both `apple` / `baidu` and `apple_pano` / `baidu_pano` forms.
+ */
+export function wireValueToProvider(raw: string | null | undefined): SvProvider | null {
+	if (!raw) return null;
+	const fromWire = WIRE_TO_PROVIDER[raw];
+	if (fromWire) return fromWire;
+	return parseProvider(raw);
 }

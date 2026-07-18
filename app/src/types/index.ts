@@ -1,4 +1,5 @@
 import type { Location, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
+import { normalizeLocationStorageFields } from "@/lib/sv/providers/panoIdStorage";
 import { nowUnix } from "@/lib/util/format";
 
 /** Street View camera orientation (POV). */
@@ -82,6 +83,7 @@ export function isSeenPreview(loc: Location): boolean {
 }
 
 export function createLocation(partial: Partial<Location> & LatLng): Location {
+	const normalized = normalizeLocationStorageFields(partial);
 	return {
 		id: 0, // placeholder; Rust assigns the real ID
 		heading: 0,
@@ -94,7 +96,7 @@ export function createLocation(partial: Partial<Location> & LatLng): Location {
 		extra: null,
 		createdAt: nowUnix(),
 		modifiedAt: null,
-		...partial,
+		...normalized,
 	};
 }
 
@@ -103,7 +105,11 @@ export function createLocation(partial: Partial<Location> & LatLng): Location {
  *  and a null patch clears extra entirely. */
 export function applyLocationPatch(loc: Location, patch: LocationPatch): Location {
 	const { extra: extraPatch, ...rest } = patch;
-	const next = { ...loc, ...rest } as Location;
+	const normalized = normalizeLocationStorageFields({
+		...rest,
+		provider: rest.provider ?? loc.provider,
+	});
+	const next = { ...loc, ...normalized } as Location;
 	if (extraPatch !== undefined) {
 		if (extraPatch === null) {
 			next.extra = null;
