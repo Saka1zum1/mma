@@ -172,5 +172,9 @@ jobs:
         run: |
           mapfile -t files < <(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.app.tar.gz" \) ! -name "*.sig")
           files+=(latest.json)
+          PRERELEASE=""
+          if [[ "$TAG" == *"-beta"* || "$TAG" == *"-alpha"* || "$TAG" == *"-rc"* ]]; then
+            PRERELEASE="--prerelease"
+          fi
           printf 'Uploading: %s\n' "${files[@]}"
-          gh release create "$TAG" --repo ccmdi/mma --title "$TAG" --draft --notes-file notes.md "${files[@]}"
+          gh release create "$TAG" --repo ccmdi/mma --title "$TAG" --draft $PRERELEASE --notes-file notes.md "${files[@]}"

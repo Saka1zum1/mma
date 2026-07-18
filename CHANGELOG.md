@@ -1,3 +1,22 @@
+## v0.8.0-beta.1 - 2026-07-18
+
+**Beta release — alternative Street View providers and a major UI/render update. Expect rough edges; feedback welcome.**
+
+- **Alternative Street View providers:** Baidu Street View and Apple Look Around, with per-location provider tracking, a providers sidebar, and coverage on the map
+- **Provider-aware panorama download** for Google, Baidu, and Look Around, including bulk resolve
+- **Fullscreen map mode** with a mini location preview; Baidu and Look Around supported in the location preview
+- **Custom marker render pipeline** with CPU picking, opaque depth split, aggregation LOD, and live render stats
+- **UI overhaul:** refreshed primitives (Checkbox, Radio), corner status tray, and more consistent plugin styling
+- **Saved selections** as first-class scopes; heatmap plugin can use them as a source, with multiple layers and more gradients
+- **Tag folders:** declared empty folders, drag tags and folders into folders, folder colors, ctrl+drag block moves
+- **Map list label filter grammar** with clickable label chips
+- **Dark and multi-provider vector basemap styles**
+- Layer-level marker opacity; hotkeys to toggle Street View and marker opacity
+- Fixed blank map clicks now trying all enabled alt providers
+- Fixed map context menu stacking above panels and markers
+- Fixed import tag order rebasing and selection re-sync on tag rename
+- Fixed maps snapshotting open-map session before update install
+
 ## v0.7.6 - 2026-07-13
 - Opt-in Discord Rich Presence, with a privacy level setting
 - Fixed metadata fields occasionally being lost when several enrichment steps wrote to a location at once
