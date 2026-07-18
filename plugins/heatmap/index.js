@@ -24,13 +24,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// mma-ext:@deck.gl/google-maps
-var require_google_maps = __commonJS({
-  "mma-ext:@deck.gl/google-maps"(exports, module) {
-    module.exports = globalThis.__mma_require("@deck.gl/google-maps");
-  }
-});
-
 // mma-ext:@deck.gl/core
 var require_core = __commonJS({
   "mma-ext:@deck.gl/core"(exports, module) {
@@ -58,9 +51,6 @@ var require_jsx_runtime = __commonJS({
     module.exports = globalThis.__mma_require("react/jsx-runtime");
   }
 });
-
-// heatmap/src/heatmap.ts
-var import_google_maps = __toESM(require_google_maps());
 
 // heatmap/node_modules/@deck.gl/aggregation-layers/dist/common/utils/color-utils.js
 var defaultColorRange = [
@@ -1040,11 +1030,10 @@ async function rebuild() {
   overlay.setProps({ layers: deckLayers });
 }
 async function init() {
-  const map = MMA.getGoogleMap();
-  if (!map) throw new Error("No map instance");
+  const host = MMA.getMapHost();
+  if (!host) throw new Error("No map instance");
   locStore = await MMA.createLocationStore();
-  overlay = new import_google_maps.GoogleMapsOverlay({ layers: [] });
-  overlay.setMap(map);
+  overlay = host.createDeckOverlay();
   void rebuild();
   const onChange = () => {
     void rebuild();
@@ -1058,7 +1047,6 @@ async function init() {
     locStore?.destroy();
     locStore = null;
     if (overlay) {
-      overlay.setMap(null);
       overlay.finalize();
       overlay = null;
     }

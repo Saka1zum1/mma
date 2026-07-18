@@ -3,5 +3,14 @@
   "version": "0.1.0",
   "description": "Type declarations for MMA plugin development",
   "types": "mma.d.ts",
-  "files": ["mma.d.ts"]
+  "files": ["mma.d.ts"],
+  "dependencies": {
+    "@deck.gl/core": "^9.3.1",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@types/google.maps": "^3.64.0",
+    "@types/react": "^19.2.14",
+    "react": "^19.2.5"
+  }
 }

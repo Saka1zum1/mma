@@ -126,13 +126,8 @@ To install a plugin:
 
 To share: zip the folder and distribute however you like (GitHub, Discord, etc.).
 
-### Optional type dependencies
+### Type dependencies
 
-Depending on what your plugin uses, you may need additional type packages:
+`mma-plugin-types` declares the libraries the SDK types import from (react, deck.gl, tauri, google.maps) as its own dependencies, so installing it pulls the whole type closure -- nothing else to install. They are types-only: at runtime your plugin shares the app's copies (see Shared modules).
 
-| You use | Install |
-|---|---|
-| `icon` field (MDI icons) | `npm install -D @mdi/js` — or just copy the SVG path string from [pictogrammers.com/library/mdi](https://pictogrammers.com/library/mdi/) |
-| `MMA.getGoogleMap()` | `npm install -D @types/google.maps` |
-| UI components (`sidebar`, `modal`, `locationPanel`) | `npm install -D react @types/react` |
-| `MMA.shell.Command` / `MMA.dialog.*` | Types are included — no extra install needed |
+For the `icon` field, `@mdi/js` has the icon paths, or just copy the SVG path string from [pictogrammers.com/library/mdi](https://pictogrammers.com/library/mdi/).

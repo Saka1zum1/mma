@@ -454,7 +454,7 @@ export async function closeMap() {
 	await cmd.storeCloseMap();
 }
 
-/* Drop the open map without persisting anything */
+/** Drop the open map without persisting anything */
 export function discardOpenMap() {
 	cancelAutosave();
 	resetMapState();

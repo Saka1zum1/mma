@@ -32,7 +32,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
-import { getGoogleMap, waitForGoogleMap } from "@/lib/map/mapState";
 import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings";
 import { getSavedSelections, savedToSelectionProps, describeRule } from "@/store/savedSelections";
@@ -43,6 +42,7 @@ import { bulkPinToPano } from "@/lib/sv/pinPano";
 import { validateLocations } from "@/lib/sv/validate";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { mmaBufUrl } from "@/lib/util/util";
+import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
 
 export interface LocationStore {
 	locations: Map<number, Location>;
@@ -153,14 +153,9 @@ async function spawnSidecar(pluginId: string, name: string, args: string[]): Pro
 	};
 }
 
-const mma = {
+/** Explicitly exposed functions not in other APIs. */
+const surface = {
 	ready: false,
-
-	// --- Store ---
-	...store,
-
-	// --- Review sessions ---
-	...review,
 
 	// --- Rust IPC commands ---
 	cmd: commands as Cmd,
@@ -201,9 +196,9 @@ const mma = {
 	// --- Types ---
 	createLocation,
 
-	// --- Google Maps ---
-	getGoogleMap: () => getGoogleMap(),
-	waitForGoogleMap: () => waitForGoogleMap(),
+	// --- Map host ---
+	getMapHost,
+	waitForMapHost,
 
 	// --- Settings ---
 	setSetting,
@@ -228,10 +223,8 @@ const mma = {
 	loadSeenPano,
 
 	// --- Enrichment ---
-	enrichAll: async (opts?: Record<string, unknown>) =>
-		enrichAll(await store.fetchAllLocations(), opts),
-	bulkPinToPano: async (opts?: Record<string, unknown>) =>
-		bulkPinToPano(await store.fetchAllLocations(), opts),
+	enrichAll,
+	bulkPinToPano,
 	validateLocations,
 	needsEnrichment,
 
@@ -269,13 +262,23 @@ const mma = {
 	},
 };
 
-export type MMA = typeof mma;
+type StoreApi = typeof store;
+type ReviewApi = typeof review;
+type SurfaceApi = typeof surface;
+
+export interface MMA extends StoreApi, ReviewApi, SurfaceApi {}
+
+const mma: MMA = {
+	...store,
+	...review,
+	...surface,
+};
 
 declare global {
 	interface Window {
-		MMA: typeof mma;
+		MMA: MMA;
 	}
-	const MMA: typeof mma;
+	const MMA: MMA;
 }
 
 window.MMA = mma;

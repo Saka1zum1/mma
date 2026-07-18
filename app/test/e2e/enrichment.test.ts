@@ -604,7 +604,7 @@ describe("Enrichment — multiple providers merge without clobbering", () => {
 
 	it("bulk enrichAll keeps both providers' fields on every location", async () => {
 		await withApi(async (api) => {
-			await api.enrichAll();
+			await api.enrichAll(await api.fetchAllLocations());
 			return "ok";
 		});
 		await browser.waitUntil(
@@ -639,7 +639,7 @@ describe("Enrichment — multiple providers merge without clobbering", () => {
 		}, l0);
 
 		await withApi(async (api) => {
-			await api.enrichAll();
+			await api.enrichAll(await api.fetchAllLocations());
 			return "ok";
 		});
 		await browser.waitUntil(

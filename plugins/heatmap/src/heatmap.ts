@@ -1,6 +1,5 @@
-import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import type { LatLng, LocationStore, SourceScope } from "mma-plugin-types";
+import type { DeckOverlayHandle, LatLng, LocationStore, SourceScope } from "mma-plugin-types";
 
 export interface HeatmapLayerSettings {
 	id: string;
@@ -85,7 +84,7 @@ function sampleColorRange(stops: RGB[], n = 6): RGB[] {
 	return out;
 }
 
-let overlay: GoogleMapsOverlay | null = null;
+let overlay: DeckOverlayHandle | null = null;
 let locStore: LocationStore | null = null;
 let layers: HeatmapLayerSettings[] = loadLayers();
 let onSettingsChange: (() => void) | null = null;
@@ -162,13 +161,12 @@ async function rebuild() {
 }
 
 export async function init(): Promise<() => void> {
-	const map = MMA.getGoogleMap();
-	if (!map) throw new Error("No map instance");
+	const host = MMA.getMapHost();
+	if (!host) throw new Error("No map instance");
 
 	locStore = await MMA.createLocationStore();
 
-	overlay = new GoogleMapsOverlay({ layers: [] });
-	overlay.setMap(map);
+	overlay = host.createDeckOverlay();
 	void rebuild();
 
 	const onChange = () => {
@@ -184,7 +182,6 @@ export async function init(): Promise<() => void> {
 		locStore?.destroy();
 		locStore = null;
 		if (overlay) {
-			overlay.setMap(null);
 			overlay.finalize();
 			overlay = null;
 		}

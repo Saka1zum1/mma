@@ -1,5 +1,5 @@
 import type { Bounds } from "@/types";
-import { hostInstance, type MapHost } from "@/lib/map/host";
+import { type MapHost } from "@/lib/map/host";
 
 let mapHost: MapHost | null = null;
 let hostReadyResolve: ((host: MapHost) => void) | null = null;
@@ -23,6 +23,9 @@ export function getMapHost(): MapHost | null {
 	return mapHost;
 }
 
+/**
+ * Wait for the main editor map to be ready.
+ */
 export function waitForMapHost(): Promise<MapHost> {
 	if (mapHost) return Promise.resolve(mapHost);
 	if (!hostReadyPromise) {
@@ -31,17 +34,6 @@ export function waitForMapHost(): Promise<MapHost> {
 		});
 	}
 	return hostReadyPromise;
-}
-
-/** Raw Google map of the editor surface; null on non-Google hosts (plugin API compat). */
-export function getGoogleMap(): google.maps.Map | null {
-	return hostInstance(mapHost, "google");
-}
-
-/** Resolves with the editor's Google map. On non-Google hosts this resolves null
- *  once the host is ready (plugins that draw on the raw map should degrade). */
-export function waitForGoogleMap(): Promise<google.maps.Map | null> {
-	return waitForMapHost().then((host) => hostInstance(host, "google"));
 }
 
 /** Expand any axis narrower than `2 * minExtent` (degrees) to that span, centered.
