@@ -8,7 +8,10 @@ import { cmd } from "@/lib/commands";
 import { lookupStreetView, showToast } from "@/lib/sv/lookup";
 import { tryInterceptClick } from "@/lib/map/mapState";
 import { createAppleLocationAtLatLng } from "@/lib/sv/lookaround/click";
-import { createBaiduLocationAtLatLng } from "@/lib/sv/baidu/click";
+import {
+	createInjectProviderLocationAtLatLng,
+	isInjectProviderId,
+} from "@/lib/sv/providers/race";
 import {
 	getEnabledAltProviders,
 	getProviderSettings,
@@ -218,7 +221,9 @@ async function tryAltProviderAtLatLng(
 		case "apple":
 			return createAppleLocationAtLatLng(lat, lng);
 		case "baidu":
-			return createBaiduLocationAtLatLng(lat, lng);
+		case "tencent":
+			// Handled via createChinaLocationAtLatLng (parallel race).
+			return null;
 		default:
 			return null;
 	}
@@ -226,10 +231,10 @@ async function tryAltProviderAtLatLng(
 
 /**
  * Create a location from a blank map click.
- * Tries every enabled alt provider (preferred first); a miss on one never blocks
- * the others. Google runs only when no alts are enabled, or when at least one
- * tried alt has fallbackToGoogle. Toast only after every attempted provider misses.
- * Pin clicks never reach here — they activate via location.provider in LocationPreview.
+ * Tries every enabled alt provider (preferred first). Baidu + Tencent are raced
+ * in parallel (first success wins; the other becomes a date-picker alternate) —
+ * catalog priority does not pick between them. Google runs only when no alts
+ * are enabled, or when at least one tried alt has fallbackToGoogle.
  */
 export async function createLocationAtLatLng(
 	lat: number,
@@ -245,9 +250,21 @@ export async function createLocationAtLatLng(
 	const t = trace("add");
 	const alts = getEnabledAltProviders();
 	let fallbackToGoogle = false;
+	let triedInjectRace = false;
 
 	for (const provider of alts) {
 		if (getProviderSettings(provider.id).fallbackToGoogle) fallbackToGoogle = true;
+		if (isInjectProviderId(provider.id)) {
+			if (triedInjectRace) continue;
+			triedInjectRace = true;
+			const loc = await createInjectProviderLocationAtLatLng(lat, lng);
+			t.step("inject");
+			if (loc) {
+				t.end();
+				return loc;
+			}
+			continue;
+		}
 		const loc = await tryAltProviderAtLatLng(provider.id, lat, lng);
 		t.step(provider.id);
 		if (loc) {
