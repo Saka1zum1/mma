@@ -1,5 +1,10 @@
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import type { Tag } from "@/bindings.gen";
 import { gdocProvider } from "@/lib/doclink/gdoc";
+import { parseMapsUrl } from "@/lib/data/importExport";
+import { cmd } from "@/lib/commands";
+import { setActiveLocation } from "@/store/useMapStore";
+import { addParsedLocations } from "@/lib/map/mapClick";
 
 /** A parsed doclink: which provider, which document, where inside it. */
 export interface DocRef {
@@ -135,6 +140,25 @@ export function prefetchDoclinks(tags: Record<string, Tag>): void {
 			if (ref) loadSection(ref).catch(() => {});
 		}
 	}
+}
+
+/** Doc links that parse as a location route into the map: open the existing
+ *  location if the map already has it (same pano, else within 2m -- the
+ *  duplicate-detection radius), otherwise add it as if pasted. Everything
+ *  else opens externally. */
+export async function openDocHref(href: string) {
+	const parsed = await parseMapsUrl(href);
+	if (!parsed) {
+		await openExternal(href);
+		return;
+	}
+	const nearby = await cmd.storeFindNearby(parsed.lat, parsed.lng, 2.0);
+	const match = nearby.find((l) => parsed.panoId && l.panoId === parsed.panoId) ?? nearby[0];
+	if (match) {
+		await setActiveLocation(match);
+		return;
+	}
+	await addParsedLocations([parsed]);
 }
 
 export function doclinkedTags(tags: Record<string, Tag>): Tag[] {

@@ -1,6 +1,5 @@
 import { createElement, useCallback } from "react";
-import { open as openExternal } from "@tauri-apps/plugin-shell";
-import type { DocBlock, InlineMarks, InlineSpan } from "@/lib/doclink";
+import { openDocHref, type DocBlock, type InlineMarks, type InlineSpan } from "@/lib/doclink";
 
 function spanStyle(m: InlineMarks): React.CSSProperties | undefined {
 	const style: React.CSSProperties = {};
@@ -91,7 +90,7 @@ export function DocRenderer({ blocks }: { blocks: DocBlock[] }) {
 		const a = (e.target as Element).closest("a");
 		if (!a?.href) return;
 		e.preventDefault();
-		void openExternal(a.href);
+		void openDocHref(a.href);
 	}, []);
 
 	return (

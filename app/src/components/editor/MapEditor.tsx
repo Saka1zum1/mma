@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import type { Bounds } from "@/types";
 import type { MutationResult } from "@/bindings.gen";
-import { createLocation } from "@/types";
 import {
 	useCurrentMap,
 	useWorkArea,
-	addLocations,
-	setActiveLocation,
 	getActiveLocation,
 	getCurrentMap,
 	getCurrentMapId,
@@ -14,7 +10,6 @@ import {
 	mutate,
 	removeLocations,
 	discardOpenMap,
-	createTags,
 	beginImportPaste,
 	beginImportFromPath,
 } from "@/store/useMapStore";
@@ -22,7 +17,8 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { goToList } from "@/store/router";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
-import { getMapHost, waitForMapHost, fitMapToBounds } from "@/lib/map/mapState";
+import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
+import { addParsedLocations } from "@/lib/map/mapClick";
 import { pluginsReady } from "@/plugins";
 import { MapEmbed } from "@/components/editor/map/MapEmbed";
 import { MapMetaBar } from "@/components/editor/map/MapMetaBar";
@@ -43,7 +39,6 @@ import {
 	parseCoordinates,
 	parseUrlList,
 	parsedLocationsToImportJson,
-	type ParsedLocation,
 } from "@/lib/data/importExport";
 import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
@@ -59,35 +54,6 @@ import { useCountrySelect } from "@/lib/map/useCountrySelect";
 import { useDeletePolygon } from "@/lib/map/useDeletePolygon";
 import { useMapKeyBindings } from "@/lib/map/mapKeyBindings";
 import { range, clamp } from "@/types/util";
-
-function zoomToPasted(bounds: Bounds | null, padding = 0) {
-	if (!getSettings().panToImported) return;
-	fitMapToBounds(bounds, padding, getSettings().pastePadding);
-}
-
-async function addParsedLocations(parsed: ParsedLocation[]) {
-	const tagNames = [...new Set(parsed.flatMap((p) => p.tags))];
-	const resolved = await createTags(tagNames);
-	const tagIdByName = new Map(resolved.map((t) => [t.name.toLowerCase(), t.id]));
-	const locs = parsed.map((p) =>
-		createLocation({
-			...p,
-			tags: p.tags
-				.map((n) => tagIdByName.get(n.toLowerCase()))
-				.filter((id): id is number => id !== undefined),
-		}),
-	);
-	await addLocations(locs);
-	setActiveLocation(locs[locs.length - 1].id);
-	const lats = locs.map((l) => l.lat);
-	const lngs = locs.map((l) => l.lng);
-	zoomToPasted({
-		west: Math.min(...lngs),
-		south: Math.min(...lats),
-		east: Math.max(...lngs),
-		north: Math.max(...lats),
-	});
-}
 
 function usePasteHandler() {
 	useEffect(() => {

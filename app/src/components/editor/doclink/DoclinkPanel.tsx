@@ -16,6 +16,7 @@ import {
 	loadSection,
 	evictDoc,
 	doclinkedTags,
+	openDocHref,
 	preloadSectionImages,
 	type DocSection,
 } from "@/lib/doclink";
@@ -55,7 +56,7 @@ function ShadowHtml({ css, html }: { css: string; html: string }) {
 			.find((n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement && !!n.href);
 		if (!a) return;
 		e.preventDefault();
-		void openExternal(a.href);
+		void openDocHref(a.href);
 	}, []);
 
 	return <div ref={hostRef} onClick={onClick} />;

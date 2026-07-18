@@ -6,13 +6,16 @@ import type { MapHost } from "@/lib/map/host";
 import { latLngToWorld } from "@/lib/geo/mercator";
 import { cmd } from "@/lib/commands";
 import { lookupStreetView, showToast } from "@/lib/sv/lookup";
-import { tryInterceptClick } from "@/lib/map/mapState";
+import { tryInterceptClick, fitMapToBounds } from "@/lib/map/mapState";
+import { getSettings } from "@/store/settings";
+import type { ParsedLocation } from "@/lib/data/importExport";
 import { openSeenEntry, isSeenOverlayActive, getSeenOverlayEntries } from "@/lib/seen/seenOverlay";
 import { openContextMenuLatLng, openContextMenuLocation } from "@/lib/sv/measure";
 import { trace } from "@/lib/util/debug";
 import { log } from "@/lib/util/log";
 import {
 	addLocations,
+	createTags,
 	getActiveLocation,
 	getCurrentMap,
 	getWorkArea,
@@ -22,8 +25,8 @@ import {
 	setActiveLocation,
 	toggleManualSelection,
 } from "@/store/useMapStore";
-import { isVirtualLocation, isImportPreview, locId } from "@/types";
-import type { MarkerStyle, MaybeLocation } from "@/types";
+import { isVirtualLocation, isImportPreview, locId, createLocation } from "@/types";
+import type { MarkerStyle, MaybeLocation, Bounds } from "@/types";
 import type { Location } from "@/bindings.gen";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +170,37 @@ export async function pickMarkerAt(
 		if (hitId != null) return { kind: "location", picked: hitId };
 	}
 	return null;
+}
+
+function zoomToPasted(bounds: Bounds | null, padding = 0) {
+	if (!getSettings().panToImported) return;
+	fitMapToBounds(bounds, padding, getSettings().pastePadding);
+}
+
+/** Add already-parsed locations (paste, URL lists, doc links): resolve tag
+ *  names to tags, add, activate the last one, pan to fit. */
+export async function addParsedLocations(parsed: ParsedLocation[]) {
+	const tagNames = [...new Set(parsed.flatMap((p) => p.tags))];
+	const resolved = await createTags(tagNames);
+	const tagIdByName = new Map(resolved.map((t) => [t.name.toLowerCase(), t.id]));
+	const locs = parsed.map((p) =>
+		createLocation({
+			...p,
+			tags: p.tags
+				.map((n) => tagIdByName.get(n.toLowerCase()))
+				.filter((id): id is number => id !== undefined),
+		}),
+	);
+	await addLocations(locs);
+	setActiveLocation(locs[locs.length - 1].id);
+	const lats = locs.map((l) => l.lat);
+	const lngs = locs.map((l) => l.lng);
+	zoomToPasted({
+		west: Math.min(...lngs),
+		south: Math.min(...lats),
+		east: Math.max(...lngs),
+		north: Math.max(...lats),
+	});
 }
 
 // ---------------------------------------------------------------------------
