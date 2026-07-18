@@ -7,6 +7,9 @@ import { latLngToWorld } from "@/lib/geo/mercator";
 import { cmd } from "@/lib/commands";
 import { lookupStreetView, showToast } from "@/lib/sv/lookup";
 import { tryInterceptClick } from "@/lib/map/mapState";
+import { createAppleLocationAtLatLng } from "@/lib/sv/lookaround/click";
+import { createBaiduLocationAtLatLng } from "@/lib/sv/baidu/click";
+import { getEnabledAltProviders } from "@/lib/sv/providers/settings";
 import { openSeenEntry, isSeenOverlayActive, getSeenOverlayEntries } from "@/lib/seen/seenOverlay";
 import { openContextMenuLatLng, openContextMenuLocation } from "@/lib/sv/measure";
 import { trace } from "@/lib/util/debug";
@@ -173,21 +176,13 @@ export async function pickMarkerAt(
 // Click / hover pipeline
 // ---------------------------------------------------------------------------
 
-// Create a location from a map click: snap to nearest SV coverage under the active
-// map's settings, add it, make it active. Shared by the editor map and the minimap.
-// Work-area guards live here so neither call site has to repeat them.
-export async function createLocationAtLatLng(
+/** Create a Google Street View location (default host). */
+async function createGoogleLocationAtLatLng(
 	lat: number,
 	lng: number,
 	zoom: number,
 	opts?: { container?: HTMLElement | null },
 ): Promise<Location | null> {
-	const area = getWorkArea();
-	if (area === "plugin" || area === "import" || area === "diff") return null;
-	const active = getActiveLocation();
-	if (active != null && isImportPreview(active)) return null;
-
-	const t = trace("add");
 	const ms = getCurrentMap()?.meta.settings;
 	const loc = await lookupStreetView(lat, lng, zoom, {
 		preferOfficial: ms?.preferOfficial,
@@ -202,11 +197,59 @@ export async function createLocationAtLatLng(
 		if (opts?.container) showToast(opts.container, "No coverage found at this location.");
 		return null;
 	}
-	t.step("lookup");
+	loc.provider = loc.provider ?? "google";
 	await addLocations([loc], { hideInDelta: true });
-	t.step("addLocations");
 	setActiveLocation(loc);
-	t.step("setActive");
+	return loc;
+}
+
+/**
+ * Create a location from a blank map click.
+ * Preferred enabled alt provider wins; otherwise Google.
+ * Pin clicks never reach here — they activate via location.provider in LocationPreview.
+ */
+export async function createLocationAtLatLng(
+	lat: number,
+	lng: number,
+	zoom: number,
+	opts?: { container?: HTMLElement | null },
+): Promise<Location | null> {
+	const area = getWorkArea();
+	if (area === "plugin" || area === "import" || area === "diff" || area === "providers") return null;
+	const active = getActiveLocation();
+	if (active != null && isImportPreview(active)) return null;
+
+	const t = trace("add");
+	const preferred = getEnabledAltProviders()[0];
+
+	if (preferred?.id === "apple") {
+		const { loc, consumed } = await createAppleLocationAtLatLng(lat, lng);
+		t.step("apple");
+		if (loc) {
+			t.end();
+			return loc;
+		}
+		if (consumed) {
+			t.end();
+			return null;
+		}
+		// fallbackToGoogle
+	} else if (preferred?.id === "baidu") {
+		const { loc, consumed } = await createBaiduLocationAtLatLng(lat, lng);
+		t.step("baidu");
+		if (loc) {
+			t.end();
+			return loc;
+		}
+		if (consumed) {
+			t.end();
+			return null;
+		}
+		// fallbackToGoogle
+	}
+
+	const loc = await createGoogleLocationAtLatLng(lat, lng, zoom, opts);
+	t.step("google");
 	t.end();
 	return loc;
 }
@@ -265,7 +308,9 @@ export async function handleMapClick(
 
 	if (ctx.measuring) return;
 
-	if (tryInterceptClick(lat, lng, domEvent instanceof MouseEvent && domEvent.shiftKey)) return;
+	if (await tryInterceptClick(lat, lng, domEvent instanceof MouseEvent && domEvent.shiftKey)) {
+		return;
+	}
 
 	const pick = await pickMarkerAt(lat, lng, pickCtx(ctx));
 	if (pick) {
