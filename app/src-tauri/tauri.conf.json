@@ -29,7 +29,7 @@
 	"plugins": {
 		"updater": {
 			"endpoints": ["https://github.com/Saka1zum1/mma/releases/latest/download/latest.json"],
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwRDJCQzg3RTUzQjRDRjQKUldUMFREdmxoN3pTTUpYd3V3ZytPc21tUGdzMjMrZ0ovUGRzRGh6aFlPQWd2N3NuOXBJS2VTL2IK"
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg0Mjc0NUFFMTIxMTlGMzUKUldRMW54RVNya1VuaEt3ajAwR0l5M0Q0R1lLeHk4Z1VURzlNb0V4ejdaeDgzaG1rRjl5YmdKYisK"
 		}
 	},
 	"bundle": {
