@@ -17,7 +17,7 @@ function Note({ children }: { children: ReactNode }) {
 // Images are fetched from GitHub at runtime so the manual ships without bundling
 // screenshots. If the file is missing or the user is offline, the <img> hides
 // itself and only the caption remains, keeping the layout clean.
-const MANUAL_IMG_BASE = "https://raw.githubusercontent.com/ccmdi/mma/master/img/manual/";
+const MANUAL_IMG_BASE = "https://raw.githubusercontent.com/Saka1zum1/mma/master/img/manual/";
 
 function Img({ name, caption }: { name: string; caption: string }) {
 	const dim = MANUAL_IMG_DIMS[name];

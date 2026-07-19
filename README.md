@@ -22,7 +22,7 @@ A local-first desktop alternative to [map-making.app](https://map-making.app).
 
 ## Installation
 
-Open [the latest release](https://github.com/ccmdi/mma/releases/latest) and download the installer for your platform.
+Open [the latest release](https://github.com/Saka1zum1/mma/releases/latest) and download the installer for your platform.
 
 ### macOS / Linux
 

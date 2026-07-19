@@ -71,7 +71,7 @@ fn fetch_expected_sha(
     asset: &str,
 ) -> Option<String> {
     let url = format!(
-        "https://github.com/ccmdi/mma/releases/download/{plugin_id}-v{version}/checksums.txt"
+        "https://github.com/Saka1zum1/mma/releases/download/{plugin_id}-v{version}/checksums.txt"
     );
     let text = client
         .get(&url)
@@ -96,7 +96,7 @@ fn install_blocking(plugin_id: String, name: String, version: String) -> AppResu
     let platform = platform_tag()?;
     let asset = format!("{name}-{platform}.zip");
     let url =
-        format!("https://github.com/ccmdi/mma/releases/download/{plugin_id}-v{version}/{asset}");
+        format!("https://github.com/Saka1zum1/mma/releases/download/{plugin_id}-v{version}/{asset}");
     log::info!("[sidecar] downloading {url}");
 
     let final_dir = sidecar_dir(&plugin_id)?;

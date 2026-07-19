@@ -91,6 +91,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -139,7 +141,7 @@ jobs:
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
         run: |
           VERSION="${TAG#v}"
-          REPO="https://github.com/ccmdi/mma/releases/download/${TAG}"
+          REPO="https://github.com/${{ github.repository }}/releases/download/${TAG}"
 
           WIN_SIG=$(cat "$(find artifacts -path '*/nsis/*' -name '*.exe.sig' | head -1)" 2>/dev/null || echo "")
           MAC_ARM_SIG=$(cat "$(find artifacts -path '*aarch64*' -name '*.app.tar.gz.sig' | head -1)" 2>/dev/null || echo "")
@@ -165,12 +167,14 @@ jobs:
           }
           EOF
 
-      - name: Create draft release on ccmdi/mma
+      - name: Create draft release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          RELEASE_REPO: ${{ github.repository }}
         run: |
           mapfile -t files < <(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.app.tar.gz" \) ! -name "*.sig")
           files+=(latest.json)
-          printf 'Uploading: %s\n' "${files[@]}"
-          gh release create "$TAG" --repo ccmdi/mma --title "$TAG" --draft --notes-file notes.md "${files[@]}"
+          printf 'Uploading to %s: %s\n' "$RELEASE_REPO" "${files[@]}"
+          gh release delete "$TAG" --repo "$RELEASE_REPO" --yes 2>/dev/null || true
+          gh release create "$TAG" --repo "$RELEASE_REPO" --title "$TAG" --draft --notes-file notes.md "${files[@]}"

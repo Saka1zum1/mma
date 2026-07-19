@@ -544,7 +544,7 @@ pub fn download_border_file(level: String) -> AppResult<()> {
     let dir = crate::storage::app_data_dir()?.join("borders");
     std::fs::create_dir_all(&dir)?;
     let url = format!(
-        "https://raw.githubusercontent.com/ccmdi/mma/master/data/borders/borders-{level}.rkyv"
+        "https://raw.githubusercontent.com/Saka1zum1/mma/master/data/borders/borders-{level}.rkyv"
     );
     let client = reqwest::blocking::Client::builder()
         .use_rustls_tls()

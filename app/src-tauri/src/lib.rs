@@ -302,7 +302,7 @@ fn list_user_plugins() -> Vec<PluginManifest> {
 }
 
 /// Base URL for the plugin marketplace repository on GitHub.
-const PLUGIN_REPO_BASE: &str = "https://raw.githubusercontent.com/ccmdi/mma/master/plugins";
+const PLUGIN_REPO_BASE: &str = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins";
 
 pub(crate) fn validate_plugin_id(id: &str) -> AppResult<()> {
     if id.is_empty()
