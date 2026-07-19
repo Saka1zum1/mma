@@ -1,3 +1,8 @@
+## v0.7.7 - 2026-07-19
+- Independent release channel from [Saka1zum1/mma](https://github.com/Saka1zum1/mma) (fork of upstream MMA)
+- Apple Look Around, Baidu, and Tencent Street View providers
+- App updates now served from the fork's GitHub Releases
+
 ## v0.7.6 - 2026-07-13
 - Opt-in Discord Rich Presence, with a privacy level setting
 - Fixed metadata fields occasionally being lost when several enrichment steps wrote to a location at once

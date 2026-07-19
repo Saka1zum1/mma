@@ -156,7 +156,7 @@ let changelogPromise: Promise<ChangelogSection[] | null> | null = null;
 
 function fetchChangelog(): Promise<ChangelogSection[] | null> {
 	if (!changelogPromise) {
-		changelogPromise = fetch("https://raw.githubusercontent.com/ccmdi/mma/master/CHANGELOG.md")
+		changelogPromise = fetch("https://raw.githubusercontent.com/Saka1zum1/mma/master/CHANGELOG.md")
 			.then((r) => (r.ok ? r.text() : null))
 			.then((md) => {
 				if (!md) return null;
@@ -1301,7 +1301,7 @@ export function MapList() {
 						<time className="updates__time">Warning</time>
 						<p>
 							This is a work in progress. Report bugs{" "}
-							<a target="_blank" href="https://github.com/ccmdi/mma/issues">
+							<a target="_blank" href="https://github.com/Saka1zum1/mma/issues">
 								here
 							</a>
 							.

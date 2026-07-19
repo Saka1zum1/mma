@@ -19,7 +19,7 @@ Grab the plugin scaffold directly into your plugins directory:
 ```bash
 mkdir %APPDATA%/app.map-making.local/plugins
 cd %APPDATA%/app.map-making.local/plugins
-npx degit ccmdi/mma/plugins
+npx degit Saka1zum1/mma/plugins
 cd sample
 npm install
 npm run build
