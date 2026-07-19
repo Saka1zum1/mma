@@ -103,7 +103,7 @@ fn coord_keeps_zoom_and_pano_when_pinned() {
 }
 
 #[test]
-fn alt_provider_exports_source_and_empty_extra() {
+fn alt_provider_exports_source_and_tags_in_extra() {
     let mut extra = serde_json::Map::new();
     extra.insert("countryCode".into(), json!("CN"));
     extra.insert("cameraType".into(), json!("baidu"));
@@ -122,7 +122,24 @@ fn alt_provider_exports_source_and_empty_extra() {
     assert!(v.get("provider").is_none());
     assert_eq!(v["panoId"], json!("09000300122012131028445027I"));
     assert_eq!(v["countryCode"], json!("CN"));
-    assert_eq!(v["extra"], json!({}));
+    assert_eq!(v["extra"], json!({ "tags": ["red"] }));
+}
+
+#[test]
+fn alt_provider_omits_extra_without_tags() {
+    let mut extra = serde_json::Map::new();
+    extra.insert("cameraType".into(), json!("baidu"));
+    let mut l = make_loc(LocationFlags::LOAD_AS_PANO_ID, vec![], Some(extra));
+    l.provider = Some("baidu".into());
+    l.pano_id = Some("09000300122012131028445027I".into());
+    let id_to_name = std::collections::HashMap::new();
+    let co = CoordOpts {
+        export_zoom: true,
+        export_unpanned: false,
+        export_extras: true,
+    };
+    let v = location_to_coord(&l, &id_to_name, &co);
+    assert!(v.get("extra").is_none());
 }
 
 #[test]
@@ -139,7 +156,7 @@ fn apple_provider_exports_apple_pano_source() {
     let v = location_to_coord(&l, &id_to_name, &co);
     assert_eq!(v["source"], json!("apple_pano"));
     assert!(v.get("provider").is_none());
-    assert_eq!(v["extra"], json!({}));
+    assert!(v.get("extra").is_none());
 }
 
 #[test]

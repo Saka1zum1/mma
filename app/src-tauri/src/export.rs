@@ -111,12 +111,33 @@ fn strip_export_pano_prefix(pano_id: &str) -> &str {
     pano_id
 }
 
+/// Tag names for export `extra.tags`, or None when the location has no tags.
+fn export_tag_names(
+    loc: &crate::types::Location,
+    id_to_name: &std::collections::HashMap<u32, String>,
+) -> Option<Vec<serde_json::Value>> {
+    if loc.tags.is_empty() {
+        return None;
+    }
+    Some(
+        loc.tags
+            .iter()
+            .map(|id| {
+                serde_json::json!(id_to_name
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| id.to_string()))
+            })
+            .collect(),
+    )
+}
+
 /// Convert one location to a `{lat, lng, heading, ...}` coordinate object.
 /// Single source of truth for the export wire shape shared by JSON and bulk ZIP.
 /// `countryCode`/`stateCode` are always hoisted to the top level; all other
 /// `extra` fields nest under `extra`.
-/// Non-Google providers export as `source: "*_pano"` (never `provider`) with an
-/// empty `extra` object — matching the alt-provider GeoGuessr wire format.
+/// Non-Google providers export as `source: "*_pano"` (never `provider`); `extra`
+/// carries tags only (no internal enrichment fields).
 fn location_to_coord(
     loc: &crate::types::Location,
     id_to_name: &std::collections::HashMap<u32, String>,
@@ -165,9 +186,14 @@ fn location_to_coord(
     }
 
     if is_alt {
-        // Alt-provider GG wire format: always emit an empty extra object; never
-        // re-export internal tags / enrichment under `extra`.
-        c.insert("extra".into(), Value::Object(serde_json::Map::new()));
+        // Alt-provider wire format: extra.tags only when exporting extras.
+        if opts.export_extras {
+            if let Some(names) = export_tag_names(loc, id_to_name) {
+                let mut extra = serde_json::Map::new();
+                extra.insert("tags".into(), json!(names));
+                c.insert("extra".into(), Value::Object(extra));
+            }
+        }
     } else if opts.export_extras {
         let mut extra = serde_json::Map::new();
         if let Some(ref e) = loc.extra {
@@ -178,17 +204,7 @@ fn location_to_coord(
                 extra.insert(k, v);
             }
         }
-        if !loc.tags.is_empty() {
-            let names: Vec<Value> = loc
-                .tags
-                .iter()
-                .map(|id| {
-                    json!(id_to_name
-                        .get(id)
-                        .cloned()
-                        .unwrap_or_else(|| id.to_string()))
-                })
-                .collect();
+        if let Some(names) = export_tag_names(loc, id_to_name) {
             extra.insert("tags".into(), json!(names));
         }
         // Google historically kept unpinned panoId under extra.
