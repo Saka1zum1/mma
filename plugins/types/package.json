@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Type declarations for MMA plugin development",
   "types": "mma.d.ts",
-  "files": ["mma.d.ts"],
+  "files": ["mma.d.ts", "google-maps.d.ts"],
   "dependencies": {
     "@deck.gl/core": "^9.3.1",
     "@tauri-apps/api": "^2.11.0",

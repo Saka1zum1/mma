@@ -1,4 +1,5 @@
 /// <reference types="google.maps" />
+/// <reference path="./google-maps.d.ts" />
 
 import { ComponentType, SetStateAction, ReactNode } from 'react';
 import * as react_jsx_runtime from 'react/jsx-runtime';
@@ -1383,6 +1384,12 @@ type VirtualTag = {
 
 export type LatLng = google.maps.LatLngLiteral;
 export type Bounds = google.maps.LatLngBoundsLiteral;
+/** Panorama source type from Google's internal metadata. */
+declare const enum PanoType {
+    Official = 2,
+    Unknown = 3,
+    UserUploaded = 10
+}
 /** A location you already hold in full, or just its id to fetch on demand.
  *  Lets the pick -> activate path carry "materialized or not" as plain data;
  *  `resolveLocation` (in the store) fetches only the id case. */
@@ -2978,7 +2985,5 @@ declare global {
     const MMA: MMA;
 }
 
-
-
-export { MMA as MMAApi, commands };
+export { MMA as MMAApi, PanoType, commands };
 export type { CellRemoval, ColorPatchEntry, CommitDelta, CommitDiff, CommitInfo, ComparisonType, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, GeoResult, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapSettings, MutationResult, NumericBinning, PartitionBucket, PickHit, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SpacedPickResult, StoreStatus, SummaryResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };

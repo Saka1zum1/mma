@@ -36,13 +36,9 @@ async function main() {
     fs.symlinkSync(path.join(appDir, "node_modules"), path.join(tmp, "node_modules"), "junction");
 
     // Mirror entrypoint.ts against the emitted tree ("../../app/src/X" -> "./X").
-    // The host modules are pulled in for their `declare module "@/lib/map/host"`
-    // augmentations - without them HostInstances stays empty and MapHost = never.
-    const entrySrc =
-      fs
-        .readFileSync(path.join(__dirname, "entrypoint.ts"), "utf-8")
-        .replace(/(["'])\.\.\/\.\.\/app\/src\//g, "$1./") +
-      `import "./lib/map/googleHost";\nimport "./lib/map/maplibreHost";\n`;
+    const entrySrc = fs
+      .readFileSync(path.join(__dirname, "entrypoint.ts"), "utf-8")
+      .replace(/(["'])\.\.\/\.\.\/app\/src\//g, "$1./");
     const entry = path.join(tmp, "entrypoint.d.ts");
     fs.writeFileSync(entry, entrySrc);
 
@@ -70,29 +66,6 @@ async function main() {
     await bundle.close();
     let content = output[0].code;
 
-    // Module augmentations survive the bundle verbatim, but their target path
-    // no longer exists in the flat file - hoist the members into the bundled
-    // interface and drop the `declare module` wrappers.
-    const augmented = new Map();
-    content = content.replace(
-      /declare module "[^"]+" \{\s*interface (\w+) \{([^}]*)\}\s*\}\n?/g,
-      (_m, name, members) => {
-        const lines = members
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .map((l) => `    ${l}`);
-        augmented.set(name, [...(augmented.get(name) ?? []), ...lines]);
-        return "";
-      },
-    );
-    for (const [name, lines] of augmented) {
-      content = content.replace(
-        new RegExp(`(interface ${name} \\{)`),
-        `$1\n${lines.join("\n")}`,
-      );
-    }
-
     // rollup-plugin-dts appends $1 to names that collide across modules.
     for (const name of ["Location", "Selection", "Plugin", "MMA", "open"]) {
       content = content.replace(new RegExp(`\\b${name}\\$1\\b`, "g"), name);
@@ -111,9 +84,19 @@ async function main() {
 
     // api.ts's `declare global` (window.MMA + bare MMA) survives the bundle,
     // so no appended global block is needed.
-    content = `/// <reference types="google.maps" />\n\n` + content;
+    content =
+      `/// <reference types="google.maps" />\n` +
+      `/// <reference path="./google-maps.d.ts" />\n\n` +
+      content;
     fs.writeFileSync(out, content);
-    console.log("Generated plugins/types/mma.d.ts");
+
+    // The google.maps namespace augmentation is ambient (position-independent),
+    // so it ships verbatim next to mma.d.ts; only the path alias needs remapping.
+    const augment = fs
+      .readFileSync(path.join(appDir, "src", "types", "google-maps.d.ts"), "utf-8")
+      .replace(/import\("@\/types"\)/g, 'import("./mma")');
+    fs.writeFileSync(path.resolve(__dirname, "google-maps.d.ts"), augment);
+    console.log("Generated plugins/types/mma.d.ts + google-maps.d.ts");
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

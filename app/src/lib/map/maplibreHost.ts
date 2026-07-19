@@ -28,12 +28,6 @@ import type {
 	DeckOverlayProps,
 } from "@/lib/map/host";
 
-declare module "@/lib/map/host" {
-	interface HostInstances {
-		maplibre: maplibregl.Map;
-	}
-}
-
 const ZOOM_OFFSET = 1;
 const SV_SOURCE = "mma-sv";
 const SV_SCHEME = "mma-sv://";

@@ -6,15 +6,17 @@
 // host is a different engine.
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
+import type maplibregl from "maplibre-gl";
 import type { LatLng, Bounds, MapTypeKey } from "@/types";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import type { CustomStyle } from "@/lib/geo/mapStack";
 
-// Engine instance registry. This module knows nothing about concrete hosts;
-// each host module augments this interface with `kind: engine instance type`,
-// which is also what makes it a MapHostKind.
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- augmentation seam
-export interface HostInstances {}
+// Engine instance registry: kind -> raw engine type. Adding a host means an
+// entry here plus a branch in createMapHost.
+export interface HostInstances {
+	google: google.maps.Map;
+	maplibre: maplibregl.Map;
+}
 
 export type MapHostKind = keyof HostInstances;
 
