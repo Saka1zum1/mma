@@ -23,6 +23,9 @@ export function getMapHost(): MapHost | null {
 	return mapHost;
 }
 
+/**
+ * Wait for the main editor map to be ready.
+ */
 export function waitForMapHost(): Promise<MapHost> {
 	if (mapHost) return Promise.resolve(mapHost);
 	if (!hostReadyPromise) {

@@ -26,6 +26,11 @@ pub struct Tag {
     /// fast sidebar display -- kept in sync by callers after batch edits.
     #[serde(default)]
     pub count: usize,
+    /// Document links from the map JSON's `extra.tags[name].doclinks` --
+    /// URLs into external docs (e.g. Google Docs heading links). Read-only
+    /// in the app; round-trips through import/export.
+    #[serde(default)]
+    pub doclinks: Vec<String>,
 }
 
 fn default_visible() -> bool {

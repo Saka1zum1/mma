@@ -37,6 +37,7 @@ export const pinPanoResolver: SvResolver = {
 
 registerSvResolver(pinPanoResolver);
 
+/** Pin each location to a resolved panorama (sets `panoId`), so it always loads the same pano. */
 export async function bulkPinToPano(
 	locations: Location[],
 	opts: {

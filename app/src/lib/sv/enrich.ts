@@ -16,6 +16,7 @@ import { SV_CONCURRENCY } from "@/lib/sv/constants";
 import { log } from "@/lib/util/log";
 import type { Location } from "@/bindings.gen";
 
+/** True when the location is missing any of the given enrich fields (default: the enabled set). */
 export function needsEnrichment(loc: Location, enrichFields?: string[]): boolean {
 	const fields = enrichFields ?? getDefaultEnrichKeys();
 	return fields.some((key) => loc.extra?.[key] == null);

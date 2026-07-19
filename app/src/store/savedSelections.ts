@@ -73,6 +73,8 @@ function resolveTagByName(tagName: string): number | null {
 	return null;
 }
 
+/** Resolve a saved rule against the open map, or null when it no longer applies
+ *  (e.g. the tag name doesn't exist here). */
 export function savedToSelectionProps(saved: SavedSelectionProps): SelectionProps | null {
 	switch (saved.type) {
 		case "TagName": {
@@ -115,6 +117,7 @@ export async function resolveSavedSelectionIds(id: string): Promise<Set<number>>
 
 // Display
 
+/** Short human-readable description of a saved-selection rule. */
 export function describeRule(props: SavedSelectionProps): string {
 	switch (props.type) {
 		case "Everything":
@@ -150,6 +153,7 @@ export function describeRule(props: SavedSelectionProps): string {
 
 // CRUD
 
+/** All saved selection rules (global, name-based; shared across maps). */
 export function getSavedSelections(): SavedSelection[] {
 	return getSettings().savedSelections;
 }

@@ -239,6 +239,7 @@ fn parse_csv(text: &str) -> ParsedMap {
 struct ExtraTagMeta {
     color: Option<String>,
     order: Option<u32>,
+    doclinks: Vec<String>,
 }
 
 /// Parse the top-level `"extra"` object (sibling of the coordinate array) into a
@@ -357,7 +358,26 @@ fn tag_meta_from_extra(extra: &serde_json::Value) -> HashMap<String, ExtraTagMet
                 .get("order")
                 .and_then(|o| o.as_u64())
                 .map(|o| o as u32);
-            meta.insert(name.clone(), ExtraTagMeta { color, order });
+            // `doclinks` array is the convention; a bare `doclink` string is tolerated.
+            let doclinks = match entry.get("doclinks") {
+                Some(Value::Array(arr)) => arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect(),
+                _ => entry
+                    .get("doclink")
+                    .and_then(|v| v.as_str())
+                    .map(|s| vec![s.to_string()])
+                    .unwrap_or_default(),
+            };
+            meta.insert(
+                name.clone(),
+                ExtraTagMeta {
+                    color,
+                    order,
+                    doclinks,
+                },
+            );
         }
     }
     meta
@@ -1103,6 +1123,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
                 .and_then(|m| m.color.clone())
                 .unwrap_or_else(|| color_for_name(&name));
             let order = meta.and_then(|m| m.order);
+            let doclinks = meta.map(|m| m.doclinks.clone()).unwrap_or_default();
             Tag {
                 id,
                 name,
@@ -1110,6 +1131,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
                 visible: true,
                 order,
                 count: 0,
+                doclinks,
             }
         })
         .collect();
@@ -1325,10 +1347,8 @@ pub struct ImportProgress {
     pub map_name: String,
 }
 
-/// Persist selected maps from a previously previewed import.
-/// Uses the cached parse if available; otherwise re-parses the file.
-/// Each map gets a new UUID, Arrow IPC file, and SQLite row.
-/// Emits `bulk-import-progress` events per map for UI feedback.
+/// Import the selected maps from a previously previewed file. Emits `bulk-import-progress` per map.
+// Uses the cached parse if available; each map gets a new UUID, Arrow IPC file, and SQLite row.
 #[tauri::command]
 #[specta::specta]
 pub async fn bulk_import_confirm(
@@ -1686,6 +1706,7 @@ fn add_parsed_to_store(
                         visible: true,
                         order: None,
                         count: 0,
+                        doclinks: Vec::new(),
                     },
                 );
                 store.tags.dirty = true;

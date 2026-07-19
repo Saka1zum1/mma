@@ -19,12 +19,6 @@ import type {
 	DeckOverlayProps,
 } from "@/lib/map/host";
 
-declare module "@/lib/map/host" {
-	interface HostInstances {
-		google: google.maps.Map;
-	}
-}
-
 type GmEvent = { srcEvent?: { domEvent?: Event } };
 
 const EVENT_NAMES: Record<keyof MapHostEvents, string> = {

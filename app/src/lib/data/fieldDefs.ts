@@ -28,6 +28,7 @@ export function getEnrichFieldOptions(): EnrichFieldOption[] {
 	return [...coreFieldOptions, ...pluginFieldOptions];
 }
 
+/** Offer extra fields in the enrichment UI. Unregistered when the plugin deactivates. */
 export function registerEnrichFields(fields: EnrichFieldOption[]) {
 	for (const f of fields) {
 		if (!pluginFieldOptions.some((e) => e.key === f.key)) {
@@ -99,6 +100,8 @@ export function providerWaves(list: EnrichmentProvider[]): EnrichmentProvider[][
 
 const providers: EnrichmentProvider[] = [];
 
+/** Register a provider that computes extra fields during enrichment (e.g. sun position).
+ *  Unregistered when the plugin deactivates. */
 export function registerEnrichmentProvider(provider: EnrichmentProvider) {
 	if (!providers.some((p) => p.id === provider.id)) {
 		providers.push(provider);

@@ -24,13 +24,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// mma-ext:@deck.gl/google-maps
-var require_google_maps = __commonJS({
-  "mma-ext:@deck.gl/google-maps"(exports, module) {
-    module.exports = globalThis.__mma_require("@deck.gl/google-maps");
-  }
-});
-
 // mma-ext:@deck.gl/layers
 var require_layers = __commonJS({
   "mma-ext:@deck.gl/layers"(exports, module) {
@@ -53,7 +46,6 @@ var require_jsx_runtime = __commonJS({
 });
 
 // inaturalist/src/inat.ts
-var import_google_maps = __toESM(require_google_maps());
 var import_layers = __toESM(require_layers());
 var TILE_TTL = 5 * 60 * 1e3;
 var MAX_TILES = 300;
@@ -126,20 +118,15 @@ function importToMap() {
   return locs.length;
 }
 async function init() {
-  const map = MMA.getGoogleMap();
-  if (!map) throw new Error("No map instance");
-  overlay = new import_google_maps.GoogleMapsOverlay({ layers: [] });
-  overlay.setMap(map);
+  const host = MMA.getMapHost();
+  if (!host) throw new Error("No map instance");
+  overlay = host.createDeckOverlay();
   const throttled = throttle(() => loadViewport(), 400);
-  listeners = [
-    map.addListener("bounds_changed", throttled),
-    map.addListener("zoom_changed", throttled)
-  ];
+  listeners = [host.on("camera", throttled)];
   return () => {
-    for (const l of listeners) l.remove();
+    for (const un of listeners) un();
     listeners = [];
     if (overlay) {
-      overlay.setMap(null);
       overlay.finalize();
       overlay = null;
     }
@@ -208,17 +195,15 @@ async function fetchTile(taxonId, bbox) {
 }
 async function loadViewport() {
   if (!currentTaxonId || !visible) return;
-  const map = MMA.getGoogleMap();
-  if (!map) return;
-  const bounds = map.getBounds();
+  const host = MMA.getMapHost();
+  if (!host) return;
+  const bounds = host.getBounds();
   if (!bounds) return;
-  const ne = bounds.getNorthEast();
-  const sw = bounds.getSouthWest();
-  const tz = computeTileZoom(map.getZoom());
-  const xMin = lngToTileX(sw.lng(), tz);
-  const xMax = lngToTileX(ne.lng(), tz);
-  const yMin = latToTileY(ne.lat(), tz);
-  const yMax = latToTileY(sw.lat(), tz);
+  const tz = computeTileZoom(host.getZoom());
+  const xMin = lngToTileX(bounds.west, tz);
+  const xMax = lngToTileX(bounds.east, tz);
+  const yMin = latToTileY(bounds.north, tz);
+  const yMax = latToTileY(bounds.south, tz);
   const now = Date.now();
   const fetches = [];
   for (let x = xMin; x <= xMax; x++) {

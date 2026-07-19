@@ -1,4 +1,4 @@
-/**
+/*
  * Unified field-definition registry.
  *
  * Field **existence** (which keys have data) is tracked separately by

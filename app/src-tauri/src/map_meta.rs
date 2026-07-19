@@ -555,14 +555,10 @@ pub fn store_create_map(name: String, folder: Option<String>) -> AppResult<MapDa
     Ok(MapData { meta })
 }
 
-/// Delete a map and all associated data: SQLite rows (maps, edit_history,
-/// commits) and Arrow base/delta/commit files on disk.
-///
-/// Evicts any live in-memory state for the map, so a window still showing it
-/// (or a racing autosave) can't flush its overlay back to disk after the files
-/// are gone. The manager lock is held across the whole delete so a concurrent
-/// `store_open_map` of the same map can't reload it from disk mid-deletion and
-/// resurrect it.
+/// Delete a map and all its data: database rows and files on disk.
+// Evicts live in-memory state so an open window or racing autosave can't flush the overlay
+// back after the files are gone. The manager lock is held across the whole delete so a
+// concurrent store_open_map can't reload the map mid-deletion and resurrect it.
 #[tauri::command]
 #[specta::specta]
 pub fn store_delete_map(state: tauri::State<'_, StoreState>, id: String) -> AppResult<()> {
@@ -588,10 +584,9 @@ pub fn store_delete_map(state: tauri::State<'_, StoreState>, id: String) -> AppR
     Ok(())
 }
 
-/// Apply a partial update to a map's metadata. Dynamically builds the SQL
-/// UPDATE from non-`None` fields in the patch. Also syncs `known_field_keys`
-/// on the in-memory store when extra fields change, so auto-registration
-/// doesn't re-discover fields the user explicitly defined.
+/// Apply a partial update to a map's metadata; `None` fields are left unchanged.
+// Also syncs known_field_keys on the in-memory store when extra fields change, so
+// auto-registration doesn't re-discover fields the user explicitly defined.
 #[tauri::command]
 #[specta::specta]
 pub fn store_update_map_meta(

@@ -1,0 +1,278 @@
+.editor-shell {
+	display: flex;
+}
+.editor-shell > .page-map-editor {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.doclink-panel {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	height: calc(100vh - 2rem);
+	margin: 0.5rem 0.5rem 0.5rem 0;
+	background: var(--item-color);
+	border-radius: 4px;
+	min-width: 0;
+}
+
+.doclink-panel__resize {
+	position: absolute;
+	left: -6px;
+	top: 0;
+	bottom: 0;
+	width: 10px;
+	cursor: col-resize;
+	z-index: 2;
+}
+
+.doclink-panel__header {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.375rem 0.5rem;
+}
+
+.doclink-panel__title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 600;
+}
+
+.doclink-panel__pager {
+	display: flex;
+	gap: 0.25rem;
+	padding: 0 0.5rem 0.375rem;
+	/* Fixed height so an empty pager (single-link tag) holds its space. */
+	height: 1.75rem;
+	box-sizing: border-box;
+}
+.doclink-panel__pager button {
+	border: 1px solid transparent;
+	border-radius: 3px;
+	background: var(--sand-10, #33332e);
+	color: inherit;
+	font-size: 0.75rem;
+	padding: 0.125rem 0.5rem;
+	cursor: pointer;
+}
+.doclink-panel__pager button.is-selected {
+	border-color: var(--sand-4, #b3b2a6);
+}
+
+.doclink-panel__body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	border-radius: 0 0 4px 4px;
+	background: var(--item-color);
+	position: relative;
+}
+
+/* Raw-HTML fallback renders the doc with Google's own (light) styling. */
+.doclink-panel__body--fallback {
+	background: #fff;
+}
+
+.doclink-panel__loading {
+	position: sticky;
+	top: 0.5rem;
+	float: right;
+	margin-right: 0.5rem;
+	z-index: 1;
+}
+
+.doclink-spinner {
+	display: inline-block;
+	width: 1rem;
+	height: 1rem;
+	border: 2px solid var(--sand-7, #66655c);
+	border-top-color: var(--sand-2, #e0dfd4);
+	border-radius: 50%;
+	animation: rotate 0.8s linear infinite;
+}
+
+.doclink-native {
+	padding: 0.75rem 1rem;
+	overflow-wrap: break-word;
+	line-height: 1.5;
+}
+.doclink-native h1,
+.doclink-native h2,
+.doclink-native h3,
+.doclink-native h4,
+.doclink-native h5,
+.doclink-native h6 {
+	margin: 1rem 0 0.375rem;
+	line-height: 1.25;
+}
+.doclink-native h1 {
+	font-size: 1.7rem;
+}
+.doclink-native h2 {
+	font-size: 1.45rem;
+}
+.doclink-native h3 {
+	font-size: 1.25rem;
+}
+.doclink-native h4 {
+	font-size: 1.1rem;
+}
+.doclink-native h5,
+.doclink-native h6 {
+	font-size: 1rem;
+}
+.doclink-native > :first-child {
+	margin-top: 0;
+}
+.doclink-native p {
+	margin: 0.4rem 0;
+	white-space: pre-wrap;
+}
+.doclink-native ul,
+.doclink-native ol {
+	margin: 0.4rem 0;
+	padding-left: 1.5rem;
+}
+.doclink-native li {
+	margin: 0.2rem 0;
+	white-space: pre-wrap;
+}
+.doclink-native img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	margin: 0.625rem auto;
+	border-radius: 3px;
+}
+.doclink-native a {
+	color: var(--text-color, #fff);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.doclink-native hr {
+	border: none;
+	border-top: 1px solid var(--sand-8, #4d4c45);
+	margin: 0.75rem 0;
+}
+.doclink-native__placeholder {
+	color: var(--sand-5, #999888);
+	font-style: italic;
+}
+
+/* --- Assign dialog --- */
+.doclink-assign {
+	width: 1100px;
+	max-width: 95vw;
+}
+.doclink-assign__url {
+	margin-top: 4px;
+	display: flex;
+	gap: 0.5rem;
+}
+.doclink-assign__url .input {
+	flex: 1;
+	min-width: 0;
+}
+.doclink-assign__url .button {
+	flex-shrink: 0;
+}
+.doclink-assign__hint {
+	margin: 0.5rem 0 0;
+	font-size: 0.85rem;
+	color: #888;
+}
+.doclink-assign__panes {
+	display: grid;
+	grid-template-columns: 280px minmax(0, 1fr);
+	gap: 0.75rem;
+	margin-top: 0.75rem;
+	height: 65vh;
+}
+.doclink-assign__pane-title {
+	font-weight: 600;
+	font-size: 0.85rem;
+	margin-bottom: 0.375rem;
+}
+.doclink-assign__tags {
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	/* Room for the armed outline, which draws outside the pill. */
+	padding: 4px 8px;
+}
+.doclink-assign__tag {
+	cursor: pointer;
+	/* Clip long names (base .tag lets them overflow). overflow:hidden zeroes the
+	   flex minimum size, so pin the pill's height against column-flex shrinking. */
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex-shrink: 0;
+}
+/* .tag__text's negative right margin is for pills ending in a button; here the
+   pill ends in the count, which it would push outside the pill. */
+.doclink-assign__tag .tag__text {
+	margin-right: 0;
+	padding-right: 0;
+}
+.doclink-assign__tag.is-armed {
+	opacity: 1;
+	outline: 2px solid #1a73e8;
+	outline-offset: 1px;
+}
+.doclink-assign__count {
+	margin-left: 0.375rem;
+	font-weight: 700;
+	opacity: 0.75;
+}
+.doclink-assign__outline {
+	overflow-y: auto;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	padding: 0.5rem 0.75rem;
+}
+.doclink-assign__heading {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	padding: 0.2rem 0.5rem;
+	font-size: 0.85rem;
+	min-height: 1.5rem;
+}
+.doclink-assign__heading.is-assignable {
+	cursor: pointer;
+}
+.doclink-assign__heading.is-assignable:hover {
+	background: #f0f0f0;
+}
+.doclink-assign__heading.is-active {
+	background: #e8f0fe;
+}
+.doclink-assign__heading-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.doclink-assign__chip {
+	border-radius: 3px;
+	padding: 0 0.375rem;
+	font-size: 0.7rem;
+	white-space: nowrap;
+}
+
+.doclink-panel__status {
+	padding: 1rem;
+	color: var(--sand-5, #999888);
+}
+.doclink-panel__status--center {
+	display: flex;
+	justify-content: center;
+	padding-top: 2.5rem;
+}

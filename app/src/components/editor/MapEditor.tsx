@@ -1,12 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Bounds } from "@/types";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { MutationResult } from "@/bindings.gen";
-import { createLocation } from "@/types";
 import {
 	useCurrentMap,
 	useWorkArea,
-	addLocations,
-	setActiveLocation,
 	getActiveLocation,
 	getCurrentMap,
 	getCurrentMapId,
@@ -14,7 +10,6 @@ import {
 	mutate,
 	removeLocations,
 	discardOpenMap,
-	createTags,
 	beginImportPaste,
 	beginImportFromPath,
 	toggleProvidersMode,
@@ -23,7 +18,8 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { goToList } from "@/store/router";
 import { activatePlugins, deactivatePlugins } from "@/plugins/registry";
-import { getMapHost, waitForMapHost, fitMapToBounds } from "@/lib/map/mapState";
+import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
+import { addParsedLocations } from "@/lib/map/mapClick";
 import { pluginsReady } from "@/plugins";
 import { MapEmbed } from "@/components/editor/map/MapEmbed";
 import { MapMetaBar } from "@/components/editor/map/MapMetaBar";
@@ -48,11 +44,14 @@ import {
 	parseCoordinates,
 	parseUrlList,
 	parsedLocationsToImportJson,
-	type ParsedLocation,
 } from "@/lib/data/importExport";
 import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
-import { mdiBackburger, mdiEarthPlus, mdiPencil } from "@mdi/js";
+import { mdiBackburger, mdiEarthPlus, mdiPencil, mdiFileDocumentOutline } from "@mdi/js";
+import { DoclinkPanel } from "@/components/editor/doclink/DoclinkPanel";
+import { DoclinkAssignDialog } from "@/components/editor/doclink/DoclinkAssignDialog";
+import { useDomEvent } from "@/lib/hooks/useDomEvent";
+import { doclinkedTags, prefetchDoclinks } from "@/lib/doclink";
 import { PluginSidebarHost } from "@/components/editor/PluginSidebarHost";
 import { ProvidersSidebar } from "@/components/editor/providers/ProvidersSidebar";
 import { useSoleEnabledProviderId } from "@/components/editor/providers/useProvidersHeaderIcon";
@@ -66,35 +65,6 @@ import { useCountrySelect } from "@/lib/map/useCountrySelect";
 import { useDeletePolygon } from "@/lib/map/useDeletePolygon";
 import { useMapKeyBindings } from "@/lib/map/mapKeyBindings";
 import { range, clamp } from "@/types/util";
-
-function zoomToPasted(bounds: Bounds | null, padding = 0) {
-	if (!getSettings().panToImported) return;
-	fitMapToBounds(bounds, padding, getSettings().pastePadding);
-}
-
-async function addParsedLocations(parsed: ParsedLocation[]) {
-	const tagNames = [...new Set(parsed.flatMap((p) => p.tags))];
-	const resolved = await createTags(tagNames);
-	const tagIdByName = new Map(resolved.map((t) => [t.name.toLowerCase(), t.id]));
-	const locs = parsed.map((p) =>
-		createLocation({
-			...p,
-			tags: p.tags
-				.map((n) => tagIdByName.get(n.toLowerCase()))
-				.filter((id): id is number => id !== undefined),
-		}),
-	);
-	await addLocations(locs);
-	setActiveLocation(locs[locs.length - 1].id);
-	const lats = locs.map((l) => l.lat);
-	const lngs = locs.map((l) => l.lng);
-	zoomToPasted({
-		west: Math.min(...lngs),
-		south: Math.min(...lats),
-		east: Math.max(...lngs),
-		north: Math.max(...lats),
-	});
-}
 
 function usePasteHandler() {
 	useEffect(() => {
@@ -251,10 +221,19 @@ function FullscreenModeHotkeys() {
 
 export function MapEditor() {
 	const map = useCurrentMap();
+	// Warm the doclink HTML cache once per map open, so the panel is instant.
+	const prefetchDocs = useEffectEvent(() => {
+		if (map) prefetchDoclinks(map.meta.tags);
+	});
+	useEffect(() => prefetchDocs(), [map?.meta.id]);
 	const workArea = useWorkArea();
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [split, setSplit] = useLocalStorage("editorSplit", 50);
 	const soleProviderId = useSoleEnabledProviderId();
+	const [docPanelOpen, setDocPanelOpen] = useLocalStorage("doclinkPanelOpen", false);
+	const [docPanelWidth, setDocPanelWidth] = useLocalStorage("doclinkPanelWidth", 420);
+	const [docAssignOpen, setDocAssignOpen] = useState(false);
+	useDomEvent("open-doclink-assign", () => setDocAssignOpen(true));
 
 	useEffect(() => {
 		let cancelled = false;
@@ -359,10 +338,12 @@ export function MapEditor() {
 	if (!map) return null;
 
 	const editorClasses = `page-map-editor${appSettings.fullscreenMap ? " fullscreen-map" : ""}`;
+	const hasDoclinks = doclinkedTags(map.meta.tags).length > 0;
 
 	return (
 		<PanoViewerProvider>
 			<FullscreenModeHotkeys />
+			<div className="editor-shell">
 			<div
 				className={editorClasses}
 				style={{
@@ -424,7 +405,20 @@ export function MapEditor() {
 						</button>
 					</Tooltip>
 				</header>
-				<div className="side-header"></div>
+				<div className="side-header">
+					{hasDoclinks && (
+						<Tooltip content="Doclinks" side="bottom">
+							<button
+								className="icon-button"
+								type="button"
+								aria-label="Toggle doclink panel"
+								onClick={() => setDocPanelOpen(!docPanelOpen)}
+							>
+								<Icon path={mdiFileDocumentOutline} />
+							</button>
+						</Tooltip>
+					)}
+				</div>
 				<section className="map-embed" style={{ background: "var(--surface-0)" }}>
 					<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
 					{showMapCursor && <div className="map-cursor-crosshair" />}
@@ -451,6 +445,15 @@ export function MapEditor() {
 					</div>
 				)}
 			</div>
+			{hasDoclinks && docPanelOpen && (
+				<DoclinkPanel
+					width={docPanelWidth}
+					onWidthChange={setDocPanelWidth}
+					onClose={() => setDocPanelOpen(false)}
+				/>
+			)}
+			<DoclinkAssignDialog open={docAssignOpen} onOpenChange={setDocAssignOpen} />
+		</div>
 		</PanoViewerProvider>
 	);
 }

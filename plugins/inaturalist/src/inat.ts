@@ -1,5 +1,5 @@
-import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import { ScatterplotLayer } from "@deck.gl/layers";
+import type { DeckOverlayHandle } from "mma-plugin-types";
 
 export interface Observation {
 	id: number;
@@ -30,11 +30,11 @@ const MAX_RENDER = 50_000;
 
 const tileCache = new Map<string, TileEntry>();
 const observationsById = new Map<number, Observation>();
-let overlay: GoogleMapsOverlay | null = null;
+let overlay: DeckOverlayHandle | null = null;
 let currentTaxonId: number | null = null;
 let currentTaxonName: string | null = null;
 let visible = true;
-let listeners: google.maps.MapsEventListener[] = [];
+let listeners: (() => void)[] = [];
 let onUpdate: (() => void) | null = null;
 
 export function setOnUpdate(cb: (() => void) | null) {
@@ -106,23 +106,18 @@ export function importToMap() {
 }
 
 export async function init(): Promise<() => void> {
-	const map = MMA.getGoogleMap();
-	if (!map) throw new Error("No map instance");
+	const host = MMA.getMapHost();
+	if (!host) throw new Error("No map instance");
 
-	overlay = new GoogleMapsOverlay({ layers: [] });
-	overlay.setMap(map);
+	overlay = host.createDeckOverlay();
 
 	const throttled = throttle(() => loadViewport(), 400);
-	listeners = [
-		map.addListener("bounds_changed", throttled),
-		map.addListener("zoom_changed", throttled),
-	];
+	listeners = [host.on("camera", throttled)];
 
 	return () => {
-		for (const l of listeners) l.remove();
+		for (const un of listeners) un();
 		listeners = [];
 		if (overlay) {
-			overlay.setMap(null);
 			overlay.finalize();
 			overlay = null;
 		}
@@ -213,19 +208,17 @@ async function fetchTile(
 
 async function loadViewport() {
 	if (!currentTaxonId || !visible) return;
-	const map = MMA.getGoogleMap();
-	if (!map) return;
-	const bounds = map.getBounds();
+	const host = MMA.getMapHost();
+	if (!host) return;
+	const bounds = host.getBounds();
 	if (!bounds) return;
 
-	const ne = bounds.getNorthEast();
-	const sw = bounds.getSouthWest();
-	const tz = computeTileZoom(map.getZoom()!);
+	const tz = computeTileZoom(host.getZoom());
 
-	const xMin = lngToTileX(sw.lng(), tz);
-	const xMax = lngToTileX(ne.lng(), tz);
-	const yMin = latToTileY(ne.lat(), tz);
-	const yMax = latToTileY(sw.lat(), tz);
+	const xMin = lngToTileX(bounds.west, tz);
+	const xMax = lngToTileX(bounds.east, tz);
+	const yMin = latToTileY(bounds.north, tz);
+	const yMax = latToTileY(bounds.south, tz);
 
 	const now = Date.now();
 	const fetches: Promise<void>[] = [];

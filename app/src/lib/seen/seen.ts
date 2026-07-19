@@ -116,6 +116,7 @@ async function writeEntry(entry: PendingEntry, pov: LocationPOV, thumbnail: stri
 	}
 }
 
+/** Fetch a page of the seen (visited-panorama) history. */
 export async function getSeenEntries(
 	limit = 100,
 	offset = 0,
@@ -126,6 +127,7 @@ export async function getSeenEntries(
 	return result;
 }
 
+/** Number of seen entries matching the filter (all when omitted). */
 export async function getSeenCount(filter?: SeenFilter): Promise<number> {
 	return cmd.storeSeenCount(filter ?? null);
 }
@@ -138,6 +140,7 @@ export async function getSeenMaps(): Promise<{ id: string; name: string }[]> {
 	return cmd.storeSeenMaps();
 }
 
+/** Delete the entire seen history. Not undoable. */
 export async function clearSeen(): Promise<void> {
 	await cmd.storeSeenClear();
 }

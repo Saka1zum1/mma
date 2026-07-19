@@ -92,6 +92,8 @@
 		"jsdom": "^27.0.1",
 		"lint-staged": "^17.0.5",
 		"prettier": "^3.8.3",
+		"rollup": "^4.62.2",
+		"rollup-plugin-dts": "^6.4.1",
 		"terser": "^5.47.1",
 		"typescript": "npm:@typescript/typescript6@^6.0.2",
 		"typescript-eslint": "^8.58.2",

@@ -11,7 +11,7 @@
 import * as store from "@/store/useMapStore";
 import * as review from "@/lib/review/review";
 import type { Scope, Location } from "@/bindings.gen";
-import { cmd as commands } from "@/lib/commands";
+import { cmd as commands, type Cmd } from "@/lib/commands";
 import { goToMap, goToList } from "@/store/router";
 import { createLocation, applyLocationPatch } from "@/types";
 import { registerPlugin, createPluginStorage, usePluginState } from "@/plugins/registry";
@@ -32,7 +32,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
-import { getGoogleMap, waitForGoogleMap, addClickInterceptor } from "@/lib/map/mapState";
+import {
+	getMapHost,
+	waitForMapHost,
+	getGoogleMap,
+	waitForGoogleMap,
+	addClickInterceptor,
+} from "@/lib/map/mapState";
 import {
 	setSvCoverageSuppressed,
 	isSvCoverageSuppressed,
@@ -61,6 +67,8 @@ export interface LocationStore {
 	destroy(): void;
 }
 
+/** A live id-to-Location map of the whole map, kept in sync via store events.
+ *  Call `destroy()` when done. */
 async function createLocationStore(): Promise<LocationStore> {
 	const locs = new Map<number, Location>();
 	for (const l of await store.fetchAllLocations()) locs.set(l.id, l);
@@ -116,8 +124,8 @@ export interface SidecarRun {
 	kill(): void;
 }
 
-// Spawn an installed plugin sidecar. Event listeners attach BEFORE the process starts
-// (no Rust-emitted line is missed); callers register onLine/onExit right after this resolves.
+/** Run an installed plugin's sidecar binary. Register onLine/onExit right after this
+ *  resolves -- listeners attach before the process starts, so no output is missed. */
 async function spawnSidecar(pluginId: string, name: string, args: string[]): Promise<SidecarRun> {
 	const lineCbs: ((l: string) => void)[] = [];
 	const errCbs: ((l: string) => void)[] = [];
@@ -162,17 +170,12 @@ async function spawnSidecar(pluginId: string, name: string, args: string[]): Pro
 	};
 }
 
-const mma = {
+/** Explicitly exposed functions not in other APIs. */
+const surface = {
 	ready: false,
 
-	// --- Store ---
-	...store,
-
-	// --- Review sessions ---
-	...review,
-
 	// --- Rust IPC commands ---
-	cmd: commands,
+	cmd: commands as Cmd,
 
 	// --- Tauri primitives (for plugins) ---
 	invoke,
@@ -210,7 +213,9 @@ const mma = {
 	// --- Types ---
 	createLocation,
 
-	// --- Google Maps ---
+	// --- Map host ---
+	getMapHost,
+	waitForMapHost,
 	getGoogleMap: () => getGoogleMap(),
 	waitForGoogleMap: () => waitForGoogleMap(),
 	addClickInterceptor: (
@@ -252,10 +257,8 @@ const mma = {
 	loadSeenPano,
 
 	// --- Enrichment ---
-	enrichAll: async (opts?: Record<string, unknown>) =>
-		enrichAll(await store.fetchAllLocations(), opts),
-	bulkPinToPano: async (opts?: Record<string, unknown>) =>
-		bulkPinToPano(await store.fetchAllLocations(), opts),
+	enrichAll,
+	bulkPinToPano,
 	validateLocations,
 	needsEnrichment,
 
@@ -293,13 +296,23 @@ const mma = {
 	},
 };
 
-export type MMA = typeof mma;
+type StoreApi = typeof store;
+type ReviewApi = typeof review;
+type SurfaceApi = typeof surface;
+
+export interface MMA extends StoreApi, ReviewApi, SurfaceApi {}
+
+const mma: MMA = {
+	...store,
+	...review,
+	...surface,
+};
 
 declare global {
 	interface Window {
-		MMA: typeof mma;
+		MMA: MMA;
 	}
-	const MMA: typeof mma;
+	const MMA: MMA;
 }
 
 window.MMA = mma;

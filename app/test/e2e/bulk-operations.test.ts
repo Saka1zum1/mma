@@ -45,7 +45,7 @@ describe("Bulk operations -- enrichAll", () => {
 
 	it("enriches locations with panoId", async () => {
 		const result = await withApi(async (api) => {
-			return await api.enrichAll();
+			return await api.enrichAll(await api.fetchAllLocations());
 		});
 
 		const meta = result.find((r: EnrichOutcome) => r.id === "enrichMeta");
@@ -62,7 +62,7 @@ describe("Bulk operations -- enrichAll", () => {
 		if (hadPano) return; // already resolved from previous test run
 
 		await withApi(async (api) => {
-			return await api.enrichAll({ force: true });
+			return await api.enrichAll(await api.fetchAllLocations(), { force: true });
 		});
 
 		const after = await getLoc(locIds[2]);
@@ -86,7 +86,7 @@ describe("Bulk operations -- enrichAll", () => {
 
 		// Run enrichment
 		await withApi(async (api) => {
-			return await api.enrichAll({ force: true });
+			return await api.enrichAll(await api.fetchAllLocations(), { force: true });
 		});
 
 		// Verify enriched
@@ -142,7 +142,7 @@ describe("Bulk operations -- bulkPinToPano", () => {
 
 	it("pins unpinned locations and resolves panoId from coords", async () => {
 		const count = await withApi(async (api) => {
-			return await api.bulkPinToPano();
+			return await api.bulkPinToPano(await api.fetchAllLocations());
 		});
 
 		// pin-1 (no pano) and pin-2 (has pano, not pinned) should be pinned
@@ -159,7 +159,7 @@ describe("Bulk operations -- bulkPinToPano", () => {
 
 	it("skips already-pinned locations without force", async () => {
 		const count = await withApi(async (api) => {
-			return await api.bulkPinToPano();
+			return await api.bulkPinToPano(await api.fetchAllLocations());
 		});
 
 		expect(count).toBe(0);
@@ -167,7 +167,7 @@ describe("Bulk operations -- bulkPinToPano", () => {
 
 	it("re-pins all with force", async () => {
 		const count = await withApi(async (api) => {
-			return await api.bulkPinToPano({ force: true });
+			return await api.bulkPinToPano(await api.fetchAllLocations(), { force: true });
 		});
 
 		expect(count).toBe(3);
@@ -262,7 +262,10 @@ describe("Bulk operations -- cancel preserves progress", () => {
 				const controller = new AbortController();
 				// Cancel after 2 seconds
 				setTimeout(() => controller.abort(), 2000);
-				await api.enrichAll({ signal: controller.signal, force: true });
+				await api.enrichAll(await api.fetchAllLocations(), {
+					signal: controller.signal,
+					force: true,
+				});
 				return { cancelled: false };
 			} catch (e) {
 				if (e instanceof Error && e.name === "AbortError") {

@@ -82,6 +82,8 @@ export function isSeenPreview(loc: Location): boolean {
 	return (loc.flags & LocationFlag.SeenOverlay) !== 0;
 }
 
+/** Build a Location from lat/lng plus overrides. `id` stays 0 until `addLocations`
+ *  writes the real id back into the object. */
 export function createLocation(partial: Partial<Location> & LatLng): Location {
 	const normalized = normalizeLocationStorageFields(partial);
 	return {

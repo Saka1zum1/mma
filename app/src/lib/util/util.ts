@@ -11,6 +11,7 @@ export function schemeBase(scheme: string): string {
 	return isWin ? `http://${scheme}.localhost/` : `${scheme}://localhost/`;
 }
 
+/** URL that serves a local file over the `mma-buf://` protocol (binary Rust-to-JS transfers). */
 export function mmaBufUrl(path: string): string {
 	return schemeBase("mma-buf") + path.replace(/\\/g, "/");
 }

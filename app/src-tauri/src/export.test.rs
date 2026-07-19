@@ -201,6 +201,20 @@ fn tag_meta_roundtrips_color_and_order() {
 }
 
 #[test]
+fn tag_meta_roundtrips_doclinks() {
+    let (tag_defs, _) = parse_tag_defs(
+        r##"{"1": {"name": "antenna", "color": "#ff0000", "doclinks": ["https://docs.google.com/document/d/abc/edit#heading=h.x"]}, "2": {"name": "plain", "color": "#0000ff", "doclinks": []}}"##,
+    );
+    let meta = tag_color_meta(&tag_defs);
+    assert_eq!(
+        meta["antenna"]["doclinks"],
+        serde_json::json!(["https://docs.google.com/document/d/abc/edit#heading=h.x"])
+    );
+    // Empty doclinks are omitted from the export block entirely.
+    assert!(meta["plain"].get("doclinks").is_none());
+}
+
+#[test]
 fn upload_session_dir_rejects_outside_paths() {
     assert!(upload_session_dir("C:/somewhere/mma_upload_1_1").is_err());
     let not_pano = std::env::temp_dir().join("other_dir");

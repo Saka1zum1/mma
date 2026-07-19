@@ -2417,6 +2417,48 @@ fn bitmask_cell_chars(buf: &[u8]) -> Vec<char> {
 }
 
 #[test]
+fn tag_patch_applies_set_fields_only() {
+    let mut tag = Tag {
+        id: 1,
+        name: "A".into(),
+        color: "#ff0000".into(),
+        visible: true,
+        order: None,
+        count: 0,
+        doclinks: vec!["https://old".into()],
+    };
+    // Unset fields untouched; blank name ignored.
+    apply_tag_patch(
+        &mut tag,
+        &TagPatch {
+            name: Some("  ".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(tag.name, "A");
+    assert_eq!(tag.doclinks, vec!["https://old".to_string()]);
+
+    // doclinks is a full replacement; empty vec clears.
+    apply_tag_patch(
+        &mut tag,
+        &TagPatch {
+            doclinks: Some(vec!["https://a".into(), "https://b".into()]),
+            ..Default::default()
+        },
+    );
+    assert_eq!(tag.doclinks.len(), 2);
+    apply_tag_patch(
+        &mut tag,
+        &TagPatch {
+            doclinks: Some(Vec::new()),
+            ..Default::default()
+        },
+    );
+    assert!(tag.doclinks.is_empty());
+    assert_eq!(tag.name, "A");
+}
+
+#[test]
 fn partial_bitmask_only_contains_affected_cells() {
     // Two locations in different geohash cells
     let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
@@ -2431,6 +2473,7 @@ fn partial_bitmask_only_contains_affected_cells() {
             visible: true,
             order: None,
             count: 2,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2469,6 +2512,7 @@ fn membership_delta_reports_gained_on_tag_add() {
             visible: true,
             order: None,
             count: 0,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2504,6 +2548,7 @@ fn membership_delta_no_colorpatch_when_membership_unchanged() {
             visible: true,
             order: None,
             count: 1,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2541,6 +2586,7 @@ fn removal_bitmask_includes_affected_cell() {
             visible: true,
             order: None,
             count: 2,
+            doclinks: Vec::new(),
         },
     );
     add_tag_selection(&mut store, 1, [255, 0, 0]);
@@ -2920,6 +2966,7 @@ fn tag(id: u32, name: &str, color: &str) -> Tag {
         visible: true,
         order: None,
         count: 0,
+        doclinks: Vec::new(),
     }
 }
 
@@ -2957,6 +3004,44 @@ fn reconcile_tags_create_missing_with_source_color() {
     assert_eq!(new_tag.name, "Trekker");
     assert_eq!(new_tag.color, "#abcdef");
     assert_eq!(new_tag.count, 0); // source count never leaks into the target
+}
+
+#[test]
+fn reconcile_tags_doclinks_claimed_when_target_empty() {
+    let mut target_tags: HashMap<u32, Tag> =
+        [(3, tag(3, "rural", "#222222"))].into_iter().collect();
+    let mut next = 4;
+    let source = Tag {
+        doclinks: vec!["https://docs.google.com/document/d/x/edit#heading=h.abc".into()],
+        ..tag(7, "Rural", "#111111")
+    };
+    let (_, changed) = reconcile_tags_by_name(&[source.clone()], &mut target_tags, &mut next);
+    assert!(changed, "doclink adoption must mark tags as changed");
+    assert_eq!(target_tags.get(&3).unwrap().doclinks, source.doclinks);
+}
+
+#[test]
+fn reconcile_tags_doclinks_never_overwrite_existing() {
+    let mut target_tags: HashMap<u32, Tag> = [(
+        3,
+        Tag {
+            doclinks: vec!["https://docs.google.com/document/d/kept/edit#heading=h.kept".into()],
+            ..tag(3, "rural", "#222222")
+        },
+    )]
+    .into_iter()
+    .collect();
+    let mut next = 4;
+    let source = Tag {
+        doclinks: vec!["https://docs.google.com/document/d/new/edit#heading=h.new".into()],
+        ..tag(7, "Rural", "#111111")
+    };
+    let (_, changed) = reconcile_tags_by_name(&[source], &mut target_tags, &mut next);
+    assert!(!changed, "no adoption means no tag change");
+    assert_eq!(
+        target_tags.get(&3).unwrap().doclinks,
+        vec!["https://docs.google.com/document/d/kept/edit#heading=h.kept".to_string()]
+    );
 }
 
 #[test]

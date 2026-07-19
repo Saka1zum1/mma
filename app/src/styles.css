@@ -620,6 +620,11 @@ input {
 	--accent-muted: #1098ad26;
 	--on-accent: #fff;
 
+	/* primary actions */
+	--action: #74b816;
+	--action-hover: #8bdb1a;
+	--on-action: #fff;
+
 	--constructive: var(--lime-7);
 	--destructive: var(--red-10);
 	--deconstructive: var(--choco-5);
@@ -705,8 +710,8 @@ summary.button {
 	display: block;
 }
 .button--primary {
-	background-color: var(--accent);
-	color: var(--on-accent);
+	background-color: var(--action);
+	color: var(--on-action);
 	border-color: transparent;
 }
 .button--destructive {
@@ -727,7 +732,7 @@ summary.button {
 	background-image: linear-gradient(#ffffff0a, #ffffff0a);
 }
 .button--primary:hover:not(:disabled) {
-	background-color: var(--accent-hover);
+	background-color: var(--action-hover);
 	background-image: none;
 }
 .button--ghost:hover:not(:disabled) {
@@ -1056,9 +1061,24 @@ input[type="range"]:disabled {
 	padding-top: 1rem;
 	border-top: 1px solid var(--border-subtle);
 }
+/* Pin the updates column to viewport height and flex the release-notes scroller
+   into the remaining space, so the default view ends at the window bottom. */
+.updates {
+	display: flex;
+	flex-direction: column;
+}
+@media (min-width: 801px) {
+	.updates {
+		height: calc(100vh - 1rem);
+	}
+}
 .updates__container {
 	padding-left: 3px;
 	list-style-type: none;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 }
 .updates__item {
 	--item-color: #ccc;
@@ -1069,6 +1089,10 @@ input[type="range"]:disabled {
 .updates__item--new {
 	--item-color: var(--constructive);
 	font-weight: 600;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 }
 .updates__item--warning {
 	--item-color: #e5a800;
@@ -1147,6 +1171,8 @@ input[type="range"]:disabled {
 	grid-template-rows: 0fr;
 	transition: grid-template-rows 0.5s ease;
 	font-weight: 400;
+	flex: 1;
+	min-height: 0;
 }
 .updates__notes--open {
 	grid-template-rows: 1fr;
@@ -1164,9 +1190,15 @@ input[type="range"]:disabled {
 	opacity: 1;
 }
 .updates__history {
-	max-height: 70vh;
+	height: 100%;
 	overflow-y: auto;
 	scrollbar-width: none;
+}
+@media (max-width: 800px) {
+	.updates__history {
+		height: auto;
+		max-height: 70vh;
+	}
 }
 .updates__history::-webkit-scrollbar {
 	display: none;
@@ -3156,6 +3188,7 @@ input.date-picker__trigger:focus {
 	background: #ff6803;
 }
 .badge--number {
+	color: #222;
 	background: #ccc;
 }
 .map-links-control {
