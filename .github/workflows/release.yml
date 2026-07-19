@@ -9,6 +9,12 @@ on:
       tag:
         description: 'Release tag (e.g. v0.2.0)'
         required: true
+      signing_key:
+        description: 'Optional Tauri signing private key (use until repo secrets are configured)'
+        required: false
+      signing_password:
+        description: 'Optional Tauri signing private key password'
+        required: false
 
 jobs:
   build:
@@ -63,8 +69,8 @@ jobs:
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.signing_key || secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.signing_password || secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tauriScript: npx tauri
