@@ -15,6 +15,8 @@ on:
       signing_password:
         description: 'Optional Tauri signing private key password'
         required: false
+  repository_dispatch:
+    types: [release]
 
 jobs:
   build:
@@ -37,9 +39,12 @@ jobs:
             args: ''
             label: windows
     runs-on: ${{ matrix.platform }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag || github.event.client_payload.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || 'master' }}
           submodules: recursive
 
       - name: Install Linux dependencies
@@ -66,11 +71,62 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: Resolve signing credentials
+        id: signing
+        env:
+          DISPATCH_KEY: ${{ github.event.client_payload.signing_key }}
+          DISPATCH_PASSWORD: ${{ github.event.client_payload.signing_password }}
+          INPUT_KEY: ${{ inputs.signing_key }}
+          INPUT_PASSWORD: ${{ inputs.signing_password }}
+          REPO_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          REPO_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          valid_key() {
+            local candidate="$1"
+            [ -z "$candidate" ] && return 1
+            decoded=$(printf '%s' "$candidate" | base64 -d 2>/dev/null || true)
+            printf '%s' "$decoded" | grep -q 'untrusted comment:'
+          }
+          pick_first_valid_key() {
+            for candidate in "$DISPATCH_KEY" "$INPUT_KEY" "$REPO_KEY"; do
+              if valid_key "$candidate"; then
+                printf '%s' "$candidate"
+                return 0
+              fi
+            done
+            return 1
+          }
+          if key=$(pick_first_valid_key); then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> "$GITHUB_ENV"
+            for candidate in "$DISPATCH_PASSWORD" "$INPUT_PASSWORD" "$REPO_PASSWORD"; do
+              if [ -n "${candidate:-}" ]; then
+                echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$candidate" >> "$GITHUB_ENV"
+                break
+              fi
+            done
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No valid Tauri signing key found; updater artifacts will be skipped."
+          fi
+
+      - name: Disable updater artifacts when signing unavailable
+        if: steps.signing.outputs.enabled != 'true'
+        working-directory: app
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+            c.bundle = c.bundle || {};
+            c.bundle.createUpdaterArtifacts = false;
+            fs.writeFileSync(p, JSON.stringify(c, null, '\t') + '\n');
+            console.log('createUpdaterArtifacts=false (unsigned build)');
+          "
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.signing_key || secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.signing_password || secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tauriScript: npx tauri
@@ -99,10 +155,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag || github.event.client_payload.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -111,7 +169,7 @@ jobs:
 
       - name: Extract release notes from CHANGELOG.md
         env:
-          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           awk -v tag="$TAG" '
             $0 ~ "^## " tag "([[:space:]]|$)" { grab=1; next }
@@ -144,7 +202,7 @@ jobs:
 
       - name: Build latest.json for updater
         env:
-          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           VERSION="${TAG#v}"
           REPO="https://github.com/${{ github.repository }}/releases/download/${TAG}"
@@ -176,7 +234,7 @@ jobs:
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
-          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          TAG: ${{ env.RELEASE_TAG }}
           RELEASE_REPO: ${{ github.repository }}
         run: |
           mapfile -t files < <(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.app.tar.gz" \) ! -name "*.sig")
