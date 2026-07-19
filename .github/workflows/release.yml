@@ -73,6 +73,7 @@ jobs:
 
       - name: Resolve signing credentials
         id: signing
+        shell: bash
         env:
           DISPATCH_KEY: ${{ github.event.client_payload.signing_key }}
           DISPATCH_PASSWORD: ${{ github.event.client_payload.signing_password }}
@@ -113,6 +114,7 @@ jobs:
 
       - name: Disable updater artifacts when signing unavailable
         if: steps.signing.outputs.enabled != 'true'
+        shell: bash
         working-directory: app
         run: |
           node -e "
