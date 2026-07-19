@@ -25,6 +25,8 @@ const lazy: Record<string, () => Promise<unknown>> = {
 
 const loaded: Record<string, unknown> = {};
 
+/** Get a module the app bundles (e.g. "react", "@deck.gl/core") for use inside a plugin.
+ *  Lazy modules must be loaded with `preloadModules` first. */
 export function mmaRequire(id: string): unknown {
 	if (id in eager) return eager[id];
 	if (id in loaded) return loaded[id];
@@ -37,6 +39,7 @@ export function mmaRequire(id: string): unknown {
 	throw new Error(`Module "${id}" is not available as an MMA external.`);
 }
 
+/** Load lazy bundled modules so `mmaRequire` can return them synchronously. */
 export async function preloadModules(ids: string[]): Promise<void> {
 	await Promise.all(
 		ids.map(async (id) => {
@@ -48,6 +51,7 @@ export async function preloadModules(ids: string[]): Promise<void> {
 	);
 }
 
+/** Names of every module available through `mmaRequire`. */
 export function getAvailableExternals(): string[] {
 	return [...Object.keys(eager), ...Object.keys(lazy)];
 }

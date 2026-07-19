@@ -173,12 +173,8 @@ fn location_to_coord(
     Value::Object(c)
 }
 
-/// Export locations as a JSON file.
-///
-/// Produces `{name, customCoordinates: [...]}` with optional `extra` block
-/// containing tags (with colors as RGB arrays) and field definitions.
-/// Heading of exactly 0 is written as 0.001 when `export_unpanned` is set,
-/// the convention for "no heading specified".
+/// Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs.
+// Heading of exactly 0 is written as 0.001 when `export_unpanned` is set ("no heading" convention).
 #[tauri::command]
 #[specta::specta]
 pub fn store_export_json(
@@ -392,12 +388,8 @@ pub fn store_upload_abort(session_dir: String) -> AppResult<()> {
     Ok(())
 }
 
-/// Export every map in the database as a deflate-compressed ZIP of JSON files.
-///
-/// Each map becomes one `{name}.json` file in the archive, with full location
-/// data, tags, and extra fields. Reads Arrow IPC files directly from disk
-/// (bypasses the in-memory store). Duplicate map names get a numeric suffix.
-/// Runs on a blocking thread to avoid starving the async runtime.
+/// Export every map in the database as a ZIP of JSON files. Duplicate map names get a numeric suffix.
+// Reads Arrow IPC files directly from disk (bypasses the in-memory store); runs on a blocking thread.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_export_bulk_zip() -> AppResult<String> {

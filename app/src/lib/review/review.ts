@@ -63,6 +63,7 @@ export function retreat(s: ReviewSession): ReviewSession | null {
 	return { ...s, cursorId: s.order[idx - 1] };
 }
 
+/** Position of the session cursor within its review order. */
 export function reviewIndex(s: ReviewSession): number {
 	return s.order.indexOf(s.cursorId);
 }
@@ -74,6 +75,7 @@ export function reviewedHistoryIds(sessions: ReviewSession[]): number[] {
 	return [...ids];
 }
 
+/** True when the cursor is on the session's first location. */
 export function isAtStart(s: ReviewSession): boolean {
 	return reviewIndex(s) <= 0;
 }
@@ -92,6 +94,7 @@ function notify() {
 	for (const l of listeners) l();
 }
 
+/** Reactive active review session, or null. */
 export function useReviewSession(): ReviewSession | null {
 	return useSyncExternalStore(
 		(cb) => {
@@ -102,6 +105,7 @@ export function useReviewSession(): ReviewSession | null {
 	);
 }
 
+/** The active review session, or null. */
 export function getReviewSession(): ReviewSession | null {
 	return session;
 }
@@ -191,6 +195,7 @@ export async function resumeReview(s: ReviewSession): Promise<void> {
 	await adopt(s);
 }
 
+/** Mark the current location reviewed and step to the next one. */
 export async function reviewNext(): Promise<void> {
 	if (!session) return;
 	const { session: next, done } = advance(session);
@@ -210,6 +215,7 @@ export async function reviewNext(): Promise<void> {
 	await gotoCursor(next);
 }
 
+/** Step back to the previous location in the session. */
 export async function reviewPrev(): Promise<void> {
 	if (!session) return;
 	const prev = retreat(session);
@@ -291,6 +297,7 @@ export async function renameReview(id: string, name: string): Promise<void> {
 	}
 }
 
+/** Delete a review session (its progress, not the locations). */
 export async function deleteSession(id: string): Promise<void> {
 	try {
 		await cmd.storeReviewDelete(id);
@@ -300,6 +307,7 @@ export async function deleteSession(id: string): Promise<void> {
 	if (session?.id === id) cancelReview();
 }
 
+/** Review sessions for the open map, optionally filtered by status. */
 export function listSessions(status?: "active" | "done"): Promise<ReviewSession[]> {
 	const mapId = getCurrentMapId();
 	if (!mapId) return Promise.resolve([]);

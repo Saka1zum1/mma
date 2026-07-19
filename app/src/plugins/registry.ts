@@ -94,6 +94,7 @@ function saveEnabled(set: Set<string>) {
 
 const enabledSet = loadEnabled();
 
+/** Register a plugin. `activate` runs when a map opens; its returned cleanup runs on map close. */
 export function registerPlugin(plugin: Plugin | PluginBehavior) {
 	if (pendingManifest) {
 		const merged: Plugin = {
@@ -164,6 +165,7 @@ function writePluginStore(id: string, data: Record<string, unknown>) {
 	localStorage.setItem(pluginStoreKey(id), JSON.stringify(data));
 }
 
+/** Persistent key-value storage namespaced to a plugin. Survives restarts. */
 export function createPluginStorage(id: string): PluginStorage {
 	return {
 		get<T = unknown>(key: string, fallback?: T): T {

@@ -11,8 +11,6 @@ import type { LatLng, Bounds, MapTypeKey } from "@/types";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import type { CustomStyle } from "@/lib/geo/mapStack";
 
-// Engine instance registry: kind -> raw engine type. Adding a host means an
-// entry here plus a branch in createMapHost.
 export interface HostInstances {
 	google: google.maps.Map;
 	maplibre: maplibregl.Map;

@@ -52,6 +52,8 @@ export interface LocationStore {
 	destroy(): void;
 }
 
+/** A live id-to-Location map of the whole map, kept in sync via store events.
+ *  Call `destroy()` when done. */
 async function createLocationStore(): Promise<LocationStore> {
 	const locs = new Map<number, Location>();
 	for (const l of await store.fetchAllLocations()) locs.set(l.id, l);
@@ -107,8 +109,8 @@ export interface SidecarRun {
 	kill(): void;
 }
 
-// Spawn an installed plugin sidecar. Event listeners attach BEFORE the process starts
-// (no Rust-emitted line is missed); callers register onLine/onExit right after this resolves.
+/** Run an installed plugin's sidecar binary. Register onLine/onExit right after this
+ *  resolves -- listeners attach before the process starts, so no output is missed. */
 async function spawnSidecar(pluginId: string, name: string, args: string[]): Promise<SidecarRun> {
 	const lineCbs: ((l: string) => void)[] = [];
 	const errCbs: ((l: string) => void)[] = [];

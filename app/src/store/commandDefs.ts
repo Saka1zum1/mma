@@ -77,6 +77,7 @@ import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
 import { toggleSeenOverlay } from "@/lib/seen/seenOverlay";
 import { selectReviewedHistory } from "@/lib/review/review";
 
+/** Every editor command (palette entries; all are hotkey-bindable in Settings). */
 const COMMANDS = {
 	save: {
 		label: "Commit map",

@@ -1282,10 +1282,8 @@ pub struct ImportProgress {
     pub map_name: String,
 }
 
-/// Persist selected maps from a previously previewed import.
-/// Uses the cached parse if available; otherwise re-parses the file.
-/// Each map gets a new UUID, Arrow IPC file, and SQLite row.
-/// Emits `bulk-import-progress` events per map for UI feedback.
+/// Import the selected maps from a previously previewed file. Emits `bulk-import-progress` per map.
+// Uses the cached parse if available; each map gets a new UUID, Arrow IPC file, and SQLite row.
 #[tauri::command]
 #[specta::specta]
 pub async fn bulk_import_confirm(

@@ -69,6 +69,8 @@ export interface ValidationProgress {
 	results: Map<ValidationState, Location[]>;
 }
 
+/** Check that each location's Street View coverage still exists; returns locations grouped
+ *  by validation state. */
 export async function validateLocations(
 	locations: Location[],
 	opts: {

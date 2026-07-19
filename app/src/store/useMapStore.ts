@@ -148,7 +148,9 @@ function memoOnRefs<const I extends readonly unknown[], O>(
 
 // --- Map list state ---
 let cachedMapList: MapMeta[] = [];
+/** Reactive list of all maps (metadata only). */
 export const useMapList = makeStoreHook(() => cachedMapList);
+/** The list of all maps (metadata only). */
 export const getMapList = () => cachedMapList;
 
 async function reloadMapList() {
@@ -156,6 +158,7 @@ async function reloadMapList() {
 	notify();
 }
 
+/** Re-fetch the map list from the database. */
 export async function invalidateMapList() {
 	await reloadMapList();
 	tauriEmit("map-list-changed");
@@ -212,8 +215,10 @@ export interface CommitDiffPreview {
 let commitDiffPreview: CommitDiffPreview | null = null;
 let diffMarkerVersion = 0;
 
+/** Reactive per-tag location counts for the open map, keyed by tag id. */
 export const useTagCounts = makeStoreHook(() => tagCounts);
 
+/** Per-tag location counts for the open map, keyed by tag id. */
 export function getTagCounts() {
 	return tagCounts;
 }
@@ -233,6 +238,7 @@ function bump() {
 	notify();
 }
 
+/** Re-render everything derived from map content. Called automatically by `mutate`. */
 export function refreshAfterMutation() {
 	if (!currentMap) {
 		selections = [];
@@ -243,6 +249,7 @@ export function refreshAfterMutation() {
 	bump();
 }
 
+/** Reactive open map (metadata + settings), or null when no map is open. */
 export const useCurrentMap = makeStoreHook(() => currentMap);
 
 const NO_TAGS: Tag[] = [];
@@ -260,13 +267,18 @@ export function getTag(id: number): Tag | undefined {
 	return currentMap?.meta.tags[id];
 }
 
+/** Reactive counter bumped on every map-content change; subscribe to re-render on any edit. */
 export const useMapVersion = makeStoreHook(() => mapVersion);
+/** Reactive set of all currently selected location ids. */
 export const useSelectedLocationIds = makeStoreHook(() => selectedLocationIds);
 
 let cachedActiveLocation: Location | null = null;
+/** Reactive location currently open in the editor, or null. */
 export const useActiveLocation = makeStoreHook((): Location | null => cachedActiveLocation);
+/** Reactive locations shown in the duplicate-resolution panel. */
 export const useDuplicateLocations = makeStoreHook(() => duplicateLocations);
 
+/** Reactive editor pane: "overview" | "location" | "duplicates" | "import" | "plugin". */
 export const useWorkArea = makeStoreHook(() => workArea);
 export const useImportStaging = makeStoreHook(() => importStaging);
 export const useImportMarkerVersion = makeStoreHook(() => importMarkerVersion);
@@ -312,11 +324,13 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let inflightPersist: Promise<void> | null = null;
 const AUTOSAVE_DELAY_MS = 2000;
 
+/** Number of uncommitted changes (the overlay size). */
 export async function getDirtyCount(): Promise<number> {
 	const result = await cmd.storeGetSummary();
 	return result.dirtyCount;
 }
 
+/** Schedule an autosave shortly. Mutations call this automatically; debounced. */
 export function scheduleSave() {
 	if (autosaveTimer) clearTimeout(autosaveTimer);
 	autosaveTimer = setTimeout(() => {
@@ -353,12 +367,14 @@ async function doSave(): Promise<void> {
 	await inflightPersist;
 }
 
+/** Save any unsaved changes now instead of waiting for the autosave timer. */
 export async function flushSave(): Promise<void> {
 	cancelAutosave();
 	await doSave();
 }
 
 // --- Init (called once at startup) ---
+/** One-time store startup. The app calls this; plugins never need to. */
 export async function initStore() {
 	cachedMapList = await cmd.storeListMaps();
 	notify();
@@ -381,6 +397,7 @@ export const mapOpen = {
 };
 
 // --- Actions ---
+/** Open a map in this window, closing any currently open map first. */
 export async function openMap(id: string) {
 	mapOpen.begin();
 
@@ -448,6 +465,7 @@ function resetMapState() {
 	bump();
 }
 
+/** Close the open map, saving unsaved changes first. */
 export async function closeMap() {
 	await flushSave();
 	resetMapState();
@@ -460,10 +478,12 @@ export function discardOpenMap() {
 	resetMapState();
 }
 
+/** Id of the open map, or null. */
 export function getCurrentMapId() {
 	return currentMapId;
 }
 
+/** The open map (metadata + settings), or null. */
 export function getCurrentMap() {
 	return currentMap;
 }
@@ -476,20 +496,24 @@ export function getKnownFieldKeys(): ReadonlySet<string> {
 /** Reactive hook for `knownFieldKeys`. Re-renders when keys are added. */
 export const useKnownFieldKeys = makeStoreHook((): ReadonlySet<string> => knownFieldKeys);
 
+/** The location currently open in the editor, or null. */
 export function getActiveLocation(): Location | null {
 	return cachedActiveLocation;
 }
 
+/** Fetch every location in the map. */
 export async function fetchAllLocations(): Promise<Location[]> {
 	const path = await cmd.storeGetAllLocations();
 	const res = await fetch(mmaBufUrl(path));
 	return res.json();
 }
 
+/** Fetch one location by id, or null if it doesn't exist. */
 export async function fetchLocation(id: number): Promise<Location | null> {
 	return cmd.storeGetLocation(id);
 }
 
+/** Fetch locations by id (missing ids are skipped). Prefer this over per-id fetches. */
 export async function fetchLocationsByIds(ids: number[]): Promise<Location[]> {
 	return cmd.storeGetLocationsByIds(ids);
 }
@@ -505,10 +529,12 @@ export const getSelections: () => Selection[] = memoOnRefs(
 	(sels, ghosts) => (ghosts.size === 0 ? sels : sels.filter((s) => !ghosts.has(s.key))),
 );
 
+/** The set of all currently selected location ids (the union of all selections). */
 export function getSelectedLocationIds() {
 	return selectedLocationIds;
 }
 
+/** Overwrite the selected-id set directly, bypassing selection resolution. Rarely what you want -- prefer `addSelections`. */
 export function setSelectedLocationIds(ids: SelectedIds) {
 	selectedLocationIds = ids;
 }
@@ -609,6 +635,7 @@ export interface ScopeHandle {
 	use(): ScopeController;
 }
 
+/** A standalone "all locations vs current selection" switch, for features that operate on a subset. */
 export function createScope(initial?: Scope): ScopeHandle {
 	let scope: Scope = initial ?? defaultScope();
 	const listeners = new Set<() => void>();
@@ -640,12 +667,14 @@ export function createScope(initial?: Scope): ScopeHandle {
 	};
 }
 
+/** Create a new empty map and return its metadata. */
 export async function createMap(name: string, folder: string | null = null) {
 	const { meta } = await cmd.storeCreateMap(name, folder);
 	await invalidateMapList();
 	return meta;
 }
 
+/** Permanently delete a map and all its data. Not undoable. */
 export async function deleteMap(id: string) {
 	await cmd.storeDeleteMap(id);
 	await invalidateMapList();
@@ -707,6 +736,7 @@ export async function updateMapMeta(patch: MapMetaPatch) {
 	await invalidateMapList();
 }
 
+/** Replace the map's extra-field definitions (types/labels for `Location.extra` keys). */
 export async function setMapExtraFields(fields: Record<string, ExtraFieldDef>) {
 	if (!currentMapId || !currentMap) return;
 	const current = currentMap.meta.extra ?? {};
@@ -797,6 +827,8 @@ export async function mutate(p: Promise<MutationResult>): Promise<MutationResult
 	return r;
 }
 
+/** Add locations to the map. Rust assigns real ids and they are written back into
+ *  the passed objects -- build with `createLocation` (id 0) and read `loc.id` after. Undoable. */
 export async function addLocations(locs: Location[], opts?: { hideInDelta?: boolean }) {
 	if (!currentMap || locs.length === 0) return;
 	const t = trace("add");
@@ -811,6 +843,7 @@ export async function addLocations(locs: Location[], opts?: { hideInDelta?: bool
 	emitEvent("location:add", locs);
 }
 
+/** Clone a location in place and return the new id, or null if it doesn't exist. Undoable. */
 export async function duplicateLocation(id: number): Promise<number | null> {
 	if (!currentMap || isVirtualLocation({ id })) return null;
 	const loc = await cmd.storeGetLocation(id);
@@ -821,6 +854,7 @@ export async function duplicateLocation(id: number): Promise<number | null> {
 	return clone.id;
 }
 
+/** Remove locations by id. Undoable. */
 export async function removeLocations(ids: ReadonlyIdSet) {
 	if (!currentMap || ids.size === 0) return;
 	if ([...ids].some((id) => isVirtualLocation({ id }))) {
@@ -839,6 +873,8 @@ export async function removeLocations(ids: ReadonlyIdSet) {
 	);
 }
 
+/** Patch locations by id. Only include the fields you're changing; `extra` merges
+ *  per-key (null deletes a key). Undoable by default. */
 export async function updateLocations(
 	updates: Update<LocationPatch>[],
 	opts?: { undoable?: boolean },
@@ -910,6 +946,7 @@ export const useSelections = makeStoreHook(getSelections);
 /** Keyed per-node selection counts (by `Selection.key`). Look up a row's count by its key. */
 export const useSelectionCounts = makeStoreHook(() => selectionCounts);
 
+/** Per-selection location counts, keyed by `Selection.key`. */
 export function getSelectionCounts() {
 	return selectionCounts;
 }
@@ -956,7 +993,9 @@ function pruneGhosted() {
 	if (pruned.size !== ghostedSelections.size) ghostedSelections = pruned;
 }
 
+/** Reactive set of ghosted (temporarily excluded) selection keys. */
 export const useGhostedSelections = makeStoreHook(() => ghostedSelections);
+/** The set of ghosted (temporarily excluded) selection keys. */
 export const getGhostedSelections = () => ghostedSelections;
 
 /** Toggle a selection's ghosted state and re-sync (excludes/includes it from the overlay). */
@@ -987,6 +1026,7 @@ export function toggleGhostAllSelections() {
 	return applySelectionUpdate((sels) => sels);
 }
 
+/** Add selections to the sidebar and highlight their locations. Same-key selections replace. */
 export function addSelections(props: SelectionProps[]) {
 	return applySelectionUpdate((sels) => {
 		let result = sels;
@@ -1007,22 +1047,27 @@ export function removeSelections(keys: string[]) {
 	});
 }
 
+/** Clear all selections. */
 export function resetSelections() {
 	return applySelectionUpdate(() => []);
 }
 
+/** Combine selections into an AND composite. `keys` null combines all top-level selections. */
 export function selectIntersection(keys: string[] | null = null) {
 	return applySelectionUpdate((sels) => intersectSelections(sels, keys));
 }
 
+/** Combine selections into an OR composite. `keys` null combines all top-level selections. */
 export function selectUnion(keys: string[] | null = null) {
 	return applySelectionUpdate((sels) => unionSelections(sels, keys));
 }
 
+/** Wrap selections in an Invert composite (everything NOT in them). `keys` null inverts all. */
 export function selectInverse(keys: string[] | null = null) {
 	return applySelectionUpdate((sels) => invertSelections(sels, keys));
 }
 
+/** Add or remove one location from the Manual selection (creating it if needed). */
 export function toggleManualSelection(locationId: number) {
 	return applySelectionUpdate((sels) => toggleManual(sels, locationId));
 }
@@ -1051,30 +1096,37 @@ export async function selectSpacedFromSelection(opts: {
 	return { picked: result.ids.length, distanceM: result.distanceM };
 }
 
+/** Select every location in the map. */
 export function selectEverything() {
 	return addSelections([{ type: "Everything" }]);
 }
 
+/** Select locations that have no tags. */
 export function selectUntagged() {
 	return addSelections([{ type: "Untagged" }]);
 }
 
+/** Select locations with no heading set (heading 0). */
 export function selectUnpanned() {
 	return addSelections([{ type: "Unpanned" }]);
 }
 
+/** Select locations pinned to a specific panorama (panoId set). */
 export function selectPanoIds() {
 	return addSelections([{ type: "PanoIds" }]);
 }
 
+/** Select locations NOT pinned to a specific panorama (no panoId). */
 export function selectNotPanoIds() {
 	return addSelections([{ type: "NotPanoIds" }]);
 }
 
+/** Select locations added or modified since the last commit. */
 export function selectUncommitted() {
 	return addSelections([{ type: "Uncommitted" }]);
 }
 
+/** Select locations that have another location within `distance` metres. */
 export function selectDuplicates(distance: number) {
 	return addSelections([{ type: "Duplicates", distance }]);
 }
@@ -1106,14 +1158,17 @@ export async function pruneDuplicates(props: SelectionProps, distance: number): 
 	return r.delta.removed.length;
 }
 
+/** Select all locations carrying a tag. */
 export function selectTag(tagId: number) {
 	return addSelections([{ type: "Tag", tagId }]);
 }
 
+/** Select locations inside a polygon. */
 export function selectPolygon(polygon: PolygonGeometry, includeInformational = false) {
 	return addSelections([{ type: "Polygon", polygon, includeInformational }]);
 }
 
+/** Select locations matching a field filter (e.g. `country == "FR"`, `altitude > 100`). */
 export function selectFilter(
 	field: string,
 	op: FilterOp,
@@ -1124,6 +1179,7 @@ export function selectFilter(
 	return addSelections([{ type: "Filter", field, op, value, value2, tzLocal }]);
 }
 
+/** Select the `k` locations with the highest (or lowest) value of a numeric field. */
 export function selectTopK(field: string, k: number, ascending: boolean) {
 	return addSelections([{ type: "TopK", field, k, ascending }]);
 }
@@ -1151,10 +1207,12 @@ export function updateFilterSelection(oldKey: string, props: SelectionProps) {
 	});
 }
 
+/** Rename a polygon selection. */
 export function setPolygonName(key: string, name: string) {
 	return applySelectionUpdate((sels) => renamePolygonSel(sels, key, name));
 }
 
+/** Set the highlight color of selections, by key. */
 export function setSelectionColors(entries: { key: string; color: [number, number, number] }[]) {
 	applySelectionUpdate((sels) => {
 		let result = sels;
@@ -1163,10 +1221,12 @@ export function setSelectionColors(entries: { key: string; color: [number, numbe
 	});
 }
 
+/** Move a selection before/after another in the sidebar order. */
 export function reorderSelection(fromKey: string, toKey: string, position: "before" | "after") {
 	applySelectionUpdate((sels) => reorderSelections(sels, fromKey, toKey, position));
 }
 
+/** Nest existing selections under a new AND/OR/Invert composite. */
 export function composeSelections(
 	dragKey: string,
 	dropKey: string,
@@ -1186,14 +1246,17 @@ export function composeSelections(
 	});
 }
 
+/** Pull a child out of a composite back to the top level. */
 export function decomposeChild(parentKey: string, childKey: string) {
 	applySelectionUpdate((sels) => decomposeChildSel(sels, parentKey, childKey));
 }
 
+/** Delete a child from a composite (without re-adding it at the top level). */
 export function removeChildFromSelection(parentKey: string, childKey: string) {
 	applySelectionUpdate((sels) => removeFromCompositeSel(sels, parentKey, childKey));
 }
 
+/** Toggle tag selections on/off for the given tags (used by tag-pill clicks). */
 export function toggleTagSelections(tagIds: number[]) {
 	if (!currentMap || tagIds.length === 0) return;
 	applySelectionUpdate((sels) => {
@@ -1261,6 +1324,8 @@ export async function resolveLocation(m: MaybeLocation): Promise<Location | null
 	return typeof m === "number" ? await cmd.storeGetLocation(m) : m;
 }
 
+/** Open a location in the editor (null closes it). With `checkDuplicates`, opening a spot
+ *  with 2+ locations within 2m opens the duplicate-resolution panel instead. */
 export async function setActiveLocation(target: MaybeLocation | null, checkDuplicates = true) {
 	const t = trace("setActive");
 	const id = target == null ? null : locId(target);
@@ -1310,6 +1375,7 @@ export async function setActiveLocation(target: MaybeLocation | null, checkDupli
 	t.end();
 }
 
+/** Open one location from the duplicate-resolution panel in the editor. */
 export function openDuplicateLocation(loc: Location) {
 	activeLocationId = loc.id;
 	cachedActiveLocation = loc;
@@ -1318,11 +1384,13 @@ export function openDuplicateLocation(loc: Location) {
 	bump();
 }
 
+/** Drop a location from the duplicate-resolution panel (does not delete it). */
 export function removeDuplicate(id: number) {
 	duplicateLocations = duplicateLocations.filter((l) => l.id !== id);
 	bump();
 }
 
+/** Close the duplicate-resolution panel and return to the overview. */
 export function closeDuplicates() {
 	duplicateLocations = [];
 	activeLocationId = null;
@@ -1331,6 +1399,7 @@ export function closeDuplicates() {
 	bump();
 }
 
+/** Switch the editor pane (overview, location, duplicates, import, plugin). */
 export function setWorkArea(area: WorkArea) {
 	workArea = area;
 	if (area !== "location") activeLocationId = null;
@@ -1340,12 +1409,15 @@ export function setWorkArea(area: WorkArea) {
 
 // --- Plugin mode ---
 
+/** Reactive id of the plugin whose sidebar is open, or null. */
 export const useActivePluginId = makeStoreHook(() => activePluginId);
 
+/** The current editor pane. */
 export function getWorkArea() {
 	return workArea;
 }
 
+/** Open a plugin's sidebar (switches the editor pane to "plugin"). */
 export function setPluginMode(pluginId: string) {
 	workArea = "plugin";
 	activePluginId = pluginId;
@@ -1353,6 +1425,7 @@ export function setPluginMode(pluginId: string) {
 	bump();
 }
 
+/** Close the plugin sidebar and return to the overview. */
 export function exitPluginMode() {
 	workArea = "overview";
 	activePluginId = null;
@@ -1407,6 +1480,7 @@ export async function reorderTags(orderedIds: number[]) {
 	await mutate(cmd.storeReorderTags(orderedIds));
 }
 
+/** Add a tag to locations (skips ones that already have it). Undoable. */
 export async function addTagToLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
@@ -1417,6 +1491,7 @@ export async function addTagToLocations(tagId: number, locationIds: number[]) {
 	await mutate(cmd.storeUpdateLocations(updates, true));
 }
 
+/** Remove a tag from the given locations. Undoable. */
 export async function removeTagFromLocations(tagId: number, locationIds: number[]) {
 	if (!currentMap || locationIds.length === 0) return;
 	const locs = await cmd.storeGetLocationsByIds(locationIds);
@@ -1427,6 +1502,7 @@ export async function removeTagFromLocations(tagId: number, locationIds: number[
 	await mutate(cmd.storeUpdateLocations(updates, true));
 }
 
+/** Remove a tag from every location that has it. Undoable. */
 export async function removeTagFromAllLocations(tagId: number) {
 	if (!currentMap) return;
 	const allWithTag = await cmd.storeResolveSelection({ type: "Tag", tagId });
@@ -1542,13 +1618,16 @@ async function undoRedo(which: () => Promise<MutationResult>) {
 	}
 }
 
+/** Undo the last edit. */
 export function undo() {
 	return undoRedo(cmd.storeUndo);
 }
+/** Redo the last undone edit. */
 export function redo() {
 	return undoRedo(cmd.storeRedo);
 }
 
+/** Whether undo/redo are currently available. */
 export function getUndoRedoState() {
 	return undoRedoState;
 }
@@ -1638,6 +1717,7 @@ export async function beginCommitDiffPreview(commit: CommitInfo) {
 	}
 }
 
+/** Leave commit-diff preview and restore the regular markers. */
 export function endCommitDiffPreview() {
 	commitDiffPreview = null;
 	diffMarkerVersion++;
@@ -1645,6 +1725,7 @@ export function endCommitDiffPreview() {
 	bump();
 }
 
+/** Restore the map to a previous commit's state and reopen it. Clears undo/redo. */
 export async function checkoutCommit(commitId: string) {
 	if (!currentMapId) return;
 	await flushSave();

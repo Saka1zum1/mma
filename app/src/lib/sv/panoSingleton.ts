@@ -92,6 +92,7 @@ export function applyResolved(
 	sv.focus();
 }
 
+/** Open a seen entry's panorama in the Street View viewer. */
 export async function loadSeenPano(entry: SeenEntry) {
 	seenSkipNext(entry.panoId);
 

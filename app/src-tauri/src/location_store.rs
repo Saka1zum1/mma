@@ -2365,10 +2365,9 @@ pub(crate) fn apply_tag_patch(t: &mut Tag, patch: &TagPatch) {
     }
 }
 
-/// Update name and/or color for one or more tags in a single mutation. A new name
-/// that collides with an existing tag (case-insensitive) merges: locations remap from
-/// the renamed tag to the existing one. Batched so a folder-cascade rename lands as one
-/// render instead of one per tag. Returns MutationResult with `tags` populated.
+/// Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
+/// merges the two tags.
+// Batched so a folder-cascade rename lands as one render instead of one per tag.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_update_tags(
@@ -2557,10 +2556,9 @@ pub fn store_get_all_locations(
     })
 }
 
-/// Count locations by country via point-in-polygon against the border dataset (no
-/// network). `level` selects the border precision ("light"/"medium"/"heavy"), falling
-/// back to bundled "light" if unavailable. Returns unsorted (ISO-A2 code, count) pairs.
-/// Coords are gathered under the store lock, then classified after it's released.
+/// Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
+/// `level` selects border precision, falling back to "light" if unavailable.
+// Coords are gathered under the store lock, then classified after it's released.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_country_distribution(
@@ -2753,13 +2751,10 @@ pub(crate) fn reconcile_tags_by_name(
     (remap, changed)
 }
 
-/// Copy locations from the current window's map into another map (routing
-/// hotkeys). Duplicates in the target are skipped (`split_new_locations`).
-/// Tags carry over import-style (`reconcile_copied_tags`), extras carry with
-/// field defs auto-registered in the target; timestamps are fresh. If the
-/// target is open (any window), its live store is mutated and a
-/// `store-external-mutation` event tells its windows to resync; either way
-/// the result is persisted immediately (delta sidecar + tags + count).
+/// Copy locations into another map, skipping ones the target already has. Tags and extra
+/// fields carry over.
+// If the target is open in any window its live store is mutated and `store-external-mutation`
+// tells its windows to resync; either way the result is persisted immediately.
 #[tauri::command]
 #[specta::specta]
 pub fn store_copy_locations_to_map(
@@ -2961,12 +2956,10 @@ pub(crate) fn persist_dirty_inner(
     Ok(())
 }
 
-/// Autosave: serialize the overlay (uncommitted changes) to the delta sidecar, plus
-/// dirty tags and the location count. Skips entirely when nothing changed since the
-/// last save. Does NOT bake the overlay — `store_commit` does the full merge.
-/// `overlay.dirty` is cleared only after the write lands, and only if the overlay
-/// wasn't mutated while the write was in flight (rev guard), so a failed or raced
-/// save keeps the data flagged for the next attempt.
+/// Autosave uncommitted changes to the delta sidecar. No-op when nothing changed.
+// Does NOT bake the overlay (store_commit does). `overlay.dirty` is cleared only after the
+// write lands and only if the overlay wasn't mutated in flight (rev guard), so a failed or
+// raced save keeps the data flagged for the next attempt.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_save_dirty(
@@ -3588,10 +3581,9 @@ pub fn store_redo(
     })
 }
 
-/// Net diff since last commit for the commit dialog, derived from the overlay --
-/// the same changeset `store_commit` will record. The undo stack is NOT consulted:
-/// it is capped, and non-undoable edits (enrichment, field renames, plugin batches)
-/// bypass it entirely while still being part of the commit.
+/// The uncommitted changes since the last commit -- the same changeset `store_commit` will record.
+// Derived from the overlay, not the undo stack: the stack is capped, and non-undoable edits
+// (enrichment, field renames, plugin batches) bypass it while still being part of the commit.
 #[tauri::command]
 #[specta::specta]
 pub fn store_commit_diff(
@@ -4074,11 +4066,9 @@ pub fn store_resolve_selection(
     })
 }
 
-/// Partition the (optionally scoped) location set into groups by a derived key, returning
-/// compact `{ key, ids, bin }` per group — no hydrated locations. `scope` None partitions
-/// the whole map; Some resolves that selection and restricts to it. Powers the gradient
-/// (groups -> colored selections) and apply-as-tags (groups -> tags) surfaces without
-/// materializing location data into JS.
+/// Group locations by a derived key, returning `{ key, ids, bin }` per group.
+/// `scope` restricts to a selection; `None` partitions the whole map.
+// Powers gradient and apply-as-tags without materializing location data into JS.
 #[tauri::command]
 #[specta::specta]
 pub fn store_partition(
@@ -4113,10 +4103,9 @@ pub fn store_duplicate_groups(
     })
 }
 
-/// Merge each transitive duplicate group (size >= 2 within `distance` metres) into one
-/// survivor. Survivor = most tags, then earliest `created_at`, then lowest id. Tags are
-/// set-unioned across the group; `extra` is merged with the survivor winning key conflicts;
-/// all other survivor fields are kept. Applied as a single undoable edit.
+/// Merge each duplicate group within `distance` metres into one survivor location, unioning
+/// tags and extra fields. One undoable edit.
+// Survivor = most tags, then earliest created_at, then lowest id; extra merges survivor-wins.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_merge_duplicates(
@@ -4171,10 +4160,10 @@ pub async fn store_merge_duplicates(
     })
 }
 
-/// Prune duplicates among `ids` (a resolved selection) within `distance` metres:
-/// <= 25m keeps the best-scored location per cluster (`keep_tag_ids` score +5, see
-/// selections::prune_score); > 25m thins greedily so no two survivors remain in
-/// range. Informational locations are never pruned. One undoable edit.
+/// Thin duplicates among `ids` within `distance` metres, keeping the best location per
+/// cluster. Informational locations are never pruned. One undoable edit.
+// <= 25m: best-scored per cluster (keep_tag_ids +5, see selections::prune_score);
+// > 25m: greedy thinning so no two survivors remain in range.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_prune_duplicates(
@@ -4221,10 +4210,8 @@ pub async fn store_prune_duplicates(
 }
 
 /// Find all locations within `radius_m` metres of (`lat`, `lng`).
-///
-/// Backed by the store's lazy spatial index: O(cells in radius) per query after a
-/// one-time O(N) build, maintained incrementally across mutations. Called on every
-/// marker click (duplicate check), so it must not scan.
+// Lazy spatial index: O(cells in radius) per query after a one-time O(N) build, maintained
+// incrementally. Called on every marker click (duplicate check), so it must not scan.
 #[tauri::command]
 #[specta::specta]
 pub fn store_find_nearby(
@@ -4415,11 +4402,10 @@ pub struct PickHit {
     pub selected: bool,
 }
 
-/// CPU hit-test replacing deck.gl GPU picking for the marker layers. Returns
-/// covering markers topmost-first, resolving overlaps by draw order (selection
-/// overlay/active above base; within base, cell order then index within cell),
-/// which reproduces the painter's-order stacking the renderer draws.
-/// `zoom` is Google-scale; `marker_style`/`size_scale` must match the surface.
+/// Hit-test markers at a point, returning covering markers topmost-first.
+/// `zoom` is Google-scale; `marker_style`/`size_scale` must match the rendering surface.
+// CPU replacement for deck.gl GPU picking; overlap order reproduces the renderer's painter's
+// order (selection overlay/active above base; within base, cell order then index).
 #[tauri::command]
 #[specta::specta]
 pub fn store_pick(

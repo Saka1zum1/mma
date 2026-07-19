@@ -11,6 +11,7 @@ let nextId = 0;
 const { subscribe: subscribeToasts, notify } = createSyncStore();
 export { subscribeToasts };
 
+/** Show a transient toast message over the map. */
 export function toast(message: string, duration = 2500) {
 	const id = nextId++;
 	toasts = [...toasts, { id, message }];

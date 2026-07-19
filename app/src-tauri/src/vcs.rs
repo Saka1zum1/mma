@@ -71,19 +71,14 @@ fn format_diff_message(added: u32, removed: u32, modified: u32) -> Option<String
     (!parts.is_empty()).then(|| parts.join(" "))
 }
 
-/// Create a commit and bake the overlay in a single pass — the only commit path.
-///
-/// Builds the canonical batch ONCE (the bake) and derives the commit delta three ways:
-/// - dirty overlay (normal commit/import): the pre-bake overlay changeset, O(changeset).
-/// - genesis (no parent): full state == the base file just written; stored by copying
-///   the base (one serialization, not two; batch_to_delta reads it as all-created).
-/// - clean overlay with a parent (a checkout/revert commit): diff the current baked
-///   state against the materialized parent.
-/// `message` is auto-formatted (`+a -r ~m`) when None. Returns the new commit id.
-///
-/// `async` so the heavy bake/VCS work runs on a runtime worker, not the main
-/// (event-loop) thread — a sync command here freezes the webview and stalls the
-/// queued render behind it.
+/// Commit the map's uncommitted changes and return the new commit id.
+/// `message` None auto-generates a `+a -r ~m` summary.
+// The only commit path: builds the canonical batch ONCE (the bake) and derives the commit
+// delta three ways -- dirty overlay: the pre-bake changeset, O(changeset); genesis (no
+// parent): a copy of the base just written (batch_to_delta reads it as all-created); clean
+// overlay with a parent (checkout/revert): diff baked state against the materialized parent.
+// async so the heavy bake/VCS work runs on a runtime worker -- a sync command here freezes
+// the webview and stalls the queued render behind it.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_commit(
@@ -221,11 +216,10 @@ pub fn store_list_commits(map_id: String) -> AppResult<Vec<CommitInfo>> {
     Ok(commits)
 }
 
-/// Restore a map to the state captured by a previous commit.
-///
-/// Materializes the commit's full state by replaying its ancestor deltas, writes
-/// it as the map's base Arrow file, and clears the uncommitted delta. The caller
-/// (`checkoutCommit` in JS) reopens the map and clears undo/redo.
+/// Restore a map to the state captured by a previous commit. The caller must reopen
+/// the map afterwards (undo/redo is cleared).
+// Materializes the commit by replaying ancestor deltas, rewrites the base Arrow file,
+// and clears the uncommitted delta.
 #[tauri::command]
 #[specta::specta]
 pub fn store_checkout_commit(map_id: String, commit_id: String) -> AppResult<()> {

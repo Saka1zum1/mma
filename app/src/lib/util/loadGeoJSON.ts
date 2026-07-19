@@ -1,6 +1,7 @@
 import { addSelections } from "@/store/useMapStore";
 import type { PolygonGeometry, SelectionProps } from "@/bindings.gen";
 
+/** Prompt for GeoJSON file(s) and add their polygons as selections. */
 export async function loadGeoJSON() {
 	const input = document.createElement("input");
 	input.type = "file";

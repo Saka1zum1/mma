@@ -81,23 +81,11 @@ export const commands = {
 	 *  release all in-memory state (batch, mmap, indexes, selections, undo stacks).
 	 */
 	storeCloseMap: () => __TAURI_INVOKE<null>("store_close_map"),
-	/**
-	 *  Autosave: serialize the overlay (uncommitted changes) to the delta sidecar, plus
-	 *  dirty tags and the location count. Skips entirely when nothing changed since the
-	 *  last save. Does NOT bake the overlay — `store_commit` does the full merge.
-	 *  `overlay.dirty` is cleared only after the write lands, and only if the overlay
-	 *  wasn't mutated while the write was in flight (rev guard), so a failed or raced
-	 *  save keeps the data flagged for the next attempt.
-	 */
+	/**  Autosave uncommitted changes to the delta sidecar. No-op when nothing changed. */
 	storeSaveDirty: () => __TAURI_INVOKE<SaveResult>("store_save_dirty"),
 	/**
-	 *  Copy locations from the current window's map into another map (routing
-	 *  hotkeys). Duplicates in the target are skipped (`split_new_locations`).
-	 *  Tags carry over import-style (`reconcile_copied_tags`), extras carry with
-	 *  field defs auto-registered in the target; timestamps are fresh. If the
-	 *  target is open (any window), its live store is mutated and a
-	 *  `store-external-mutation` event tells its windows to resync; either way
-	 *  the result is persisted immediately (delta sidecar + tags + count).
+	 *  Copy locations into another map, skipping ones the target already has. Tags and extra
+	 *  fields carry over.
 	 */
 	storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => __TAURI_INVOKE<CopyToMapResult>("store_copy_locations_to_map", { targetMapId, ids }),
 	/**  Lightweight status query: location count, version, and dirty flag. */
@@ -111,23 +99,9 @@ export const commands = {
 	 *  (including the generated UUID) so the frontend can navigate to it immediately.
 	 */
 	storeCreateMap: (name: string, folder: string | null) => __TAURI_INVOKE<MapData>("store_create_map", { name, folder }).then((v) => (({...v,meta:({...v.meta,extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
-	/**
-	 *  Delete a map and all associated data: SQLite rows (maps, edit_history,
-	 *  commits) and Arrow base/delta/commit files on disk.
-	 * 
-	 *  Evicts any live in-memory state for the map, so a window still showing it
-	 *  (or a racing autosave) can't flush its overlay back to disk after the files
-	 *  are gone. The manager lock is held across the whole delete so a concurrent
-	 *  `store_open_map` of the same map can't reload it from disk mid-deletion and
-	 *  resurrect it.
-	 */
+	/**  Delete a map and all its data: database rows and files on disk. */
 	storeDeleteMap: (id: string) => __TAURI_INVOKE<null>("store_delete_map", { id }),
-	/**
-	 *  Apply a partial update to a map's metadata. Dynamically builds the SQL
-	 *  UPDATE from non-`None` fields in the patch. Also syncs `known_field_keys`
-	 *  on the in-memory store when extra fields change, so auto-registration
-	 *  doesn't re-discover fields the user explicitly defined.
-	 */
+	/**  Apply a partial update to a map's metadata; `None` fields are left unchanged. */
 	storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => __TAURI_INVOKE<null>("store_update_map_meta", { id, patch: ({...patch,scoreBounds:patch.scoreBounds==null?patch.scoreBounds:patch.scoreBounds,extra:patch.extra==null?patch.extra:({...patch.extra,fields:patch.extra.fields==null?patch.extra.fields:Object.fromEntries(Object.entries(patch.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})}) }),
 	/**
 	 *  Update `last_opened_at` to the current timestamp. Used to sort the map
@@ -173,10 +147,8 @@ export const commands = {
 	 */
 	storeGetAllLocations: () => __TAURI_INVOKE<string>("store_get_all_locations"),
 	/**
-	 *  Count locations by country via point-in-polygon against the border dataset (no
-	 *  network). `level` selects the border precision ("light"/"medium"/"heavy"), falling
-	 *  back to bundled "light" if unavailable. Returns unsorted (ISO-A2 code, count) pairs.
-	 *  Coords are gathered under the store lock, then classified after it's released.
+	 *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
+	 *  `level` selects border precision, falling back to "light" if unavailable.
 	 */
 	storeCountryDistribution: (level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { level }),
 	/**  Return the number of alive locations (batch + adds - dead). */
@@ -186,13 +158,7 @@ export const commands = {
 	 *  When `selected_only` is true, restricts to the current selection.
 	 */
 	storeBounds: (selectedOnly: boolean) => __TAURI_INVOKE<[number, number, number, number] | null>("store_bounds", { selectedOnly }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
-	/**
-	 *  Find all locations within `radius_m` metres of (`lat`, `lng`).
-	 * 
-	 *  Backed by the store's lazy spatial index: O(cells in radius) per query after a
-	 *  one-time O(N) build, maintained incrementally across mutations. Called on every
-	 *  marker click (duplicate check), so it must not scan.
-	 */
+	/**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
 	storeFindNearby: (lat: number, lng: number, radiusM: number) => __TAURI_INVOKE<Location[]>("store_find_nearby", { lat, lng, radiusM }).then((v) => (v.map(i=>i) as typeof v)),
 	/**
 	 *  For each input point, whether any existing location lies within `radius_m` metres.
@@ -201,11 +167,8 @@ export const commands = {
 	 */
 	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => __TAURI_INVOKE<boolean[]>("store_near_any", { lats: lats.map(i=>i), lngs: lngs.map(i=>i), radiusM }),
 	/**
-	 *  CPU hit-test replacing deck.gl GPU picking for the marker layers. Returns
-	 *  covering markers topmost-first, resolving overlaps by draw order (selection
-	 *  overlay/active above base; within base, cell order then index within cell),
-	 *  which reproduces the painter's-order stacking the renderer draws.
-	 *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the surface.
+	 *  Hit-test markers at a point, returning covering markers topmost-first.
+	 *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the rendering surface.
 	 */
 	storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => __TAURI_INVOKE<PickHit[]>("store_pick", { lat, lng, zoom, markerStyle, sizeScale }),
 	/**
@@ -219,10 +182,8 @@ export const commands = {
 	 */
 	storeCreateTags: (names: string[]) => __TAURI_INVOKE<MutationResult>("store_create_tags", { names }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
-	 *  Update name and/or color for one or more tags in a single mutation. A new name
-	 *  that collides with an existing tag (case-insensitive) merges: locations remap from
-	 *  the renamed tag to the existing one. Batched so a folder-cascade rename lands as one
-	 *  render instead of one per tag. Returns MutationResult with `tags` populated.
+	 *  Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
+	 *  merges the two tags.
 	 */
 	storeUpdateTags: (updates: Update<TagPatch>[]) => __TAURI_INVOKE<MutationResult>("store_update_tags", { updates }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
@@ -241,12 +202,7 @@ export const commands = {
 	storeRedo: () => __TAURI_INVOKE<MutationResult>("store_redo").then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**  Clear both undo and redo stacks. Called after a commit to start fresh. */
 	storeResetUndo: () => __TAURI_INVOKE<null>("store_reset_undo"),
-	/**
-	 *  Net diff since last commit for the commit dialog, derived from the overlay --
-	 *  the same changeset `store_commit` will record. The undo stack is NOT consulted:
-	 *  it is capped, and non-undoable edits (enrichment, field renames, plugin batches)
-	 *  bypass it entirely while still being part of the commit.
-	 */
+	/**  The uncommitted changes since the last commit -- the same changeset `store_commit` will record. */
 	storeCommitDiff: () => __TAURI_INVOKE<[number, number, number]>("store_commit_diff"),
 	/**
 	 *  Replace all selections, resolve bitmasks against current data, and write a binary
@@ -267,11 +223,8 @@ export const commands = {
 	 */
 	storeResolveSelection: (props: SelectionProps) => __TAURI_INVOKE<number[]>("store_resolve_selection", { props }),
 	/**
-	 *  Partition the (optionally scoped) location set into groups by a derived key, returning
-	 *  compact `{ key, ids, bin }` per group — no hydrated locations. `scope` None partitions
-	 *  the whole map; Some resolves that selection and restricts to it. Powers the gradient
-	 *  (groups -> colored selections) and apply-as-tags (groups -> tags) surfaces without
-	 *  materializing location data into JS.
+	 *  Group locations by a derived key, returning `{ key, ids, bin }` per group.
+	 *  `scope` restricts to a selection; `None` partitions the whole map.
 	 */
 	storePartition: (field: string, key: KeySpec, scope: Scope) => __TAURI_INVOKE<PartitionBucket[]>("store_partition", { field, key, scope }).then((v) => (v.map(i=>({...i,bin:i.bin==null?i.bin:i.bin.map(i=>i)})) as typeof v)),
 	/**
@@ -280,17 +233,13 @@ export const commands = {
 	 */
 	storeDuplicateGroups: (distance: number) => __TAURI_INVOKE<number[][]>("store_duplicate_groups", { distance }),
 	/**
-	 *  Merge each transitive duplicate group (size >= 2 within `distance` metres) into one
-	 *  survivor. Survivor = most tags, then earliest `created_at`, then lowest id. Tags are
-	 *  set-unioned across the group; `extra` is merged with the survivor winning key conflicts;
-	 *  all other survivor fields are kept. Applied as a single undoable edit.
+	 *  Merge each duplicate group within `distance` metres into one survivor location, unioning
+	 *  tags and extra fields. One undoable edit.
 	 */
 	storeMergeDuplicates: (distance: number) => __TAURI_INVOKE<MutationResult>("store_merge_duplicates", { distance }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
-	 *  Prune duplicates among `ids` (a resolved selection) within `distance` metres:
-	 *  <= 25m keeps the best-scored location per cluster (`keep_tag_ids` score +5, see
-	 *  selections::prune_score); > 25m thins greedily so no two survivors remain in
-	 *  range. Informational locations are never pruned. One undoable edit.
+	 *  Thin duplicates among `ids` within `distance` metres, keeping the best location per
+	 *  cluster. Informational locations are never pruned. One undoable edit.
 	 */
 	storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { ids, distance, keepTagIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
@@ -309,12 +258,7 @@ export const commands = {
 	 *  ZIP files have each `.json` entry parsed in parallel via rayon.
 	 */
 	bulkImportPreview: (path: string) => __TAURI_INVOKE<ImportPreviewEntry[]>("bulk_import_preview", { path }),
-	/**
-	 *  Persist selected maps from a previously previewed import.
-	 *  Uses the cached parse if available; otherwise re-parses the file.
-	 *  Each map gets a new UUID, Arrow IPC file, and SQLite row.
-	 *  Emits `bulk-import-progress` events per map for UI feedback.
-	 */
+	/**  Import the selected maps from a previously previewed file. Emits `bulk-import-progress` per map. */
 	bulkImportConfirm: (path: string, selectedIndices: number[]) => __TAURI_INVOKE<ImportedMapInfo[]>("bulk_import_confirm", { path, selectedIndices }),
 	/**
 	 *  Drop the cached parse from `bulk_import_preview` when the user dismisses the
@@ -343,14 +287,7 @@ export const commands = {
 	 *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
 	storeImportFile: (droppedFields: string[], tagName: string | null) => __TAURI_INVOKE<EditorImportResult>("store_import_file", { droppedFields, tagName }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
-	/**
-	 *  Export locations as a JSON file.
-	 * 
-	 *  Produces `{name, customCoordinates: [...]}` with optional `extra` block
-	 *  containing tags (with colors as RGB arrays) and field definitions.
-	 *  Heading of exactly 0 is written as 0.001 when `export_unpanned` is set,
-	 *  the convention for "no heading specified".
-	 */
+	/**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
 	storeExportJson: (opts: ExportOpts) => __TAURI_INVOKE<string>("store_export_json", { opts }),
 	/**  Export locations as a minimal lat/lng CSV file. */
 	storeExportCsv: (scope: number[] | null) => __TAURI_INVOKE<string>("store_export_csv", { scope }),
@@ -364,14 +301,7 @@ export const commands = {
 	 *  then remove the temp source. `dest_path` comes from the frontend save dialog.
 	 */
 	storeSaveExportFile: (srcPath: string, destPath: string) => __TAURI_INVOKE<null>("store_save_export_file", { srcPath, destPath }),
-	/**
-	 *  Export every map in the database as a deflate-compressed ZIP of JSON files.
-	 * 
-	 *  Each map becomes one `{name}.json` file in the archive, with full location
-	 *  data, tags, and extra fields. Reads Arrow IPC files directly from disk
-	 *  (bypasses the in-memory store). Duplicate map names get a numeric suffix.
-	 *  Runs on a blocking thread to avoid starving the async runtime.
-	 */
+	/**  Export every map in the database as a ZIP of JSON files. Duplicate map names get a numeric suffix. */
 	storeExportBulkZip: () => __TAURI_INVOKE<string>("store_export_bulk_zip"),
 	/**
 	 *  Create a temp session dir for binary uploads from the frontend. Files are
@@ -397,12 +327,7 @@ export const commands = {
 	 *  by parsing each map's tags JSON column.
 	 */
 	storeDbStats: () => __TAURI_INVOKE<DbStats>("store_db_stats"),
-	/**
-	 *  Records a panorama visit and evicts excess entries beyond `MAX_SEEN`.
-	 * 
-	 *  Eviction deletes the oldest rows by `entered_at`, so the table acts as a
-	 *  bounded ring buffer without requiring explicit rotation.
-	 */
+	/**  Record a panorama visit. Oldest entries beyond `MAX_SEEN` are evicted. */
 	storeSeenWrite: (entry: SeenWriteEntry) => __TAURI_INVOKE<null>("store_seen_write", { entry }),
 	/**  Returns a page of seen entries, newest first, with optional filtering. */
 	storeSeenList: (limit: number, offset: number, filter: SeenFilter | null, thumbnails: boolean) => __TAURI_INVOKE<SeenEntry[]>("store_seen_list", { limit, offset, filter, thumbnails }).then((v) => (v.map(i=>i) as typeof v)),
@@ -426,29 +351,15 @@ export const commands = {
 	storeReviewUpdate: (update: ReviewUpdate) => __TAURI_INVOKE<null>("store_review_update", { update }),
 	storeReviewDelete: (id: string) => __TAURI_INVOKE<null>("store_review_delete", { id }),
 	/**
-	 *  Create a commit and bake the overlay in a single pass — the only commit path.
-	 * 
-	 *  Builds the canonical batch ONCE (the bake) and derives the commit delta three ways:
-	 *  - dirty overlay (normal commit/import): the pre-bake overlay changeset, O(changeset).
-	 *  - genesis (no parent): full state == the base file just written; stored by copying
-	 *    the base (one serialization, not two; batch_to_delta reads it as all-created).
-	 *  - clean overlay with a parent (a checkout/revert commit): diff the current baked
-	 *    state against the materialized parent.
-	 *  `message` is auto-formatted (`+a -r ~m`) when None. Returns the new commit id.
-	 * 
-	 *  `async` so the heavy bake/VCS work runs on a runtime worker, not the main
-	 *  (event-loop) thread — a sync command here freezes the webview and stalls the
-	 *  queued render behind it.
+	 *  Commit the map's uncommitted changes and return the new commit id.
+	 *  `message` None auto-generates a `+a -r ~m` summary.
 	 */
 	storeCommit: (mapId: string, message: string | null) => __TAURI_INVOKE<string>("store_commit", { mapId, message }),
 	/**  List all commits for a map, newest first. */
 	storeListCommits: (mapId: string) => __TAURI_INVOKE<CommitInfo[]>("store_list_commits", { mapId }),
 	/**
-	 *  Restore a map to the state captured by a previous commit.
-	 * 
-	 *  Materializes the commit's full state by replaying its ancestor deltas, writes
-	 *  it as the map's base Arrow file, and clears the uncommitted delta. The caller
-	 *  (`checkoutCommit` in JS) reopens the map and clears undo/redo.
+	 *  Restore a map to the state captured by a previous commit. The caller must reopen
+	 *  the map afterwards (undo/redo is cleared).
 	 */
 	storeCheckoutCommit: (mapId: string, commitId: string) => __TAURI_INVOKE<null>("store_checkout_commit", { mapId, commitId }),
 	/**  Read a single commit's delta (created/removed locations) for the diff viewer. */

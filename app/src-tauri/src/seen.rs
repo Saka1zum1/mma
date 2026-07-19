@@ -110,10 +110,7 @@ fn build_where_clause(
 /// are evicted in the same write transaction.
 const MAX_SEEN: i64 = 10_000;
 
-/// Records a panorama visit and evicts excess entries beyond `MAX_SEEN`.
-///
-/// Eviction deletes the oldest rows by `entered_at`, so the table acts as a
-/// bounded ring buffer without requiring explicit rotation.
+/// Record a panorama visit. Oldest entries beyond `MAX_SEEN` are evicted.
 #[tauri::command]
 #[specta::specta]
 pub fn store_seen_write(entry: SeenWriteEntry) -> AppResult<()> {

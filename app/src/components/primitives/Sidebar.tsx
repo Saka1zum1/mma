@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft, mdiChevronDown, mdiChevronRight } from "@mdi/js";
+/** Standard right-hand sidebar chrome (title, back button, scrollable body). Use for plugin sidebars. */
 export function Sidebar({
 	title,
 	onBack,
@@ -34,6 +35,7 @@ export function Sidebar({
 	);
 }
 
+/** Collapsible titled section inside a Sidebar. */
 export function Section({
 	title,
 	defaultOpen = true,
@@ -68,6 +70,7 @@ export function Section({
 	);
 }
 
+/** Labelled form row (label left, control right) for sidebar sections. */
 export function Field({
 	label,
 	hint,
@@ -88,6 +91,7 @@ export function Field({
 	);
 }
 
+/** Centered icon + message for empty panels. */
 export function EmptyState({ icon, children }: { icon?: string; children: ReactNode }) {
 	return (
 		<div className="plugin-empty">
@@ -104,6 +108,7 @@ export interface SegmentedOption<T extends string | number> {
 	title?: string;
 }
 
+/** Row of mutually exclusive option buttons (a compact radio group). */
 export function SegmentedControl<T extends string | number>({
 	options,
 	value,
