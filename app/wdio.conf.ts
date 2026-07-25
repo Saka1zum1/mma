@@ -15,7 +15,10 @@ if (!isWorker) {
 	// Random suffix keeps parallel shards (separate containers, shared logs mount)
 	// from clobbering one another's log file.
 	const suffix = Math.random().toString(36).slice(2, 7);
-	const logPath = path.join(logDir, `e2e-${timestamp}-${suffix}.txt`);
+	const logPath = path.join(
+		logDir,
+		`e2e-${process.env.MMA_E2E_LOG_TAG ?? "native"}-${timestamp}-${suffix}.txt`,
+	);
 	logStream = fs.createWriteStream(logPath, { encoding: "utf-8" });
 	process.env.MMA_E2E_LOG_PATH = logPath;
 
@@ -27,18 +30,22 @@ if (!isWorker) {
 	};
 }
 
+/** Excluded from both suites: scratch and perf specs, run explicitly via --spec. */
+export const SHARED_EXCLUDES = [
+	"./test/e2e/scratch.test.ts",
+	"./test/e2e/benchmarks.test.ts",
+	"./test/e2e/speed-matrix.test.ts",
+	"./test/e2e/bulk-import-rust.test.ts",
+	"./test/e2e/perf-import.test.ts",
+	"./test/e2e/perf-sel.test.ts",
+	"./test/e2e/perf-render.test.ts",
+];
+
 export const config: WebdriverIO.Config = {
 	runner: "local",
 	specs: ["./test/e2e/**/*.test.ts"],
-	exclude: [
-		"./test/e2e/scratch.test.ts",
-		"./test/e2e/benchmarks.test.ts",
-		"./test/e2e/speed-matrix.test.ts",
-		"./test/e2e/bulk-import-rust.test.ts",
-		"./test/e2e/perf-import.test.ts",
-		"./test/e2e/perf-sel.test.ts",
-		"./test/e2e/perf-render.test.ts",
-	],
+	// web-bridge asserts on the HTTP bridge, which only exists under --web.
+	exclude: [...SHARED_EXCLUDES, "./test/e2e/web-bridge.test.ts"],
 	maxInstances: 1,
 	capabilities: [
 		{

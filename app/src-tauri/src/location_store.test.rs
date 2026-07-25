@@ -40,7 +40,6 @@ fn patch() -> LocationPatch {
         pitch: None,
         zoom: None,
         pano_id: None,
-        provider: None,
         flags: None,
         tags: None,
         extra: None,
@@ -411,13 +410,10 @@ fn undo_add() {
         removed: vec![],
     });
 
-    let _delta = apply_edit_reverse(
-        &mut store,
-        &EditEntry {
-            created: vec![l],
-            removed: vec![],
-        },
-    );
+    let _delta = store.apply_edit_reverse(&EditEntry {
+        created: vec![l],
+        removed: vec![],
+    });
     assert_eq!(store.alive_count, 0);
     assert!(store.get_loc_by_id(1).is_none());
 }
@@ -427,13 +423,10 @@ fn undo_remove() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[]);
     // simulate: location was removed, undo should re-add it
-    let _delta = apply_edit_reverse(
-        &mut store,
-        &EditEntry {
-            created: vec![],
-            removed: vec![l.clone()],
-        },
-    );
+    let _delta = store.apply_edit_reverse(&EditEntry {
+        created: vec![],
+        removed: vec![l.clone()],
+    });
     assert_eq!(store.alive_count, 1);
     let got = store.get_loc_by_id(1).unwrap();
     assert_eq!(got.lat, 10.0);
@@ -449,7 +442,7 @@ fn undo_update_restores_original() {
         created: vec![updated],
         removed: vec![original.clone()],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
 
     let got = store.get_loc_by_id(1).unwrap();
     assert_eq!(got.heading, 0.0);
@@ -464,10 +457,10 @@ fn redo_after_undo() {
         removed: vec![],
     };
 
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.alive_count, 0);
 
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
     assert_eq!(store.alive_count, 1);
     assert!(store.get_loc_by_id(1).is_some());
 }
@@ -516,7 +509,7 @@ fn tag_counts_correct_after_undo_add() {
         created: vec![l],
         removed: vec![],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.tags.all.get(&10).map(|t| t.count), Some(0));
 }
 
@@ -530,7 +523,7 @@ fn tag_counts_correct_after_undo_remove() {
         created: vec![],
         removed: vec![l],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.tags.all.get(&10).map(|t| t.count), Some(1));
 }
 
@@ -550,7 +543,7 @@ fn tag_counts_correct_after_undo_tag_change() {
         created: vec![new],
         removed: vec![old],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
 
     assert_eq!(store.tags.all.get(&10).map(|t| t.count), Some(1));
     assert_eq!(store.tags.all.get(&20).map(|t| t.count), Some(0));
@@ -565,10 +558,10 @@ fn tag_counts_survive_undo_redo_cycle() {
         removed: vec![],
     };
 
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.tags.all.get(&10).map(|t| t.count), Some(0));
 
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
     assert_eq!(store.tags.all.get(&10).map(|t| t.count), Some(1));
 }
 
@@ -584,7 +577,7 @@ fn delta_has_added_entry_for_new_location() {
         created: vec![l],
         removed: vec![],
     };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let delta = store.apply_edit_forward(&entry);
     assert_eq!(delta.added.len(), 1);
     assert_eq!(delta.added[0].id, 1);
     assert_eq!(delta.removed.len(), 0);
@@ -598,7 +591,7 @@ fn delta_has_removed_entry_for_deleted_location() {
         created: vec![],
         removed: vec![l],
     };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let delta = store.apply_edit_forward(&entry);
     assert_eq!(delta.removed.len(), 1);
     assert_eq!(delta.removed[0], 1);
     assert_eq!(delta.added.len(), 0);
@@ -614,7 +607,7 @@ fn delta_has_both_for_moved_location() {
         created: vec![new],
         removed: vec![old],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     let delta = store.derive_render_delta(&changes);
     // cross-cell move => remove old + add new
     assert_eq!(delta.removed.len(), 1);
@@ -630,7 +623,7 @@ fn delta_add_uses_configured_marker_color() {
         created: vec![loc(2, 30.0, 40.0)],
         removed: vec![],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     let delta = store.derive_render_delta(&changes);
 
     assert_eq!(delta.added.len(), 1);
@@ -655,7 +648,7 @@ fn samey_location_skips_render_delta() {
         created: vec![new],
         removed: vec![old],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     let delta = store.derive_render_delta(&changes);
 
     assert_eq!(
@@ -677,7 +670,7 @@ fn samey_location_with_heading_change_does_rerender() {
         created: vec![new],
         removed: vec![old],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     let delta = store.derive_render_delta(&changes);
 
     // heading change in the same cell => in-place render patch
@@ -700,7 +693,7 @@ fn samey_location_with_lat_change_does_rerender() {
         created: vec![new],
         removed: vec![old],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     let delta = store.derive_render_delta(&changes);
 
     assert!(
@@ -719,7 +712,7 @@ fn samey_tag_only_change_skips_render() {
         created: vec![new],
         removed: vec![old],
     };
-    let delta = apply_edit_forward(&mut store, &entry);
+    let delta = store.apply_edit_forward(&entry);
 
     assert_eq!(delta.added.len(), 0, "tag-only change should skip render");
     assert_eq!(delta.removed.len(), 0);
@@ -790,7 +783,7 @@ fn tag_counts_shipped_only_when_changed() {
     assert!(result.status.tag_counts.is_none());
 
     // A tag-touching edit ships fresh counts again.
-    let changes = apply_edit(&mut store, std::slice::from_ref(&l), &[]);
+    let changes = store.apply_edit(std::slice::from_ref(&l), &[]);
     let result = store.finish_mutation(changes);
     assert_eq!(
         result.status.tag_counts.as_ref().unwrap().get(&10),
@@ -1065,11 +1058,11 @@ fn readd_after_remove_through_undo() {
         created: vec![],
         removed: vec![l.clone()],
     };
-    apply_edit_forward(&mut store, &remove_entry);
+    store.apply_edit_forward(&remove_entry);
     assert_eq!(store.alive_count, 0);
 
     // undo the removal
-    apply_edit_reverse(&mut store, &remove_entry);
+    store.apply_edit_reverse(&remove_entry);
     assert_eq!(store.alive_count, 1);
     let got = store.get_loc_by_id(1).unwrap();
     assert_eq!(got.lat, 10.0);
@@ -1141,7 +1134,7 @@ fn undo_update_when_location_is_in_baked_batch() {
         created: vec![updated],
         removed: vec![l],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
 
     let got = store.get_loc_by_id(1).unwrap();
     assert_eq!(got.heading, 0.0, "undo should restore original heading");
@@ -1159,11 +1152,11 @@ fn multiple_undo_redo_cycles_consistent() {
     };
 
     for _ in 0..5 {
-        apply_edit_forward(&mut store, &entry);
+        store.apply_edit_forward(&entry);
         assert_eq!(store.get_loc_by_id(1).unwrap().tags, vec![20]);
         assert_eq!(store.tags.all.get(&20).map(|t| t.count), Some(1));
 
-        apply_edit_reverse(&mut store, &entry);
+        store.apply_edit_reverse(&entry);
         assert_eq!(store.get_loc_by_id(1).unwrap().tags, vec![10]);
         assert_eq!(store.tags.all.get(&10).map(|t| t.count), Some(1));
     }
@@ -1504,7 +1497,7 @@ fn alive_count_stays_correct_through_all_mutations() {
         created: vec![],
         removed: vec![loc(2, 1.0, 1.0), loc(3, 2.0, 2.0)],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.alive_count, 3);
 }
 
@@ -1649,8 +1642,8 @@ fn render_buffer_format_matches_js_parser() {
         offset += count as usize * 4;
         // positions: count * 2 * 4 bytes
         offset += count as usize * 2 * 4;
-        // colors: count * 4 bytes
-        offset += count as usize * 4;
+        // visible: count * 1 byte
+        offset += count as usize;
         // angles: count * 4 bytes
         offset += count as usize * 4;
         total_locs += count;
@@ -1681,7 +1674,7 @@ fn arrow_render_angle_is_negated_heading() {
     };
     let buf = build_cell_render_buffers(&mut store, &req);
 
-    // Walk to the single cell's angles segment: [u32 cells][u8 char][u32 count][ids][positions][colors][angles]
+    // Walk to the single cell's angles segment: [u32 cells][u8 char][u32 count][ids][positions][visible][angles]
     let cell_count = u32::from_le_bytes(buf[0..4].try_into().unwrap());
     assert_eq!(cell_count, 1);
     let mut offset = 4usize;
@@ -1690,7 +1683,7 @@ fn arrow_render_angle_is_negated_heading() {
     offset += 5;
     offset += count * 4; // ids
     offset += count * 2 * 4; // positions
-    offset += count * 4; // colors
+    offset += count; // visible
     let angle = f32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap());
     assert_eq!(angle, -90.0, "arrow angle must be the negated heading");
 }
@@ -1745,13 +1738,13 @@ fn undo_delete_readds_render_entry() {
         created: vec![],
         removed: vec![l.clone()],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     let delta = store.derive_render_delta(&changes);
     assert_eq!(delta.removed.len(), 1);
     assert!(store.cell_lookup(1).is_none());
 
     // Undo delete
-    let changes = apply_edit_reverse(&mut store, &entry);
+    let changes = store.apply_edit_reverse(&entry);
     let delta = store.derive_render_delta(&changes);
     assert_eq!(delta.added.len(), 1);
     assert_eq!(delta.added[0].id, 1);
@@ -1773,14 +1766,14 @@ fn undo_delete_multiple_then_readd_renders_correctly() {
         created: vec![],
         removed: vec![l1.clone(), l2.clone()],
     };
-    let changes = apply_edit_forward(&mut store, &entry);
+    let changes = store.apply_edit_forward(&entry);
     store.derive_render_delta(&changes);
     assert!(store.cell_lookup(1).is_none());
     assert!(store.cell_lookup(2).is_none());
     assert!(store.cell_lookup(3).is_some());
 
     // Undo
-    let changes = apply_edit_reverse(&mut store, &entry);
+    let changes = store.apply_edit_reverse(&entry);
     let delta = store.derive_render_delta(&changes);
     assert_eq!(delta.added.len(), 2);
     assert!(store.cell_lookup(1).is_some());
@@ -1820,11 +1813,11 @@ fn tag_counts_correct_after_bulk_add_then_undo() {
         created: locs.clone(),
         removed: vec![],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.tags.all.get(&5).map(|t| t.count), Some(0));
     assert_eq!(store.alive_count, 0);
 
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
     assert_eq!(store.tags.all.get(&5).map(|t| t.count), Some(10));
     assert_eq!(store.alive_count, 10);
 }
@@ -1846,7 +1839,7 @@ fn tag_counts_correct_after_tag_reassignment_undo() {
         created: vec![new],
         removed: vec![old],
     };
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(
         store.tags.all.get(&5).map(|t| t.count),
         Some(1),
@@ -1949,7 +1942,7 @@ fn active_id_should_be_clearable_when_location_removed() {
         created: vec![],
         removed: vec![l],
     };
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
 
     // The caller (JS) should clear active_id when the delta removes it.
     // Verify the location is actually gone so the caller can detect it.
@@ -1968,20 +1961,31 @@ fn active_id_should_be_clearable_when_location_removed() {
 // Render buffer binary format
 // -----------------------------------------------------------------------
 
+/// Push a selection with an explicit member set, bypassing resolution.
+fn push_resolved(store: &mut Store, key: &str, color: [u8; 3], members: &[u32]) {
+    let mut set = RoaringBitmap::new();
+    for &id in members {
+        set.insert(id);
+    }
+    store.selections.resolved.push(ResolvedSelection {
+        sel: selections::Selection {
+            key: key.into(),
+            color,
+            props: selections::SelectionProps::Manual {
+                locations: members.to_vec(),
+            },
+        },
+        set,
+    });
+}
+
 #[test]
 fn render_buffer_with_selection_overlay() {
     let l1 = loc(1, 10.0, 20.0);
     let l2 = loc(2, 30.0, 40.0);
     let mut store = setup_store_with(&[l1, l2]);
     store.bake_overlay();
-    store.selections.all.push(selections::Selection {
-        key: "manual".into(),
-        color: [255, 0, 0],
-        props: selections::SelectionProps::Manual { locations: vec![1] },
-    });
-    let mut bm = RoaringBitmap::new();
-    bm.insert(1);
-    store.selections.loc_sets.push(bm);
+    push_resolved(&mut store, "manual", [255, 0, 0], &[1]);
     store.selections.ids.insert(1);
 
     let req = RenderRequest {
@@ -2000,7 +2004,8 @@ fn render_buffer_with_selection_overlay() {
     let mut offset = 4usize;
     for _ in 0..cell_count {
         let count = u32::from_le_bytes(buf[offset + 1..offset + 5].try_into().unwrap()) as usize;
-        offset += 5 + count * 4 + count * 2 * 4 + count * 4 + count * 4;
+        // ids + positions + visible + angles
+        offset += 5 + count * 4 + count * 2 * 4 + count + count * 4;
     }
     let sel_count = u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap());
     assert_eq!(sel_count, 1, "one selected location");
@@ -2011,14 +2016,7 @@ fn color_for_uses_last_matching_selection() {
     let mut store = setup_store_with(&[loc(1, 0.0, 0.0)]);
     // id 1 belongs to two selections with different colors.
     for (key, color) in [("a", [255, 0, 0]), ("b", [0, 0, 255])] {
-        store.selections.all.push(selections::Selection {
-            key: key.into(),
-            color,
-            props: selections::SelectionProps::Manual { locations: vec![1] },
-        });
-        let mut bm = RoaringBitmap::new();
-        bm.insert(1);
-        store.selections.loc_sets.push(bm);
+        push_resolved(&mut store, key, color, &[1]);
     }
     store.selections.ids.insert(1);
 
@@ -2037,19 +2035,10 @@ fn color_map_matches_color_for() {
         ("a", [255, 0, 0], vec![1u32, 2]),
         ("b", [0, 0, 255], vec![2u32, 3]),
     ] {
-        store.selections.all.push(selections::Selection {
-            key: key.into(),
-            color,
-            props: selections::SelectionProps::Manual {
-                locations: members.clone(),
-            },
-        });
-        let mut bm = RoaringBitmap::new();
+        push_resolved(&mut store, key, color, &members);
         for id in &members {
-            bm.insert(*id);
             store.selections.ids.insert(*id);
         }
-        store.selections.loc_sets.push(bm);
     }
 
     let map = store.selections.color_map();
@@ -2373,16 +2362,140 @@ fn manager_remove_preserves_other() {
 }
 
 // -----------------------------------------------------------------------
+// Store::create_tags: create-and-assign in one mutation
+// -----------------------------------------------------------------------
+
+#[test]
+fn create_tags_with_locations_never_leaves_the_tag_at_zero() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0), loc(2, 10.1, 20.1)]);
+
+    let result = store.create_tags(&["field".to_string()], &[1, 2]);
+
+    let tag = store
+        .tags
+        .all
+        .values()
+        .find(|t| t.name == "field")
+        .expect("tag created");
+    assert_eq!(tag.count, 2, "the count is right in the same mutation");
+    assert!(
+        tag.visible,
+        "and it is not flipped invisible for being empty"
+    );
+    for id in [1, 2] {
+        assert!(store.get_loc_by_id(id).unwrap().tags.contains(&tag.id));
+    }
+    assert_eq!(
+        result.status.tag_counts.unwrap().get(&tag.id),
+        Some(&2),
+        "the same mutation reports the count to JS"
+    );
+}
+
+#[test]
+fn create_tags_without_locations_only_creates() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
+
+    store.create_tags(&["solo".to_string()], &[]);
+
+    let tag = store.tags.all.values().find(|t| t.name == "solo").unwrap();
+    assert_eq!(tag.count, 0);
+    assert!(store.get_loc_by_id(1).unwrap().tags.is_empty());
+}
+
+#[test]
+fn an_empty_tag_survives_an_unrelated_mutation() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0), loc(2, 30.0, 40.0)]);
+    store.create_tags(&["empty".to_string()], &[]);
+    let tag_id = store
+        .tags
+        .all
+        .values()
+        .find(|t| t.name == "empty")
+        .unwrap()
+        .id;
+    assert!(store.tags.all[&tag_id].visible, "visible on creation");
+
+    // Move an unrelated location. Visibility is re-derived only for tags this touched.
+    let old = store.get_loc_by_id(2).unwrap();
+    let moved = Location {
+        lat: 31.0,
+        ..old.clone()
+    };
+    store.finish_mutation(ChangeSet {
+        updated: vec![(old, moved)],
+        ..Default::default()
+    });
+
+    assert!(
+        store.tags.all[&tag_id].visible,
+        "an unrelated edit must not hide a tag that is merely empty"
+    );
+}
+
+#[test]
+fn losing_its_last_location_still_hides_a_tag() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
+    store.create_tags(&["fading".to_string()], &[1]);
+    let tag_id = store
+        .tags
+        .all
+        .values()
+        .find(|t| t.name == "fading")
+        .unwrap()
+        .id;
+    assert!(store.tags.all[&tag_id].visible);
+
+    // Strip it back off: the tag IS touched, so visibility is re-derived and it hides.
+    let old = store.get_loc_by_id(1).unwrap();
+    let untagged = Location {
+        tags: vec![],
+        ..old.clone()
+    };
+    store.remove_tag_counts(&[old.clone()]);
+    store.add_tag_counts(&[untagged.clone()]);
+    store.finish_mutation(ChangeSet {
+        updated: vec![(old, untagged)],
+        ..Default::default()
+    });
+
+    assert_eq!(store.tags.all[&tag_id].count, 0);
+    assert!(!store.tags.all[&tag_id].visible);
+}
+
+#[test]
+fn create_tags_is_idempotent_against_locations_that_already_have_the_tag() {
+    let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
+    store.create_tags(&["dup".to_string()], &[1]);
+    let tag_id = store
+        .tags
+        .all
+        .values()
+        .find(|t| t.name == "dup")
+        .unwrap()
+        .id;
+
+    // Same name, same location: no second copy of the tag, no double count.
+    store.create_tags(&["DUP".to_string()], &[1]);
+
+    assert_eq!(store.tags.all.values().filter(|t| t.count > 0).count(), 1);
+    assert_eq!(store.tags.all[&tag_id].count, 1);
+    assert_eq!(store.get_loc_by_id(1).unwrap().tags, vec![tag_id]);
+}
+
+// -----------------------------------------------------------------------
 // Selection bitmask: partial cell invariants
 // -----------------------------------------------------------------------
 
 fn add_tag_selection(store: &mut Store, tag_id: u32, color: [u8; 3]) {
-    store.selections.all.push(selections::Selection {
-        key: format!("tag:{}", tag_id),
-        color,
-        props: selections::SelectionProps::Tag { tag_id },
+    store.selections.resolved.push(ResolvedSelection {
+        sel: selections::Selection {
+            key: format!("tag:{}", tag_id),
+            color,
+            props: selections::SelectionProps::Tag { tag_id },
+        },
+        set: RoaringBitmap::new(),
     });
-    store.selections.loc_sets.push(RoaringBitmap::new());
 }
 
 /// Parse the binary bitmask and return the cell chars it contains.
@@ -2457,44 +2570,72 @@ fn tag_patch_applies_set_fields_only() {
     assert_eq!(tag.name, "A");
 }
 
-#[test]
-fn partial_bitmask_only_contains_affected_cells() {
-    // Two locations in different geohash cells
-    let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
-    let l2 = loc_with_tags(2, -30.0, -40.0, vec![1]);
-    let mut store = setup_store_with(&[l1.clone(), l2.clone()]);
+/// Insert tag `id` with `count` members so selection resolution can see it.
+fn insert_tag(store: &mut Store, id: u32, count: usize) {
     store.tags.all.insert(
-        1,
+        id,
         Tag {
-            id: 1,
-            name: "A".into(),
+            id,
+            name: format!("tag{id}"),
             color: "#ff0000".into(),
             visible: true,
             order: None,
-            count: 2,
+            count,
             doclinks: Vec::new(),
         },
     );
+}
+
+#[test]
+fn incremental_membership_change_ships_no_bitmask() {
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![]);
+    let mut store = setup_store_with(&[l1.clone()]);
+    insert_tag(&mut store, 1, 0);
     add_tag_selection(&mut store, 1, [255, 0, 0]);
 
-    // Verify they're in different cells
-    let c1 = render_cell_idx(10.0, 20.0);
-    let c2 = render_cell_idx(-30.0, -40.0);
-    assert_ne!(c1, c2, "test requires locations in different cells");
-
-    // Update only l1's tags — only l1's cell should be in the bitmask
     let result = store.finish_mutation(ChangeSet {
-        updated: vec![(l1.clone(), loc_with_tags(1, 10.0, 20.0, vec![1]))],
+        updated: vec![(l1, loc_with_tags(1, 10.0, 20.0, vec![1]))],
         ..Default::default()
     });
 
-    let sync = result.selection_sync.unwrap();
-    let buf = sync.bitmask.expect("should send bitmask");
-    let cells = bitmask_cell_chars(&buf);
+    let sync = result.selection_sync.expect("counts still sync");
+    assert!(
+        sync.bitmask.is_none(),
+        "the incremental path carries membership on the render delta, not a bitmask"
+    );
+    assert_eq!(sync.selected_count, 1);
+    assert_eq!(result.delta.color_patches.len(), 1);
+}
+
+#[test]
+fn full_resolve_ships_a_bitmask_for_every_cell() {
+    // Two locations in different geohash cells, both tagged.
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let l2 = loc_with_tags(2, -30.0, -40.0, vec![1]);
+    assert_ne!(
+        render_cell_idx(10.0, 20.0),
+        render_cell_idx(-30.0, -40.0),
+        "test requires locations in different cells"
+    );
+    let mut store = setup_store_with(&[l1.clone(), l2.clone()]);
+    insert_tag(&mut store, 1, 2);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+
+    // `full_reset` forces the full-resolve branch.
+    let result = store.finish_mutation(ChangeSet {
+        full_reset: true,
+        ..Default::default()
+    });
+
+    let buf = result
+        .selection_sync
+        .unwrap()
+        .bitmask
+        .expect("full resolve rebuilds the whole bitmask");
     assert_eq!(
-        cells.len(),
-        1,
-        "only the affected cell should be in the bitmask"
+        bitmask_cell_chars(&buf).len(),
+        2,
+        "a full resolve covers every non-empty cell, not just changed ones"
     );
 }
 
@@ -2529,9 +2670,68 @@ fn membership_delta_reports_gained_on_tag_add() {
         "should emit colorPatch for gained selection"
     );
     let cp = &result.delta.color_patches[0];
-    assert_eq!(cp.r, 255);
-    assert_eq!(cp.g, 0);
-    assert_eq!(cp.b, 0);
+    assert_eq!([cp.r, cp.g, cp.b], [255, 0, 0], "the selection colour");
+    assert_eq!(
+        cp.a, 0,
+        "a selected row is transparent in the base layer; the overlay draws it"
+    );
+}
+
+#[test]
+fn membership_delta_reports_lost_on_tag_remove() {
+    let tagged = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let mut store = setup_store_with(&[tagged.clone()]);
+    insert_tag(&mut store, 1, 1);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    store.resolve_selection_membership();
+    assert!(store.selections.ids.contains(1), "starts selected");
+
+    let untagged = loc_with_tags(1, 10.0, 20.0, vec![]);
+    let result = store.finish_mutation(ChangeSet {
+        updated: vec![(tagged, untagged)],
+        ..Default::default()
+    });
+
+    assert!(!store.selections.ids.contains(1), "left the selection");
+    assert_eq!(
+        result.delta.color_patches.len(),
+        1,
+        "a row that leaves a selection must be restored in the base layer"
+    );
+    let cp = &result.delta.color_patches[0];
+    assert_eq!(
+        [cp.r, cp.g, cp.b],
+        store.render.marker_color,
+        "restored to the default marker colour"
+    );
+    assert_eq!(cp.a, 255, "and made opaque again, or it stays invisible");
+}
+
+#[test]
+fn removed_selected_location_leaves_no_colorpatch() {
+    // A deleted row has no cell left to patch; JS drops it from the overlay via
+    // `delta.removed`, so emitting a colorPatch for it would dangle.
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let l2 = loc_with_tags(2, 10.001, 20.001, vec![1]);
+    let mut store = setup_store_with(&[l1, l2]);
+    insert_tag(&mut store, 1, 2);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    store.resolve_selection_membership();
+
+    let result = store.finish_mutation(ChangeSet {
+        removed: vec![1],
+        ..Default::default()
+    });
+
+    assert!(
+        result.delta.color_patches.is_empty(),
+        "no colorPatch for a row that no longer has a cell"
+    );
+    assert!(
+        result.delta.removed.iter().any(|r| r.id == 1),
+        "the removal itself is what drops it from the overlay"
+    );
+    assert!(!store.selections.ids.contains(1));
 }
 
 #[test]
@@ -2572,36 +2772,64 @@ fn membership_delta_no_colorpatch_when_membership_unchanged() {
 }
 
 #[test]
-fn removal_bitmask_includes_affected_cell() {
+fn selected_row_moving_across_cells_ships_hidden() {
+    // A cross-cell move ships as removed + added with no membership change or colorPatch.
+    // The added row's a=0 is what tells JS the row is still selected, so it moves the
+    // existing overlay entry instead of dropping it; a=255 here would double the marker.
     let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
-    let l2 = loc_with_tags(2, 10.001, 20.001, vec![1]);
-    let mut store = setup_store_with(&[l1.clone(), l2.clone()]);
-    store.tags.all.insert(
-        1,
-        Tag {
-            id: 1,
-            name: "A".into(),
-            color: "#ff0000".into(),
-            visible: true,
-            order: None,
-            count: 2,
-            doclinks: Vec::new(),
-        },
-    );
+    let mut store = setup_store_with(&[l1.clone()]);
+    insert_tag(&mut store, 1, 1);
     add_tag_selection(&mut store, 1, [255, 0, 0]);
     store.resolve_selection_membership();
+    assert!(store.selections.ids.contains(1), "starts selected");
 
-    // Remove l1
+    let moved = Location {
+        lat: -30.0,
+        lng: -40.0,
+        ..l1.clone()
+    };
+    assert_ne!(
+        render_cell_idx(10.0, 20.0),
+        render_cell_idx(-30.0, -40.0),
+        "test requires a cross-cell move"
+    );
     let result = store.finish_mutation(ChangeSet {
-        removed: vec![1],
+        updated: vec![(l1, moved)],
         ..Default::default()
     });
 
-    // The bitmask should include the cell that l1 was in
-    let sync = result.selection_sync.unwrap();
+    assert!(result.delta.removed.iter().any(|r| r.id == 1));
+    let added = result
+        .delta
+        .added
+        .iter()
+        .find(|e| e.id == 1)
+        .expect("re-added in the new cell");
+    assert_eq!(added.a, 0, "still selected, so hidden in the base layer");
     assert!(
-        sync.bitmask.is_some(),
-        "should send bitmask for the affected cell"
+        result.delta.color_patches.is_empty(),
+        "membership did not change"
+    );
+}
+
+#[test]
+fn touched_zero_member_tag_is_hidden_by_finish_mutation() {
+    // A tag with no members produces an empty changeset, so update_tag_counts never marks
+    // it touched; store_delete_tags marks it directly. This pins the mechanism it relies
+    // on: a touched count-0 tag gets visible=false and the result ships tags.
+    let mut store = setup_store_with(&[]);
+    insert_tag(&mut store, 1, 0);
+    store.tags.touched.insert(1);
+
+    let result = store.finish_mutation(ChangeSet::default());
+
+    assert!(
+        !store.tags.all[&1].visible,
+        "touched zero-member tag must be hidden"
+    );
+    assert!(
+        result.tags.is_some(),
+        "the visibility flip must ship tags so JS sees it"
     );
 }
 
@@ -2677,12 +2905,12 @@ fn merge_group_applies_and_undo_restores() {
         removed: members,
     };
 
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
     assert_eq!(store.alive_count, 1);
     assert_eq!(store.get_loc_by_id(1).unwrap().tags, vec![10, 20]);
     assert!(store.get_loc_by_id(2).is_none());
 
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(store.alive_count, 2);
     assert_eq!(store.get_loc_by_id(1).unwrap().tags, vec![10]);
     assert_eq!(store.get_loc_by_id(2).unwrap().tags, vec![20]);
@@ -2715,7 +2943,7 @@ fn selection_cell_segment_adapts_format() {
     // Sparse (one selected id) -> routed member-walk -> index-list (format byte 1).
     let mut sparse = RoaringBitmap::new();
     sparse.insert(5);
-    let routed = vec![selection_cell_indices(&render, &sparse, None)];
+    let routed = vec![selection_cell_indices(&render, &sparse)];
     let seg = serialize_cell_segment(0, cr, &routed);
     assert_eq!(parse_header(&seg), n as u32);
     assert_eq!(
@@ -2735,21 +2963,18 @@ fn selection_cell_segment_adapts_format() {
 
     // Dense (select all) -> cell scan -> bitmask (format byte 0), all bits set.
     let dense: RoaringBitmap = (0..n as u32).collect();
-    let routed = vec![selection_cell_indices(&render, &dense, None)];
+    let routed = vec![selection_cell_indices(&render, &dense)];
     let seg = serialize_cell_segment(0, cr, &routed);
     let mask_bytes = n.div_ceil(8);
     assert_eq!(seg[5], 0, "select-all should use the dense bitmask format");
     assert_eq!(seg.len(), 5 + 1 + mask_bytes);
     assert!(seg[6..].iter().all(|&b| b == 0xFF), "every bit set");
 
-    // Affected-scope filter: routing for a cell outside the scope yields nothing.
-    let mut other_cell_only = std::collections::HashSet::new();
-    other_cell_only.insert(1u8);
-    let routed = selection_cell_indices(&render, &sparse, Some(&other_cell_only));
-    assert!(
-        routed[0].is_empty(),
-        "out-of-scope cells must not be routed"
-    );
+    // Ids in no render cell route nowhere rather than panicking.
+    let mut absent = RoaringBitmap::new();
+    absent.insert(n as u32 + 10);
+    let routed = selection_cell_indices(&render, &absent);
+    assert!(routed.iter().all(|v| v.is_empty()));
 }
 
 // -----------------------------------------------------------------------
@@ -2776,7 +3001,7 @@ fn history_max_id_spans_both_stacks_and_both_sides() {
     assert_eq!(history_max_id(&[], &[]), 0);
 }
 
-// Simulate "close map" (store_close_map + save_edit_history_inner) and "reopen"
+// Simulate "close map" (store_close_map + save_edit_history) and "reopen"
 // (store_open_map's delta/history load + next_id seeding) at the Store level,
 // using the same serialization roundtrips the app uses.
 fn close_and_reopen(store: &Store) -> Store {
@@ -2831,13 +3056,13 @@ fn delete_loc(store: &mut Store, id: u32) {
 // store_undo / store_redo replay.
 fn press_undo(store: &mut Store) {
     let entry = store.edits.undo.pop().unwrap();
-    apply_edit_reverse(store, &entry);
+    store.apply_edit_reverse(&entry);
     store.edits.redo.push(entry);
 }
 
 fn press_redo(store: &mut Store) {
     let entry = store.edits.redo.pop().unwrap();
-    apply_edit_forward(store, &entry);
+    store.apply_edit_forward(&entry);
     store.push_undo(entry);
 }
 
@@ -3072,13 +3297,13 @@ fn undo_to_base_clears_overlay_patch() {
         created: vec![edited],
         removed: vec![base],
     };
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
     assert!(
         store.overlay.patches.contains_key(&1),
         "edit should create a patch"
     );
 
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert!(
         store.overlay.patches.is_empty(),
         "undo to base state should clear the patch"
@@ -3200,9 +3425,9 @@ fn spatial_survives_bake_and_undo_roundtrip() {
         created: vec![loc(3, 10.0, 10.0)],
         removed: vec![loc(1, 10.0, 10.0)],
     };
-    apply_edit_forward(&mut store, &entry);
+    store.apply_edit_forward(&entry);
     assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![3]);
-    apply_edit_reverse(&mut store, &entry);
+    store.apply_edit_reverse(&entry);
     assert_eq!(indexed_nearby(&mut store, 10.0, 10.0, 5.0), vec![1]);
 }
 
@@ -3418,7 +3643,7 @@ fn delta_bytes_roundtrip_exact() {
 }
 
 // -----------------------------------------------------------------------
-// Crash-window double-apply: save_arrow_inner renames the base file, then
+// Crash-window double-apply: save_arrow renames the base file, then
 // deletes the delta sidecar non-atomically. A crash between the two leaves a
 // stale delta whose `adds` duplicate what the (now up to date) base already
 // holds. store_open_map applies the parsed delta unconditionally -- mirror

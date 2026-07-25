@@ -1,3 +1,12 @@
+## v0.8.2 - 2026-07-25
+- New setting for the color of newly drawn polygons
+- Overlapping selections draw one marker per location instead of stacking duplicates
+- Faster marker rendering and selection updates on large maps
+- Plugin cards explain their labels on hover
+- Fixed pulling a nested group out of a composite duplicating its children
+- Fixed lag when hovering long suggestion lists
+- Fixed GPU memory churn from the search coverage overlay
+
 ## v0.8.1 - 2026-07-22
 - **Sync maps with map-making.app and GeoGuessr**
 - First sync offers merge or mirror when both sides already have locations

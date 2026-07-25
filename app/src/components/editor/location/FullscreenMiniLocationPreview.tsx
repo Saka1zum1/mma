@@ -1,119 +1,66 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
-import { useSyncStore } from "@/lib/events";
-import { useMapState } from "@/store/useMapStore";
 import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
-import { singletonDiv, singletonPano } from "@/lib/sv/panoSingleton";
-import { google } from "@/lib/sv/opensv";
-import {
-	findPanoProvider,
-	getActivePanoViewport,
-	getActivePanoViewportSnapshot,
-	resizeActivePanoViewport,
-	subscribeActivePanoViewport,
-} from "@/lib/sv/panoProvider";
+import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
 
 const PREVIEW_SCALE = range([0.5, 2]);
 const PREVIEW_SCALE_STEP = 0.5;
 const PREVIEW_BASE_W = 480;
 const PREVIEW_BASE_H = 270;
+const PREVIEW_COLLAPSED_W = 250;
 const PREVIEW_CLOSE_DELAY = 500;
 
-function resizeGooglePano() {
-	if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
-}
+/** Portal target for the chip */
+export const ChipHostContext = createContext<HTMLElement | null>(null);
 
-function resizeMountedPano(usingAlt: boolean) {
-	if (usingAlt) resizeActivePanoViewport();
-	else resizeGooglePano();
-}
-
-/** Floating Street View chip for fullscreen-map mode. Reuses the Google singleton or
- *  the active alt-provider viewport (Look Around PSV). LocationPreview yields ownership
- *  while this is mounted. No embed controls. */
-export function FullscreenMiniLocationPreview() {
-	const location = useMapState((s) => s.activeLocation);
-	const containerRef = useRef<HTMLDivElement>(null);
+/** Floating chip chrome for fullscreen-map mode: hover-expand + scale buttons. */
+export function FullscreenMiniLocationPreview({ children }: { children: ReactNode }) {
+	const host = useContext(ChipHostContext);
 	const scale = useSetting("fullscreenMiniLocationScale");
-	const [expanded, setExpanded] = useState(false);
-	const closeTimer = useRef<number | null>(null);
-	const altViewportEpoch = useSyncStore(subscribeActivePanoViewport, getActivePanoViewportSnapshot);
-	const altViewport = getActivePanoViewport();
-	const hasAltProvider = !!location && !!findPanoProvider(location);
-	const usingAlt = hasAltProvider && !!altViewport;
+	const boxRef = useRef<HTMLDivElement>(null);
+	const { expanded, hoverProps } = useHoverExpand(boxRef, PREVIEW_CLOSE_DELAY);
+	const width = Math.round(PREVIEW_BASE_W * scale);
 
+	const prevWidth = useRef(width);
 	useLayoutEffect(() => {
-		const container = containerRef.current;
-		if (!container || !location) return;
-
-		if (hasAltProvider) {
-			if (!altViewport) return;
-			container.appendChild(altViewport);
-			resizeActivePanoViewport();
-			return () => {
-				if (container.contains(altViewport)) container.removeChild(altViewport);
-			};
-		}
-
-		container.appendChild(singletonDiv);
-		if (singletonPano) {
-			singletonPano.setVisible(true);
-			resizeGooglePano();
-		}
-		return () => {
-			if (container.contains(singletonDiv)) container.removeChild(singletonDiv);
-		};
-	}, [location?.id, hasAltProvider, altViewport, altViewportEpoch]);
-
-	// Size changes are not CSS-animated (avoids canvas stretch mid-transition).
-	// Resize once after layout commits — never during a transition.
-	useLayoutEffect(() => {
-		resizeMountedPano(usingAlt);
-	}, [expanded, scale, location?.id, usingAlt, altViewportEpoch]);
+		const el = boxRef.current;
+		const from = prevWidth.current;
+		prevWidth.current = width;
+		if (!el || from === width) return;
+		el.style.transition = "none";
+		el.style.setProperty("--fs-mini-flip", String(from / width));
+		void el.offsetWidth;
+		el.style.transition = "";
+		el.style.setProperty("--fs-mini-flip", "1");
+	}, [width]);
 
 	const setScale = (next: number) => {
 		const clamped = clamp(next, PREVIEW_SCALE);
 		setSetting("fullscreenMiniLocationScale", Math.round(clamped * 100) / 100);
 	};
 
-	const open = () => {
-		if (closeTimer.current !== null) {
-			clearTimeout(closeTimer.current);
-			closeTimer.current = null;
-		}
-		setExpanded(true);
-	};
-	const scheduleClose = () => {
-		if (closeTimer.current !== null) clearTimeout(closeTimer.current);
-		closeTimer.current = window.setTimeout(() => {
-			setExpanded(false);
-			closeTimer.current = null;
-		}, PREVIEW_CLOSE_DELAY);
-	};
-
-	useEffect(() => {
-		return () => {
-			if (closeTimer.current !== null) clearTimeout(closeTimer.current);
-		};
-	}, []);
-
-	if (!location) return null;
+	if (!host) return null;
 
 	const sizeVars = {
-		"--fs-mini-loc-w": `${Math.round(PREVIEW_BASE_W * scale)}px`,
+		"--fs-mini-loc-w": `${width}px`,
 		"--fs-mini-loc-h": `${Math.round(PREVIEW_BASE_H * scale)}px`,
+		// Never above 1: at the smallest scale the expanded box is already
+		// narrower than the collapsed target, and scaling up would blur it.
+		"--fs-mini-k": Math.min(1, PREVIEW_COLLAPSED_W / width),
 	} as React.CSSProperties;
 
-	return (
+	return createPortal(
 		<div
+			ref={boxRef}
 			className={`fullscreen-mini-location${expanded ? " is-expanded" : ""}`}
 			style={sizeVars}
-			onPointerEnter={open}
-			onPointerLeave={scheduleClose}
+			{...hoverProps}
 		>
-			<div ref={containerRef} className="fullscreen-mini-location__pano" />
+			{children}
 			<div className="fullscreen-mini-location__size">
 				<button
 					type="button"
@@ -134,6 +81,7 @@ export function FullscreenMiniLocationPreview() {
 					<Icon path={mdiPlus} size={16} />
 				</button>
 			</div>
-		</div>
+		</div>,
+		host,
 	);
 }

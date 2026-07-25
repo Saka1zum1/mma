@@ -5,8 +5,8 @@ import type { MarkerStyle } from "@/types";
 
 const buf: MarkerBuf = {
 	positions: new Float32Array([0, 0]),
-	colors: new Uint8Array([255, 0, 0, 255]),
 	angles: new Float32Array([0]),
+	color: { kind: "perMarker", colors: new Uint8Array([255, 0, 0, 255]) },
 };
 
 function build(style: MarkerStyle, opacity?: number) {

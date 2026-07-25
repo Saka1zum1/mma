@@ -87,6 +87,13 @@ export const range = <const T extends readonly [number, number]>(
 
 export const clamp = (val: number, r: Range): number => Math.min(r.max, Math.max(r.min, val));
 
+/** Step `step` places through a non-empty list from `current`, wrapping at both ends.
+ *  A `current` that isn't in the list behaves as if it sat just before the first item. */
+export function cycle<T>(items: readonly T[], current: T | null | undefined, step = 1): T {
+	const n = items.length;
+	return items[(((items.indexOf(current as T) + step) % n) + n) % n];
+}
+
 export type RequireNonNull<T> = { [P in keyof T]-?: NonNullable<T[P]> };
 export type Nullable<T> = { [K in keyof T]: T[K] | null };
 export type Rename<T, Map extends Record<string, string>> = {

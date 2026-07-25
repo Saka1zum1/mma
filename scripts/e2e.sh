@@ -8,6 +8,8 @@
 #   scripts/e2e.sh --shard [N]                      # full suite split across N containers (default 3)
 #   scripts/e2e.sh --mock [...]                     # add --mock (any position before specs) to
 #                                                   #   monkey-patch Street View (deterministic, no network)
+#   scripts/e2e.sh --web [...]                      # run the same specs against the web-serve
+#                                                   #   build in Chrome instead of the native shell
 #
 # Rebuild the image first (after app source changes) with: scripts/e2e-build.sh
 set -uo pipefail
@@ -16,15 +18,25 @@ set -uo pipefail
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 cd "$(dirname "$0")/.."
 
-# Optional leading --mock: enable the test-side Street View monkey-patch.
+# Leading flags, any order: --mock enables the test-side Street View monkey-patch,
+# --web swaps the native-shell runner for the web-serve one (Chrome over HTTP IPC).
 MOCK_ENV=()
-if [ "${1:-}" = "--mock" ]; then
-	MOCK_ENV=(-e MMA_TEST_MOCK_SV=1)
-	shift
-fi
+RUNNER="sh /repo/scripts/internal/e2e-native.sh"
+while :; do
+	case "${1:-}" in
+	--mock)
+		MOCK_ENV=(-e MMA_TEST_MOCK_SV=1)
+		shift
+		;;
+	--web)
+		RUNNER="sh /repo/scripts/internal/e2e-web.sh"
+		shift
+		;;
+	*) break ;;
+	esac
+done
 
 COMPOSE="docker compose -f docker-compose.e2e.yml -f docker-compose.e2e.dev.yml"
-RUNNER="sh /repo/scripts/docker-e2e.sh"
 
 if [ "${1:-}" = "--shard" ]; then
 	N="${2:-3}"

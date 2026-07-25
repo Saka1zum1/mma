@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { mdiChevronDown, mdiChevronUp } from "@mdi/js";
 import type { Tag } from "@/bindings.gen";
 import { getMapState } from "@/store/useMapStore";
 import { sortTagsByMode, tagColorFor, appendTagName } from "@/lib/util/util";
 import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
-import { useSetting } from "@/store/settings";
+import { Icon } from "@/components/primitives/Icon";
+import { useSetting, setSetting } from "@/store/settings";
 import { displayTagName } from "@/store/selections";
 
 export function FullscreenTagBar({
@@ -18,6 +20,7 @@ export function FullscreenTagBar({
 	const [input, setInput] = useState("");
 	const [focused, setFocused] = useState(false);
 	const [hovered, setHovered] = useState(false);
+	const collapsed = useSetting("fullscreenTagbarCollapsed");
 	const tagSortMode = useSetting("tagSortMode");
 	useSetting("truncateTagPaths");
 	useSetting("tagViewMode");
@@ -50,43 +53,55 @@ export function FullscreenTagBar({
 
 	return (
 		<div
-			className="fullscreen-tagbar"
+			className={`fullscreen-tagbar${collapsed ? " is-collapsed" : ""}`}
 			onPointerEnter={() => setHovered(true)}
 			onPointerLeave={() => setHovered(false)}
 		>
-			<ul className="tag-list">
-				{pendingTags.map((name) => (
-					<TagPill
-						as="li"
-						key={name}
-						small
-						color={tagColorFor(name, tags)}
-						label={label(name)}
-						button={
-							<TagPillButton
-								variant="delete"
-								onClick={() => onChangeTags(pendingTags.filter((n) => n !== name))}
+			<div className="fullscreen-tagbar__row">
+				<div className="fullscreen-tagbar__content">
+					<ul className="tag-list">
+						{pendingTags.map((name) => (
+							<TagPill
+								as="li"
+								key={name}
+								small
+								color={tagColorFor(name, tags)}
+								label={label(name)}
+								button={
+									<TagPillButton
+										variant="delete"
+										onClick={() => onChangeTags(pendingTags.filter((n) => n !== name))}
+									/>
+								}
 							/>
-						}
-					/>
-				))}
-			</ul>
-			<form className="form-add-tag" onSubmit={handleAdd}>
-				<button className="button form-add-tag__button" type="submit">
-					+
-				</button>
-				<input
-					className="form-add-tag__input fullscreen-tagbar__input"
-					type="text"
-					placeholder="Add a tag..."
-					spellCheck={false}
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onFocus={() => setFocused(true)}
-					onBlur={() => setTimeout(() => setFocused(false), 150)}
-				/>
-			</form>
-			{(focused || hovered) && filtered.length > 0 && (
+						))}
+					</ul>
+					<form className="form-add-tag" onSubmit={handleAdd}>
+						<button className="button form-add-tag__button" type="submit">
+							+
+						</button>
+						<input
+							className="form-add-tag__input fullscreen-tagbar__input"
+							type="text"
+							placeholder="Add a tag..."
+							spellCheck={false}
+							value={input}
+							onChange={(e) => setInput(e.target.value)}
+							onFocus={() => setFocused(true)}
+							onBlur={() => setTimeout(() => setFocused(false), 150)}
+						/>
+					</form>
+				</div>
+			</div>
+			<button
+				type="button"
+				className="fullscreen-tagbar__collapse"
+				aria-label={collapsed ? "Expand tag bar" : "Collapse tag bar"}
+				onClick={() => setSetting("fullscreenTagbarCollapsed", !collapsed)}
+			>
+				<Icon path={collapsed ? mdiChevronUp : mdiChevronDown} size={16} />
+			</button>
+			{!collapsed && (focused || hovered) && filtered.length > 0 && (
 				<div className="fullscreen-tagbar__palette">
 					{filtered.map((t) => (
 						<TagPill

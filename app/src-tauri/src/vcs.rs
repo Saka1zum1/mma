@@ -112,7 +112,7 @@ pub async fn store_commit(
         };
 
         // Build the canonical full batch ONCE (bake), write the base, re-mmap, flush tags.
-        crate::location_store::bake_and_save_inner(store, &map_id)?;
+        crate::location_store::bake_and_save(store, &map_id)?;
 
         store.edits.undo.clear();
         store.edits.redo.clear();

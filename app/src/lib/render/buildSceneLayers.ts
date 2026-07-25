@@ -5,6 +5,7 @@ import { baseMarkerLayers, buildMarkerLayer, MARKER_STYLE } from "@/lib/render/m
 import PanoCoverageLayer from "@/lib/render/PanoCoverageLayer";
 import LookAroundPanoCoverageLayer from "@/lib/sv/lookaround/LookAroundPanoCoverageLayer";
 import { isProviderEnabled, getProviderSettings } from "@/lib/sv/providers/settings";
+import { getMarkerDefaultColor } from "@/lib/render/sceneStore";
 import type { CellManager } from "@/lib/render/CellManager";
 import type { MarkerStyle } from "@/types";
 import type { LatLng } from "@/types";
@@ -160,7 +161,15 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		);
 	}
 
-	layers.push(...baseMarkerLayers(cm, ctx.markerStyle, ctx.markerOpacity, ctx.markerSize));
+	layers.push(
+		...baseMarkerLayers(
+			cm,
+			ctx.markerStyle,
+			getMarkerDefaultColor(),
+			ctx.markerOpacity,
+			ctx.markerSize,
+		),
+	);
 
 	if (isSeenOverlayActive()) {
 		const seen = getSeenOverlayEntries();
@@ -193,8 +202,8 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				cm.selOverlayCount,
 				{
 					positions: cm.selOverlayPositions,
-					colors: cm.selOverlayColors,
 					angles: cm.selOverlayAngles,
+					color: { kind: "perMarker", colors: cm.selOverlayColors },
 				},
 				cm.selOverlayVersion,
 				cm.selOverlayVersion,

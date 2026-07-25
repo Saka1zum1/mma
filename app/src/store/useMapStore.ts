@@ -1030,10 +1030,14 @@ export function exitPluginMode() {
 
 /** Get-or-create tags by name. Returns the tag objects for use
  *  in subsequent location updates. Idempotent — existing tags are returned
- *  as-is, new names get auto-generated colors. */
-export async function createTags(names: string[]): Promise<Tag[]> {
+ *  as-is, new names get auto-generated colors.
+ *
+ *  Pass `locationIds` to assign the tags in the same mutation. Prefer that over a follow-up
+ *  `addTagToLocations`: it is one round trip instead of three, and the tag never renders at
+ *  count 0 in between. */
+export async function createTags(names: string[], locationIds: number[] = []): Promise<Tag[]> {
 	if (names.length === 0) return [];
-	await mutate(() => cmd.storeCreateTags(names));
+	await mutate(() => cmd.storeCreateTags(names, locationIds));
 	const lower = new Set(names.map((n) => n.toLowerCase()));
 	const created = Object.values(state.tags).filter((t) => lower.has(t.name.toLowerCase()));
 	emitEvent("tag:add", created);

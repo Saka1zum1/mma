@@ -13,7 +13,6 @@ import type { MarkerStyle } from "@/types";
 // There can be exactly one producer — `store_fill_render_file` is unsafe for a second caller
 // (ignores bounds, rebuilds the picking index, shared file path).
 
-const ACTIVE_HIDDEN: [number, number, number, number] = [0, 0, 0, 0];
 let markerDefault: [number, number, number, number] = [42, 42, 42, 255];
 
 const scene = new CellManager();
@@ -25,11 +24,11 @@ export function getScene(): CellManager {
 	return scene;
 }
 
-function patchMarker(id: number, rgba: [number, number, number, number]) {
+function patchMarker(id: number, visible: number) {
 	for (const cb of scene.cells.values()) {
 		const idx = cb.idToIndex.get(id);
 		if (idx != null) {
-			cb.patchColor(idx, rgba[0], rgba[1], rgba[2], rgba[3]);
+			cb.patchVisible(idx, visible);
 			return;
 		}
 	}
@@ -44,39 +43,22 @@ function applyActive() {
 		prevActiveId !== activeId &&
 		!getMapState().selectedLocationIds.has(prevActiveId)
 	) {
-		patchMarker(prevActiveId, markerDefault);
+		patchMarker(prevActiveId, 255);
 	}
 	prevActiveId = activeId;
-	if (activeId != null) patchMarker(activeId, ACTIVE_HIDDEN);
+	if (activeId != null) patchMarker(activeId, 0);
 }
 
 export function setMarkerDefaultColor(r: number, g: number, b: number) {
 	markerDefault = [r, g, b, 255];
 }
 
-/** Repaint the default marker color in place: patches base cell colors and tells Rust
- *  (for future deltas). No render rebuild — safe to drive from an interactive picker. */
+/** Repaint the default marker color and tell Rust (for future deltas). The base layers take
+ *  the colour as a constant, so this is O(1) rather than a rewrite of every marker. */
 export function recolorScene(mc: RGB) {
 	const [or, og, ob] = markerDefault;
 	if (or === mc.r && og === mc.g && ob === mc.b) return;
 	setMarkerDefaultColor(mc.r, mc.g, mc.b);
-	for (const cb of scene.cells.values()) {
-		const colors = cb.colors;
-		for (let i = 0; i < cb.count; i++) {
-			const o = i * 4;
-			if (
-				colors[o + 3] === 255 &&
-				colors[o] === or &&
-				colors[o + 1] === og &&
-				colors[o + 2] === ob
-			) {
-				colors[o] = mc.r;
-				colors[o + 1] = mc.g;
-				colors[o + 2] = mc.b;
-			}
-		}
-		cb.colorVersion++;
-	}
 	void cmd.storeSetMarkerColor([mc.r, mc.g, mc.b]);
 	scene.version++;
 	emitEvent("scene:changed");
@@ -156,13 +138,10 @@ export function startSceneEngine(): () => void {
 		const t = trace("delta", { summary: true });
 		const affected = scene.applyDelta(delta);
 		const aid = getMapState().activeLocation?.id ?? null;
-		if (aid != null) patchMarker(aid, ACTIVE_HIDDEN);
-		if (delta.colorPatches.length > 0) {
-			const selPatches = delta.colorPatches.filter(
-				(cp) =>
-					!(cp.r === markerDefault[0] && cp.g === markerDefault[1] && cp.b === markerDefault[2]),
-			);
-			scene.appendToSelectionOverlay(selPatches);
+		if (aid != null) patchMarker(aid, 0);
+		// No bitmask follows an incremental mutation; applyDelta already folded membership in.
+		if (delta.colorPatches.length > 0 || delta.removed.length > 0) {
+			setSelectedLocationIds(scene.selectedIds());
 		}
 		t.end({ affected: affected.size, added: delta.added.length, removed: delta.removed.length });
 		if (affected.size > 0 || delta.colorPatches.length > 0) emitEvent("scene:changed");
@@ -170,8 +149,7 @@ export function startSceneEngine(): () => void {
 
 	const unsubSel = subscribeEvent("render:selection", ({ selColors, cellEntries, setIds }) => {
 		const t = trace("selection", { summary: true });
-		const [r, g, b] = markerDefault;
-		const ids = scene.applySelectionBitmasks(selColors, cellEntries, [r, g, b]);
+		const ids = scene.applySelectionBitmasks(selColors, cellEntries);
 		setIds(ids);
 		t.end({ cells: cellEntries.length, sels: selColors.length, ids: ids.size });
 		emitEvent("scene:changed");

@@ -29,6 +29,8 @@ type _SDFMarkerLayerProps<DataT> = {
 	flattenOpacity?: number;
 	getPosition?: Accessor<DataT, Position>;
 	getFillColor?: Accessor<DataT, Color>;
+	/** Per-marker visibility, unorm8: 255 draws, 0 hides. Omit for always-visible layers. */
+	getVisible?: Accessor<DataT, number>;
 	getAngle?: Accessor<DataT, number>;
 	getRadius?: Accessor<DataT, number>;
 };
@@ -41,6 +43,8 @@ const defaultProps: DefaultProps<SDFMarkerLayerProps> = {
 	flattenOpacity: { type: "number", min: 0, max: 1, value: 0 },
 	getPosition: { type: "accessor", value: [0, 0] },
 	getFillColor: { type: "accessor", value: [0, 0, 0, 255] },
+	// unorm8, so the "fully visible" constant is 255, matching getFillColor's alpha.
+	getVisible: { type: "accessor", value: 255 },
 	getAngle: { type: "accessor", value: 0 },
 	// Prevent errors when transitioning from ScatterplotLayer on the same layer ID
 	getRadius: { type: "accessor", value: 1 },
@@ -78,6 +82,12 @@ export default class SDFMarkerLayer<
 				type: "unorm8",
 				accessor: "getFillColor",
 				defaultValue: [0, 0, 0, 255],
+			},
+			instanceVisible: {
+				size: 1,
+				type: "unorm8",
+				accessor: "getVisible",
+				defaultValue: [255],
 			},
 			instanceAngles: {
 				size: 1,

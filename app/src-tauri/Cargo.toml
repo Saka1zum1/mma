@@ -1,6 +1,6 @@
 [package]
 name = "map-making-app"
-version = "0.8.1"
+version = "0.8.2"
 description = "Local map-making.app clone"
 authors = ["ccmdi"]
 license = ""

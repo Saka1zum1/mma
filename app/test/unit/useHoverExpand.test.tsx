@@ -1,0 +1,92 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { act, useRef } from "react";
+import { createRoot } from "react-dom/client";
+import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+const DELAY = 250;
+const BOX = { left: 0, top: 0, right: 100, bottom: 100 } as DOMRect;
+
+let api: ReturnType<typeof useHoverExpand>;
+
+function Probe() {
+	const ref = useRef<HTMLDivElement>(null);
+	api = useHoverExpand(ref, DELAY);
+	return <div ref={ref} data-testid="box" />;
+}
+
+let unmount: () => void;
+
+beforeEach(() => {
+	vi.useFakeTimers();
+	const container = document.createElement("div");
+	document.body.appendChild(container);
+	const root = createRoot(container);
+	act(() => root.render(<Probe />));
+	const box = container.querySelector("div")!;
+	box.getBoundingClientRect = () => BOX;
+	unmount = () => act(() => root.unmount());
+});
+
+afterEach(() => {
+	unmount();
+	vi.useRealTimers();
+});
+
+const enter = () => act(() => api.hoverProps.onPointerEnter());
+const leave = () => act(() => api.hoverProps.onPointerLeave());
+const pointerDown = () => act(() => api.hoverProps.onPointerDown());
+const pointerUpAt = (clientX: number, clientY: number) =>
+	act(() => {
+		document.dispatchEvent(new MouseEvent("pointerup", { clientX, clientY }));
+	});
+
+describe("useHoverExpand", () => {
+	it("expands on enter and collapses after the delay on leave", () => {
+		enter();
+		expect(api.expanded).toBe(true);
+
+		leave();
+		expect(api.expanded).toBe(true);
+		act(() => vi.advanceTimersByTime(DELAY));
+		expect(api.expanded).toBe(false);
+	});
+
+	it("re-entering cancels a pending close", () => {
+		enter();
+		leave();
+		enter();
+		act(() => vi.advanceTimersByTime(DELAY));
+		expect(api.expanded).toBe(true);
+	});
+
+	it("collapses when a drag releases outside, with no leave event", () => {
+		enter();
+		pointerDown();
+		pointerUpAt(500, 500);
+		act(() => vi.advanceTimersByTime(DELAY));
+		expect(api.expanded).toBe(false);
+	});
+
+	it("stays open for the whole drag, however far it wanders", () => {
+		enter();
+		pointerDown();
+		leave();
+		act(() => vi.advanceTimersByTime(DELAY * 4));
+		expect(api.expanded).toBe(true);
+
+		pointerUpAt(500, 500);
+		act(() => vi.advanceTimersByTime(DELAY));
+		expect(api.expanded).toBe(false);
+	});
+
+	it("stays open when a drag releases inside", () => {
+		enter();
+		pointerDown();
+		pointerUpAt(50, 50);
+		act(() => vi.advanceTimersByTime(DELAY));
+		expect(api.expanded).toBe(true);
+	});
+});

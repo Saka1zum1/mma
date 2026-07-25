@@ -55,6 +55,7 @@ import { type PanoReference, resolvePano, fetchPanoData, showToast } from "@/lib
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { enrich } from "@/lib/sv/enrich";
 import { FullscreenMiniMap } from "@/components/editor/location/FullscreenMiniMap";
+import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
 import { FullscreenTagBar } from "@/components/editor/location/FullscreenTagBar";
 import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
 import { seenPanoChanged, seenFlush, seenSetCanvas, seenUpdateGeo } from "@/lib/seen/seen";
@@ -79,6 +80,7 @@ import {
 	getPanoProvidersSnapshot,
 	setActivePanoViewport,
 	getActivePanoViewport,
+	resizeActivePanoViewport,
 	subscribeActivePanoViewport,
 	getActivePanoViewportSnapshot,
 	type PanoProviderSession,
@@ -279,17 +281,22 @@ export function LocationPreview() {
 		if (geoResult) seenUpdateGeo(geoResult);
 	}, [geoResult]);
 	const appSettings = useSettings();
-	const yieldPanoToMini =
+	const chipMode =
 		appSettings.fullscreenMap && appSettings.showFullscreenMiniLocationPreview;
 	const bottomTrayRef = useRef<HTMLDivElement>(null);
-	const [bottomTrayHeight, setBottomTrayHeight] = useState(0);
+	// Written straight to the CSS var, not through state: the tray animates its height, so
+	// this fires every frame and a re-render per frame would leave the chrome lagging behind.
 	useLayoutEffect(() => {
+		const root = fullscreenContainerRef.current;
 		const el = bottomTrayRef.current;
+		if (!root) return;
 		if (!el) {
-			setBottomTrayHeight(0);
+			root.style.setProperty("--fs-tray-h", "0px");
 			return;
 		}
-		const obs = new ResizeObserver(() => setBottomTrayHeight(el.offsetHeight));
+		const obs = new ResizeObserver(() =>
+			root.style.setProperty("--fs-tray-h", `${el.offsetHeight}px`),
+		);
 		obs.observe(el);
 		return () => obs.disconnect();
 	}, [isFullscreen, appSettings.showFullscreenTagbar, appSettings.showFullscreenDatePicker]);
@@ -306,7 +313,6 @@ export function LocationPreview() {
 			scrollwheel: appSettings.defaultMovementMode !== "nmpz",
 		});
 	}, [
-		yieldPanoToMini,
 		appSettings.showLinksControl,
 		appSettings.clickToGo,
 		appSettings.showRoadLabels,
@@ -334,17 +340,19 @@ export function LocationPreview() {
 
 	// Mount/unmount Google singleton. Look Around (and other alt providers) replace the host.
 	// Baidu uses the same singleton via BAIDU: inject — it is not an MMA PanoProvider.
-	// Yield to FullscreenMiniLocationPreview while fullscreen-map mode owns the chip.
+	// In chipMode the host is the fullscreen mini chip; otherwise the sidebar preview.
 	useLayoutEffect(() => {
-		if (yieldPanoToMini) return;
 		const container = panoContainerRef.current;
 		if (!container) return;
 		if (activeProvider) {
 			if (singletonPano) singletonPano.setVisible(false);
 			if (container.contains(singletonDiv)) container.removeChild(singletonDiv);
 			const vp = getActivePanoViewport();
-			if (vp && !container.contains(vp)) container.appendChild(vp);
-			return;
+			if (!vp) return;
+			if (!container.contains(vp)) container.appendChild(vp);
+			return () => {
+				if (container.contains(vp)) container.removeChild(vp);
+			};
 		}
 		container.appendChild(singletonDiv);
 		const pano = getPanorama();
@@ -355,7 +363,7 @@ export function LocationPreview() {
 		return () => {
 			if (container.contains(singletonDiv)) container.removeChild(singletonDiv);
 		};
-	}, [yieldPanoToMini, activeProvider?.id, location?.id, altViewportEpoch]);
+	}, [chipMode, activeProvider?.id, location?.id, altViewportEpoch]);
 
 	useEffect(() => {
 		if (!location || !panoContainerRef.current) return;
@@ -1002,6 +1010,19 @@ export function LocationPreview() {
 	}, [location]);
 
 	useEffect(() => {
+		if (!chipMode) return;
+		const el = panoContainerRef.current;
+		if (!el) return;
+		const resize = () => {
+			if (activeProvider) resizeActivePanoViewport();
+			else if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
+		};
+		const obs = new ResizeObserver(resize);
+		obs.observe(el);
+		return () => obs.disconnect();
+	}, [chipMode, activeProvider?.id, altViewportEpoch]);
+
+	useEffect(() => {
 		if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
 	}, [appSettings.previewAspectRatio]);
 
@@ -1046,6 +1067,17 @@ export function LocationPreview() {
 
 	if (!location || !map) return null;
 
+	if (chipMode) {
+		return (
+			<>
+				<ReviewBar />
+				<FullscreenMiniLocationPreview>
+					<div ref={panoContainerRef} className="fullscreen-mini-location__pano" />
+				</FullscreenMiniLocationPreview>
+			</>
+		);
+	}
+
 	return (
 		<>
 			<ReviewBar />
@@ -1057,7 +1089,7 @@ export function LocationPreview() {
 					ref={fullscreenContainerRef}
 					style={
 						isFullscreen
-							? ({ "--fs-tray-h": `${bottomTrayHeight}px` } as React.CSSProperties)
+							? undefined
 							: appSettings.previewAspectRatio === "free"
 								? undefined
 								: { aspectRatio: appSettings.previewAspectRatio }

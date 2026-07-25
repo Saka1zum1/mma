@@ -19,12 +19,12 @@ import {
 	subscribeProviderCoverageLayers,
 } from "@/lib/sv/providers/coverageLayers";
 import { usePanoViewer } from "./PanoViewerContext";
+import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
 
 const MINIMAP_SCALE = range([0.5, 2]);
-const MINIMAP_SCALE_STEP = 0.5;
+const MINIMAP_SCALE_STEP = 0.25;
 const MINIMAP_BASE_W = 800;
 const MINIMAP_BASE_H = 600;
-const MINIMAP_CLOSE_DELAY = 500;
 
 // Singleton host + overlay reused across mounts (opening/closing the pano viewer),
 // rebuilt only when the basemap kind changes.
@@ -66,9 +66,10 @@ async function ensureMinimapHost(
 export function FullscreenMiniMap() {
 	const { lat, lng } = usePanoViewer();
 	const containerRef = useRef<HTMLDivElement>(null);
+	const rootRef = useRef<HTMLDivElement>(null);
 	const scale = useSetting("fullscreenMinimapScale");
-	const [expanded, setExpanded] = useState(false);
-	const closeTimer = useRef<number | null>(null);
+	const closeDelay = useSetting("fullscreenMinimapCloseDelay");
+	const { expanded, hoverProps } = useHoverExpand(rootRef, closeDelay);
 	const [prefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
 	const [surface, setSurface] = useState<{
 		host: MapHost;
@@ -135,27 +136,6 @@ export function FullscreenMiniMap() {
 		setSetting("fullscreenMinimapScale", Math.round(clamped * 100) / 100);
 	};
 
-	const open = () => {
-		if (closeTimer.current !== null) {
-			clearTimeout(closeTimer.current);
-			closeTimer.current = null;
-		}
-		setExpanded(true);
-	};
-	const scheduleClose = () => {
-		if (closeTimer.current !== null) clearTimeout(closeTimer.current);
-		closeTimer.current = window.setTimeout(() => {
-			setExpanded(false);
-			closeTimer.current = null;
-		}, MINIMAP_CLOSE_DELAY);
-	};
-
-	useEffect(() => {
-		return () => {
-			if (closeTimer.current !== null) clearTimeout(closeTimer.current);
-		};
-	}, []);
-
 	const sizeVars = {
 		"--fs-minimap-w": `${Math.round(MINIMAP_BASE_W * scale)}px`,
 		"--fs-minimap-h": `${Math.round(MINIMAP_BASE_H * scale)}px`,
@@ -163,10 +143,10 @@ export function FullscreenMiniMap() {
 
 	return (
 		<div
+			ref={rootRef}
 			className={`fullscreen-minimap${expanded ? " is-expanded" : ""}`}
 			style={sizeVars}
-			onPointerEnter={open}
-			onPointerLeave={scheduleClose}
+			{...hoverProps}
 		>
 			<div ref={containerRef} className="fullscreen-minimap__map" />
 			<div className="fullscreen-minimap__size">

@@ -1,4 +1,5 @@
 import type { SvColor, MapTypeKey, SvCoverageType, SvThickness, MarkerStyle } from "@/types";
+import type { OpacityToggleMode } from "./settings";
 
 export interface MapEmbedPrefs {
 	svOpacity: number;
@@ -53,3 +54,14 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 	showPreviews: false,
 	selectOnly: false,
 };
+
+/** Next value for a layer opacity toggle: a visible layer goes off, a hidden one comes
+ *  back at `lastNonZero` (or full, per the setting). */
+export function toggledOpacity(
+	current: number,
+	lastNonZero: number,
+	mode: OpacityToggleMode,
+): number {
+	if (current > 0) return 0;
+	return mode === "full" || lastNonZero <= 0 ? 1 : lastNonZero;
+}

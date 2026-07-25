@@ -122,6 +122,12 @@ const STATIC_HOTKEY_DEFS = [
 		defaultBinding: "h",
 	},
 	{
+		action: "cycleMovementMode",
+		label: "Cycle movement mode",
+		group: "Location Editor",
+		defaultBinding: "Shift+m",
+	},
+	{
 		action: "duplicateLocation",
 		label: "Duplicate location",
 		group: "Location Editor",

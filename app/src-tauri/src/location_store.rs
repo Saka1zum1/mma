@@ -93,31 +93,23 @@ fn assemble_selection_bitmask<'a>(
 }
 
 /// Route one selection's id-set to per-cell local render indices. Adaptive so the cost
-/// is O(min(set size, render size in scope)) rather than O(render size) per selection:
-/// sparse sets walk their members and probe `id_to_cell_idx`/`id_to_index`; dense sets
-/// (where member-walking would do the same work anyway) scan the cell arrays directly.
-/// `affected` limits the scope to those cells (delta path); `None` = all cells.
-fn selection_cell_indices(
-    render: &RenderState,
-    set: &RoaringBitmap,
-    affected: Option<&HashSet<u8>>,
-) -> [Vec<u32>; 32] {
+/// is O(min(set size, render size)) rather than O(render size) per selection: sparse sets
+/// walk their members and probe `id_to_cell_idx`/`id_to_index`; dense sets (where
+/// member-walking would do the same work anyway) scan the cell arrays directly.
+fn selection_cell_indices(render: &RenderState, set: &RoaringBitmap) -> [Vec<u32>; 32] {
     let mut out: [Vec<u32>; 32] = std::array::from_fn(|_| Vec::new());
-    let in_scope = |ci: u8| affected.map_or(true, |a| a.contains(&ci));
-    let scope_size: usize = render
+    let render_size: usize = render
         .cells
         .iter()
-        .enumerate()
-        .filter(|(ci, _)| in_scope(*ci as u8))
-        .filter_map(|(_, o)| o.as_ref())
+        .filter_map(|o| o.as_ref())
         .map(|cr| cr.id_order.len())
         .sum();
-    if (set.len() as usize) <= scope_size {
+    if (set.len() as usize) <= render_size {
         for id in set {
             let Some(&ci) = render.id_to_cell_idx.get(id as usize) else {
                 continue;
             };
-            if ci == 255 || !in_scope(ci) {
+            if ci == 255 {
                 continue;
             }
             let Some(cr) = render.cells[ci as usize].as_ref() else {
@@ -132,9 +124,6 @@ fn selection_cell_indices(
         }
     } else {
         for (ci, opt) in render.cells.iter().enumerate() {
-            if !in_scope(ci as u8) {
-                continue;
-            }
             let Some(cr) = opt.as_ref() else { continue };
             for (li, &id) in cr.id_order.iter().enumerate() {
                 if set.contains(id) {
@@ -256,15 +245,35 @@ pub(crate) struct RenderState {
     pub marker_color: [u8; 3],
 }
 
+/// A selection together with its resolved membership. One value rather than two parallel
+/// vectors, so the index correspondence the color lookups depend on cannot drift.
+pub(crate) struct ResolvedSelection {
+    pub sel: Selection,
+    /// Member location ids.
+    pub set: RoaringBitmap,
+}
+
+/// Zip selections with the member sets `resolve_forest` returned for them. The only place
+/// the two are joined, so the pairing is stated once.
+fn pair_selections(sels: Vec<Selection>, sets: Vec<RoaringBitmap>) -> Vec<ResolvedSelection> {
+    debug_assert_eq!(
+        sels.len(),
+        sets.len(),
+        "resolve_forest returns one set per selection"
+    );
+    sels.into_iter()
+        .zip(sets)
+        .map(|(sel, set)| ResolvedSelection { sel, set })
+        .collect()
+}
+
 pub(crate) struct SelectionState {
-    pub all: Vec<Selection>,
-    /// Per-selection membership, keyed by location id.
-    pub loc_sets: Vec<RoaringBitmap>,
+    pub resolved: Vec<ResolvedSelection>,
     /// Resolved count of every selection node (top-level and nested), keyed by `Selection.key`.
     /// The faithful per-node count source for sidebar display; refreshed on every sync/resolve.
     pub node_counts: HashMap<String, u32>,
     pub version: u64,
-    /// Union of all `loc_sets`. Answers "is this id selected".
+    /// Union of every member set. Answers "is this id selected".
     pub ids: RoaringBitmap,
     pub active_id: Option<u32>,
 }
@@ -276,9 +285,9 @@ impl SelectionState {
             return None;
         }
         let mut color = None;
-        for (si, set) in self.loc_sets.iter().enumerate() {
-            if set.contains(id) {
-                color = Some(self.all[si].color);
+        for r in &self.resolved {
+            if r.set.contains(id) {
+                color = Some(r.sel.color);
             }
         }
         color
@@ -286,10 +295,9 @@ impl SelectionState {
 
     fn color_map(&self) -> HashMap<u32, [u8; 3]> {
         let mut map = HashMap::with_capacity(self.ids.len() as usize);
-        for (si, set) in self.loc_sets.iter().enumerate() {
-            let color = self.all[si].color;
-            for id in set {
-                map.insert(id, color);
+        for r in &self.resolved {
+            for id in &r.set {
+                map.insert(id, r.sel.color);
             }
         }
         map
@@ -299,7 +307,11 @@ impl SelectionState {
 pub(crate) struct TagState {
     pub all: HashMap<u32, Tag>,
     pub dirty: bool,
-    pub counts_dirty: bool,
+    /// Tags whose count moved since the last `finish_mutation`, which drains it. Decides
+    /// both which tags get their visibility re-derived (scanning all of them instead would
+    /// hide any tag merely sitting at zero, including one just created) and whether the
+    /// result carries `tag_counts` at all.
+    pub touched: HashSet<u32>,
     pub next_id: u32,
     /// `tag_id -> set of member location ids`. Lets a `Tag` selection resolve by
     /// cloning a set instead of scanning every row's tag list. Maintained
@@ -478,8 +490,7 @@ impl Store {
                 marker_color: [42, 42, 42],
             },
             selections: SelectionState {
-                all: Vec::new(),
-                loc_sets: Vec::new(),
+                resolved: Vec::new(),
                 node_counts: HashMap::new(),
                 version: 0,
                 ids: RoaringBitmap::new(),
@@ -488,7 +499,7 @@ impl Store {
             tags: TagState {
                 all: HashMap::new(),
                 dirty: false,
-                counts_dirty: false,
+                touched: HashSet::new(),
                 next_id: 1,
                 sets: HashMap::new(),
             },
@@ -520,17 +531,6 @@ impl Store {
         }
     }
 
-    /// MutationResult for metadata-only changes (tags, reorder) that don't touch locations.
-    fn metadata_result(&self) -> MutationResult {
-        MutationResult {
-            status: self.store_status(),
-            delta: RenderDelta::default(),
-            selection_sync: None,
-            new_field_defs: None,
-            tags: Some(self.tags.all.clone()),
-        }
-    }
-
     /// Bump version, derive the render delta + selection sync from the semantic
     /// changeset, and return the full mutation result. The changeset is the single
     /// source of truth; the render delta and selection sync are two projections of it.
@@ -538,33 +538,15 @@ impl Store {
         self.bump();
         self.update_bounds(&changes);
 
-        let has_selections = !self.selections.all.is_empty();
+        // A metadata-only mutation (tag rename, reorder, a create with nothing to assign)
+        // moves no rows, so there is no membership to re-test and no delta to derive.
+        let has_selections = !changes.is_empty() && !self.selections.resolved.is_empty();
         let full_resolve = has_selections
             && (changes.full_reset
                 || changes.added.len() + changes.removed.len() + changes.updated.len() > 100
                 || self.selections_need_full_resolve());
 
-        // Step 1: Record which render cells contain changed IDs BEFORE anything mutates render_cells.
-        let affected_cells: HashSet<u8> = if has_selections {
-            let mut cells = HashSet::new();
-            for &id in changes
-                .removed
-                .iter()
-                .chain(changes.added.iter().map(|l| &l.id))
-                .chain(changes.updated.iter().map(|(_, n)| &n.id))
-            {
-                if let Some(&ci) = self.render.id_to_cell_idx.get(id as usize) {
-                    if ci != 255 {
-                        cells.insert(ci);
-                    }
-                }
-            }
-            cells
-        } else {
-            HashSet::new()
-        };
-
-        // Step 2: Update selection membership and get back what changed.
+        // Step 1: Update selection membership and get back what changed.
         let membership_delta = if has_selections {
             if full_resolve {
                 self.resolve_selection_membership();
@@ -576,36 +558,54 @@ impl Store {
             None
         };
 
-        // Step 3: Derive render delta (mutates render_cells).
+        // Step 2: Derive render delta (mutates render_cells).
         let mut delta = self.derive_render_delta(&changes);
 
-        // Step 4: Emit colorPatches from membership changes.
+        // Step 3: Project membership changes onto colorPatches. This is the whole
+        // incremental selection update: gained rows go transparent in the base layer
+        // (the overlay draws them in the selection color), lost rows go back to the
+        // marker color and drop out of the overlay. Rows lost by deletion have no cell
+        // left to patch; JS drops those from the overlay via `delta.removed`.
         if let Some(ref md) = membership_delta {
+            let [mr, mg, mb] = self.render.marker_color;
             for &(id, color) in &md.gained {
-                if let Some((cell, ci)) = self.cell_lookup(id) {
+                if let Some((cell, cell_index)) = self.cell_lookup(id) {
                     delta.color_patches.push(ColorPatchEntry {
                         cell,
-                        cell_index: ci,
+                        cell_index,
                         r: color[0],
                         g: color[1],
                         b: color[2],
+                        a: 0,
+                    });
+                }
+            }
+            for &id in &md.lost {
+                if let Some((cell, cell_index)) = self.cell_lookup(id) {
+                    delta.color_patches.push(ColorPatchEntry {
+                        cell,
+                        cell_index,
+                        r: mr,
+                        g: mg,
+                        b: mb,
                         a: 255,
                     });
                 }
             }
         }
 
-        // Step 5: Build bitmask for affected cells.
-        let mut bitmask_cells = affected_cells;
-        for loc in &changes.added {
-            let ci = render_cell_idx(loc.lat, loc.lng);
-            bitmask_cells.insert(ci);
-        }
+        // Step 4: Only a full resolve ships a bitmask. The incremental path is carried
+        // entirely by the colorPatches above, which cost O(changed) instead of the
+        // O(rows in the affected cells) that a per-cell bitmask rebuild costs.
         let selection_sync = if has_selections {
             if full_resolve {
-                Some(self.build_selection_bitmask(None))
+                Some(self.build_selection_bitmask())
             } else {
-                Some(self.build_selection_bitmask(Some(&bitmask_cells)))
+                Some(SelectionSync {
+                    counts: self.selections.node_counts.clone(),
+                    bitmask: None,
+                    selected_count: self.selections.ids.len() as usize,
+                })
             }
         } else {
             None
@@ -613,10 +613,12 @@ impl Store {
 
         let mut tags = None;
         let mut vis_changed = false;
-        // NOTE: tags created with count=0 (via store_create_tags) will be
-        // flipped to visible=false here on the next unrelated mutation.
-        // Create is followed by assign so this shouldn't matter.
-        for tag in self.tags.all.values_mut() {
+        let touched = std::mem::take(&mut self.tags.touched);
+        let counts_changed = !touched.is_empty();
+        for tag_id in touched {
+            let Some(tag) = self.tags.all.get_mut(&tag_id) else {
+                continue;
+            };
             let should = tag.count > 0;
             if tag.visible != should {
                 tag.visible = should;
@@ -629,7 +631,7 @@ impl Store {
         }
 
         let mut status = self.store_status();
-        if !std::mem::take(&mut self.tags.counts_dirty) {
+        if !counts_changed {
             status.tag_counts = None;
         }
 
@@ -657,9 +659,9 @@ impl Store {
     /// Whether any active selection requires a full O(S*N) resolve rather than
     /// incremental membership updates (composites and duplicates depend on global state).
     fn selections_need_full_resolve(&self) -> bool {
-        self.selections.all.iter().any(|s| {
+        self.selections.resolved.iter().any(|r| {
             matches!(
-                s.props,
+                r.sel.props,
                 SelectionProps::Duplicates { .. }
                     | SelectionProps::TopK { .. }
                     | SelectionProps::Uncommitted
@@ -789,9 +791,9 @@ impl Store {
                     was_selected.insert(*id);
                 }
             }
-            for set in &mut self.selections.loc_sets {
+            for r in &mut self.selections.resolved {
                 for id in &drop_ids {
-                    set.remove(*id);
+                    r.set.remove(*id);
                 }
             }
             for id in &drop_ids {
@@ -804,17 +806,13 @@ impl Store {
             .iter()
             .chain(changes.updated.iter().map(|(_, n)| n))
             .collect();
-        let sel_props: Vec<SelectionProps> = self
-            .selections
-            .all
-            .iter()
-            .map(|s| s.props.clone())
-            .collect();
-        for (si, props) in sel_props.iter().enumerate() {
+        // Split the borrow so membership and the union can be updated in one pass.
+        let SelectionState { resolved, ids, .. } = &mut self.selections;
+        for r in resolved.iter_mut() {
             for loc in &test_locs {
-                if selections::RowRef::from_loc(loc).matches(&props) {
-                    self.selections.loc_sets[si].insert(loc.id);
-                    self.selections.ids.insert(loc.id);
+                if selections::RowRef::from_loc(loc).matches(&r.sel.props) {
+                    r.set.insert(loc.id);
+                    ids.insert(loc.id);
                 }
             }
         }
@@ -822,10 +820,9 @@ impl Store {
         // Incremental path runs only without composites, so every node is top-level.
         self.selections.node_counts = self
             .selections
-            .all
+            .resolved
             .iter()
-            .zip(&self.selections.loc_sets)
-            .map(|(s, set)| (s.key.clone(), set.len() as u32))
+            .map(|r| (r.sel.key.clone(), r.set.len() as u32))
             .collect();
 
         let mut gained = Vec::new();
@@ -854,50 +851,47 @@ impl Store {
         MembershipDelta { gained, lost }
     }
 
-    /// Full selection membership resolve: recomputes selection_loc_sets, selected_ids,
-    /// selected_colors from scratch. O(S * N). Does NOT build the bitmask file.
+    /// Full selection membership resolve: recomputes every member set, the union, and the
+    /// per-node counts from scratch. O(S * N). Does NOT build the bitmask.
     fn resolve_selection_membership(&mut self) {
-        let sels = self.selections.all.clone();
+        let sels: Vec<Selection> = self
+            .selections
+            .resolved
+            .iter()
+            .map(|r| r.sel.clone())
+            .collect();
         let (loc_sets, node_counts) = {
             let view = self.loc_view();
             selections::resolve_forest(&view, &sels)
         };
-        self.selections.loc_sets = loc_sets;
         self.selections.node_counts = node_counts;
+        self.selections.resolved = pair_selections(sels, loc_sets);
 
         let mut all_selected = RoaringBitmap::new();
-        for set in &self.selections.loc_sets {
-            all_selected |= set;
+        for r in &self.selections.resolved {
+            all_selected |= &r.set;
         }
         self.selections.ids = all_selected;
         self.selections.version += 1;
     }
 
-    /// Build the selection bitmask file from current render_cells + selection_loc_sets.
-    /// `affected = None` rebuilds all cells (full resolve path); `Some` restricts the
-    /// rebuild to those cell indices (incremental delta path).
-    fn build_selection_bitmask(&self, affected: Option<&HashSet<u8>>) -> SelectionSync {
+    /// Build the full selection bitmask from the current render cells + member sets.
+    /// Every cell is rebuilt; incremental membership changes ride the render delta's
+    /// colorPatches instead (see `finish_mutation`).
+    fn build_selection_bitmask(&self) -> SelectionSync {
         let counts = self.selections.node_counts.clone();
         let selected_count = self.selections.ids.len() as usize;
 
-        if affected.is_some_and(|a| a.is_empty()) {
-            return SelectionSync {
-                counts,
-                bitmask: None,
-                selected_count,
-            };
-        }
-
         let t0 = std::time::Instant::now();
-        let num_sels = self.selections.all.len();
+        let num_sels = self.selections.resolved.len();
         // Route selections to per-cell indices (parallel over selections, O(selected)),
-        // then serialize affected cells in parallel; segments are self-describing so
+        // then serialize the cells in parallel; segments are self-describing so
         // order is irrelevant.
         let routed: Vec<[Vec<u32>; 32]> = self
             .selections
-            .loc_sets
+            .resolved
             .par_iter()
-            .map(|set| selection_cell_indices(&self.render, set, affected))
+            .map(|r| selection_cell_indices(&self.render, &r.set))
             .collect();
         let segments: Vec<Vec<u8>> = self
             .render
@@ -905,28 +899,24 @@ impl Store {
             .par_iter()
             .enumerate()
             .filter_map(|(ci, opt)| {
-                if let Some(a) = affected {
-                    if !a.contains(&(ci as u8)) {
-                        return None;
-                    }
-                }
                 let cr = opt.as_ref()?;
                 Some(serialize_cell_segment(ci, cr, &routed))
             })
             .collect();
         let num_cells = segments.len();
 
-        let buf =
-            assemble_selection_bitmask(self.selections.all.iter().map(|s| &s.color), &segments);
+        let buf = assemble_selection_bitmask(
+            self.selections.resolved.iter().map(|r| &r.sel.color),
+            &segments,
+        );
         let bitmask = if num_cells > 0 { Some(buf) } else { None };
 
         log::debug!(
-            "[sel] total={}ms sels={} selected={} cells={} incremental={}",
+            "[sel] total={}ms sels={} selected={} cells={}",
             t0.elapsed().as_millis(),
             num_sels,
             selected_count,
             num_cells,
-            affected.is_some()
         );
 
         SelectionSync {
@@ -938,9 +928,6 @@ impl Store {
 
     /// Adjust tag counts by `delta` (+1 for adds, -1 for removes). O(L * T) where L = locs, T = avg tags per loc.
     pub(crate) fn update_tag_counts(&mut self, locs: &[Location], delta: isize) {
-        if locs.iter().any(|l| !l.tags.is_empty()) {
-            self.tags.counts_dirty = true;
-        }
         // Pre-aggregate membership changes per tag for bulk bitmap operations.
         let mut members: HashMap<u32, Vec<u32>> = HashMap::new();
         for loc in locs {
@@ -967,6 +954,7 @@ impl Store {
                     self.tags.dirty = true;
                 }
                 members.entry(tag_id).or_default().push(loc.id);
+                self.tags.touched.insert(tag_id);
             }
         }
         for (tag_id, mut ids) in members {
@@ -1036,6 +1024,133 @@ impl Store {
             updated,
             ..Default::default()
         }
+    }
+
+    /// Core edit primitive: atomically remove then create locations, updating tags, overlay,
+    /// and render cells. Undo/redo swap the arguments. O(R + C) where R = removed, C = created.
+    fn apply_edit(&mut self, remove: &[Location], create: &[Location]) -> ChangeSet {
+        let t0 = std::time::Instant::now();
+        let create_ids: HashSet<u32> = create.iter().map(|l| l.id).collect();
+        let remove_by_id: HashMap<u32, &Location> = remove.iter().map(|l| (l.id, l)).collect();
+
+        self.remove_tag_counts(remove);
+        self.overlay_remove(remove);
+        self.add_tag_counts(create);
+        for loc in create {
+            self.overlay_add(loc.clone());
+        }
+
+        // Categorize: same-id remove+create is an update; the rest are pure add/remove.
+        let mut changes = ChangeSet::default();
+        for loc in remove {
+            if !create_ids.contains(&loc.id) {
+                changes.removed.push(loc.id);
+            }
+        }
+        for loc in create {
+            if let Some(old) = remove_by_id.get(&loc.id) {
+                changes.updated.push(((*old).clone(), loc.clone()));
+            } else {
+                changes.added.push(loc.clone());
+            }
+        }
+
+        log::debug!(
+            "[apply_edit] +{} ~{} -{} in {}ms",
+            changes.added.len(),
+            changes.updated.len(),
+            changes.removed.len(),
+            t0.elapsed().as_millis()
+        );
+        changes
+    }
+
+    /// Replay an edit forward: remove `entry.removed`, create `entry.created`.
+    fn apply_edit_forward(&mut self, entry: &EditEntry) -> ChangeSet {
+        self.apply_edit(&entry.removed, &entry.created)
+    }
+
+    /// Reverse an edit: remove `entry.created`, restore `entry.removed`.
+    fn apply_edit_reverse(&mut self, entry: &EditEntry) -> ChangeSet {
+        self.apply_edit(&entry.created, &entry.removed)
+    }
+
+    /// Apply an edit, record undo, clear redo, finish mutation. No-op when both sides empty.
+    fn apply_undoable(&mut self, remove: Vec<Location>, create: Vec<Location>) -> MutationResult {
+        if remove.is_empty() && create.is_empty() {
+            return self.finish_mutation(ChangeSet::default());
+        }
+        let changes = self.apply_edit(&remove, &create);
+        self.push_undo(EditEntry {
+            created: create,
+            removed: remove,
+        });
+        self.edits.redo.clear();
+        self.finish_mutation(changes)
+    }
+
+    /// Ensure `names` exist as tags and are on `location_ids`, in one mutation. Names match
+    /// case-insensitively, so an existing tag is reused (and un-hidden) rather than
+    /// duplicated. An empty `location_ids` just creates them.
+    pub(crate) fn create_tags(&mut self, names: &[String], location_ids: &[u32]) -> MutationResult {
+        let mut name_to_id: HashMap<String, u32> = HashMap::new();
+        for (&id, entry) in &self.tags.all {
+            name_to_id.insert(entry.name.to_lowercase(), id);
+        }
+
+        let mut tag_ids: Vec<u32> = Vec::with_capacity(names.len());
+        for name in names {
+            if let Some(&id) = name_to_id.get(&name.to_lowercase()) {
+                let tag = self.tags.all.get_mut(&id).unwrap();
+                tag.visible = true;
+                tag_ids.push(id);
+            } else {
+                let id = self.alloc_tag_id();
+                let order = self.tags.all.values().filter_map(|t| t.order).max();
+                self.tags.all.insert(
+                    id,
+                    Tag {
+                        id,
+                        name: name.clone(),
+                        color: util::color_for_name(name),
+                        visible: true,
+                        order: Some(order.map_or(1, |m| m + 1)),
+                        count: 0,
+                        doclinks: Vec::new(),
+                    },
+                );
+                name_to_id.insert(name.to_lowercase(), id);
+                tag_ids.push(id);
+            }
+        }
+
+        if !names.is_empty() {
+            self.tags.dirty = true;
+        }
+
+        let mut updated: Vec<(Location, Location)> = Vec::new();
+        for &id in location_ids {
+            let Some(old) = self.get_loc_by_id(id) else {
+                continue;
+            };
+            let mut tags = old.tags.clone();
+            for &t in &tag_ids {
+                if !tags.contains(&t) {
+                    tags.push(t);
+                }
+            }
+            if tags.len() == old.tags.len() {
+                continue; // already had all of them
+            }
+            let mut new_loc = old.clone();
+            new_loc.tags = tags;
+            updated.push((old, new_loc));
+        }
+
+        let changeset = self.commit_tag_update(updated);
+        let mut result = self.finish_mutation(changeset);
+        result.tags = Some(self.tags.all.clone());
+        result
     }
 
     /// Grow `id_to_cell_idx` so it can index `id`. Fills new slots with 255 (sentinel = unmapped).
@@ -1771,6 +1886,16 @@ pub struct ChangeSet {
     pub full_reset: bool,
 }
 
+impl ChangeSet {
+    /// No rows moved. A metadata-only mutation (tag rename, reorder) produces one of these.
+    pub(crate) fn is_empty(&self) -> bool {
+        !self.full_reset
+            && self.added.is_empty()
+            && self.removed.is_empty()
+            && self.updated.is_empty()
+    }
+}
+
 /// A newly-added marker to a render cell: position, heading, and base color.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -1807,8 +1932,10 @@ pub struct CellRemoval {
     pub id: u32,
 }
 
-/// Override the RGBA color of a single marker within a cell (used when selection
-/// membership changes without a position change).
+/// One location's selection-membership change, projected onto the render buffers.
+/// The RGBA is the base-layer color, and `a` says which way it went: a gained row is
+/// transparent there (a=0) and drawn by the overlay in `r,g,b`; a lost row (a=255) gets
+/// the opaque marker color back and drops out of the overlay.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ColorPatchEntry {
@@ -1982,7 +2109,7 @@ pub async fn store_open_map(
             0
         };
 
-        let (undo, redo) = load_edit_history_inner(&map_id2)?;
+        let (undo, redo) = load_edit_history(&map_id2)?;
 
         log::debug!("[store_open] TOTAL={}ms", t_total.elapsed().as_millis());
         Ok::<_, AppError>((batch, mmap_handle, max_id, undo, redo, delta))
@@ -2121,7 +2248,7 @@ pub fn store_close_map(
         if store.tags.dirty {
             write_tags_json(&conn, &map_id, &store.tags.all)?;
         }
-        save_edit_history_inner(&map_id, &store.edits.undo, &store.edits.redo)?;
+        save_edit_history(&map_id, &store.edits.undo, &store.edits.redo)?;
         log::debug!(
             "[close_map] {map_id} flushed: undo={} redo={}",
             store.edits.undo.len(),
@@ -2443,6 +2570,9 @@ pub async fn store_delete_tags(
             affected_ids.len(),
             _t.elapsed().as_millis()
         );
+        // A zero-member tag never passes through update_tag_counts, so mark it touched
+        // directly or finish_mutation skips the visible=false flip and the delete no-ops.
+        store.tags.touched.extend(tag_set.iter().copied());
         let changeset = store.commit_tag_update(updated);
         Ok(store.finish_mutation(changeset))
     })
@@ -2860,7 +2990,7 @@ pub fn store_copy_locations_to_map(
         }
 
         let t_hist = std::time::Instant::now();
-        let (undo, redo) = load_edit_history_inner(&target_map_id)?;
+        let (undo, redo) = load_edit_history(&target_map_id)?;
         let hist_ms = t_hist.elapsed().as_millis();
         let base_max = existing.iter().map(|l| l.id).max().unwrap_or(0);
         let next = seed_next_id(base_max, &[], &undo, &redo);
@@ -2881,7 +3011,7 @@ pub fn store_copy_locations_to_map(
         delta.adds.extend(fresh);
         let bytes = rmp_serde::to_vec_named(&delta)?;
         let alive = existing.len() + copied as usize;
-        persist_dirty_inner(
+        persist_dirty(
             &target_map_id,
             Some(bytes),
             alive,
@@ -2899,7 +3029,7 @@ pub fn store_copy_locations_to_map(
 
 /// Write a map's dirty state: delta sidecar (if any), location count, and tags
 /// JSON (if any). Sync core shared by `store_save_dirty` and cross-map copy.
-pub(crate) fn persist_dirty_inner(
+pub(crate) fn persist_dirty(
     map_id: &str,
     delta_data: Option<Vec<u8>>,
     alive: usize,
@@ -2968,10 +3098,8 @@ pub async fn store_save_dirty(
     let size = delta_data.as_ref().map_or(0, |d| d.len());
     let wrote_delta = delta_data.is_some();
     let map_id2 = map_id.clone();
-    tokio::task::spawn_blocking(move || {
-        persist_dirty_inner(&map_id2, delta_data, alive, tags_json)
-    })
-    .await??;
+    tokio::task::spawn_blocking(move || persist_dirty(&map_id2, delta_data, alive, tags_json))
+        .await??;
 
     if wrote_delta {
         let mut mgr = state.lock()?;
@@ -3016,7 +3144,7 @@ pub fn store_get_summary(
 }
 
 /// Persist undo/redo stacks to SQLite as msgpack blobs, capped at MAX_UNDO_ENTRIES.
-fn save_edit_history_inner(map_id: &str, undo: &[EditEntry], redo: &[EditEntry]) -> AppResult<()> {
+fn save_edit_history(map_id: &str, undo: &[EditEntry], redo: &[EditEntry]) -> AppResult<()> {
     let conn = storage::open_db()?;
     let undo_capped = if undo.len() > MAX_UNDO_ENTRIES {
         &undo[undo.len() - MAX_UNDO_ENTRIES..]
@@ -3063,7 +3191,7 @@ pub(crate) fn seed_next_id(
 }
 
 /// Load undo/redo stacks from SQLite. Returns empty stacks if no history exists.
-fn load_edit_history_inner(map_id: &str) -> AppResult<(Vec<EditEntry>, Vec<EditEntry>)> {
+fn load_edit_history(map_id: &str) -> AppResult<(Vec<EditEntry>, Vec<EditEntry>)> {
     let conn = storage::open_db()?;
     let result = conn.query_row(
         "SELECT undo_stack, redo_stack FROM edit_history WHERE map_id = ?1",
@@ -3096,7 +3224,7 @@ fn load_edit_history_inner(map_id: &str) -> AppResult<(Vec<EditEntry>, Vec<EditE
 }
 
 /// Write the current batch to disk as Arrow IPC and remove any stale delta file.
-pub(crate) fn save_arrow_inner(store: &Store, map_id: &str) -> AppResult<()> {
+pub(crate) fn save_arrow(store: &Store, map_id: &str) -> AppResult<()> {
     if let Some(ref batch) = store.batch {
         let path = storage::arrow_path(map_id)?;
         storage::write_arrow_ipc(&path, batch)?;
@@ -3113,12 +3241,12 @@ pub(crate) fn save_arrow_inner(store: &Store, map_id: &str) -> AppResult<()> {
 /// Bake the overlay into the base batch, write it to disk, re-mmap, and flush
 /// location count + dirty tags. Used by `store_commit` so a commit builds
 /// the batch only once.
-pub(crate) fn bake_and_save_inner(store: &mut Store, map_id: &str) -> AppResult<()> {
+pub(crate) fn bake_and_save(store: &mut Store, map_id: &str) -> AppResult<()> {
     let _t = std::time::Instant::now();
     store.bake_overlay();
     let t_bake = _t.elapsed();
     store.mmap_handle = None;
-    save_arrow_inner(store, map_id)?;
+    save_arrow(store, map_id)?;
     let t_write = _t.elapsed();
     let path = storage::arrow_path(map_id)?;
     if path.exists() {
@@ -3191,14 +3319,14 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     let color_map = store.selections.color_map();
     let active_id = store.selections.active_id;
     let arrow_style = req.marker_style == "arrow";
-    let mc = store.render.marker_color;
-    let base_color = [mc[0], mc[1], mc[2], 255u8];
 
-    // 32 cells indexed by render_cell_idx (0-31)
+    // 32 cells indexed by render_cell_idx (0-31). Base markers all draw in the one marker
+    // colour, which JS hands the layer as a constant, so the only per-marker colour fact
+    // here is visibility. The selection overlay below genuinely varies and ships RGBA.
     struct CellOut {
         ids: Vec<u32>,
         positions: Vec<f32>,
-        colors: Vec<u8>,
+        visible: Vec<u8>,
         angles: Vec<f32>,
     }
     const NONE: Option<CellOut> = None;
@@ -3224,17 +3352,15 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
             let out = cells[ci].get_or_insert_with(|| CellOut {
                 ids: Vec::new(),
                 positions: Vec::new(),
-                colors: Vec::new(),
+                visible: Vec::new(),
                 angles: Vec::new(),
             });
             out.positions.push(lng as f32);
             out.positions.push(lat as f32);
             let angle = if arrow_style { -(heading as f32) } else { 0.0 };
-            if selected_set.contains(id) || active_id == Some(id) {
-                out.colors.extend_from_slice(&[0, 0, 0, 0]);
-            } else {
-                out.colors.extend_from_slice(&base_color);
-            }
+            // Hidden when the selection overlay or the active highlight is drawing it instead.
+            let hidden = selected_set.contains(id) || active_id == Some(id);
+            out.visible.push(if hidden { 0 } else { 255 });
             out.angles.push(angle);
             out.ids.push(id);
             if let Some(&[r, g, b]) = color_map.get(&id) {
@@ -3292,10 +3418,11 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         store.render.cells[ci] = Some(cr);
     }
 
-    // Serialize: u32 cell_count, per cell: [1 byte geohash char][u32 count][positions][colors][angles]
+    // Serialize: u32 cell_count, per cell:
+    //   [1 byte geohash char][u32 count][u32[] ids][f32[] positions][u8[] visible][f32[] angles]
     let body_cap: usize = (0..32)
         .filter_map(|ci| cells[ci].as_ref())
-        .map(|o| 5 + o.ids.len() * 4 + o.positions.len() * 4 + o.colors.len() + o.angles.len() * 4)
+        .map(|o| 5 + o.ids.len() * 4 + o.positions.len() * 4 + o.visible.len() + o.angles.len() * 4)
         .sum();
     let sel_cap = if sel_ov.ids.is_empty() {
         0
@@ -3321,7 +3448,7 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         for &v in &out.positions {
             buf.extend_from_slice(&v.to_le_bytes());
         }
-        buf.extend_from_slice(&out.colors);
+        buf.extend_from_slice(&out.visible);
         for &v in &out.angles {
             buf.extend_from_slice(&v.to_le_bytes());
         }
@@ -3419,7 +3546,7 @@ pub fn store_undo(
             entry.created.len(),
             entry.removed.len()
         );
-        let changes = apply_edit_reverse(store, &entry);
+        let changes = store.apply_edit_reverse(&entry);
         log::debug!(
             "[UNDO] apply_edit={}ms changes: +{} ~{} -{}",
             _t.elapsed().as_millis(),
@@ -3448,7 +3575,7 @@ pub fn store_redo(
             entry.created.len(),
             entry.removed.len()
         );
-        let changes = apply_edit_forward(store, &entry);
+        let changes = store.apply_edit_forward(&entry);
         log::debug!(
             "[REDO] apply_edit={}ms changes: +{} ~{} -{}",
             _t.elapsed().as_millis(),
@@ -3485,45 +3612,6 @@ pub fn store_reset_undo(
         store.edits.redo.clear();
         Ok(())
     })
-}
-
-/// Core edit primitive: atomically remove then create locations, updating tags, overlay, and
-/// render cells. Undo/redo swap the arguments. O(R + C) where R = removed, C = created.
-fn apply_edit(store: &mut Store, remove: &[Location], create: &[Location]) -> ChangeSet {
-    let t0 = std::time::Instant::now();
-    let create_ids: HashSet<u32> = create.iter().map(|l| l.id).collect();
-    let remove_by_id: HashMap<u32, &Location> = remove.iter().map(|l| (l.id, l)).collect();
-
-    store.remove_tag_counts(remove);
-    store.overlay_remove(remove);
-    store.add_tag_counts(create);
-    for loc in create {
-        store.overlay_add(loc.clone());
-    }
-
-    // Categorize: same-id remove+create is an update; the rest are pure add/remove.
-    let mut changes = ChangeSet::default();
-    for loc in remove {
-        if !create_ids.contains(&loc.id) {
-            changes.removed.push(loc.id);
-        }
-    }
-    for loc in create {
-        if let Some(old) = remove_by_id.get(&loc.id) {
-            changes.updated.push(((*old).clone(), loc.clone()));
-        } else {
-            changes.added.push(loc.clone());
-        }
-    }
-
-    log::debug!(
-        "[apply_edit] +{} ~{} -{} in {}ms",
-        changes.added.len(),
-        changes.updated.len(),
-        changes.removed.len(),
-        t0.elapsed().as_millis()
-    );
-    changes
 }
 
 /// Fold a duplicate group into one survivor. Survivor = most tags, then earliest
@@ -3573,34 +3661,6 @@ fn merge_group(members: &[Location]) -> Location {
     new_survivor
 }
 
-/// Replay an edit forward: remove `entry.removed`, create `entry.created`.
-fn apply_edit_forward(store: &mut Store, entry: &EditEntry) -> ChangeSet {
-    apply_edit(store, &entry.removed, &entry.created)
-}
-
-/// Reverse an edit: remove `entry.created`, restore `entry.removed`.
-fn apply_edit_reverse(store: &mut Store, entry: &EditEntry) -> ChangeSet {
-    apply_edit(store, &entry.created, &entry.removed)
-}
-
-/// Apply an edit, record undo, clear redo, finish mutation. No-op when both sides empty.
-fn apply_undoable(
-    store: &mut Store,
-    remove: Vec<Location>,
-    create: Vec<Location>,
-) -> MutationResult {
-    if remove.is_empty() && create.is_empty() {
-        return store.finish_mutation(ChangeSet::default());
-    }
-    let changes = apply_edit(store, &remove, &create);
-    store.push_undo(EditEntry {
-        created: create,
-        removed: remove,
-    });
-    store.edits.redo.clear();
-    store.finish_mutation(changes)
-}
-
 // ---------------------------------------------------------------------------
 // Query commands
 // ---------------------------------------------------------------------------
@@ -3640,56 +3700,21 @@ pub(crate) fn write_tags_json(
 
 /// Create tags by name. Deduplicates case-insensitively: if a tag with the same name
 /// already exists, it is made visible instead of creating a duplicate.
+///
+/// `location_ids` assigns every resulting tag to those locations in the same mutation.
+/// Doing both here is not a convenience: creating and assigning as two commands leaves the
+/// tag visible at count 0 for the round trip in between, and makes the caller fetch every
+/// location into JS just to append an id Rust already has.
 #[tauri::command]
 #[specta::specta]
 pub fn store_create_tags(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     names: Vec<String>,
+    location_ids: Vec<u32>,
 ) -> AppResult<MutationResult> {
     with_store!(webview, state, |store| {
-        let mut name_to_id: HashMap<String, u32> = HashMap::new();
-        for (&id, entry) in &store.tags.all {
-            name_to_id.insert(entry.name.to_lowercase(), id);
-        }
-
-        for name in &names {
-            if let Some(&id) = name_to_id.get(&name.to_lowercase()) {
-                let tag = store.tags.all.get_mut(&id).unwrap();
-                if !tag.visible {
-                    tag.visible = true;
-                }
-            } else {
-                let id = store.alloc_tag_id();
-                let color = util::color_for_name(name);
-                let order = Some(
-                    store
-                        .tags
-                        .all
-                        .values()
-                        .filter_map(|t| t.order)
-                        .max()
-                        .map_or(1, |m| m + 1),
-                );
-                let tag = Tag {
-                    id,
-                    name: name.clone(),
-                    color,
-                    visible: true,
-                    order,
-                    count: 0,
-                    doclinks: Vec::new(),
-                };
-                store.tags.all.insert(id, tag.clone());
-                name_to_id.insert(name.to_lowercase(), id);
-            }
-        }
-
-        if !names.is_empty() {
-            store.tags.dirty = true;
-        }
-
-        Ok(store.metadata_result())
+        Ok(store.create_tags(&names, &location_ids))
     })
 }
 
@@ -3709,7 +3734,9 @@ pub fn store_reorder_tags(
             }
         }
         store.tags.dirty = true;
-        Ok(store.metadata_result())
+        let mut result = store.finish_mutation(ChangeSet::default());
+        result.tags = Some(store.tags.all.clone());
+        Ok(result)
     })
 }
 
@@ -3813,11 +3840,18 @@ pub async fn store_sync_selections(
         let (sel_sets, counts) = selections::resolve_forest(&view, &sels_full);
         drop(view);
 
-        let live: Vec<usize> = (0..sels.len()).filter(|&i| !sels[i].ghosted).collect();
+        // 2. Drop the ghosted ones once, here. Everything downstream reads `live`, so the
+        //    selections and their member sets can never be filtered by two different rules.
+        let live: Vec<ResolvedSelection> = pair_selections(sels_full, sel_sets)
+            .into_iter()
+            .zip(&sels)
+            .filter(|(_, si)| !si.ghosted)
+            .map(|(r, _)| r)
+            .collect();
 
         let mut all_selected = RoaringBitmap::new();
-        for &i in &live {
-            all_selected |= &sel_sets[i];
+        for r in &live {
+            all_selected |= &r.set;
         }
         let selected_count = all_selected.len() as usize;
 
@@ -3825,7 +3859,7 @@ pub async fn store_sync_selections(
         //    serialize the per-cell bitmask binary. Cells are independent → parallel.
         let routed: Vec<[Vec<u32>; 32]> = live
             .par_iter()
-            .map(|&i| selection_cell_indices(&store.render, &sel_sets[i], None))
+            .map(|r| selection_cell_indices(&store.render, &r.set))
             .collect();
         let segments: Vec<Vec<u8>> = store
             .render
@@ -3839,16 +3873,10 @@ pub async fn store_sync_selections(
             .collect();
         let num_cells = segments.len();
 
-        let buf = assemble_selection_bitmask(live.iter().map(|&i| &sels[i].color), &segments);
+        let buf = assemble_selection_bitmask(live.iter().map(|r| &r.sel.color), &segments);
 
         store.selections.ids = all_selected;
-        store.selections.all = live.iter().map(|&i| sels_full[i].clone()).collect();
-        store.selections.loc_sets = sel_sets
-            .into_iter()
-            .enumerate()
-            .filter(|(i, _)| !sels[*i].ghosted)
-            .map(|(_, s)| s)
-            .collect();
+        store.selections.resolved = live;
         store.selections.node_counts = counts.clone();
         store.selections.version += 1;
 
@@ -3863,7 +3891,7 @@ pub async fn store_sync_selections(
             _t.elapsed().as_millis(), sels.len(), selected_count, num_cells, buf.len(),
             store.batch.as_ref().map_or(0, |b| b.num_rows()), store.overlay.adds.len(),
             store.overlay.dead.len(), store.alive_count, render_total,
-            store.selections.loc_sets.first().map_or(0, |s| s.len() as usize), counts);
+            store.selections.resolved.first().map_or(0, |r| r.set.len() as usize), counts);
 
         (counts, buf, selected_count, num_cells)
     };
@@ -4019,7 +4047,7 @@ pub async fn store_merge_duplicates(
             remove.len().saturating_sub(create.len()),
             _t.elapsed().as_millis()
         );
-        Ok(apply_undoable(store, remove, create))
+        Ok(store.apply_undoable(remove, create))
     })
 }
 
@@ -4057,7 +4085,7 @@ pub async fn store_prune_duplicates(
             ids.len(),
             _t.elapsed().as_millis()
         );
-        Ok(apply_undoable(store, remove, Vec::new()))
+        Ok(store.apply_undoable(remove, Vec::new()))
     })
 }
 

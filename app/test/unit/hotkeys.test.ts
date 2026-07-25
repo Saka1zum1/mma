@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { parseHotkey, matchesKey, buildComboString } from "@/lib/hooks/useHotkey";
 import {
+	getAllBindings,
 	getAltSlowConflict,
 	getConflicts,
 	getBinding,
@@ -197,6 +198,19 @@ describe("getAltSlowConflict", () => {
 		const result = getAltSlowConflict("Alt+a");
 		expect(result).toBeDefined();
 		expect(result!.altSlow).toBe(true);
+	});
+});
+
+describe("default bindings", () => {
+	it("gives no two actions the same default", () => {
+		const owner: Record<string, string> = {};
+		for (const def of getAllBindings()) {
+			for (const alt of def.defaultBinding.split(",").map((s) => s.trim())) {
+				if (!alt) continue;
+				expect(owner[alt] ?? def.action).toBe(def.action);
+				owner[alt] = def.action;
+			}
+		}
 	});
 });
 

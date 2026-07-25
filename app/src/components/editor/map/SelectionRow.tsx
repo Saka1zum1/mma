@@ -4,7 +4,6 @@ import {
 	selectInverse,
 	setPolygonName,
 	setSelectionColors,
-	addTagToLocations,
 	createTags,
 	fetchLocationsByIds,
 	reorderSelection,
@@ -199,8 +198,7 @@ export const SelectionRow = memo(function SelectionRow({
 		if (!name) return;
 		const ids = await cmd.storeResolveSelection(selection.props);
 		if (ids.length === 0) return;
-		const [tag] = await createTags([name]);
-		await addTagToLocations(tag.id, ids);
+		await createTags([name], ids);
 		setSavingTag(false);
 		setTagName("");
 	};

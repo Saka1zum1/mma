@@ -1,6 +1,7 @@
 import {
 	useEffect,
 	useEffectEvent,
+	useRef,
 	type Dispatch,
 	type RefObject,
 	type SetStateAction,
@@ -10,7 +11,7 @@ import { getMapState, getVisibleTags, duplicateLocation, addLocations } from "@/
 import { sortTagsByMode } from "@/lib/util/util";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
-import { getSettings, setSetting } from "@/store/settings";
+import { getSettings, setSetting, MOVEMENT_CYCLE, MOVEMENT_MODES } from "@/store/settings";
 import { PANO_ZOOM } from "@/lib/sv/constants";
 import { tweenPov } from "@/lib/sv/tweenPov";
 import { type PanoReference, nearestLinkHeading, followLinkedPanos } from "@/lib/sv/lookup";
@@ -18,6 +19,7 @@ import { toast } from "@/lib/util/toast";
 import { downloadPano } from "@/lib/sv/panoDownload";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { isVirtualLocation } from "@/types";
+import { cycle } from "@/types/util";
 import { reviewNext, reviewPrev } from "@/lib/review/review";
 import { registerMapKeyActionHandler } from "@/lib/map/mapKeyBindings";
 import { cmd } from "@/lib/commands";
@@ -67,9 +69,10 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleDateChange,
 	} = deps;
 
-	const getPano = useEffectEvent(
-		() => panoramaRef?.current ?? singletonPano,
-	);
+	// Ref stays current for hotkey handlers (cannot use useEffectEvent outside Effects).
+	const panoramaRefKeep = useRef(panoramaRef);
+	panoramaRefKeep.current = panoramaRef;
+	const getPano = () => panoramaRefKeep.current?.current ?? singletonPano;
 
 	useHotkey(useBinding("locationSave"), () => {
 		if (location) handleSave();
@@ -163,6 +166,12 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	useHotkey(useBinding("togglePanoUI"), () => {
 		setSetting("hidePanoUI", !getSettings().hidePanoUI);
 	});
+	useHotkey(useBinding("cycleMovementMode"), () => {
+		const mode = cycle(MOVEMENT_CYCLE, getSettings().defaultMovementMode);
+		setSetting("defaultMovementMode", mode);
+		const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
+		if (container) toast(MOVEMENT_MODES[mode], 1200, container);
+	});
 	useHotkey(useBinding("duplicateLocation"), () => {
 		if (location) duplicateLocation(location.id);
 	});
@@ -176,22 +185,19 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 			void downloadPano(panoId);
 		}
 	});
-	useHotkey(useBinding("nextPanoDate"), () => {
+	const stepPanoDate = (step: 1 | -1) => {
 		if (!panoDates.length) return;
-		const currentPanoId = selectedPanoId ?? currentPano?.location?.pano ?? location?.panoId;
-		const raw = currentPanoId ? panoDates.findIndex((d) => d.pano === currentPanoId) : -1;
-		const idx = raw === -1 ? panoDates.length - 1 : raw;
-		const next = idx < panoDates.length - 1 ? idx + 1 : 0;
-		handleDateChange(panoDates[next].pano);
-	});
-	useHotkey(useBinding("prevPanoDate"), () => {
-		if (!panoDates.length) return;
-		const currentPanoId = selectedPanoId ?? currentPano?.location?.pano ?? location?.panoId;
-		const raw = currentPanoId ? panoDates.findIndex((d) => d.pano === currentPanoId) : -1;
-		const idx = raw === -1 ? panoDates.length - 1 : raw;
-		const prev = idx > 0 ? idx - 1 : panoDates.length - 1;
-		handleDateChange(panoDates[prev].pano);
-	});
+		const current = selectedPanoId ?? currentPano?.location?.pano ?? location?.panoId;
+		handleDateChange(
+			cycle(
+				panoDates.map((d) => d.pano),
+				current,
+				step,
+			),
+		);
+	};
+	useHotkey(useBinding("nextPanoDate"), () => stepPanoDate(1));
+	useHotkey(useBinding("prevPanoDate"), () => stepPanoDate(-1));
 	useHotkey(useBinding("followRoad"), () => {
 		const pano = getPano();
 		if (!pano) return;

@@ -44,6 +44,8 @@ import {
 	DISCORD_PRESENCE_MODES,
 	TAG_VIEW_MODES,
 	TAG_FOLDER_COLOR_MODES,
+	POLYGON_COLOR_MODES,
+	OPACITY_TOGGLE_MODES,
 	TAG_SUGGESTION_LIMITS,
 	BORDER_DETAILS,
 	SUBDIVISION_DETAILS,
@@ -429,6 +431,23 @@ function StreetViewBody() {
 
 			<GroupHeading>Fullscreen</GroupHeading>
 			<SettingRow setting="showFullscreenMinimap" label="Show minimap in fullscreen" />
+			<SettingRow
+				sub
+				disabled={!s.showFullscreenMinimap}
+				label="Minimap close delay"
+				description="How long the minimap stays expanded after the pointer leaves it."
+				control={
+					<SettingSlider
+						value={s.fullscreenMinimapCloseDelay}
+						min={0}
+						max={1000}
+						step={50}
+						disabled={!s.showFullscreenMinimap}
+						onChange={(v) => setSetting("fullscreenMinimapCloseDelay", v)}
+						format={(v) => `${v}ms`}
+					/>
+				}
+			/>
 			<SettingRow setting="showFullscreenTagbar" label="Show tag bar in fullscreen" />
 			<SettingRow setting="showFullscreenDatePicker" label="Show date picker in fullscreen" />
 			<SettingRow setting="showFullscreenReviewBar" label="Show review bar in fullscreen" />
@@ -504,6 +523,12 @@ function MarkersBody() {
 				}
 			/>
 
+			<SettingRow
+				label="Layer opacity toggle"
+				description="What the Street View and marker opacity hotkeys restore a hidden layer to."
+				control={<SettingSelect setting="opacityToggleMode" options={OPACITY_TOGGLE_MODES} />}
+			/>
+
 			<GroupHeading>Markers</GroupHeading>
 			<SettingRow
 				label="Default marker color"
@@ -561,6 +586,23 @@ function MarkersBody() {
 						<option value="constant">Constant on screen</option>
 						<option value="scaled">Grow when zoomed in</option>
 					</NSelect>
+				}
+			/>
+
+			<GroupHeading>Selections</GroupHeading>
+			<SettingRow
+				label="Polygon color"
+				control={
+					<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+						<SettingSelect setting="polygonColorMode" options={POLYGON_COLOR_MODES} />
+						{s.polygonColorMode === "fixed" && (
+							<ColorPicker
+								color={s.polygonColor}
+								onChange={(color) => setSetting("polygonColor", color)}
+								ariaLabel="Default polygon color"
+							/>
+						)}
+					</span>
 				}
 			/>
 

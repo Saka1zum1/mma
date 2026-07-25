@@ -43,7 +43,7 @@ import { SearchControl } from "@/components/editor/map/SearchControl";
 import type { ParsedLocation } from "@/lib/data/importExport";
 import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/MapSettingsPanel";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
-import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
+import { type MapEmbedPrefs, DEFAULT_PREFS, toggledOpacity } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
 
 /** Live zoom text with its own zoom subscription, so zooming doesn't re-render MapEmbed. */
@@ -74,6 +74,18 @@ export function MapEmbed({
 			setPrefs((p) => ({ ...p, [k]: v }));
 	const { svOpacity, mapType, markerStyle, markerOpacity, showSearchRadiusCursor, showPreviews } =
 		prefs;
+	// Where each layer's opacity sat while visible, so the toggle hotkeys can restore it.
+	const lastOpacityRef = useRef({
+		svOpacity: DEFAULT_PREFS.svOpacity,
+		markerOpacity: DEFAULT_PREFS.markerOpacity,
+	});
+	if (svOpacity > 0) lastOpacityRef.current.svOpacity = svOpacity;
+	if (markerOpacity > 0) lastOpacityRef.current.markerOpacity = markerOpacity;
+	const toggleOpacity = (key: "svOpacity" | "markerOpacity") =>
+		setPrefs((p) => ({
+			...p,
+			[key]: toggledOpacity(p[key], lastOpacityRef.current[key], getSettings().opacityToggleMode),
+		}));
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
 	// Boolean, not the raw zoom: re-renders only when crossing the blobby threshold.
 	// The live zoom readout subscribes itself (ZoomReadout).
@@ -324,12 +336,8 @@ export function MapEmbed({
 	useHotkey(useBinding("toggleSelectOnly"), () => {
 		setPrefs((p) => ({ ...p, selectOnly: !p.selectOnly }));
 	});
-	useHotkey(useBinding("toggleSvOpacity"), () => {
-		setPrefs((p) => ({ ...p, svOpacity: p.svOpacity > 0 ? 0 : 1 }));
-	});
-	useHotkey(useBinding("toggleMarkerOpacity"), () => {
-		setPrefs((p) => ({ ...p, markerOpacity: p.markerOpacity > 0 ? 0 : 1 }));
-	});
+	useHotkey(useBinding("toggleSvOpacity"), () => toggleOpacity("svOpacity"));
+	useHotkey(useBinding("toggleMarkerOpacity"), () => toggleOpacity("markerOpacity"));
 	useHotkey(useBinding("mapZoomBounds"), () => {
 		cmd.storeBounds(false).then((bounds) => {
 			if (!hostRef.current || !bounds) return;

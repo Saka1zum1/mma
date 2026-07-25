@@ -75,6 +75,44 @@ describe("colorForKey", () => {
 	});
 });
 
+describe("polygon color mode", () => {
+	const polygon = {
+		coordinates: [
+			[
+				[0, 0],
+				[1, 0],
+				[1, 1],
+				[0, 0],
+			],
+		],
+	};
+	const build = () => buildSelection({ type: "Polygon", polygon, includeInformational: false });
+
+	afterEach(() => setSetting("polygonColorMode", "random"));
+
+	it("random gives each polygon its own key-hashed color", () => {
+		setSetting("polygonColorMode", "random");
+		const a = build();
+		const b = build();
+		expect(a.color).toEqual(colorForKey(a.key));
+		expect(b.color).toEqual(colorForKey(b.key));
+		expect(a.key).not.toBe(b.key);
+	});
+
+	it("fixed gives every polygon the configured color", () => {
+		setSetting("polygonColorMode", "fixed");
+		setSetting("polygonColor", { r: 1, g: 2, b: 3 });
+		expect(build().color).toEqual([1, 2, 3]);
+		expect(build().color).toEqual([1, 2, 3]);
+	});
+
+	it("fixed does not affect non-polygon selections", () => {
+		setSetting("polygonColorMode", "fixed");
+		setSetting("polygonColor", { r: 1, g: 2, b: 3 });
+		expect(buildSelection({ type: "Untagged" }).color).toEqual(colorForKey("untagged"));
+	});
+});
+
 describe("review overlay colors stay clear of the active marker", () => {
 	// The active-location marker is red (hue 0 by default). The reviewed/unreviewed overlays must
 	// not blend into it, or into each other, or the cursor gets lost in a field of queued markers.
@@ -831,6 +869,35 @@ describe("decomposeChild", () => {
 		const result = decomposeChild(composed, parentKey, s2.key);
 		expect(result.length).toBeGreaterThan(composed.length);
 	});
+
+	it("extracts a nested group without leaking its children into the parent", () => {
+		const a = buildSelection({ type: "PanoIds" });
+		const b = buildSelection({ type: "Untagged" });
+		const c = buildSelection({ type: "Unpanned" });
+		const union = buildSelection({ type: "Union", selections: [a, b] });
+		const parent = buildSelection({ type: "Intersection", selections: [union, c] });
+
+		const result = decomposeChild([parent], parent.key, union.key);
+
+		// Parent had two children, so it collapses to the one left: C. The Union comes out whole.
+		expect(result.map((s) => s.props.type)).toEqual(["Unpanned", "Union"]);
+		expect((result[1].props as { selections: any[] }).selections.map((s: any) => s.key)).toEqual([
+			a.key,
+			b.key,
+		]);
+	});
+
+	it("drops the parent when its only child is extracted", () => {
+		const a = buildSelection({ type: "PanoIds" });
+		const b = buildSelection({ type: "Untagged" });
+		const union = buildSelection({ type: "Union", selections: [a, b] });
+		const parent = buildSelection({ type: "Intersection", selections: [union] });
+
+		const result = decomposeChild([parent], parent.key, union.key);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].key).toBe(union.key);
+	});
 });
 
 describe("removeFromComposite", () => {
@@ -846,6 +913,39 @@ describe("removeFromComposite", () => {
 		expect(result).toHaveLength(sels.length);
 		const children = (result[0].props as { selections: any[] }).selections;
 		expect(children.every((c: any) => c.key !== s2.key)).toBe(true);
+	});
+
+	// Deleting a nested group ungroups it: its children stay behind in the parent. Deliberate,
+	// and the one place a removal is allowed to keep the removed node's children.
+	it("ungroups a nested group into the parent", () => {
+		const a = buildSelection({ type: "PanoIds" });
+		const b = buildSelection({ type: "Untagged" });
+		const c = buildSelection({ type: "Unpanned" });
+		const union = buildSelection({ type: "Union", selections: [a, b] });
+		const parent = buildSelection({ type: "Intersection", selections: [union, c] });
+
+		const result = removeFromComposite([parent], parent.key, union.key);
+
+		expect(result).toHaveLength(1);
+		expect(result[0].props.type).toBe("Intersection");
+		expect((result[0].props as { selections: any[] }).selections.map((s: any) => s.key)).toEqual([
+			a.key,
+			b.key,
+			c.key,
+		]);
+	});
+
+	it("removes a composite that has no children left", () => {
+		const a = buildSelection({ type: "PanoIds" });
+		const b = buildSelection({ type: "Untagged" });
+		const inner = buildSelection({ type: "Union", selections: [a, b] });
+		const outer = buildSelection({ type: "Intersection", selections: [inner] });
+
+		// Inner drops to one child, so it collapses, and so does the outer wrapping it.
+		expect(removeFromComposite([outer], inner.key, a.key)).toEqual([b]);
+		// Nothing left in the parent at all: the parent goes too.
+		const solo = buildSelection({ type: "Intersection", selections: [a] });
+		expect(removeFromComposite([solo], solo.key, a.key)).toEqual([]);
 	});
 
 	it("preserves the Invert wrapper when removing a child from an inverted group", () => {

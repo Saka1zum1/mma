@@ -7,6 +7,7 @@ in vec3 positions;
 in vec3 instancePositions;
 in vec3 instancePositions64Low;
 in vec4 instanceFillColors;
+in float instanceVisible;
 in float instanceAngles;
 in vec3 instancePickingColors;
 
@@ -46,7 +47,9 @@ void main(void) {
   DECKGL_FILTER_SIZE(offset, geometry);
   gl_Position.xy += project_pixel_size_to_clipspace(offset.xy);
 
-  vFillColor = vec4(instanceFillColors.rgb, instanceFillColors.a * layer.opacity);
+  // instanceVisible is the per-marker hide flag; the base layer takes its colour from a
+  // constant accessor and varies only this. Defaults to 1 where no attribute is supplied.
+  vFillColor = vec4(instanceFillColors.rgb, instanceFillColors.a * layer.opacity * instanceVisible);
   DECKGL_FILTER_COLOR(vFillColor, geometry);
 }
 `;

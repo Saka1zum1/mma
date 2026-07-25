@@ -50,6 +50,14 @@ export const TAG_FOLDER_COLOR_MODES = {
 	direct: "Fixed color",
 	firstChild: "Inherit first child",
 } as const;
+export const OPACITY_TOGGLE_MODES = {
+	previous: "Last used opacity",
+	full: "Full opacity",
+} as const;
+export const POLYGON_COLOR_MODES = {
+	random: "Random",
+	fixed: "Fixed color",
+} as const;
 export const BORDER_DETAILS = {
 	light: "Standard (bundled)",
 	medium: "High (~10MB)",
@@ -71,6 +79,7 @@ export const PREVIEW_ASPECT_RATIOS = {
 } as const;
 
 export type MovementMode = keyof typeof MOVEMENT_MODES;
+export const MOVEMENT_CYCLE = Object.keys(MOVEMENT_MODES) as MovementMode[];
 export type ExactDateFormat = keyof typeof EXACT_DATE_FORMATS;
 export type DateTimezone = keyof typeof DATE_TIMEZONES;
 export type SeenResolution = keyof typeof SEEN_RESOLUTIONS;
@@ -80,6 +89,8 @@ export type DiscordPresenceMode = keyof typeof DISCORD_PRESENCE_MODES;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
 export type TagFolderColorMode = keyof typeof TAG_FOLDER_COLOR_MODES;
+export type OpacityToggleMode = keyof typeof OPACITY_TOGGLE_MODES;
+export type PolygonColorMode = keyof typeof POLYGON_COLOR_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
 export type SubdivisionDetail = keyof typeof SUBDIVISION_DETAILS;
 export type PreviewAspectRatio = keyof typeof PREVIEW_ASPECT_RATIOS;
@@ -112,7 +123,11 @@ const DEFAULTS = {
 	fullscreenMiniLocationScale: 1,
 	showFullscreenMinimap: true,
 	fullscreenMinimapScale: 1,
+	/** Milliseconds the fullscreen minimap stays expanded after the pointer leaves it. */
+	fullscreenMinimapCloseDelay: 250,
 	showFullscreenTagbar: true,
+	/** Tag bar dropped down to a thin strip. Toggled from the bar itself, not Settings. */
+	fullscreenTagbarCollapsed: false,
 	showFullscreenDatePicker: true,
 	showFullscreenReviewBar: true,
 	showFullscreenGeocode: true,
@@ -141,6 +156,13 @@ const DEFAULTS = {
 	activeLocationColor: { r: 200, g: 0, b: 0 } as RGB,
 	importPreviewColor: { r: 217, g: 70, b: 239 } as RGB,
 	panoDotColor: { r: 255, g: 0, b: 0 } as RGB,
+	/** Color a newly drawn polygon selection starts with. `random` hashes it from the polygon's
+	 *  key; `fixed` uses polygonColor. Either way it's only the initial value -- recoloring a
+	 *  polygon by hand still wins. */
+	/** What the layer opacity hotkeys restore a layer to when toggling it back on. */
+	opacityToggleMode: "previous" as OpacityToggleMode,
+	polygonColorMode: "random" as PolygonColorMode,
+	polygonColor: { r: 0, g: 140, b: 255 } as RGB,
 	panoDotScaled: false,
 	tagViewMode: "flat" as TagViewMode,
 	/** Tree view only: render each tag as the shortest path suffix that's still unique. */

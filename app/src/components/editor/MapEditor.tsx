@@ -22,7 +22,7 @@ import { MapOverview } from "@/components/editor/map/MapOverview";
 import { ImportSidebar } from "@/components/editor/ImportSidebar";
 import { DiffSidebar } from "@/components/editor/DiffSidebar";
 import { LocationPreview } from "@/components/editor/location/LocationPreview";
-import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
+import { ChipHostContext } from "@/components/editor/location/FullscreenMiniLocationPreview";
 import { PanoViewerProvider } from "@/components/editor/location/PanoViewerContext";
 import { exitFullscreenMap } from "@/components/editor/location/fullscreenModeState";
 import { useFullscreenModeHotkeys } from "@/components/editor/location/useFullscreenModeHotkeys";
@@ -301,6 +301,7 @@ export function MapEditor() {
 	);
 	const [showMapCursor, setShowMapCursor] = useState(false);
 	const showMapCursorRef = useRef(false);
+	const [chipHost, setChipHost] = useState<HTMLElement | null>(null);
 
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
@@ -341,18 +342,19 @@ export function MapEditor() {
 
 	return (
 		<PanoViewerProvider>
-			<FullscreenModeHotkeys />
-			<div className="editor-shell">
-				<div
-					className={editorClasses}
-					style={{
-						gridTemplateColumns: appSettings.fullscreenMap
-							? undefined
-							: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
-					}}
-				>
-					{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
-					<header>
+			<ChipHostContext.Provider value={chipHost}>
+				<FullscreenModeHotkeys />
+				<div className="editor-shell">
+					<div
+						className={editorClasses}
+						style={{
+							gridTemplateColumns: appSettings.fullscreenMap
+								? undefined
+								: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
+						}}
+					>
+						{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
+						<header>
 						<Tooltip content="Back to map list" side="bottom" align="start">
 							<a
 								href="#"
@@ -419,14 +421,12 @@ export function MapEditor() {
 						)}
 					</div>
 					<section
+						ref={setChipHost}
 						className="map-embed"
 						style={{ background: "var(--surface-0)" }}
 					>
 						<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
 						{showMapCursor && <div className="map-cursor-crosshair" />}
-						{appSettings.fullscreenMap &&
-							appSettings.showFullscreenMiniLocationPreview &&
-							workArea === "location" && <FullscreenMiniLocationPreview />}
 					</section>
 					{(!appSettings.fullscreenMap || appSettings.showFullscreenMapMeta) && (
 						<section className="map-meta">
@@ -455,7 +455,8 @@ export function MapEditor() {
 					/>
 				)}
 				<DoclinkAssignDialog open={docAssignOpen} onOpenChange={setDocAssignOpen} />
-			</div>
+				</div>
+			</ChipHostContext.Provider>
 		</PanoViewerProvider>
 	);
 }

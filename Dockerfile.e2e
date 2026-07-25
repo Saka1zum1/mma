@@ -11,8 +11,17 @@ RUN apt-get update && apt-get install -y \
     libssl-dev libx11-dev libxkbcommon-dev \
     libjavascriptcoregtk-4.1-dev librsvg2-dev \
     webkit2gtk-driver \
-    xvfb curl git \
+    xvfb curl git unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Chrome + matching chromedriver, for the web-serve suite (wdio.web.conf.ts).
+RUN curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o /tmp/chrome.deb \
+    && apt-get update && apt-get install -y /tmp/chrome.deb \
+    && rm /tmp/chrome.deb && rm -rf /var/lib/apt/lists/* \
+    && CHROME_VER="$(google-chrome --version | grep -oE '[0-9]+(\.[0-9]+){3}')" \
+    && curl -fsSL "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VER}/linux64/chromedriver-linux64.zip" -o /tmp/cd.zip \
+    && unzip -j /tmp/cd.zip chromedriver-linux64/chromedriver -d /usr/local/bin \
+    && rm /tmp/cd.zip && chromedriver --version
 
 # Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -35,16 +44,17 @@ RUN cd app && npm ci
 # Copy source (repo root -- needed for plugins/ dir referenced by build scripts)
 COPY app/ ./app/
 COPY plugins/ ./plugins/
-COPY scripts/docker-e2e.sh ./scripts/docker-e2e.sh
-RUN chmod +x ./scripts/docker-e2e.sh
+COPY scripts/internal/ ./scripts/internal/
+RUN chmod +x ./scripts/internal/*.sh
 
 WORKDIR /repo/app
 
-# Build Tauri debug binary with e2e features (no bundle -- just the binary)
+# One debug binary serving both suites: `e2e` adds the WebDriver bridge (desktop),
+# `web-serve` adds the `--serve` HTTP sidecar (browser). Neither affects the other.
 RUN --mount=type=cache,target=/repo/app/src-tauri/target \
     --mount=type=cache,target=/root/.cargo/registry \
-    cargo tauri build --debug --features e2e --no-bundle \
+    cargo tauri build --debug --features e2e,web-serve --no-bundle \
     && cp src-tauri/target/debug/map-making-app /usr/local/bin/map-making-app
 
 # Start Xvfb + tauri-driver, then run tests
-CMD ["/repo/scripts/docker-e2e.sh"]
+CMD ["/repo/scripts/internal/e2e-native.sh"]

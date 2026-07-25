@@ -74,6 +74,7 @@ fn local_to_normalized_strips_virtual_flags_and_resolves_tags() {
         pitch: 4.0,
         zoom: 5.0,
         pano_id: Some("p".into()),
+        provider: None,
         // 12 = the JS-side virtual bits (ImportPreview | SeenOverlay); undeclared here, so stripped.
         flags: LocationFlags::from_bits_retain(1 | 12),
         tags: vec![10, 11, 99],

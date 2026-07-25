@@ -9,6 +9,8 @@ import {
 } from "@/lib/util/util";
 import { colorForName } from "@/lib/util/color";
 import { relativeTime } from "@/lib/util/format";
+import { cycle } from "@/types/util";
+import { MOVEMENT_CYCLE } from "@/store/settings";
 import type { Tag } from "@/bindings.gen";
 
 describe("sortTagsByMode", () => {
@@ -200,5 +202,36 @@ describe("relativeTime", () => {
 		const result = relativeTime(old);
 		expect(result).not.toContain("ago");
 		expect(result.length).toBeGreaterThan(3);
+	});
+});
+
+describe("cycle", () => {
+	const items = ["a", "b", "c"];
+
+	it("steps forward and wraps", () => {
+		expect(cycle(items, "a")).toBe("b");
+		expect(cycle(items, "c")).toBe("a");
+	});
+
+	it("steps backward and wraps", () => {
+		expect(cycle(items, "b", -1)).toBe("a");
+		expect(cycle(items, "a", -1)).toBe("c");
+	});
+
+	it("treats an unknown or missing current as sitting before the first item", () => {
+		expect(cycle(items, "z")).toBe("a");
+		expect(cycle(items, undefined)).toBe("a");
+		expect(cycle(items, undefined, -1)).toBe("b");
+	});
+
+	it("holds on a single-item list", () => {
+		expect(cycle(["only"], "only")).toBe("only");
+		expect(cycle(["only"], "only", -1)).toBe("only");
+	});
+
+	it("visits every movement mode before repeating", () => {
+		const seen = [MOVEMENT_CYCLE[0]];
+		for (let i = 0; i < MOVEMENT_CYCLE.length; i++) seen.push(cycle(MOVEMENT_CYCLE, seen[i]));
+		expect(seen).toEqual([...MOVEMENT_CYCLE, MOVEMENT_CYCLE[0]]);
 	});
 });

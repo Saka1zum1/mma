@@ -231,8 +231,13 @@ declare const commands: {
     /**
      *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
      *  already exists, it is made visible instead of creating a duplicate.
+     *
+     *  `location_ids` assigns every resulting tag to those locations in the same mutation.
+     *  Doing both here is not a convenience: creating and assigning as two commands leaves the
+     *  tag visible at count 0 for the round trip in between, and makes the caller fetch every
+     *  location into JS just to append an id Rust already has.
      */
-    storeCreateTags: (names: string[]) => Promise<MutationResult>;
+    storeCreateTags: (names: string[], locationIds: number[]) => Promise<MutationResult>;
     /**
      *  Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
      *  merges the two tags.
@@ -457,8 +462,10 @@ type CellRemoval = {
     id: number;
 };
 /**
- *  Override the RGBA color of a single marker within a cell (used when selection
- *  membership changes without a position change).
+ *  One location's selection-membership change, projected onto the render buffers.
+ *  The RGBA is the base-layer color, and `a` says which way it went: a gained row is
+ *  transparent there (a=0) and drawn by the overlay in `r,g,b`; a lost row (a=255) gets
+ *  the opaque marker color back and drops out of the overlay.
  */
 type ColorPatchEntry = {
     cell: string;
@@ -1757,8 +1764,12 @@ declare function setPluginMode(pluginId: string): void;
 declare function exitPluginMode(): void;
 /** Get-or-create tags by name. Returns the tag objects for use
  *  in subsequent location updates. Idempotent — existing tags are returned
- *  as-is, new names get auto-generated colors. */
-declare function createTags(names: string[]): Promise<Tag[]>;
+ *  as-is, new names get auto-generated colors.
+ *
+ *  Pass `locationIds` to assign the tags in the same mutation. Prefer that over a follow-up
+ *  `addTagToLocations`: it is one round trip instead of three, and the tag never renders at
+ *  count 0 in between. */
+declare function createTags(names: string[], locationIds?: number[]): Promise<Tag[]>;
 /** Rename or recolor tags. If a rename collides with an existing tag name
  *  (case-insensitive), the two tags are merged — all locations are remapped
  *  to the survivor. */
@@ -2314,6 +2325,14 @@ declare const TAG_FOLDER_COLOR_MODES: {
     readonly direct: "Fixed color";
     readonly firstChild: "Inherit first child";
 };
+declare const OPACITY_TOGGLE_MODES: {
+    readonly previous: "Last used opacity";
+    readonly full: "Full opacity";
+};
+declare const POLYGON_COLOR_MODES: {
+    readonly random: "Random";
+    readonly fixed: "Fixed color";
+};
 declare const BORDER_DETAILS: {
     readonly light: "Standard (bundled)";
     readonly medium: "High (~10MB)";
@@ -2340,6 +2359,8 @@ export type DiscordPresenceMode = keyof typeof DISCORD_PRESENCE_MODES;
 export type GeocodeProvider = keyof typeof GEOCODE_PROVIDERS;
 export type TagViewMode = keyof typeof TAG_VIEW_MODES;
 export type TagFolderColorMode = keyof typeof TAG_FOLDER_COLOR_MODES;
+export type OpacityToggleMode = keyof typeof OPACITY_TOGGLE_MODES;
+export type PolygonColorMode = keyof typeof POLYGON_COLOR_MODES;
 export type BorderDetail = keyof typeof BORDER_DETAILS;
 export type SubdivisionDetail = keyof typeof SUBDIVISION_DETAILS;
 export type PreviewAspectRatio = keyof typeof PREVIEW_ASPECT_RATIOS;
@@ -2371,7 +2392,11 @@ declare const DEFAULTS: {
     fullscreenMiniLocationScale: number;
     showFullscreenMinimap: boolean;
     fullscreenMinimapScale: number;
+    /** Milliseconds the fullscreen minimap stays expanded after the pointer leaves it. */
+    fullscreenMinimapCloseDelay: number;
     showFullscreenTagbar: boolean;
+    /** Tag bar dropped down to a thin strip. Toggled from the bar itself, not Settings. */
+    fullscreenTagbarCollapsed: boolean;
     showFullscreenDatePicker: boolean;
     showFullscreenReviewBar: boolean;
     showFullscreenGeocode: boolean;
@@ -2400,6 +2425,13 @@ declare const DEFAULTS: {
     activeLocationColor: RGB;
     importPreviewColor: RGB;
     panoDotColor: RGB;
+    /** Color a newly drawn polygon selection starts with. `random` hashes it from the polygon's
+     *  key; `fixed` uses polygonColor. Either way it's only the initial value -- recoloring a
+     *  polygon by hand still wins. */
+    /** What the layer opacity hotkeys restore a layer to when toggling it back on. */
+    opacityToggleMode: OpacityToggleMode;
+    polygonColorMode: PolygonColorMode;
+    polygonColor: RGB;
     panoDotScaled: boolean;
     tagViewMode: TagViewMode;
     /** Tree view only: render each tag as the shortest path suffix that's still unique. */
@@ -3169,7 +3201,9 @@ declare const surface: {
         fullscreenMiniLocationScale: number;
         showFullscreenMinimap: boolean;
         fullscreenMinimapScale: number;
+        fullscreenMinimapCloseDelay: number;
         showFullscreenTagbar: boolean;
+        fullscreenTagbarCollapsed: boolean;
         showFullscreenDatePicker: boolean;
         showFullscreenReviewBar: boolean;
         showFullscreenGeocode: boolean;
@@ -3194,6 +3228,9 @@ declare const surface: {
         activeLocationColor: RGB;
         importPreviewColor: RGB;
         panoDotColor: RGB;
+        opacityToggleMode: OpacityToggleMode;
+        polygonColorMode: PolygonColorMode;
+        polygonColor: RGB;
         panoDotScaled: boolean;
         tagViewMode: TagViewMode;
         truncateTagPaths: boolean;
