@@ -1,6 +1,5 @@
-import { useSyncExternalStore } from "react";
 import { getCommands, getCommand } from "@/store/commands";
-import { createSyncStore } from "@/lib/util/syncStore";
+import { emit as emitEvent, useEventValue } from "@/lib/events";
 
 const QUICKTAG_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 type QuicktagSlot = (typeof QUICKTAG_SLOTS)[number];
@@ -372,8 +371,6 @@ function getDefaultBinding(action: string): string {
 	return cmd?.defaultBinding ?? "";
 }
 
-const { subscribe, getSnapshot, notify } = createSyncStore();
-
 export function getBinding(action: HotkeyAction | string): string {
 	return overrides[action] ?? getDefaultBinding(action);
 }
@@ -404,7 +401,7 @@ export function getConflicts(action: string, binding: string): HotkeyDef[] {
 export function setBinding(action: HotkeyAction, binding: string): void {
 	overrides[action] = binding;
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-	notify();
+	emitEvent("hotkeys:changed");
 }
 
 // Assign `binding` to `action`, clearing it from any other actions that currently
@@ -414,23 +411,22 @@ export function reassignBinding(action: HotkeyAction, binding: string): string[]
 	for (const a of cleared) overrides[a] = "";
 	overrides[action] = binding;
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-	notify();
+	emitEvent("hotkeys:changed");
 	return cleared;
 }
 
 export function resetBinding(action: HotkeyAction): void {
 	delete overrides[action];
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-	notify();
+	emitEvent("hotkeys:changed");
 }
 
 export function resetAllBindings(): void {
 	overrides = {};
 	localStorage.removeItem(STORAGE_KEY);
-	notify();
+	emitEvent("hotkeys:changed");
 }
 
 export function useBinding(action: HotkeyAction): string {
-	useSyncExternalStore(subscribe, getSnapshot);
-	return getBinding(action);
+	return useEventValue("hotkeys:changed", () => getBinding(action));
 }

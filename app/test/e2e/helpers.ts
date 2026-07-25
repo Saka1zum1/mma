@@ -149,12 +149,14 @@ export async function getAllLocs(): Promise<Location[]> {
 }
 
 export async function getLocCount(): Promise<number> {
-	return withApi(async (api) => api.cmd.storeLocationCount());
+	return withApi(async (api) => (await api.cmd.storeGetSummary()).locationCount);
 }
 
 export async function refreshSelections(): Promise<number[]> {
 	return withApi(async (api) => {
-		const sels = api.getSelections().map((s) => ({ key: s.key, props: s.props, color: s.color }));
+		const sels = api
+			.getActiveSelections()
+			.map((s) => ({ key: s.key, props: s.props, color: s.color }));
 		if (sels.length === 0) return [] as number[];
 		await api.cmd.storeSyncSelections(sels);
 		return api.cmd.storeGetSelectedIdsList();
@@ -176,14 +178,14 @@ const WAIT = { timeout: 5000, interval: 50 } as const;
 /** Wait until the active location id equals `id` (null = back to overview). */
 export async function waitForActive(id: number | null) {
 	await browser.waitUntil(
-		() => withApi((api, target) => (api.getActiveLocation()?.id ?? null) === target, id),
+		() => withApi((api, target) => (api.getMapState().activeLocation?.id ?? null) === target, id),
 		{ ...WAIT, timeoutMsg: `active location never became ${id}` },
 	);
 }
 
 /** Wait until the store's work area matches (e.g. "overview" | "location"). */
 export async function waitForWorkArea(area: string) {
-	await browser.waitUntil(() => withApi((api, a) => api.getWorkArea() === a, area), {
+	await browser.waitUntil(() => withApi((api, a) => api.getMapState().workArea === a, area), {
 		...WAIT,
 		timeoutMsg: `workArea never became ${area}`,
 	});

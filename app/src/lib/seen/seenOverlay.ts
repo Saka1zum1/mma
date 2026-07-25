@@ -3,10 +3,9 @@
 // import preview — so picking, hover cursor, and clicks flow through the one deck pass with
 // no second overlay or interceptors. This module just owns the toggle + data + reactivity.
 
-import { useSyncExternalStore } from "react";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { subscribe as onEvent } from "@/lib/events";
+import { emit as emitEvent, subscribe as onEvent } from "@/lib/events";
 import { fetchLocation, setActiveLocation, previewVirtualLocation } from "@/store/useMapStore";
 import { createLocation, LocationFlag } from "@/types";
 import { getSeenCount, getSeenEntries, seenSkipNext } from "./seen";
@@ -21,23 +20,6 @@ let entries: SeenEntry[] = [];
 /** Seen-entry ids whose pano resolves to an existing location on the current map. */
 let onMapIds = new Set<number>();
 let active = false;
-let version = 0;
-const listeners = new Set<() => void>();
-
-function notify() {
-	version++;
-	for (const l of listeners) l();
-}
-
-export function subscribeSeenOverlay(cb: () => void): () => void {
-	listeners.add(cb);
-	return () => listeners.delete(cb);
-}
-
-/** Repaint signal for the scene; include in the surface's rebuild deps. */
-export function useSeenOverlayVersion(): number {
-	return useSyncExternalStore(subscribeSeenOverlay, () => version);
-}
 
 export function isSeenOverlayActive(): boolean {
 	return active;
@@ -76,7 +58,7 @@ export function toggleSeenOverlay(): void {
 		entries = [];
 		onMapIds = new Set();
 	}
-	notify();
+	emitEvent("seen:changed");
 	if (active) void load();
 }
 
@@ -90,7 +72,7 @@ async function load() {
 		entries = [];
 		onMapIds = new Set();
 	}
-	if (active) notify();
+	if (active) emitEvent("seen:changed");
 }
 
 /** Open the seen entry at `index` (deck pick index): select its real location if present on
@@ -124,5 +106,5 @@ onEvent("map:close", () => {
 	active = false;
 	entries = [];
 	onMapIds = new Set();
-	notify();
+	emitEvent("seen:changed");
 });

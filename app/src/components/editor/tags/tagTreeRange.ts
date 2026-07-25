@@ -60,6 +60,35 @@ export interface FolderColorOpts {
 }
 const DEFAULT_FOLDER_COLOR: FolderColorOpts = { mode: "direct", color: "#888888" };
 
+/** Walk/create the node chain for `parts`, returning the leaf node. */
+function ensurePath(root: TagTreeNode[], parts: string[]): TagTreeNode {
+	let level = root;
+	let pathSoFar = "";
+	let node!: TagTreeNode;
+	for (const segment of parts) {
+		const parentPath = pathSoFar;
+		pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
+		let existing = level.find((n) => n.segment === segment);
+		if (!existing) {
+			existing = {
+				segment,
+				fullPath: pathSoFar,
+				parentPath,
+				tag: null,
+				inheritedColor: "",
+				children: [],
+				descendantTagIds: [],
+				sortOrder: 0,
+				isAlias: false,
+			};
+			level.push(existing);
+		}
+		node = existing;
+		level = existing.children;
+	}
+	return node;
+}
+
 /** Build the nested tag tree from `/`-delimited tag names. Within each level, leaf tags
  *  are floated above sub-branches so they render as a flat pill group above folder rows.
  *  `virtualTags` colors folder nodes that have no underlying tag (keyed by full path).
@@ -77,40 +106,12 @@ export function buildTagTree(
 	const root: TagTreeNode[] = [];
 
 	for (const tag of tags) {
-		const parts = split ? tag.name.split("/") : [tag.name];
-		let level = root;
-		let pathSoFar = "";
-
-		for (let i = 0; i < parts.length; i++) {
-			const segment = parts[i];
-			const parentPath = pathSoFar;
-			pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
-			const isLeaf = i === parts.length - 1;
-
-			let existing = level.find((n) => n.segment === segment);
-			if (!existing) {
-				existing = {
-					segment,
-					fullPath: pathSoFar,
-					parentPath,
-					tag: isLeaf ? tag : null,
-					inheritedColor: "",
-					children: [],
-					descendantTagIds: [],
-					sortOrder: 0,
-					isAlias: false,
-				};
-				level.push(existing);
-			} else if (isLeaf && !existing.tag) {
-				existing.tag = tag;
-			}
-
-			level = existing.children;
-		}
+		const leaf = ensurePath(root, split ? tag.name.split("/") : [tag.name]);
+		if (!leaf.tag) leaf.tag = tag;
 	}
 
 	// Insert alias leaves: a real tag placed at a second path. Skip a dangling alias
-	// (tag deleted) or one whose path is already occupied by any real node — an alias only
+	// (tag deleted) or one whose path is already occupied by any real node - an alias only
 	// fills a free leaf slot, never clobbers (and never leaves a stray empty folder).
 	if (split) {
 		const tagById = new Map(tags.map((t) => [t.id, t]));
@@ -127,58 +128,15 @@ export function buildTagTree(
 		for (const [aliasPath, tagId] of Object.entries(aliases)) {
 			const tag = tagById.get(tagId);
 			if (!tag || resolve(aliasPath)) continue;
-			const parts = aliasPath.split("/");
-			let level = root;
-			let pathSoFar = "";
-			for (let i = 0; i < parts.length; i++) {
-				const segment = parts[i];
-				const parentPath = pathSoFar;
-				pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
-				const isLeaf = i === parts.length - 1;
-				let existing = level.find((n) => n.segment === segment);
-				if (!existing) {
-					existing = {
-						segment,
-						fullPath: pathSoFar,
-						parentPath,
-						tag: isLeaf ? tag : null,
-						inheritedColor: "",
-						children: [],
-						descendantTagIds: [],
-						sortOrder: 0,
-						isAlias: isLeaf,
-					};
-					level.push(existing);
-				}
-				level = existing.children;
-			}
+			const leaf = ensurePath(root, aliasPath.split("/"));
+			leaf.tag = tag;
+			leaf.isAlias = true;
 		}
 
 		// Seed declared folders: every virtualTags key gets a folder node even when no
 		// tag path passes through it, so empty folders exist without scaffolding tags.
 		for (const path of Object.keys(virtualTags)) {
-			let level = root;
-			let pathSoFar = "";
-			for (const segment of path.split("/")) {
-				const parentPath = pathSoFar;
-				pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
-				let existing = level.find((n) => n.segment === segment);
-				if (!existing) {
-					existing = {
-						segment,
-						fullPath: pathSoFar,
-						parentPath,
-						tag: null,
-						inheritedColor: "",
-						children: [],
-						descendantTagIds: [],
-						sortOrder: 0,
-						isAlias: false,
-					};
-					level.push(existing);
-				}
-				level = existing.children;
-			}
+			ensurePath(root, path.split("/"));
 		}
 	}
 

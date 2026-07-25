@@ -12,13 +12,14 @@ Five fields are **on by default**:
 - **Pano type.** Official, unknown, or user-uploaded.
 - **Image date.** The year-month of capture.
 
-Five more are **off by default** and must be opted into:
+Six more are **off by default** and must be opted into:
 
 - **Exact date.** The precise capture timestamp, resolved by binary-searching Google's servers. Much slower than other fields (multiple requests per location). Display format (date only vs date + time) and timezone (location-local vs UTC) are configurable in **Settings → Street View → Date Picker**.
 - **Timezone.** The pano's IANA timezone (e.g. `America/New_York`). Pairs with exact date for time-of-day filtering in local time.
 - **Driving direction.** Which side of the road the coverage car was driving on.
 - **Uploader.** The name of the user or entity that uploaded the panorama.
 - **Coverage dates.** The full list of capture dates available at that location across all time periods.
+- **Subdivision.** The first-level administrative area (state, province, region) containing the location. Resolved offline against the subdivision border dataset (downloaded automatically on first use), so boundaries near borders may differ slightly from other sources. Pairs with **Apply metadata as tags** to tag a whole map by subdivision.
 
 Plugins can register additional enrichment fields.
 

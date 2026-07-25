@@ -58,7 +58,7 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 	const autoDefaulted = useRef(createPluginStorage("distribution").keys().includes("source"));
 
 	const refresh = useCallback(async () => {
-		const map = MMA.getCurrentMap();
+		const map = MMA.getMapState().map;
 		if (!map) return;
 		const locs = await fetchAllLocations();
 		setTotal(locs.length);

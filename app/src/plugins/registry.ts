@@ -1,6 +1,7 @@
 import { useState, useCallback, type ComponentType, type SetStateAction } from "react";
-import { createSyncStore } from "@/lib/util/syncStore";
+import { emit as emitEvent } from "@/lib/events";
 import { runAsPlugin, disposePlugin } from "@/plugins/scope";
+import { cmpVersion } from "@/lib/util/util";
 
 export interface PluginSettingDef {
 	key: string;
@@ -16,6 +17,7 @@ export interface Plugin {
 	icon: string;
 	comingSoon?: boolean;
 	core?: boolean;
+	experimental?: boolean;
 	settings?: PluginSettingDef[];
 	/** Keep the sidebar mounted (hidden) when the user leaves plugin mode.
 	 *  Only for plugins whose state can't be serialized (e.g. an iframe). */
@@ -23,12 +25,6 @@ export interface Plugin {
 	activate(): void | (() => void);
 	modal?: ComponentType<{ onClose: () => void }>;
 	sidebar?: ComponentType<{ onClose: () => void }>;
-	/** Toolbar button that toggles on/off (no sidebar). */
-	toolbarToggle?: {
-		getActive: () => boolean;
-		onToggle: () => void;
-		subscribe?: (cb: () => void) => () => void;
-	};
 	locationPanel?: ComponentType;
 }
 
@@ -45,6 +41,8 @@ export interface PluginManifest {
 	icon: string;
 	main: string;
 	version: string;
+	minAppVersion?: string;
+	experimental?: boolean;
 	sidecar?: PluginSidecarRef | null;
 }
 
@@ -52,35 +50,21 @@ export type PluginBehavior = Partial<Plugin> & {
 	activate(): void | (() => void);
 };
 
-// An installed plugin is updatable when the registry publishes a newer semver than
-// what's installed. A locally synced dev build may bump ahead of the registry; that
-// must not surface an Update button (clicking it re-downloads from GitHub and
-// overwrites the local artifact).
-function parseSemver(version: string): [number, number, number] | null {
-	const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
-	if (!m) return null;
-	return [Number(m[1]), Number(m[2]), Number(m[3])];
+// The registry serves only the latest build of each plugin, so a stale app offered a
+// fresh plugin has exactly two options: take it or keep what it has. `minAppVersion`
+// lets the plugin declare when "take it" would break.
+export function isPluginCompatible(minAppVersion: string | undefined, appVersion: string): boolean {
+	return !minAppVersion || cmpVersion(appVersion, minAppVersion) >= 0;
 }
 
-function compareSemver(a: string, b: string): number | null {
-	const pa = parseSemver(a);
-	const pb = parseSemver(b);
-	if (!pa || !pb) return null;
-	for (let i = 0; i < 3; i++) {
-		if (pa[i] !== pb[i]) return pa[i] - pb[i];
-	}
-	return 0;
-}
-
+// An installed plugin is updatable when both its installed version and the registry's
+// version are known and differ. The registry only moves forward, so any mismatch means
+// a newer build is published. Empty/unknown versions never prompt an update.
 export function isPluginUpdatable(
 	installedVersion: string | undefined,
 	latestVersion: string | undefined,
 ): boolean {
-	if (!installedVersion || !latestVersion) return false;
-	const cmp = compareSemver(installedVersion, latestVersion);
-	if (cmp !== null) return cmp < 0;
-	// Non-semver strings: only flag when they differ and we can't order them.
-	return installedVersion !== latestVersion;
+	return !!installedVersion && !!latestVersion && installedVersion !== latestVersion;
 }
 
 // A plugin needs updating when its JS version drifts OR its sidecar drifts. A registry
@@ -129,6 +113,7 @@ export function registerPlugin(plugin: Plugin | PluginBehavior) {
 			name: pendingManifest.name,
 			description: pendingManifest.description || undefined,
 			icon: pendingManifest.icon,
+			experimental: pendingManifest.experimental,
 			...plugin,
 		};
 		plugins.set(merged.id, merged);
@@ -136,7 +121,7 @@ export function registerPlugin(plugin: Plugin | PluginBehavior) {
 	} else {
 		plugins.set((plugin as Plugin).id, plugin as Plugin);
 	}
-	notifyRegistry();
+	emitEvent("plugins:changed");
 }
 
 export function getPlugins(): Plugin[] {
@@ -147,9 +132,17 @@ export function getPlugin(id: string): Plugin | undefined {
 	return plugins.get(id);
 }
 
+/** A plugin with no sidebar, modal, or location panel — it only contributes data
+ *  (enrichment fields) and never shows UI of its own. Unknown for plugins that
+ *  aren't loaded, so uninstalled registry entries report false. */
+export function isBackgroundPlugin(id: string): boolean {
+	const plugin = plugins.get(id);
+	return !!plugin && !plugin.sidebar && !plugin.modal && !plugin.locationPanel;
+}
+
 export function unregisterPlugin(id: string) {
 	plugins.delete(id);
-	notifyRegistry();
+	emitEvent("plugins:changed");
 }
 
 export function isPluginEnabled(id: string): boolean {
@@ -160,7 +153,7 @@ export function setPluginEnabled(id: string, enabled: boolean) {
 	if (enabled) enabledSet.add(id);
 	else enabledSet.delete(id);
 	saveEnabled(enabledSet);
-	notifyRegistry();
+	emitEvent("plugins:changed");
 }
 
 export function getEnabledPlugins(): Plugin[] {
@@ -248,7 +241,7 @@ export function getPluginSetting<T = unknown>(plugin: Plugin, key: string): T {
 
 export function setPluginSetting(id: string, key: string, value: unknown) {
 	createPluginStorage(id).set(key, value);
-	notifyRegistry();
+	emitEvent("plugins:changed");
 }
 
 // --- Activation lifecycle ---
@@ -260,7 +253,7 @@ export function activatePlugins() {
 			if (cleanup) cleanups.set(plugin.id, cleanup);
 		}
 	}
-	notifyRegistry();
+	emitEvent("plugins:changed");
 }
 
 export function deactivatePlugins() {
@@ -287,12 +280,3 @@ export function deactivatePlugin(id: string) {
 	// returned no cleanup — so a disabled plugin's providers/fields/listeners stop.
 	disposePlugin(id);
 }
-
-// --- React subscription for registry changes ---
-
-const {
-	subscribe: subscribeRegistry,
-	getSnapshot: getRegistrySnapshot,
-	notify: notifyRegistry,
-} = createSyncStore();
-export { subscribeRegistry, getRegistrySnapshot };

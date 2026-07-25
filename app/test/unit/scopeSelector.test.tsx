@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
-import type { ScopeController } from "@/store/useMapStore";
+import type { ScopeController } from "@/store/scope";
 
 const ctl = (over: Partial<ScopeController>): ScopeController => ({
 	scope: { kind: "all" },

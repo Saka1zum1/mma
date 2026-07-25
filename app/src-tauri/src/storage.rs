@@ -9,6 +9,33 @@ use crate::types::{AppError, AppResult};
 use rusqlite::Connection;
 use tauri::Manager;
 
+/// Deserialize a JSON text column from a SQLite row, falling back to `T::default()`
+/// on parse failure (forward-compatible with schema evolution).
+pub(crate) fn json_col<T: Default + serde::de::DeserializeOwned>(
+    row: &rusqlite::Row,
+    col: &str,
+) -> rusqlite::Result<T> {
+    let s: String = row.get(col)?;
+    Ok(serde_json::from_str(&s).unwrap_or_default())
+}
+
+/// Push a plain field onto a dynamic SQL UPDATE builder.
+/// Skips `None` fields; clones `Some` values into the boxed param list.
+macro_rules! push_field {
+    ($sets:expr, $vals:expr, $patch:expr, $col:literal, $field:ident) => {
+        if let Some(ref v) = $patch.$field {
+            $sets.push(concat!($col, " = ?"));
+            $vals.push(Box::new(v.clone()));
+        }
+    };
+    (json $sets:expr, $vals:expr, $patch:expr, $col:literal, $field:ident) => {
+        if let Some(ref v) = $patch.$field {
+            $sets.push(concat!($col, " = ?"));
+            $vals.push(Box::new(serde_json::to_string(v).unwrap_or_default()));
+        }
+    };
+}
+
 /// True when running under e2e tests or with `MMA_TEST_DB` set.
 /// Controls which database file and Arrow directory are used, keeping
 /// test data isolated from production.
@@ -479,7 +506,84 @@ const MIGRATIONS: &[(u32, &str)] = &[
         "DROP TABLE IF EXISTS tags;
           DROP INDEX IF EXISTS idx_tags_map_id;",
     ),
+    (
+        19,
+        "CREATE TABLE IF NOT EXISTS remote_mapping (
+            provider   TEXT    NOT NULL,
+            map_id     TEXT    NOT NULL REFERENCES maps(id) ON DELETE CASCADE,
+            local_id   INTEGER NOT NULL,
+            remote_id  INTEGER NOT NULL,
+            hash       TEXT    NOT NULL,
+            PRIMARY KEY (provider, map_id, local_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_remote_mapping_remote ON remote_mapping(provider, map_id, remote_id);",
+    ),
 ];
+
+// ---------------------------------------------------------------------------
+// secret: named secrets in the OS credential store (not the DB)
+// ---------------------------------------------------------------------------
+
+#[cfg(not(test))]
+pub(crate) mod secret {
+    use crate::types::AppResult;
+
+    /// One credential per `name`, all under the app identifier.
+    const SERVICE: &str = "app.map-making.local";
+
+    fn entry(name: &str) -> AppResult<keyring::Entry> {
+        Ok(keyring::Entry::new(SERVICE, name)?)
+    }
+
+    pub fn get(name: &str) -> AppResult<Option<String>> {
+        match entry(name)?.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn set(name: &str, value: &str) -> AppResult<()> {
+        Ok(entry(name)?.set_password(value)?)
+    }
+
+    pub fn delete(name: &str) -> AppResult<()> {
+        match entry(name)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+/// Test builds swap in a thread-local map so the suite never touches the real keychain.
+#[cfg(test)]
+pub(crate) mod secret {
+    use crate::types::AppResult;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    thread_local! {
+        static STORE: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    }
+
+    pub fn get(name: &str) -> AppResult<Option<String>> {
+        Ok(STORE.with(|s| s.borrow().get(name).cloned()))
+    }
+
+    pub fn set(name: &str, value: &str) -> AppResult<()> {
+        STORE.with(|s| {
+            s.borrow_mut().insert(name.to_string(), value.to_string());
+        });
+        Ok(())
+    }
+
+    pub fn delete(name: &str) -> AppResult<()> {
+        STORE.with(|s| {
+            s.borrow_mut().remove(name);
+        });
+        Ok(())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Arrow IPC

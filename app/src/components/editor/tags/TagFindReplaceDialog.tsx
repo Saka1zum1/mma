@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { getVisibleTags, updateTags } from "@/store/useMapStore";
-import { textColorFor } from "@/lib/util/color";
+import { TagPill } from "@/components/primitives/TagPill";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
@@ -97,19 +97,9 @@ export function TagFindReplaceDialog({
 											key={t.id}
 											style={{ padding: "1px 0", display: "flex", alignItems: "center", gap: 6 }}
 										>
-											<span
-												className="tag is-small"
-												style={{ backgroundColor: t.color, color: textColorFor(t.color) }}
-											>
-												<span className="tag__text">{t.name}</span>
-											</span>
+											<TagPill small color={t.color} label={t.name} />
 											<span style={{ opacity: 0.5 }}>&rarr;</span>
-											<span
-												className="tag is-small"
-												style={{ backgroundColor: t.color, color: textColorFor(t.color) }}
-											>
-												<span className="tag__text">{newName}</span>
-											</span>
+											<TagPill small color={t.color} label={newName} />
 										</li>
 									);
 								})}

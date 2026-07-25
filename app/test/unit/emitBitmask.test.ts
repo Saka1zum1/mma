@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { emitBitmask, selBitmaskBus } from "@/store/useMapStore";
+import { emitBitmask } from "@/store/useMapStore";
+import { subscribe } from "@/lib/events";
 import type { SelCellEntry } from "@/lib/render/CellManager";
 
 const le32 = (n: number) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255];
@@ -7,7 +8,7 @@ const le32 = (n: number) => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24)
 /** Capture the cellEntries emitBitmask emits for a crafted wire message. */
 function decode(bytes: number[]): SelCellEntry[] {
 	let captured: SelCellEntry[] = [];
-	const unsub = selBitmaskBus.on((_colors, cellEntries) => {
+	const unsub = subscribe("render:selection", ({ cellEntries }) => {
 		captured = cellEntries;
 	});
 	emitBitmask(bytes);

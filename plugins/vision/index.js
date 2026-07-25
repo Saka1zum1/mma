@@ -284,7 +284,7 @@ var SIMILARITY_THRESHOLD = 0.85;
 function FindSimilarButton() {
   const [running, setRunning] = (0, import_react2.useState)(false);
   const [result, setResult] = (0, import_react2.useState)(null);
-  const active = MMA.getActiveLocation();
+  const active = MMA.getMapState().activeLocation;
   if (!active?.panoId) return null;
   const run = async () => {
     setRunning(true);

@@ -40,7 +40,7 @@ async function computePivot(
 	fieldDef: ExtraFieldDef | undefined,
 	bucketCount: number | null,
 ): Promise<PivotData | null> {
-	const map = MMA.getCurrentMap();
+	const map = MMA.getMapState().map;
 	if (!map) return null;
 
 	if (!locStore) locStore = await MMA.createLocationStore();
@@ -55,7 +55,7 @@ async function computePivot(
 		rowDefs = [{ label: "All locations", color: [140, 140, 140] }];
 		idSets = [allIds];
 	} else if (rowSource === "active") {
-		const sels = MMA.getSelections();
+		const sels = MMA.getActiveSelections();
 		if (sels.length === 0) return null;
 		rowDefs = sels.map((s: Selection) => ({
 			label: selectionDisplayName(s),
@@ -90,7 +90,7 @@ async function computePivot(
 	}
 
 	const isTags = fieldKey === TAGS_FIELD_KEY;
-	const tagMap = map.meta.tags;
+	const tagMap = MMA.getMapState().tags;
 	const isNumeric = !isTags && (fieldDef?.type === "number" || fieldDef?.type === "date");
 
 	// Numeric fields explode into one column per distinct value; bucket them into
@@ -186,7 +186,7 @@ async function computePivot(
 	const extraLabels = fieldDef?.labels ?? {};
 	const columnLabels = columns.map((c) => {
 		if (c === NA_KEY) return "N/A";
-		if (isTags) return tagMap[c]?.name ?? `Tag ${c}`;
+		if (isTags) return tagMap[Number(c)]?.name ?? `Tag ${c}`;
 		return extraLabels[c] ?? c;
 	});
 
@@ -221,7 +221,7 @@ function defaultPivotField(fields: FieldEntry[]): string {
 export function PivotSidebar({ onClose }: { onClose: () => void }) {
 	const [rowSourceRaw, setRowSource] = usePluginState<RowSource>("pivot", "rowSource", "active");
 	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("pivot", "fieldKey", () =>
-		defaultPivotField(buildPivotFields(MMA.getKnownFieldKeys())),
+		defaultPivotField(buildPivotFields(MMA.getMapState().knownFieldKeys)),
 	);
 	const [bucketCount, setBucketCount] = usePluginState<number | null>("pivot", "bucketCount", 10);
 	const [valueMode, setValueMode] = usePluginState<ValueMode>("pivot", "valueMode", "count");
@@ -229,7 +229,7 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 	const [data, setData] = useState<PivotData | null>(null);
 	const [loading, setLoading] = useState(false);
 
-	const knownKeys = MMA.getKnownFieldKeys();
+	const knownKeys = MMA.getMapState().knownFieldKeys;
 	const fields = useMemo(() => buildPivotFields(knownKeys), [knownKeys]);
 
 	const savedSelections: SavedSelection[] = MMA.getSettings().savedSelections;
@@ -380,14 +380,14 @@ function PivotTable({ data, mode, stale }: { data: PivotData; mode: ValueMode; s
 		() => data.columnProps?.map((p) => (p ? buildSelection(p).key : null)),
 		[data],
 	);
-	const liveKeys = new Set(MMA.getSelections().map((s) => s.key));
+	const liveKeys = new Set(MMA.getActiveSelections().map((s) => s.key));
 
 	const toggleColumnSelection = useCallback(
 		(i: number) => {
 			const props = data.columnProps?.[i];
 			if (!props) return;
 			const key = columnKeys?.[i];
-			if (key && MMA.getSelections().some((s) => s.key === key)) {
+			if (key && MMA.getActiveSelections().some((s) => s.key === key)) {
 				MMA.removeSelections([key]);
 			} else {
 				MMA.addSelections([props]);

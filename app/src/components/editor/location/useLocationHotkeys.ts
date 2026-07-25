@@ -1,32 +1,20 @@
 import {
 	useEffect,
 	useEffectEvent,
-	useRef,
 	type Dispatch,
 	type RefObject,
 	type SetStateAction,
 } from "react";
 import type { Location } from "@/bindings.gen";
-import {
-	getActiveLocation,
-	getCurrentMap,
-	getVisibleTags,
-	getTagCounts,
-	duplicateLocation,
-	addLocations,
-} from "@/store/useMapStore";
+import { getMapState, getVisibleTags, duplicateLocation, addLocations } from "@/store/useMapStore";
 import { sortTagsByMode } from "@/lib/util/util";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { getSettings, setSetting } from "@/store/settings";
 import { PANO_ZOOM } from "@/lib/sv/constants";
 import { tweenPov } from "@/lib/sv/tweenPov";
-import {
-	type PanoReference,
-	nearestLinkHeading,
-	followLinkedPanos,
-	showToast,
-} from "@/lib/sv/lookup";
+import { type PanoReference, nearestLinkHeading, followLinkedPanos } from "@/lib/sv/lookup";
+import { toast } from "@/lib/util/toast";
 import { downloadPano } from "@/lib/sv/panoDownload";
 import { isVirtualLocation } from "@/types";
 import { reviewNext, reviewPrev } from "@/lib/review/review";
@@ -54,8 +42,6 @@ interface LocationHotkeyDeps {
 	handleDelete: () => void;
 	handleReturnToSpawn: () => void;
 	handleDateChange: (panoId: string | null) => void;
-	/** Active panorama (Google singleton or alt provider proxy). */
-	panorama?: google.maps.StreetViewPanorama | null;
 }
 
 export function useLocationHotkeys(deps: LocationHotkeyDeps) {
@@ -75,12 +61,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleDelete,
 		handleReturnToSpawn,
 		handleDateChange,
-		panorama: panoramaProp,
 	} = deps;
-
-	const panoramaRef = useRef(panoramaProp);
-	panoramaRef.current = panoramaProp;
-	const pano = () => panoramaRef.current ?? singletonPano;
 
 	useHotkey(useBinding("locationSave"), () => {
 		if (location) handleSave();
@@ -101,54 +82,49 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleReturnToSpawn();
 	});
 	useHotkey(useBinding("pointNorth"), () => {
-		const panorama = pano();
-		if (panorama) {
+		if (singletonPano) {
 			cancelTweenRef.current?.();
-			const h = panorama.getPov().heading;
-			if (Math.abs(h) < 1 && Math.abs(panorama.getPov().pitch) < 1) {
-				cancelTweenRef.current = tweenPov(panorama, { heading: 0, pitch: -90 });
+			const h = singletonPano.getPov().heading;
+			if (Math.abs(h) < 1 && Math.abs(singletonPano.getPov().pitch) < 1) {
+				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: -90 });
 			} else {
-				cancelTweenRef.current = tweenPov(panorama, { heading: 0, pitch: 0 });
+				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: 0 });
 			}
 		}
 	});
 	useHotkey(useBinding("centerRoad"), () => {
-		const panorama = pano();
-		if (!panorama) return;
-		const headings = (panorama.getLinks() ?? [])
+		if (!singletonPano) return;
+		const headings = (singletonPano.getLinks() ?? [])
 			.map((l) => l?.heading)
 			.filter((h): h is number => h != null);
-		const nearest = nearestLinkHeading(headings, panorama.getPov().heading);
+		const nearest = nearestLinkHeading(headings, singletonPano.getPov().heading);
 		if (nearest == null) return;
 		cancelTweenRef.current?.();
-		cancelTweenRef.current = tweenPov(panorama, { heading: nearest, pitch: 0 });
+		cancelTweenRef.current = tweenPov(singletonPano, { heading: nearest, pitch: 0 });
 	});
 	useHotkey(useBinding("spin180"), () => {
-		const panorama = pano();
-		if (panorama) {
+		if (singletonPano) {
 			cancelTweenRef.current?.();
-			const pov = panorama.getPov();
-			cancelTweenRef.current = tweenPov(panorama, {
+			const pov = singletonPano.getPov();
+			cancelTweenRef.current = tweenPov(singletonPano, {
 				heading: (pov.heading + 180) % 360,
 				pitch: pov.pitch,
 			});
 		}
 	});
+	const canZoom = () => getSettings().defaultMovementMode !== "nmpz";
 	useHotkey(useBinding("zoomIn"), () => {
-		const panorama = pano();
-		if (panorama) {
-			panorama.setZoom(Math.min(PANO_ZOOM.max, Math.max(0, panorama.getZoom()) + 1));
+		if (singletonPano && canZoom()) {
+			singletonPano.setZoom(Math.min(PANO_ZOOM.max, Math.max(0, singletonPano.getZoom()) + 1));
 		}
 	});
 	useHotkey(useBinding("zoomOut"), () => {
-		const panorama = pano();
-		if (panorama) {
-			panorama.setZoom(Math.max(0, panorama.getZoom() - 1));
+		if (singletonPano && canZoom()) {
+			singletonPano.setZoom(Math.max(0, singletonPano.getZoom() - 1));
 		}
 	});
 	useHotkey(useBinding("panoZoomReset"), () => {
-		const panorama = pano();
-		if (panorama) panorama.setZoom(PANO_ZOOM.min);
+		if (singletonPano && canZoom()) singletonPano.setZoom(PANO_ZOOM.min);
 	});
 	useHotkey(
 		useBinding("copyLink"),
@@ -180,8 +156,8 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	});
 
 	useHotkey(useBinding("downloadPanoTile"), () => {
-		const panoId = pano()?.getPano();
-		if (panoId) void downloadPano(panoId, { location, zoom: 5 });
+		const panoId = singletonPano?.getPano();
+		if (panoId) downloadPano(panoId);
 	});
 	useHotkey(useBinding("nextPanoDate"), () => {
 		if (!panoDates.length) return;
@@ -200,25 +176,24 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleDateChange(panoDates[prev].pano);
 	});
 	useHotkey(useBinding("followRoad"), () => {
-		const panorama = pano();
-		if (!panorama) return;
-		const panoId = panorama.getPano();
-		const heading = panorama.getPov().heading;
+		if (!singletonPano) return;
+		const panoId = singletonPano.getPano();
+		const heading = singletonPano.getPov().heading;
 		if (!panoId) return;
 		const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
-		if (container) showToast(container, "Following road...");
+		if (container) toast("Following road...", 1500, container);
 		followLinkedPanos(panoId, heading)
 			.then((locs) => {
 				if (locs.length > 0) addLocations(locs);
-				if (container) showToast(container, `Added ${locs.length} locations`);
+				if (container) toast(`Added ${locs.length} locations`, 1500, container);
 			})
 			.catch(() => {
-				if (container) showToast(container, "Follow road failed");
+				if (container) toast("Follow road failed", 1500, container);
 			});
 	});
 
 	useHotkey(useBinding("refreshPano"), () => {
-		if (!singletonPano || !location || panoramaRef.current) return;
+		if (!singletonPano || !location) return;
 		const panoId = singletonPano.getPano();
 		const pov = singletonPano.getPov();
 		const zoom = singletonPano.getZoom();
@@ -235,13 +210,16 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	});
 
 	useHotkey(useBinding("viewportLock"), () => {
-		const panorama = pano();
-		if (panorama) toggleViewportLock(panorama);
+		if (singletonPano) toggleViewportLock(singletonPano);
 	});
 
 	const quicktagSlot = (idx: number) => {
-		if (!location || !getCurrentMap()) return;
-		const tags = sortTagsByMode(getVisibleTags(), getSettings().tagSortMode, getTagCounts());
+		if (!location || !getMapState().map) return;
+		const tags = sortTagsByMode(
+			getVisibleTags(),
+			getSettings().tagSortMode,
+			getMapState().tagCounts,
+		);
 		if (idx >= tags.length) return;
 		const tag = tags[idx];
 		const has = pendingTags.includes(tag.name);
@@ -249,7 +227,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	};
 
 	const onApplyTag = useEffectEvent(({ tagId }: { tagId: number }) => {
-		const active = getActiveLocation();
+		const active = getMapState().activeLocation;
 		if (!active || isVirtualLocation(active)) return false;
 		const tag = getVisibleTags().find((t) => t.id === tagId);
 		if (!tag) return false;
@@ -263,7 +241,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		if (!hasLocation) return;
 		const unregisterApply = registerMapKeyActionHandler("applyTag", (action) => onApplyTag(action));
 		const unregisterCopy = registerMapKeyActionHandler("copyToMap", ({ mapId }) => {
-			const loc = getActiveLocation();
+			const loc = getMapState().activeLocation;
 			if (!loc || isVirtualLocation(loc)) return false;
 			const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
 			const t0 = performance.now();
@@ -272,14 +250,15 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 				.then((res) => {
 					log.debug(`[copyToMap] ipc=${Math.round(performance.now() - t0)}ms`);
 					if (!container) return;
-					showToast(
-						container,
+					toast(
 						res.copied > 0 ? `Copied to "${res.targetName}"` : `Already in "${res.targetName}"`,
+						1500,
+						container,
 					);
 				})
 				.catch((e) => {
 					log.error("[copyToMap] failed:", e);
-					if (container) showToast(container, "Copy failed");
+					if (container) toast("Copy failed", 1500, container);
 				});
 		});
 		return () => {

@@ -1,22 +1,22 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Checkbox } from "@/components/primitives/Checkbox";
+import { renameMap, updateMapLabels } from "@/store/useMapStore";
 import {
 	useMapList,
 	createMap,
 	deleteMap,
-	renameMap,
 	renameFolder,
 	deleteFolder,
 	moveMapToFolder,
 	invalidateMapList,
-	updateMapLabels,
-} from "@/store/useMapStore";
+} from "@/store/mapList";
 import { openMapWindow } from "@/lib/window";
 import { log, fireAndForget } from "@/lib/util/log";
+import { cmpVersion } from "@/lib/util/util";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "@/lib/commands";
-import { mmaBufUrl } from "@/lib/util/util";
+import { mmaBufUrl, downloadBlob } from "@/lib/util/util";
 import { listen } from "@tauri-apps/api/event";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Dialog, DialogContent, useCloseDialog } from "@/components/primitives/Dialog";
@@ -73,17 +73,6 @@ function parseChangelog(md: string): ChangelogSection[] {
 }
 
 declare const __APP_VERSION__: string;
-
-// Compare two version strings (e.g. "0.6.1"). Returns >0 if a > b.
-function cmpVersion(a: string, b: string): number {
-	const pa = a.split(".").map(Number);
-	const pb = b.split(".").map(Number);
-	for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-		const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-		if (d) return d;
-	}
-	return 0;
-}
 
 // Inline markdown: **bold**, *italic*, `code`, [text](url).
 function renderInline(text: string, kb: string): React.ReactNode[] {
@@ -815,13 +804,7 @@ export function BulkActions() {
 		try {
 			const path = await cmd.storeExportBulkZip();
 			const res = await fetch(mmaBufUrl(path));
-			const blob = await res.blob();
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = `mma-backup-${new Date().toISOString().slice(0, 10)}.zip`;
-			a.click();
-			URL.revokeObjectURL(url);
+			downloadBlob(await res.blob(), `mma-backup-${new Date().toISOString().slice(0, 10)}.zip`);
 			progress.finish("Export saved");
 		} catch {
 			progress.finish();

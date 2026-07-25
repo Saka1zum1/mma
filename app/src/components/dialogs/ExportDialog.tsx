@@ -1,10 +1,11 @@
-import { useState, useEffect, useId } from "react";
+import { useState, useId } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { Radio } from "@/components/primitives/Radio";
 import { TextInput } from "@/components/primitives/TextInput";
-import { useCurrentMap, useSelectedLocationIds, getVisibleTags } from "@/store/useMapStore";
+import { useMapState, getVisibleTags } from "@/store/useMapStore";
+import type { Scope } from "@/bindings.gen";
 import { useMapSetting } from "@/store/useMapSetting";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl, saveExportTempFile } from "@/lib/util/util";
@@ -17,36 +18,23 @@ interface Props {
 	onClose: () => void;
 }
 
-enum ExportScope {
-	All = 0,
-	Selection = 1,
-}
-
-async function fetchExportFile(path: string): Promise<string> {
-	const res = await fetch(mmaBufUrl(path));
-	return res.text();
-}
-
 export function ExportDialog({ onClose }: Props) {
-	const map = useCurrentMap();
-	const selectedIds = useSelectedLocationIds();
+	const map = useMapState((s) => s.map);
+	const selectedIds = useMapState((s) => s.selectedLocationIds);
+	const locationCount = useMapState((s) => s.locationCount);
 	const uid = useId();
 
-	const [locationCount, setLocationCount] = useState(0);
-	const [scope, setScope] = useState(ExportScope.All);
+	const [scope, setScope] = useState<Scope>({ kind: "all" });
 	const [saveZoom, setSaveZoom] = useMapSetting("exportZoom");
 	const [saveExtras, setSaveExtras] = useMapSetting("exportExtras");
 	const [bypassUnpanned, setBypassUnpanned] = useMapSetting("exportUnpanned");
 	const [fileName, setFileName] = useState(map?.meta.name ?? "");
 	const selCount = selectedIds.size;
-	useEffect(() => {
-		if (map) cmd.storeLocationCount().then(setLocationCount);
-	}, [map]);
 
 	if (!map) return null;
 
 	const baseName = fileName || map.meta.name || "export";
-	const scopeIds = scope === ExportScope.Selection ? [...selectedIds] : undefined;
+	const scopeIds = scope.kind === "all" ? undefined : [...selectedIds];
 
 	const tagsJson = () => JSON.stringify(Object.fromEntries(getVisibleTags().map((t) => [t.id, t])));
 
@@ -77,7 +65,8 @@ export function ExportDialog({ onClose }: Props) {
 	};
 
 	const copyJson = withFeedback(
-		async () => navigator.clipboard.writeText(await fetchExportFile(await jsonPath())),
+		async () =>
+			navigator.clipboard.writeText(await (await fetch(mmaBufUrl(await jsonPath()))).text()),
 		"Copied JSON to clipboard",
 	);
 	const downloadJson = withFeedback(
@@ -86,7 +75,8 @@ export function ExportDialog({ onClose }: Props) {
 	);
 
 	const copyCsv = withFeedback(
-		async () => navigator.clipboard.writeText(await fetchExportFile(await csvPath())),
+		async () =>
+			navigator.clipboard.writeText(await (await fetch(mmaBufUrl(await csvPath()))).text()),
 		"Copied CSV to clipboard",
 	);
 	const downloadCsv = withFeedback(
@@ -118,18 +108,18 @@ export function ExportDialog({ onClose }: Props) {
 						<label>
 							<Radio
 								name="selection"
-								value={ExportScope.All}
-								checked={scope === ExportScope.All}
-								onChange={(e) => setScope(Number(e.target.value))}
+								value="all"
+								checked={scope.kind === "all"}
+								onChange={() => setScope({ kind: "all" })}
 							/>
 							Export everything ({fmt.format(locationCount)} locations)
 						</label>
 						<label>
 							<Radio
 								name="selection"
-								value={ExportScope.Selection}
-								checked={scope === ExportScope.Selection}
-								onChange={(e) => setScope(Number(e.target.value))}
+								value="selected"
+								checked={scope.kind === "selected"}
+								onChange={() => setScope({ kind: "selected" })}
 								disabled={selCount === 0}
 							/>
 							<span style={selCount === 0 ? { opacity: 0.7 } : undefined}>

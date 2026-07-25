@@ -390,43 +390,17 @@ function StreetViewBody() {
 	return (
 		<>
 			<GroupHeading>Navigation</GroupHeading>
-			<SettingRow
-				checked={s.showLinksControl}
-				onChange={(v) => setSetting("showLinksControl", v)}
-				label="Show link arrows (ground navigation)"
-			/>
-			<SettingRow
-				checked={s.clickToGo}
-				onChange={(v) => setSetting("clickToGo", v)}
-				label="Show click-to-go navigation"
-			/>
+			<SettingRow setting="showLinksControl" label="Show link arrows (ground navigation)" />
+			<SettingRow setting="clickToGo" label="Show click-to-go navigation" />
 			{s.clickToGo && (
 				<>
-					<SettingRow
-						sub
-						checked={s.showNavArrow}
-						onChange={(v) => setSetting("showNavArrow", v)}
-						label="Show navigation X"
-					/>
-					<SettingRow
-						sub
-						checked={s.showGroundArrow}
-						onChange={(v) => setSetting("showGroundArrow", v)}
-						label="Show ground arrow"
-					/>
+					<SettingRow sub setting="showNavArrow" label="Show navigation X" />
+					<SettingRow sub setting="showGroundArrow" label="Show ground arrow" />
 				</>
 			)}
-			<SettingRow
-				checked={s.showRoadLabels}
-				onChange={(v) => setSetting("showRoadLabels", v)}
-				label="Show road labels"
-			/>
-			<SettingRow checked={s.showCar} onChange={(v) => setSetting("showCar", v)} label="Show car" />
-			<SettingRow
-				checked={s.showCrosshair}
-				onChange={(v) => setSetting("showCrosshair", v)}
-				label="Show crosshair"
-			/>
+			<SettingRow setting="showRoadLabels" label="Show road labels" />
+			<SettingRow setting="showCar" label="Show car" />
+			<SettingRow setting="showCrosshair" label="Show crosshair" />
 			<SettingRow
 				label="Default movement mode"
 				control={<SettingSelect setting="defaultMovementMode" options={MOVEMENT_MODES} />}
@@ -450,37 +424,18 @@ function StreetViewBody() {
 
 			<GroupHeading>Viewer controls</GroupHeading>
 			{controls.map(({ key, label }) => (
-				<SettingRow
-					key={key}
-					checked={s[key] as boolean}
-					onChange={(v) => setSetting(key, v)}
-					label={label}
-				/>
+				<SettingRow key={key} setting={key} label={label} />
 			))}
 
 			<GroupHeading>Fullscreen</GroupHeading>
-			<SettingRow
-				checked={s.showFullscreenMinimap}
-				onChange={(v) => setSetting("showFullscreenMinimap", v)}
-				label="Show minimap in fullscreen"
-			/>
-			<SettingRow
-				checked={s.showFullscreenTagbar}
-				onChange={(v) => setSetting("showFullscreenTagbar", v)}
-				label="Show tag bar in fullscreen"
-			/>
-			<SettingRow
-				checked={s.showFullscreenDatePicker}
-				onChange={(v) => setSetting("showFullscreenDatePicker", v)}
-				label="Show date picker in fullscreen"
-			/>
+			<SettingRow setting="showFullscreenMinimap" label="Show minimap in fullscreen" />
+			<SettingRow setting="showFullscreenTagbar" label="Show tag bar in fullscreen" />
+			<SettingRow setting="showFullscreenDatePicker" label="Show date picker in fullscreen" />
+			<SettingRow setting="showFullscreenReviewBar" label="Show review bar in fullscreen" />
+			<SettingRow setting="showFullscreenGeocode" label="Show geocoding info in fullscreen" />
 
 			<GroupHeading>Date picker</GroupHeading>
-			<SettingRow
-				checked={s.showCameraBadges}
-				onChange={(v) => setSetting("showCameraBadges", v)}
-				label="Show camera type badges (Gen1, Gen2, etc.)"
-			/>
+			<SettingRow setting="showCameraBadges" label="Show camera type badges (Gen1, Gen2, etc.)" />
 			<SettingRow
 				label="Exact date format"
 				control={<SettingSelect setting="exactDateFormat" options={EXACT_DATE_FORMATS} />}
@@ -498,14 +453,9 @@ function MarkersBody() {
 	return (
 		<>
 			<GroupHeading>Fullscreen</GroupHeading>
+			<SettingRow setting="showFullscreenMapMeta" label="Show map meta bar in fullscreen" />
 			<SettingRow
-				checked={s.showFullscreenMapMeta}
-				onChange={(v) => setSetting("showFullscreenMapMeta", v)}
-				label="Show map meta bar in fullscreen"
-			/>
-			<SettingRow
-				checked={s.showFullscreenMiniLocationPreview}
-				onChange={(v) => setSetting("showFullscreenMiniLocationPreview", v)}
+				setting="showFullscreenMiniLocationPreview"
 				label="Show mini location preview in fullscreen"
 			/>
 
@@ -522,11 +472,7 @@ function MarkersBody() {
 					/>
 				}
 			/>
-			<SettingRow
-				checked={s.panToImported}
-				onChange={(v) => setSetting("panToImported", v)}
-				label="Pan to imported locations"
-			/>
+			<SettingRow setting="panToImported" label="Pan to imported locations" />
 			<SettingRow
 				sub
 				disabled={!s.panToImported}
@@ -590,8 +536,7 @@ function MarkersBody() {
 				}
 			/>
 			<SettingRow
-				checked={s.followActiveInReview}
-				onChange={(v) => setSetting("followActiveInReview", v)}
+				setting="followActiveInReview"
 				label="Center map on active location during review"
 			/>
 
@@ -792,17 +737,12 @@ function EditingBody() {
 					/>
 					<SettingRow
 						sub
-						checked={s.truncateTagPaths}
-						onChange={(v) => setSetting("truncateTagPaths", v)}
+						setting="truncateTagPaths"
 						label="Truncate tag names to shortest unique path"
 					/>
 				</>
 			)}
-			<SettingRow
-				checked={s.animateTagReorder}
-				onChange={(v) => setSetting("animateTagReorder", v)}
-				label="Animate tags during drag reorder"
-			/>
+			<SettingRow setting="animateTagReorder" label="Animate tags during drag reorder" />
 			<SettingRow
 				label="Tag gap"
 				control={
@@ -831,19 +771,10 @@ function EditingBody() {
 			/>
 
 			<GroupHeading>Seen</GroupHeading>
-			<SettingRow
-				checked={s.enableSeen}
-				onChange={(v) => setSetting("enableSeen", v)}
-				label="Log viewed panos"
-			/>
+			<SettingRow setting="enableSeen" label="Log viewed panos" />
 			{s.enableSeen && (
 				<>
-					<SettingRow
-						sub
-						checked={s.enableSeenThumbnails}
-						onChange={(v) => setSetting("enableSeenThumbnails", v)}
-						label="Save thumbnails"
-					/>
+					<SettingRow sub setting="enableSeenThumbnails" label="Save thumbnails" />
 					{s.enableSeenThumbnails && (
 						<SettingRow
 							sub
@@ -1009,15 +940,10 @@ function UpdateBlock() {
 }
 
 function ApplicationBody() {
-	const restoreSession = useSetting("restoreSession");
 	return (
 		<>
 			<GroupHeading>Startup</GroupHeading>
-			<SettingRow
-				checked={restoreSession}
-				onChange={(v) => setSetting("restoreSession", v)}
-				label="Restore open maps on startup"
-			/>
+			<SettingRow setting="restoreSession" label="Restore open maps on startup" />
 
 			<GroupHeading>Map list</GroupHeading>
 			<MapListBlock />
@@ -1160,18 +1086,13 @@ function DataBody() {
 }
 
 function AdvancedBody() {
-	const showFps = useSetting("showFps");
 	return (
 		<>
 			<GroupHeading>Custom CSS</GroupHeading>
 			<CustomCssBlock />
 
 			<GroupHeading>Debug</GroupHeading>
-			<SettingRow
-				checked={showFps}
-				onChange={(v) => setSetting("showFps", v)}
-				label="Show FPS counter"
-			/>
+			<SettingRow setting="showFps" label="Show FPS counter" />
 			<Aux match="log file logs diagnostics">
 				<div style={{ display: "flex", gap: 8 }}>
 					<Button onClick={() => cmd.openLogFile()}>Open log file</Button>

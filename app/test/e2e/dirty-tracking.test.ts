@@ -24,20 +24,20 @@ describe("Dirty tracking", () => {
 	});
 
 	it("starts with zero dirty count on new map", async () => {
-		const count = await withApi(async (api) => api.getDirtyCount());
+		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(count).toBe(0);
 	});
 
 	it("dirty count increases after adding locations", async () => {
 		await addLocs([createLocation({ lat: 10, lng: 20 })]);
-		const count = await withApi(async (api) => api.getDirtyCount());
+		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(count).toBeGreaterThan(0);
 	});
 
 	it("dirty count decreases after flush", async () => {
-		const before = await withApi(async (api) => api.getDirtyCount());
+		const before = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		await flushAndWait();
-		const after = await withApi(async (api) => api.getDirtyCount());
+		const after = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(after).toBeLessThanOrEqual(before);
 	});
 
@@ -50,7 +50,7 @@ describe("Dirty tracking", () => {
 			await api.updateLocations([{ id: l.id, patch: { heading: 90 } }]);
 		}, loc);
 
-		const count = await withApi(async (api) => api.getDirtyCount());
+		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(count).toBeGreaterThan(0);
 	});
 
@@ -62,7 +62,7 @@ describe("Dirty tracking", () => {
 			await api.removeLocations(new Set([id]));
 		}, ids[0]);
 
-		const count = await withApi(async (api) => api.getDirtyCount());
+		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(count).toBeGreaterThan(0);
 	});
 
@@ -73,7 +73,7 @@ describe("Dirty tracking", () => {
 			createLocation({ lat: 2, lng: 2 }),
 			createLocation({ lat: 3, lng: 3 }),
 		]);
-		const count = await withApi(async (api) => api.getDirtyCount());
+		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(count).toBeGreaterThan(0);
 	});
 });
@@ -96,13 +96,13 @@ describe("Dirty tracking across undo/redo", () => {
 		await flushAndWait();
 
 		await withApi(async (api) => api.undo());
-		const afterUndo = await withApi(async (api) => api.getDirtyCount());
+		const afterUndo = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(afterUndo).toBeGreaterThan(0);
 	});
 
 	it("redo after undo also marks dirty", async () => {
 		await withApi(async (api) => api.redo());
-		const count = await withApi(async (api) => api.getDirtyCount());
+		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
 		expect(count).toBeGreaterThan(0);
 	});
 });

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
-import { getDirtyCount, getCurrentMap } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 import {
 	startFrameMeter,
 	stopFrameMeter,
@@ -90,7 +90,7 @@ async function gatherStats(): Promise<Stats> {
 		locations: dbStats.locations,
 		tags: dbStats.tags,
 		commits: dbStats.commits,
-		pendingSaves: getCurrentMap() ? await getDirtyCount() : 0,
+		pendingSaves: getMapState().map ? (await cmd.storeGetSummary()).dirtyCount : 0,
 		dbSize,
 		journalMode: dbStats.journalMode,
 		foreignKeys: dbStats.foreignKeys ? "ON" : "OFF",

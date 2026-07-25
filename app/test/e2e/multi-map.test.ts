@@ -77,8 +77,7 @@ describe("Multi-map isolation", () => {
 
 		await openMap(mapBId);
 		const hasTags = await withApi(async (api) => {
-			const map = api.getCurrentMap();
-			const tagNames = Object.values(map!.meta.tags).map((t: any) => t.name);
+			const tagNames = Object.values(api.getMapState().tags).map((t: any) => t.name);
 			return tagNames.includes("MapA-Only");
 		});
 		expect(hasTags).toBe(false);
@@ -94,7 +93,10 @@ describe("Multi-map isolation", () => {
 
 		// Open map B, check undo state
 		await openMap(mapBId);
-		await withApi(async (api) => api.getUndoRedoState());
+		await withApi(async (api) => ({
+			canUndo: api.getMapState().canUndo,
+			canRedo: api.getMapState().canRedo,
+		}));
 		await closeMap();
 
 		// Open map A, undo
@@ -107,13 +109,13 @@ describe("Multi-map isolation", () => {
 
 	it("selections are reset when switching maps", async () => {
 		await openMap(mapAId);
-		await withApi(async (api) => api.selectEverything());
-		const selCountA = await withApi(async (api) => api.getSelections().length);
+		await withApi(async (api) => api.addSelections([{ type: "Everything" }]));
+		const selCountA = await withApi(async (api) => api.getActiveSelections().length);
 		expect(selCountA).toBeGreaterThan(0);
 		await closeMap();
 
 		await openMap(mapBId);
-		const selCountB = await withApi(async (api) => api.getSelections().length);
+		const selCountB = await withApi(async (api) => api.getActiveSelections().length);
 		expect(selCountB).toBe(0);
 		await closeMap();
 	});
@@ -148,12 +150,12 @@ describe("Multi-map metadata isolation", () => {
 
 	it("each map retains its own description", async () => {
 		await openMap(map1Id);
-		const desc1 = await withApi(async (api) => api.getCurrentMap()!.meta.description);
+		const desc1 = await withApi(async (api) => api.getMapState().map!.meta.description);
 		expect(desc1).toBe("Description 1");
 		await closeMap();
 
 		await openMap(map2Id);
-		const desc2 = await withApi(async (api) => api.getCurrentMap()!.meta.description);
+		const desc2 = await withApi(async (api) => api.getMapState().map!.meta.description);
 		expect(desc2).toBe("Description 2");
 		await closeMap();
 	});

@@ -1,7 +1,7 @@
 //! Tauri command layer and URI scheme proxies for the MMA desktop app.
 //!
 //! This is the application entry point. It registers all IPC commands (via tauri-specta),
-//! custom URI scheme handlers (svtile, gmaps, bmaps, googl, mma-buf, mma-plugin), and Tauri plugins.
+//! custom URI scheme handlers (svtile, gmaps, googl, mma-buf, mma-plugin), and Tauri plugins.
 //! No business logic lives here -- commands delegate to `location_store`, `map_meta`, `import`, etc.
 
 use crate::types::{AppError, AppResult};
@@ -25,12 +25,6 @@ pub fn promote_serialize_bindings(path: &std::path::Path) {
         out.push_str(&line.replace("_Serialize", ""));
         out.push('\n');
     }
-    // `MapSettings` uses `#[serde(default)]`, so specta marks every field optional —
-    // including `providers`. The generated IPC transforms then access
-    // `.providers.apple` etc. without a null check and fail `strict` TS (and
-    // dts-bundle-generator). Rust always emits `providers` (Default), so keep it
-    // required in the unified bindings type.
-    let out = out.replace("providers?: ProvidersSettings", "providers: ProvidersSettings");
     std::fs::write(path, out.as_bytes()).expect("write bindings");
 }
 
@@ -38,6 +32,7 @@ mod arrow_bridge;
 mod arrow_migrate;
 mod selections;
 mod spatial;
+#[macro_use]
 mod storage;
 mod types;
 mod util;
@@ -47,14 +42,22 @@ mod borders;
 mod export;
 mod gdoc;
 mod geocoder;
+mod geoguessr;
 mod import;
 mod map_meta;
 mod plugins;
 mod presence;
 mod remote_api;
+mod remote_mapping;
 mod review;
 mod seen;
 mod sidecar;
+mod sync;
+mod sync_diff;
+mod sync_engine;
+mod sync_geoguessr;
+mod sync_keying;
+mod sync_map_making;
 mod vcs;
 mod vcs_delta;
 
@@ -200,6 +203,8 @@ struct PluginManifest {
     icon: String,
     main: String,
     version: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    experimental: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     sidecar: Option<PluginSidecar>,
 }
@@ -286,6 +291,10 @@ fn list_user_plugins() -> Vec<PluginManifest> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                let experimental = val
+                    .get("experimental")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let sidecar = parse_sidecar(&val);
                 plugins.push(PluginManifest {
                     id,
@@ -294,6 +303,7 @@ fn list_user_plugins() -> Vec<PluginManifest> {
                     icon,
                     main,
                     version,
+                    experimental,
                     sidecar,
                 });
             }
@@ -373,6 +383,10 @@ fn install_plugin(id: String) -> AppResult<PluginManifest> {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let experimental = val
+        .get("experimental")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let sidecar = parse_sidecar(&val);
 
     Ok(PluginManifest {
@@ -382,6 +396,7 @@ fn install_plugin(id: String) -> AppResult<PluginManifest> {
         icon,
         main: main.to_string(),
         version,
+        experimental,
         sidecar,
     })
 }
@@ -420,6 +435,20 @@ fn build_http_client(follow_redirects: bool) -> reqwest::blocking::Client {
 pub(crate) fn proxy_client() -> &'static reqwest::blocking::Client {
     static C: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
     C.get_or_init(|| build_http_client(true))
+}
+
+/// Sync transfers move whole maps, far past the proxy client's 15s total cap, so this client
+/// bounds the CONNECT, not the transfer.
+pub(crate) fn sync_client() -> &'static reqwest::blocking::Client {
+    static C: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .use_rustls_tls()
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .timeout(std::time::Duration::from_secs(300))
+            .build()
+            .expect("failed to build sync http client")
+    })
 }
 
 /// Does NOT follow redirects, so the `Location` header is readable (googl).
@@ -520,49 +549,6 @@ pub(crate) fn proxy_gmaps(
     }
 }
 
-/// bmaps: forward a request to j.map.baidu.com (Baidu share short-link API).
-pub(crate) fn proxy_bmaps(url: &str) -> tauri::http::Response<Vec<u8>> {
-    match proxy_client().get(url).send() {
-        Ok(resp) => relay(resp, "application/json"),
-        Err(e) => proxy_error(format!("bmaps fetch error: {e}")),
-    }
-}
-
-/// Expand a `j.map.baidu.com/...` short link by reading its redirect `Location`
-/// header; returns the target URL as a JSON string (same shape as `googl`).
-pub(crate) fn resolve_bmapslink(path: &str) -> tauri::http::Response<Vec<u8>> {
-    let path = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{path}")
-    };
-    let url = format!("https://j.map.baidu.com{path}");
-    match resolve_client().get(&url).send() {
-        Ok(resp) => match resp
-            .headers()
-            .get(reqwest::header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-        {
-            Some(location) => tauri::http::Response::builder()
-                .status(200)
-                .header("Content-Type", "application/json")
-                .header("Access-Control-Allow-Origin", "*")
-                .body(
-                    serde_json::to_string(location)
-                        .unwrap_or_default()
-                        .into_bytes(),
-                )
-                .unwrap(),
-            None => tauri::http::Response::builder()
-                .status(404)
-                .header("Access-Control-Allow-Origin", "*")
-                .body(Vec::new())
-                .unwrap(),
-        },
-        Err(e) => proxy_error(format!("bmaps resolve error: {e}")),
-    }
-}
-
 /// googl: resolve a goo.gl / maps.app.goo.gl short link by reading its redirect
 /// `Location` header; returns the target URL as a JSON string.
 pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
@@ -646,6 +632,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             borders::check_border_file,
             borders::download_border_file,
             borders::border_lookup,
+            borders::border_classify,
             geocoder::reverse_geocode,
             presence::discord_presence_set,
             presence::discord_presence_clear,
@@ -678,11 +665,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_get_locations_by_ids,
             location_store::store_get_all_locations,
             location_store::store_country_distribution,
-            location_store::store_location_count,
             location_store::store_bounds,
             location_store::store_find_nearby,
             location_store::store_near_any,
-            location_store::store_pick,
             location_store::store_extra_field_values,
             // --- Tag CRUD ---
             location_store::store_create_tags,
@@ -736,6 +721,15 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             review::store_review_list,
             review::store_review_update,
             review::store_review_delete,
+            remote_mapping::remote_mapping_get,
+            remote_mapping::remote_mapping_upsert,
+            remote_mapping::remote_mapping_delete,
+            remote_mapping::remote_mapping_clear,
+            sync_engine::sync_reconcile,
+            geoguessr::geoguessr_login,
+            geoguessr::geoguessr_me,
+            geoguessr::geoguessr_logout,
+            geoguessr::geoguessr_has_session,
             vcs::store_commit,
             vcs::store_list_commits,
             vcs::store_checkout_commit,
@@ -880,22 +874,39 @@ pub fn run() {
                 responder.respond(proxy_gmaps(method, &url, content_type, user_agent, body))
             });
         })
-        .register_asynchronous_uri_scheme_protocol("bmaps", |_ctx, req, responder| {
+        .register_asynchronous_uri_scheme_protocol("ggapi", |_ctx, req, responder| {
+            if req.method() == tauri::http::Method::OPTIONS {
+                responder.respond(
+                    tauri::http::Response::builder()
+                        .status(204)
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header(
+                            "Access-Control-Allow-Methods",
+                            "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+                        )
+                        .header("Access-Control-Allow-Headers", "*")
+                        .body(Vec::new())
+                        .unwrap(),
+                );
+                return;
+            }
             let path = req.uri().path().to_string();
-            let query = req.uri().query().unwrap_or("").to_string();
-            let resolve = query.split('&').any(|kv| kv == "mma_resolve=1");
+            let query = req.uri().query().map(str::to_string);
+            let method = req.method().clone();
+            let content_type = req
+                .headers()
+                .get(tauri::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let body = req.body().clone();
             std::thread::spawn(move || {
-                if resolve {
-                    responder.respond(resolve_bmapslink(&path));
-                } else {
-                    let qs = if query.is_empty() {
-                        String::new()
-                    } else {
-                        format!("?{query}")
-                    };
-                    let url = format!("https://j.map.baidu.com{path}{qs}");
-                    responder.respond(proxy_bmaps(&url));
-                }
+                responder.respond(geoguessr::proxy(
+                    method,
+                    &path,
+                    query.as_deref(),
+                    content_type,
+                    body,
+                ))
             });
         })
         .register_asynchronous_uri_scheme_protocol("gdoc", |_ctx, req, responder| {

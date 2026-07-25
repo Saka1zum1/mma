@@ -64,12 +64,7 @@ vi.mock("@/lib/util/log", () => ({
 	fireAndForget: (p: Promise<unknown>) => void p.catch(() => {}),
 }));
 
-import {
-	openMap,
-	openDuplicateLocation,
-	updateLocations,
-	getActiveLocation,
-} from "@/store/useMapStore";
+import { openMap, openDuplicateLocation, updateLocations, getMapState } from "@/store/useMapStore";
 import { createLocation, applyLocationPatch } from "@/types";
 import type { Location } from "@/types";
 
@@ -107,7 +102,7 @@ describe("extra merge-patch writes via updateLocations", () => {
 		await patchExtra(stale, { datetime: 111, timezone: "X/Y" });
 		await patchExtra(stale, { imageDate: "2023-03", copyrightYear: 2023 });
 
-		expect(getActiveLocation()?.extra).toMatchObject({
+		expect(getMapState().activeLocation?.extra).toMatchObject({
 			datetime: 111,
 			timezone: "X/Y",
 			imageDate: "2023-03",
@@ -125,7 +120,10 @@ describe("extra merge-patch writes via updateLocations", () => {
 		wire.gates.forEach((release) => release());
 		await Promise.all([first, second]);
 
-		expect(getActiveLocation()?.extra).toMatchObject({ datetime: 111, copyrightYear: 2023 });
+		expect(getMapState().activeLocation?.extra).toMatchObject({
+			datetime: 111,
+			copyrightYear: 2023,
+		});
 	});
 
 	it("null values delete keys from the active cache", async () => {
@@ -134,7 +132,7 @@ describe("extra merge-patch writes via updateLocations", () => {
 
 		await patchExtra(loc, { datetime: null as unknown as number });
 
-		expect(getActiveLocation()?.extra).toEqual({ keep: 1 });
+		expect(getMapState().activeLocation?.extra).toEqual({ keep: 1 });
 	});
 });
 

@@ -96,4 +96,4 @@ jobs:
       - run: npm run gen:image-dims
         working-directory: app
       - name: Fail if image dimensions are stale (run npm run gen:image-dims)
-        run: git diff --exit-code -- app/src/components/dialogs/manual-img-dims.gen.ts
+        run: git diff --exit-code -- app/src/components/manual/manual-img-dims.gen.ts

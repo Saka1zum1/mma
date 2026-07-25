@@ -332,30 +332,31 @@ function removeChildFromComposite(
 	return null;
 }
 
+function detachChild(
+	current: Selection[],
+	parentKey: string,
+	childKey: string,
+	reinsert: boolean,
+): Selection[] {
+	for (let i = 0; i < current.length; i++) {
+		const result = removeChildFromComposite(current[i], parentKey, childKey);
+		if (result) {
+			const out = [...current];
+			out[i] = result.updated;
+			if (reinsert) out.splice(i + 1, 0, result.removed);
+			return out;
+		}
+	}
+	return current;
+}
+
 /** Pull a child out of a composite back into the top-level list. Parent collapses if only one child remains. */
 export function decomposeChild(
 	current: Selection[],
 	parentKey: string,
 	childKey: string,
 ): Selection[] {
-	for (let i = 0; i < current.length; i++) {
-		if (current[i].key === parentKey) {
-			const result = removeChildFromComposite(current[i], parentKey, childKey);
-			if (!result) return current;
-			const out = [...current];
-			out[i] = result.updated;
-			out.splice(i + 1, 0, result.removed);
-			return out;
-		}
-		const nested = removeChildFromComposite(current[i], parentKey, childKey);
-		if (nested) {
-			const out = [...current];
-			out[i] = nested.updated;
-			out.splice(i + 1, 0, nested.removed);
-			return out;
-		}
-	}
-	return current;
+	return detachChild(current, parentKey, childKey, true);
 }
 
 export function removeFromComposite(
@@ -363,15 +364,7 @@ export function removeFromComposite(
 	parentKey: string,
 	childKey: string,
 ): Selection[] {
-	for (let i = 0; i < current.length; i++) {
-		const result = removeChildFromComposite(current[i], parentKey, childKey);
-		if (result) {
-			const out = [...current];
-			out[i] = result.updated;
-			return out;
-		}
-	}
-	return current;
+	return detachChild(current, parentKey, childKey, false);
 }
 
 export function composeSiblings(

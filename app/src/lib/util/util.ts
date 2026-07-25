@@ -2,7 +2,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { Tag } from "@/bindings.gen";
 import type { TagSortMode } from "@/types";
 import { cmd } from "@/lib/commands";
-import { colorForName, textColorFor } from "@/lib/util/color";
+import { colorForName } from "@/lib/util/color";
 
 /** Base URL for a Tauri custom URI scheme. Windows WebView2 uses http://<scheme>.localhost/. */
 export function schemeBase(scheme: string): string {
@@ -14,6 +14,17 @@ export function schemeBase(scheme: string): string {
 /** URL that serves a local file over the `mma-buf://` protocol (binary Rust-to-JS transfers). */
 export function mmaBufUrl(path: string): string {
 	return schemeBase("mma-buf") + path.replace(/\\/g, "/");
+}
+
+/** Compare two dotted version strings (e.g. "0.6.1"). Returns >0 if a > b. */
+export function cmpVersion(a: string, b: string): number {
+	const pa = a.split(".").map(Number);
+	const pb = b.split(".").map(Number);
+	for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+		const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+		if (d) return d;
+	}
+	return 0;
 }
 
 /** True when running under the web-serve bridge (a plain browser, no native shell). */
@@ -47,13 +58,18 @@ async function downloadInBrowser(srcPath: string, fileName: string): Promise<boo
 		await res.body.pipeTo((await handle.createWritable()) as unknown as WritableStream<Uint8Array>);
 		return true;
 	}
-	const objUrl = URL.createObjectURL(await (await fetch(url)).blob());
+	downloadBlob(await (await fetch(url)).blob(), fileName);
+	return true;
+}
+
+/** Trigger a browser download from an in-memory Blob. */
+export function downloadBlob(blob: Blob, fileName: string) {
+	const url = URL.createObjectURL(blob);
 	const a = document.createElement("a");
-	a.href = objUrl;
+	a.href = url;
 	a.download = fileName;
 	a.click();
-	URL.revokeObjectURL(objUrl);
-	return true;
+	URL.revokeObjectURL(url);
 }
 
 /** Prompt for a destination and move a temp export file there (native dialog in
@@ -169,14 +185,10 @@ export function sortTagsByMode(
 	);
 }
 
-/** Style for a staged tag chip. An existing tag uses its stored color. */
-export function tagChipStyle(
-	name: string,
-	tags: Tag[],
-): { backgroundColor: string; color: string } {
+/** Color for a tag named `name`. An existing tag uses its stored color. */
+export function tagColorFor(name: string, tags: Tag[]): string {
 	const existing = tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
-	const color = existing?.color ?? colorForName(name);
-	return { backgroundColor: color, color: textColorFor(color) };
+	return existing?.color ?? colorForName(name);
 }
 
 /** Add a name to a staged list: dedup case-insensitively, normalizing to an existing tag's

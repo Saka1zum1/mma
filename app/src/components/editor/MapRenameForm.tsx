@@ -1,4 +1,5 @@
-import { updateMapMeta, deleteMap } from "@/store/useMapStore";
+import { updateMapMeta } from "@/store/useMapStore";
+import { deleteMap } from "@/store/mapList";
 import { useId, useState } from "react";
 import { useCloseDialog } from "../primitives/Dialog";
 import { Button } from "../primitives/Button";

@@ -6,10 +6,11 @@ vi.mock("@/types", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@/types")>()),
 	Location: {},
 }));
-vi.mock("@/lib/util/syncStore", async (importOriginal) => importOriginal());
-vi.mock("@/store/useMapStore", () => ({ useCurrentMap: () => null }));
+vi.mock("@/store/useMapStore", () => ({
+	useMapState: (sel: (s: { map: null }) => unknown) => sel({ map: null }),
+}));
 vi.mock("@/lib/commands", () => ({ cmd: { storeBounds: async () => null } }));
-vi.mock("@/lib/events", () => ({ subscribe: () => () => {} }));
+vi.mock("@/lib/events", () => ({ emit: () => {}, subscribe: () => () => {} }));
 
 import {
 	formatDistance,
@@ -20,7 +21,7 @@ import {
 	resolveScoreMaxError,
 	resolveScoreMaxErrorFromBounds,
 	WORLD_MAX_ERROR,
-} from "@/lib/sv/measure";
+} from "@/lib/geo/scoring";
 import { isWorldBounds } from "@/types";
 
 const WORLD_BOUNDS = { south: -90, west: -180, north: 90, east: 180 };

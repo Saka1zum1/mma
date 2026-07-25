@@ -1,5 +1,5 @@
 import { google } from "./opensv";
-import { createSyncStore } from "@/lib/util/syncStore";
+import { emit as emitEvent } from "@/lib/events";
 
 interface CameraFrame {
 	heading: number;
@@ -13,13 +13,6 @@ let lockedZoom = 0;
 
 let svService: google.maps.StreetViewService | null = null;
 const frameCache = new Map<string, CameraFrame>();
-
-const {
-	subscribe: subscribeViewportLock,
-	getSnapshot: getViewportLockSnapshot,
-	notify,
-} = createSyncStore();
-export { subscribeViewportLock, getViewportLockSnapshot };
 
 export function isViewportLocked() {
 	return locked;
@@ -78,7 +71,7 @@ export async function applyViewportLock(pano: google.maps.StreetViewPanorama) {
 export async function toggleViewportLock(pano: google.maps.StreetViewPanorama): Promise<boolean> {
 	if (locked) {
 		locked = false;
-		notify();
+		emitEvent("viewport-lock:changed");
 		return false;
 	}
 	const pov = pano.getPov?.();
@@ -90,12 +83,12 @@ export async function toggleViewportLock(pano: google.maps.StreetViewPanorama): 
 	relPitch = (pov.pitch ?? 0) - frame.pitch;
 	lockedZoom = pano.getZoom?.() ?? 0;
 	locked = true;
-	notify();
+	emitEvent("viewport-lock:changed");
 	return true;
 }
 
 export function clearViewportLock() {
 	if (!locked) return;
 	locked = false;
-	notify();
+	emitEvent("viewport-lock:changed");
 }

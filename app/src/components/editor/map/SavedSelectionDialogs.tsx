@@ -1,4 +1,4 @@
-import { useCurrentMap, useAllSelections } from "@/store/useMapStore";
+import { useMapState } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
 import {
 	saveCurrentSelections,
@@ -25,8 +25,8 @@ export function SaveSelectionsDialog({
 	name: string;
 	onNameChange: (v: string) => void;
 }) {
-	const map = useCurrentMap();
-	const selections = useAllSelections();
+	const map = useMapState((s) => s.map);
+	const selections = useMapState((s) => s.selections);
 	const saveableItems: SavedSelectionItem[] = (() => {
 		if (!map) return [];
 		return selections
@@ -99,7 +99,7 @@ export function ApplySavedSelectionDialog({
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 }) {
-	const map = useCurrentMap();
+	const map = useMapState((s) => s.map);
 	const saved = useSetting("savedSelections");
 
 	return (

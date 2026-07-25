@@ -10,7 +10,7 @@ import {
 	mdiBookOpenOutline,
 } from "@mdi/js";
 import type { Selection, Tag } from "@/bindings.gen";
-import { useCurrentMap, useSelections } from "@/store/useMapStore";
+import { useMapState, getActiveSelections } from "@/store/useMapStore";
 import {
 	parseDoclink,
 	loadSection,
@@ -78,9 +78,9 @@ function collectSelectedTagIds(sels: Selection[], out: number[] = []): number[] 
 }
 
 export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProps) {
-	const map = useCurrentMap();
-	const selections = useSelections();
-	const tags: Tag[] = map ? doclinkedTags(map.meta.tags) : [];
+	const tagMap = useMapState((s) => s.tags);
+	const selections = useMapState(getActiveSelections);
+	const tags: Tag[] = doclinkedTags(tagMap);
 	const [pinned, setPinned] = useState(false);
 	const [sel, setSel] = useState<{ tagId: number; idx: number } | null>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
@@ -88,7 +88,7 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 	// Follow tag selections: the newest selected tag with doclinks wins; keep the
 	// current one while it stays selected.
 	const candidates = collectSelectedTagIds(selections).filter(
-		(id) => (map?.meta.tags[String(id)]?.doclinks?.length ?? 0) > 0,
+		(id) => (tagMap[id]?.doclinks?.length ?? 0) > 0,
 	);
 	const candidateKey = candidates.join(",");
 	useEffect(() => {

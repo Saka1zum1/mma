@@ -25,8 +25,8 @@ describe("event group constants", () => {
 		]);
 	});
 
-	it("SELECTION_EVENTS is correct", () => {
-		expect([...SELECTION_EVENTS]).toEqual(["selection:change"]);
+	it("SELECTION_EVENTS is only user-facing selection state", () => {
+		expect([...SELECTION_EVENTS].sort()).toEqual(["selection:change"]);
 	});
 });
 

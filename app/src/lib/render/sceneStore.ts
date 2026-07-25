@@ -1,20 +1,11 @@
-import { useSyncExternalStore } from "react";
-import { CellManager, LOD_BANDS, LOD_MIN_TOTAL } from "@/lib/render/CellManager";
-import type { CellBuffer } from "@/lib/render/CellManager";
+import { CellManager } from "@/lib/render/CellManager";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl } from "@/lib/util/util";
 import type { RGB } from "@/lib/util/color";
 import { log } from "@/lib/util/log";
 import { trace } from "@/lib/util/debug";
-import {
-	getActiveLocation,
-	getSelectedLocationIds,
-	mapOpen,
-	renderDeltaBus,
-	selBitmaskBus,
-	setSelectedLocationIds,
-	subscribeStore,
-} from "@/store/useMapStore";
+import { getMapState, mapOpen, setSelectedLocationIds } from "@/store/useMapStore";
+import { emit as emitEvent, subscribe as subscribeEvent } from "@/lib/events";
 import type { MarkerStyle } from "@/types";
 
 // Owns marker/scene data for every map surface. The editor map drives the
@@ -26,77 +17,12 @@ const ACTIVE_HIDDEN: [number, number, number, number] = [0, 0, 0, 0];
 let markerDefault: [number, number, number, number] = [42, 42, 42, 255];
 
 const scene = new CellManager();
-let version = 0;
 let prevActiveId: number | null = null;
 let lastMarkerStyle: MarkerStyle = "pin";
 let loadToken = 0;
-let listeners: Array<() => void> = [];
-
-function bumpScene() {
-	version++;
-	for (const l of listeners) l();
-	scheduleLodWarm();
-}
-
-// Warm the LOD pyramid at idle after any scene change, sliced so no single idle
-// callback blocks an interaction that follows it: one (cell, band) build per
-// slice, finest bands first (the finest is the only O(N) scan — usually seeded
-// from the Rust blob — and coarser bands cascade from it in O(reps)). warmLod is
-// position-only: already-warm bands are skipped without touching colors.
-let lodWarmPending = false;
-let lodWarmDirty = false;
-function idleSlice(fn: () => void) {
-	if (typeof requestIdleCallback === "function") requestIdleCallback(fn, { timeout: 2000 });
-	else setTimeout(fn, 200);
-}
-function scheduleLodWarm() {
-	if (lodWarmPending) {
-		lodWarmDirty = true; // a bump landed mid-warm; re-queue when this run finishes
-		return;
-	}
-	if (scene.totalCount < LOD_MIN_TOTAL) return;
-	lodWarmPending = true;
-	lodWarmDirty = false;
-	const work: Array<[CellBuffer, number]> = [];
-	for (let b = LOD_BANDS.length - 1; b >= 0; b--) {
-		for (const cb of scene.cells.values()) work.push([cb, b]);
-	}
-	let i = 0;
-	const slice = () => {
-		if (scene.totalCount < LOD_MIN_TOTAL) {
-			lodWarmPending = false;
-			return;
-		}
-		const [cb, b] = work[i++];
-		if (cb.count > 0) cb.warmLod(b);
-		if (i < work.length) {
-			idleSlice(slice);
-		} else {
-			lodWarmPending = false;
-			if (lodWarmDirty) scheduleLodWarm();
-		}
-	};
-	idleSlice(slice);
-}
 
 export function getScene(): CellManager {
 	return scene;
-}
-
-function getSceneVersion() {
-	return version;
-}
-
-export function subscribeScene(fn: () => void): () => void {
-	listeners.push(fn);
-	return () => {
-		listeners = listeners.filter((l) => l !== fn);
-	};
-}
-
-/** Reactive scene version. Bumps on load, delta, selection, and active-location change. */
-export function useScene(): number {
-	return useSyncExternalStore(subscribeScene, getSceneVersion);
 }
 
 function patchMarker(id: number, rgba: [number, number, number, number]) {
@@ -112,11 +38,11 @@ function patchMarker(id: number, rgba: [number, number, number, number]) {
 // Reflect the active location in the scene: hide its base marker (the active overlay draws
 // it) and restore the previously-active one — unless it's selected. Fast path: no refetch.
 function applyActive() {
-	const activeId = getActiveLocation()?.id ?? null;
+	const activeId = getMapState().activeLocation?.id ?? null;
 	if (
 		prevActiveId != null &&
 		prevActiveId !== activeId &&
-		!getSelectedLocationIds().has(prevActiveId)
+		!getMapState().selectedLocationIds.has(prevActiveId)
 	) {
 		patchMarker(prevActiveId, markerDefault);
 	}
@@ -153,7 +79,7 @@ export function recolorScene(mc: RGB) {
 	}
 	void cmd.storeSetMarkerColor([mc.r, mc.g, mc.b]);
 	scene.version++;
-	bumpScene();
+	emitEvent("scene:changed");
 }
 
 export function getMarkerDefaultColor(): [number, number, number, number] {
@@ -161,6 +87,7 @@ export function getMarkerDefaultColor(): [number, number, number, number] {
 }
 
 let sceneSettled: Promise<void> = Promise.resolve();
+let loadRequested = 0;
 
 /** Resolves when the most recently started full scene load has finished (or immediately if none is in flight). */
 export function whenSceneSettled(): Promise<void> {
@@ -169,7 +96,13 @@ export function whenSceneSettled(): Promise<void> {
 
 /** Full (re)load from Rust for the whole world. Editor-driven on open / marker-style change. */
 export function loadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
-	return (sceneSettled = doLoadScene(markerStyle, mc));
+	const seq = ++loadRequested;
+	return (sceneSettled = sceneSettled
+		.catch(() => {})
+		.then(() => {
+			if (seq !== loadRequested) return;
+			return doLoadScene(markerStyle, mc);
+		}));
 }
 
 async function doLoadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
@@ -201,7 +134,7 @@ async function doLoadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
 		// since any bitmask decode in `mutate` ran against the pre-reload scene.
 		setSelectedLocationIds(scene.selectedIds());
 		t.end({ cells: scene.cells.size, total: scene.totalCount, bytes: buf.byteLength });
-		bumpScene();
+		emitEvent("scene:changed");
 	} catch (e) {
 		log.error("[scene] loadScene failed:", e);
 	}
@@ -210,19 +143,19 @@ async function doLoadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
 export function clearScene() {
 	scene.clear();
 	prevActiveId = null;
-	bumpScene();
+	emitEvent("scene:changed");
 }
 
 // Subscriptions live for the editor map's lifetime (one producer). Returns a stop fn.
 export function startSceneEngine(): () => void {
-	const unsubDelta = renderDeltaBus.on((delta) => {
+	const unsubDelta = subscribeEvent("render:delta", (delta) => {
 		if (delta.fullReset) {
 			void loadScene(lastMarkerStyle);
 			return;
 		}
 		const t = trace("delta", { summary: true });
 		const affected = scene.applyDelta(delta);
-		const aid = getActiveLocation()?.id ?? null;
+		const aid = getMapState().activeLocation?.id ?? null;
 		if (aid != null) patchMarker(aid, ACTIVE_HIDDEN);
 		if (delta.colorPatches.length > 0) {
 			const selPatches = delta.colorPatches.filter(
@@ -232,25 +165,25 @@ export function startSceneEngine(): () => void {
 			scene.appendToSelectionOverlay(selPatches);
 		}
 		t.end({ affected: affected.size, added: delta.added.length, removed: delta.removed.length });
-		if (affected.size > 0 || delta.colorPatches.length > 0) bumpScene();
+		if (affected.size > 0 || delta.colorPatches.length > 0) emitEvent("scene:changed");
 	});
 
-	const unsubSel = selBitmaskBus.on((selColors, cellEntries, setIds) => {
+	const unsubSel = subscribeEvent("render:selection", ({ selColors, cellEntries, setIds }) => {
 		const t = trace("selection", { summary: true });
 		const [r, g, b] = markerDefault;
 		const ids = scene.applySelectionBitmasks(selColors, cellEntries, [r, g, b]);
 		setIds(ids);
 		t.end({ cells: cellEntries.length, sels: selColors.length, ids: ids.size });
-		bumpScene();
+		emitEvent("scene:changed");
 	});
 
 	// Active-location switch fires a plain store mutation (store_set_active is fire-and-forget,
 	// no delta). Re-derive the scene's active highlight when the id changes.
-	const unsubStore = subscribeStore(() => {
-		const activeId = getActiveLocation()?.id ?? null;
+	const unsubStore = subscribeEvent("store:changed", () => {
+		const activeId = getMapState().activeLocation?.id ?? null;
 		if (activeId !== prevActiveId) {
 			applyActive();
-			bumpScene();
+			emitEvent("scene:changed");
 		}
 	});
 

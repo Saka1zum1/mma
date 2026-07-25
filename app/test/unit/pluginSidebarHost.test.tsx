@@ -7,8 +7,8 @@ let workArea = "plugin";
 let activePluginId: string | null = null;
 
 vi.mock("@/store/useMapStore", () => ({
-	useActivePluginId: () => activePluginId,
-	useWorkArea: () => workArea,
+	useMapState: (sel: (s: { workArea: string; activePluginId: string | null }) => unknown) =>
+		sel({ workArea, activePluginId }),
 	exitPluginMode: vi.fn(),
 }));
 

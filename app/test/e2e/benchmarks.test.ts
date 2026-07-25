@@ -413,7 +413,7 @@ describe("Benchmarks - selection refresh", () => {
 			const ms = await withApi(async (api) => {
 				await api.resetSelections();
 				const t0 = performance.now();
-				await api.selectEverything();
+				await api.addSelections([{ type: "Everything" }]);
 				return performance.now() - t0;
 			});
 			times.push(ms);
@@ -429,7 +429,7 @@ describe("Benchmarks - selection refresh", () => {
 			const ms = await withApi(async (api) => {
 				await api.resetSelections();
 				const t0 = performance.now();
-				await api.selectPanoIds();
+				await api.addSelections([{ type: "PanoIds" }]);
 				return performance.now() - t0;
 			});
 			times.push(ms);
@@ -445,7 +445,7 @@ describe("Benchmarks - selection refresh", () => {
 			const ms = await withApi(async (api, tagId) => {
 				await api.resetSelections();
 				const t0 = performance.now();
-				await api.selectTag(tagId);
+				await api.addSelections([{ type: "Tag", tagId }]);
 				return performance.now() - t0;
 			}, benchTagId);
 			times.push(ms);
@@ -461,7 +461,7 @@ describe("Benchmarks - selection refresh", () => {
 			const ms = await withApi(async (api) => {
 				await api.resetSelections();
 				const t0 = performance.now();
-				await api.selectUntagged();
+				await api.addSelections([{ type: "Untagged" }]);
 				return performance.now() - t0;
 			});
 			times.push(ms);
@@ -476,8 +476,8 @@ describe("Benchmarks - selection refresh", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			const ms = await withApi(async (api, tagId) => {
 				await api.resetSelections();
-				await api.selectPanoIds();
-				await api.selectTag(tagId);
+				await api.addSelections([{ type: "PanoIds" }]);
+				await api.addSelections([{ type: "Tag", tagId }]);
 				const t0 = performance.now();
 				await api.selectIntersection();
 				return performance.now() - t0;
@@ -494,8 +494,8 @@ describe("Benchmarks - selection refresh", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			const ms = await withApi(async (api) => {
 				await api.resetSelections();
-				await api.selectPanoIds();
-				await api.selectUntagged();
+				await api.addSelections([{ type: "PanoIds" }]);
+				await api.addSelections([{ type: "Untagged" }]);
 				const t0 = performance.now();
 				await api.selectUnion();
 				return performance.now() - t0;
@@ -512,7 +512,7 @@ describe("Benchmarks - selection refresh", () => {
 		for (let iter = 0; iter < ITERATIONS; iter++) {
 			const ms = await withApi(async (api) => {
 				await api.resetSelections();
-				await api.selectPanoIds();
+				await api.addSelections([{ type: "PanoIds" }]);
 				const t0 = performance.now();
 				await api.selectInverse();
 				return performance.now() - t0;

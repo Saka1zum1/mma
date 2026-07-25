@@ -4,7 +4,7 @@ import {
 	compareNatural,
 	binNumeric,
 	sortTagsByMode,
-	tagChipStyle,
+	tagColorFor,
 	appendTagName,
 } from "@/lib/util/util";
 import { colorForName } from "@/lib/util/color";
@@ -42,15 +42,15 @@ describe("sortTagsByMode", () => {
 	});
 });
 
-describe("tagChipStyle", () => {
+describe("tagColorFor", () => {
 	const tags: Tag[] = [{ id: 1, name: "Red", color: "#ff0000" }];
 
 	it("uses an existing tag's stored color, matched case-insensitively", () => {
-		expect(tagChipStyle("red", tags).backgroundColor).toBe("#ff0000");
+		expect(tagColorFor("red", tags)).toBe("#ff0000");
 	});
 
 	it("falls back to the deterministic colorForName for an unknown name", () => {
-		expect(tagChipStyle("Gamma", tags).backgroundColor).toBe(colorForName("Gamma"));
+		expect(tagColorFor("Gamma", tags)).toBe(colorForName("Gamma"));
 	});
 });
 

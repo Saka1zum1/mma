@@ -33,10 +33,10 @@ describe("Map management", () => {
 		const id = await createAndOpenMap("Test Map 1");
 		createdMapIds.push(id);
 
-		const name = await withApi(async (api) => api.getCurrentMap()?.meta.name);
+		const name = await withApi(async (api) => api.getMapState().map?.meta.name);
 		expect(name).toBe("Test Map 1");
 
-		const count = await withApi(async (api) => api.cmd.storeLocationCount());
+		const count = await getLocCount();
 		expect(count).toBe(0);
 
 		await closeMap();
@@ -72,8 +72,8 @@ describe("Map management", () => {
 		await openMap(createdMapIds[0]);
 
 		const map = await withApi(async (api) => {
-			const m = api.getCurrentMap();
-			return m ? { id: m.meta.id, name: m.meta.name } : null;
+			const state = api.getMapState();
+			return state.map ? { id: state.mapId, name: state.map.meta.name } : null;
 		});
 		expect(map).not.toBeNull();
 		expect(map!.id).toBe(createdMapIds[0]);
@@ -81,7 +81,7 @@ describe("Map management", () => {
 		await closeMap();
 
 		const closed = await withApi(async (api) => {
-			return api.getCurrentMap();
+			return api.getMapState().map;
 		});
 		expect(closed).toBeNull();
 	});
@@ -113,7 +113,7 @@ describe("Map management", () => {
 		// storeDeleteMap helper. The open window must drop the map in response.
 		await withApi(async (api, mapId) => api._test.deleteMap(mapId), id);
 
-		await browser.waitUntil(async () => withApi(async (api) => api.getCurrentMap() === null), {
+		await browser.waitUntil(async () => withApi(async (api) => api.getMapState().map === null), {
 			timeout: 5000,
 			timeoutMsg: "open map was not closed after delete",
 		});
@@ -162,7 +162,7 @@ describe("Map metadata", () => {
 	it("map has correct initial metadata", async () => {
 		await openMap(mapId);
 		const meta = await withApi(async (api) => {
-			return api.getCurrentMap()!.meta;
+			return api.getMapState().map!.meta;
 		});
 		expect(meta.name).toBe("Meta Test Map");
 		expect(meta.description).toBe("");
@@ -203,8 +203,8 @@ describe("Empty map edge cases", () => {
 
 	it("selectEverything on empty map selects nothing", async () => {
 		const count = await withApi(async (api) => {
-			await api.selectEverything();
-			return api.getSelectedLocationIds().size;
+			await api.addSelections([{ type: "Everything" }]);
+			return api.getMapState().selectedLocationIds.size;
 		});
 		expect(count).toBe(0);
 	});

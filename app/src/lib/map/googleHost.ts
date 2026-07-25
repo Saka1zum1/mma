@@ -28,7 +28,6 @@ const EVENT_NAMES: Record<keyof MapHostEvents, string> = {
 	mouseout: "mouseout",
 	zoom: "zoom_changed",
 	camera: "bounds_changed",
-	idle: "idle",
 	tilesloaded: "tilesloaded",
 };
 

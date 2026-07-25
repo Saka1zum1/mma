@@ -10,14 +10,8 @@
 // synchronously from the hash at module load, so it's correct on the very first
 // render, before any async map load). The store (currentMap) is the data;
 // applyRoute reconciles the store to the URL.
-import { useSyncExternalStore } from "react";
-import {
-	openMap,
-	closeMap,
-	getCurrentMapId,
-	getCurrentMap,
-	subscribeStore,
-} from "@/store/useMapStore";
+import { openMap, closeMap, getMapState } from "@/store/useMapStore";
+import { emit, useEventValue, subscribe as subscribeEvent } from "@/lib/events";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface Route {
@@ -49,20 +43,15 @@ export function build(r: Route): string {
 // Parsed synchronously at module load (before first render) so the URL is the
 // render authority from frame one — no dependency on openMap's timing.
 let route: Route = parse(location.hash);
-const listeners = new Set<() => void>();
-const subscribe = (cb: () => void) => {
-	listeners.add(cb);
-	return () => listeners.delete(cb);
-};
 
 /** The map the URL says should be open (intent), independent of load state. */
 export function useTargetMapId(): string | null {
-	return useSyncExternalStore(subscribe, () => route.mapId);
+	return useEventValue("route:changed", () => route.mapId);
 }
 
 /** Manual overlay chapter from the URL, or null when closed. */
 export function useManualChapter(): string | null {
-	return useSyncExternalStore(subscribe, () => route.manual);
+	return useEventValue("route:changed", () => route.manual);
 }
 
 function applyRoute() {
@@ -70,11 +59,11 @@ function applyRoute() {
 	const changed = next.mapId !== route.mapId || next.manual !== route.manual;
 	route = next;
 	// Reconcile the store's open map to the URL.
-	if (next.mapId !== getCurrentMapId()) {
+	if (next.mapId !== getMapState().mapId) {
 		if (next.mapId) void openMap(next.mapId);
 		else void closeMap();
 	}
-	if (changed) for (const l of listeners) l();
+	if (changed) emit("route:changed");
 }
 
 function navigate(next: Route) {
@@ -93,7 +82,7 @@ export const closeManual = () => navigate({ ...route, manual: null });
 // web-serve mirrors setTitle to the browser tab.
 let lastTitle = "";
 function syncTitle() {
-	const map = getCurrentMap();
+	const map = getMapState().map;
 	const title = map ? `${map.meta.name} · Map Making App` : "Map Making App";
 	if (title === lastTitle) return;
 	lastTitle = title;
@@ -103,6 +92,6 @@ function syncTitle() {
 export function initRouter() {
 	window.addEventListener("popstate", applyRoute);
 	window.addEventListener("hashchange", applyRoute);
-	subscribeStore(syncTitle);
+	subscribeEvent("store:changed", syncTitle);
 	applyRoute();
 }

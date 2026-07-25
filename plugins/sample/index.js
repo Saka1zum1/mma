@@ -1,7 +1,7 @@
 // sample/src/index.ts
 MMA.registerPlugin({
   activate() {
-    const map = MMA.getCurrentMap();
+    const map = MMA.getMapState().map;
     if (map) {
       console.log(`[sample] Activated on "${map.meta.name}"`);
     }

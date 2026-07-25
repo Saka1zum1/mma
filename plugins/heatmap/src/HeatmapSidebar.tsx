@@ -113,9 +113,8 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 		};
 	}, []);
 
-	const map = MMA.useCurrentMap();
-	const selectedIds = MMA.useSelectedLocationIds();
-	const allCount = map?.meta.locationCount ?? 0;
+	const allCount = MMA.useMapState((s) => s.locationCount);
+	const selectedIds = MMA.useMapState((s) => s.selectedLocationIds);
 
 	return (
 		<section className="map-sidebar heatmap-sidebar">

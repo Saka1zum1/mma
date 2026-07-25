@@ -11,7 +11,12 @@ let overlay: DeckOverlayHandle | null = null;
 function redraw(): void {
 	const data = getCoverageImage();
 	if (!data) {
-		overlay?.setProps({ layers: [] });
+		// Fully tear down: an idle deck overlay still renders every map frame and
+		// keeps the last texture alive, dragging fps long after coverage is cleared.
+		if (overlay) {
+			overlay.finalize();
+			overlay = null;
+		}
 		return;
 	}
 	if (!overlay) {

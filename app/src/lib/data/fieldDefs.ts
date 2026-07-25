@@ -20,6 +20,7 @@ const coreFieldOptions: EnrichFieldOption[] = [
 	{ key: "drivingDirection", label: "Driving direction", defaultOff: true },
 	{ key: "uploaderName", label: "Uploader", defaultOff: true },
 	{ key: "coverageDates", label: "Coverage dates", defaultOff: true },
+	{ key: "subdivision", label: "Subdivision", defaultOff: true },
 ];
 
 const pluginFieldOptions: EnrichFieldOption[] = [];

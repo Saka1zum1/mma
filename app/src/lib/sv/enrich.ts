@@ -1,7 +1,7 @@
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { resolveExactTimestamp } from "@/lib/sv/exactDate";
 import { resolveTimezone } from "@/lib/util/timezone";
-import { getCurrentMap, updateLocations, fetchLocationsByIds } from "@/store/useMapStore";
+import { getMapState, updateLocations, fetchLocationsByIds } from "@/store/useMapStore";
 import {
 	filterEnrichPatch,
 	isFieldEnabled,
@@ -14,6 +14,8 @@ import {
 import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 import { SV_CONCURRENCY } from "@/lib/sv/constants";
 import { log } from "@/lib/util/log";
+import { cmd } from "@/lib/commands";
+import { toast } from "@/lib/util/toast";
 import type { Location } from "@/bindings.gen";
 
 /** True when the location is missing any of the given enrich fields (default: the enabled set). */
@@ -62,7 +64,7 @@ export async function enrich(
 		[data] = await fetchSvMetadata([loc.panoId]);
 		if (!data) return false;
 	}
-	const map = getCurrentMap();
+	const map = getMapState().map;
 	if (!map || !(map.meta.settings.enrichMetadata ?? true)) return false;
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 	const write = (extra: Record<string, unknown>) =>
@@ -94,7 +96,7 @@ export const enrichMetaResolver: SvResolver = {
 	label: "Enrich metadata",
 	pending: (loc, force) => {
 		if (force) return true;
-		const map = getCurrentMap();
+		const map = getMapState().map;
 		const fields = map?.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 		return needsEnrichment(loc, fields);
 	},
@@ -164,8 +166,49 @@ export const exactDateProvider: EnrichmentProvider = {
 	},
 };
 
+let adm1Ready: Promise<boolean> | null = null;
+function ensureAdm1(): Promise<boolean> {
+	adm1Ready ??= (async () => {
+		if (await cmd.checkBorderFile("adm1")) return true;
+		toast("Subdivision borders missing - downloading...");
+		try {
+			await cmd.downloadBorderFile("adm1");
+			return true;
+		} catch {
+			toast("Couldn't download subdivision borders - check your connection");
+			adm1Ready = null;
+			return false;
+		}
+	})();
+	return adm1Ready;
+}
+
+/** Subdivision (adm1) via offline point-in-polygon against the local border dataset.
+ *  No Google dependency; downloads the adm1 archive on first use. */
+export const subdivisionProvider: EnrichmentProvider = {
+	id: "subdivision",
+	fieldDefs: {
+		subdivision: { type: "string", label: "Subdivision" },
+	},
+	async enrich(locations, enrichFields, ctx) {
+		const out = new Map<number, Record<string, unknown>>();
+		if (!isFieldEnabled(enrichFields, "subdivision")) return out;
+		const pending = locations.filter((l) => ctx?.force || l.extra?.subdivision == null);
+		if (pending.length === 0 || !(await ensureAdm1())) return out;
+		const names = await cmd.borderClassify(
+			"adm1",
+			pending.map((l) => [l.lat, l.lng] as [number, number]),
+		);
+		pending.forEach((l, i) => {
+			if (names[i] != null) out.set(l.id, { subdivision: names[i] });
+		});
+		return out;
+	},
+};
+
 registerSvResolver(enrichMetaResolver);
 registerEnrichmentProvider(exactDateProvider);
+registerEnrichmentProvider(subdivisionProvider);
 
 /** One summary row per pass that did work: the core metadata pass, then every
  *  provider that updated or failed at least one location. */
@@ -187,7 +230,7 @@ export async function enrichAll(
 		onProgress?: (done: number, total: number, label?: string) => void;
 	} = {},
 ): Promise<EnrichResult> {
-	const map = getCurrentMap();
+	const map = getMapState().map;
 	if (!map) return [];
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 

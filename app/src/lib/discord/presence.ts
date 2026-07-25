@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cmd } from "@/lib/commands";
-import { getCurrentMap } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 import { subscribe, MAP_LIFECYCLE_EVENTS, LOCATION_DATA_EVENTS } from "@/lib/events";
 import { useSetting } from "@/store/settings";
 import type { DiscordPresenceMode } from "@/store/settings";
@@ -17,7 +17,7 @@ const PUSH_INTERVAL_MS = 4000;
 let sessionStart: number | null = null;
 
 function buildActivity(level: Exclude<DiscordPresenceMode, "off">): PresenceActivity {
-	const map = getCurrentMap();
+	const map = getMapState().map;
 	const base: PresenceActivity = {
 		details: null,
 		state: null,
@@ -32,7 +32,7 @@ function buildActivity(level: Exclude<DiscordPresenceMode, "off">): PresenceActi
 	const start = sessionStart;
 	if (level === "generic") return { ...base, details: "Editing a map", start };
 
-	const count = map.meta.locationCount;
+	const count = getMapState().locationCount;
 	return {
 		...base,
 		details: `Editing ${map.meta.name}`,
@@ -69,7 +69,7 @@ export function useDiscordPresence(): void {
 			}, PUSH_INTERVAL_MS);
 		};
 
-		if (getCurrentMap() && sessionStart === null) sessionStart = Math.floor(Date.now() / 1000);
+		if (getMapState().map && sessionStart === null) sessionStart = Math.floor(Date.now() / 1000);
 		void win.isFocused().then((f) => {
 			focused = f;
 			push();

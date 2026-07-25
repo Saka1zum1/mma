@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
+import clsx from "clsx";
+import { TagPill } from "@/components/primitives/TagPill";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
-import { useCurrentMap, updateTags } from "@/store/useMapStore";
+import { useMapState, updateTags } from "@/store/useMapStore";
 import { parseDoclink, loadOutline, type DocRef } from "@/lib/doclink";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { textColorFor } from "@/lib/util/color";
@@ -27,13 +29,13 @@ export function DoclinkAssignDialog({
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 }) {
-	const map = useCurrentMap();
+	const tagMap = useMapState((s) => s.tags);
 	const tags: Tag[] = useMemo(
 		() =>
-			Object.values(map?.meta.tags ?? {}).sort((a, b) =>
+			Object.values(tagMap).sort((a, b) =>
 				a.name.localeCompare(b.name, undefined, { numeric: true }),
 			),
-		[map?.meta.tags],
+		[tagMap],
 	);
 
 	// Doc identity: pasted URL, prefilled from the map's first existing doclink.
@@ -129,17 +131,19 @@ export function DoclinkAssignDialog({
 							{tags.map((tag) => {
 								const n = anchorsInDoc(tag, docRef.docId).size;
 								return (
-									<span
+									<TagPill
 										key={tag.id}
-										className={`tag is-small doclink-assign__tag${tag.id === armedId ? " is-armed" : ""}`}
-										style={{ backgroundColor: tag.color, color: textColorFor(tag.color) }}
+										small
+										color={tag.color}
+										className={clsx("doclink-assign__tag", tag.id === armedId && "is-armed")}
 										onClick={() => setArmedId(tag.id === armedId ? null : tag.id)}
-									>
-										<span className="tag__text">
-											{tag.name}
-											{n > 0 && <span className="doclink-assign__count">{n}</span>}
-										</span>
-									</span>
+										label={
+											<>
+												{tag.name}
+												{n > 0 && <span className="doclink-assign__count">{n}</span>}
+											</>
+										}
+									/>
 								);
 							})}
 							{tags.length === 0 && <p className="doclink-assign__hint">This map has no tags.</p>}

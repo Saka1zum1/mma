@@ -39,21 +39,21 @@ describe("Duplicate detection via selectDuplicates", () => {
 	});
 
 	it("selectDuplicates with tight radius finds nearby locations", async () => {
-		await withApi(async (api) => api.selectDuplicates(50));
+		await withApi(async (api) => api.addSelections([{ type: "Duplicates", distance: 50 }]));
 		const ids = await refreshSelections();
 		// Should find at least the 4 locations in 2 clusters
 		expect(ids.length).toBeGreaterThanOrEqual(4);
 	});
 
 	it("selectDuplicates with very small radius finds fewer", async () => {
-		await withApi(async (api) => api.selectDuplicates(1));
+		await withApi(async (api) => api.addSelections([{ type: "Duplicates", distance: 1 }]));
 		const ids = await refreshSelections();
 		// At 1m, the ~5m-apart locations might not be duplicates
 		expect(ids.length).toBeLessThanOrEqual(4);
 	});
 
 	it("isolated location is not included in duplicates", async () => {
-		await withApi(async (api) => api.selectDuplicates(50));
+		await withApi(async (api) => api.addSelections([{ type: "Duplicates", distance: 50 }]));
 		const ids = await refreshSelections();
 		// Total is 5 locations. Isolated one should not be a duplicate.
 		expect(ids.length).toBeLessThan(5);

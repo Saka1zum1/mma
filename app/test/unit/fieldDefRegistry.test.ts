@@ -7,12 +7,12 @@ import {
 	setUserFieldDefs,
 	mergeUserFieldDefs,
 	resetForMapChange,
-	getFieldDefsVersion,
 	isBuiltinField,
 	isWritableField,
 	isListableField,
 	getBuiltinKeys,
 } from "@/lib/data/fieldDefRegistry";
+import { getEventVersion } from "@/lib/events";
 
 beforeEach(() => {
 	resetForMapChange();
@@ -191,36 +191,36 @@ describe("placeholder does not shadow plugin def", () => {
 // a label rename. The version must bump on any def edit so those memos invalidate.
 describe("def-change version", () => {
 	it("bumps on every layer mutation", () => {
-		const v0 = getFieldDefsVersion();
+		const v0 = getEventVersion("fields:changed");
 		setUserFieldDefs({ a: { type: "number", label: "A" } });
-		const v1 = getFieldDefsVersion();
+		const v1 = getEventVersion("fields:changed");
 		expect(v1).toBeGreaterThan(v0);
 
 		// A label-only rename (same key set) must still bump.
 		setUserFieldDefs({ a: { type: "number", label: "A renamed" } });
-		expect(getFieldDefsVersion()).toBeGreaterThan(v1);
+		expect(getEventVersion("fields:changed")).toBeGreaterThan(v1);
 
-		const v2 = getFieldDefsVersion();
+		const v2 = getEventVersion("fields:changed");
 		mergeUserFieldDefs({ b: { type: "string", label: "B" } });
-		expect(getFieldDefsVersion()).toBeGreaterThan(v2);
+		expect(getEventVersion("fields:changed")).toBeGreaterThan(v2);
 
-		const v3 = getFieldDefsVersion();
+		const v3 = getEventVersion("fields:changed");
 		registerPluginFieldDefs({ p: { type: "number", label: "P" } });
-		expect(getFieldDefsVersion()).toBeGreaterThan(v3);
+		expect(getEventVersion("fields:changed")).toBeGreaterThan(v3);
 
-		const v4 = getFieldDefsVersion();
+		const v4 = getEventVersion("fields:changed");
 		unregisterPluginFieldDefs(["p"]);
-		expect(getFieldDefsVersion()).toBeGreaterThan(v4);
+		expect(getEventVersion("fields:changed")).toBeGreaterThan(v4);
 
-		const v5 = getFieldDefsVersion();
+		const v5 = getEventVersion("fields:changed");
 		resetForMapChange();
-		expect(getFieldDefsVersion()).toBeGreaterThan(v5);
+		expect(getEventVersion("fields:changed")).toBeGreaterThan(v5);
 	});
 
 	it("does not bump when unregistering an empty key list", () => {
-		const v = getFieldDefsVersion();
+		const v = getEventVersion("fields:changed");
 		unregisterPluginFieldDefs([]);
-		expect(getFieldDefsVersion()).toBe(v);
+		expect(getEventVersion("fields:changed")).toBe(v);
 	});
 });
 

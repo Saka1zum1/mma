@@ -3,14 +3,10 @@ import { useState, useEffect, useMemo } from "react";
 import type { Selection, FilterOp, ExtraFieldDef } from "@/bindings.gen";
 import { cmd } from "@/lib/commands";
 import { NSelect } from "@/components/primitives/NSelect";
-import {
-	fieldLabel,
-	useFieldDefsVersion,
-	getAllFieldDefs,
-	isListableField,
-} from "@/lib/data/fieldDefRegistry";
+import { fieldLabel, getAllFieldDefs, isListableField } from "@/lib/data/fieldDefRegistry";
+import { useEvent } from "@/lib/events";
 import { pickPeriodEnd, hasTimeOfDay, dateParts, partsToEpoch } from "@/lib/data/fieldOps";
-import { useKnownFieldKeys, selectFilter } from "@/store/useMapStore";
+import { useMapState, addSelections } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
 import { OP_LABELS } from "@/store/selections";
 import { DatePicker } from "@/components/primitives/DatePicker";
@@ -71,8 +67,8 @@ export interface FieldEntry {
 }
 
 export function useExtraFieldKeys(): FieldEntry[] {
-	const keys = useKnownFieldKeys();
-	const defsVersion = useFieldDefsVersion();
+	const keys = useMapState((s) => s.knownFieldKeys);
+	const defsVersion = useEvent("fields:changed");
 	return useMemo(() => {
 		const allDefs = getAllFieldDefs();
 		const seen = new Set<string>();
@@ -562,7 +558,7 @@ export function FilterBuilder({ mapId }: { mapId: string }) {
 			persistKey={mapId}
 			submitLabel="Add filter"
 			onSubmit={(field, op, value, value2, tzLocal) =>
-				selectFilter(field, op, value, value2, tzLocal)
+				addSelections([{ type: "Filter", field, op, value, value2, tzLocal }])
 			}
 		/>
 	);

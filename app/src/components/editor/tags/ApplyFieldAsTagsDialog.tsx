@@ -9,13 +9,8 @@ import type {
 import { getProviderForField } from "@/lib/data/fieldDefs";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
-import {
-	fetchLocationsByIds,
-	partition,
-	useScope,
-	createTags,
-	updateLocations,
-} from "@/store/useMapStore";
+import { fetchLocationsByIds, createTags, updateLocations } from "@/store/useMapStore";
+import { partition, useScope } from "@/store/scope";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { useSetting } from "@/store/settings";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";

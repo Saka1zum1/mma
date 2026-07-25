@@ -8,7 +8,7 @@ import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { Button } from "@/components/primitives/Button";
 import { useMapSetting } from "@/store/useMapSetting";
 import { getMapCopyBindingKey, withMapCopyBinding } from "@/lib/map/mapKeyBindings";
-import { getCurrentMapId } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 
 /** Assign per-map hotkeys that copy the active location into other maps.
  *  Shows only configured maps; new targets are added via autocomplete (type a
@@ -43,7 +43,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 		? (maps ?? [])
 				.filter(
 					(m) =>
-						m.id !== getCurrentMapId() &&
+						m.id !== getMapState().mapId &&
 						!rowIds.includes(m.id) &&
 						m.name.toLowerCase().includes(lower),
 				)

@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, createContext, useContext } from "react";
-import { useDomEvent } from "@/lib/hooks/useDomEvent";
+import { useDialog } from "@/store/dialogBus";
 import { Command } from "cmdk";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
@@ -10,7 +10,8 @@ import { getCommands, togglePinnedCommand, type CommandGroup } from "@/store/com
 import { useSetting } from "@/store/settings";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { getBinding, useBinding } from "@/lib/util/hotkeys";
-import { useMapList, getCurrentMapId, closeMap } from "@/store/useMapStore";
+import { getMapState, closeMap } from "@/store/useMapStore";
+import { useMapList } from "@/store/mapList";
 import { goToMap } from "@/store/router";
 
 interface PaletteContext {
@@ -145,7 +146,7 @@ function MainCommands() {
 function MapSwitcher() {
 	const ctx = useContext(Ctx);
 	const maps = useMapList();
-	const currentId = getCurrentMapId();
+	const currentId = getMapState().mapId;
 	const others = maps.filter((m) => m.id !== currentId);
 
 	return (
@@ -220,9 +221,9 @@ export function CommandPalette() {
 	const [bulkOp, setBulkOp] = useState<BulkOperation | null>(null);
 	useHotkey(useBinding("openCommandPalette"), () => setOpen((v) => !v));
 
-	useDomEvent("open-command-palette", () => setOpen(true));
+	useDialog("command-palette", () => setOpen(true));
 
-	useDomEvent("open-bulk-op", (e) => setBulkOp((e as CustomEvent).detail as BulkOperation));
+	useDialog("bulk-op", (op) => setBulkOp(op as BulkOperation));
 
 	return (
 		<>

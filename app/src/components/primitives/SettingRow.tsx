@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, type ReactNode } from "react";
 import { Switch } from "@/components/primitives/Switch";
+import { useSetting, setSetting, type AppSettings } from "@/store/settings";
 
 type SearchCtx = { query: string; searching: boolean; sectionMatched: boolean };
 
@@ -20,17 +21,25 @@ export function useSettingsSearch() {
 
 type Base = { label: string; description?: string; disabled?: boolean; sub?: boolean };
 type BoolRow = Base & { checked: boolean; onChange: (v: boolean) => void };
+type AutoBoolRow = Base & { setting: keyof AppSettings };
 type ControlRow = Base & { control: ReactNode };
 
-/** The Settings dialog row: label (+ optional one-line description) on the left,
- *  control right-aligned. Boolean rows render a Switch and are fully
- *  click-toggleable (row forwards clicks, control wrapper stops propagation,
- *  Switch owns keyboard + ARIA). Control rows (select/slider/color/text)
- *  right-align their control with no row-level click handler. Self-filters
- *  against the active search query. */
-export function SettingRow(props: BoolRow | ControlRow) {
-	const { label, description, disabled, sub } = props;
+function AutoWiredRow({ setting, ...rest }: AutoBoolRow) {
+	const value = useSetting(setting);
+	return (
+		<SettingRow
+			checked={value as boolean}
+			onChange={(v) => setSetting(setting, v as never)}
+			{...rest}
+		/>
+	);
+}
+
+export function SettingRow(props: BoolRow | ControlRow | AutoBoolRow) {
 	const { query, searching, sectionMatched } = useContext(SettingsSearchContext);
+	if ("setting" in props) return <AutoWiredRow {...(props as AutoBoolRow)} />;
+
+	const { label, description, disabled, sub } = props;
 
 	if (searching && !sectionMatched) {
 		if (!`${label} ${description ?? ""}`.toLowerCase().includes(query)) return null;

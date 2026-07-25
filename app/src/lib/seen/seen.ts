@@ -1,6 +1,6 @@
 import { cmd } from "@/lib/commands";
 import { getSettings } from "@/store/settings";
-import { getCurrentMapId } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 import { log } from "@/lib/util/log";
 import type { LocationPOV } from "@/types";
 import type { SeenFilter } from "@/bindings.gen";
@@ -58,7 +58,7 @@ export function seenPanoChanged(
 	staged = {
 		...location,
 		enteredAt: Date.now(),
-		mapId: getCurrentMapId(),
+		mapId: getMapState().mapId,
 		countryCode: geo?.countryCode || latestGeo?.countryCode || null,
 		address: geo?.address || latestGeo?.address || null,
 	};

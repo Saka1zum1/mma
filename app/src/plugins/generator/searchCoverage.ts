@@ -11,7 +11,7 @@ const TARGET_DISC_PX = 6; // texels per probe radius at full resolution
 const MIN_DISC_PX = 2.5; // floor so coarse (large-region) textures still draw round dots, not plus-signs
 const MAX_DIM = 2048; // cap texture size (memory + upload bandwidth)
 const COLOR: readonly [number, number, number] = [56, 189, 248];
-const FLUSH_MS = 80; // coalesce probe bursts into ~12 redraws/sec
+const FLUSH_MS = 200; // coalesce probe bursts; each flush costs a full-texture GPU upload
 
 let enabled = false;
 let bounds: Bounds | null = null;
@@ -19,6 +19,10 @@ let texW = 0;
 let texH = 0;
 let radiusPx = 0;
 let buffer: Uint8ClampedArray | null = null;
+// Ping-pong pair reused across flushes: BitmapLayer re-uploads on reference change,
+// so we alternate between two fixed ImageData instead of allocating ~16MB per flush.
+let images: [ImageData, ImageData] | null = null;
+let frontImage = 0;
 
 let version = 0;
 let dirty = false;
@@ -106,6 +110,7 @@ export function beginSession(b: Bounds, radiusMeters: number): void {
 	if (!(widthMeters > 0) || !(heightMeters > 0) || !(radiusMeters > 0)) {
 		bounds = null;
 		buffer = null;
+		images = null;
 		version++;
 		notify();
 		return;
@@ -127,6 +132,7 @@ export function beginSession(b: Bounds, radiusMeters: number): void {
 	texH = h;
 	radiusPx = Math.max(radiusMeters / mpp, MIN_DISC_PX);
 	buffer = null; // allocated on first probe
+	images = null; // dimensions changed
 	version++;
 	notify();
 }
@@ -144,6 +150,7 @@ export function addProbe(lng: number, lat: number): void {
 export function endSession(): void {
 	bounds = null;
 	buffer = null;
+	images = null;
 	version++;
 	notify();
 }
@@ -153,6 +160,7 @@ export function setEnabled(value: boolean): void {
 	enabled = value;
 	if (!value) {
 		buffer = null;
+		images = null;
 		version++;
 		notify();
 	}
@@ -165,8 +173,11 @@ export function hasCoverage(): boolean {
 export function getCoverageImage(): SearchCoverageImage | null {
 	if (!buffer || !bounds) return null;
 	if (typeof ImageData === "undefined") return null;
-	// Fresh ImageData each call so a BitmapLayer (which diffs `image` by reference) re-uploads.
-	const image = new ImageData(texW, texH);
+	// Alternate between two reused ImageData: BitmapLayer diffs `image` by reference,
+	// so the flip forces a re-upload without a fresh multi-MB allocation per flush.
+	if (!images) images = [new ImageData(texW, texH), new ImageData(texW, texH)];
+	frontImage = 1 - frontImage;
+	const image = images[frontImage];
 	image.data.set(buffer);
 	return { image, bounds };
 }

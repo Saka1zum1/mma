@@ -9,9 +9,9 @@ function tagIdsToNames(tagIds: number[], tags: Record<string, Tag>): string[] {
 
 function serializeActive(active: Location): string {
 	const { id: _id, createdAt: _createdAt, modifiedAt: _modifiedAt, ...editable } = active;
-	const map = MMA.getCurrentMap();
+	const map = MMA.getMapState().map;
 	const display = map
-		? { ...editable, tags: tagIdsToNames(editable.tags, map.meta.tags) }
+		? { ...editable, tags: tagIdsToNames(editable.tags, MMA.getMapState().tags) }
 		: editable;
 	return JSON.stringify(display, null, 2);
 }
@@ -23,7 +23,7 @@ async function resolveTagNames(names: string[]): Promise<number[]> {
 }
 
 export function JsonEditorPanel() {
-	const active = MMA.getActiveLocation();
+	const active = MMA.getMapState().activeLocation;
 	const prevIdRef = useRef(active?.id);
 	const [text, setText] = useState(() => (active ? serializeActive(active) : ""));
 	const [error, setError] = useState<string | null>(null);

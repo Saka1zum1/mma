@@ -1,16 +1,10 @@
-import { useState } from "react";
-import { useDomEvent } from "@/lib/hooks/useDomEvent";
+import { useState, useCallback } from "react";
+import { useDialog } from "@/store/dialogBus";
 import { Tooltip } from "@/components/primitives/Tooltip";
-import {
-	useCurrentMap,
-	useUndoRedo,
-	useCommitDiff,
-	hasCommitDiff,
-	undo,
-	redo,
-	commitMap,
-	beginImportFile,
-} from "@/store/useMapStore";
+import { useMapState, undo, redo, commitMap } from "@/store/useMapStore";
+import { useCommitDiff, hasCommitDiff } from "@/store/commitDiff";
+import { beginImportFromPath } from "@/store/importStaging";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { ExportDialog } from "@/components/dialogs/ExportDialog";
 import { VersionHistory } from "@/components/dialogs/VersionHistory";
 import { SeenDialog } from "@/components/dialogs/SeenDialog";
@@ -22,77 +16,109 @@ import { Button } from "@/components/primitives/Button";
 import { mdiUndo, mdiRedo } from "@mdi/js";
 import { fmt } from "@/lib/util/format";
 
-export function MapMetaBar() {
-	const map = useCurrentMap();
-	const { canUndo, canRedo } = useUndoRedo();
+function LocationTotal() {
+	const locationCount = useMapState((s) => s.locationCount);
+	return (
+		<span className="map-meta__total">
+			<span className="mono">{fmt.format(locationCount)}</span> locations
+		</span>
+	);
+}
+
+function CommitControls() {
 	const diff = useCommitDiff();
 	const hasDiff = hasCommitDiff();
+	return (
+		<>
+			<Button variant="primary" disabled={!hasDiff} onClick={() => commitMap()}>
+				Commit
+			</Button>
+			{hasDiff && (
+				<span className="map-meta__count mono">
+					<span className="map-meta__count--added">+{fmt.format(diff.added)}</span>{" "}
+					<span className="map-meta__count--removed">-{fmt.format(diff.removed)}</span>{" "}
+					<span className="map-meta__count--updated">&plusmn;{fmt.format(diff.modified)}</span>
+				</span>
+			)}
+		</>
+	);
+}
+
+function UndoRedoControls() {
+	const canUndo = useMapState((s) => s.canUndo);
+	const canRedo = useMapState((s) => s.canRedo);
+	return (
+		<>
+			<Tooltip content="Undo">
+				<button
+					type="button"
+					className="icon-button"
+					disabled={!canUndo}
+					style={{ color: canUndo ? undefined : "var(--text-3)" }}
+					aria-label="Undo"
+					onClick={undo}
+				>
+					<Icon path={mdiUndo} />
+				</button>
+			</Tooltip>
+			<Tooltip content="Redo">
+				<button
+					type="button"
+					className="icon-button"
+					disabled={!canRedo}
+					style={{ color: canRedo ? undefined : "var(--text-3)" }}
+					aria-label="Redo"
+					onClick={redo}
+				>
+					<Icon path={mdiRedo} />
+				</button>
+			</Tooltip>
+		</>
+	);
+}
+
+export function MapMetaBar() {
+	const map = useMapState((s) => s.map);
 	const [showExport, setShowExport] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
 	const [showSeen, setShowSeen] = useState(false);
 	const [showCopyToMap, setShowCopyToMap] = useState(false);
 	const [showQuickCopy, setShowQuickCopy] = useState(false);
 
-	useDomEvent("open-export", () => setShowExport(true));
-	useDomEvent("open-import", beginImportFile);
-	useDomEvent("open-history", () => setShowHistory(true));
-	useDomEvent("open-seen", () => setShowSeen(true));
-	useDomEvent("open-copy-to-map", () => setShowCopyToMap(true));
-	useDomEvent("open-quick-copy-to-map", () => setShowQuickCopy(true));
+	useDialog("export", () => setShowExport(true));
+	const importFile = useCallback(async () => {
+		const path = await openFileDialog({
+			multiple: false,
+			filters: [{ name: "Map data", extensions: ["json", "csv"] }],
+		});
+		if (!path || typeof path !== "string") return;
+		await beginImportFromPath(path);
+	}, []);
+	useDialog("import", importFile);
+	useDialog("history", () => setShowHistory(true));
+	useDialog("seen", () => setShowSeen(true));
+	useDialog("copy-to-map", () => setShowCopyToMap(true));
+	useDialog("quick-copy-to-map", () => setShowQuickCopy(true));
 
 	if (!map) return null;
 
 	return (
 		<>
-			<span className="map-meta__total">
-				<span className="mono">{fmt.format(map.meta.locationCount)}</span> locations
-			</span>
+			<LocationTotal />
 			<span className="map-meta__actions">
-				<Button variant="primary" disabled={!hasDiff} onClick={() => commitMap()}>
-					Commit
-				</Button>
-				{hasDiff && (
-					<span className="map-meta__count mono">
-						<span className="map-meta__count--added">+{fmt.format(diff.added)}</span>{" "}
-						<span className="map-meta__count--removed">-{fmt.format(diff.removed)}</span>{" "}
-						<span className="map-meta__count--updated">&plusmn;{fmt.format(diff.modified)}</span>
-					</span>
-				)}
-				<Tooltip content="Undo">
-					<button
-						type="button"
-						className="icon-button"
-						disabled={!canUndo}
-						style={{ color: canUndo ? undefined : "var(--text-3)" }}
-						aria-label="Undo"
-						onClick={undo}
-					>
-						<Icon path={mdiUndo} />
-					</button>
-				</Tooltip>
-				<Tooltip content="Redo">
-					<button
-						type="button"
-						className="icon-button"
-						disabled={!canRedo}
-						style={{ color: canRedo ? undefined : "var(--text-3)" }}
-						aria-label="Redo"
-						onClick={redo}
-					>
-						<Icon path={mdiRedo} />
-					</button>
-				</Tooltip>
+				<CommitControls />
+				<UndoRedoControls />
 			</span>
 			<span className="map-meta__spacer"></span>
 			<div className="map-meta__import">
 				<Button onClick={() => setShowSeen(true)}>Seen</Button>
 				<Button onClick={() => setShowHistory(true)}>History</Button>
-				<Button onClick={() => beginImportFile()}>Import file</Button>
+				<Button onClick={importFile}>Import file</Button>
 				<Button onClick={() => setShowExport(true)}>Export</Button>
 			</div>
 			{showExport && <ExportDialog onClose={() => setShowExport(false)} />}
 			{showHistory && <VersionHistory onClose={() => setShowHistory(false)} />}
-			<SeenDialog open={showSeen} onOpenChange={setShowSeen} onLoadPano={loadSeenPano} />
+			{showSeen && <SeenDialog open onOpenChange={setShowSeen} onLoadPano={loadSeenPano} />}
 			{showCopyToMap && <CopyToMapDialog onClose={() => setShowCopyToMap(false)} />}
 			{showQuickCopy && <QuickCopyToMapDialog onClose={() => setShowQuickCopy(false)} />}
 		</>

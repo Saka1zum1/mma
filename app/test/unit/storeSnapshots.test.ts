@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getSelections, getGhostedSelections, toggleGhostSelection } from "@/store/useMapStore";
+import { getActiveSelections, getMapState, toggleGhostSelection } from "@/store/useMapStore";
 
 // Store hooks use their value as the useSyncExternalStore snapshot, so consumers
 // re-render iff the reference changes. Two invariants keep that correct:
@@ -8,24 +8,24 @@ import { getSelections, getGhostedSelections, toggleGhostSelection } from "@/sto
 
 describe("store snapshot invariants", () => {
 	it("ghostedSelections is reassigned on every change, never mutated in place", () => {
-		const before = getGhostedSelections();
+		const before = getMapState().ghostedSelections;
 		toggleGhostSelection("tag:1");
-		const ghosted = getGhostedSelections();
+		const ghosted = getMapState().ghostedSelections;
 		expect(ghosted).not.toBe(before);
 		expect(ghosted.has("tag:1")).toBe(true);
 
 		toggleGhostSelection("tag:1");
-		const unghosted = getGhostedSelections();
+		const unghosted = getMapState().ghostedSelections;
 		expect(unghosted).not.toBe(ghosted);
 		expect(unghosted.has("tag:1")).toBe(false);
 	});
 
-	it("getSelections returns a stable reference between mutations", () => {
-		expect(getSelections()).toBe(getSelections());
+	it("getActiveSelections returns a stable reference between mutations", () => {
+		expect(getActiveSelections()).toBe(getActiveSelections());
 		// The filtered (ghosted non-empty) branch must be cached too.
 		toggleGhostSelection("tag:2");
-		expect(getGhostedSelections().size).toBeGreaterThan(0);
-		expect(getSelections()).toBe(getSelections());
+		expect(getMapState().ghostedSelections.size).toBeGreaterThan(0);
+		expect(getActiveSelections()).toBe(getActiveSelections());
 		toggleGhostSelection("tag:2");
 	});
 });

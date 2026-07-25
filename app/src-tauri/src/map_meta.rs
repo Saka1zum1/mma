@@ -240,105 +240,108 @@ impl Default for ScoreBounds {
 // Known field defs + auto-registration
 // ---------------------------------------------------------------------------
 
+struct KnownField {
+    key: &'static str,
+    type_tag: &'static str,
+    label: &'static str,
+    values: &'static [&'static str],
+    labels: &'static [(&'static str, &'static str)],
+    circular_period: Option<f64>,
+}
+
+impl KnownField {
+    const fn simple(key: &'static str, type_tag: &'static str, label: &'static str) -> Self {
+        Self {
+            key,
+            type_tag,
+            label,
+            values: &[],
+            labels: &[],
+            circular_period: None,
+        }
+    }
+}
+
+static KNOWN_FIELDS: &[KnownField] = &[
+    KnownField::simple("altitude", "number", "Altitude"),
+    KnownField::simple("countryCode", "string", "Country code"),
+    KnownField {
+        key: "cameraType",
+        type_tag: "enum",
+        label: "Camera type",
+        values: &["gen1", "gen2", "gen4", "badcam", "tripod"],
+        labels: &[
+            ("gen1", "Gen 1"),
+            ("gen2", "Gen 2/3"),
+            ("gen4", "Gen 4"),
+            ("badcam", "Bad cam"),
+            ("tripod", "Tripod"),
+        ],
+        circular_period: None,
+    },
+    KnownField {
+        key: "panoType",
+        type_tag: "enum",
+        label: "Pano type",
+        values: &["2", "3", "10"],
+        labels: &[("2", "Official"), ("3", "Unknown"), ("10", "User uploaded")],
+        circular_period: None,
+    },
+    KnownField::simple("imageDate", "month", "Image date"),
+    KnownField::simple("datetime", "date", "Exact date"),
+    KnownField::simple("timezone", "enum", "Timezone"),
+    KnownField {
+        key: "drivingDirection",
+        type_tag: "number",
+        label: "Driving direction",
+        values: &[],
+        labels: &[],
+        circular_period: Some(360.0),
+    },
+    KnownField::simple("uploaderName", "string", "Uploader"),
+    KnownField::simple("coverageDates", "array", "Coverage dates"),
+];
+
+fn type_from_tag(tag: &str) -> ExtraFieldType {
+    match tag {
+        "number" => ExtraFieldType::Number,
+        "date" => ExtraFieldType::Date,
+        "month" => ExtraFieldType::Month,
+        "enum" => ExtraFieldType::Enum,
+        "array" => ExtraFieldType::Array,
+        _ => ExtraFieldType::String,
+    }
+}
+
 /// Returns a curated field definition for well-known SV metadata keys
 /// (altitude, countryCode, cameraType, etc.). Falls back to `None` for
 /// user-defined fields, which get type-inferred instead.
 pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
-    match key {
-        "altitude" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Number,
-            label: Some("Altitude".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "countryCode" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::String,
-            label: Some("Country code".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "cameraType" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Enum,
-            label: Some("Camera type".into()),
-            values: Some(vec![
-                "gen1".into(),
-                "gen2".into(),
-                "gen4".into(),
-                "badcam".into(),
-                "tripod".into(),
-            ]),
-            labels: Some(
-                [
-                    ("gen1", "Gen 1"),
-                    ("gen2", "Gen 2/3"),
-                    ("gen4", "Gen 4"),
-                    ("badcam", "Bad cam"),
-                    ("tripod", "Tripod"),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect(),
-            ),
-            comparison: None,
-        }),
-        "panoType" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Enum,
-            label: Some("Pano type".into()),
-            values: Some(vec!["2".into(), "3".into(), "10".into()]),
-            labels: Some(
-                [("2", "Official"), ("3", "Unknown"), ("10", "User uploaded")]
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect(),
-            ),
-            comparison: None,
-        }),
-        "imageDate" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Month,
-            label: Some("Image date".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "datetime" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Date,
-            label: Some("Exact date".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "timezone" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Enum,
-            label: Some("Timezone".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "drivingDirection" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Number,
-            label: Some("Driving direction".into()),
-            values: None,
-            labels: None,
-            comparison: Some(ComparisonType::Circular { period: 360.0 }),
-        }),
-        "uploaderName" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::String,
-            label: Some("Uploader".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "coverageDates" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Array,
-            label: Some("Coverage dates".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        _ => None,
-    }
+    KNOWN_FIELDS
+        .iter()
+        .find(|f| f.key == key)
+        .map(|f| ExtraFieldDef {
+            field_type: type_from_tag(f.type_tag),
+            label: Some(f.label.into()),
+            values: if f.values.is_empty() {
+                None
+            } else {
+                Some(f.values.iter().map(|s| (*s).into()).collect())
+            },
+            labels: if f.labels.is_empty() {
+                None
+            } else {
+                Some(
+                    f.labels
+                        .iter()
+                        .map(|(k, v)| ((*k).into(), (*v).into()))
+                        .collect(),
+                )
+            },
+            comparison: f
+                .circular_period
+                .map(|p| ComparisonType::Circular { period: p }),
+        })
 }
 
 /// Infer an `ExtraFieldType` from a sample JSON value. Numbers become `Number`,
@@ -480,22 +483,16 @@ where
 /// Deserialize a SQLite row into `MapMeta`, parsing JSON columns with
 /// fallback defaults for forward compatibility.
 fn row_to_map_meta(row: &rusqlite::Row<'_>) -> Result<MapMeta, rusqlite::Error> {
-    let settings_str: String = row.get("settings")?;
-    let score_bounds_str: String = row.get("score_bounds")?;
-    let extra_str: String = row.get("extra")?;
-    let tags_str: String = row.get("tags")?;
-    let labels_str: String = row.get("labels")?;
-
     Ok(MapMeta {
         id: row.get("id")?,
         name: row.get("name")?,
         description: row.get("description")?,
         folder: row.get("folder")?,
-        settings: serde_json::from_str(&settings_str).unwrap_or_default(),
-        score_bounds: serde_json::from_str(&score_bounds_str).unwrap_or_default(),
-        extra: serde_json::from_str(&extra_str).unwrap_or_default(),
-        tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-        labels: serde_json::from_str(&labels_str).unwrap_or_default(),
+        settings: storage::json_col(row, "settings")?,
+        score_bounds: storage::json_col(row, "score_bounds")?,
+        extra: storage::json_col(row, "extra")?,
+        tags: storage::json_col(row, "tags")?,
+        labels: storage::json_col(row, "labels")?,
         location_count: row.get("location_count")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -594,48 +591,24 @@ pub fn store_update_map_meta(
     id: String,
     patch: MapMetaPatch,
 ) -> AppResult<()> {
-    let mut sets: Vec<String> = Vec::new();
+    let mut sets: Vec<&str> = Vec::new();
     let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    if let Some(ref v) = patch.name {
-        sets.push("name = ?".into());
-        values.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = patch.description {
-        sets.push("description = ?".into());
-        values.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = patch.folder {
-        sets.push("folder = ?".into());
-        values.push(Box::new(v.clone()));
-    }
-    if let Some(ref v) = patch.settings {
-        sets.push("settings = ?".into());
-        values.push(Box::new(serde_json::to_string(v).unwrap_or_default()));
-    }
-    if let Some(ref v) = patch.score_bounds {
-        sets.push("score_bounds = ?".into());
-        values.push(Box::new(serde_json::to_string(v).unwrap_or_default()));
-    }
-    if let Some(ref v) = patch.extra {
-        sets.push("extra = ?".into());
-        values.push(Box::new(serde_json::to_string(v).unwrap_or_default()));
-    }
-    if let Some(ref v) = patch.tags {
-        sets.push("tags = ?".into());
-        values.push(Box::new(serde_json::to_string(&v).unwrap_or_default()));
-    }
-    if let Some(ref v) = patch.labels {
-        sets.push("labels = ?".into());
-        values.push(Box::new(serde_json::to_string(v).unwrap_or_default()));
-    }
+    push_field!(sets, values, patch, "name", name);
+    push_field!(sets, values, patch, "description", description);
+    push_field!(sets, values, patch, "folder", folder);
+    push_field!(json sets, values, patch, "settings", settings);
+    push_field!(json sets, values, patch, "score_bounds", score_bounds);
+    push_field!(json sets, values, patch, "extra", extra);
+    push_field!(json sets, values, patch, "tags", tags);
+    push_field!(json sets, values, patch, "labels", labels);
 
     if sets.is_empty() {
         return Ok(());
     }
 
     let now = now_iso();
-    sets.push("updated_at = ?".to_string());
+    sets.push("updated_at = ?");
     values.push(Box::new(now));
     let id_clone = id.clone();
     values.push(Box::new(id));

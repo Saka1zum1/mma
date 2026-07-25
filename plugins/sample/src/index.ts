@@ -3,7 +3,7 @@
 
 MMA.registerPlugin({
   activate() {
-    const map = MMA.getCurrentMap();
+    const map = MMA.getMapState().map;
     if (map) {
       console.log(`[sample] Activated on "${map.meta.name}"`);
     }
@@ -14,7 +14,7 @@ MMA.registerPlugin({
     });
 
     // Read/write location extra fields
-    // const loc = MMA.getActiveLocation();
+    // const loc = MMA.getMapState().activeLocation;
     // if (loc) {
     //   MMA.updateLocation(loc, {
     //     extra: { ...loc.extra, myField: "hello from plugin" },

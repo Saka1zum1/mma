@@ -38,9 +38,6 @@ export interface MapHostEvents {
 	mouseout: void;
 	zoom: void;
 	camera: void;
-	// Camera settled after a pan/zoom animation. Zoom fires at animation START with
-	// the target zoom; idle is the signal that the interpolation has finished.
-	idle: void;
 	tilesloaded: void;
 }
 

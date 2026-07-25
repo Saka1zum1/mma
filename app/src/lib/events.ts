@@ -1,16 +1,25 @@
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { log } from "@/lib/util/log";
 import type {
 	Location,
 	Update,
 	LocationPatch_Deserialize,
 	MapData,
+	RenderDelta,
 	Selection,
 	Tag,
 	TagPatch,
 } from "@/bindings.gen";
+import type { SelectedIds, SelCellEntry } from "@/lib/render/CellManager";
 
 /** Phantom helper: captures a payload type at the value level without a real value. */
 const event = <T>() => null as T;
+
+export interface SelectionBitmaskPayload {
+	selColors: [number, number, number][];
+	cellEntries: SelCellEntry[];
+	setIds: (ids: SelectedIds) => void;
+}
 
 const EVENT_DEFS = {
 	"location:add": event<Location[]>(),
@@ -23,6 +32,28 @@ const EVENT_DEFS = {
 	"active:change": event<number | null>(),
 	"map:open": event<MapData>(),
 	"map:close": event<void>(),
+	"store:changed": event<void>(),
+	"render:delta": event<RenderDelta>(),
+	"render:selection": event<SelectionBitmaskPayload>(),
+	"settings:changed": event<void>(),
+	"fullscreen:changed": event<void>(),
+	"plugins:changed": event<void>(),
+	"hotkeys:changed": event<void>(),
+	"toasts:changed": event<void>(),
+	"scene:changed": event<void>(),
+	"measure:changed": event<void>(),
+	"anchor:changed": event<void>(),
+	"viewport-lock:changed": event<void>(),
+	"trail:changed": event<void>(),
+	"altitude:changed": event<void>(),
+	"seen:changed": event<void>(),
+	"update:changed": event<void>(),
+	"review:changed": event<void>(),
+	"fields:changed": event<void>(),
+	"route:changed": event<void>(),
+	"import-markers:changed": event<void>(),
+	"diff-markers:changed": event<void>(),
+	"commit-diff:changed": event<void>(),
 };
 
 export type EditorEventMap = typeof EVENT_DEFS;
@@ -37,8 +68,10 @@ type EmitArgs<E extends EditorEvent> = EditorEventMap[E] extends void
 const ALL_EVENTS = Object.keys(EVENT_DEFS) as EditorEvent[];
 
 const handlers = new Map<EditorEvent, Set<(payload: never) => void>>();
+const versions = new Map<EditorEvent, number>();
 
 export function emit<E extends EditorEvent>(evt: E, ...args: EmitArgs<E>): void {
+	versions.set(evt, (versions.get(evt) ?? 0) + 1);
 	const set = handlers.get(evt);
 	if (!set) return;
 	const payload = args[0] as never;
@@ -49,6 +82,39 @@ export function emit<E extends EditorEvent>(evt: E, ...args: EmitArgs<E>): void 
 			log.error(`[event] ${evt}:`, e);
 		}
 	}
+}
+
+/** Normalizes event input into a stable key, event list, and subscribe callback. */
+function useEventSubscription(evt: EditorEvent | readonly EditorEvent[]) {
+	const key = Array.isArray(evt) ? evt.join("|") : (evt as string);
+	const events = useMemo(() => key.split("|") as EditorEvent[], [key]);
+	const sub = useCallback((cb: () => void) => subscribeMany(events, cb), [events]);
+	return { events, sub };
+}
+
+/** Subscribe to an event and derive a reactive value from it. The value itself is the
+ *  `useSyncExternalStore` snapshot, so consumers re-render only when its reference
+ *  changes (`Object.is`). Two invariants follow:
+ *  - `getValue` must return a cached/stable reference, never construct one per call
+ *  - producers must reassign the published reference, never mutate it in place */
+export function useEventValue<T>(evt: EditorEvent | readonly EditorEvent[], getValue: () => T): T {
+	const { sub } = useEventSubscription(evt);
+	return useSyncExternalStore(sub, getValue);
+}
+
+/** React hook: re-renders when the given event(s) fire. Returns a version counter. */
+export function useEvent(evt: EditorEvent | readonly EditorEvent[]): number {
+	const { events, sub } = useEventSubscription(evt);
+	const snap = useCallback(
+		() => events.reduce((sum, e) => sum + (versions.get(e) ?? 0), 0),
+		[events],
+	);
+	return useSyncExternalStore(sub, snap);
+}
+
+/** Non-hook read of the version counter for a single event. */
+export function getEventVersion(evt: EditorEvent): number {
+	return versions.get(evt) ?? 0;
 }
 
 export function subscribe<E extends EditorEvent>(evt: E, handler: EventHandler<E>): () => void {
@@ -72,7 +138,9 @@ export function subscribeMany(events: readonly EditorEvent[], handler: () => voi
 
 /** Events under a given `namespace:` prefix, derived from the event map. */
 type EventsWithPrefix<P extends string> = Extract<EditorEvent, `${P}:${string}`>;
-const eventsWithPrefix = <P extends string>(prefix: P): EventsWithPrefix<P>[] =>
+const eventsWithPrefix = <P extends string>(
+	prefix: [EventsWithPrefix<P>] extends [never] ? `No events match prefix "${P}:"` : P,
+): EventsWithPrefix<P>[] =>
 	ALL_EVENTS.filter((e): e is EventsWithPrefix<P> => e.startsWith(`${prefix}:`));
 
 /** The events that fire whenever location data changes. */

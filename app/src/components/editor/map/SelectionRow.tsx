@@ -1,8 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { memo, useState, useEffect, useCallback, useRef } from "react";
 import {
-	useCurrentMap,
-	useGhostedSelections,
-	useSelectionCounts,
+	useMapState,
 	selectInverse,
 	setPolygonName,
 	setSelectionColors,
@@ -13,6 +11,7 @@ import {
 	composeSelections,
 	decomposeChild,
 	removeChildFromSelection,
+	removeSelections,
 	toggleGhostSelection,
 	isolateSelection,
 	updateFilterSelection,
@@ -20,6 +19,7 @@ import {
 	getVisibleTags,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
+import { downloadBlob } from "@/lib/util/util";
 import { stepFilterWindow } from "@/lib/data/fieldOps";
 import { cmd } from "@/lib/commands";
 import { RgbColorPicker } from "react-colorful";
@@ -45,7 +45,7 @@ import {
 	mdiGhost,
 	mdiGhostOutline,
 } from "@mdi/js";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Menu } from "@base-ui-components/react/menu";
 import { fmt } from "@/lib/util/format";
 import { rgbCss } from "@/lib/util/color";
 import { getMapHost } from "@/lib/map/mapState";
@@ -109,24 +109,35 @@ function useDragState() {
 	return activeDrag;
 }
 
-export function SelectionRow({
+/** An Invert wraps exactly one selection; its row renders the wrapped one. */
+function innerOf(selection: Selection): Selection {
+	return selection.props.type === "Invert" ? selection.props.selections[0] : selection;
+}
+
+export const SelectionRow = memo(function SelectionRow({
 	selection,
 	depth = 0,
 	parentKey,
-	onRemove,
 	inheritedGhost = false,
 }: {
 	selection: Selection;
 	depth?: number;
 	parentKey?: string | null;
-	onRemove?: () => void;
 	inheritedGhost?: boolean;
 }) {
-	const map = useCurrentMap();
-	const ghostedKeys = useGhostedSelections();
-	const count = useSelectionCounts()[selection.key] ?? 0;
+	const map = useMapState((s) => s.map);
+	const tagColor = useMapState((s) => {
+		const i = innerOf(selection);
+		return i.props.type === "Tag" ? s.tags[i.props.tagId]?.color : undefined;
+	});
+	const count = useMapState((s) => s.selectionCounts[selection.key] ?? 0);
 	const isTopLevel = depth === 0;
-	const ghosted = inheritedGhost || (isTopLevel && ghostedKeys.has(selection.key));
+	const ghosted = useMapState(
+		(s) => inheritedGhost || (depth === 0 && s.ghostedSelections.has(selection.key)),
+	);
+	const onRemove = parentKey
+		? () => removeChildFromSelection(parentKey, selection.key)
+		: () => removeSelections([selection.key]);
 	const [view, setView] = useState<"contextmenu" | "color">("contextmenu");
 	const [dropZone, setDropZone] = useState<"before" | "on" | "after" | null>(null);
 	const [editingFilter, setEditingFilter] = useState(false);
@@ -150,7 +161,7 @@ export function SelectionRow({
 	const fieldEntries = useExtraFieldKeys();
 
 	if (!map) return null;
-	const inner = selection.props.type === "Invert" ? selection.props.selections[0] : selection;
+	const inner = innerOf(selection);
 	const stepFilter = (() => {
 		const p = selection.props;
 		if (p.type !== "Filter") return null;
@@ -174,9 +185,7 @@ export function SelectionRow({
 	const showChildren = inner.props.type === "Intersection" || inner.props.type === "Union";
 	const isPoly = selection.props.type === "Polygon";
 	const colorBlockCss =
-		inner.props.type === "Tag"
-			? (map.meta.tags[inner.props.tagId]?.color ?? rgbCss(selection.color))
-			: rgbCss(selection.color);
+		inner.props.type === "Tag" ? (tagColor ?? rgbCss(selection.color)) : rgbCss(selection.color);
 
 	const handleRename = () => {
 		if (selection.props.type !== "Polygon") return;
@@ -205,13 +214,10 @@ export function SelectionRow({
 			properties: poly.properties ?? {},
 			geometry: { type: "Polygon", coordinates: poly.coordinates },
 		};
-		const blob = new Blob([JSON.stringify(fc)], { type: "application/geo+json" });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
-		a.href = url;
-		a.download = `${name}.geojson`;
-		a.click();
-		URL.revokeObjectURL(url);
+		downloadBlob(
+			new Blob([JSON.stringify(fc)], { type: "application/geo+json" }),
+			`${name}.geojson`,
+		);
 	};
 
 	const handleMouseDown = (e: React.MouseEvent) => {
@@ -348,121 +354,112 @@ export function SelectionRow({
 							</button>
 						</>
 					)}
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger asChild>
-							<button className="icon-button" type="button" aria-label="Selection options">
-								<Icon path={mdiDotsVertical} />
-							</button>
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Portal>
-							<DropdownMenu.Content
-								className="context-menu"
-								align="end"
-								onCloseAutoFocus={() => setView("contextmenu")}
-							>
-								{view === "color" ? (
-									<div style={{ padding: "0.5rem", width: "14rem" }}>
-										<RgbColorPicker
-											color={{
-												r: selection.color[0],
-												g: selection.color[1],
-												b: selection.color[2],
-											}}
-											onChange={handleColorChange}
-										/>
-									</div>
-								) : (
-									<>
-										<DropdownMenu.Item
-											className="context-menu__item"
-											onSelect={() => selectInverse([selection.key])}
-										>
-											Invert selection
-										</DropdownMenu.Item>
-										{selection.props.type === "Filter" && (
-											<DropdownMenu.Item
-												className="context-menu__item"
-												onSelect={() => setEditingFilter(true)}
-											>
-												Edit filter
-											</DropdownMenu.Item>
-										)}
-										<DropdownMenu.Item
-											className="context-menu__item"
-											disabled={count === 0}
-											onSelect={async () => {
-												const ids = await cmd.storeResolveSelection(selection.props);
-												beginReview(ids, selection);
-											}}
-										>
-											Review selection
-										</DropdownMenu.Item>
-										{selection.props.type !== "Tag" && (
-											<DropdownMenu.Item
-												className="context-menu__item"
-												disabled={count === 0}
-												onSelect={() => {
-													const names = new Set(getVisibleTags().map((t) => t.name));
-													setTagName(uniqueTagName(selectionDisplayName(selection), names));
-													setSavingTag(true);
+					<Menu.Root onOpenChange={(open) => !open && setView("contextmenu")}>
+						<Menu.Trigger
+							render={
+								<button className="icon-button" type="button" aria-label="Selection options">
+									<Icon path={mdiDotsVertical} />
+								</button>
+							}
+						/>
+						<Menu.Portal>
+							<Menu.Positioner align="end">
+								<Menu.Popup className="context-menu">
+									{view === "color" ? (
+										<div style={{ padding: "0.5rem", width: "14rem" }}>
+											<RgbColorPicker
+												color={{
+													r: selection.color[0],
+													g: selection.color[1],
+													b: selection.color[2],
 												}}
-											>
-												Save as tag
-											</DropdownMenu.Item>
-										)}
-										{pruneDistance(selection) != null && (
-											<DropdownMenu.Item
+												onChange={handleColorChange}
+											/>
+										</div>
+									) : (
+										<>
+											<Menu.Item
 												className="context-menu__item"
-												disabled={count === 0}
-												onSelect={async () => {
-													const n = await pruneDuplicates(
-														selection.props,
-														pruneDistance(selection)!,
-													);
-													toast(`Pruned ${fmt.format(n)} duplicate${n === 1 ? "" : "s"}`);
-												}}
+												onClick={() => selectInverse([selection.key])}
 											>
-												Prune duplicates
-											</DropdownMenu.Item>
-										)}
-										{selection.props.type !== "Tag" && (
-											<DropdownMenu.Item
-												className="context-menu__item"
-												onSelect={(e) => {
-													e.preventDefault();
-													setView("color");
-												}}
-											>
-												Change color
-											</DropdownMenu.Item>
-										)}
-										{isPoly && (
-											<>
-												<DropdownMenu.Separator className="context-menu__separator" />
-												<DropdownMenu.Item
+												Invert selection
+											</Menu.Item>
+											{selection.props.type === "Filter" && (
+												<Menu.Item
 													className="context-menu__item"
-													onSelect={handleDownloadGeoJSON}
+													onClick={() => setEditingFilter(true)}
 												>
-													Download GeoJSON
-												</DropdownMenu.Item>
-												<DropdownMenu.Item className="context-menu__item" onSelect={handleRename}>
-													Rename
-												</DropdownMenu.Item>
-											</>
-										)}
-										{onRemove && (
-											<>
-												<DropdownMenu.Separator className="context-menu__separator" />
-												<DropdownMenu.Item className="context-menu__item" onSelect={onRemove}>
-													Deselect
-												</DropdownMenu.Item>
-											</>
-										)}
-									</>
-								)}
-							</DropdownMenu.Content>
-						</DropdownMenu.Portal>
-					</DropdownMenu.Root>
+													Edit filter
+												</Menu.Item>
+											)}
+											<Menu.Item
+												className="context-menu__item"
+												disabled={count === 0}
+												onClick={async () => {
+													const ids = await cmd.storeResolveSelection(selection.props);
+													beginReview(ids, selection);
+												}}
+											>
+												Review selection
+											</Menu.Item>
+											{selection.props.type !== "Tag" && (
+												<Menu.Item
+													className="context-menu__item"
+													disabled={count === 0}
+													onClick={() => {
+														const names = new Set(getVisibleTags().map((t) => t.name));
+														setTagName(uniqueTagName(selectionDisplayName(selection), names));
+														setSavingTag(true);
+													}}
+												>
+													Save as tag
+												</Menu.Item>
+											)}
+											{pruneDistance(selection) != null && (
+												<Menu.Item
+													className="context-menu__item"
+													disabled={count === 0}
+													onClick={async () => {
+														const n = await pruneDuplicates(
+															selection.props,
+															pruneDistance(selection)!,
+														);
+														toast(`Pruned ${fmt.format(n)} duplicate${n === 1 ? "" : "s"}`);
+													}}
+												>
+													Prune duplicates
+												</Menu.Item>
+											)}
+											{selection.props.type !== "Tag" && (
+												<Menu.Item
+													className="context-menu__item"
+													closeOnClick={false}
+													onClick={() => setView("color")}
+												>
+													Change color
+												</Menu.Item>
+											)}
+											{isPoly && (
+												<>
+													<Menu.Separator className="context-menu__separator" />
+													<Menu.Item className="context-menu__item" onClick={handleDownloadGeoJSON}>
+														Download GeoJSON
+													</Menu.Item>
+													<Menu.Item className="context-menu__item" onClick={handleRename}>
+														Rename
+													</Menu.Item>
+												</>
+											)}
+											<Menu.Separator className="context-menu__separator" />
+											<Menu.Item className="context-menu__item" onClick={onRemove}>
+												Deselect
+											</Menu.Item>
+										</>
+									)}
+								</Menu.Popup>
+							</Menu.Positioner>
+						</Menu.Portal>
+					</Menu.Root>
 					{isTopLevel && (
 						<button
 							className="icon-button"
@@ -476,11 +473,9 @@ export function SelectionRow({
 							<Icon path={ghosted ? mdiGhost : mdiGhostOutline} />
 						</button>
 					)}
-					{onRemove && (
-						<button className="icon-button" type="button" onClick={onRemove} aria-label="Deselect">
-							<Icon path={mdiClose} />
-						</button>
-					)}
+					<button className="icon-button" type="button" onClick={onRemove} aria-label="Deselect">
+						<Icon path={mdiClose} />
+					</button>
 				</span>
 			</div>
 			{editingFilter && selection.props.type === "Filter" && (
@@ -548,9 +543,8 @@ export function SelectionRow({
 						depth={depth + 1}
 						parentKey={selection.key}
 						inheritedGhost={ghosted}
-						onRemove={() => removeChildFromSelection(selection.key, child.key)}
 					/>
 				))}
 		</>
 	);
-}
+});

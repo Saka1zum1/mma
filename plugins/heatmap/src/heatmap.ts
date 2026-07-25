@@ -24,7 +24,7 @@ export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
 const store = MMA.storage("heatmap");
 
 function defaultSource(): SourceScope {
-	return MMA.getSelectedLocationIds().size > 0 ? { kind: "selected" } : { kind: "all" };
+	return MMA.getMapState().selectedLocationIds.size > 0 ? { kind: "selected" } : { kind: "all" };
 }
 
 function newLayer(): HeatmapLayerSettings {

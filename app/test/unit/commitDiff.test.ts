@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { categorizeCommitDelta, diffPositions } from "@/store/useMapStore";
+import { categorizeCommitDelta, diffPositions } from "@/store/commitDiff";
 
 const loc = (id: number, lat: number, lng: number) => ({ id, lat, lng });
 

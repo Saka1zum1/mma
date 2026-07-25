@@ -1,0 +1,140 @@
+﻿import { useEffect } from "react";
+import type { LatLng } from "@/types";
+import type { CommitDelta, CommitDiff, CommitInfo, Location } from "@/bindings.gen";
+import { cmd } from "@/lib/commands";
+import { fitMapToBounds } from "@/lib/map/mapState";
+import { emit as emitEvent, subscribe, useEventValue } from "@/lib/events";
+import { getMapState, setWorkArea } from "./useMapStore";
+
+// --- Uncommitted-diff counts (drives the Commit button + palette enablement) ---
+
+const ZERO_DIFF: CommitDiff = { added: 0, removed: 0, modified: 0 };
+let cachedCommitDiff = ZERO_DIFF;
+
+export function hasCommitDiff(): boolean {
+	return (
+		cachedCommitDiff.added > 0 || cachedCommitDiff.removed > 0 || cachedCommitDiff.modified > 0
+	);
+}
+
+function publishCommitDiff(next: CommitDiff) {
+	if (
+		next.added === cachedCommitDiff.added &&
+		next.removed === cachedCommitDiff.removed &&
+		next.modified === cachedCommitDiff.modified
+	) {
+		return;
+	}
+	cachedCommitDiff = next;
+	emitEvent("commit-diff:changed");
+}
+
+/** Zero the cached counts (a commit just cleared the overlay). */
+export function resetCommitDiffCounts() {
+	publishCommitDiff(ZERO_DIFF);
+}
+
+async function refreshCommitDiff() {
+	if (!getMapState().map) return;
+	const [added, removed, modified] = await cmd.storeCommitDiff();
+	publishCommitDiff({ added, removed, modified });
+}
+
+export function useCommitDiff() {
+	const diff = useEventValue("commit-diff:changed", () => cachedCommitDiff);
+	useEffect(() => {
+		void refreshCommitDiff();
+		return subscribe("store:changed", () => void refreshCommitDiff());
+	}, []);
+	return diff;
+}
+
+// --- Commit-diff preview overlay ---
+
+/** Ephemeral commit-diff overlay shown while `workArea === "diff"`. Position arrays are
+ *  interleaved `[lng, lat]` f32; `diff-markers:changed` fires to rebuild the layers. */
+export interface CommitDiffPreview {
+	commitId: string;
+	hash: string;
+	counts: CommitDiff;
+	added: Float32Array;
+	removed: Float32Array;
+	modified: Float32Array;
+}
+
+let commitDiffPreview: CommitDiffPreview | null = null;
+export function getCommitDiffPreview() {
+	return commitDiffPreview;
+}
+
+/** Reset diff state (called when map edit state is cleared). */
+export function resetCommitDiffState() {
+	commitDiffPreview = null;
+}
+
+/** Interleave `[lng, lat]` pairs into an f32 buffer for deck.gl. */
+export function diffPositions(locs: LatLng[]): Float32Array {
+	const a = new Float32Array(locs.length * 2);
+	for (let i = 0; i < locs.length; i++) {
+		a[i * 2] = locs[i].lng;
+		a[i * 2 + 1] = locs[i].lat;
+	}
+	return a;
+}
+
+/** Split a commit delta into added / removed / modified. An updated location appears in
+ *  both `created` (new) and `removed` (old), keyed by id. */
+export function categorizeCommitDelta(delta: CommitDelta): {
+	added: Location[];
+	removed: Location[];
+	modified: Location[];
+} {
+	const removedIds = new Set(delta.removed.map((l) => l.id));
+	const createdIds = new Set(delta.created.map((l) => l.id));
+	return {
+		added: delta.created.filter((l) => !removedIds.has(l.id)),
+		removed: delta.removed.filter((l) => !createdIds.has(l.id)),
+		modified: delta.created.filter((l) => removedIds.has(l.id)),
+	};
+}
+
+/** Fetch a commit's delta and overlay its added/removed/modified locations on the map,
+ *  temporarily replacing the regular markers. */
+export async function beginCommitDiffPreview(commit: CommitInfo) {
+	if (!getMapState().map) return;
+	const { added, removed, modified } = categorizeCommitDelta(
+		await cmd.storeGetCommitDelta(commit.mapId, commit.id),
+	);
+	commitDiffPreview = {
+		commitId: commit.id,
+		hash: commit.id.slice(0, 7),
+		counts: { added: added.length, removed: removed.length, modified: modified.length },
+		added: diffPositions(added),
+		removed: diffPositions(removed),
+		modified: diffPositions(modified),
+	};
+	emitEvent("diff-markers:changed");
+	setWorkArea("diff");
+	const all = [...added, ...removed, ...modified];
+	if (all.length > 0) {
+		let west = Infinity,
+			south = Infinity,
+			east = -Infinity,
+			north = -Infinity;
+		for (const l of all) {
+			if (l.lng < west) west = l.lng;
+			if (l.lng > east) east = l.lng;
+			if (l.lat < south) south = l.lat;
+			if (l.lat > north) north = l.lat;
+		}
+		fitMapToBounds({ west, south, east, north }, 100);
+	}
+}
+
+/** Leave commit-diff preview and restore the regular markers. */
+export function endCommitDiffPreview() {
+	commitDiffPreview = null;
+	emitEvent("diff-markers:changed");
+	if (getMapState().workArea === "diff") setWorkArea("overview");
+	else emitEvent("store:changed");
+}

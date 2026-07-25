@@ -5,14 +5,11 @@
 //! Extracted out of useMapStore/LocationPreview: this module is the single seam.
 //! LocationPreview renders <ReviewBar> and calls reviewNext/Prev/Delete/onSaved.
 
-import { useSyncExternalStore } from "react";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { subscribe as onEvent } from "@/lib/events";
+import { emit, useEventValue, subscribe as onEvent } from "@/lib/events";
 import {
-	getCurrentMapId,
-	getCurrentMap,
-	getActiveLocation,
+	getMapState,
 	setActiveLocation,
 	addSelections,
 	removeSelections,
@@ -88,21 +85,10 @@ export function isCurrentReviewed(s: ReviewSession): boolean {
 // --- Module state + reactivity ---
 
 let session: ReviewSession | null = null;
-const listeners = new Set<() => void>();
-
-function notify() {
-	for (const l of listeners) l();
-}
 
 /** Reactive active review session, or null. */
 export function useReviewSession(): ReviewSession | null {
-	return useSyncExternalStore(
-		(cb) => {
-			listeners.add(cb);
-			return () => listeners.delete(cb);
-		},
-		() => session,
-	);
+	return useEventValue("review:changed", () => session);
 }
 
 /** The active review session, or null. */
@@ -155,8 +141,8 @@ async function gotoCursor(s: ReviewSession): Promise<void> {
 /** Start (or resume) a review over `ids`. When `source` is a real selection, the session
  *  is keyed by it so re-reviewing that selection resumes the in-progress session. */
 export async function beginReview(ids: number[], source?: Selection): Promise<void> {
-	const mapId = getCurrentMapId();
-	const map = getCurrentMap();
+	const mapId = getMapState().mapId;
+	const map = getMapState().map;
 	if (!mapId || !map || ids.length === 0) return;
 
 	const sourceKey = source?.key ?? "manual";
@@ -182,7 +168,7 @@ export async function beginReview(ids: number[], source?: Selection): Promise<vo
 	const sourceProps = source?.props ?? { type: "Manual", locations: order };
 	try {
 		session = await cmd.storeReviewCreate({ mapId, name, sourceKey, sourceProps, order });
-		notify();
+		emit("review:changed");
 		refreshProjection();
 		await gotoCursor(session);
 	} catch (e) {
@@ -200,12 +186,12 @@ export async function reviewNext(): Promise<void> {
 	if (!session) return;
 	const { session: next, done } = advance(session);
 	session = next;
-	notify();
+	emit("review:changed");
 	if (done) {
 		const id = next.id;
 		flushSave();
 		session = null;
-		notify();
+		emit("review:changed");
 		clearProjection(id);
 		await setActiveLocation(null);
 		return;
@@ -221,7 +207,7 @@ export async function reviewPrev(): Promise<void> {
 	const prev = retreat(session);
 	if (!prev) return;
 	session = prev;
-	notify();
+	emit("review:changed");
 	scheduleSave();
 	await gotoCursor(prev);
 }
@@ -241,7 +227,7 @@ export async function reviewDelete(): Promise<void> {
 	if (idx >= 0 && idx < order.length) {
 		// an item took curId's slot — advance to it
 		session = { ...s, order, reviewed, cursorId: order[idx] };
-		notify();
+		emit("review:changed");
 		await gotoCursor(session);
 		flushSave();
 		scheduleProjection();
@@ -256,7 +242,7 @@ export async function reviewDelete(): Promise<void> {
 		cmd.storeReviewDelete(s.id).catch(() => {});
 	}
 	session = null;
-	notify();
+	emit("review:changed");
 	clearProjection(s.id);
 	await setActiveLocation(null);
 	await removeLocations(new Set([curId]));
@@ -268,7 +254,7 @@ export function cancelReview(): void {
 	const id = session.id;
 	flushSave();
 	session = null;
-	notify();
+	emit("review:changed");
 	clearProjection(id);
 	void setActiveLocation(null);
 }
@@ -293,7 +279,7 @@ export async function renameReview(id: string, name: string): Promise<void> {
 	}
 	if (session?.id === id) {
 		session = { ...session, name: trimmed };
-		notify();
+		emit("review:changed");
 	}
 }
 
@@ -309,7 +295,7 @@ export async function deleteSession(id: string): Promise<void> {
 
 /** Review sessions for the open map, optionally filtered by status. */
 export function listSessions(status?: "active" | "done"): Promise<ReviewSession[]> {
-	const mapId = getCurrentMapId();
+	const mapId = getMapState().mapId;
 	if (!mapId) return Promise.resolve([]);
 	return cmd.storeReviewList(mapId, status ?? null);
 }
@@ -398,7 +384,7 @@ async function adopt(s: ReviewSession): Promise<void> {
 	const changed = order.length !== s.order.length || reviewed.length !== s.reviewed.length;
 	const v: ReviewSession = { ...s, order, reviewed, cursorId };
 	session = v;
-	notify();
+	emit("review:changed");
 	if (changed) persist(v);
 	refreshProjection();
 	await gotoCursor(v);
@@ -412,7 +398,7 @@ function reconcile(removed: number[]): void {
 	const { session: next, cursorMoved } = pruneSession(prev, new Set(removed));
 	if (next === prev) return; // nothing overlapped
 	session = next;
-	notify();
+	emit("review:changed");
 	if (!next) {
 		cmd.storeReviewDelete(prev.id).catch(() => {});
 		clearProjection(prev.id);
@@ -421,7 +407,7 @@ function reconcile(removed: number[]): void {
 	}
 	scheduleSave();
 	scheduleProjection();
-	if (cursorMoved && getActiveLocation()?.id !== next.cursorId) {
+	if (cursorMoved && getMapState().activeLocation?.id !== next.cursorId) {
 		void gotoCursor(next);
 	}
 }
@@ -433,7 +419,7 @@ function onActiveChange(id: number | null): void {
 	if (!session || id == null || id === session.cursorId) return;
 	if (!session.order.includes(id)) return; // off-queue peek: leave the cursor parked
 	session = { ...session, cursorId: id };
-	notify();
+	emit("review:changed");
 	scheduleSave();
 }
 
@@ -443,10 +429,10 @@ onEvent("map:close", () => {
 	clearProjectTimer();
 	flushSave();
 	session = null;
-	notify();
+	emit("review:changed");
 });
 onEvent("map:open", () => {
 	clearProjectTimer();
 	session = null;
-	notify();
+	emit("review:changed");
 });

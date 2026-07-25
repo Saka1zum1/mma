@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 
-// Mock the store — router.ts imports openMap/closeMap/getCurrentMapId at module scope
+// Mock the store — router.ts imports openMap/closeMap/getMapState at module scope
 vi.mock("@/store/useMapStore", () => ({
 	openMap: vi.fn(),
 	closeMap: vi.fn(),
-	getCurrentMapId: () => null,
+	getMapState: () => ({ mapId: null, map: null }),
 }));
 
 import { parse, build } from "@/store/router";

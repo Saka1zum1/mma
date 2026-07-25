@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { selectPolygon } from "@/store/useMapStore";
+import { addSelections } from "@/store/useMapStore";
 import { getSettings } from "@/store/settings";
 import { cmd } from "@/lib/commands";
 import { useHeldHotkeyClick } from "@/lib/map/useHeldHotkeyClick";
@@ -31,7 +31,8 @@ export function useCountrySelect() {
 					}
 					geometry = await lookup();
 				}
-				if (geometry) selectPolygon(geometry, false);
+				if (geometry)
+					addSelections([{ type: "Polygon", polygon: geometry, includeInformational: false }]);
 			})();
 		}, []),
 		{ ignoreShift: true },

@@ -603,6 +603,66 @@ pub fn border_lookup(lat: f64, lng: f64, level: String) -> AppResult<Option<Poly
     Ok(None)
 }
 
+/// Classify each `(lat, lng)` to the name of its containing feature at `level`
+/// (subdivision names for "adm1"). `None` for points outside every feature.
+/// Same bbox-prefiltered parallel scan as `tally_countries`, but per-point names.
+#[tauri::command]
+#[specta::specta]
+pub fn border_classify(level: String, points: Vec<(f64, f64)>) -> AppResult<Vec<Option<String>>> {
+    validate_border_level(&level)?;
+    ensure_loaded(&level)?;
+
+    let datasets = cache().lock().unwrap();
+    let ds = datasets.get(&level).unwrap();
+
+    Ok(match ds {
+        Dataset::Owned(features) => {
+            let feats = features
+                .iter()
+                .filter_map(|f| selections::geometry_bbox(&f.geometry).map(|bb| (bb, f)))
+                .collect();
+            classify_scan(
+                feats,
+                &points,
+                |lng, lat, f| selections::point_in_geometry(lng, lat, &f.geometry),
+                |f| f.name.as_str(),
+            )
+        }
+        Dataset::Mapped(mmap) => {
+            let feats = Dataset::archived(mmap)
+                .features
+                .iter()
+                .filter_map(|f| arch_feature_bbox(f).map(|bb| (bb, f)))
+                .collect();
+            classify_scan(
+                feats,
+                &points,
+                |lng, lat, f| arch_point_in_feature(lng, lat, f),
+                |f| f.name.as_str(),
+            )
+        }
+    })
+}
+
+/// Bbox-prefiltered parallel point classification, generic over the feature backend.
+fn classify_scan<T: Sync>(
+    feats: Vec<([f64; 4], &T)>,
+    coords: &[(f64, f64)],
+    contains: impl Fn(f64, f64, &T) -> bool + Sync,
+    name: impl Fn(&T) -> &str + Sync,
+) -> Vec<Option<String>> {
+    use rayon::prelude::*;
+    coords
+        .par_iter()
+        .map(|&(lat, lng)| {
+            feats.iter().find_map(|(bb, f)| {
+                (selections::in_bbox(lng, lat, bb) && contains(lng, lat, f))
+                    .then(|| name(f).to_string())
+            })
+        })
+        .collect()
+}
+
 /// Ensure a dataset level is loaded into the in-memory cache.
 fn ensure_loaded(level: &str) -> AppResult<()> {
     if cache().lock().unwrap().contains_key(level) {

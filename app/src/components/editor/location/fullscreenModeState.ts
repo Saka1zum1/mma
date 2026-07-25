@@ -1,76 +1,72 @@
 import { getSettings, setSetting } from "@/store/settings";
+import { emit as emitEvent, useEventValue } from "@/lib/events";
 
-/** Pano fullscreen temporarily replaced fullscreen-map mode. */
+let panoFullscreen = false;
 let suspendedFullscreenMap = false;
-/** Fullscreen-map temporarily replaced pano fullscreen. */
 let suspendedPanoFullscreen = false;
 
-let setPanoFullscreenImpl: ((value: boolean) => void) | null = null;
-
-export function registerPanoFullscreenSetter(setter: (value: boolean) => void): () => void {
-	setPanoFullscreenImpl = setter;
-	return () => {
-		if (setPanoFullscreenImpl === setter) setPanoFullscreenImpl = null;
-	};
+function setPanoFullscreen(next: boolean): void {
+	if (next === panoFullscreen) return;
+	panoFullscreen = next;
+	emitEvent("fullscreen:changed");
 }
 
-export function restoreSuspendedFullscreenMap(): void {
-	if (!suspendedFullscreenMap) return;
-	suspendedFullscreenMap = false;
-	setSetting("fullscreenMap", true);
+export function usePanoFullscreen(): boolean {
+	return useEventValue("fullscreen:changed", () => panoFullscreen);
 }
 
-export function clearSuspendedFullscreenMap(): void {
-	suspendedFullscreenMap = false;
-}
-
-export function suspendFullscreenMapForPano(): void {
-	if (getSettings().fullscreenMap) {
+export function togglePanoFullscreen(): void {
+	const next = !panoFullscreen;
+	// Flag before setting: the fullscreenMap watcher reads panoFullscreen.
+	setPanoFullscreen(next);
+	if (next && getSettings().fullscreenMap) {
 		suspendedFullscreenMap = true;
 		setSetting("fullscreenMap", false);
+	} else if (!next && suspendedFullscreenMap) {
+		suspendedFullscreenMap = false;
+		setSetting("fullscreenMap", true);
 	}
 }
 
-export function resumeFullscreenMapAfterPano(): void {
-	restoreSuspendedFullscreenMap();
+/** Returns whether pano fullscreen was on (and is now exited). */
+export function exitPanoFullscreen(): boolean {
+	if (!panoFullscreen) return false;
+	togglePanoFullscreen();
+	return true;
 }
 
-export function suspendPanoFullscreenForMap(): void {
-	suspendedPanoFullscreen = true;
-}
-
-export function clearSuspendedPanoFullscreen(): void {
-	suspendedPanoFullscreen = false;
-}
-
-export function resumePanoFullscreenAfterMap(setIsFullscreen?: (value: boolean) => void): void {
-	if (!suspendedPanoFullscreen) return;
-	suspendedPanoFullscreen = false;
-	const apply = setIsFullscreen ?? setPanoFullscreenImpl;
-	apply?.(true);
-}
-
-/** Exit fullscreen-map and restore suspended pano fullscreen when applicable. */
-export function exitFullscreenMap(setIsFullscreen?: (value: boolean) => void): void {
-	if (!getSettings().fullscreenMap) return;
-	setSetting("fullscreenMap", false);
-	resumePanoFullscreenAfterMap(setIsFullscreen);
-}
-
-export function enterFullscreenMapFromPano(isFullscreen: boolean, setIsFullscreen: (value: boolean) => void): void {
-	if (isFullscreen) {
-		suspendPanoFullscreenForMap();
-		setIsFullscreen(false);
+/** Enforcement point for the mutual exclusion, called on every `fullscreenMap`
+ *  transition (hotkey, settings page, plugin api.setSetting alike). */
+export function onFullscreenMapChanged(on: boolean): void {
+	if (on) {
+		if (panoFullscreen) {
+			suspendedPanoFullscreen = true;
+			setPanoFullscreen(false);
+		}
+	} else if (suspendedPanoFullscreen) {
+		suspendedPanoFullscreen = false;
+		setPanoFullscreen(true);
 	}
-	setSetting("fullscreenMap", true);
 }
 
-export function exitFullscreenMapToggle(setIsFullscreen?: (value: boolean) => void): void {
+/** Location cleared (save/delete/close): drop pano fullscreen, restore a
+ *  suspended fullscreen-map, forget all suspensions. */
+export function onLocationCleared(): void {
+	setPanoFullscreen(false);
+	if (suspendedFullscreenMap) {
+		suspendedFullscreenMap = false;
+		setSetting("fullscreenMap", true);
+	}
+	suspendedPanoFullscreen = false;
+}
+
+export function toggleFullscreenMap(): void {
+	setSetting("fullscreenMap", !getSettings().fullscreenMap);
+}
+
+/** Returns whether fullscreen-map was on (and is now exited). */
+export function exitFullscreenMap(): boolean {
+	if (!getSettings().fullscreenMap) return false;
 	setSetting("fullscreenMap", false);
-	resumePanoFullscreenAfterMap(setIsFullscreen);
-}
-
-export function clearAllFullscreenSuspensions(): void {
-	clearSuspendedFullscreenMap();
-	clearSuspendedPanoFullscreen();
+	return true;
 }

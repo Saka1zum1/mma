@@ -53,10 +53,22 @@ export function SuggestInput<T>({
 	portal?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
-	const [highlight, setHighlight] = useState(0);
 	const [anchor, setAnchor] = useState<DOMRect | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLOListElement>(null);
+	// Highlight lives in the DOM (aria-selected), not React state, so mouse movement
+	// over the list re-renders nothing. The ref only answers "what does Enter pick".
+	const highlightRef = useRef(0);
+
+	const applyHighlight = (i: number, scroll = false) => {
+		const items = listRef.current?.children;
+		if (!items) return;
+		items[highlightRef.current]?.setAttribute("aria-selected", "false");
+		highlightRef.current = i;
+		const next = items[i];
+		next?.setAttribute("aria-selected", "true");
+		if (scroll) next?.scrollIntoView({ block: "nearest" });
+	};
 
 	useLayoutEffect(() => {
 		if (!portal || !open) return;
@@ -71,13 +83,11 @@ export function SuggestInput<T>({
 	}, [portal, open]);
 
 	useEffect(() => {
-		setHighlight(0);
+		highlightRef.current = 0;
+		const items = listRef.current?.children;
+		if (!items) return;
+		for (let i = 0; i < items.length; i++) items[i].setAttribute("aria-selected", String(i === 0));
 	}, [suggestions]);
-
-	useEffect(() => {
-		if (!open) return;
-		listRef.current?.children[highlight]?.scrollIntoView({ block: "nearest" });
-	}, [highlight, open]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -120,11 +130,13 @@ export function SuggestInput<T>({
 			}
 		>
 			{suggestions.map((item, i) => (
-				<li key={getKey(item)} aria-selected={i === highlight}>
+				<li key={getKey(item)} aria-selected={i === 0}>
 					<button
 						type="button"
 						className={itemClassName}
-						onMouseMove={() => setHighlight(i)}
+						onMouseMove={() => {
+							if (highlightRef.current !== i) applyHighlight(i);
+						}}
 						onClick={() => pick(item)}
 					>
 						{renderItem(item)}
@@ -156,16 +168,16 @@ export function SuggestInput<T>({
 				onKeyDown={(e) => {
 					if (e.key === "ArrowDown" && open && suggestions.length > 0) {
 						e.preventDefault();
-						setHighlight((h) => Math.min(h + 1, suggestions.length - 1));
+						applyHighlight(Math.min(highlightRef.current + 1, suggestions.length - 1), true);
 					}
 					if (e.key === "ArrowUp" && open && suggestions.length > 0) {
 						e.preventDefault();
-						setHighlight((h) => Math.max(h - 1, 0));
+						applyHighlight(Math.max(highlightRef.current - 1, 0), true);
 					}
 					if (e.key === "Enter" && open) {
 						if (pickOnEnter && suggestions.length > 0) {
 							e.preventDefault();
-							pick(suggestions[Math.min(highlight, suggestions.length - 1)]);
+							pick(suggestions[Math.min(highlightRef.current, suggestions.length - 1)]);
 						} else {
 							setOpen(false);
 						}

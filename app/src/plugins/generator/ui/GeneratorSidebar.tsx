@@ -13,7 +13,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { ProgressDisplay } from "./ProgressDisplay";
 import { tickProgress } from "./progressSignal";
 import { google } from "@/lib/sv/opensv";
-import { getSelections, useSelections, createTags } from "@/store/useMapStore";
+import { getActiveSelections, useMapState, createTags } from "@/store/useMapStore";
 import type { Selection } from "@/bindings.gen";
 import { createPluginStorage } from "@/plugins/registry";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
@@ -154,7 +154,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 	const [tagName, setTagName] = useState(() => genStore.get<string>("tagName", ""));
 	const [, rerender] = useState(0);
 	const engineRef = useRef<GenerationEngine | null>(sessionEngine);
-	const selections = useSelections();
+	const selections = useMapState(getActiveSelections);
 
 	useEffect(() => {
 		sessionMeta = meta;
@@ -216,7 +216,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 	}, []);
 
 	const handleStart = useCallback(async () => {
-		const sels = getSelections().filter((s) => s.props.type === "Polygon");
+		const sels = getActiveSelections().filter((s) => s.props.type === "Polygon");
 		if (sels.length === 0) return;
 		if (!google) return;
 
@@ -270,7 +270,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		const engine = engineRef.current;
 		if (!engine) return;
 		if (engine.isPaused()) {
-			const sels = getSelections().filter((s) => s.props.type === "Polygon");
+			const sels = getActiveSelections().filter((s) => s.props.type === "Polygon");
 			const nextMeta = new Map(sessionMeta);
 			const desired: GeneratorRegion[] = [];
 			for (const sel of sels) {

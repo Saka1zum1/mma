@@ -28,7 +28,7 @@ describe("Map rename", () => {
 			await api.renameMap(id, "Renamed Map");
 		}, mapId);
 
-		const name = await withApi(async (api) => api.getCurrentMap()?.meta.name);
+		const name = await withApi(async (api) => api.getMapState().map?.meta.name);
 		expect(name).toBe("Renamed Map");
 	});
 
@@ -37,7 +37,7 @@ describe("Map rename", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const name = await withApi(async (api) => api.getCurrentMap()?.meta.name);
+		const name = await withApi(async (api) => api.getMapState().map?.meta.name);
 		expect(name).toBe("Renamed Map");
 	});
 
@@ -157,17 +157,17 @@ describe("Map metadata updates", () => {
 			await api.updateMapMeta({ description: "Test map for E2E" });
 		});
 
-		const desc = await withApi(async (api) => api.getCurrentMap()?.meta.description);
+		const desc = await withApi(async (api) => api.getMapState().map?.meta.description);
 		expect(desc).toBe("Test map for E2E");
 	});
 
 	it("update settings", async () => {
 		await withApi(async (api) => {
-			const cur = api.getCurrentMap()!.meta.settings;
+			const cur = api.getMapState().map!.meta.settings;
 			await api.updateMapMeta({ settings: { ...cur, enrichMetadata: true } });
 		});
 
-		const settings = await withApi(async (api) => api.getCurrentMap()!.meta.settings);
+		const settings = await withApi(async (api) => api.getMapState().map!.meta.settings);
 		expect(settings.enrichMetadata).toBe(true);
 	});
 
@@ -178,7 +178,7 @@ describe("Map metadata updates", () => {
 			});
 		});
 
-		const bounds = await withApi(async (api) => api.getCurrentMap()?.meta.scoreBounds);
+		const bounds = await withApi(async (api) => api.getMapState().map?.meta.scoreBounds);
 		expect(bounds).toEqual([100, 200, 300, 400]);
 	});
 
@@ -187,7 +187,7 @@ describe("Map metadata updates", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const meta = await withApi(async (api) => api.getCurrentMap()!.meta);
+		const meta = await withApi(async (api) => api.getMapState().map!.meta);
 		expect(meta.description).toBe("Test map for E2E");
 		expect(meta.settings.enrichMetadata).toBe(true);
 		expect(meta.scoreBounds).toEqual([100, 200, 300, 400]);
@@ -221,9 +221,9 @@ describe("Active location and work area", () => {
 
 		const result = await withApi(async (api) => {
 			return {
-				workArea: api.getWorkArea(),
-				activeId: api.getActiveLocation()?.id,
-				activeLat: api.getActiveLocation()?.lat,
+				workArea: api.getMapState().workArea,
+				activeId: api.getMapState().activeLocation?.id,
+				activeLat: api.getMapState().activeLocation?.lat,
 			};
 		});
 		expect(result.workArea).toBe("location");
@@ -237,8 +237,8 @@ describe("Active location and work area", () => {
 		});
 
 		const result = await withApi(async (api) => ({
-			workArea: api.getWorkArea(),
-			active: api.getActiveLocation(),
+			workArea: api.getMapState().workArea,
+			active: api.getMapState().activeLocation,
 		}));
 		expect(result.workArea).toBe("overview");
 		expect(result.active).toBeNull();
@@ -257,8 +257,8 @@ describe("Active location and work area", () => {
 		);
 
 		const result = await withApi(async (api) => ({
-			activeId: api.getActiveLocation()?.id,
-			activeLat: api.getActiveLocation()?.lat,
+			activeId: api.getMapState().activeLocation?.id,
+			activeLat: api.getMapState().activeLocation?.lat,
 		}));
 		expect(result.activeId).toBe(id1);
 		expect(result.activeLat).toBe(30);
@@ -280,10 +280,10 @@ describe("Extra field definitions", () => {
 
 	it("set extra field definitions on map", async () => {
 		await withApi(async (api) => {
-			const cur = api.getCurrentMap()!.meta.extra?.fields ?? {};
+			const cur = api.getMapState().map!.meta.extra?.fields ?? {};
 			await api.updateMapMeta({
 				extra: {
-					...api.getCurrentMap()!.meta.extra,
+					...api.getMapState().map!.meta.extra,
 					fields: {
 						...cur,
 						altitude: { type: "number", label: "Altitude (m)" },
@@ -294,7 +294,7 @@ describe("Extra field definitions", () => {
 			});
 		});
 
-		const extra = await withApi(async (api) => api.getCurrentMap()?.meta.extra);
+		const extra = await withApi(async (api) => api.getMapState().map?.meta.extra);
 		expect(extra!.fields!.altitude.type).toBe("number");
 		expect(extra!.fields!.country.type).toBe("string");
 		expect(extra!.fields!.region.values).toEqual(["NA", "EU", "AS"]);
@@ -305,7 +305,7 @@ describe("Extra field definitions", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const extra = await withApi(async (api) => api.getCurrentMap()?.meta.extra);
+		const extra = await withApi(async (api) => api.getMapState().map?.meta.extra);
 		expect(extra!.fields!.altitude.type).toBe("number");
 		expect(extra!.fields!.altitude.label).toBe("Altitude (m)");
 	});
@@ -339,8 +339,8 @@ describe("Extra field definitions", () => {
 		});
 
 		const known = await withApi(async (api) => ({
-			countryCode: api.getKnownFieldKeys().has("countryCode"),
-			imageDate: api.getKnownFieldKeys().has("imageDate"),
+			countryCode: api.getMapState().knownFieldKeys.has("countryCode"),
+			imageDate: api.getMapState().knownFieldKeys.has("imageDate"),
 		}));
 		expect(known.countryCode).toBe(true);
 		expect(known.imageDate).toBe(true);
@@ -363,7 +363,7 @@ describe("Extra field definitions", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const extra = await withApi(async (api) => api.getCurrentMap()?.meta.extra);
+		const extra = await withApi(async (api) => api.getMapState().map?.meta.extra);
 		expect(extra!.fields!.fleeb).toBeDefined();
 		expect(extra!.fields!.fleeb.type).toBe("number");
 	});
@@ -392,10 +392,10 @@ describe("Extra field definitions", () => {
 	it("does not re-register already known keys", async () => {
 		// Explicitly register with a custom label
 		await withApi(async (api) => {
-			const cur = api.getCurrentMap()!.meta.extra?.fields ?? {};
+			const cur = api.getMapState().map!.meta.extra?.fields ?? {};
 			await api.updateMapMeta({
 				extra: {
-					...api.getCurrentMap()!.meta.extra,
+					...api.getMapState().map!.meta.extra,
 					fields: { ...cur, score: { type: "number", label: "My Score" } },
 				},
 			});
@@ -406,7 +406,7 @@ describe("Extra field definitions", () => {
 			await api.addLocations([api.createLocation({ lat: 0, lng: 0, extra: { score: 42 } })]);
 		});
 
-		const extra = await withApi(async (api) => api.getCurrentMap()?.meta.extra);
+		const extra = await withApi(async (api) => api.getMapState().map?.meta.extra);
 		expect(extra!.fields!.score.label).toBe("My Score");
 	});
 });

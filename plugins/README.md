@@ -64,6 +64,8 @@ The manifest is the plugin's identity:
 - `description` — short description (optional)
 - `icon` — MDI SVG path string (get one from [pictogrammers.com/library/mdi](https://pictogrammers.com/library/mdi/), or `npm install -D @mdi/js` and import the constant)
 - `main` — entry point JS file, loaded as an ES module (defaults to `index.js`)
+- `experimental` — `true` marks the plugin as experimental (optional). The marketplace card shows a flask label so users know to expect rough edges.
+- `minAppVersion` — lowest app version this build works on (optional). The registry only serves the latest build of each plugin, so older apps use this to refuse an install/update that needs a newer `window.MMA` instead of breaking. Set it when a release starts depending on new API surface.
 
 ## Writing a plugin
 

@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
-import { useCurrentMap, checkoutCommit, beginCommitDiffPreview } from "@/store/useMapStore";
+import { useMapState, checkoutCommit } from "@/store/useMapStore";
+import { beginCommitDiffPreview } from "@/store/commitDiff";
 import { cmd } from "@/lib/commands";
 import type { CommitInfo } from "@/bindings.gen";
 
@@ -39,7 +40,7 @@ function diffLabel(c: CommitInfo): ReactNode | null {
 }
 
 export function VersionHistory({ onClose }: { onClose: () => void }) {
-	const map = useCurrentMap();
+	const map = useMapState((s) => s.map);
 	const [commits, setCommits] = useState<CommitInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [restoring, setRestoring] = useState<string | null>(null);

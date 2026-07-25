@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { useAsync } from "@/lib/hooks/useAsync";
-import { useEventVersion } from "@/lib/hooks/useEditorEvents";
-import { SELECTION_EVENTS } from "@/lib/events";
+import { useEvent, SELECTION_EVENTS } from "@/lib/events";
 import { Sidebar, EmptyState } from "@/components/primitives/Sidebar";
 import type { Selection, ExtraFieldDef, Location } from "@/bindings.gen";
 import { computeDivergence, soleGroup } from "./engine";
@@ -145,9 +144,9 @@ interface Analysis {
 /** Resolve the active selections to labeled groups (dropping multi-group overlap)
  *  and compute field divergence. Mirrors the Rust `store_disambiguate` orchestration. */
 async function analyze(): Promise<Analysis> {
-	const map = MMA.getCurrentMap();
+	const map = MMA.getMapState().map;
 	if (!map) throw new Error("No map open");
-	const sels: Selection[] = MMA.getSelections();
+	const sels: Selection[] = MMA.getActiveSelections();
 	if (sels.length < 2) throw new Error("Select at least 2 groups to disambiguate.");
 
 	const colors = sels.map((s) => s.color);
@@ -167,7 +166,7 @@ async function analyze(): Promise<Analysis> {
 
 		const fieldDefs: Record<string, ExtraFieldDef> = MMA.getAllFieldDefs();
 		const tagNames: Record<number, string> = {};
-		for (const [id, t] of Object.entries(map.meta.tags))
+		for (const [id, t] of Object.entries(MMA.getMapState().tags))
 			tagNames[Number(id)] = (t as { name: string }).name;
 
 		const result = computeDivergence(labeled, sels.length, fieldDefs, tagNames);
@@ -178,8 +177,8 @@ async function analyze(): Promise<Analysis> {
 }
 
 export function DisambiguateSidebar({ onClose }: { onClose: () => void }) {
-	const version = useEventVersion(SELECTION_EVENTS);
-	const selCount = MMA.getSelections().length;
+	const version = useEvent(SELECTION_EVENTS);
+	const selCount = MMA.getActiveSelections().length;
 	// Synchronous null short-circuit: no loading flash while under two groups.
 	const {
 		data: analysis,

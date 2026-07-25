@@ -9,7 +9,7 @@
 import { ScatterplotLayer } from "@deck.gl/layers";
 import { clickSearchRadius } from "@/lib/sv/lookup";
 import { getMapHost } from "@/lib/map/mapState";
-import { getCurrentMap } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 import type { LatLng } from "@/types";
 
 const LAYER_ID = "mma-search-radius-cursor";
@@ -28,7 +28,7 @@ export function mountSearchRadiusCursor(): () => void {
 		const latLng = host.containerPxToLatLng(pixel.x, pixel.y);
 		if (!latLng) return;
 		const zoom = host.getZoom();
-		const minRadius = getCurrentMap()?.meta.settings.searchRadius ?? undefined;
+		const minRadius = getMapState().map?.meta.settings.searchRadius ?? undefined;
 		const radius = clickSearchRadius(latLng.lat, zoom, minRadius);
 		overlay.setProps({
 			layers: [

@@ -1,11 +1,6 @@
 import { useState, useEffect } from "react";
-import {
-	useMeasureState,
-	endMeasure,
-	formatDistance,
-	computeScore,
-	useScoreMaxError,
-} from "@/lib/sv/measure";
+import { useMeasureState, endMeasure } from "@/lib/sv/measure";
+import { formatDistance, computeScore, useScoreMaxError } from "@/lib/geo/scoring";
 
 export function MeasurementBar() {
 	const { isMeasuring, instance } = useMeasureState();

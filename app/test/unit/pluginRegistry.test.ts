@@ -14,8 +14,10 @@ import {
 	deactivatePlugin,
 	deactivatePlugins,
 	setPendingManifest,
-	getRegistrySnapshot,
+	isPluginCompatible,
+	isBackgroundPlugin,
 } from "@/plugins/registry";
+import { subscribe } from "@/lib/events";
 import {
 	registerEnrichmentProvider,
 	getEnrichmentProviders,
@@ -220,28 +222,49 @@ describe("deactivatePlugins", () => {
 	});
 });
 
-describe("registrySnapshot", () => {
-	it("changes on register, unregister, and enable/disable", () => {
-		const v0 = getRegistrySnapshot();
+describe("plugins:changed event", () => {
+	it("fires on register, unregister, and enable/disable", () => {
+		let count = 0;
+		const unsub = subscribe("plugins:changed", () => count++);
 
 		registerPlugin(makePlugin("s", "S"));
-		const v1 = getRegistrySnapshot();
-		expect(v1).toBeGreaterThan(v0);
+		expect(count).toBe(1);
 
 		unregisterPlugin("s");
-		const v2 = getRegistrySnapshot();
-		expect(v2).toBeGreaterThan(v1);
+		expect(count).toBe(2);
 
 		registerPlugin(makePlugin("s2", "S2"));
-		const v3 = getRegistrySnapshot();
+		expect(count).toBe(3);
 
 		setPluginEnabled("s2", true);
-		const v4 = getRegistrySnapshot();
-		expect(v4).toBeGreaterThan(v3);
+		expect(count).toBe(4);
 
 		setPluginEnabled("s2", false);
-		const v5 = getRegistrySnapshot();
-		expect(v5).toBeGreaterThan(v4);
+		expect(count).toBe(5);
+
+		unsub();
+	});
+});
+
+describe("isPluginCompatible", () => {
+	it("no declared minimum is always compatible", () => {
+		expect(isPluginCompatible(undefined, "0.8.1")).toBe(true);
+	});
+
+	it("app at or above the minimum is compatible", () => {
+		expect(isPluginCompatible("0.8.1", "0.8.1")).toBe(true);
+		expect(isPluginCompatible("0.8.1", "0.9.0")).toBe(true);
+		expect(isPluginCompatible("0.8.1", "1.0.0")).toBe(true);
+	});
+
+	it("app below the minimum is incompatible", () => {
+		expect(isPluginCompatible("0.8.1", "0.8.0")).toBe(false);
+		expect(isPluginCompatible("1.0.0", "0.9.9")).toBe(false);
+	});
+
+	it("missing components compare as zero", () => {
+		expect(isPluginCompatible("0.8", "0.8.0")).toBe(true);
+		expect(isPluginCompatible("0.8.0.1", "0.8.0")).toBe(false);
 	});
 });
 
@@ -275,5 +298,20 @@ describe("plugin deactivation tears down enrichment registrations", () => {
 		expect(getEnrichmentProviders().some((p) => p.id === provId)).toBe(false);
 		expect(getEnrichFieldOptions().some((o) => o.key === fieldKey)).toBe(false);
 		expect(getFieldDef(fieldKey)).toBeUndefined();
+	});
+});
+
+describe("isBackgroundPlugin", () => {
+	it("is true only for a loaded plugin with no UI surface", () => {
+		registerPlugin(makePlugin("bg", "Background"));
+		registerPlugin({ ...makePlugin("side", "Sidebar"), sidebar: () => null });
+		registerPlugin({ ...makePlugin("modal", "Modal"), modal: () => null });
+		registerPlugin({ ...makePlugin("panel", "Panel"), locationPanel: () => null });
+
+		expect(isBackgroundPlugin("bg")).toBe(true);
+		expect(isBackgroundPlugin("side")).toBe(false);
+		expect(isBackgroundPlugin("modal")).toBe(false);
+		expect(isBackgroundPlugin("panel")).toBe(false);
+		expect(isBackgroundPlugin("not-loaded")).toBe(false);
 	});
 });

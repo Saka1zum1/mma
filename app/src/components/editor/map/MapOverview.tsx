@@ -1,17 +1,12 @@
 import { useState } from "react";
 import { NSelect } from "@/components/primitives/NSelect";
 import {
-	useCurrentMap,
-	useSelectedLocationIds,
-	useAllSelections,
-	removeSelections,
+	useMapState,
+	getMapState,
 	addTagToLocations,
 	createTags,
-	selectDuplicates,
-	useVisibleTags,
-	useTagCounts,
-	selectFilter,
-	selectTopK,
+	addSelections,
+	getVisibleTags,
 	selectRandomFromSelection,
 	selectSpacedFromSelection,
 } from "@/store/useMapStore";
@@ -33,14 +28,14 @@ import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { PluginToolbar } from "@/plugins/PluginPanels";
 import { fmt } from "@/lib/util/format";
-import { useDomEvent } from "@/lib/hooks/useDomEvent";
+import { useDialog, openDialog } from "@/store/dialogBus";
 import { SelectionRow } from "./SelectionRow";
 import { PinnedToolbar } from "./PinnedToolbar";
 import { SaveSelectionsDialog, ApplySavedSelectionDialog } from "./SavedSelectionDialogs";
 
 function RandomPickPanel() {
 	const [value, setValue] = useState("");
-	const total = useSelectedLocationIds().size;
+	const total = useMapState((s) => s.selectedLocationIds).size;
 	const parsed = Math.floor(Number(value));
 	const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
 	const count = valid ? Math.min(parsed, total) : 0;
@@ -74,7 +69,7 @@ function RandomPickPanel() {
 function SpacedPickPanel() {
 	const [mode, setMode] = useState<"count" | "distance">("count");
 	const [value, setValue] = useState("");
-	const total = useSelectedLocationIds().size;
+	const total = useMapState((s) => s.selectedLocationIds).size;
 	const parsed = Math.floor(Number(value));
 	const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
 
@@ -136,7 +131,7 @@ function TopKPanel({
 			onSubmit={(e) => {
 				e.preventDefault();
 				if (!field || count < 1) return;
-				selectTopK(field, count, ascending);
+				addSelections([{ type: "TopK", field, k: count, ascending }]);
 			}}
 		>
 			<NSelect value={field} onChange={(e) => setField(e.target.value)}>
@@ -167,45 +162,38 @@ function TopKPanel({
 	);
 }
 
-export function MapOverview({ hidden }: { hidden?: boolean }) {
-	const map = useCurrentMap();
-	const selected = useSelectedLocationIds();
-	const selections = useAllSelections();
-	const visibleTags = useVisibleTags();
-	const tagCounts = useTagCounts();
+function SelectedCount({ className }: { className?: string }) {
+	const total = useMapState((s) => s.selectedLocationIds.size);
+	return (
+		<span className={className}>
+			<span className="mono">{fmt.format(total)}</span> selected
+		</span>
+	);
+}
+
+function SelectionList() {
+	const selections = useMapState((s) => s.selections);
+	if (selections.length === 0) return null;
+	return (
+		<div className="selection-manager__selections">
+			{selections.map((sel) => (
+				<SelectionRow key={sel.key} selection={sel} />
+			))}
+		</div>
+	);
+}
+
+function BulkTagForm() {
 	const [bulkTagInput, setBulkTagInput] = useState("");
+	const hasSelection = useMapState((s) => s.selectedLocationIds.size > 0);
+	const visibleTags = useMapState(getVisibleTags);
+	const tagCounts = useMapState((s) => s.tagCounts);
 	const tagSortMode = useSetting("tagSortMode");
-	const [selectionsCollapsed, setSelectionsCollapsed] = useState(false);
-	const [dupDistance, setDupDistance] = useState(1);
-	const [topKField, setTopKField] = useState("");
-	const [topKCount, setTopKCount] = useState(10);
-	const [topKAscending, setTopKAscending] = useState(false);
-	const [showTagFindReplace, setShowTagFindReplace] = useState(false);
-	const [showMergeDuplicates, setShowMergeDuplicates] = useState(false);
-	const [showReviews, setShowReviews] = useState(false);
-	const [showApplyFieldAsTags, setShowApplyFieldAsTags] = useState(false);
-	const [showSaveSelections, setShowSaveSelections] = useState(false);
-	const [showApplySaved, setShowApplySaved] = useState(false);
-	const [saveSelName, setSaveSelName] = useState("");
-
-	useDomEvent("open-tag-find-replace", () => setShowTagFindReplace(true));
-	useDomEvent("open-apply-field-as-tags", () => setShowApplyFieldAsTags(true));
-	useDomEvent("open-merge-duplicates", () => setShowMergeDuplicates(true));
-	useDomEvent("open-save-selections", () => setShowSaveSelections(true));
-	useDomEvent("open-apply-saved-selection", () => setShowApplySaved(true));
-	useDomEvent("open-review-sessions", () => setShowReviews(true));
-
-	useDomEvent("open-review-selected", () => {
-		if (selected.size === 0) return;
-		const source = selections.length === 1 ? selections[0] : undefined;
-		beginReview(Array.from(selected), source);
-	});
-
-	if (!map) return null;
 
 	const handleBulkAddTag = async (e: React.FormEvent) => {
 		e.preventDefault();
 		const name = bulkTagInput.trim();
+		const selected = getMapState().selectedLocationIds;
 		if (!name || selected.size === 0) return;
 		const [resolved] = await createTags([name]);
 		addTagToLocations(resolved.id, [...selected]);
@@ -219,13 +207,67 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	})();
 
 	const handleBulkPick = (t: Tag) => {
+		const selected = getMapState().selectedLocationIds;
 		if (selected.size === 0) return;
 		addTagToLocations(t.id, [...selected]);
 		setBulkTagInput("");
 	};
 
-	const hasSelection = selected.size > 0;
-	const hasSelections = selections.length > 0;
+	return (
+		<form className="selection-manager__bulk-tag" onSubmit={handleBulkAddTag}>
+			<span className={`tag-input has-button${!hasSelection ? " is-disabled" : ""}`}>
+				<button type="submit" className="button tag-input__button" disabled={!hasSelection}>
+					+
+				</button>
+				<SuggestInput
+					containerClassName="tag-input__suggest"
+					inputClassName="tag-input__value"
+					placeholder="Bulk-add tag..."
+					disabled={!hasSelection}
+					value={bulkTagInput}
+					onChange={setBulkTagInput}
+					suggestions={bulkSuggestions}
+					getKey={(t) => t.id}
+					onPick={handleBulkPick}
+					renderItem={(t) => t.name}
+					pickOnEnter={false}
+					listStyle={{ top: "100%", right: 0, zIndex: 10 }}
+				/>
+			</span>
+		</form>
+	);
+}
+
+export function MapOverview({ hidden }: { hidden?: boolean }) {
+	const map = useMapState((s) => s.map);
+	const [selectionsCollapsed, setSelectionsCollapsed] = useState(false);
+	const [dupDistance, setDupDistance] = useState(1);
+	const [topKField, setTopKField] = useState("");
+	const [topKCount, setTopKCount] = useState(10);
+	const [topKAscending, setTopKAscending] = useState(false);
+	const [showTagFindReplace, setShowTagFindReplace] = useState(false);
+	const [showMergeDuplicates, setShowMergeDuplicates] = useState(false);
+	const [showReviews, setShowReviews] = useState(false);
+	const [showApplyFieldAsTags, setShowApplyFieldAsTags] = useState(false);
+	const [showSaveSelections, setShowSaveSelections] = useState(false);
+	const [showApplySaved, setShowApplySaved] = useState(false);
+	const [saveSelName, setSaveSelName] = useState("");
+
+	useDialog("tag-find-replace", () => setShowTagFindReplace(true));
+	useDialog("apply-field-as-tags", () => setShowApplyFieldAsTags(true));
+	useDialog("merge-duplicates", () => setShowMergeDuplicates(true));
+	useDialog("save-selections", () => setShowSaveSelections(true));
+	useDialog("apply-saved-selection", () => setShowApplySaved(true));
+	useDialog("review-sessions", () => setShowReviews(true));
+
+	useDialog("review-selected", () => {
+		const { selectedLocationIds, selections } = getMapState();
+		if (selectedLocationIds.size === 0) return;
+		const source = selections.length === 1 ? selections[0] : undefined;
+		beginReview(Array.from(selectedLocationIds), source);
+	});
+
+	if (!map) return null;
 
 	return (
 		<section className="map-overview" hidden={hidden}>
@@ -236,60 +278,20 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				title="Selections"
 				isCollapsed={selectionsCollapsed}
 				onCollapse={setSelectionsCollapsed}
-				collapsedAddons={
-					<span>
-						<span className="mono">{fmt.format(selected.size)}</span> selected
-					</span>
-				}
+				collapsedAddons={<SelectedCount />}
 				addons={
 					<>
-						<span className="selection-manager__count">
-							<span className="mono">{fmt.format(selected.size)}</span> selected
-						</span>
+						<SelectedCount className="selection-manager__count" />
 						<span className="selection-manager__space" />
 						<PluginToolbar />
-						<Button onClick={() => document.dispatchEvent(new CustomEvent("open-command-palette"))}>
-							Commands...
-						</Button>
+						<Button onClick={() => openDialog("command-palette")}>Commands...</Button>
 					</>
 				}
 			>
-				{hasSelections && (
-					<div className="selection-manager__selections">
-						{selections.map((sel) => (
-							<SelectionRow
-								key={sel.key}
-								selection={sel}
-								onRemove={() => removeSelections([sel.key])}
-							/>
-						))}
-					</div>
-				)}
+				<SelectionList />
 
 				<PinnedToolbar
-					right={
-						<form className="selection-manager__bulk-tag" onSubmit={handleBulkAddTag}>
-							<span className={`tag-input has-button${!hasSelection ? " is-disabled" : ""}`}>
-								<button type="submit" className="button tag-input__button" disabled={!hasSelection}>
-									+
-								</button>
-								<SuggestInput
-									containerClassName="tag-input__suggest"
-									inputClassName="tag-input__value"
-									placeholder="Bulk-add tag..."
-									disabled={!hasSelection}
-									value={bulkTagInput}
-									onChange={setBulkTagInput}
-									suggestions={bulkSuggestions}
-									getKey={(t) => t.id}
-									onPick={handleBulkPick}
-									renderItem={(t) => t.name}
-									pickOnEnter={false}
-									listStyle={{ top: "100%", right: 0, zIndex: 10 }}
-								/>
-							</span>
-						</form>
-					}
+					right={<BulkTagForm />}
 					panels={{
 						"select-random": {
 							render: () => <RandomPickPanel />,
@@ -303,7 +305,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 									className="selection-manager__inline-form"
 									onSubmit={(e) => {
 										e.preventDefault();
-										selectDuplicates(dupDistance);
+										addSelections([{ type: "Duplicates", distance: dupDistance }]);
 									}}
 								>
 									<label>
@@ -327,7 +329,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 									persistKey={map.meta.id}
 									submitLabel="Add filter"
 									onSubmit={(field, op, value, value2, tzLocal) => {
-										selectFilter(field, op, value, value2, tzLocal);
+										addSelections([{ type: "Filter", field, op, value, value2, tzLocal }]);
 									}}
 								/>
 							),
@@ -348,22 +350,24 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				/>
 			</ToolBlock>
 
-			<TagFindReplaceDialog open={showTagFindReplace} onOpenChange={setShowTagFindReplace} />
-			<ApplyFieldAsTagsDialog open={showApplyFieldAsTags} onOpenChange={setShowApplyFieldAsTags} />
-			<MergeDuplicatesModal
-				open={showMergeDuplicates}
-				onOpenChange={setShowMergeDuplicates}
-				distance={dupDistance}
-			/>
-			<ReviewSessionsModal open={showReviews} onOpenChange={setShowReviews} />
+			{showTagFindReplace && <TagFindReplaceDialog open onOpenChange={setShowTagFindReplace} />}
+			{showApplyFieldAsTags && (
+				<ApplyFieldAsTagsDialog open onOpenChange={setShowApplyFieldAsTags} />
+			)}
+			{showMergeDuplicates && (
+				<MergeDuplicatesModal open onOpenChange={setShowMergeDuplicates} distance={dupDistance} />
+			)}
+			{showReviews && <ReviewSessionsModal open onOpenChange={setShowReviews} />}
 
-			<SaveSelectionsDialog
-				open={showSaveSelections}
-				onOpenChange={setShowSaveSelections}
-				name={saveSelName}
-				onNameChange={setSaveSelName}
-			/>
-			<ApplySavedSelectionDialog open={showApplySaved} onOpenChange={setShowApplySaved} />
+			{showSaveSelections && (
+				<SaveSelectionsDialog
+					open
+					onOpenChange={setShowSaveSelections}
+					name={saveSelName}
+					onNameChange={setSaveSelName}
+				/>
+			)}
+			{showApplySaved && <ApplySavedSelectionDialog open onOpenChange={setShowApplySaved} />}
 		</section>
 	);
 }

@@ -9,17 +9,15 @@ import {
 } from "react";
 import { cmd } from "@/lib/commands";
 import { HslColorPicker } from "react-colorful";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import { ContextMenu } from "@base-ui-components/react/context-menu";
 import {
-	useCurrentMap,
-	getCurrentMap,
-	useSelectedTagIds,
-	useTagCounts,
+	useMapState,
+	getMapState,
+	getSelectedTagIds,
 	updateTags,
 	reorderTags,
 	deleteTags,
 	removeTagFromAllLocations,
-	getSelectedLocationIds,
 	getVisibleTags,
 	removeTagFromLocations,
 } from "@/store/useMapStore";
@@ -32,7 +30,8 @@ import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { fmt } from "@/lib/util/format";
-import { textColorFor, hexToHsl, hslToHex } from "@/lib/util/color";
+import { hexToHsl, hslToHex } from "@/lib/util/color";
+import { TagPill } from "@/components/primitives/TagPill";
 import { useSetting, setSetting } from "@/store/settings";
 import { sortTagsByMode } from "@/lib/util/util";
 import { useMapSetting } from "@/store/useMapSetting";
@@ -51,15 +50,20 @@ import {
 /** `order` rides the optimistic overlay only; persisted order goes through `reorderTags`. */
 type OptimisticTagPatch = TagPatch & { order?: number };
 
+// Stable identities: an inline default would be a new object each render, which
+// invalidates the tag tree's useMemo and re-renders every row.
+const NO_VIRTUAL_TAGS = {};
+const NO_ALIASES = {};
+
 export function TagManager() {
-	const map = useCurrentMap();
-	const selectedTagIds = useSelectedTagIds();
-	const tagCounts = useTagCounts();
+	const map = useMapState((s) => s.map);
+	const selectedTagIds = useMapState(getSelectedTagIds);
+	const tagCounts = useMapState((s) => s.tagCounts);
 	const tagViewMode = useSetting("tagViewMode");
 	const [filterText, setFilterText] = useState("");
 	const sortMode = useSetting("tagSortMode");
-	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags");
-	const [aliases, setAliases] = useMapSetting("aliases");
+	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags", NO_VIRTUAL_TAGS);
+	const [aliases, setAliases] = useMapSetting("aliases", NO_ALIASES);
 	const [addingAliasFor, setAddingAliasFor] = useState<{ id: number; name: string } | null>(null);
 	// The edited node carries descendant context so the dialog can offer a cascade rename
 	// (descendantCount is 0 for every leaf, including all of flat mode).
@@ -74,10 +78,9 @@ export function TagManager() {
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
 
-	// New array identity only when the map object changes (mutations), NOT on selection
-	// toggles -- keeps sortedTags stable so memoized rows can skip re-rendering.
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	const storeTags = useMemo(() => getVisibleTags(), [map]);
+	// memoOnRefs keys this on `state.tags`, so the array identity is stable across
+	// selection toggles (which never touch tags) and fresh on any tag mutation.
+	const storeTags = useMapState(getVisibleTags);
 
 	// Optimistic overlay: `commitTags`/`commitReorder` apply pending name/color/order patches
 	// over the store tags for the lifetime of the mutation; React drops them once the transition
@@ -152,7 +155,7 @@ export function TagManager() {
 			}
 		}
 		commitTags(tagUpdates);
-		const nextVT = { ...(virtualTags ?? {}) };
+		const nextVT = { ...virtualTags };
 		for (const f of folders) nextVT[f] = { color };
 		setVirtualTags(nextVT);
 	};
@@ -163,7 +166,7 @@ export function TagManager() {
 	}, []);
 	const removeAlias = useCallback(
 		(aliasPath: string) => {
-			const next = { ...(getCurrentMap()?.meta.settings.aliases ?? {}) };
+			const next = { ...(getMapState().map?.meta.settings.aliases ?? {}) };
 			delete next[aliasPath];
 			setAliases(next);
 		},
@@ -172,7 +175,7 @@ export function TagManager() {
 	// Deletes the declared subtree (only reachable when no tags live under `path`).
 	const deleteFolder = useCallback(
 		(path: string) => {
-			const vt = getCurrentMap()?.meta.settings.virtualTags ?? {};
+			const vt = getMapState().map?.meta.settings.virtualTags ?? {};
 			const next: Record<string, VirtualTag> = {};
 			for (const [k, v] of Object.entries(vt)) {
 				if (k !== path && !k.startsWith(`${path}/`)) next[k] = v;
@@ -204,13 +207,13 @@ export function TagManager() {
 				collapsedAddons={
 					<ul className="tag-list is-collapsed">
 						{sortedTags.slice(0, 20).map((tag) => (
-							<li
+							<TagPill
+								as="li"
 								key={tag.id}
-								className="tag"
-								style={{ backgroundColor: tag.color, color: textColorFor(tag.color) }}
-							>
-								{tag.name} ({fmt.format(tagCounts[tag.id] ?? 0)})
-							</li>
+								small
+								color={tag.color}
+								label={`${tag.name} (${fmt.format(tagCounts[tag.id] ?? 0)})`}
+							/>
 						))}
 					</ul>
 				}
@@ -247,8 +250,8 @@ export function TagManager() {
 					selectedTagIds={selectedTagIds}
 					tagCounts={tagCounts}
 					sortMode={sortMode}
-					virtualTags={virtualTags ?? {}}
-					aliases={aliases ?? {}}
+					virtualTags={virtualTags}
+					aliases={aliases}
 					onEditTag={handleEditTreeTag}
 					onEditVirtual={setEditingVirtualPath}
 					onRenameTag={setRenamingTag}
@@ -266,14 +269,14 @@ export function TagManager() {
 				<EditTagDialog
 					tag={editingTreeTag.tag}
 					commit={commitTags}
-					aliases={aliases ?? {}}
+					aliases={aliases}
 					setAliases={setAliases}
 					cascade={
 						editingTreeTag.descendantCount > 0
 							? {
 									descendantCount: editingTreeTag.descendantCount,
 									tags,
-									virtualTags: virtualTags ?? {},
+									virtualTags,
 									setVirtualTags,
 									onRenamed: (o, n) => treeRef.current?.remapExpanded(o, n),
 									onApplyColor: (color) => applyColorToSubtree(editingTreeTag.tag.name, color),
@@ -287,7 +290,7 @@ export function TagManager() {
 			{editingVirtualPath != null && (
 				<VirtualTagDialog
 					path={editingVirtualPath}
-					color={(virtualTags ?? {})[editingVirtualPath]?.color ?? null}
+					color={virtualTags[editingVirtualPath]?.color ?? null}
 					descendantCount={tags.filter((t) => t.name.startsWith(`${editingVirtualPath}/`)).length}
 					onClose={() => setEditingVirtualPath(null)}
 					onApplyColor={(color) => {
@@ -295,7 +298,6 @@ export function TagManager() {
 						setEditingVirtualPath(null);
 					}}
 					onSave={(color, newSegment) => {
-						const vt = virtualTags ?? {};
 						const i = editingVirtualPath.lastIndexOf("/");
 						const parent = i === -1 ? "" : editingVirtualPath.slice(0, i);
 						const newPath = parent ? `${parent}/${newSegment}` : newSegment;
@@ -304,7 +306,7 @@ export function TagManager() {
 								tagRenames,
 								virtualTags: nextVT,
 								aliases: nextAliases,
-							} = cascadeRename(editingVirtualPath, newPath, tags, vt, aliases ?? {});
+							} = cascadeRename(editingVirtualPath, newPath, tags, virtualTags, aliases);
 							if (tagRenames.length)
 								commitTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
 							nextVT[newPath] = { color };
@@ -312,12 +314,12 @@ export function TagManager() {
 							setAliases(nextAliases);
 							treeRef.current?.remapExpanded(editingVirtualPath, newPath);
 						} else {
-							setVirtualTags({ ...vt, [editingVirtualPath]: { color } });
+							setVirtualTags({ ...virtualTags, [editingVirtualPath]: { color } });
 						}
 						setEditingVirtualPath(null);
 					}}
 					onReset={() => {
-						const next = { ...(virtualTags ?? {}) };
+						const next = { ...virtualTags };
 						delete next[editingVirtualPath];
 						setVirtualTags(next);
 						setEditingVirtualPath(null);
@@ -329,7 +331,7 @@ export function TagManager() {
 				<RenameInSelectionDialog
 					tag={renamingTag}
 					commit={commitTags}
-					aliases={aliases ?? {}}
+					aliases={aliases}
 					setAliases={setAliases}
 					onClose={() => setRenamingTag(null)}
 				/>
@@ -339,11 +341,11 @@ export function TagManager() {
 				<NewFolderDialog
 					parentPath={newFolderParent}
 					tags={tags}
-					virtualTags={virtualTags ?? {}}
-					aliases={aliases ?? {}}
+					virtualTags={virtualTags}
+					aliases={aliases}
 					onClose={() => setNewFolderParent(null)}
 					onSave={(path) => {
-						setVirtualTags({ ...(virtualTags ?? {}), [path]: {} });
+						setVirtualTags({ ...virtualTags, [path]: {} });
 						setNewFolderParent(null);
 					}}
 				/>
@@ -353,11 +355,11 @@ export function TagManager() {
 				<AddAliasDialog
 					tag={addingAliasFor}
 					tags={tags}
-					virtualTags={virtualTags ?? {}}
-					aliases={aliases ?? {}}
+					virtualTags={virtualTags}
+					aliases={aliases}
 					onClose={() => setAddingAliasFor(null)}
 					onSave={(aliasPath) => {
-						setAliases({ ...(aliases ?? {}), [aliasPath]: addingAliasFor.id });
+						setAliases({ ...aliases, [aliasPath]: addingAliasFor.id });
 						setAddingAliasFor(null);
 					}}
 				/>
@@ -387,7 +389,7 @@ export function TagContextMenuContent({
 	const [selCount, setSelCount] = useState<number | null>(null);
 
 	useEffect(() => {
-		const selIds = getSelectedLocationIds();
+		const selIds = getMapState().selectedLocationIds;
 		if (selIds.size === 0) {
 			setSelCount(0);
 			return;
@@ -402,39 +404,41 @@ export function TagContextMenuContent({
 	const inSel = selCount ?? 0;
 
 	return (
-		<ContextMenu.Content className="context-menu">
-			<ContextMenu.Item
-				className="context-menu__item"
-				onSelect={() => removeTagFromAllLocations(tagId)}
-			>
-				Remove from all ({fmt.format(totalCount)} locations)
-			</ContextMenu.Item>
-			<ContextMenu.Item
-				className="context-menu__item"
-				disabled={inSel === 0}
-				onSelect={() => removeTagFromLocations(tagId, [...getSelectedLocationIds()])}
-			>
-				Remove from selection ({fmt.format(inSel)} locations)
-			</ContextMenu.Item>
-			<ContextMenu.Item className="context-menu__item" disabled={inSel === 0} onSelect={onRename}>
-				Rename in selection ({fmt.format(inSel)} locations)
-			</ContextMenu.Item>
-			{onAddAlias && (
-				<ContextMenu.Item className="context-menu__item" onSelect={onAddAlias}>
-					Add alias...
+		<ContextMenu.Positioner>
+			<ContextMenu.Popup className="context-menu">
+				<ContextMenu.Item
+					className="context-menu__item"
+					onClick={() => removeTagFromAllLocations(tagId)}
+				>
+					Remove from all ({fmt.format(totalCount)} locations)
 				</ContextMenu.Item>
-			)}
-			{onNewSubfolder && (
-				<ContextMenu.Item className="context-menu__item" onSelect={onNewSubfolder}>
-					New subfolder...
+				<ContextMenu.Item
+					className="context-menu__item"
+					disabled={inSel === 0}
+					onClick={() => removeTagFromLocations(tagId, [...getMapState().selectedLocationIds])}
+				>
+					Remove from selection ({fmt.format(inSel)} locations)
 				</ContextMenu.Item>
-			)}
-			{onRemoveAlias && (
-				<ContextMenu.Item className="context-menu__item" onSelect={onRemoveAlias}>
-					Remove alias
+				<ContextMenu.Item className="context-menu__item" disabled={inSel === 0} onClick={onRename}>
+					Rename in selection ({fmt.format(inSel)} locations)
 				</ContextMenu.Item>
-			)}
-		</ContextMenu.Content>
+				{onAddAlias && (
+					<ContextMenu.Item className="context-menu__item" onClick={onAddAlias}>
+						Add alias...
+					</ContextMenu.Item>
+				)}
+				{onNewSubfolder && (
+					<ContextMenu.Item className="context-menu__item" onClick={onNewSubfolder}>
+						New subfolder...
+					</ContextMenu.Item>
+				)}
+				{onRemoveAlias && (
+					<ContextMenu.Item className="context-menu__item" onClick={onRemoveAlias}>
+						Remove alias
+					</ContextMenu.Item>
+				)}
+			</ContextMenu.Popup>
+		</ContextMenu.Positioner>
 	);
 }
 

@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 // doesn't use so the pure patch logic is testable in a node environment. The real
 // filterEnrichPatch (from fieldDefs.add) is kept -- the bug lives in its interaction.
 vi.mock("@/store/useMapStore", () => ({
-	getCurrentMap: () => null,
+	getMapState: () => ({ map: null }),
 	fetchLocationsByIds: async () => [],
 	updateLocations: async () => {},
 }));
@@ -16,8 +16,17 @@ vi.mock("@/lib/sv/lookup", () => ({ resolvePanoIds: async () => [] }));
 vi.mock("@/lib/util/log", () => ({
 	log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {} },
 }));
+const cmdMock = vi.hoisted(() => ({
+	checkBorderFile: vi.fn(async () => true),
+	downloadBorderFile: vi.fn(async () => {}),
+	borderClassify: vi.fn(async (_level: string, pts: [number, number][]) =>
+		pts.map((): string | null => null),
+	),
+}));
+vi.mock("@/lib/commands", () => ({ cmd: cmdMock }));
+vi.mock("@/lib/util/toast", () => ({ toast: () => {} }));
 
-import { buildPatch, exactDateProvider } from "@/lib/sv/enrich";
+import { buildPatch, exactDateProvider, subdivisionProvider } from "@/lib/sv/enrich";
 import { getDefaultEnrichKeys } from "@/lib/data/fieldDefs";
 import { createLocation } from "@/types";
 import type { Location } from "@/types";
@@ -114,5 +123,46 @@ describe("exactDateProvider", () => {
 		});
 		expect(out.size).toBe(0);
 		expect(failed).toEqual([target.id]);
+	});
+});
+
+describe("subdivisionProvider", () => {
+	const locAt = (id: number, extra: Record<string, unknown> = {}): Location => ({
+		...createLocation({ lat: id, lng: id }),
+		id,
+		extra,
+	});
+
+	it("is inert when the subdivision field is not enabled", async () => {
+		const out = await subdivisionProvider.enrich([locAt(1)], ["altitude"]);
+		expect(out.size).toBe(0);
+		expect(cmdMock.borderClassify).not.toHaveBeenCalled();
+	});
+
+	it("classifies only pending locations and skips unmatched points", async () => {
+		cmdMock.borderClassify.mockResolvedValueOnce(["Sarawak", null]);
+		const fresh = locAt(1);
+		const ocean = locAt(2);
+		const done = locAt(3, { subdivision: "Sabah" });
+
+		const out = await subdivisionProvider.enrich([fresh, ocean, done], ["subdivision"]);
+		expect(cmdMock.borderClassify).toHaveBeenCalledWith("adm1", [
+			[1, 1],
+			[2, 2],
+		]);
+		expect(out.size).toBe(1);
+		expect(out.get(1)).toEqual({ subdivision: "Sarawak" });
+	});
+
+	it("re-classifies enriched locations under force", async () => {
+		cmdMock.borderClassify.mockResolvedValueOnce(["Johor"]);
+		const done = locAt(3, { subdivision: "Sabah" });
+		const out = await subdivisionProvider.enrich([done], ["subdivision"], { force: true });
+		expect(out.get(3)).toEqual({ subdivision: "Johor" });
+	});
+
+	it("checks the adm1 archive once across enrich calls", async () => {
+		expect(cmdMock.checkBorderFile).toHaveBeenCalledTimes(1);
+		expect(cmdMock.downloadBorderFile).not.toHaveBeenCalled();
 	});
 });

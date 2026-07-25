@@ -23,7 +23,7 @@
  * no layer declares the key (the UI falls back to the raw key name).
  */
 
-import { useSyncExternalStore } from "react";
+import { emit } from "@/lib/events";
 import type { ExtraFieldDef } from "@/bindings.gen";
 
 /**
@@ -78,34 +78,10 @@ export function getBuiltinKeys(): string[] {
 
 let pluginDefs: Record<string, ExtraFieldDef> = {};
 let userDefs: Record<string, ExtraFieldDef> = {};
-
-// --- Reactivity: a version that bumps whenever any layer changes. Consumers that
-//     read defs (labels, comparison) inside a memo can't key on the field-key set
-//     alone -- a label rename changes a def without changing which keys exist. They
-//     subscribe to this so a def-only edit invalidates their memo. ---
-let version = 0;
-const listeners = new Set<() => void>();
-function bump() {
-	version++;
-	listeners.forEach((l) => l());
-}
-function subscribe(l: () => void): () => void {
-	listeners.add(l);
-	return () => listeners.delete(l);
-}
-/** Snapshot of the def-change version (bumps on every layer mutation). */
-export function getFieldDefsVersion(): number {
-	return version;
-}
-/** Reactive hook: re-renders when any field def changes (label, type, comparison, ...). */
-export function useFieldDefsVersion(): number {
-	return useSyncExternalStore(subscribe, getFieldDefsVersion);
-}
-
 /** Register field definitions from an enrichment provider (called at activation). */
 export function registerPluginFieldDefs(defs: Record<string, ExtraFieldDef>) {
 	pluginDefs = { ...pluginDefs, ...defs };
-	bump();
+	emit("fields:changed");
 }
 
 /** Remove plugin field definitions by key (called when a plugin is deactivated). */
@@ -114,13 +90,13 @@ export function unregisterPluginFieldDefs(keys: string[]) {
 	const next = { ...pluginDefs };
 	for (const k of keys) delete next[k];
 	pluginDefs = next;
-	bump();
+	emit("fields:changed");
 }
 
 /** Load user-customized field definitions from `MapMeta.extra.fields` (called on map open). */
 export function setUserFieldDefs(defs: Record<string, ExtraFieldDef>) {
 	userDefs = defs;
-	bump();
+	emit("fields:changed");
 }
 
 /** Merge auto-registered/inferred defs into the user layer (e.g. after a mutation
@@ -128,13 +104,13 @@ export function setUserFieldDefs(defs: Record<string, ExtraFieldDef>) {
  *  defs are never clobbered. Keeps the registry the live source of truth without a reload. */
 export function mergeUserFieldDefs(defs: Record<string, ExtraFieldDef>) {
 	userDefs = { ...defs, ...userDefs };
-	bump();
+	emit("fields:changed");
 }
 
 /** Clear per-map state on map close. Plugin defs persist across maps. */
 export function resetForMapChange() {
 	userDefs = {};
-	bump();
+	emit("fields:changed");
 }
 
 /** Compose two layers per-attribute: the user value wins when present, falling

@@ -26,10 +26,10 @@ describe("Extra field definitions", () => {
 
 	it("registers field definitions that persist after reopen", async () => {
 		await withApi(async (api) => {
-			const cur = api.getCurrentMap()!.meta.extra?.fields ?? {};
+			const cur = api.getMapState().map!.meta.extra?.fields ?? {};
 			await api.updateMapMeta({
 				extra: {
-					...api.getCurrentMap()!.meta.extra,
+					...api.getMapState().map!.meta.extra,
 					fields: {
 						...cur,
 						altitude: { label: "Altitude", type: "number" },
@@ -43,7 +43,7 @@ describe("Extra field definitions", () => {
 		await closeMap();
 		await openMap(mapId);
 
-		const fields = await withApi(async (api) => api.getCurrentMap()!.meta.extra?.fields);
+		const fields = await withApi(async (api) => api.getMapState().map!.meta.extra?.fields);
 		expect(fields).toBeTruthy();
 		expect(fields!.altitude).toBeTruthy();
 		expect(fields!.altitude.label).toBe("Altitude");

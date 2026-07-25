@@ -2,8 +2,8 @@
 //! the owned GeoJSON path, and the offline artifact generator.
 
 use super::{
-    arch_feature_bbox, arch_point_in_feature, arch_to_geometry, convert_dataset, ArchDataset,
-    ArchFeature,
+    arch_feature_bbox, arch_point_in_feature, arch_to_geometry, classify_scan, convert_dataset,
+    ArchDataset, ArchFeature,
 };
 use crate::selections::{self, PolygonGeometry};
 
@@ -77,6 +77,52 @@ fn convert_dataset_produces_valid_archive() {
     assert_eq!(archived.features.len(), 1);
     assert_eq!(archived.features[0].code.as_str(), "XX");
     assert_eq!(archived.features[0].rings[0].len(), 5);
+}
+
+#[test]
+fn classify_scan_names_points_in_order() {
+    let (owned, _) = sample();
+    let other = PolygonGeometry {
+        coordinates: vec![vec![
+            [40.0, 0.0],
+            [50.0, 0.0],
+            [50.0, 10.0],
+            [40.0, 10.0],
+            [40.0, 0.0],
+        ]],
+        extra_polygons: None,
+        properties: None,
+    };
+    let features = [("A", owned), ("B", other)];
+    let feats: Vec<_> = features
+        .iter()
+        .map(|f| (selections::geometry_bbox(&f.1).unwrap(), f))
+        .collect();
+
+    // (lat, lng): inside A, in A's hole, in A's extra polygon, inside B, outside all.
+    let coords = [
+        (1.0, 1.0),
+        (5.0, 5.0),
+        (5.0, 25.0),
+        (5.0, 45.0),
+        (5.0, 35.0),
+    ];
+    let names = classify_scan(
+        feats,
+        &coords,
+        |lng, lat, f| selections::point_in_geometry(lng, lat, &f.1),
+        |f| f.0,
+    );
+    assert_eq!(
+        names,
+        vec![
+            Some("A".into()),
+            None,
+            Some("A".into()),
+            Some("B".into()),
+            None
+        ]
+    );
 }
 
 /// Regenerate the shipped border archives from their GeoJSON sources. Not part of the

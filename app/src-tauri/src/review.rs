@@ -64,23 +64,20 @@ pub struct ReviewUpdate {
 const COLS: &str =
     "id, map_id, name, source_key, source_props, ordering, reviewed, cursor_id, status, created_at, updated_at";
 
-/// Decode a row (in `COLS` order) into a `ReviewSession`, parsing the JSON-text columns.
+/// Decode a row (selected via `COLS`) into a `ReviewSession`, parsing JSON-text columns.
 fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<ReviewSession> {
-    let source_props: String = row.get(4)?;
-    let ordering: String = row.get(5)?;
-    let reviewed: String = row.get(6)?;
     Ok(ReviewSession {
-        id: row.get(0)?,
-        map_id: row.get(1)?,
-        name: row.get(2)?,
-        source_key: row.get(3)?,
-        source_props: serde_json::from_str(&source_props).unwrap_or(serde_json::Value::Null),
-        order: serde_json::from_str(&ordering).unwrap_or_default(),
-        reviewed: serde_json::from_str(&reviewed).unwrap_or_default(),
-        cursor_id: row.get(7)?,
-        status: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        id: row.get("id")?,
+        map_id: row.get("map_id")?,
+        name: row.get("name")?,
+        source_key: row.get("source_key")?,
+        source_props: storage::json_col(row, "source_props")?,
+        order: storage::json_col(row, "ordering")?,
+        reviewed: storage::json_col(row, "reviewed")?,
+        cursor_id: row.get("cursor_id")?,
+        status: row.get("status")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
@@ -168,26 +165,11 @@ pub(crate) fn update(conn: &Connection, update: ReviewUpdate) -> AppResult<()> {
     let mut sets: Vec<&str> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    if let Some(name) = &update.name {
-        sets.push("name = ?");
-        params.push(Box::new(name.clone()));
-    }
-    if let Some(cursor_id) = update.cursor_id {
-        sets.push("cursor_id = ?");
-        params.push(Box::new(cursor_id));
-    }
-    if let Some(reviewed) = &update.reviewed {
-        sets.push("reviewed = ?");
-        params.push(Box::new(serde_json::to_string(reviewed)?));
-    }
-    if let Some(ordering) = &update.ordering {
-        sets.push("ordering = ?");
-        params.push(Box::new(serde_json::to_string(ordering)?));
-    }
-    if let Some(status) = &update.status {
-        sets.push("status = ?");
-        params.push(Box::new(status.clone()));
-    }
+    push_field!(sets, params, update, "name", name);
+    push_field!(sets, params, update, "cursor_id", cursor_id);
+    push_field!(json sets, params, update, "reviewed", reviewed);
+    push_field!(json sets, params, update, "ordering", ordering);
+    push_field!(sets, params, update, "status", status);
     if sets.is_empty() {
         return Ok(());
     }

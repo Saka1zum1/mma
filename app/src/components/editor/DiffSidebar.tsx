@@ -1,13 +1,14 @@
 import { mdiArrowLeft } from "@mdi/js";
 import { Icon } from "@/components/primitives/Icon";
-import { useCommitDiffPreview, endCommitDiffPreview } from "@/store/useMapStore";
+import { getCommitDiffPreview, endCommitDiffPreview } from "@/store/commitDiff";
+import { useEventValue } from "@/lib/events";
 import { fmt } from "@/lib/util/format";
 
 /** Sidebar shown while viewing a commit diff on the map. The colored markers
  *  temporarily replace the regular markers; this panel labels them. The back
  *  arrow restores the regular markers. */
 export function DiffSidebar() {
-	const diff = useCommitDiffPreview();
+	const diff = useEventValue("store:changed", getCommitDiffPreview);
 	if (!diff) return null;
 	const { counts } = diff;
 

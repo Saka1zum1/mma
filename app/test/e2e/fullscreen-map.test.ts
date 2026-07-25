@@ -1,4 +1,3 @@
-﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
 	waitForReady,
 	createAndOpenMap,
@@ -88,6 +87,49 @@ describe("Fullscreen map mode", () => {
 		await mini.waitForExist({ timeout: 5000 });
 	});
 
+	// Hover-expand is a transform, not a size change: the SV canvas must keep its
+	// drawing buffer (resizing it mid-transition is what stretched the imagery).
+	it("expanding the mini preview scales it without resizing the pano canvas", async () => {
+		await withApi(async (api) => api.setSetting("fullscreenMap", true));
+		await waitForFullscreenMap(true);
+		await openLocation(locA);
+		await waitForWorkArea("location");
+
+		const chip = await browser.$(".fullscreen-mini-location");
+		await chip.waitForExist({ timeout: 5000 });
+
+		// The pano widget mounts several canvases; only the scene canvas is the
+		// WebGL surface whose drawing buffer must stay put.
+		const read = () =>
+			browser.execute(() => {
+				const el = document.querySelector(".fullscreen-mini-location") as HTMLElement;
+				const cv = el.querySelector(".widget-scene-canvas") as HTMLCanvasElement | null;
+				return { shown: Math.round(el.getBoundingClientRect().width), buffer: cv?.width ?? 0 };
+			});
+		await browser.waitUntil(async () => (await read()).buffer > 1, {
+			timeout: 15000,
+			timeoutMsg: "scene canvas never sized",
+		});
+
+		const collapsed = await read();
+		// Expansion is driven through the component's real onPointerEnter. The bridge
+		// does not deliver synthesized mouse movement (clicks and keys work, hover does
+		// not), and the event must originate on the chip's own chrome anyway - the pano
+		// widget stops propagation, so events on the canvas never reach the handler.
+		await browser.execute(() => {
+			document
+				.querySelector(".fullscreen-mini-location")!
+				.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+		});
+		await browser.waitUntil(async () => (await read()).shown > collapsed.shown + 20, {
+			timeout: 3000,
+			timeoutMsg: `chip never expanded on hover; collapsed=${JSON.stringify(collapsed)}`,
+		});
+		const expanded = await read();
+
+		expect(expanded.buffer).toBe(collapsed.buffer);
+	});
+
 	it("pano fullscreen (f) suspends fullscreen map and can be restored after delete", async () => {
 		await withApi(async (api) => api.setSetting("fullscreenMap", true));
 		await waitForFullscreenMap(true);
@@ -129,13 +171,11 @@ describe("Fullscreen map mode", () => {
 		await browser.keys("f");
 		await waitForPanoFullscreen(true);
 
-		// Use the map-fullscreen hotkey so pano fullscreen is suspended correctly.
-		await browser.$("body").click();
-		await browser.keys(["Control", "\\"]);
+		await withApi(async (api) => api.setSetting("fullscreenMap", true));
 		await waitForFullscreenMap(true);
 		await waitForPanoFullscreen(false);
 
-		await browser.keys(["Control", "\\"]);
+		await withApi(async (api) => api.setSetting("fullscreenMap", false));
 		await waitForFullscreenMap(false);
 		await waitForPanoFullscreen(true);
 	});

@@ -1,12 +1,10 @@
-import { useSyncExternalStore } from "react";
-import { createSyncStore } from "@/lib/util/syncStore";
+import { emit as emitEvent } from "@/lib/events";
 
 let trail: [number, number][] = [];
-const { subscribe, getSnapshot, notify } = createSyncStore();
 
 export function resetTrail(lng: number, lat: number) {
 	trail = [[lng, lat]];
-	notify();
+	emitEvent("trail:changed");
 }
 
 export function pushTrail(lng: number, lat: number) {
@@ -15,21 +13,15 @@ export function pushTrail(lng: number, lat: number) {
 		if (last[0] === lng && last[1] === lat) return;
 	}
 	trail = [...trail, [lng, lat]];
-	notify();
+	emitEvent("trail:changed");
 }
 
 export function clearTrail() {
 	if (trail.length === 0) return;
 	trail = [];
-	notify();
+	emitEvent("trail:changed");
 }
 
 export function getTrail(): [number, number][] {
 	return trail;
 }
-
-export function useTrailVersion() {
-	return useSyncExternalStore(subscribe, getSnapshot);
-}
-
-export const subscribeTrail = subscribe;

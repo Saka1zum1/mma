@@ -1,13 +1,14 @@
 import { forwardRef } from "react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import { ContextMenu } from "@base-ui-components/react/context-menu";
 import {
 	useMeasureState,
 	startMeasure,
 	endMeasure,
-	useLatLngAnchor,
+	getLatLngAnchor,
 	setLatLngAnchor,
-	getContextMenuTarget,
 } from "@/lib/sv/measure";
+import { useEventValue } from "@/lib/events";
+import { getContextMenuTarget } from "@/lib/map/contextMenu";
 import { hostInstance, type MapHost } from "@/lib/map/host";
 
 interface MapContextMenuProps {
@@ -17,51 +18,53 @@ interface MapContextMenuProps {
 export const MapContextMenuContent = forwardRef<HTMLDivElement, MapContextMenuProps>(
 	({ host }, ref) => {
 		const { isMeasuring } = useMeasureState();
-		const anchor = useLatLngAnchor();
+		const anchor = useEventValue("anchor:changed", getLatLngAnchor);
 		// The measure tool is Google-only (measuretool-googlemaps-v3).
 		const gMap = hostInstance(host, "google");
 
 		return (
-			<ContextMenu.Content className="context-menu" ref={ref}>
-				{isMeasuring ? (
-					<ContextMenu.Item className="context-menu__item" onSelect={endMeasure}>
-						End measurement
-					</ContextMenu.Item>
-				) : (
-					gMap && (
-						<ContextMenu.Item
-							className="context-menu__item"
-							onSelect={() => {
-								startMeasure(gMap, getContextMenuTarget().latLng);
-							}}
-						>
-							Start measurement
+			<ContextMenu.Positioner>
+				<ContextMenu.Popup className="context-menu" ref={ref}>
+					{isMeasuring ? (
+						<ContextMenu.Item className="context-menu__item" onClick={endMeasure}>
+							End measurement
 						</ContextMenu.Item>
-					)
-				)}
-				<ContextMenu.Item
-					className="context-menu__item"
-					onSelect={() => {
-						const { lat, lng } = getContextMenuTarget().latLng;
-						navigator.clipboard.writeText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-					}}
-				>
-					Copy coordinates
-				</ContextMenu.Item>
-				<ContextMenu.Item
-					className="context-menu__item"
-					onSelect={() => setLatLngAnchor(getContextMenuTarget().latLng)}
-				>
-					Set latitude/longitude anchors
-				</ContextMenu.Item>
-				<ContextMenu.Item
-					className="context-menu__item"
-					disabled={!anchor}
-					onSelect={() => setLatLngAnchor(null)}
-				>
-					Clear latitude/longitude anchors
-				</ContextMenu.Item>
-			</ContextMenu.Content>
+					) : (
+						gMap && (
+							<ContextMenu.Item
+								className="context-menu__item"
+								onClick={() => {
+									startMeasure(gMap, getContextMenuTarget().latLng);
+								}}
+							>
+								Start measurement
+							</ContextMenu.Item>
+						)
+					)}
+					<ContextMenu.Item
+						className="context-menu__item"
+						onClick={() => {
+							const { lat, lng } = getContextMenuTarget().latLng;
+							navigator.clipboard.writeText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+						}}
+					>
+						Copy coordinates
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						className="context-menu__item"
+						onClick={() => setLatLngAnchor(getContextMenuTarget().latLng)}
+					>
+						Set latitude/longitude anchors
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						className="context-menu__item"
+						disabled={!anchor}
+						onClick={() => setLatLngAnchor(null)}
+					>
+						Clear latitude/longitude anchors
+					</ContextMenu.Item>
+				</ContextMenu.Popup>
+			</ContextMenu.Positioner>
 		);
 	},
 );

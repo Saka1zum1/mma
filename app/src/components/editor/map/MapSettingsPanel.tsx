@@ -38,23 +38,6 @@ export interface LayerConfig {
 	onManageStyles: () => void;
 }
 
-/** App-level (localStorage) prefs the panel renders. Per-map settings are read
- *  directly via `useMapSetting`, not passed in. */
-export interface MapSettingsDropdownProps {
-	markerStyle: MarkerStyle;
-	setMarkerStyle: (v: MarkerStyle) => void;
-	markerSize: number;
-	setMarkerSize: (v: number) => void;
-	showPerfectScoreCircle: boolean;
-	setShowPerfectScoreCircle: (v: boolean) => void;
-	showSearchRadiusCursor: boolean;
-	setShowSearchRadiusCursor: (v: boolean) => void;
-	showPreviews: boolean;
-	setShowPreviews: (v: boolean) => void;
-	selectOnly: boolean;
-	setSelectOnly: (v: boolean) => void;
-}
-
 function SearchRadiusSlider({
 	value,
 	onChange,
@@ -500,7 +483,13 @@ export function MapTypeDropdown({ layerConfig }: { layerConfig: LayerConfig }) {
 	);
 }
 
-export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDropdownProps }) {
+export function MapSettingsDropdown({
+	prefs: p,
+	setPref,
+}: {
+	prefs: MapEmbedPrefs;
+	setPref: <K extends keyof MapEmbedPrefs>(k: K) => (v: MapEmbedPrefs[K]) => void;
+}) {
 	const [pointAlongRoad, setPointAlongRoad] = useMapSetting("pointAlongRoad");
 	const [preferDirection, setPreferDirection] = useMapSetting("preferDirection");
 	const [preferOfficial, setPreferOfficial] = useMapSetting("preferOfficial");
@@ -589,11 +578,15 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 							Map behaviour <span className="fieldset__divider" />
 						</legend>
 						<SwitchRow
-							checked={s.showPreviews}
-							onChange={s.setShowPreviews}
+							checked={p.showPreviews}
+							onChange={setPref("showPreviews")}
 							label="Show location previews when hovering the map"
 						/>
-						<SwitchRow checked={s.selectOnly} onChange={s.setSelectOnly} label="Select-only mode" />
+						<SwitchRow
+							checked={p.selectOnly}
+							onChange={setPref("selectOnly")}
+							label="Select-only mode"
+						/>
 					</fieldset>
 					<ScoreBoundsEditor />
 					<fieldset className="fieldset">
@@ -604,8 +597,8 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 							Marker style:{" "}
 							<NSelect
 								className="nselect--compact"
-								value={s.markerStyle}
-								onChange={(e) => s.setMarkerStyle(e.target.value as MarkerStyle)}
+								value={p.markerStyle}
+								onChange={(e) => setPref("markerStyle")(e.target.value as MarkerStyle)}
 							>
 								<option value="pin">Pin</option>
 								<option value="circle">Circle</option>
@@ -618,18 +611,18 @@ export function MapSettingsDropdown({ settings: s }: { settings: MapSettingsDrop
 								min={0.5}
 								max={3}
 								step={0.25}
-								value={s.markerSize}
-								onChange={(e) => s.setMarkerSize(Number(e.target.value))}
+								value={p.markerSize}
+								onChange={(e) => setPref("markerSize")(Number(e.target.value))}
 							/>
 						</label>
 						<SwitchRow
-							checked={s.showPerfectScoreCircle}
-							onChange={s.setShowPerfectScoreCircle}
+							checked={p.showPerfectScoreCircle}
+							onChange={setPref("showPerfectScoreCircle")}
 							label="Display 5K radius"
 						/>
 						<SwitchRow
-							checked={s.showSearchRadiusCursor}
-							onChange={s.setShowSearchRadiusCursor}
+							checked={p.showSearchRadiusCursor}
+							onChange={setPref("showSearchRadiusCursor")}
 							label="Show click search radius at cursor"
 						/>
 					</fieldset>

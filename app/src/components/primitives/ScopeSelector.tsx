@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { ScopeController, SourceScope } from "@/store/useMapStore";
+import type { ScopeController, SourceScope } from "@/store/scope";
 import { getSavedSelections } from "@/store/savedSelections";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Radio } from "@/components/primitives/Radio";

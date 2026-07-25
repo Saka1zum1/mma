@@ -7,7 +7,7 @@ export function FindSimilarButton() {
 	const [running, setRunning] = useState(false);
 	const [result, setResult] = useState<string | null>(null);
 
-	const active = MMA.getActiveLocation();
+	const active = MMA.getMapState().activeLocation;
 	if (!active?.panoId) return null;
 
 	const run = async () => {

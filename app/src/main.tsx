@@ -5,7 +5,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "@/styles.css";
 import App from "@/App.tsx";
 import { initLogging, log } from "@/lib/util/log";
-import { initStore, flushSave, getMapList } from "@/store/useMapStore";
+import { initStore, flushSave } from "@/store/useMapStore";
+import { getMapList } from "@/store/mapList";
 import { initRouter } from "@/store/router";
 import { getSettings } from "@/store/settings";
 import { loadSession, saveSession } from "@/store/session";
@@ -16,6 +17,13 @@ import "@/api";
 import "@/store/commandDefs";
 
 async function boot() {
+	// react-scan must load before the React root renders. Dev-only and flag-gated, so the
+	// whole branch tree-shakes out of production builds.
+	if (import.meta.env.DEV && import.meta.env.VITE_REACT_SCAN) {
+		const { scan } = await import("react-scan");
+		scan({ enabled: true });
+	}
+
 	const t0 = performance.now();
 	let tPrev = t0;
 	const mark = (label: string) => {

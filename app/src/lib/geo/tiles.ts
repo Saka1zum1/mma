@@ -62,10 +62,13 @@ export const StyleType = {
 } as const;
 export const LegacyFlag = { LEGACY: 18, CURRENT: 1105 } as const;
 
-// --- Protobuf message classes ---
+// --- Protobuf message factory ---
+// Each message is a compact schema of field descriptors. The factory stamps
+// getters/setters onto a class prototype and builds a matching serializer.
+// Wire types: i=int, e=enum, f=float, b=bool, s=string, m=nested, rm=repeated nested, re=repeated enum sub-msg.
 
-class RenderStrategy {
-	private _a: any[];
+class PbMsg {
+	_a: any[];
 	constructor(init?: any) {
 		if (Array.isArray(init)) this._a = init;
 		else {
@@ -73,492 +76,216 @@ class RenderStrategy {
 			if (init) Object.assign(this, init);
 		}
 	}
-	get frontend() {
-		return this._a[0] ?? 0;
-	}
-	set frontend(v) {
-		this._a[0] = v;
-	}
-	get tiled() {
-		return this._a[1] ?? false;
-	}
-	set tiled(v) {
-		this._a[1] = v;
-	}
-	get imageFormat() {
-		return this._a[2] ?? 0;
-	}
-	set imageFormat(v) {
-		this._a[2] = v;
-	}
 	toArray() {
 		return this._a;
 	}
 }
 
-function serializeRenderStrategy(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1e${e[0]}`);
-	if (e[1]) t.push("2b1");
-	if (e[2] != null) t.push(`3e${e[2]}`);
-}
+type W = "i" | "e" | "f" | "b" | "s";
+type F =
+	| { n: string; i: number; w: W; d?: any }
+	| { n: string; i: number; w: "m"; s: F[]; init?: true }
+	| { n: string; i: number; w: "rm"; s: F[] }
+	| { n: string; i: number; w: "re" };
+type Def = { C: new (init?: any) => PbMsg; ser: (a: any[], o: string[]) => void };
 
-export class CoverageStrategies {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get strategies(): RenderStrategy[] {
-		return (this._a[0] ??= []).map((e: any) => new RenderStrategy(e));
-	}
-	set strategies(v: any[]) {
-		this._a[0] = (v ?? []).map((e: any) =>
-			(e instanceof RenderStrategy ? e : new RenderStrategy(e)).toArray(),
-		);
-	}
-	get unknownBool() {
-		return this._a[1] ?? false;
-	}
-	set unknownBool(v) {
-		this._a[1] = v;
-	}
-	get unknownBool2() {
-		return this._a[3] ?? false;
-	}
-	set unknownBool2(v) {
-		this._a[3] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeCoverageStrategies(e: any[], t: string[]) {
-	e[0]?.forEach((e: any) => {
-		pbMsg(1, serializeRenderStrategy, e, t);
+const reEnumSer = (arr: any[], out: string[]) =>
+	arr.forEach((v: any) => {
+		if (v != null) out.push(`1e${v}`);
 	});
-	if (e[1]) t.push("2b1");
-	if (e[3]) t.push("4b1");
+
+const _defs = new WeakMap<F[], Def>();
+function pb(fields: F[], Cls?: new (init?: any) => PbMsg): Def {
+	let d = _defs.get(fields);
+	if (d) return d;
+	const M = Cls ?? class extends PbMsg {};
+	d = { C: M, ser: null! };
+	_defs.set(fields, d);
+	const proto: any = M.prototype;
+	for (const f of fields) {
+		const desc: PropertyDescriptor = { enumerable: true, configurable: true };
+		const { i } = f;
+		if (f.w === "m") {
+			const ch = pb(f.s);
+			desc.get = f.init
+				? function (this: PbMsg) {
+						return new ch.C((this._a[i] ??= []));
+					}
+				: function (this: PbMsg) {
+						return new ch.C(this._a[i]);
+					};
+			desc.set = function (this: PbMsg, v: any) {
+				this._a[i] = v == null ? [] : (v instanceof PbMsg ? v : new ch.C(v)).toArray();
+			};
+		} else if (f.w === "rm") {
+			const ch = pb(f.s);
+			desc.get = function (this: PbMsg) {
+				return (this._a[i] ??= []).map((e: any) => new ch.C(e));
+			};
+			desc.set = function (this: PbMsg, v: any) {
+				this._a[i] = (v ?? []).map((e: any) => (e instanceof PbMsg ? e : new ch.C(e)).toArray());
+			};
+		} else if (f.w === "b") {
+			desc.get = function (this: PbMsg) {
+				return this._a[i] ?? false;
+			};
+			desc.set = function (this: PbMsg, v: any) {
+				this._a[i] = v;
+			};
+		} else if (f.w === "re") {
+			desc.get = function (this: PbMsg) {
+				return this._a[i] ?? [];
+			};
+			desc.set = function (this: PbMsg, v: any) {
+				this._a[i] = v;
+			};
+		} else {
+			desc.get =
+				"d" in f
+					? function (this: PbMsg) {
+							return this._a[i] ?? f.d;
+						}
+					: function (this: PbMsg) {
+							return this._a[i];
+						};
+			desc.set = function (this: PbMsg, v: any) {
+				this._a[i] = v;
+			};
+		}
+		Object.defineProperty(proto, f.n, desc);
+	}
+	d.ser = (a, o) => {
+		for (const f of fields) {
+			const { i } = f;
+			const p = i + 1;
+			switch (f.w) {
+				case "i":
+					if (a[i] != null) o.push(`${p}i${a[i]}`);
+					break;
+				case "e":
+					if (a[i] != null) o.push(`${p}e${a[i]}`);
+					break;
+				case "f":
+					if (a[i] != null) o.push(`${p}f${a[i]}`);
+					break;
+				case "b":
+					if (a[i]) o.push(`${p}b1`);
+					break;
+				case "s":
+					if (a[i] != null) o.push(`${p}s${pbEscape(a[i])}`);
+					break;
+				case "m":
+					if (a[i] != null) pbMsg(p, pb(f.s).ser, a[i], o);
+					break;
+				case "rm":
+					a[i]?.forEach((v: any) => pbMsg(p, pb(f.s).ser, v, o));
+					break;
+				case "re":
+					if (a[i]?.length) pbMsg(p, reEnumSer, a[i], o);
+					break;
+			}
+		}
+	};
+	return d;
 }
+
+// --- Message schemas (field order = serialization order) ---
+
+const kvS: F[] = [
+	{ n: "key", i: 0, w: "s", d: "" },
+	{ n: "value", i: 1, w: "s", d: "" },
+];
+const renderStrategyS: F[] = [
+	{ n: "frontend", i: 0, w: "e", d: 0 },
+	{ n: "tiled", i: 1, w: "b" },
+	{ n: "imageFormat", i: 2, w: "e", d: 0 },
+];
+const coverageStrategiesS: F[] = [
+	{ n: "strategies", i: 0, w: "rm", s: renderStrategyS },
+	{ n: "unknownBool", i: 1, w: "b" },
+	{ n: "unknownBool2", i: 3, w: "b" },
+];
+const svlConfigS: F[] = [
+	{ n: "showUserContent", i: 0, w: "b" },
+	{ n: "useDetailedLines", i: 1, w: "b" },
+];
+const tileCoordS: F[] = [
+	{ n: "zoom", i: 0, w: "i", d: 0 },
+	{ n: "x", i: 1, w: "i", d: 0 },
+	{ n: "y", i: 2, w: "i", d: 0 },
+	{ n: "size", i: 3, w: "i", d: 0 },
+];
+const tileQueryS: F[] = [{ n: "tile", i: 0, w: "m", s: tileCoordS }];
+const layerS: F[] = [
+	{ n: "type", i: 0, w: "e", d: 0 },
+	{ n: "layerName", i: 1, w: "s", d: "" },
+	{ n: "layerVersion", i: 2, w: "i" },
+	{ n: "layerOptions", i: 3, w: "rm", s: kvS },
+];
+const stylerS: F[] = [
+	{ n: "type", i: 0, w: "e", d: 0 },
+	{ n: "params", i: 1, w: "rm", s: kvS },
+];
+// Serialization order differs from index order: outputFormat (i=3) comes after styles (i=11)
+const optionsS: F[] = [
+	{ n: "language", i: 1, w: "s", d: "" },
+	{ n: "region", i: 2, w: "s", d: "" },
+	{ n: "unknownStyleFlag", i: 4, w: "e", d: 0 },
+	{ n: "styles", i: 11, w: "rm", s: stylerS },
+	{ n: "outputFormat", i: 3, w: "e", d: 0 },
+];
+const renderOptionsS: F[] = [
+	{ n: "rasterType", i: 0, w: "e", d: 0 },
+	{ n: "scale", i: 4, w: "f", d: 0 },
+];
+const tileConfigS: F[] = [
+	{ n: "query", i: 0, w: "m", s: tileQueryS },
+	{ n: "layers", i: 1, w: "rm", s: layerS },
+	{ n: "options", i: 2, w: "m", s: optionsS, init: true },
+	{ n: "outputFormat", i: 3, w: "i", d: 0 },
+	{ n: "renderOptions", i: 4, w: "m", s: renderOptionsS, init: true },
+	{ n: "tileHash", i: 22, w: "i" },
+	{ n: "footerStyleTypes", i: 25, w: "re" },
+];
+
+// --- Exported message classes (declare for TS visibility) ---
+
+export class CoverageStrategies extends PbMsg {
+	declare strategies: any[];
+	declare unknownBool: boolean;
+	declare unknownBool2: boolean;
+}
+export class Styler extends PbMsg {
+	declare type: number;
+	declare params: any[];
+}
+export class TileConfig extends PbMsg {
+	declare query: any;
+	declare layers: any[];
+	declare options: any;
+	declare outputFormat: number;
+	declare renderOptions: any;
+	declare tileHash: any;
+	declare footerStyleTypes: number[];
+}
+
+const csDef = pb(coverageStrategiesS, CoverageStrategies);
+const svlDef = pb(svlConfigS);
+pb(stylerS, Styler);
+const tcDef = pb(tileConfigS, TileConfig);
+const RenderStrategy = pb(renderStrategyS).C;
+const SvlConfig = svlDef.C;
 
 export function encodeCoverageStrategies(cs: CoverageStrategies): string {
-	return pbSerialize(serializeCoverageStrategies, cs.toArray());
+	return pbSerialize(csDef.ser, cs.toArray());
 }
 
-class SvlConfig {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get showUserContent() {
-		return this._a[0] ?? false;
-	}
-	set showUserContent(v) {
-		this._a[0] = v;
-	}
-	get useDetailedLines() {
-		return this._a[1] ?? false;
-	}
-	set useDetailedLines(v) {
-		this._a[1] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeSvlConfig(e: any[], t: string[]) {
-	if (e[0]) t.push("1b1");
-	if (e[1]) t.push("2b1");
-}
-
-export function encodeSvlConfig(cfg: SvlConfig): string {
-	return pbSerialize(serializeSvlConfig, cfg.toArray());
-}
-
-class TileCoord {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get zoom() {
-		return this._a[0] ?? 0;
-	}
-	set zoom(v) {
-		this._a[0] = v;
-	}
-	get x() {
-		return this._a[1] ?? 0;
-	}
-	set x(v) {
-		this._a[1] = v;
-	}
-	get y() {
-		return this._a[2] ?? 0;
-	}
-	set y(v) {
-		this._a[2] = v;
-	}
-	get size() {
-		return this._a[3] ?? 0;
-	}
-	set size(v) {
-		this._a[3] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeTileCoord(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1i${e[0]}`);
-	if (e[1] != null) t.push(`2i${e[1]}`);
-	if (e[2] != null) t.push(`3i${e[2]}`);
-	if (e[3] != null) t.push(`4i${e[3]}`);
-}
-
-class TileQuery {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get tile(): TileCoord {
-		return new TileCoord(this._a[0]);
-	}
-	set tile(v: any) {
-		this._a[0] = (v instanceof TileCoord ? v : new TileCoord(v)).toArray();
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeTileQuery(e: any[], t: string[]) {
-	if (e[0] != null) pbMsg(1, serializeTileCoord, e[0], t);
-}
-
-class LayerOption {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get key() {
-		return this._a[0] ?? "";
-	}
-	set key(v) {
-		this._a[0] = v;
-	}
-	get value() {
-		return this._a[1] ?? "";
-	}
-	set value(v) {
-		this._a[1] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeLayerOption(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1s${pbEscape(e[0])}`);
-	if (e[1] != null) t.push(`2s${pbEscape(e[1])}`);
-}
-
-class Layer {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get type() {
-		return this._a[0] ?? 0;
-	}
-	set type(v) {
-		this._a[0] = v;
-	}
-	get layerName() {
-		return this._a[1] ?? "";
-	}
-	set layerName(v) {
-		this._a[1] = v;
-	}
-	get layerVersion() {
-		return this._a[2];
-	}
-	set layerVersion(v) {
-		this._a[2] = v;
-	}
-	get layerOptions(): LayerOption[] {
-		return (this._a[3] ??= []).map((e: any) => new LayerOption(e));
-	}
-	set layerOptions(v: any[]) {
-		this._a[3] = (v ?? []).map((e: any) =>
-			(e instanceof LayerOption ? e : new LayerOption(e)).toArray(),
-		);
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeLayer(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1e${e[0]}`);
-	if (e[1] != null) t.push(`2s${pbEscape(e[1])}`);
-	if (e[2] != null) t.push(`3i${e[2]}`);
-	e[3]?.forEach((e: any) => {
-		pbMsg(4, serializeLayerOption, e, t);
-	});
-}
-
-class StylerParam {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get key() {
-		return this._a[0] ?? "";
-	}
-	set key(v) {
-		this._a[0] = v;
-	}
-	get value() {
-		return this._a[1] ?? "";
-	}
-	set value(v) {
-		this._a[1] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeStylerParam(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1s${pbEscape(e[0])}`);
-	if (e[1] != null) t.push(`2s${pbEscape(e[1])}`);
-}
-
-export class Styler {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get type() {
-		return this._a[0] ?? 0;
-	}
-	set type(v) {
-		this._a[0] = v;
-	}
-	get params(): StylerParam[] {
-		return (this._a[1] ??= []).map((e: any) => new StylerParam(e));
-	}
-	set params(v: any[]) {
-		this._a[1] = (v ?? []).map((e: any) =>
-			(e instanceof StylerParam ? e : new StylerParam(e)).toArray(),
-		);
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeStyler(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1e${e[0]}`);
-	e[1]?.forEach((e: any) => {
-		pbMsg(2, serializeStylerParam, e, t);
-	});
-}
-
-class Options {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get language() {
-		return this._a[1] ?? "";
-	}
-	set language(v) {
-		this._a[1] = v;
-	}
-	get region() {
-		return this._a[2] ?? "";
-	}
-	set region(v) {
-		this._a[2] = v;
-	}
-	get outputFormat() {
-		return this._a[3] ?? 0;
-	}
-	set outputFormat(v) {
-		this._a[3] = v;
-	}
-	get unknownStyleFlag() {
-		return this._a[4] ?? 0;
-	}
-	set unknownStyleFlag(v) {
-		this._a[4] = v;
-	}
-	get styles(): Styler[] {
-		return (this._a[11] ??= []).map((e: any) => new Styler(e));
-	}
-	set styles(v: any[]) {
-		this._a[11] = (v ?? []).map((e: any) => (e instanceof Styler ? e : new Styler(e)).toArray());
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeOptions(e: any[], t: string[]) {
-	if (e[1] != null) t.push(`2s${pbEscape(e[1])}`);
-	if (e[2] != null) t.push(`3s${pbEscape(e[2])}`);
-	if (e[4] != null) t.push(`5e${e[4]}`);
-	e[11]?.forEach((e: any) => {
-		pbMsg(12, serializeStyler, e, t);
-	});
-	if (e[3] != null) t.push(`4e${e[3]}`);
-}
-
-class RenderOptions {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get rasterType() {
-		return this._a[0] ?? 0;
-	}
-	set rasterType(v) {
-		this._a[0] = v;
-	}
-	get scale() {
-		return this._a[4] ?? 0;
-	}
-	set scale(v) {
-		this._a[4] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeRenderOptions(e: any[], t: string[]) {
-	if (e[0] != null) t.push(`1e${e[0]}`);
-	if (e[4] != null) t.push(`5f${e[4]}`);
-}
-
-export class TileConfig {
-	private _a: any[];
-	constructor(init?: any) {
-		if (Array.isArray(init)) this._a = init;
-		else {
-			this._a = [];
-			if (init) Object.assign(this, init);
-		}
-	}
-	get query(): TileQuery {
-		return new TileQuery(this._a[0]);
-	}
-	set query(v: any) {
-		this._a[0] = (v instanceof TileQuery ? v : new TileQuery(v)).toArray();
-	}
-	get layers(): Layer[] {
-		return (this._a[1] ??= []).map((e: any) => new Layer(e));
-	}
-	set layers(v: any[]) {
-		this._a[1] = (v ?? []).map((e: any) => (e instanceof Layer ? e : new Layer(e)).toArray());
-	}
-	get options(): Options {
-		return new Options((this._a[2] ??= []));
-	}
-	set options(v: any) {
-		this._a[2] = v == null ? [] : (v instanceof Options ? v : new Options(v)).toArray();
-	}
-	get outputFormat() {
-		return this._a[3] ?? 0;
-	}
-	set outputFormat(v) {
-		this._a[3] = v;
-	}
-	get renderOptions(): RenderOptions {
-		return new RenderOptions((this._a[4] ??= []));
-	}
-	set renderOptions(v: any) {
-		this._a[4] = v == null ? [] : (v instanceof RenderOptions ? v : new RenderOptions(v)).toArray();
-	}
-	get tileHash() {
-		return this._a[22];
-	}
-	set tileHash(v) {
-		this._a[22] = v;
-	}
-	get footerStyleTypes(): number[] {
-		return this._a[25] ?? [];
-	}
-	set footerStyleTypes(v: number[]) {
-		this._a[25] = v;
-	}
-	toArray() {
-		return this._a;
-	}
-}
-
-function serializeTileFooterStyles(e: any[], t: string[]) {
-	e.forEach((v: number) => {
-		if (v != null) t.push(`1e${v}`);
-	});
-}
-
-function serializeTileConfig(e: any[], t: string[]) {
-	if (e[0] != null) pbMsg(1, serializeTileQuery, e[0], t);
-	e[1]?.forEach((e: any) => {
-		pbMsg(2, serializeLayer, e, t);
-	});
-	if (e[2] != null) pbMsg(3, serializeOptions, e[2], t);
-	if (e[3] != null) t.push(`4i${e[3]}`);
-	if (e[4] != null) pbMsg(5, serializeRenderOptions, e[4], t);
-	if (e[22] != null) t.push(`23i${e[22]}`);
-	if (e[25]?.length) pbMsg(26, serializeTileFooterStyles, e[25], t);
+export function encodeSvlConfig(cfg: PbMsg): string {
+	return pbSerialize(svlDef.ser, cfg.toArray());
 }
 
 export function serializeTileUrl(cfg: TileConfig): string {
-	return pbSerialize(serializeTileConfig, cfg.toArray());
+	return pbSerialize(tcDef.ser, cfg.toArray());
 }
 
 // --- Google Maps style serialization (du function from map_editor) ---

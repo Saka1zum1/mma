@@ -37,8 +37,8 @@ describe("Review mode", () => {
 				await api.beginReview(ids);
 				await new Promise((r) => setTimeout(r, settle));
 				return {
-					activeId: api.getActiveLocation()?.id ?? null,
-					workArea: api.getWorkArea(),
+					activeId: api.getMapState().activeLocation?.id ?? null,
+					workArea: api.getMapState().workArea,
 				};
 			},
 			reviewIds,
@@ -52,7 +52,7 @@ describe("Review mode", () => {
 		const result = await withApi(async (api, settle) => {
 			await api.reviewNext();
 			await new Promise((r) => setTimeout(r, settle));
-			return { activeId: api.getActiveLocation()?.id ?? null };
+			return { activeId: api.getMapState().activeLocation?.id ?? null };
 		}, SETTLE);
 		expect(result.activeId).toBe(locIds[5]);
 	});
@@ -61,7 +61,7 @@ describe("Review mode", () => {
 		const result = await withApi(async (api, settle) => {
 			await api.reviewNext();
 			await new Promise((r) => setTimeout(r, settle));
-			return { activeId: api.getActiveLocation()?.id ?? null };
+			return { activeId: api.getMapState().activeLocation?.id ?? null };
 		}, SETTLE);
 		expect(result.activeId).toBe(locIds[7]);
 	});
@@ -71,8 +71,8 @@ describe("Review mode", () => {
 			await api.reviewNext();
 			await new Promise((r) => setTimeout(r, settle));
 			return {
-				activeId: api.getActiveLocation()?.id ?? null,
-				workArea: api.getWorkArea(),
+				activeId: api.getMapState().activeLocation?.id ?? null,
+				workArea: api.getMapState().workArea,
 			};
 		}, SETTLE);
 		expect(result.activeId).toBeNull();
@@ -88,7 +88,7 @@ describe("Review mode", () => {
 				await api.reviewNext(); // -> locIds[2]
 				await api.reviewPrev(); // -> locIds[1]
 				await new Promise((r) => setTimeout(r, settle));
-				return { activeId: api.getActiveLocation()?.id ?? null };
+				return { activeId: api.getMapState().activeLocation?.id ?? null };
 			},
 			reviewIds,
 			SETTLE,
@@ -102,8 +102,8 @@ describe("Review mode", () => {
 			await api.reviewPrev(); // at start -> no-op, stays put
 			await new Promise((r) => setTimeout(r, settle));
 			return {
-				activeId: api.getActiveLocation()?.id ?? null,
-				workArea: api.getWorkArea(),
+				activeId: api.getMapState().activeLocation?.id ?? null,
+				workArea: api.getMapState().workArea,
 				inReview: api.getReviewSession() !== null,
 			};
 		}, SETTLE);
@@ -125,8 +125,8 @@ describe("Review mode", () => {
 				api.cancelReview();
 				await new Promise((r) => setTimeout(r, settle));
 				return {
-					activeId: api.getActiveLocation()?.id ?? null,
-					workArea: api.getWorkArea(),
+					activeId: api.getMapState().activeLocation?.id ?? null,
+					workArea: api.getMapState().workArea,
 				};
 			},
 			reviewIds,
@@ -140,7 +140,7 @@ describe("Review mode", () => {
 		const result = await withApi(async (api, settle) => {
 			await api.beginReview([]);
 			await new Promise((r) => setTimeout(r, settle));
-			return { workArea: api.getWorkArea() };
+			return { workArea: api.getMapState().workArea };
 		}, SETTLE);
 		expect(result.workArea).toBe("overview");
 	});
@@ -151,7 +151,7 @@ describe("Review mode", () => {
 			async (api, id, settle) => {
 				await api.beginReview([999999, id, 999998]);
 				await new Promise((r) => setTimeout(r, settle));
-				return { activeId: api.getActiveLocation()?.id ?? null };
+				return { activeId: api.getMapState().activeLocation?.id ?? null };
 			},
 			validId,
 			SETTLE,
@@ -168,7 +168,7 @@ describe("Review mode", () => {
 		const result = await withApi(async (api, settle) => {
 			await api.beginReview([999999, 999998, 999997]);
 			await new Promise((r) => setTimeout(r, settle));
-			return { workArea: api.getWorkArea() };
+			return { workArea: api.getMapState().workArea };
 		}, SETTLE);
 		expect(result.workArea).toBe("overview");
 	});
@@ -211,10 +211,10 @@ describe("Review mode - delete", () => {
 			async (api, did, _nid, settle) => {
 				await api.reviewDelete();
 				await new Promise((r) => setTimeout(r, settle));
-				const count = await api.cmd.storeLocationCount();
+				const count = (await api.cmd.storeGetSummary()).locationCount;
 				const deleted = await api.fetchLocation(did).catch(() => null);
 				return {
-					activeId: api.getActiveLocation()?.id ?? null,
+					activeId: api.getMapState().activeLocation?.id ?? null,
 					count,
 					deleted,
 				};
@@ -234,8 +234,8 @@ describe("Review mode - delete", () => {
 			await api.reviewDelete(); // deletes locIds[2], no more -> exits
 			await new Promise((r) => setTimeout(r, settle));
 			return {
-				activeId: api.getActiveLocation()?.id ?? null,
-				workArea: api.getWorkArea(),
+				activeId: api.getMapState().activeLocation?.id ?? null,
+				workArea: api.getMapState().workArea,
 			};
 		}, SETTLE);
 		const count = await getLocCount();
@@ -286,7 +286,7 @@ describe("Review mode - skips deleted locations", () => {
 				await api.removeLocations(new Set([delId]));
 				await api.reviewNext(); // should skip locIds[1], land on locIds[2]
 				await new Promise((r) => setTimeout(r, settle));
-				return { activeId: api.getActiveLocation()?.id ?? null };
+				return { activeId: api.getMapState().activeLocation?.id ?? null };
 			},
 			allIds,
 			deleteId,
@@ -348,7 +348,7 @@ describe("Review mode - reviewed tracking & peek", () => {
 				const s = api.getReviewSession();
 				const out = {
 					cursorId: s?.cursorId ?? null,
-					activeId: api.getActiveLocation()?.id ?? null,
+					activeId: api.getMapState().activeLocation?.id ?? null,
 				};
 				api.cancelReview();
 				await new Promise((res) => setTimeout(res, settle));
@@ -373,7 +373,7 @@ describe("Review mode - reviewed tracking & peek", () => {
 				const out = {
 					inReview: s !== null,
 					cursorId: s?.cursorId ?? null,
-					activeId: api.getActiveLocation()?.id ?? null,
+					activeId: api.getMapState().activeLocation?.id ?? null,
 				};
 				api.cancelReview();
 				await new Promise((res) => setTimeout(res, settle));
@@ -399,7 +399,7 @@ describe("Review mode - reviewed tracking & peek", () => {
 				const s = api.getReviewSession();
 				const out = {
 					cursorId: s?.cursorId ?? null,
-					activeId: api.getActiveLocation()?.id ?? null,
+					activeId: api.getMapState().activeLocation?.id ?? null,
 					order: s?.order ?? [],
 				};
 				api.cancelReview();
@@ -453,7 +453,7 @@ describe("Review mode - resume", () => {
 					savedCursor: sessions[0]?.cursorId ?? null,
 					savedReviewed: sessions[0]?.reviewed ?? [],
 					resumedCursor: resumed?.cursorId ?? null,
-					activeId: api.getActiveLocation()?.id ?? null,
+					activeId: api.getMapState().activeLocation?.id ?? null,
 				};
 				if (resumed) await api.deleteSession(resumed.id);
 				return out;

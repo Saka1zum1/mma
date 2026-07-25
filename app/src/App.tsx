@@ -3,7 +3,7 @@ import type { ComponentType, CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
-import { useCurrentMap } from "@/store/useMapStore";
+import { useMapState } from "@/store/useMapStore";
 import {
 	useTargetMapId,
 	useManualChapter,
@@ -91,7 +91,7 @@ export default function App() {
 /** Editor window content: the map data + the lazily-loaded editor chunk, with a blank
  *  placeholder while either is still resolving. */
 function EditorRoot() {
-	const map = useCurrentMap();
+	const map = useMapState((s) => s.map);
 	const [MapEditor, setMapEditor] = useState<ComponentType | null>(null);
 	useEffect(() => {
 		mapEditorModule.then((m) => setMapEditor(() => m.MapEditor));
@@ -103,7 +103,7 @@ function EditorRoot() {
 /** Floating UI shared by both window roles: settings/plugins gears, update pill, and the
  *  app-level dialogs. Hidden by App while a window is self-destructing. */
 function AppChrome() {
-	const map = useCurrentMap();
+	const map = useMapState((s) => s.map);
 	const isMapList = !useTargetMapId();
 	const manualChapter = useManualChapter();
 

@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
+import { emit, useEventValue } from "@/lib/events";
 import { log } from "@/lib/util/log";
 import { getSettings } from "@/store/settings";
 import { saveSession } from "@/store/session";
@@ -25,11 +25,10 @@ let state: UpdateState = {
 	dismissed: false,
 };
 let pendingUpdate: Update | null = null;
-const listeners = new Set<() => void>();
 
 function set(patch: Partial<UpdateState>) {
 	state = { ...state, ...patch };
-	for (const fn of listeners) fn();
+	emit("update:changed");
 }
 
 const DISMISS_KEY = "mma-update-dismissed-version";
@@ -110,15 +109,6 @@ export function dismissUpdate() {
 	set({ dismissed: true });
 }
 
-function subscribe(fn: () => void) {
-	listeners.add(fn);
-	return () => listeners.delete(fn);
-}
-
-function getSnapshot(): UpdateState {
-	return state;
-}
-
 export function useUpdateState(): UpdateState {
-	return useSyncExternalStore(subscribe, getSnapshot);
+	return useEventValue("update:changed", () => state);
 }

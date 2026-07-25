@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { useSelections } from "@/store/useMapStore";
+import { useMapState, getActiveSelections } from "@/store/useMapStore";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
@@ -27,7 +27,7 @@ export function RegionSelector({
 	meta: Map<string, GeneratorRegionMeta>;
 	onMetaChange: (meta: Map<string, GeneratorRegionMeta>) => void;
 }) {
-	const selections = useSelections();
+	const selections = useMapState(getActiveSelections);
 	const polygonSelections = selections.filter((s) => s.props.type === "Polygon");
 	const [capDialogOpen, setCapDialogOpen] = useState(false);
 	const [capInput, setCapInput] = useState("");

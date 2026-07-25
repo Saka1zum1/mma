@@ -3,9 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 // review.ts pulls in the store graph for its side-effectful API; stub it so the
 // pure helpers (the part under test) load in isolation.
 vi.mock("@/store/useMapStore", () => ({
-	getCurrentMapId: () => null,
-	getCurrentMap: () => null,
-	getActiveLocation: () => null,
+	getMapState: () => ({ mapId: null, map: null, activeLocation: null }),
 	setActiveLocation: vi.fn(),
 	addSelections: vi.fn(),
 	mutate: vi.fn(),

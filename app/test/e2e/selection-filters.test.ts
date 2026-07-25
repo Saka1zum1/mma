@@ -45,66 +45,157 @@ describe("Selection filters — extra field operations", () => {
 	});
 
 	it("filter eq on string field", async () => {
-		await withApi(async (api) => api.selectFilter("country", "eq", "US"));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "country",
+					op: "eq",
+					value: "US",
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(10);
 	});
 
 	it("filter neq on string field", async () => {
-		await withApi(async (api) => api.selectFilter("country", "neq", "US"));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "country",
+					op: "neq",
+					value: "US",
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(10);
 	});
 
 	it("filter gt on numeric field", async () => {
-		await withApi(async (api) => api.selectFilter("altitude", "gt", 1000));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "altitude",
+					op: "gt",
+					value: 1000,
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		// altitude > 1000 means i > 10, so indices 11-19 = 9 locations
 		expect(ids.length).toBe(9);
 	});
 
 	it("filter lt on numeric field", async () => {
-		await withApi(async (api) => api.selectFilter("altitude", "lt", 500));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "altitude",
+					op: "lt",
+					value: 500,
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		// altitude < 500 means i < 5, so indices 0-4 = 5 locations
 		expect(ids.length).toBe(5);
 	});
 
 	it("filter gte on numeric field", async () => {
-		await withApi(async (api) => api.selectFilter("altitude", "gte", 1000));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "altitude",
+					op: "gte",
+					value: 1000,
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		// altitude >= 1000 means i >= 10, so indices 10-19 = 10 locations
 		expect(ids.length).toBe(10);
 	});
 
 	it("filter lte on numeric field", async () => {
-		await withApi(async (api) => api.selectFilter("altitude", "lte", 500));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "altitude",
+					op: "lte",
+					value: 500,
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		// altitude <= 500 means i <= 5, so indices 0-5 = 6 locations
 		expect(ids.length).toBe(6);
 	});
 
 	it("filter between on numeric field", async () => {
-		await withApi(async (api) => api.selectFilter("altitude", "between", 500, 1500));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "altitude",
+					op: "between",
+					value: 500,
+					value2: 1500,
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		// 500 <= altitude <= 1500 means 5 <= i <= 15, so 11 locations
 		expect(ids.length).toBe(11);
 	});
 
 	it("filter has on field (field exists)", async () => {
-		await withApi(async (api) => api.selectFilter("country", "has", ""));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "country",
+					op: "has",
+					value: "",
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(20);
 	});
 
 	it("filter nothas on field that does not exist", async () => {
-		await withApi(async (api) => api.selectFilter("nonexistent", "nothas", ""));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "nonexistent",
+					op: "nothas",
+					value: "",
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(20);
 	});
 
 	it("filter returns empty for no matches", async () => {
-		await withApi(async (api) => api.selectFilter("country", "eq", "JP"));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "country",
+					op: "eq",
+					value: "JP",
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		expect(ids.length).toBe(0);
 	});
@@ -144,14 +235,25 @@ describe("Selection filters — core field operations", () => {
 	});
 
 	it("filter on heading field", async () => {
-		await withApi(async (api) => api.selectFilter("heading", "gt", 180));
+		await withApi(async (api) =>
+			api.addSelections([
+				{
+					type: "Filter",
+					field: "heading",
+					op: "gt",
+					value: 180,
+				},
+			]),
+		);
 		const ids = await refreshSelections();
 		// heading > 180: i*12 > 180 → i > 15, so indices 16-29 = 14 locations
 		expect(ids.length).toBe(14);
 	});
 
 	it("filter on lat field", async () => {
-		await withApi(async (api) => api.selectFilter("lat", "between", 0, 30));
+		await withApi(async (api) =>
+			api.addSelections([{ type: "Filter", field: "lat", op: "between", value: 0, value2: 30 }]),
+		);
 		const ids = await refreshSelections();
 		// lat = i*3, 0 <= i*3 <= 30 → i = 0..10, so 11 locations
 		expect(ids.length).toBe(11);
@@ -159,8 +261,22 @@ describe("Selection filters — core field operations", () => {
 
 	it("intersecting two filters narrows results", async () => {
 		await withApi(async (api) => {
-			await api.selectFilter("heading", "gt", 100);
-			await api.selectFilter("heading", "lt", 200);
+			await api.addSelections([
+				{
+					type: "Filter",
+					field: "heading",
+					op: "gt",
+					value: 100,
+				},
+			]);
+			await api.addSelections([
+				{
+					type: "Filter",
+					field: "heading",
+					op: "lt",
+					value: 200,
+				},
+			]);
 			await api.selectIntersection();
 		});
 		const ids = await refreshSelections();
@@ -171,8 +287,22 @@ describe("Selection filters — core field operations", () => {
 
 	it("union of two filters combines results", async () => {
 		await withApi(async (api) => {
-			await api.selectFilter("heading", "lt", 36);
-			await api.selectFilter("heading", "gt", 336);
+			await api.addSelections([
+				{
+					type: "Filter",
+					field: "heading",
+					op: "lt",
+					value: 36,
+				},
+			]);
+			await api.addSelections([
+				{
+					type: "Filter",
+					field: "heading",
+					op: "gt",
+					value: 336,
+				},
+			]);
 			await api.selectUnion();
 		});
 		const ids = await refreshSelections();

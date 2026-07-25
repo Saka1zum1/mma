@@ -1,11 +1,6 @@
 import type { Location, SeenEntry } from "@/bindings.gen";
 import { createLocation } from "@/types";
-import {
-	getActiveLocation,
-	setActiveLocation,
-	addLocations,
-	fetchLocation,
-} from "@/store/useMapStore";
+import { getMapState, setActiveLocation, addLocations, fetchLocation } from "@/store/useMapStore";
 import { getSettings } from "@/store/settings";
 import { google } from "@/lib/sv/opensv";
 import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch";
@@ -100,7 +95,7 @@ export async function loadSeenPano(entry: SeenEntry) {
 	const existing = fetched && fetched.panoId === entry.panoId ? fetched : null;
 
 	if (existing) {
-		const active = getActiveLocation();
+		const active = getMapState().activeLocation;
 		if (active?.id !== existing.id) {
 			setActiveLocation(existing.id);
 			return;

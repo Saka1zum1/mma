@@ -7,7 +7,7 @@ import {
 	flushAndWait,
 	withApi,
 } from "./helpers";
-import type { Location } from "@/bindings.gen";
+import type { Location, SelectionProps } from "@/bindings.gen";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -137,18 +137,22 @@ function timeOpenMap(id: string): Promise<number> {
 	}, id);
 }
 
-function timeSelection(selName: string, tagId: number): Promise<number> {
+type NullarySelection = "Everything" | "Untagged" | "Unpanned" | "PanoIds" | "NotPanoIds";
+
+function timeSelection(selType: NullarySelection | "Tag", tagId: number): Promise<number> {
 	return withApi(
-		async (api, name: string, tid: number) => {
+		async (api, type: string, tid: number) => {
 			api.resetSelections();
 			const t0 = performance.now();
-			const result = name === "selectTag" ? api.selectTag(tid) : (api as any)[name]();
+			const result = api.addSelections([
+				type === "Tag" ? { type: "Tag", tagId: tid } : ({ type } as SelectionProps),
+			]);
 			if (result && typeof result.then === "function") {
 				await result;
 			}
 			return performance.now() - t0;
 		},
-		selName,
+		selType,
 		tagId,
 	);
 }
@@ -158,10 +162,10 @@ function timeComposite(setup: string, measure: string, tagId: number): Promise<n
 		async (api, s: string, m: string, tid: number) => {
 			api.resetSelections();
 			if (s === "pano+tag") {
-				await api.selectPanoIds();
-				await api.selectTag(tid);
+				await api.addSelections([{ type: "PanoIds" }]);
+				await api.addSelections([{ type: "Tag", tagId: tid }]);
 			} else if (s === "pano") {
-				await api.selectPanoIds();
+				await api.addSelections([{ type: "PanoIds" }]);
 			}
 			const t0 = performance.now();
 			const result = (api as any)[m]();
@@ -212,7 +216,7 @@ function timeBatchUpdate(count: number, iter: number): Promise<number> {
 function timeTagCounts(): Promise<number> {
 	return withApi(async (api) => {
 		const t0 = performance.now();
-		api.getTagCounts();
+		void api.getMapState().tagCounts;
 		return performance.now() - t0;
 	});
 }
@@ -387,21 +391,21 @@ describe("Speed Matrix", () => {
 				await deleteMap(mapId);
 			});
 
-			for (const selName of [
-				"selectEverything",
-				"selectTag",
-				"selectUntagged",
-				"selectPanoIds",
-				"selectNotPanoIds",
-				"selectUnpanned",
-			]) {
-				it(selName, async () => {
+			for (const selType of [
+				"Everything",
+				"Tag",
+				"Untagged",
+				"PanoIds",
+				"NotPanoIds",
+				"Unpanned",
+			] as const) {
+				it(selType, async () => {
 					const times: number[] = [];
 					for (let i = 0; i < RUNS; i++) {
-						const ms = await timeSelection(selName, tagId);
+						const ms = await timeSelection(selType, tagId);
 						if (ms >= 0) times.push(ms);
 					}
-					if (times.length > 0) record(selName, n, times);
+					if (times.length > 0) record(selType, n, times);
 				});
 			}
 

@@ -7,13 +7,9 @@ import { getBinding } from "@/lib/util/hotkeys";
 import { singletonPano } from "@/lib/sv/panoSingleton";
 import type { AppSettings } from "@/store/settings";
 
-export function usePanoNavigation(
-	appSettings: AppSettings,
-	panorama?: google.maps.StreetViewPanorama | null,
-) {
+export function usePanoNavigation(appSettings: AppSettings) {
 	const navRef = useRef({ held: new Set<string>(), rafId: 0, alt: false, lastTime: 0 });
 	const getAppSettings = useEffectEvent(() => appSettings);
-	const getPanorama = useEffectEvent(() => panorama ?? singletonPano);
 
 	useEffect(() => {
 		const nav = navRef.current;
@@ -22,8 +18,7 @@ export function usePanoNavigation(
 		const allActions = [...lookActions, ...moveActions] as const;
 
 		function tick() {
-			const active = getPanorama();
-			if (!active || nav.held.size === 0) {
+			if (!singletonPano || nav.held.size === 0) {
 				nav.rafId = 0;
 				nav.lastTime = 0;
 				return;
@@ -36,7 +31,7 @@ export function usePanoNavigation(
 			const s = getAppSettings();
 			const slow = nav.alt ? s.slowModifier : 1;
 			const speed = (s.panoLookSpeed * 0.4 * dt) / slow;
-			const pov = active.getPov();
+			const pov = singletonPano.getPov();
 			let dh = 0,
 				dp = 0;
 			if (nav.held.has("panoLookLeft")) dh -= speed;
@@ -45,16 +40,11 @@ export function usePanoNavigation(
 			if (nav.held.has("panoLookDown")) dp -= speed;
 
 			if (dh || dp) {
-				active.setOptions({
+				singletonPano.setOptions({
 					pov: {
 						heading: (pov.heading + dh + 360) % 360,
 						pitch: clamp(pov.pitch + dp, PANO_PITCH),
 					},
-				});
-				// Alt providers may ignore setOptions — also apply via setPov.
-				active.setPov({
-					heading: (pov.heading + dh + 360) % 360,
-					pitch: clamp(pov.pitch + dp, PANO_PITCH),
 				});
 			}
 
@@ -78,13 +68,13 @@ export function usePanoNavigation(
 				for (const alt of parsed) {
 					if (alt.length === 1 && matchesKey(e, alt[0], { ignoreAlt: true })) {
 						if (action === "panoMoveForward" || action === "panoMoveBackward") {
-							const active = getPanorama();
-							if (!active) return;
-							const links = active
+							if (!singletonPano) return;
+							if (getAppSettings().defaultMovementMode !== "moving") return;
+							const links = singletonPano
 								.getLinks()
 								?.filter((l): l is google.maps.StreetViewLink => l != null);
 							if (!links?.length) return;
-							const heading = active.getPov().heading;
+							const heading = singletonPano.getPov().heading;
 							const target = action === "panoMoveForward" ? heading : (heading + 180) % 360;
 							let best = links[0];
 							let bestDiff = 360;
@@ -95,11 +85,12 @@ export function usePanoNavigation(
 									best = link;
 								}
 							}
-							if (best.pano) active.setPano(best.pano);
+							if (best.pano) singletonPano.setPano(best.pano);
 							e.preventDefault();
 							e.stopImmediatePropagation();
 							return;
 						}
+						if (getAppSettings().defaultMovementMode === "nmpz") return;
 						nav.held.add(action);
 						if (!nav.rafId) nav.rafId = requestAnimationFrame(tick);
 						e.preventDefault();

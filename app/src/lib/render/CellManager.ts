@@ -4,187 +4,17 @@ import type {
 	CellRemoval as _CellRemoval,
 	ColorPatchEntry,
 } from "@/bindings.gen";
-import type { Bounds } from "@/types";
-import { log } from "@/lib/util/log";
 
-// ---------------------------------------------------------------------------
-// Render cell geometry
-// ---------------------------------------------------------------------------
-
-const GEOHASH32 = "0123456789bcdefghjkmnpqrstuvwxyz";
-const cellBoundsCache = new Map<string, Bounds>();
-
-/** Lat/lng bounds of a 1-char geohash render cell (45x45 degrees). Mirrors Rust's
- *  `render_cell_idx` bit walk — 5 bits, lng first, alternating. */
-export function cellBounds(key: string): Bounds {
-	const cached = cellBoundsCache.get(key);
-	if (cached) return cached;
-	const idx = GEOHASH32.indexOf(key);
-	let west = -180;
-	let east = 180;
-	let south = -90;
-	let north = 90;
-	let even = true;
-	for (let bit = 4; bit >= 0; bit--) {
-		const on = (idx >> bit) & 1;
-		if (even) {
-			const mid = (west + east) / 2;
-			if (on) west = mid;
-			else east = mid;
-		} else {
-			const mid = (south + north) / 2;
-			if (on) south = mid;
-			else north = mid;
-		}
-		even = !even;
-	}
-	const b = { west, south, east, north };
-	cellBoundsCache.set(key, b);
-	return b;
+function bitHas(bits: Uint8Array, id: number): boolean {
+	return (bits[id >>> 3] & (1 << (id & 7))) !== 0;
 }
 
-/** Does the view intersect the cell? View may cross the antimeridian (west > east);
- *  cells never do. */
-export function boundsIntersectCell(view: Bounds, cell: Bounds): boolean {
-	if (view.south > cell.north || view.north < cell.south) return false;
-	if (view.west <= view.east) return view.west <= cell.east && view.east >= cell.west;
-	return cell.east >= view.west || cell.west <= view.east;
-}
-
-// ---------------------------------------------------------------------------
-// Aggregation LOD
-// ---------------------------------------------------------------------------
-// Zoomed out, cells render a decimated buffer instead of every marker: one
-// representative per geo-anchored screen bin, derived lazily from the cell's live
-// arrays and rebuilt when the cell's versions move. Representatives render as the
-// current marker style at full size — the LOD only decimates, never restyles. The
-// renderer never submits the occluded pile; the hit-test queries the drawn band.
-
-export interface LodBand {
-	/** Band is active while zoom < maxZoom (and the previous band's maxZoom <= zoom). */
-	maxZoom: number;
-	/** Bins are sized so representatives sit >= binPx apart at this zoom. */
-	binPx: number;
-}
-
-// One band per zoom level: on-screen rep spacing only drifts between ~binPx/2 and
-// binPx before the next band re-bins, so density never visibly pops. Bins nest
-// exactly 2x between adjacent bands, which is what lets coarser bands cascade from
-// finer ones in getLod. Full detail resumes at the last maxZoom.
-export const LOD_BANDS: LodBand[] = Array.from({ length: 9 }, (_, i) => ({
-	maxZoom: 4 + i,
-	binPx: 12,
-}));
-
-/** Maps smaller than this always render full detail — no visual change. */
-export const LOD_MIN_TOTAL = 50_000;
-
-/** The bin spacing LOD_BANDS are built for. Band selection shifts to finer bands
- *  when the marker's solid footprint is smaller than this, so decimation never
- *  drops a marker that wasn't visually covered by its bin's representative. */
-export const LOD_BIN_PX = 12;
-
-export function lodBandForZoom(
-	zoom: number,
-	totalCount: number,
-	binTargetPx: number = LOD_BIN_PX,
-): number | null {
-	if (totalCount < LOD_MIN_TOTAL) return null;
-	// Smaller markers need tighter rep spacing: selecting a finer band halves the
-	// on-screen spacing per step. This also returns small markers to full detail
-	// at a lower zoom, which they can afford (fragment cost scales with area).
-	const z = zoom + Math.max(0, Math.log2(LOD_BIN_PX / binTargetPx));
-	for (let i = 0; i < LOD_BANDS.length; i++) {
-		if (z < LOD_BANDS[i].maxZoom) return i;
-	}
-	return null;
-}
-
-export interface LodBufs {
-	count: number;
-	positions: Float32Array;
-	colors: Uint8Array;
-	angles: Float32Array;
-	ids: Uint32Array;
-	/** Monotonic per rebuild — use as the layer update trigger. */
-	version: number;
-}
-
-type LodEntry = LodBufs & {
-	srcPosVer: number;
-	srcColVer: number;
-	/** Each rep's index in the source arrays — painter's order for cascades. */
-	srcIdx: Uint32Array;
-};
-
-type DecimateSrc = {
-	count: number;
-	positions: Float32Array;
-	colors: Uint8Array;
-	angles: Float32Array;
-	ids: ArrayLike<number>;
-	/** Painter's-order rank per element; absent = the element index itself. */
-	srcIdx?: Uint32Array;
-};
-
-/** One representative per geo bin over `src`: the element with the highest
- *  painter's-order rank. Membership is position-only — hidden (alpha 0) markers
- *  still claim their bin and render as nothing, mirroring full detail where the
- *  selection/active overlays draw the hidden marker on top. This keeps binning
- *  independent of color state, so selection syncs never force a re-bin. Shared by
- *  the per-cell buffers and the selection overlay. */
-function decimateBand(bandIdx: number, src: DecimateSrc) {
-	const band = LOD_BANDS[bandIdx];
-	const worldPx = 256 * Math.pow(2, band.maxZoom);
-	const inv = worldPx / band.binPx;
-	const { positions, srcIdx } = src;
-	// bin key -> slot in rep.
-	const bins = new Map<number, number>();
-	const rep: number[] = [];
-	for (let i = 0; i < src.count; i++) {
-		const lng = positions[i * 2];
-		const lat = positions[i * 2 + 1];
-		const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
-		const bx = Math.floor((lng / 360 + 0.5) * inv);
-		const by = Math.floor((0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * inv);
-		// 2^17 exceeds bins-per-axis at the finest band; keys stay exact as JS numbers.
-		const key = by * 131072 + bx;
-		const slot = bins.get(key);
-		if (slot == null) {
-			bins.set(key, rep.length);
-			rep.push(i);
-		} else if ((srcIdx ? srcIdx[i] : i) > (srcIdx ? srcIdx[rep[slot]] : rep[slot])) {
-			rep[slot] = i;
-		}
-	}
-	return gatherReps(src, rep);
-}
-
-/** Copy the rep elements out of `src` into fresh contiguous buffers. */
-function gatherReps(src: DecimateSrc, rep: ArrayLike<number>) {
-	const { positions, colors, srcIdx } = src;
-	const n = rep.length;
-	const out = {
-		count: n,
-		positions: new Float32Array(n * 2),
-		colors: new Uint8Array(n * 4),
-		angles: new Float32Array(n),
-		ids: new Uint32Array(n),
-		srcIdx: new Uint32Array(n),
-	};
-	for (let o = 0; o < n; o++) {
-		const i = rep[o];
-		out.positions[o * 2] = positions[i * 2];
-		out.positions[o * 2 + 1] = positions[i * 2 + 1];
-		out.colors[o * 4] = colors[i * 4];
-		out.colors[o * 4 + 1] = colors[i * 4 + 1];
-		out.colors[o * 4 + 2] = colors[i * 4 + 2];
-		out.colors[o * 4 + 3] = colors[i * 4 + 3];
-		out.angles[o] = src.angles[i];
-		out.ids[o] = src.ids[i];
-		out.srcIdx[o] = srcIdx ? srcIdx[i] : i;
-	}
-	return out;
+function bitSet(bits: Uint8Array, id: number): boolean {
+	const w = id >>> 3,
+		m = 1 << (id & 7);
+	const was = (bits[w] & m) !== 0;
+	bits[w] |= m;
+	return !was;
 }
 
 /** Per-cell, per-selection membership: a dense bitmask or a sparse selected-index list. */
@@ -376,84 +206,6 @@ export class CellBuffer {
 		this.colorVersion++;
 	}
 
-	private lod: (LodEntry | null)[] = [];
-	private lodVersion = 0;
-
-	/**
-	 * Decimated buffers for a zoom band: one representative per geo bin — the marker
-	 * with the highest cell index, the one painter's order draws on top at full
-	 * detail. Binning depends only on positions: a position change re-bins (only the
-	 * finest band scans the full cell; coarser bands cascade from the next finer
-	 * band, bins nest exactly 2x), while a color-only change (selection sync, active
-	 * hide, recolor) just re-gathers rep colors through srcIdx in O(reps). Selection
-	 * clicks at LOD zooms stay off the O(cell) path.
-	 */
-	getLod(bandIdx: number): LodBufs {
-		const cached = this.lod[bandIdx];
-		if (cached && cached.srcPosVer === this.positionVersion) {
-			if (cached.srcColVer !== this.colorVersion) {
-				const { colors, srcIdx } = cached;
-				for (let o = 0; o < cached.count; o++) {
-					const i = srcIdx[o];
-					colors[o * 4] = this.colors[i * 4];
-					colors[o * 4 + 1] = this.colors[i * 4 + 1];
-					colors[o * 4 + 2] = this.colors[i * 4 + 2];
-					colors[o * 4 + 3] = this.colors[i * 4 + 3];
-				}
-				cached.srcColVer = this.colorVersion;
-				cached.version = ++this.lodVersion;
-			}
-			return cached;
-		}
-		const finer = bandIdx < LOD_BANDS.length - 1 ? (this.getLod(bandIdx + 1) as LodEntry) : null;
-		const src: DecimateSrc = finer ?? {
-			count: this.count,
-			positions: this.positions,
-			colors: this.colors,
-			angles: this.angles,
-			ids: this.ids,
-		};
-		const entry: LodEntry = {
-			...decimateBand(bandIdx, src),
-			version: ++this.lodVersion,
-			srcPosVer: this.positionVersion,
-			srcColVer: this.colorVersion,
-		};
-		this.lod[bandIdx] = entry;
-		log.debug(`[lod] band ${bandIdx}: ${src.count} -> ${entry.count} representatives`);
-		return entry;
-	}
-
-	/** Ensure the band's position binning is cached WITHOUT touching colors — the
-	 *  prewarm path. Color re-gather stays lazy (getLod, at first draw of the band),
-	 *  so prewarm never pays O(reps) color copies for bands that are never drawn. */
-	warmLod(bandIdx: number): void {
-		const cached = this.lod[bandIdx];
-		if (cached && cached.srcPosVer === this.positionVersion) return;
-		this.getLod(bandIdx);
-	}
-
-	/** Install Rust-precomputed rep indices (from the render blob) as a band's
-	 *  entry — gather only, no binning. Rust mirrors decimateBand's bin math. */
-	seedLod(bandIdx: number, srcIdx: Uint32Array) {
-		const entry: LodEntry = {
-			...gatherReps(
-				{
-					count: this.count,
-					positions: this.positions,
-					colors: this.colors,
-					angles: this.angles,
-					ids: this.ids,
-				},
-				srcIdx,
-			),
-			version: ++this.lodVersion,
-			srcPosVer: this.positionVersion,
-			srcColVer: this.colorVersion,
-		};
-		this.lod[bandIdx] = entry;
-	}
-
 	private ensureCapacity(needed: number) {
 		if (needed <= this.capacity) return;
 		const newCap = Math.max(needed, this.capacity * 2, MIN_CAPACITY);
@@ -555,20 +307,6 @@ export class CellManager {
 			}
 		}
 
-		// Finest-band LOD reps precomputed by Rust: [u32 repCount][u32[] indices] per
-		// non-empty cell, cells-section order; repCount 0 below the LOD threshold.
-		// Seeding skips the O(cell) first bin on the JS main thread.
-		const finest = LOD_BANDS.length - 1;
-		for (const cb of this.cells.values()) {
-			if (offset + 4 > buf.byteLength) break;
-			const repCount = dv.getUint32(offset, true);
-			offset += 4;
-			if (repCount === 0) continue;
-			const reps = new Uint32Array(buf.slice(offset, offset + repCount * 4));
-			offset += repCount * 4;
-			cb.seedLod(finest, reps);
-		}
-
 		this.version++;
 	}
 
@@ -639,30 +377,28 @@ export class CellManager {
 	selOverlayCount = 0;
 	selOverlayVersion = 0;
 
-	private selLod: (LodEntry | null)[] = [];
-	private selLodVersion = 0;
-
-	/** Decimated selection overlay for a zoom band — same binning as
-	 *  CellBuffer.getLod, invalidated by selOverlayVersion. No cascade: any overlay
-	 *  change rebuilds its arrays wholesale, so only the requested band is built,
-	 *  one O(selected) pass. */
-	getSelOverlayLod(bandIdx: number): LodBufs {
-		const cached = this.selLod[bandIdx];
-		if (cached && cached.srcPosVer === this.selOverlayVersion) return cached;
-		const entry: LodEntry = {
-			...decimateBand(bandIdx, {
-				count: this.selOverlayCount,
-				positions: this.selOverlayPositions,
-				colors: this.selOverlayColors,
-				angles: this.selOverlayAngles,
-				ids: this.selOverlayIds,
-			}),
-			version: ++this.selLodVersion,
-			srcPosVer: this.selOverlayVersion,
-			srcColVer: this.selOverlayVersion,
-		};
-		this.selLod[bandIdx] = entry;
-		return entry;
+	private writeOverlayEntries(
+		startIndex: number,
+		colorPatches: ColorPatchEntry[],
+		pos: Float32Array,
+		col: Uint8Array,
+		ang: Float32Array,
+		ids: Uint32Array,
+	) {
+		for (let i = 0; i < colorPatches.length; i++) {
+			const cp = colorPatches[i];
+			const cb = this.cells.get(cp.cell);
+			if (!cb || cp.cellIndex >= cb.count) continue;
+			const oi = startIndex + i;
+			pos[oi * 2] = cb.positions[cp.cellIndex * 2];
+			pos[oi * 2 + 1] = cb.positions[cp.cellIndex * 2 + 1];
+			col[oi * 4] = cp.r;
+			col[oi * 4 + 1] = cp.g;
+			col[oi * 4 + 2] = cp.b;
+			col[oi * 4 + 3] = cp.a;
+			ang[oi] = cb.angles[cp.cellIndex];
+			ids[oi] = cb.ids[cp.cellIndex];
+		}
 	}
 
 	/** Build a selection overlay from explicit color patches (used by non-bitmask code paths). */
@@ -678,19 +414,14 @@ export class CellManager {
 		this.selOverlayColors = new Uint8Array(n * 4);
 		this.selOverlayAngles = new Float32Array(n);
 		this.selOverlayIds = new Uint32Array(n);
-		for (let i = 0; i < n; i++) {
-			const cp = colorPatches[i];
-			const cb = this.cells.get(cp.cell);
-			if (!cb || cp.cellIndex >= cb.count) continue;
-			this.selOverlayPositions[i * 2] = cb.positions[cp.cellIndex * 2];
-			this.selOverlayPositions[i * 2 + 1] = cb.positions[cp.cellIndex * 2 + 1];
-			this.selOverlayColors[i * 4] = cp.r;
-			this.selOverlayColors[i * 4 + 1] = cp.g;
-			this.selOverlayColors[i * 4 + 2] = cp.b;
-			this.selOverlayColors[i * 4 + 3] = cp.a;
-			this.selOverlayAngles[i] = cb.angles[cp.cellIndex];
-			this.selOverlayIds[i] = cb.ids[cp.cellIndex];
-		}
+		this.writeOverlayEntries(
+			0,
+			colorPatches,
+			this.selOverlayPositions,
+			this.selOverlayColors,
+			this.selOverlayAngles,
+			this.selOverlayIds,
+		);
 		this.selOverlayVersion++;
 	}
 
@@ -707,21 +438,7 @@ export class CellManager {
 		col.set(this.selOverlayColors.subarray(0, oldCount * 4));
 		ang.set(this.selOverlayAngles.subarray(0, oldCount));
 		ids.set(this.selOverlayIds.subarray(0, oldCount));
-
-		for (let i = 0; i < colorPatches.length; i++) {
-			const cp = colorPatches[i];
-			const cb = this.cells.get(cp.cell);
-			if (!cb || cp.cellIndex >= cb.count) continue;
-			const oi = oldCount + i;
-			pos[oi * 2] = cb.positions[cp.cellIndex * 2];
-			pos[oi * 2 + 1] = cb.positions[cp.cellIndex * 2 + 1];
-			col[oi * 4] = cp.r;
-			col[oi * 4 + 1] = cp.g;
-			col[oi * 4 + 2] = cp.b;
-			col[oi * 4 + 3] = cp.a;
-			ang[oi] = cb.angles[cp.cellIndex];
-			ids[oi] = cb.ids[cp.cellIndex];
-		}
+		this.writeOverlayEntries(oldCount, colorPatches, pos, col, ang, ids);
 		this.selOverlayPositions = pos;
 		this.selOverlayColors = col;
 		this.selOverlayAngles = ang;
@@ -738,13 +455,7 @@ export class CellManager {
 		const bits = new Uint8Array((this.maxId >>> 3) + 1);
 		let size = 0;
 		for (let i = 0; i < n; i++) {
-			const id = ids[i];
-			const w = id >>> 3;
-			const m = 1 << (id & 7);
-			if ((bits[w] & m) === 0) {
-				bits[w] |= m;
-				size++;
-			}
+			if (bitSet(bits, ids[i])) size++;
 		}
 		return new SelectedIds(bits, size);
 	}
@@ -793,14 +504,12 @@ export class CellManager {
 				if (!cb) continue;
 				const ids = cb.ids;
 				for (let i = 0; i < cb.count; i++) {
-					const id = ids[i];
-					incomingBits[id >>> 3] |= 1 << (id & 7);
+					bitSet(incomingBits, ids[i]);
 				}
 			}
 			const rem = this._removedIds;
 			for (let i = 0; i < prevCount; i++) {
-				const id = prevIds[i];
-				if ((incomingBits[id >>> 3] & (1 << (id & 7))) !== 0 || rem.has(id)) continue;
+				if (bitHas(incomingBits, prevIds[i]) || rem.has(prevIds[i])) continue;
 				keptCount++;
 			}
 		}
@@ -819,7 +528,7 @@ export class CellManager {
 					for (let k = 0; k < idx.length; k++) if (idx[k] < n) newEntries++;
 				} else {
 					const m = sel.mask;
-					for (let li = 0; li < n; li++) if (m[li >> 3] & (1 << (li & 7))) newEntries++;
+					for (let li = 0; li < n; li++) if (bitHas(m, li)) newEntries++;
 				}
 			}
 		}
@@ -842,7 +551,7 @@ export class CellManager {
 			const inc = incomingBits!;
 			for (let i = 0; i < prevCount; i++) {
 				const id = prevIds[i];
-				if ((inc[id >>> 3] & (1 << (id & 7))) !== 0 || rem.has(id)) continue;
+				if (bitHas(inc, id) || rem.has(id)) continue;
 				sp[oi * 2] = prevPos[i * 2];
 				sp[oi * 2 + 1] = prevPos[i * 2 + 1];
 				const o4 = oi * 4,
@@ -853,10 +562,7 @@ export class CellManager {
 				sc[o4 + 3] = prevCol[p4 + 3];
 				sa[oi] = prevAng[i];
 				sid[oi] = id;
-				const w = id >>> 3,
-					m = 1 << (id & 7);
-				if ((bits[w] & m) === 0) selCount++;
-				bits[w] |= m;
+				if (bitSet(bits, id)) selCount++;
 				oi++;
 			}
 		}
@@ -908,10 +614,7 @@ export class CellManager {
 				// and appends an overlay entry, advancing `oi`.
 				const write = (li: number) => {
 					const locId = cids[li];
-					const bw = locId >>> 3,
-						bm = 1 << (locId & 7);
-					if ((bits[bw] & bm) === 0) selCount++;
-					bits[bw] |= bm;
+					if (bitSet(bits, locId)) selCount++;
 					const c4 = li * 4;
 					cc[c4] = 0;
 					cc[c4 + 1] = 0;
@@ -936,7 +639,7 @@ export class CellManager {
 				} else {
 					const m = sel.mask;
 					for (let li = 0; li < n; li++) {
-						if (m[li >> 3] & (1 << (li & 7))) write(li);
+						if (bitHas(m, li)) write(li);
 					}
 				}
 			}

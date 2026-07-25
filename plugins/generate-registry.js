@@ -48,6 +48,8 @@ for (const name of fs.readdirSync(pluginsDir)) {
 		main: raw.main || "index.js",
 	};
 	if (raw.comingSoon) entry.comingSoon = true;
+	if (raw.experimental) entry.experimental = true;
+	if (raw.minAppVersion) entry.minAppVersion = raw.minAppVersion;
 	if (raw.sidecar) entry.sidecar = { name: raw.sidecar.name, version: raw.sidecar.version };
 	entries.push(entry);
 }

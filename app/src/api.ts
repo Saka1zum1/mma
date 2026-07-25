@@ -4,15 +4,16 @@
 /**
  * Unified MMA API — the single public surface for plugins, tests, and app code.
  * Exposed as `window.MMA` (and the global `MMA`).
- *
- * Store functions are spread directly — new store exports appear on MMA automatically.
  */
 
 import * as store from "@/store/useMapStore";
+import * as importStaging from "@/store/importStaging";
+import * as commitDiff from "@/store/commitDiff";
+import * as scope from "@/store/scope";
+import * as mapList from "@/store/mapList";
 import * as review from "@/lib/review/review";
 import type { Scope, Location } from "@/bindings.gen";
 import { cmd as commands, type Cmd } from "@/lib/commands";
-import { goToMap, goToList } from "@/store/router";
 import { createLocation, applyLocationPatch } from "@/types";
 import { registerPlugin, createPluginStorage, usePluginState } from "@/plugins/registry";
 import { trackDisposable } from "@/plugins/scope";
@@ -32,22 +33,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
-import {
-	getMapHost,
-	waitForMapHost,
-	getGoogleMap,
-	waitForGoogleMap,
-	addClickInterceptor,
-} from "@/lib/map/mapState";
-import {
-	setSvCoverageSuppressed,
-	isSvCoverageSuppressed,
-	subscribeSvCoverageSuppressed,
-	getMapEmbedPrefs,
-	patchMapEmbedPrefs,
-	subscribeMapEmbedPrefs,
-} from "@/lib/map/svCoverageBridge";
-import { registerPanoProvider, findPanoProvider } from "@/lib/sv/panoProvider";
 import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings";
 import { getSavedSelections, savedToSelectionProps, describeRule } from "@/store/savedSelections";
@@ -58,6 +43,9 @@ import { bulkPinToPano } from "@/lib/sv/pinPano";
 import { validateLocations } from "@/lib/sv/validate";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { mmaBufUrl } from "@/lib/util/util";
+import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
+import * as legacy from "@/legacy";
+import * as testApi from "@/testApi";
 
 export interface LocationStore {
 	locations: Map<number, Location>;
@@ -98,8 +86,8 @@ async function createLocationStore(): Promise<LocationStore> {
 
 	return {
 		locations: locs,
-		get(scope = { kind: "all" }) {
-			return store.applyScope(scope, [...locs.values()]);
+		get(s = { kind: "all" }) {
+			return scope.applyScope(s, [...locs.values()]);
 		},
 		onChange(cb) {
 			listeners.add(cb);
@@ -216,23 +204,6 @@ const surface = {
 	// --- Map host ---
 	getMapHost,
 	waitForMapHost,
-	getGoogleMap: () => getGoogleMap(),
-	waitForGoogleMap: () => waitForGoogleMap(),
-	addClickInterceptor: (
-		fn: (lat: number, lng: number, shiftKey: boolean) => boolean | Promise<boolean>,
-	) => addClickInterceptor(fn),
-
-	/** Coverage takeover for alt providers (e.g. Look Around). */
-	setSvCoverageSuppressed,
-	isSvCoverageSuppressed,
-	subscribeSvCoverageSuppressed,
-	getMapEmbedPrefs,
-	patchMapEmbedPrefs,
-	subscribeMapEmbedPrefs,
-
-	/** Alternate panorama viewport providers (replace Google SV in location-preview). */
-	registerPanoProvider,
-	findPanoProvider,
 
 	// --- Settings ---
 	setSetting,
@@ -269,43 +240,38 @@ const surface = {
 	mmaBufUrl,
 
 	// --- Test-only convenience ---
-	_test: {
-		openMap: async (id: string) => {
-			// Await the real store op for a deterministic completion signal, THEN sync the
-			// URL — by which point the router's reconcile is a no-op (state already matches),
-			// so no second fire-and-forget openMap can interleave with the next test step.
-			await store.openMap(id);
-			goToMap(id);
-		},
-		closeMap: async () => {
-			await store.closeMap();
-			goToList();
-		},
-		deleteMap: (id: string) => store.deleteMap(id),
-		importPaste: async (text: string) => {
-			await commands.storeImportPastePreview(text);
-			const r = await commands.storeImportFile([], null);
-			await store.mutate(Promise.resolve(r));
-			return [r];
-		},
-		importFile: async (droppedFields: string[], tagName?: string) => {
-			const r = await commands.storeImportFile(droppedFields, tagName ?? null);
-			await store.mutate(Promise.resolve(r));
-			return r;
-		},
-	},
+	_test: testApi,
 };
 
 type StoreApi = typeof store;
+type ImportStagingApi = typeof importStaging;
+type CommitDiffApi = typeof commitDiff;
+type ScopeApi = typeof scope;
+type MapListApi = typeof mapList;
 type ReviewApi = typeof review;
 type SurfaceApi = typeof surface;
+type LegacyApi = typeof legacy;
 
-export interface MMA extends StoreApi, ReviewApi, SurfaceApi {}
+export interface MMA
+	extends
+		StoreApi,
+		ImportStagingApi,
+		CommitDiffApi,
+		ScopeApi,
+		MapListApi,
+		ReviewApi,
+		SurfaceApi,
+		LegacyApi {}
 
 const mma: MMA = {
 	...store,
+	...importStaging,
+	...commitDiff,
+	...scope,
+	...mapList,
 	...review,
 	...surface,
+	...legacy,
 };
 
 declare global {

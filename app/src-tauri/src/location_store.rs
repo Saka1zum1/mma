@@ -445,6 +445,15 @@ impl BoundsAcc {
     }
 }
 
+macro_rules! apply_patch {
+    ($target:expr, $patch:expr; $($field:ident),+ $(,)?) => {
+        $(if let Some(v) = $patch.$field { $target.$field = v; })+
+    };
+    (clone $target:expr, $patch:expr; $($field:ident),+ $(,)?) => {
+        $(if let Some(ref v) = $patch.$field { $target.$field = v.clone(); })+
+    };
+}
+
 impl Store {
     pub fn new() -> Self {
         Self {
@@ -508,6 +517,17 @@ impl Store {
             can_redo: !self.edits.redo.is_empty(),
             tag_counts: Some(self.tags.all.iter().map(|(&id, t)| (id, t.count)).collect()),
             known_field_keys: self.known_field_keys.iter().cloned().collect(),
+        }
+    }
+
+    /// MutationResult for metadata-only changes (tags, reorder) that don't touch locations.
+    fn metadata_result(&self) -> MutationResult {
+        MutationResult {
+            status: self.store_status(),
+            delta: RenderDelta::default(),
+            selection_sync: None,
+            new_field_defs: None,
+            tags: Some(self.tags.all.clone()),
         }
     }
 
@@ -1138,25 +1158,6 @@ impl Store {
         None
     }
 
-    /// Current heading of an alive location, without cloning the full Location.
-    fn heading_of(&self, id: u32) -> Option<f64> {
-        if self.overlay.dead.contains(&id) {
-            return None;
-        }
-        if let Some(p) = self.overlay.patches.get(&id) {
-            return Some(p.heading);
-        }
-        if let Ok(i) = self.overlay.adds.binary_search_by_key(&id, |l| l.id) {
-            return Some(self.overlay.adds[i].heading);
-        }
-        if let Some(ref b) = self.batch {
-            if let Some(idx) = batch_row_for_id(b, id) {
-                return Some(col_heading(b).value(idx));
-            }
-        }
-        None
-    }
-
     /// Build the spatial index if absent or drifted (length mismatch vs alive_count
     /// catches any bulk path that bypassed the overlay fns — rebuild, never wrong).
     fn ensure_spatial(&mut self) {
@@ -1452,7 +1453,7 @@ impl Store {
     }
 
     /// Construct a read-only view over all alive locations for selection resolution.
-    fn loc_view(&self) -> selections::LocView<'_> {
+    pub(crate) fn loc_view(&self) -> selections::LocView<'_> {
         selections::LocView::new(
             self.batch.as_ref(),
             &self.overlay.dead,
@@ -1522,36 +1523,13 @@ impl Store {
             None => return,
         };
         let old_coords = (loc.lat, loc.lng);
-        if let Some(v) = patch.lat {
-            loc.lat = v;
-        }
-        if let Some(v) = patch.lng {
-            loc.lng = v;
-        }
-        if let Some(v) = patch.heading {
-            loc.heading = v;
-        }
-        if let Some(v) = patch.pitch {
-            loc.pitch = v;
-        }
-        if let Some(v) = patch.zoom {
-            loc.zoom = v;
-        }
-        if let Some(ref v) = patch.pano_id {
-            loc.pano_id = v.clone();
-        }
-        if let Some(ref v) = patch.provider {
-            loc.provider = v.clone();
-        }
+        apply_patch!(loc, patch; lat, lng, heading, pitch, zoom, created_at, modified_at);
+        apply_patch!(clone loc, patch; pano_id, tags);
         if let Some(v) = patch.flags {
             loc.flags = LocationFlags::from_bits_retain(v);
         }
-        if let Some(ref v) = patch.tags {
-            loc.tags = v.clone();
-        }
         if let Some(ref v) = patch.extra {
-            // JSON Merge Patch (RFC 7386): keys shallow-merge into the current extra,
-            // a null value deletes its key, and a null patch clears extra entirely.
+            // JSON Merge Patch (RFC 7386)
             loc.extra = match v {
                 None => None,
                 Some(p) => {
@@ -1566,12 +1544,6 @@ impl Store {
                     crate::types::RawExtra::from_map(&m)
                 }
             };
-        }
-        if let Some(v) = patch.created_at {
-            loc.created_at = v;
-        }
-        if let Some(v) = patch.modified_at {
-            loc.modified_at = v;
         }
         self.overlay_write(id, loc, old_coords);
     }
@@ -1903,9 +1875,6 @@ pub struct LocationPatch {
     #[serde(default, deserialize_with = "nullable")]
     #[specta(type = Option<Option<String>>)]
     pub pano_id: Option<Option<String>>,
-    #[serde(default, deserialize_with = "nullable")]
-    #[specta(type = Option<Option<String>>)]
-    pub provider: Option<Option<String>>,
     pub flags: Option<u32>,
     pub tags: Option<Vec<u32>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -2363,12 +2332,7 @@ pub(crate) fn apply_tag_patch(t: &mut Tag, patch: &TagPatch) {
             t.name = trimmed.to_string();
         }
     }
-    if let Some(c) = &patch.color {
-        t.color = c.clone();
-    }
-    if let Some(d) = &patch.doclinks {
-        t.doclinks = d.clone();
-    }
+    apply_patch!(clone t, patch; color, doclinks);
 }
 
 /// Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
@@ -3202,43 +3166,6 @@ pub struct RenderRequest {
     pub marker_color: Option<[u8; 3]>,
 }
 
-/// Maps below this render full detail — no LOD section in the blob.
-/// Mirrors LOD_MIN_TOTAL in CellManager.ts — keep in sync.
-const LOD_MIN_TOTAL: usize = 50_000;
-
-/// Finest-band aggregation-LOD rep indices for one cell's `[lng, lat]` f32 pairs.
-/// Mirrors `decimateBand` in CellManager.ts (keep in sync): position-only binning
-/// on a 12px grid at zoom 12, representative = highest index in the bin (painter's
-/// topmost). Bins nest exactly 2x per zoom band, so JS derives every coarser band
-/// from this list. Transcendental rounding may differ from JS by an ulp on exact
-/// bin boundaries — both results are valid decimations.
-pub(crate) fn lod_finest_reps(positions: &[f32]) -> Vec<u32> {
-    use std::collections::hash_map::Entry;
-    const INV: f64 = 256.0 * 4096.0 / 12.0; // worldPx at maxZoom 12 / binPx 12
-    let n = positions.len() / 2;
-    let mut bins: HashMap<i64, usize> = HashMap::with_capacity(n);
-    let mut reps: Vec<u32> = Vec::new();
-    for i in 0..n {
-        let lng = positions[i * 2] as f64;
-        let lat = positions[i * 2 + 1] as f64;
-        let siny = (lat * std::f64::consts::PI / 180.0)
-            .sin()
-            .clamp(-0.9999, 0.9999);
-        let bx = ((lng / 360.0 + 0.5) * INV).floor() as i64;
-        let by = ((0.5 - ((1.0 + siny) / (1.0 - siny)).ln() / (4.0 * std::f64::consts::PI)) * INV)
-            .floor() as i64;
-        let key = by * 131072 + bx;
-        match bins.entry(key) {
-            Entry::Occupied(e) => reps[*e.get()] = i as u32, // ascending i: topmost wins
-            Entry::Vacant(e) => {
-                e.insert(reps.len());
-                reps.push(i as u32);
-            }
-        }
-    }
-    reps
-}
-
 /// Build the full render binary: single linear pass over all alive locations, partitioned into
 /// 32 geohash cells. Also rebuilds render_cells index and selection overlay. O(N).
 fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> {
@@ -3291,78 +3218,52 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         angles: Vec::new(),
     };
 
-    // Single linear pass over batch rows (cache-friendly)
-    for i in 0..batch_n {
-        let id = ids_col.value(i);
-        if has_dead && store.overlay.dead.contains(&id) {
-            continue;
-        }
-        let (lat, lng, heading) = if has_patches {
-            if let Some(p) = store.overlay.patches.get(&id) {
-                (p.lat, p.lng, p.heading)
+    {
+        let mut emit = |id: u32, lat: f64, lng: f64, heading: f64| {
+            let ci = render_cell_idx(lat, lng) as usize;
+            let out = cells[ci].get_or_insert_with(|| CellOut {
+                ids: Vec::new(),
+                positions: Vec::new(),
+                colors: Vec::new(),
+                angles: Vec::new(),
+            });
+            out.positions.push(lng as f32);
+            out.positions.push(lat as f32);
+            let angle = if arrow_style { -(heading as f32) } else { 0.0 };
+            if selected_set.contains(id) || active_id == Some(id) {
+                out.colors.extend_from_slice(&[0, 0, 0, 0]);
+            } else {
+                out.colors.extend_from_slice(&base_color);
+            }
+            out.angles.push(angle);
+            out.ids.push(id);
+            if let Some(&[r, g, b]) = color_map.get(&id) {
+                sel_ov.positions.push(lng as f32);
+                sel_ov.positions.push(lat as f32);
+                sel_ov.colors.extend_from_slice(&[r, g, b, 255]);
+                sel_ov.angles.push(angle);
+                sel_ov.ids.push(id);
+            }
+        };
+
+        for i in 0..batch_n {
+            let id = ids_col.value(i);
+            if has_dead && store.overlay.dead.contains(&id) {
+                continue;
+            }
+            let (lat, lng, heading) = if has_patches {
+                if let Some(p) = store.overlay.patches.get(&id) {
+                    (p.lat, p.lng, p.heading)
+                } else {
+                    (lats.value(i), lngs.value(i), headings.value(i))
+                }
             } else {
                 (lats.value(i), lngs.value(i), headings.value(i))
-            }
-        } else {
-            (lats.value(i), lngs.value(i), headings.value(i))
-        };
-        let ci = render_cell_idx(lat, lng) as usize;
-        let out = cells[ci].get_or_insert_with(|| CellOut {
-            ids: Vec::new(),
-            positions: Vec::new(),
-            colors: Vec::new(),
-            angles: Vec::new(),
-        });
-        out.positions.push(lng as f32);
-        out.positions.push(lat as f32);
-        let angle = if arrow_style { -(heading as f32) } else { 0.0 };
-        let is_hidden = selected_set.contains(id) || active_id == Some(id);
-        if is_hidden {
-            out.colors.extend_from_slice(&[0, 0, 0, 0]);
-        } else {
-            out.colors.extend_from_slice(&base_color);
+            };
+            emit(id, lat, lng, heading);
         }
-        out.angles.push(angle);
-        out.ids.push(id);
-        if let Some(&[r, g, b]) = color_map.get(&id) {
-            sel_ov.positions.push(lng as f32);
-            sel_ov.positions.push(lat as f32);
-            sel_ov.colors.extend_from_slice(&[r, g, b, 255]);
-            sel_ov.angles.push(angle);
-            sel_ov.ids.push(id);
-        }
-    }
-    // Overlay adds
-    for loc in &store.overlay.adds {
-        let ci = render_cell_idx(loc.lat, loc.lng) as usize;
-        let out = cells[ci].get_or_insert_with(|| CellOut {
-            ids: Vec::new(),
-            positions: Vec::new(),
-            colors: Vec::new(),
-            angles: Vec::new(),
-        });
-        let id = loc.id;
-        let is_hidden = selected_set.contains(id) || active_id == Some(id);
-        out.positions.push(loc.lng as f32);
-        out.positions.push(loc.lat as f32);
-        let angle = if arrow_style {
-            -(loc.heading as f32)
-        } else {
-            0.0
-        };
-        if is_hidden {
-            out.colors.extend_from_slice(&[0, 0, 0, 0]);
-        } else {
-            out.colors.extend_from_slice(&base_color);
-        }
-        out.angles.push(angle);
-        out.ids.push(id);
-        if let Some(&[r, g, b]) = color_map.get(&id) {
-            sel_ov.positions.push(loc.lng as f32);
-            sel_ov.positions.push(loc.lat as f32);
-            sel_ov.colors.extend_from_slice(&[r, g, b, 255]);
-            sel_ov.angles.push(angle);
-            sel_ov.ids.push(id);
+        for loc in &store.overlay.adds {
+            emit(loc.id, loc.lat, loc.lng, loc.heading);
         }
     }
 
@@ -3439,33 +3340,6 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         }
         for &id in &sel_ov.ids {
             buf.extend_from_slice(&id.to_le_bytes());
-        }
-    }
-
-    // Finest-band LOD reps: [u32 repCount][u32[] indices] per non-empty cell, cells-
-    // section order; repCount 0 below the LOD threshold. JS seeds its pyramid from
-    // this instead of binning O(N) on the main thread.
-    let lod_reps: Vec<Vec<u32>> = if total_count >= LOD_MIN_TOTAL {
-        use rayon::prelude::*;
-        (0..32)
-            .filter_map(|ci| cells[ci].as_ref())
-            .collect::<Vec<_>>()
-            .par_iter()
-            .map(|o| lod_finest_reps(&o.positions))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    if lod_reps.is_empty() {
-        for _ in 0..non_empty {
-            buf.extend_from_slice(&0u32.to_le_bytes());
-        }
-    } else {
-        for reps in &lod_reps {
-            buf.extend_from_slice(&(reps.len() as u32).to_le_bytes());
-            for &r in reps {
-                buf.extend_from_slice(&r.to_le_bytes());
-            }
         }
     }
 
@@ -3709,6 +3583,24 @@ fn apply_edit_reverse(store: &mut Store, entry: &EditEntry) -> ChangeSet {
     apply_edit(store, &entry.created, &entry.removed)
 }
 
+/// Apply an edit, record undo, clear redo, finish mutation. No-op when both sides empty.
+fn apply_undoable(
+    store: &mut Store,
+    remove: Vec<Location>,
+    create: Vec<Location>,
+) -> MutationResult {
+    if remove.is_empty() && create.is_empty() {
+        return store.finish_mutation(ChangeSet::default());
+    }
+    let changes = apply_edit(store, &remove, &create);
+    store.push_undo(EditEntry {
+        created: create,
+        removed: remove,
+    });
+    store.edits.redo.clear();
+    store.finish_mutation(changes)
+}
+
 // ---------------------------------------------------------------------------
 // Query commands
 // ---------------------------------------------------------------------------
@@ -3797,13 +3689,7 @@ pub fn store_create_tags(
             store.tags.dirty = true;
         }
 
-        Ok(MutationResult {
-            status: store.store_status(),
-            delta: RenderDelta::default(),
-            selection_sync: None,
-            new_field_defs: None,
-            tags: Some(store.tags.all.clone()),
-        })
+        Ok(store.metadata_result())
     })
 }
 
@@ -3823,13 +3709,7 @@ pub fn store_reorder_tags(
             }
         }
         store.tags.dirty = true;
-        Ok(MutationResult {
-            status: store.store_status(),
-            delta: RenderDelta::default(),
-            selection_sync: None,
-            new_field_defs: None,
-            tags: Some(store.tags.all.clone()),
-        })
+        Ok(store.metadata_result())
     })
 }
 
@@ -3851,16 +3731,6 @@ pub async fn store_bounds(
             Ok(store.cached_bounds())
         }
     })
-}
-
-/// Return the number of alive locations (batch + adds - dead).
-#[tauri::command]
-#[specta::specta]
-pub fn store_location_count(
-    webview: tauri::Webview,
-    state: tauri::State<'_, StoreState>,
-) -> AppResult<u32> {
-    with_store!(webview, state, |store| { Ok(store.alive_count as u32) })
 }
 
 /// Collect all distinct values for an `extra` field across all alive locations. O(N).
@@ -4143,26 +4013,13 @@ pub async fn store_merge_duplicates(
             }
         }
 
-        let result = if create.is_empty() {
-            store.finish_mutation(ChangeSet::default())
-        } else {
-            let group_count = create.len();
-            let merged_away = remove.len() - create.len();
-            let changes = apply_edit(store, &remove, &create);
-            store.push_undo(EditEntry {
-                created: create,
-                removed: remove,
-            });
-            store.edits.redo.clear();
-            log::debug!(
-                "[cmd] store_merge_duplicates groups={} merged_away={} total={}ms",
-                group_count,
-                merged_away,
-                _t.elapsed().as_millis()
-            );
-            store.finish_mutation(changes)
-        };
-        Ok(result)
+        log::debug!(
+            "[cmd] store_merge_duplicates groups={} merged_away={} total={}ms",
+            create.len(),
+            remove.len().saturating_sub(create.len()),
+            _t.elapsed().as_millis()
+        );
+        Ok(apply_undoable(store, remove, create))
     })
 }
 
@@ -4194,24 +4051,13 @@ pub async fn store_prune_duplicates(
             .filter(|l| prune_ids.contains(&l.id))
             .collect();
 
-        let result = if remove.is_empty() {
-            store.finish_mutation(ChangeSet::default())
-        } else {
-            let changes = apply_edit(store, &remove, &[]);
-            store.push_undo(EditEntry {
-                created: Vec::new(),
-                removed: remove,
-            });
-            store.edits.redo.clear();
-            log::debug!(
-                "[cmd] store_prune_duplicates pruned={} of {} total={}ms",
-                prune_ids.len(),
-                ids.len(),
-                _t.elapsed().as_millis()
-            );
-            store.finish_mutation(changes)
-        };
-        Ok(result)
+        log::debug!(
+            "[cmd] store_prune_duplicates pruned={} of {} total={}ms",
+            remove.len(),
+            ids.len(),
+            _t.elapsed().as_millis()
+        );
+        Ok(apply_undoable(store, remove, Vec::new()))
     })
 }
 
@@ -4273,208 +4119,6 @@ pub fn store_near_any(
             radius_m,
             _t.elapsed().as_millis()
         );
-        Ok(result)
-    })
-}
-
-// ---------------------------------------------------------------------------
-// CPU marker picking
-// ---------------------------------------------------------------------------
-// Replaces deck.gl GPU picking for marker layers. Coverage math mirrors the
-// SDFMarkerLayer shaders (sdf-marker-fragment/vertex.glsl.ts) exactly: same
-// SDFs, same unit space, same pin tip-anchor offset. Style radii mirror
-// MARKER_STYLE in markerLayer.ts.
-
-pub(crate) mod pick {
-    /// Extra pixels of slop around a marker's edge (deck used pickingRadius: 2).
-    pub const SLOP_PX: f64 = 2.0;
-    /// The SDF circle inscribes the unit quad (radius 1.0); 6px visible radius.
-    pub const CIRCLE_RADIUS_PX: f64 = 6.0;
-    pub const ARROW_RADIUS_PX: f64 = 12.0;
-    pub const PIN_RADIUS_PX: f64 = 16.0;
-
-    #[derive(Clone, Copy, PartialEq)]
-    pub enum Shape {
-        Circle,
-        Arrow,
-        Pin,
-    }
-
-    pub fn shape_for_style(style: &str) -> (Shape, f64) {
-        match style {
-            "arrow" => (Shape::Arrow, ARROW_RADIUS_PX),
-            "circle" => (Shape::Circle, CIRCLE_RADIUS_PX),
-            _ => (Shape::Pin, PIN_RADIUS_PX),
-        }
-    }
-
-    fn sd_circle(x: f64, y: f64, r: f64) -> f64 {
-        (x * x + y * y).sqrt() - r
-    }
-
-    fn sd_triangle_isosceles(px: f64, py: f64, qx: f64, qy: f64) -> f64 {
-        let px = px.abs();
-        let t = ((px * qx + py * qy) / (qx * qx + qy * qy)).clamp(0.0, 1.0);
-        let (ax, ay) = (px - qx * t, py - qy * t);
-        let t2 = (px / qx).clamp(0.0, 1.0);
-        let (bx, by) = (px - qx * t2, py - qy);
-        let s = -qy.signum();
-        let dx = (ax * ax + ay * ay).min(bx * bx + by * by);
-        let dy = (s * (px * qy - py * qx)).min(s * (py - qy));
-        -dx.sqrt() * dy.signum()
-    }
-
-    fn sd_box(px: f64, py: f64, bx: f64, by: f64) -> f64 {
-        let dx = px.abs() - bx;
-        let dy = py.abs() - by;
-        let (ox, oy) = (dx.max(0.0), dy.max(0.0));
-        (ox * ox + oy * oy).sqrt() + dx.max(dy).min(0.0)
-    }
-
-    fn sd_arrow(px: f64, py: f64) -> f64 {
-        let head = sd_triangle_isosceles(px, py + 0.5, 0.6, 0.6);
-        let shaft = sd_box(px, py - 0.30, 0.2, 0.30);
-        head.min(shaft)
-    }
-
-    fn sd_pin(px: f64, py: f64) -> f64 {
-        let py = -py;
-        let px = px.abs();
-        const CY: f64 = 0.3;
-        const CR: f64 = 0.65;
-        const TIP: f64 = -0.9;
-        const SIN_A: f64 = 0.5416666666666667;
-        const COS_A: f64 = 0.8405933750763339;
-        const EDGE_LEN: f64 = 1.0087120500916007;
-        let (tpx, tpy) = (px, py - TIP);
-        let along = tpx * SIN_A + tpy * COS_A;
-        if along < 0.0 {
-            return (tpx * tpx + tpy * tpy).sqrt();
-        }
-        if along > EDGE_LEN {
-            return (px * px + (py - CY) * (py - CY)).sqrt() - CR;
-        }
-        tpx * COS_A - tpy * SIN_A
-    }
-
-    fn sd_shape(shape: Shape, x: f64, y: f64) -> f64 {
-        match shape {
-            Shape::Circle => sd_circle(x, y, 1.0),
-            Shape::Arrow => sd_arrow(x, y),
-            Shape::Pin => sd_pin(x, y),
-        }
-    }
-
-    /// World pixel coordinates (Web Mercator, 256px world at z0, y down/north-up).
-    pub fn world_px(lat: f64, lng: f64, zoom: f64) -> (f64, f64) {
-        let scale = 256.0 * 2f64.powf(zoom);
-        let siny = lat.to_radians().sin().clamp(-0.9999, 0.9999);
-        let x = (lng / 360.0 + 0.5) * scale;
-        let y = (0.5 - ((1.0 + siny) / (1.0 - siny)).ln() / (4.0 * std::f64::consts::PI)) * scale;
-        (x, y)
-    }
-
-    /// Signed distance in *pixels* from the cursor to the marker's edge.
-    /// (dx, dy_down) = cursor screen offset from the marker anchor, y down.
-    /// Inverts the vertex shader: scr = flipY(R(-angle) * unit * r) + pinShift.
-    pub fn marker_distance_px(
-        shape: Shape,
-        dx: f64,
-        dy_down: f64,
-        radius_px: f64,
-        angle_deg: f64,
-    ) -> f64 {
-        let dy_up = -dy_down;
-        let (sx, sy) = match shape {
-            Shape::Pin => (dx, dy_up - 0.9 * radius_px),
-            _ => (dx, dy_up),
-        };
-        // Un-flip, then un-rotate (rotate_by_angle in the shader is R(-angle)).
-        let (vx, vy) = (sx, -sy);
-        let a = angle_deg.to_radians();
-        let (c, s) = (a.cos(), a.sin());
-        let ux = (c * vx - s * vy) / radius_px;
-        let uy = (s * vx + c * vy) / radius_px;
-        sd_shape(shape, ux, uy) * radius_px
-    }
-}
-
-/// One marker under the cursor. `selected` = drawn in the selection overlay
-/// (or as the active marker), i.e. above every base cell marker.
-#[derive(serde::Serialize, specta::Type, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
-pub struct PickHit {
-    pub id: u32,
-    pub selected: bool,
-}
-
-/// Hit-test markers at a point, returning covering markers topmost-first.
-/// `zoom` is Google-scale; `marker_style`/`size_scale` must match the rendering surface.
-// CPU replacement for deck.gl GPU picking; overlap order reproduces the renderer's painter's
-// order (selection overlay/active above base; within base, cell order then index).
-#[tauri::command]
-#[specta::specta]
-pub fn store_pick(
-    webview: tauri::Webview,
-    state: tauri::State<'_, StoreState>,
-    lat: f64,
-    lng: f64,
-    zoom: f64,
-    marker_style: String,
-    size_scale: f64,
-) -> AppResult<Vec<PickHit>> {
-    with_store!(webview, state, |store| {
-        let _t = std::time::Instant::now();
-        let (shape, base_radius) = pick::shape_for_style(&marker_style);
-        let radius_px = base_radius * size_scale.max(0.01);
-        // Meters per pixel at this latitude/zoom; search covers the pin's full
-        // screen extent (up to ~1.9r above the anchor) plus slop.
-        let mpp = 156_543.033_92 * lat.to_radians().cos().abs().max(1e-4) / 2f64.powf(zoom);
-        let search_m = (2.0 * radius_px + pick::SLOP_PX) * mpp;
-        let (cx, cy) = pick::world_px(lat, lng, zoom);
-        let arrow = shape == pick::Shape::Arrow;
-
-        let ids = store.find_nearby_ids(lat, lng, search_m);
-        let mut hits: Vec<(u8, u8, usize, u32)> = Vec::new();
-        for id in ids {
-            let Some((mlat, mlng)) = store.coords_of(id) else {
-                continue;
-            };
-            let (mx, my) = pick::world_px(mlat, mlng, zoom);
-            let angle = if arrow {
-                -store.heading_of(id).unwrap_or(0.0)
-            } else {
-                0.0
-            };
-            let d = pick::marker_distance_px(shape, cx - mx, cy - my, radius_px, angle);
-            if d > pick::SLOP_PX {
-                continue;
-            }
-            let selected =
-                store.selections.ids.contains(id) || store.selections.active_id == Some(id);
-            let (ci, idx) = match store.cell_lookup(id) {
-                Some((key, idx)) => (cell_idx_from_key(&key).unwrap_or(0), idx),
-                None => (0, 0),
-            };
-            hits.push((selected as u8, ci, idx, id));
-        }
-        // Topmost first: overlay group, then cell draw order, then index within cell.
-        hits.sort_unstable_by(|a, b| b.cmp(a));
-        let result: Vec<PickHit> = hits
-            .into_iter()
-            .map(|(sel, _, _, id)| PickHit {
-                id,
-                selected: sel != 0,
-            })
-            .collect();
-        if _t.elapsed().as_millis() >= 5 {
-            log::debug!(
-                "[cmd] store_pick z={:.1} hits={} total={}ms",
-                zoom,
-                result.len(),
-                _t.elapsed().as_millis()
-            );
-        }
         Ok(result)
     })
 }

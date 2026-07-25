@@ -53,6 +53,12 @@ export const commands = {
 	downloadBorderFile: (level: string) => __TAURI_INVOKE<null>("download_border_file", { level }),
 	borderLookup: (lat: number, lng: number, level: string) => __TAURI_INVOKE<PolygonGeometry | null>("border_lookup", { lat, lng, level }).then((v) => (v==null?v:({...v,coordinates:v.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:v.extraPolygons==null?v.extraPolygons:v.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) as typeof v)),
 	/**
+	 *  Classify each `(lat, lng)` to the name of its containing feature at `level`
+	 *  (subdivision names for "adm1"). `None` for points outside every feature.
+	 *  Same bbox-prefiltered parallel scan as `tally_countries`, but per-point names.
+	 */
+	borderClassify: (level: string, points: ([number, number])[]) => __TAURI_INVOKE<(string | null)[]>("border_classify", { level, points: points.map(i=>i) }),
+	/**
 	 *  Finds the nearest city/country for a coordinate. O(log n) k-d tree lookup.
 	 *  Always returns `Some` -- the GeoNames dataset covers every landmass.
 	 */
@@ -151,8 +157,6 @@ export const commands = {
 	 *  `level` selects border precision, falling back to "light" if unavailable.
 	 */
 	storeCountryDistribution: (level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { level }),
-	/**  Return the number of alive locations (batch + adds - dead). */
-	storeLocationCount: () => __TAURI_INVOKE<number>("store_location_count"),
 	/**
 	 *  Compute the bounding box [west, south, east, north]. O(N).
 	 *  When `selected_only` is true, restricts to the current selection.
@@ -166,11 +170,6 @@ export const commands = {
 	 *  already-covered spots) pay one IPC round-trip, not one per point.
 	 */
 	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => __TAURI_INVOKE<boolean[]>("store_near_any", { lats: lats.map(i=>i), lngs: lngs.map(i=>i), radiusM }),
-	/**
-	 *  Hit-test markers at a point, returning covering markers topmost-first.
-	 *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the rendering surface.
-	 */
-	storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => __TAURI_INVOKE<PickHit[]>("store_pick", { lat, lng, zoom, markerStyle, sizeScale }),
 	/**
 	 *  Collect all distinct values for an `extra` field across all alive locations. O(N).
 	 *  Used by the filter UI to populate dropdown options.
@@ -350,6 +349,25 @@ export const commands = {
 	storeReviewList: (mapId: string, status: string | null) => __TAURI_INVOKE<ReviewSession[]>("store_review_list", { mapId, status }),
 	storeReviewUpdate: (update: ReviewUpdate) => __TAURI_INVOKE<null>("store_review_update", { update }),
 	storeReviewDelete: (id: string) => __TAURI_INVOKE<null>("store_review_delete", { id }),
+	remoteMappingGet: (provider: string, mapId: string) => __TAURI_INVOKE<RemoteMappingRow[]>("remote_mapping_get", { provider, mapId }),
+	remoteMappingUpsert: (provider: string, mapId: string, rows: RemoteMappingRow[]) => __TAURI_INVOKE<null>("remote_mapping_upsert", { provider, mapId, rows }),
+	remoteMappingDelete: (provider: string, mapId: string, localIds: number[]) => __TAURI_INVOKE<null>("remote_mapping_delete", { provider, mapId, localIds }),
+	remoteMappingClear: (provider: string, mapId: string) => __TAURI_INVOKE<null>("remote_mapping_clear", { provider, mapId }),
+	/**
+	 *  Reconcile a linked, open map against its remote. Snapshots local state under the store lock,
+	 *  drops the lock, then does all network + persistence off the async thread.
+	 */
+	syncReconcile: (provider: string, mapId: string, remoteMapId: string, apiKey: string | null, firstSync: FirstSyncMode | null, resolutions: ([string, ResolutionSide])[] | null) => __TAURI_INVOKE<SyncReconcileResult>("sync_reconcile", { provider, mapId, remoteMapId, apiKey, firstSync, resolutions }).then((v) => (({...v,conflicts:v.conflicts.map(i=>({...i,local:i.local==null?i.local:i.local,remote:i.remote==null?i.remote:i.remote})),pullUpdates:v.pullUpdates.map(i=>({...i,patch:({...i.patch,lat:i.patch.lat==null?i.patch.lat:i.patch.lat,lng:i.patch.lng==null?i.patch.lng:i.patch.lng,heading:i.patch.heading==null?i.patch.heading:i.patch.heading,pitch:i.patch.pitch==null?i.patch.pitch:i.patch.pitch,zoom:i.patch.zoom==null?i.patch.zoom:i.patch.zoom})}))}) as typeof v)),
+	/**
+	 *  Open the GeoGuessr sign-in window and wait for a `_ncfa` cookie to appear.
+	 *  Returns the signed-in nickname.
+	 */
+	geoguessrLogin: () => __TAURI_INVOKE<string>("geoguessr_login"),
+	/**  The signed-in user, or `None` when there is no session (or it was rejected). */
+	geoguessrMe: () => __TAURI_INVOKE<GgUser | null>("geoguessr_me"),
+	geoguessrLogout: () => __TAURI_INVOKE<null>("geoguessr_logout"),
+	/**  Local-only check: is a token stored? Says nothing about its validity. */
+	geoguessrHasSession: () => __TAURI_INVOKE<boolean>("geoguessr_has_session"),
 	/**
 	 *  Commit the map's uncommitted changes and return the new commit id.
 	 *  `message` None auto-generates a `+a -r ~m` summary.
@@ -433,6 +451,22 @@ export type CommitInfo = {
  *  everything else is inferred from `ExtraFieldType`.
  */
 export type ComparisonType = { type: "linear" } | { type: "circular"; period: number } | { type: "categorical" };
+
+export type Conflict = {
+	key: string,
+	kind: ConflictKind,
+	/**  Base value is not persisted (only its hash), so conflicts surface local vs remote. */
+	local: NormalizedSyncLocation | null,
+	remote: NormalizedSyncLocation | null,
+};
+
+export type ConflictKind = 
+/**  Both sides modified the same location differently. */
+"update-update" | 
+/**  One side deleted while the other modified. */
+"delete-update" | 
+/**  Both sides added the same identity with different content (hash collision only). */
+"add-add";
 
 /**  Result of a cross-map location copy. `target_name` feeds the toast. */
 export type CopyToMapResult = {
@@ -562,6 +596,12 @@ export type FieldCount = {
  */
 export type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas" | "contains" | "notcontains";
 
+/**
+ *  First-sync seeding when both sides already have pins. Only meaningful on the first sync
+ *  (empty mapping); afterwards it's plain three-way. `Merge` never deletes.
+ */
+export type FirstSyncMode = "merge" | "mirrorFromRemote" | "mirrorFromLocal";
+
 /**  Reverse geocode result: nearest populated place to a coordinate. */
 export type GeoResult = {
 	city: string,
@@ -570,6 +610,14 @@ export type GeoResult = {
 	country: string,
 	/**  ISO 3166-1 alpha-2 (e.g. "US", "FR"). */
 	country_code: string,
+};
+
+/**  The signed-in GeoGuessr account. */
+export type GgUser = {
+	id: string,
+	nick: string,
+	/**  Avatar pin path (e.g. `pin/<hash>.png`), served under `/images/` on geoguessr.com. */
+	pin: string | null,
 };
 
 /**
@@ -836,6 +884,23 @@ export type MutationResult = {
 	tags: { [key in number]: Tag } | null,
 } & StoreStatus;
 
+/**
+ *  The syncable contract: the only fields that participate in diffing. Everything else is
+ *  owned by exactly one side and would register as a phantom change.
+ */
+export type NormalizedSyncLocation = {
+	lat: number,
+	lng: number,
+	heading: number,
+	pitch: number,
+	zoom: number,
+	panoId: string | null,
+	/**  Remote-meaningful bits only; virtual bits are stripped. */
+	flags: number,
+	/**  Tag names, deduped and sorted. Empty for providers with no tag support. */
+	tags: string[],
+};
+
 /**  Equal-width bin sizing. `count` derives the width from the data range; `width` fixes it. */
 export type NumericBinning = { by: "count"; n: number } | { by: "width"; w: number };
 
@@ -849,15 +914,6 @@ export type PartitionBucket = {
 	bin: [number, number] | null,
 };
 
-/**
- *  One marker under the cursor. `selected` = drawn in the selection overlay
- *  (or as the active marker), i.e. above every base cell marker.
- */
-export type PickHit = {
-	id: number,
-	selected: boolean,
-};
-
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
@@ -868,6 +924,7 @@ export type PluginManifest_Deserialize = {
 	icon: string,
 	main: string,
 	version: string,
+	experimental: boolean,
 	sidecar: PluginSidecar_Deserialize | null,
 };
 
@@ -879,6 +936,7 @@ export type PluginManifest = {
 	icon: string,
 	main: string,
 	version: string,
+	experimental?: boolean,
 	sidecar?: PluginSidecar | null,
 };
 
@@ -919,6 +977,30 @@ export type PresenceActivity = {
 	smallText: string | null,
 	/**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
 	start: number | null,
+};
+
+/**
+ *  A remote-originated create for JS to apply. `remote_id` is the handle its mapping row must
+ *  carry once created (a positional push reindexes to its desired-document position).
+ */
+export type PullCreate = {
+	fields: NormalizedSyncLocation,
+	remoteId: number,
+	hash: string,
+};
+
+/**  A remote-originated update for JS to apply to an existing local id. */
+export type PullUpdate = {
+	localId: number,
+	patch: SyncPatch,
+};
+
+/**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
+export type RemoteMappingRow = {
+	localId: number,
+	/**  Remote ids can exceed u32 (observed ~1.2e10), so i64. */
+	remoteId: number,
+	hash: string,
 };
 
 /**
@@ -970,6 +1052,9 @@ export type RenderRequest = {
 	markerStyle?: string,
 	markerColor?: [number, number, number] | null,
 };
+
+/**  Which side won a resolved conflict; serialized as "local"/"remote". */
+export type ResolutionSide = "local" | "remote";
 
 /**
  *  Inbound payload for creating a session. `order` is the frozen worklist (must be non-empty);
@@ -1126,6 +1211,12 @@ export type SelectionSync = {
 	selectedCount: number,
 };
 
+export type SideCounts = {
+	create: number,
+	update: number,
+	delete: number,
+};
+
 export type SpacedPickResult = {
 	ids: number[],
 	distanceM: number,
@@ -1156,6 +1247,38 @@ export type SummaryResult = {
 	locationCount: number,
 	version: number,
 	dirtyCount: number,
+};
+
+/**
+ *  Only the fields a pull genuinely changes. A field the provider cannot represent reads as empty
+ *  on the remote side and must not overwrite local data, so absent fields are left untouched.
+ *  `pano_id` applies only when `pano_id_set` is true (a cleared panoId is a real change to `null`).
+ */
+export type SyncPatch = {
+	lat: number | null,
+	lng: number | null,
+	heading: number | null,
+	pitch: number | null,
+	zoom: number | null,
+	panoIdSet: boolean,
+	panoId: string | null,
+	flags: number | null,
+	tags: string[] | null,
+};
+
+/**  Everything the reconcile settled to, for the JS side. Every array is empty on an unchanged map. */
+export type SyncReconcileResult = {
+	/**  Remote-applied counts; mirror-from-local deletes fold into `delete`. */
+	pushed: SideCounts,
+	/**  Local-applied counts; mirror-from-remote deletes fold into `delete`. */
+	pulled: SideCounts,
+	adopted: number,
+	conflicts: Conflict[],
+	neededTags: string[],
+	pullCreates: PullCreate[],
+	pullUpdates: PullUpdate[],
+	pullDeleteIds: number[],
+	mirrorLocalDeleteIds: number[],
 };
 
 /**
