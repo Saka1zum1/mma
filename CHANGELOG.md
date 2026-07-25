@@ -1,7 +1,45 @@
-## v0.7.7 - 2026-07-19
-- Independent release channel from [Saka1zum1/mma](https://github.com/Saka1zum1/mma) (fork of upstream MMA)
-- Apple Look Around, Baidu, and Tencent Street View providers
-- App updates now served from the fork's GitHub Releases
+## v0.8.1 - 2026-07-22
+- **Sync maps with map-making.app and GeoGuessr**
+- First sync offers merge or mirror when both sides already have locations
+- Sync connections show provider icons, your account avatar, and a link to open the remote map in the browser
+- New subdivision enrichment field
+- Review bar and geocoding info in fullscreen
+- Fullscreen tag palette opens on hover
+- Plugin installs and updates that require a newer app version are blocked instead of breaking
+- Movement mode now applies to keyboard controls
+- Fixed tooltips overlapping during handoff and arrow color seams
+- Fixed a clipped tag delete outline and a stray scrollbar in the location preview
+
+## v0.8.0 - 2026-07-19
+- **Doclinks: link tags to sections of a Google Doc, with an in-app document reader**
+- **UI overhaul: refreshed dialogs, buttons, checkboxes, and consistent styling app-wide**
+- Fullscreen map mode with a floating, draggable Street View preview
+- Saved selections can now be used anywhere a selection is picked, including as a heatmap source
+- Drag tags and folders into folders, and ctrl+drag to move a block of selected tags together
+- Tag folder color setting: fixed color or inherit from the first child
+- Declare empty tag folders
+- Whole-layer marker opacity control, with hotkeys to toggle Street View/marker opacity
+- New corner status tray for update, plugin, settings, and bulk-action buttons
+- Map list label filter syntax with clickable label chips
+- New dark and multi-provider vector basemap styles
+- Live render stats in Stats for Nerds
+- Export dialog settings are now remembered per map
+- Local REST transport for the MMA API
+- Heatmap plugin: multiple simultaneous layers and more gradient options
+- Fixed doc links tooltip claiming an undo option that doesn't exist
+- Fixed the pano date count badge losing its text color
+- Fixed the generator plugin's "set caps" prompt using a native popup instead of an in-app dialog
+- Fixed the map context menu appearing behind other panels
+- Fixed the min-distance picker missing a meters label
+- Fixed Street View coverage dots stuttering while panning
+- Fixed saved selections breaking when a referenced field was renamed
+- Fixed tag renames needlessly resyncing selections
+- Fixed dragging a tag over an invalid folder leaving a move armed
+- Fixed imports keeping raw tag order values instead of rebasing them
+- Fixed the app losing your open map session after an update install and relaunch
+- Fixed changing the generator plugin's target not applying to an already-running job
+- Fixed month groupings sorting alphabetically instead of by calendar order
+- Fixed Street View tiles being throttled unnecessarily on the vector basemap
 
 ## v0.7.6 - 2026-07-13
 - Opt-in Discord Rich Presence, with a privacy level setting

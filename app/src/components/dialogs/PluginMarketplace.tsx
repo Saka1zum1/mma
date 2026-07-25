@@ -27,6 +27,8 @@ const REGISTRY_URL = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plu
 
 declare const __APP_VERSION__: string;
 
+declare const __APP_VERSION__: string;
+
 interface RegistryEntry {
 	id: string;
 	name: string;
