@@ -33,7 +33,7 @@ export interface BaiduPanoMeta {
 	altitude: number | null;
 	/** Rname — road name for Street View description only (not uploader). */
 	roadName: string | null;
-	/** Navigable links for arrows (altproviders: Links[] + ≤2 nearest per Roads[]). */
+	/** Navigable links for arrows (Links[] via DIR, plus same-road Order±1). */
 	links: BaiduLink[];
 	/**
 	 * All nearby captures for clickToGo target overlays
@@ -47,6 +47,8 @@ interface SdataPanoLink {
 	PID: string;
 	X: number;
 	Y: number;
+	/** Link bearing in degrees (preferred over geometric heading when present). */
+	DIR?: number;
 }
 
 interface SdataPanoRoadPano {
@@ -69,13 +71,14 @@ interface SdataPano {
 	Date?: string;
 	Rname?: string;
 	Links?: SdataPanoLink[];
-	Roads?: { Name?: string; Panos?: SdataPanoRoadPano[] }[];
+	Roads: { Name: string; 	IsCurrent: number; Panos?: SdataPanoRoadPano[] }[];
 	TimeLine?: { ID: string; Year: string; TimeLine: string; IsCurrent?: number }[];
 }
 
 const metaCache = new Map<string, BaiduPanoMeta>();
 const metaInflight = new Map<string, Promise<BaiduPanoMeta | null>>();
-const SEARCH_RADIUS_M = 200;
+/** Fallback only when caller omits radius (map-click / SIS always pass one). */
+const DEFAULT_SEARCH_RADIUS_M = 50;
 
 function bearingDeg(
 	fromLng: number,
@@ -165,23 +168,22 @@ function linkFromPano(
 	fromLat: number,
 	p: SdataPanoRoadPano | SdataPanoLink,
 	description?: string,
+	headingOverride?: number,
 ): BaiduLink {
 	const pos = baiduCmToMap(p.X, p.Y);
+	const heading =
+		headingOverride != null && Number.isFinite(headingOverride)
+			? ((headingOverride % 360) + 360) % 360
+			: bearingDeg(fromLng, fromLat, pos.lng, pos.lat);
 	return {
 		pid: p.PID,
 		lng: pos.lng,
 		lat: pos.lat,
-		heading: bearingDeg(fromLng, fromLat, pos.lng, pos.lat),
+		heading,
 		...(description ? { description } : {}),
 	};
 }
 
-/**
- * Link selection (altproviders.js Baidu getOneMetadata):
- * 1. Keep every `Links[]` entry.
- * 2. Per `Roads[]`, add up to 2 nearest Panos whose bearing is ≥5° from any
- *    link already chosen.
- */
 function selectNavigableLinks(baidu: SdataPano, lng: number, lat: number): BaiduLink[] {
 	const links: BaiduLink[] = [];
 	const seen = new Set<string>();
@@ -189,31 +191,29 @@ function selectNavigableLinks(baidu: SdataPano, lng: number, lat: number): Baidu
 	for (const raw of baidu.Links ?? []) {
 		if (!raw?.PID || seen.has(raw.PID)) continue;
 		seen.add(raw.PID);
-		links.push(linkFromPano(lng, lat, raw));
+		const dir = typeof raw.DIR === "number" ? raw.DIR : undefined;
+		links.push(linkFromPano(lng, lat, raw, baidu.Rname, dir));
 	}
 
-	for (const road of baidu.Roads ?? []) {
-		if (!road.Panos?.length) continue;
-		const roadName = road.Name || undefined;
-		const candidates: { dist: number; link: BaiduLink }[] = [];
-		for (const p of road.Panos) {
-			if (!p?.PID || p.PID === baidu.ID || seen.has(p.PID)) continue;
-			const pos = baiduCmToMap(p.X, p.Y);
-			if (pos.lat === lat && pos.lng === lng) continue;
-			candidates.push({
-				dist: haversineM(lng, lat, pos.lng, pos.lat),
-				link: linkFromPano(lng, lat, p, roadName),
-			});
+	const road = (baidu.Roads ?? []).find((r) => r.IsCurrent === 1);
+	const panos = road?.Panos;
+	if (panos?.length) {
+		const self = panos.find((p) => p?.PID === baidu.ID);
+		const selfOrder = self?.Order;
+		if (typeof selfOrder === "number" && Number.isFinite(selfOrder)) {
+			for (const targetOrder of [selfOrder - 1, selfOrder + 1]) {
+				const neighbor = panos.find(
+					(p) => p?.PID && p.PID !== baidu.ID && p.Order === targetOrder,
+				);
+				if (!neighbor?.PID || seen.has(neighbor.PID)) continue;
+				const pos = baiduCmToMap(neighbor.X, neighbor.Y);
+				if (pos.lat === lat && pos.lng === lng) continue;
+				seen.add(neighbor.PID);
+				const heading = bearingDeg(lng, lat, pos.lng, pos.lat);
+				links.push(linkFromPano(lng, lat, neighbor, road?.Name, heading));
+			}
 		}
-		candidates.sort((a, b) => a.dist - b.dist);
-		let added = 0;
-		for (const { link } of candidates) {
-			if (added >= 2) break;
-			if (links.some((l) => headingDelta(l.heading, link.heading) < 5)) continue;
-			seen.add(link.pid);
-			links.push(link);
-			added += 1;
-		}
+
 	}
 
 	return links;
@@ -310,14 +310,16 @@ export async function fetchBaiduMeta(sid: string): Promise<BaiduPanoMeta | null>
 export async function searchBaiduPano(
 	lat: number,
 	lng: number,
-	radiusM = SEARCH_RADIUS_M,
+	radiusM: number = DEFAULT_SEARCH_RADIUS_M,
 ): Promise<string | null> {
 	if (!supportsBaiduAt(lng, lat)) return null;
+	const r =
+		Number.isFinite(radiusM) && radiusM > 0 ? radiusM : DEFAULT_SEARCH_RADIUS_M;
 	const { x, y } = mapToBaiduMeters(lng, lat);
 	const url = new URL(BAIDU_SEARCH_URL);
 	url.searchParams.set("x", String(x));
 	url.searchParams.set("y", String(y));
-	url.searchParams.set("r", String(radiusM));
+	url.searchParams.set("r", String(r));
 	const res = await fetch(url.href, { signal: AbortSignal.timeout(15_000) });
 	if (!res.ok) return null;
 	const data = (await res.json()) as { content?: { id?: string } };
@@ -327,7 +329,7 @@ export async function searchBaiduPano(
 export async function resolveBaiduNear(
 	lat: number,
 	lng: number,
-	radiusM = SEARCH_RADIUS_M,
+	radiusM: number = DEFAULT_SEARCH_RADIUS_M,
 ): Promise<BaiduPanoMeta | null> {
 	const id = await searchBaiduPano(lat, lng, radiusM);
 	if (!id) return null;

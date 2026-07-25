@@ -6,7 +6,7 @@ import { baiduSpawnPanoId } from "@/lib/sv/baidu/session";
 import { isBaiduPanoId } from "@/lib/sv/baidu/prefix";
 import { tencentSpawnPanoId } from "@/lib/sv/tencent/session";
 import { isTencentPanoId } from "@/lib/sv/tencent/prefix";
-import { useActiveLocation } from "@/store/useMapStore";
+import { useMapState } from "@/store/useMapStore";
 import { useAsync } from "@/lib/hooks/useAsync";
 
 export function useExactDate(
@@ -18,7 +18,7 @@ export function useExactDate(
 	/** Capture time from the selected panoDates entry (alt-provider alternate dates). */
 	captureDate: Date | null = null,
 ) {
-	const location = useActiveLocation();
+	const location = useMapState((s) => s.activeLocation);
 	const existingDatetime = location?.extra?.datetime as number | undefined;
 	const provider = location ? findPanoProvider(location) : null;
 	const isBaidu =

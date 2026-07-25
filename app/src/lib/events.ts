@@ -117,6 +117,15 @@ export function getEventVersion(evt: EditorEvent): number {
 	return versions.get(evt) ?? 0;
 }
 
+/** Wraps useSyncExternalStore for any subscribe/getSnapshot pair outside the
+ *  event bus. Use this instead of importing useSyncExternalStore from react. */
+export function useSyncStore<T>(
+	subscribe: (cb: () => void) => () => void,
+	getSnapshot: () => T,
+): T {
+	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 export function subscribe<E extends EditorEvent>(evt: E, handler: EventHandler<E>): () => void {
 	let set = handlers.get(evt);
 	if (!set) {

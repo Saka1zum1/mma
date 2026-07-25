@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { MutationResult } from "@/bindings.gen";
 import {
-	useCurrentMap,
-	useWorkArea,
-	getActiveLocation,
-	getCurrentMap,
-	getCurrentMapId,
-	getSelectedLocationIds,
+	useMapState,
+	getMapState,
 	mutate,
 	removeLocations,
 	discardOpenMap,
-	beginImportPaste,
-	beginImportFromPath,
 	toggleProvidersMode,
 } from "@/store/useMapStore";
+import { beginImportPaste, beginImportFromPath } from "@/store/importStaging";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { goToList } from "@/store/router";
@@ -50,7 +45,7 @@ import { Tooltip } from "@/components/primitives/Tooltip";
 import { mdiBackburger, mdiEarthPlus, mdiPencil, mdiFileDocumentOutline } from "@mdi/js";
 import { DoclinkPanel } from "@/components/editor/doclink/DoclinkPanel";
 import { DoclinkAssignDialog } from "@/components/editor/doclink/DoclinkAssignDialog";
-import { useDomEvent } from "@/lib/hooks/useDomEvent";
+import { useDialog } from "@/store/dialogBus";
 import { doclinkedTags, prefetchDoclinks } from "@/lib/doclink";
 import { PluginSidebarHost } from "@/components/editor/PluginSidebarHost";
 import { ProvidersSidebar } from "@/components/editor/providers/ProvidersSidebar";
@@ -59,12 +54,19 @@ import { ProviderIcon } from "@/components/editor/providers/ProviderIcon";
 import { startLookAroundProvider } from "@/lib/sv/lookaround/bootstrap";
 import { startBaiduProvider } from "@/lib/sv/baidu/bootstrap";
 import { startTencentProvider } from "@/lib/sv/tencent/bootstrap";
+import { startYandexProvider } from "@/lib/sv/yandex/bootstrap";
 import SameLocation from "@/components/editor/SameLocation";
 import { log } from "@/lib/util/log";
 import { useCountrySelect } from "@/lib/map/useCountrySelect";
 import { useDeletePolygon } from "@/lib/map/useDeletePolygon";
 import { useMapKeyBindings } from "@/lib/map/mapKeyBindings";
 import { range, clamp } from "@/types/util";
+
+/** Mounted under PanoViewerProvider so pano/map fullscreen shortcuts stay live. */
+function FullscreenModeHotkeys() {
+	useFullscreenModeHotkeys();
+	return null;
+}
 
 function usePasteHandler() {
 	useEffect(() => {
@@ -214,32 +216,29 @@ function SplitHandle({ onSplitChange }: { onSplitChange: (v: number) => void }) 
 	);
 }
 
-function FullscreenModeHotkeys() {
-	useFullscreenModeHotkeys();
-	return null;
-}
-
 export function MapEditor() {
-	const map = useCurrentMap();
+	const map = useMapState((s) => s.map);
+	const hasDoclinks = useMapState((s) => doclinkedTags(s.tags).length > 0);
 	// Warm the doclink HTML cache once per map open, so the panel is instant.
 	const prefetchDocs = useEffectEvent(() => {
-		if (map) prefetchDoclinks(map.meta.tags);
+		if (map) prefetchDoclinks(getMapState().tags);
 	});
 	useEffect(() => prefetchDocs(), [map?.meta.id]);
-	const workArea = useWorkArea();
+	const workArea = useMapState((s) => s.workArea);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [split, setSplit] = useLocalStorage("editorSplit", 50);
-	const soleProviderId = useSoleEnabledProviderId();
 	const [docPanelOpen, setDocPanelOpen] = useLocalStorage("doclinkPanelOpen", false);
 	const [docPanelWidth, setDocPanelWidth] = useLocalStorage("doclinkPanelWidth", 420);
 	const [docAssignOpen, setDocAssignOpen] = useState(false);
-	useDomEvent("open-doclink-assign", () => setDocAssignOpen(true));
+	useDialog("doclink-assign", () => setDocAssignOpen(true));
+	const soleProviderId = useSoleEnabledProviderId();
 
 	useEffect(() => {
 		let cancelled = false;
 		const stopLookaround = startLookAroundProvider();
 		const stopBaidu = startBaiduProvider();
 		const stopTencent = startTencentProvider();
+		const stopYandex = startYandexProvider();
 		Promise.all([pluginsReady, waitForMapHost()]).then(() => {
 			if (cancelled) return;
 			activatePlugins();
@@ -250,13 +249,14 @@ export function MapEditor() {
 			stopLookaround();
 			stopBaidu();
 			stopTencent();
+			stopYandex();
 		};
 	}, [map?.meta.id]);
 
 	// Another window mutated this map
 	useEffect(() => {
 		const unlisten = listen<MutationResult & { mapId: string }>("store-external-mutation", (e) => {
-			if (e.payload.mapId === getCurrentMapId()) void mutate(Promise.resolve(e.payload));
+			if (e.payload.mapId === getMapState().mapId) void mutate(() => Promise.resolve(e.payload));
 		});
 		return () => {
 			unlisten.then((f) => f());
@@ -267,7 +267,7 @@ export function MapEditor() {
 	// and back out to the list, which self-destructs the editor window on Tauri.
 	useEffect(() => {
 		const unlisten = listen<string>("map-deleted", (e) => {
-			if (e.payload === getCurrentMapId()) {
+			if (e.payload === getMapState().mapId) {
 				discardOpenMap();
 				goToList();
 			}
@@ -281,7 +281,7 @@ export function MapEditor() {
 	usePasteHandler();
 	const fileDragging = useFileDrop();
 	useCommandHotkeys();
-	useMapKeyBindings(() => getCurrentMap()?.meta.settings.keyBindings ?? []);
+	useMapKeyBindings(() => getMapState().map?.meta.settings.keyBindings ?? []);
 	useCountrySelect();
 	useDeletePolygon();
 	useHotkey(
@@ -294,7 +294,7 @@ export function MapEditor() {
 	useHotkey(
 		useBinding("locationDelete"),
 		() => {
-			const ids = getSelectedLocationIds();
+			const ids = getMapState().selectedLocationIds;
 			if (ids.size > 0) removeLocations(ids);
 		},
 		{ bubble: true },
@@ -306,7 +306,7 @@ export function MapEditor() {
 		function onKeyDown(e: KeyboardEvent) {
 			if (e.key !== "Enter" || e.repeat) return;
 			if (isEditableElement(e.target)) return;
-			if (getActiveLocation()) return;
+			if (getMapState().activeLocation) return;
 			showMapCursorRef.current = true;
 			setShowMapCursor(true);
 		}
@@ -338,122 +338,124 @@ export function MapEditor() {
 	if (!map) return null;
 
 	const editorClasses = `page-map-editor${appSettings.fullscreenMap ? " fullscreen-map" : ""}`;
-	const hasDoclinks = doclinkedTags(map.meta.tags).length > 0;
 
 	return (
 		<PanoViewerProvider>
 			<FullscreenModeHotkeys />
 			<div className="editor-shell">
-			<div
-				className={editorClasses}
-				style={{
-					gridTemplateColumns: appSettings.fullscreenMap
-						? undefined
-						: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
-				}}
-			>
-				{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
-				<header>
-					<Tooltip content="Back to map list" side="bottom" align="start">
-						<a
-							href="#"
-							style={{ textDecoration: "none" }}
-							aria-label="Back to map list"
-							onClick={(e) => {
-								e.preventDefault();
-								goToList();
-							}}
-						>
-							<Icon path={mdiBackburger} />
-						</a>
-					</Tooltip>
-					<h1>{map.meta.name}</h1>
-					<Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-						<Tooltip content="Edit map" side="bottom">
-							<DialogTrigger asChild>
-								<button className="icon-button" type="button" aria-label="Edit map">
-									<Icon path={mdiPencil} />
-								</button>
-							</DialogTrigger>
+				<div
+					className={editorClasses}
+					style={{
+						gridTemplateColumns: appSettings.fullscreenMap
+							? undefined
+							: `minmax(0, ${split}fr) minmax(0, ${100 - split}fr)`,
+					}}
+				>
+					{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
+					<header>
+						<Tooltip content="Back to map list" side="bottom" align="start">
+							<a
+								href="#"
+								style={{ textDecoration: "none" }}
+								aria-label="Back to map list"
+								onClick={(e) => {
+									e.preventDefault();
+									goToList();
+								}}
+							>
+								<Icon path={mdiBackburger} />
+							</a>
 						</Tooltip>
-						<DialogContent title="Map settings" className="edit-map-modal">
-							<MapRenameForm mapId={map.meta.id} currentName={map.meta.name} />
-						</DialogContent>
-					</Dialog>
-					<EnrichmentButton />
-					<Tooltip
-						content={
-							workArea === "providers"
-								? "Close Street View providers"
-								: "Street View providers"
-						}
-						side="bottom"
-						align="end"
-					>
-						<button
-							className={`icon-button`}
-							type="button"
-							aria-label="Street View providers"
-							aria-pressed={workArea === "providers"}
-							onClick={() => toggleProvidersMode()}
+						<h1>{map.meta.name}</h1>
+						<Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+							<Tooltip content="Edit map" side="bottom">
+								<DialogTrigger asChild>
+									<button className="icon-button" type="button" aria-label="Edit map">
+										<Icon path={mdiPencil} />
+									</button>
+								</DialogTrigger>
+							</Tooltip>
+							<DialogContent title="Map settings" className="edit-map-modal">
+								<MapRenameForm mapId={map.meta.id} currentName={map.meta.name} />
+							</DialogContent>
+						</Dialog>
+						<EnrichmentButton />
+						<Tooltip
+							content={
+								workArea === "providers"
+									? "Close Street View providers"
+									: "Street View providers"
+							}
+							side="bottom"
+							align="end"
 						>
-							{soleProviderId ? (
-								<ProviderIcon id={soleProviderId} size={24} />
-							) : (
-								<Icon path={mdiEarthPlus} />
-							)}
-						</button>
-					</Tooltip>
-				</header>
-				<div className="side-header">
-					{hasDoclinks && (
-						<Tooltip content="Doclinks" side="bottom">
 							<button
 								className="icon-button"
 								type="button"
-								aria-label="Toggle doclink panel"
-								onClick={() => setDocPanelOpen(!docPanelOpen)}
+								aria-label="Street View providers"
+								aria-pressed={workArea === "providers"}
+								onClick={() => toggleProvidersMode()}
 							>
-								<Icon path={mdiFileDocumentOutline} />
+								{soleProviderId ? (
+									<ProviderIcon id={soleProviderId} size={24} />
+								) : (
+									<Icon path={mdiEarthPlus} />
+								)}
 							</button>
 						</Tooltip>
+					</header>
+					<div className="side-header">
+						{hasDoclinks && (
+							<Tooltip content="Doclinks" side="bottom">
+								<button
+									className="icon-button"
+									type="button"
+									aria-label="Toggle doclink panel"
+									onClick={() => setDocPanelOpen(!docPanelOpen)}
+								>
+									<Icon path={mdiFileDocumentOutline} />
+								</button>
+							</Tooltip>
+						)}
+					</div>
+					<section
+						className="map-embed"
+						style={{ background: "var(--surface-0)" }}
+					>
+						<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
+						{showMapCursor && <div className="map-cursor-crosshair" />}
+						{appSettings.fullscreenMap &&
+							appSettings.showFullscreenMiniLocationPreview &&
+							workArea === "location" && <FullscreenMiniLocationPreview />}
+					</section>
+					{(!appSettings.fullscreenMap || appSettings.showFullscreenMapMeta) && (
+						<section className="map-meta">
+							<MapMetaBar />
+						</section>
+					)}
+					<MapOverview hidden={workArea !== "overview"} />
+					{workArea === "location" && <LocationPreview />}
+					{workArea === "duplicates" && <SameLocation />}
+					{workArea === "import" && <ImportSidebar />}
+					{workArea === "diff" && <DiffSidebar />}
+					{workArea === "providers" && <ProvidersSidebar />}
+					<PluginSidebarHost />
+					<CommandPalette />
+					{fileDragging && (
+						<div className="file-drop-overlay">
+							<div className="file-drop-overlay__content">Drop file to import</div>
+						</div>
 					)}
 				</div>
-				<section className="map-embed" style={{ background: "var(--surface-0)" }}>
-					<MapEmbed onAddLocation={(p) => addParsedLocations([p])} />
-					{showMapCursor && <div className="map-cursor-crosshair" />}
-					{appSettings.fullscreenMap &&
-						appSettings.showFullscreenMiniLocationPreview &&
-						workArea === "location" && <FullscreenMiniLocationPreview />}
-				</section>
-				{(!appSettings.fullscreenMap || appSettings.showFullscreenMapMeta) && (
-					<section className="map-meta">
-						<MapMetaBar />
-					</section>
+				{hasDoclinks && docPanelOpen && (
+					<DoclinkPanel
+						width={docPanelWidth}
+						onWidthChange={setDocPanelWidth}
+						onClose={() => setDocPanelOpen(false)}
+					/>
 				)}
-				<MapOverview hidden={workArea !== "overview"} />
-				{workArea === "location" && <LocationPreview />}
-				{workArea === "duplicates" && <SameLocation />}
-				{workArea === "import" && <ImportSidebar />}
-				{workArea === "diff" && <DiffSidebar />}
-				{workArea === "providers" && <ProvidersSidebar />}
-				<PluginSidebarHost />
-				<CommandPalette />
-				{fileDragging && (
-					<div className="file-drop-overlay">
-						<div className="file-drop-overlay__content">Drop file to import</div>
-					</div>
-				)}
+				<DoclinkAssignDialog open={docAssignOpen} onOpenChange={setDocAssignOpen} />
 			</div>
-			{hasDoclinks && docPanelOpen && (
-				<DoclinkPanel
-					width={docPanelWidth}
-					onWidthChange={setDocPanelWidth}
-					onClose={() => setDocPanelOpen(false)}
-				/>
-			)}
-			<DoclinkAssignDialog open={docAssignOpen} onOpenChange={setDocAssignOpen} />
-		</div>
 		</PanoViewerProvider>
 	);
 }

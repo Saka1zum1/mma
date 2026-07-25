@@ -2,6 +2,7 @@
  * Build Google json+protobuf GetMetadata / SingleImageSearch payloads for Tencent
  * panos (field layout matches altproviders.js ImageMetadata PBLite arrays).
  */
+import { parseSingleImageSearchRequest } from "@/lib/sv/providers/sisRequest";
 import type { TencentNeighbor, TencentPanoMeta } from "./api";
 import { offsetLatLng } from "@/lib/sv/baidu/api";
 import { prefixTencent, isTencentPanoId } from "./prefix";
@@ -162,7 +163,7 @@ export function buildTencentImageMetadata(meta: TencentPanoMeta): unknown[] {
 		);
 	}
 
-	// Arrow links — altproviders left this empty; we fill from selectNavigableLinks.
+	/** Arrow links — from roads (order±1 on the same segment). */
 	for (const l of meta.links) {
 		if (!l.svid) continue;
 		let index = neighborIndex.get(l.svid);
@@ -273,16 +274,9 @@ export function tencentIdsFromGetMetadataRequest(body: unknown): string[] | null
 export function latLngFromSingleImageSearchRequest(
 	body: unknown,
 ): { lat: number; lng: number; radius: number } | null {
-	if (!Array.isArray(body)) return null;
-	const loc = body[1];
-	if (!Array.isArray(loc)) return null;
-	const center = loc[0];
-	if (!Array.isArray(center)) return null;
-	const lat = Number(center[2]);
-	const lng = Number(center[3]);
-	const radius = Number(loc[1] ?? 100);
-	if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-	return { lat, lng, radius: Number.isFinite(radius) && radius > 0 ? radius : 100 };
+	const q = parseSingleImageSearchRequest(body);
+	if (!q) return null;
+	return { lat: q.lat, lng: q.lng, radius: q.radiusM };
 }
 
 export function isTencentPrefixedKey(id: unknown): boolean {

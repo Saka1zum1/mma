@@ -1,12 +1,15 @@
 name: Update manual on release
 
-# When a GitHub Release is published, have Claude treat the in-app manual
-# (app/src/components/manual/chapters/*.mdx) as a living document: fold the
-# release's user-facing changes into the right chapters and open a DRAFT PR.
-# release.yml creates a *draft* release; this fires when you publish it.
+# After the Release workflow finishes for a version tag, have Claude treat the
+# in-app manual (app/src/components/manual/chapters/*.mdx) as a living document:
+# fold the release's user-facing changes into the right chapters and open a DRAFT PR.
+# anthropics/claude-code-action does not support the release event, so we trigger
+# via workflow_run (same pattern as upstream fixes for this action). For an already
+# published tag, use workflow_dispatch with the tag input.
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -20,18 +23,25 @@ permissions:
 
 jobs:
   update-manual:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Update manual
         uses: anthropics/claude-code-action@v1
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
           GH_TOKEN: ${{ github.token }}
         with:
+          github_token: ${{ github.token }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           settings: '{"attribution":{"commit":"","pr":""}}'
           claude_args: |

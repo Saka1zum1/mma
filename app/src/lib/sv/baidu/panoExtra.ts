@@ -24,6 +24,7 @@ export function buildBaiduExtra(meta: BaiduPanoMeta): LocationSvExtra {
 		countryCode: "CN",
 		cameraType: "baidu",
 		panoType: 0,
+		drivingDirection: meta.heading,
 	};
 	const imageDate = baiduDateToImageDate(meta.date);
 	if (imageDate) extra.imageDate = imageDate;

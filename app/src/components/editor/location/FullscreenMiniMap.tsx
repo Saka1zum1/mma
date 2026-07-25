@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSyncStore } from "@/lib/events";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
@@ -119,11 +120,7 @@ export function FullscreenMiniMap() {
 		if (!inside) host.panTo({ lat, lng });
 	}, [lat, lng, surface]);
 
-	const coverageEpoch = useSyncExternalStore(
-		subscribeProviderCoverageLayers,
-		getProviderCoverageLayersEpoch,
-		getProviderCoverageLayersEpoch,
-	);
+	const coverageEpoch = useSyncStore(subscribeProviderCoverageLayers, getProviderCoverageLayersEpoch);
 
 	useEffect(() => {
 		if (!surface) return;

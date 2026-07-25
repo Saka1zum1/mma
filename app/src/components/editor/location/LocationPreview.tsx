@@ -7,7 +7,6 @@ import {
 	useState,
 	useCallback,
 	useEffectEvent,
-	useSyncExternalStore,
 } from "react";
 import {
 	LocationFlag,
@@ -20,27 +19,24 @@ import {
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
-import { mdiChevronLeft, mdiChevronRight, mdiClose, mdiPlus } from "@mdi/js";
+import { mdiChevronLeft, mdiChevronRight } from "@mdi/js";
 import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
 import type { Tag } from "@/bindings.gen";
 import {
-	useActiveLocation,
-	useCurrentMap,
+	useMapState,
+	getMapState,
 	updateLocations,
-	getActiveLocation,
-	getCurrentMap,
 	removeLocations,
 	addLocations,
 	createTags,
 	setActiveLocation,
 	getVisibleTags,
-	useVisibleTags,
-	useTagCounts,
-	subscribeStore,
 } from "@/store/useMapStore";
-import { sortTagsByMode, tagChipStyle, appendTagName } from "@/lib/util/util";
+import { subscribe, useEvent, useSyncStore } from "@/lib/events";
+import { sortTagsByMode, tagColorFor, appendTagName } from "@/lib/util/util";
 import { log } from "@/lib/util/log";
 import { displayTagName } from "@/store/selections";
+import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
 import { ReviewBar } from "@/components/editor/location/ReviewBar";
 import {
 	useReviewSession,
@@ -55,7 +51,6 @@ import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { useSettings, useSetting, getSettings, GEOCODE_PROVIDER_LABELS } from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
-import { textColorFor } from "@/lib/util/color";
 import { type PanoReference, resolvePano, fetchPanoData, showToast } from "@/lib/sv/lookup";
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { enrich } from "@/lib/sv/enrich";
@@ -65,14 +60,16 @@ import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
 import { seenPanoChanged, seenFlush, seenSetCanvas, seenUpdateGeo } from "@/lib/seen/seen";
 import { useReverseGeocode, type GeoDisplay } from "@/components/editor/location/useReverseGeocode";
 import { usePanoViewer, setPanoAltitude } from "./PanoViewerContext";
-import { togglePanoFullscreenState } from "./useFullscreenModeHotkeys";
-import { resumeFullscreenMapAfterPano, exitFullscreenMap } from "./fullscreenModeState";
+import {
+	usePanoFullscreen,
+	togglePanoFullscreen,
+	exitPanoFullscreen,
+	exitFullscreenMap,
+} from "./fullscreenModeState";
 import { providerEntriesToPanoDates } from "./panoDate";
 import {
 	applyViewportLock,
 	getViewportLockInfo,
-	subscribeViewportLock,
-	getViewportLockSnapshot,
 } from "@/lib/sv/viewportLock";
 import { resetTrail, pushTrail, clearTrail } from "@/lib/sv/svTrail";
 import { singletonPano, singletonDiv, getPanorama, applyResolved } from "@/lib/sv/panoSingleton";
@@ -102,6 +99,7 @@ import {
 	tencentSpawnPanoId,
 	loadTencentDateEntries,
 } from "@/lib/sv/tencent/session";
+import { stripYandex } from "@/lib/sv/yandex/prefix";
 import { installGoogleInjectBridge } from "@/lib/sv/providers/googleInject";
 import {
 	injectAlternatesAsDateEntries,
@@ -114,7 +112,7 @@ import { useLocationHotkeys } from "./useLocationHotkeys";
 
 /** Tags are staged by name, not ID, because some tags do not exist yet. */
 function idsToNames(ids: number[]): string[] {
-	const tags = getCurrentMap()?.meta.tags ?? {};
+	const tags = getMapState().map?.meta.tags ?? {};
 	return ids.map((id) => tags[id]?.name).filter((n): n is string => n != null);
 }
 
@@ -130,8 +128,8 @@ const TagEditor = memo(function TagEditor({
 	isImport: boolean;
 }) {
 	const [tagInput, setTagInput] = useState("");
-	const visibleTags = useVisibleTags();
-	const tagCounts = useTagCounts();
+	const visibleTags = useMapState(getVisibleTags);
+	const tagCounts = useMapState((s) => s.tagCounts);
 	const tagSortMode = useSetting("tagSortMode");
 	const suggestionLimit = useSetting("tagSuggestionLimit");
 
@@ -183,16 +181,14 @@ const TagEditor = memo(function TagEditor({
 		<>
 			<ul className="tag-list">
 				{pendingTags.map((name) => (
-					<li key={name} className="tag is-small has-button" style={tagChipStyle(name, allTags)}>
-						<button
-							className="button tag__button tag__button--delete"
-							onClick={() => handleRemoveTag(name)}
-							type="button"
-						>
-							<Icon path={mdiClose} size={16} />
-						</button>
-						<span className="tag__text">{displayTagName(name)}</span>
-					</li>
+					<TagPill
+						as="li"
+						key={name}
+						small
+						color={tagColorFor(name, allTags)}
+						label={displayTagName(name)}
+						button={<TagPillButton variant="delete" onClick={() => handleRemoveTag(name)} />}
+					/>
 				))}
 				<li>
 					<form className="form-add-tag" onSubmit={handleAddTag}>
@@ -220,23 +216,14 @@ const TagEditor = memo(function TagEditor({
 				>
 					<ol className="tag-list">
 						{suggestions.map((t) => (
-							<li
+							<TagPill
+								as="li"
 								key={t.id}
-								className="tag is-small has-button"
-								style={{
-									backgroundColor: t.color,
-									color: textColorFor(t.color),
-								}}
-							>
-								<button
-									className="button tag__button tag__button--add"
-									onClick={() => handleSuggestionClick(t)}
-									type="button"
-								>
-									<Icon path={mdiPlus} size={16} />
-								</button>
-								<span className="tag__text">{displayTagName(t.name)}</span>
-							</li>
+								small
+								color={t.color}
+								label={displayTagName(t.name)}
+								button={<TagPillButton variant="add" onClick={() => handleSuggestionClick(t)} />}
+							/>
 						))}
 					</ol>
 				</div>
@@ -246,8 +233,8 @@ const TagEditor = memo(function TagEditor({
 });
 
 export function LocationPreview() {
-	const location = useActiveLocation();
-	const map = useCurrentMap();
+	const location = useMapState((s) => s.activeLocation);
+	const map = useMapState((s) => s.map);
 	const reviewSession = useReviewSession();
 	const isReviewMode = reviewSession !== null;
 	const panoContainerRef = useRef<HTMLDivElement>(null);
@@ -257,24 +244,21 @@ export function LocationPreview() {
 		setCurrentPano,
 		panoDates,
 		setPanoDates,
-		isFullscreen,
-		setIsFullscreen,
 		panoReady,
 		setPanoReady,
 		selectedPanoId,
 		coverageDefaultPanoId,
 		setCoverageDefaultPanoId,
 	} = usePanoViewer();
-	const providerEpoch = useSyncExternalStore(
-		subscribePanoProviders,
-		getPanoProvidersSnapshot,
-		getPanoProvidersSnapshot,
-	);
+	const isFullscreen = usePanoFullscreen();
+	const providerEpoch = useSyncStore(subscribePanoProviders, getPanoProvidersSnapshot);
 	const activeProvider = location ? findPanoProvider(location) : null;
 	const [providerSession, setProviderSession] = useState<PanoProviderSession | null>(null);
 	const effectivePano = providerSession?.panorama ?? singletonPano;
+	const effectivePanoRef = useRef(effectivePano);
+	effectivePanoRef.current = effectivePano;
 	const [pendingTags, setPendingTags] = useState<string[]>(() => idsToNames(location?.tags ?? []));
-	const visibleTags = useVisibleTags();
+	const visibleTags = useMapState(getVisibleTags);
 	const [panoGeo, setPanoGeo] = useState<GeoDisplay | null>(null);
 	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0, panoGeo);
 	const cancelTweenRef = useRef<(() => void) | null>(null);
@@ -309,7 +293,7 @@ export function LocationPreview() {
 		obs.observe(el);
 		return () => obs.disconnect();
 	}, [isFullscreen, appSettings.showFullscreenTagbar, appSettings.showFullscreenDatePicker]);
-	useSyncExternalStore(subscribeViewportLock, getViewportLockSnapshot);
+	useEvent("viewport-lock:changed");
 	const lockInfo = getViewportLockInfo();
 
 	useEffect(() => {
@@ -346,11 +330,7 @@ export function LocationPreview() {
 		return () => overlay.dispose();
 	}, [appSettings.showCrosshair]);
 
-	const altViewportEpoch = useSyncExternalStore(
-		subscribeActivePanoViewport,
-		getActivePanoViewportSnapshot,
-		getActivePanoViewportSnapshot,
-	);
+	const altViewportEpoch = useSyncStore(subscribeActivePanoViewport, getActivePanoViewportSnapshot);
 
 	// Mount/unmount Google singleton. Look Around (and other alt providers) replace the host.
 	// Baidu uses the same singleton via BAIDU: inject — it is not an MMA PanoProvider.
@@ -429,7 +409,7 @@ export function LocationPreview() {
 							setPanoDates(providerEntriesToPanoDates(entries, panoId));
 						}
 						if (!panoId || !pos) return;
-						const active = getActiveLocation();
+						const active = getMapState().activeLocation;
 						// Google SV: YYYY-MM string. Look Around: capture timestamp (ms)
 						// — derive YYYY-MM in the pano timezone for date-state fallbacks.
 						let imageDate: string | undefined;
@@ -481,7 +461,7 @@ export function LocationPreview() {
 						const pos = pano.getPosition();
 						if (!panoId || !pos) return;
 						pushTrail(pos.lng(), pos.lat());
-						const activeForSeen = getActiveLocation();
+						const activeForSeen = getMapState().activeLocation;
 						const geo = getGeoResult();
 						seenPanoChanged(
 							{
@@ -542,6 +522,7 @@ export function LocationPreview() {
 			if (cancelled) return;
 			if (!google?.maps) return;
 			// Baidu / Tencent pins share the Google singleton; install inject before setPano.
+			// Yandex uses PanoProvider + PSV and never reaches this branch.
 			const injectProvider = getLocationProvider(location);
 			if (injectProvider === "baidu" || injectProvider === "tencent") {
 				ensureProviderEnabled(injectProvider);
@@ -566,7 +547,7 @@ export function LocationPreview() {
 				});
 				if (pos) {
 					pushTrail(pos.lng(), pos.lat());
-					const activeForSeen = getActiveLocation();
+					const activeForSeen = getMapState().activeLocation;
 					const geo = getGeoResult();
 					seenPanoChanged(
 						{
@@ -657,21 +638,21 @@ export function LocationPreview() {
 					setPanoAltitude(fromProvider);
 					return;
 				}
-				const active = getActiveLocation();
-				const alt = active?.extra?.altitude;
-				setPanoAltitude(typeof alt === "number" && Number.isFinite(alt) ? alt : null);
-			};
-			applyAltDates();
+			const active = getMapState().activeLocation;
+			const alt = active?.extra?.altitude;
+			setPanoAltitude(typeof alt === "number" && Number.isFinite(alt) ? alt : null);
+		};
+		applyAltDates();
+		syncAltitude();
+		const unsubDates = providerSession.subscribeAlternateDates?.(applyAltDates);
+		const unsubStore = subscribe("store:changed", () => {
+			const alt = getMapState().activeLocation?.extra?.altitude;
+			if (typeof alt === "number" && Number.isFinite(alt)) setPanoAltitude(alt);
+		});
+		const panoListener = providerSession.panorama.addListener("pano_changed", () => {
 			syncAltitude();
-			const unsubDates = providerSession.subscribeAlternateDates?.(applyAltDates);
-			const unsubStore = subscribeStore(() => {
-				const alt = getActiveLocation()?.extra?.altitude;
-				if (typeof alt === "number" && Number.isFinite(alt)) setPanoAltitude(alt);
-			});
-			const panoListener = providerSession.panorama.addListener("pano_changed", () => {
-				syncAltitude();
-				applyAltDates();
-				const active = getActiveLocation();
+			applyAltDates();
+			const active = getMapState().activeLocation;
 				const panoId = providerSession.panorama.getPano();
 				const pos = providerSession.panorama.getPosition();
 				if (panoId && pos) {
@@ -730,12 +711,12 @@ export function LocationPreview() {
 		const loc = currentPano.location;
 		if (!loc?.latLng) return;
 
-		// Baidu / Tencent timeline via provider meta (native Google date RPC does not apply).
+		// Inject-provider timeline via provider meta (native Google date RPC does not apply).
 		// Sibling inject-provider hits from the parallel race are merged into the date picker.
 		if (isBaiduPanoId(loc.pano) || isTencentPanoId(loc.pano)) {
 			const lat = loc.latLng.lat();
 			const lng = loc.latLng.lng();
-			const applyChinaDates = (
+			const applyInjectDates = (
 				entries: { pano: string; timestamp: number; cameraType?: string }[],
 			) => {
 				if (cancelled) return;
@@ -749,29 +730,29 @@ export function LocationPreview() {
 			if (isBaiduPanoId(loc.pano)) {
 				void loadBaiduDateEntries(loc.pano).then(({ entries, meta, defaultPanoId }) => {
 					if (cancelled) return;
-					applyChinaDates(entries);
+					applyInjectDates(entries);
 					if (defaultPanoId) setCoverageDefaultPanoId(defaultPanoId);
 					setPanoAltitude(meta?.altitude ?? null);
-					const active = getActiveLocation();
-					if (active && meta) void patchLocationExtra(active, buildBaiduExtra(meta));
-				});
-			} else {
-				void loadTencentDateEntries(loc.pano).then(({ entries, meta, defaultPanoId }) => {
-					if (cancelled) return;
-					applyChinaDates(entries);
-					if (defaultPanoId) setCoverageDefaultPanoId(defaultPanoId);
-					setPanoAltitude(null);
-					const active = getActiveLocation();
-					if (active && meta) void patchLocationExtra(active, buildTencentExtra(meta));
+				const active = getMapState().activeLocation;
+				if (active && meta) void patchLocationExtra(active, buildBaiduExtra(meta));
+			});
+		} else {
+			void loadTencentDateEntries(loc.pano).then(({ entries, meta, defaultPanoId }) => {
+				if (cancelled) return;
+				applyInjectDates(entries);
+				if (defaultPanoId) setCoverageDefaultPanoId(defaultPanoId);
+				setPanoAltitude(null);
+				const active = getMapState().activeLocation;
+				if (active && meta) void patchLocationExtra(active, buildTencentExtra(meta));
 				});
 			}
 
 			const unsubAlts = subscribeInjectAlternates(() => {
 				if (cancelled) return;
 				if (isBaiduPanoId(loc.pano)) {
-					void loadBaiduDateEntries(loc.pano).then(({ entries }) => applyChinaDates(entries));
+					void loadBaiduDateEntries(loc.pano).then(({ entries }) => applyInjectDates(entries));
 				} else {
-					void loadTencentDateEntries(loc.pano).then(({ entries }) => applyChinaDates(entries));
+					void loadTencentDateEntries(loc.pano).then(({ entries }) => applyInjectDates(entries));
 				}
 			});
 
@@ -823,20 +804,20 @@ export function LocationPreview() {
 				address: data.location.description || "",
 				countryCode: data.extra?.countryCode?.toUpperCase() ?? null,
 			});
-			const active = getActiveLocation();
-			if (active) enrich(active, data);
-		});
+		const active = getMapState().activeLocation;
+		if (active) enrich(active, data);
+	});
 
-		return () => {
-			cancelled = true;
-		};
-	}, [location?.id, currentPano?.location?.pano, providerSession, setCoverageDefaultPanoId]);
+	return () => {
+		cancelled = true;
+	};
+}, [location?.id, currentPano?.location?.pano, providerSession, setCoverageDefaultPanoId]);
 
 	// Reads the active location at call time to stay referentially stable
 	// (it is a memo'd PanoDatePicker prop).
 	const handleDateChange = useCallback(
 		(panoId: string | null) => {
-			const loc = getActiveLocation();
+			const loc = getMapState().activeLocation;
 			if (!loc) return;
 			// Alt providers (e.g. Look Around) own their own pano graph — no Google
 			// LoadAsPanoId flag. null = return to the spawn / default capture.
@@ -900,10 +881,13 @@ export function LocationPreview() {
 				: (provider?.id ?? location.provider ?? "google");
 		let savedPanoId = selectedPanoId ?? pano ?? location.panoId;
 		// Inject viewers use PREFIX: ids; store raw svid/sid on the location.
+		// Yandex PSV already uses unprefixed oids (strip is a no-op safety net).
 		if (isBaidu && typeof savedPanoId === "string") {
 			savedPanoId = stripBaidu(savedPanoId);
 		} else if (isTencent && typeof savedPanoId === "string") {
 			savedPanoId = stripTencent(savedPanoId);
+		} else if (liveProvider === "yandex" && typeof savedPanoId === "string") {
+			savedPanoId = stripYandex(savedPanoId);
 		}
 		const isAltProvider = Boolean(providerSession);
 		const saveExtra =
@@ -973,21 +957,14 @@ export function LocationPreview() {
 	]);
 
 	const handleClose = useCallback(() => {
-		if (isFullscreen) {
-			setIsFullscreen(false);
-			resumeFullscreenMapAfterPano();
-			return;
-		}
-		if (getSettings().fullscreenMap) {
-			exitFullscreenMap(setIsFullscreen);
-			return;
-		}
+		if (exitPanoFullscreen()) return;
+		if (exitFullscreenMap()) return;
 		if (isReviewMode) {
 			reviewNext();
 		} else {
 			setActiveLocation(null);
 		}
-	}, [isReviewMode, isFullscreen, setIsFullscreen]);
+	}, [isReviewMode]);
 
 	const handleDelete = useCallback(() => {
 		if (!location) return;
@@ -1001,7 +978,7 @@ export function LocationPreview() {
 	// Reads the active location at call time so the callback stays referentially
 	// stable (it is a memo'd PanoControls prop).
 	const handleReturnToSpawn = useCallback(async () => {
-		const loc = getActiveLocation();
+		const loc = getMapState().activeLocation;
 		if (!loc) return;
 		if (providerSession) {
 			const spawnId = findPanoProvider(loc)?.getSpawnPanoId?.(loc) ?? null;
@@ -1021,8 +998,8 @@ export function LocationPreview() {
 	}, [providerSession]);
 
 	const handleFullscreen = useCallback(() => {
-		togglePanoFullscreenState(location, isFullscreen, setIsFullscreen);
-	}, [location, isFullscreen, setIsFullscreen]);
+		if (location) togglePanoFullscreen();
+	}, [location]);
 
 	useEffect(() => {
 		if (singletonPano && google?.maps) google.maps.event.trigger(singletonPano, "resize");
@@ -1057,15 +1034,15 @@ export function LocationPreview() {
 		setPendingTags,
 		fullscreenContainerRef,
 		panoContainerRef,
+		panoramaRef: effectivePanoRef,
 		handleSave,
 		handleClose,
 		handleDelete,
 		handleReturnToSpawn,
 		handleDateChange,
-		panorama: effectivePano,
 	});
 
-	usePanoNavigation(appSettings, effectivePano);
+	usePanoNavigation(appSettings, effectivePanoRef);
 
 	if (!location || !map) return null;
 

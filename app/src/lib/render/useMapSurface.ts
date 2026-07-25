@@ -9,6 +9,7 @@ import { useScoreMaxError } from "@/lib/geo/scoring";
 import { handleMapClick, handleMapHover } from "@/lib/map/mapClick";
 import { getMapState } from "@/store/useMapStore";
 import { subscribe, subscribeMany } from "@/lib/events";
+import { subscribeProviderCoverageLayers } from "@/lib/sv/providers/coverageLayers";
 import { getReviewSession } from "@/lib/review/review";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
@@ -105,7 +106,7 @@ export function useMapSurface(
 	// Latest rebuild, so overlay creation paints the first frame with current values.
 	const rebuildLatest = useEffectEvent(() => rebuild());
 
-	// Repaint on every visual signal WITHOUT rendering the host component — these buses
+	// Repaint on every visual signal WITHOUT rendering the host component 鈥?these buses
 	// used to be render subscriptions serving purely as effect triggers. Same-tick bursts
 	// coalesce into one rebuild (React's batching did this implicitly before).
 	const rebuildQueued = useRef(false);
@@ -126,6 +127,10 @@ export function useMapSurface(
 			),
 		[],
 	);
+
+	// Alt-provider enable / style toggles rebuild Apple coverage dots (line layers
+	// refresh via MapEmbed applyPrefs on the same coverage epoch).
+	useEffect(() => subscribeProviderCoverageLayers(scheduleRebuild), []);
 
 	const externalOverlay = opts.overlay ?? null;
 

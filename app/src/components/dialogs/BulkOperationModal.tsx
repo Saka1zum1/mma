@@ -514,8 +514,11 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 				</div>
 			)}
 			<div className="bulk-operation__status">
-				Supports Google, Baidu, Tencent, and Apple Look Around in the same batch.
-				Tile mode is Google-only; Apple skips thumbnail mode.
+				{mode === "thumbnail"
+					? "Thumbnail: Google, Baidu, Tencent (Apple and Yandex are skipped)."
+					: mode === "tile"
+						? "Tile: Google, Baidu, Tencent, Yandex. Yandex zoom is reversed."
+						: "Equirectangular / perspective: all providers enabled."}
 			</div>
 			<label className="bulk-operation__option">
 				Mode
@@ -523,7 +526,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 					<option value="equirectangular">Equirectangular (full panorama)</option>
 					<option value="perspective">Perspective (1920×1080)</option>
 					<option value="thumbnail">Thumbnail (1024×768)</option>
-					<option value="tile">Tile (512×512)</option>
+					<option value="tile">Tile</option>
 				</NSelect>
 			</label>
 			{mode !== "thumbnail" && (

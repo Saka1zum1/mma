@@ -46,6 +46,8 @@ import type { InjectAlternateHit } from "./alternates";
 import { isProviderEnabled } from "./settings";
 import type { AltSvProviderId } from "./types";
 
+export { parseSingleImageSearchRequest, type SisLatLngQuery } from "./sisRequest";
+
 /** Result of a nearby search used by map-click race and SIS fallback. */
 export interface InjectRaceHit {
 	provider: AltSvProviderId;
@@ -77,9 +79,14 @@ export interface InjectAdapter {
 	): string | Promise<string> | null;
 	/**
 	 * Participate in blank-click / SIS races when enabled.
-	 * Omit for providers that use a separate PanoProvider (e.g. Apple).
+	 * `radiusM` is Google SingleImageSearch's search radius (meters) when racing SIS.
+	 * Omit for providers that use a separate PanoProvider (e.g. Apple, Yandex).
 	 */
-	resolveNear?(lat: number, lng: number, radiusM?: number): Promise<InjectRaceHit | null>;
+	resolveNear?(
+		lat: number,
+		lng: number,
+		radiusM?: number,
+	): Promise<InjectRaceHit | null>;
 	/** Geographic gate for SIS fallback (optional). */
 	supportsAt?(lng: number, lat: number): boolean;
 }
@@ -255,4 +262,5 @@ function tencentRaceHit(meta: TencentPanoMeta): InjectRaceHit {
 export function ensureBuiltinInjectAdapters(): void {
 	if (!adapters.has("baidu")) registerInjectAdapter(baiduAdapter);
 	if (!adapters.has("tencent")) registerInjectAdapter(tencentAdapter);
+	// Yandex renders via PanoProvider + PSV (see yandex/panoProvider.ts), not inject.
 }

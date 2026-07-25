@@ -1,14 +1,15 @@
 /**
- * Tencent Street View blue-line coverage from PMTiles vector layer `sv`.
+ * Tencent Street View blue-line coverage from PMTiles vector layers (`sv`, `ccf`).
  *
- * Perf notes (no mapStack / StackedMapType changes):
- * - minZoom gate: skip world-scale tiles (huge feature counts)
- * - LRU caches for raw MVT bytes and painted canvases
- * - DPR capped at 1; single stroke; feature budget at low zooms
+ * Perf (no tile/canvas caches — those clone/retain work fights zoom):
+ * - Single ImageMapType paints both layers in one pass (shared fetch + parse)
+ * - Bounded paint concurrency + time-budget yields (not rAF-per-chunk)
+ * - Inflight decode sharing for concurrent overzoom children of one source tile
+ * - Zoom-aware feature stride (low-z samples evenly instead of truncating)
+ * - Sub-tile bbox cull + sub-pixel vertex simplify before Path2D
  * - Fire "load" immediately so the composite stack is not blocked
  */
-import { PbfReader } from "pbf";
-import { VectorTile } from "@mapbox/vector-tile";
+import type { VectorTile } from "@mapbox/vector-tile";
 import { PMTiles } from "pmtiles";
 import { google } from "@/lib/sv/opensv";
 import {
@@ -20,46 +21,39 @@ import {
 	bumpProviderCoverageLayers,
 	registerProviderLineLayers,
 } from "@/lib/sv/providers/coverageLayers";
+import { vectorTileFromBytes } from "@/lib/sv/providers/pbfCompat";
 import { TENCENT_COVERAGE_PMTILES } from "./endpoints";
 
 const TILE = 256;
-const LAYER = "sv";
 /** Below this zoom, skip PMTiles entirely — too many line features per tile. */
 const MIN_COVERAGE_Z = 5;
 const MAX_COVERAGE_Z = 20;
 /** Cap overzoom parent fetches so we never paint a z≤7 archive tile into a viewport. */
 const MIN_SOURCE_Z = 5;
-const MVT_CACHE_MAX = 2048;
-const COMPOSED_CACHE_MAX = 1536;
-/** Soft cap: skip remaining features once painted this many rings in one tile. */
-const FEATURE_BUDGET = 2_500;
+const LAYER_NAMES = ["sv", "ccf"] as const;
+/** Safety cap after stride sampling (avoids pathological tiles). */
+const MAX_VERTICES = 48_000;
+/** Work this many ms on the main thread before yielding. */
+const PAINT_SLICE_MS = 8;
+/** Parallel tile paints — high enough for viewport fill, low enough to keep zoom fluid. */
+const PAINT_CONCURRENCY = 4;
 
-class LruCache<V> {
-	private map = new Map<string, V>();
-	constructor(private readonly max: number) {}
-	get(key: string): V | undefined {
-		const v = this.map.get(key);
-		if (v === undefined) return undefined;
-		this.map.delete(key);
-		this.map.set(key, v);
-		return v;
-	}
-	set(key: string, value: V) {
-		if (this.map.has(key)) this.map.delete(key);
-		this.map.set(key, value);
-		while (this.map.size > this.max) {
-			const oldest = this.map.keys().next().value!;
-			this.map.delete(oldest);
-		}
-	}
-	clear() {
-		this.map.clear();
-	}
+/** Evenly sample features so low-z tiles stay dense across the whole tile. */
+function featureStride(featureCount: number, zoom: number): number {
+	const target =
+		zoom <= 5 ? 10_000 : zoom <= 6 ? 12_000 : zoom <= 7 ? 14_000 : zoom <= 8 ? 16_000 : zoom <= 10 ? 20_000 : zoom <= 12 ? 24_000 : featureCount;
+	return Math.max(1, Math.ceil(featureCount / Math.max(1, target)));
 }
 
-const mvtCache = new LruCache<ArrayBuffer>(MVT_CACHE_MAX);
-const composedCache = new LruCache<HTMLCanvasElement>(COMPOSED_CACHE_MAX);
-const mvtInflight = new Map<string, Promise<ArrayBuffer | null>>();
+function simplifyPx(zoom: number, dz: number): number {
+	// Stronger simplify at low zoom — fewer verts, more features kept via stride.
+	const screenPx = zoom <= 6 ? 2.5 : zoom <= 8 ? 1.5 : zoom <= 10 ? 1 : zoom <= 12 ? 0.75 : 0.5;
+	return screenPx / Math.max(1, 2 ** Math.min(dz, 3));
+}
+
+type DecodedMvt = { tile: VectorTile };
+
+const mvtInflight = new Map<string, Promise<DecodedMvt | null>>();
 
 let pmtiles: PMTiles | null = null;
 let headerReady: Promise<{ maxZoom: number; minZoom: number }> | null = null;
@@ -75,12 +69,58 @@ function getHeader(): Promise<{ maxZoom: number; minZoom: number }> {
 			.getHeader()
 			.then((h) => ({ maxZoom: h.maxZoom, minZoom: h.minZoom }));
 	}
-	return headerReady;
+	// Mutable `let` is not narrowed after assignment; non-null is guaranteed above.
+	return headerReady!;
 }
 
 let settingsUnsub: (() => void) | null = null;
 let registryUnsub: (() => void) | null = null;
 let styleGen = 0;
+
+type PaintJob = {
+	run: () => Promise<void>;
+	signal: AbortSignal;
+};
+
+const paintQueue: PaintJob[] = [];
+let paintActive = 0;
+
+function pumpPaintQueue(): void {
+	while (paintActive < PAINT_CONCURRENCY && paintQueue.length > 0) {
+		const job = paintQueue.shift()!;
+		if (job.signal.aborted) continue;
+		paintActive += 1;
+		void job
+			.run()
+			.catch(() => {
+				/* ignore abort / decode errors */
+			})
+			.finally(() => {
+				paintActive -= 1;
+				pumpPaintQueue();
+			});
+	}
+}
+
+function enqueuePaint(signal: AbortSignal, run: () => Promise<void>): void {
+	if (signal.aborted) return;
+	// Drop tiles released during zoom so the queue doesn't grow unbounded.
+	for (let i = paintQueue.length - 1; i >= 0; i -= 1) {
+		if (paintQueue[i]!.signal.aborted) paintQueue.splice(i, 1);
+	}
+	paintQueue.push({ run, signal });
+	pumpPaintQueue();
+}
+
+/** Yield without waiting a full animation frame (rAF was the main load-speed killer). */
+function yieldToBrowser(): Promise<void> {
+	const sched = (globalThis as unknown as { scheduler?: { yield?: () => Promise<void> } })
+		.scheduler;
+	if (sched?.yield) return sched.yield();
+	return new Promise((resolve) => {
+		setTimeout(resolve, 0);
+	});
+}
 
 function parseRgb(color: string): { r: number; g: number; b: number } | null {
 	const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
@@ -98,46 +138,33 @@ function triggerTileLoad(el: Element): void {
 	});
 }
 
-function cloneCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
-	const out = document.createElement("canvas");
-	out.width = src.width;
-	out.height = src.height;
-	out.getContext("2d")?.drawImage(src, 0, 0);
-	return out;
-}
-
 async function fetchMvt(
 	z: number,
 	x: number,
 	y: number,
 	signal: AbortSignal,
-): Promise<ArrayBuffer | null> {
+): Promise<DecodedMvt | null> {
 	const key = `${z}/${x}/${y}`;
-	const hit = mvtCache.get(key);
-	if (hit) return hit;
 	const pending = mvtInflight.get(key);
 	if (pending) {
-		const buf = await pending;
+		const decoded = await pending;
 		if (signal.aborted) return null;
-		return buf;
+		return decoded;
 	}
 
-	const work = (async (): Promise<ArrayBuffer | null> => {
+	const work = (async (): Promise<DecodedMvt | null> => {
 		try {
-			const result = await getPmtiles().getZxy(z, x, y, signal);
+			// No per-tile AbortSignal: overzoom siblings share this fetch; one
+			// released child must not cancel the parent tile for the rest.
+			const result = await getPmtiles().getZxy(z, x, y);
 			if (!result?.data) return null;
 			const raw = result.data as ArrayBuffer | Uint8Array;
-			const buf =
+			const bytes =
 				raw instanceof ArrayBuffer
-					? raw
-					: (raw.buffer.slice(
-							raw.byteOffset,
-							raw.byteOffset + raw.byteLength,
-						) as ArrayBuffer);
-			mvtCache.set(key, buf);
-			return buf;
-		} catch (err) {
-			if (err instanceof Error && err.name === "AbortError") return null;
+					? new Uint8Array(raw)
+					: new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+			return { tile: vectorTileFromBytes(bytes) };
+		} catch {
 			return null;
 		} finally {
 			mvtInflight.delete(key);
@@ -145,9 +172,9 @@ async function fetchMvt(
 	})();
 
 	mvtInflight.set(key, work);
-	const buf = await work;
+	const decoded = await work;
 	if (signal.aborted) return null;
-	return buf;
+	return decoded;
 }
 
 function resolveSourceTile(
@@ -161,26 +188,48 @@ function resolveSourceTile(
 	let x = coordX;
 	let y = coordY;
 	const floor = Math.max(MIN_SOURCE_Z, headerMin);
-	const ceiling = headerMax;
-	while (z > ceiling) {
+	while (z > headerMax) {
 		z -= 1;
 		x = Math.floor(x / 2);
 		y = Math.floor(y / 2);
 	}
-	while (z < floor && zoom > floor) {
-		// Prefer fetching a denser parent only when the archive lacks this z.
-		break;
-	}
-	if (z < floor) {
-		// Archive tile below our paint floor — skip (caller treats as empty).
-		return { z, x, y, dz: zoom - z };
-	}
+	// Caller skips when z < MIN_SOURCE_Z; floor keeps headerMin in the contract.
+	if (z < floor) return { z, x, y, dz: zoom - z };
 	return { z, x, y, dz: zoom - z };
 }
 
-function paintMvt(
+function lineOutsideBBox(
+	line: Array<{ x: number; y: number }>,
+	minX: number,
+	minY: number,
+	maxX: number,
+	maxY: number,
+): boolean {
+	let sawInside = false;
+	for (let i = 0; i < line.length; i += 1) {
+		const p = line[i]!;
+		if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) {
+			sawInside = true;
+			break;
+		}
+	}
+	if (sawInside) return false;
+	// Keep lines that cross the tile even if endpoints are outside (cheap segment test).
+	for (let i = 1; i < line.length; i += 1) {
+		const a = line[i - 1]!;
+		const b = line[i]!;
+		if (a.x < minX && b.x < minX) continue;
+		if (a.x > maxX && b.x > maxX) continue;
+		if (a.y < minY && b.y < minY) continue;
+		if (a.y > maxY && b.y > maxY) continue;
+		return false;
+	}
+	return true;
+}
+
+async function paintMvt(
 	canvas: HTMLCanvasElement,
-	buf: ArrayBuffer,
+	decoded: DecodedMvt,
 	coordX: number,
 	coordY: number,
 	zoom: number,
@@ -189,18 +238,43 @@ function paintMvt(
 	srcY: number,
 	strokeStyle: string,
 	lineWidthScale: number,
-): void {
-	const ctx = canvas.getContext("2d", { alpha: true });
-	if (!ctx) return;
+	signal: AbortSignal,
+): Promise<void> {
+	const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
+	if (!ctx || signal.aborted) return;
 
-	const tile = new VectorTile(new PbfReader(new Uint8Array(buf)));
-	const vectorLayer = tile.layers[LAYER];
-	if (!vectorLayer) return;
-
+	const { tile } = decoded;
 	const dz = zoom - srcZ;
-	const layerSize = vectorLayer.extent;
+	const layerSize = (() => {
+		for (const name of LAYER_NAMES) {
+			const layer = tile.layers[name];
+			if (layer) return layer.extent;
+		}
+		return 4096;
+	})();
+
 	const scale = layerSize / TILE / 2 ** Math.max(0, dz);
-	const widthScale = lineWidthScale;
+	// Slightly thicker at low zoom so sparse samples still read as coverage.
+	const widthBoost = zoom <= 7 ? 1.35 : zoom <= 9 ? 1.15 : 1;
+	const lineWidth = Math.max(1, 1.75 * scale * lineWidthScale * widthBoost);
+	const minDist = Math.max(1, (layerSize / TILE) * simplifyPx(zoom, dz));
+	const minDist2 = minDist * minDist;
+
+	let minX = -Infinity;
+	let minY = -Infinity;
+	let maxX = Infinity;
+	let maxY = Infinity;
+	if (dz > 0) {
+		const span = layerSize / 2 ** dz;
+		const dx = coordX - srcX * 2 ** dz;
+		const dy = coordY - srcY * 2 ** dz;
+		// Small pad so strokes near edges aren't culled.
+		const pad = minDist * 2;
+		minX = dx * span - pad;
+		minY = dy * span - pad;
+		maxX = (dx + 1) * span + pad;
+		maxY = (dy + 1) * span + pad;
+	}
 
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -214,32 +288,63 @@ function paintMvt(
 		ctx.translate(-dx * (layerSize / 2 ** dz), -dy * (layerSize / 2 ** dz));
 	}
 
-	ctx.beginPath();
-	let rings = 0;
-	const len = vectorLayer.length;
-	// At lower zooms, stride features to keep paint cheap.
-	const stride = zoom <= 12 ? 2 : 1;
-	for (let i = 0; i < len; i += stride) {
-		if (rings >= FEATURE_BUDGET) break;
-		const feature = vectorLayer.feature(i);
-		if (feature.type !== 2) continue;
-		const geom = feature.loadGeometry();
-		for (const line of geom) {
-			if (line.length < 2) continue;
-			ctx.moveTo(line[0]!.x, line[0]!.y);
-			for (let j = 1; j < line.length; j += 1) {
-				ctx.lineTo(line[j]!.x, line[j]!.y);
+	const path = new Path2D();
+	let vertices = 0;
+	let sliceDeadline = performance.now() + PAINT_SLICE_MS;
+
+	outer: for (const layerName of LAYER_NAMES) {
+		const vectorLayer = tile.layers[layerName];
+		if (!vectorLayer) continue;
+		const len = vectorLayer.length;
+		const stride = featureStride(len, zoom);
+		for (let i = 0; i < len; i += stride) {
+			if (signal.aborted) return;
+			if (performance.now() >= sliceDeadline) {
+				await yieldToBrowser();
+				if (signal.aborted) return;
+				sliceDeadline = performance.now() + PAINT_SLICE_MS;
 			}
-			rings += 1;
-			if (rings >= FEATURE_BUDGET) break;
+
+			const feature = vectorLayer.feature(i);
+			if (feature.type !== 2) continue;
+			const geom = feature.loadGeometry();
+			for (const line of geom) {
+				if (line.length < 2) continue;
+				if (dz > 0 && lineOutsideBBox(line, minX, minY, maxX, maxY)) continue;
+
+				let moved = false;
+				let lastX = 0;
+				let lastY = 0;
+				for (let j = 0; j < line.length; j += 1) {
+					const p = line[j]!;
+					if (moved) {
+						const ddx = p.x - lastX;
+						const ddy = p.y - lastY;
+						if (ddx * ddx + ddy * ddy < minDist2 && j !== line.length - 1) {
+							continue;
+						}
+						path.lineTo(p.x, p.y);
+						vertices += 1;
+					} else {
+						path.moveTo(p.x, p.y);
+						moved = true;
+						vertices += 1;
+					}
+					lastX = p.x;
+					lastY = p.y;
+					if (vertices >= MAX_VERTICES) break outer;
+				}
+			}
 		}
 	}
 
+	if (signal.aborted || vertices === 0) return;
+
 	ctx.lineCap = "round";
 	ctx.lineJoin = "round";
-	ctx.lineWidth = Math.max(1, 1.75 * scale * widthScale);
+	ctx.lineWidth = lineWidth;
 	ctx.strokeStyle = strokeStyle;
-	ctx.stroke();
+	ctx.stroke(path);
 }
 
 function createTencentLineLayer(): google.maps.ImageMapType {
@@ -248,7 +353,7 @@ function createTencentLineLayer(): google.maps.ImageMapType {
 	const fillRgb = parseRgb(s.lineColor) ?? { r: 0, g: 81, b: 218 };
 	const strokeStyle = `rgb(${fillRgb.r}, ${fillRgb.g}, ${fillRgb.b})`;
 	const lineWidthScale = Math.max(0.25, s.lineWidthScale);
-	const cacheGen = styleGen;
+	void styleGen;
 
 	const layer = new google.maps.ImageMapType({
 		name: "Tencent SV lines",
@@ -277,15 +382,7 @@ function createTencentLineLayer(): google.maps.ImageMapType {
 			return wrap;
 		}
 
-		const cacheKey = `${cacheGen}/${zoom}/${coord.x}/${coord.y}`;
-		const hit = composedCache.get(cacheKey);
-		if (hit) {
-			wrap.appendChild(cloneCanvas(hit));
-			return wrap;
-		}
-
 		const canvas = ownerDocument.createElement("canvas");
-		// Coverage lines don't need retina — halves pixel fill cost.
 		canvas.width = TILE;
 		canvas.height = TILE;
 		canvas.style.width = `${TILE}px`;
@@ -297,10 +394,12 @@ function createTencentLineLayer(): google.maps.ImageMapType {
 
 		const controller = new AbortController();
 		controllers.set(wrap, controller);
+		const { signal } = controller;
 
+		// Fetch in parallel; only serialize CPU-heavy parse/paint on the queue.
 		void getHeader()
 			.then((header) => {
-				if (controller.signal.aborted) return null;
+				if (signal.aborted) return null;
 				const src = resolveSourceTile(
 					coord.x,
 					coord.y,
@@ -309,30 +408,31 @@ function createTencentLineLayer(): google.maps.ImageMapType {
 					header.minZoom,
 				);
 				if (src.z < MIN_SOURCE_Z) return null;
-				return fetchMvt(src.z, src.x, src.y, controller.signal).then((buf) =>
-					buf ? { buf, src } : null,
+				return fetchMvt(src.z, src.x, src.y, signal).then((decoded) =>
+					decoded ? { decoded, src } : null,
 				);
 			})
 			.then((payload) => {
-				if (controller.signal.aborted || !payload) return;
-				paintMvt(
-					canvas,
-					payload.buf,
-					coord.x,
-					coord.y,
-					zoom,
-					payload.src.z,
-					payload.src.x,
-					payload.src.y,
-					strokeStyle,
-					lineWidthScale,
-				);
-				if (!controller.signal.aborted) {
-					composedCache.set(cacheKey, cloneCanvas(canvas));
-				}
+				if (signal.aborted || !payload) return;
+				enqueuePaint(signal, async () => {
+					if (signal.aborted) return;
+					await paintMvt(
+						canvas,
+						payload.decoded,
+						coord.x,
+						coord.y,
+						zoom,
+						payload.src.z,
+						payload.src.x,
+						payload.src.y,
+						strokeStyle,
+						lineWidthScale,
+						signal,
+					);
+				});
 			})
 			.catch(() => {
-				/* ignore abort / decode errors */
+				/* ignore abort / network errors */
 			});
 
 		return wrap;
@@ -352,13 +452,13 @@ function createTencentLineLayer(): google.maps.ImageMapType {
 export function createTencentLineLayers(): google.maps.ImageMapType[] {
 	if (!isProviderEnabled("tencent") || !getProviderSettings("tencent").showLines) return [];
 	if (typeof google === "undefined" || !google?.maps?.ImageMapType) return [];
-	void styleGen;
 	return [createTencentLineLayer()];
 }
 
 export function rebuildTencentStyledLayers(): void {
 	styleGen++;
-	composedCache.clear();
+	// Drop queued paints from the previous style generation.
+	paintQueue.length = 0;
 	bumpProviderCoverageLayers();
 }
 
@@ -376,5 +476,6 @@ export function initTencentCoverage(): () => void {
 		settingsUnsub = null;
 		registryUnsub?.();
 		registryUnsub = null;
+		paintQueue.length = 0;
 	};
 }

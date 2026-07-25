@@ -832,11 +832,24 @@ export type AltProviderSettings = {
 };
 
 /** Per-provider toggles; future providers can be added without migrating existing maps. */
+/** One alternate basemap provider slot (Petal or Yandex). */
+export type AltBasemapSlot = {
+	enabled?: boolean,
+	language?: string | null,
+};
+
+export type AltBasemapSettings = {
+	petal?: AltBasemapSlot,
+	yandex?: AltBasemapSlot,
+};
+
 export type ProvidersSettings = {
 	apple?: AltProviderSettings | null,
 	baidu?: AltProviderSettings | null,
 	tencent?: AltProviderSettings | null,
 	yandex?: AltProviderSettings | null,
+	/** Shared Petal / Yandex basemap toggles (not per-provider). */
+	altBasemapSettings?: AltBasemapSettings | null,
 };
 
 /**

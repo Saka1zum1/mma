@@ -1,18 +1,13 @@
 import type { Layer, Position } from "@deck.gl/core";
 import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
-import {
-	baseMarkerLayers,
-	baseMarkerCount,
-	buildMarkerLayer,
-	MARKER_STYLE,
-	type DrawOrder,
-} from "@/lib/render/markerLayer";
+import { baseMarkerLayers, buildMarkerLayer, MARKER_STYLE } from "@/lib/render/markerLayer";
 import PanoCoverageLayer from "@/lib/render/PanoCoverageLayer";
 import LookAroundPanoCoverageLayer from "@/lib/sv/lookaround/LookAroundPanoCoverageLayer";
 import { isProviderEnabled, getProviderSettings } from "@/lib/sv/providers/settings";
 import type { CellManager } from "@/lib/render/CellManager";
-import type { Bounds, LatLng, MarkerStyle } from "@/types";
+import type { MarkerStyle } from "@/types";
+import type { LatLng } from "@/types";
 import { isImportPreview } from "@/types";
 import type { Location, SeenEntry } from "@/bindings.gen";
 import {
@@ -21,14 +16,9 @@ import {
 	getSeenOnMapIds,
 	seenEntryColor,
 } from "@/lib/seen/seenOverlay";
-import {
-	getCurrentMap,
-	getWorkArea,
-	getCommitDiffPreview,
-	getActiveLocation,
-	getAllSelections,
-	getImportPreviewPositions,
-} from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
+import { getCommitDiffPreview } from "@/store/commitDiff";
+import { getImportPreviewPositions } from "@/store/importStaging";
 import { getTrail } from "@/lib/sv/svTrail";
 import { getLatLngAnchor } from "@/lib/sv/measure";
 import type { RGB } from "@/lib/util/color";
@@ -39,10 +29,6 @@ export const PERFECT_SCORE_LAYER_ID = "perfect-score";
 // the node's drawn radius, so the visible circle matches what's actually clickable.
 export const POLYGON_CLOSE_VERTEX_PX = 10;
 export type PolyGeom = { poly: object; fill: Position[][][]; stroke: Position[][] };
-
-// Markers carry draw-order depth in the far half of NDC; any layer drawn *before*
-// them must not write depth at z=0 or it would occlude every marker.
-const NO_DEPTH_WRITE = { depthWriteEnabled: false } as const;
 
 export function normalizeRing<T extends number[]>(ring: T[]): T[] {
 	const crosses =
@@ -64,13 +50,6 @@ interface SceneContext {
 	markerStyle: MarkerStyle;
 	markerOpacity: number;
 	markerSize: number;
-	/** Aggregation-LOD band to render, or null for full detail. Owned by the
-	 *  surface (useMapSurface), which swaps at live band-boundary crossings —
-	 *  never derive it from live zoom here. */
-	lodBand: number | null;
-	/** Padded viewport for whole-cell culling, or null to draw every cell.
-	 *  Owned by the surface, which rebuilds when the visible cell set changes. */
-	viewBounds: Bounds | null;
 	showPerfectScoreCircle: boolean;
 	scoreMaxError: number;
 	svPanoramas: boolean;
@@ -86,47 +65,29 @@ interface SceneContext {
 	polygonVertices: number[][] | null;
 }
 
-/** Marker dot layer for the auxiliary marker sets (diff / import preview / seen). */
-function dotLayer(
-	id: string,
-	count: number,
-	order: DrawOrder,
-	props: Record<string, unknown>,
-	radiusPx = 6,
-): SDFMarkerLayer<unknown> {
-	const layer = new SDFMarkerLayer({
-		id,
-		shape: "circle",
-		radiusPixels: radiusPx,
-		orderBase: order.base,
-		orderTotal: order.total,
-		opaque: false,
-		pickable: false,
-		...props,
-	});
-	order.base += count;
-	return layer;
-}
-
 // Assembles the full deck.gl layer set from shared state + per-view context. Pure: it reads the
 // CellManager and store getters but mutates nothing, so multiple views can
 // call it to render identical visuals. The active-marker color patch lives in the scene store
 // (single owner of the shared CellManager), applied before consumers rebuild their layers.
 export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
-	if (!getCurrentMap()) return [];
+	if (!getMapState().map) return [];
 
 	const layers: Layer[] = [];
 
 	// Commit-diff overlay temporarily replaces the regular markers.
-	if (getWorkArea() === "diff") {
+	if (getMapState().workArea === "diff") {
 		const diff = getCommitDiffPreview();
 		if (diff) {
-			const counts = [diff.removed, diff.added, diff.modified].map((p) => p.length / 2);
-			const order: DrawOrder = { base: 0, total: counts.reduce((a, b) => a + b, 0) };
 			const diffLayer = (id: string, pos: Float32Array, color: [number, number, number, number]) =>
-				dotLayer(id, pos.length / 2, order, {
+				new ScatterplotLayer({
+					id,
 					data: { length: pos.length / 2, attributes: { getPosition: { value: pos, size: 2 } } },
+					getRadius: 6,
+					radiusUnits: "pixels" as const,
+					radiusMinPixels: 3,
 					getFillColor: color,
+					stroked: false,
+					pickable: false,
 				});
 			if (diff.removed.length)
 				layers.push(diffLayer("diff-removed", diff.removed, [239, 68, 68, 210]));
@@ -137,7 +98,7 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		return layers;
 	}
 
-	const allSelections = getAllSelections();
+	const allSelections = getMapState().selections;
 	const polygonSels = allSelections.flatMap((sel) =>
 		sel.props.type === "Intersection" ? sel.props.selections : [sel],
 	);
@@ -163,7 +124,6 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				stroked: false,
 				pickable: false,
 				opacity: 1,
-				parameters: NO_DEPTH_WRITE,
 			}),
 			new PathLayer<Position[]>({
 				id: `selectionPolygonStroke:${sel.key}`,
@@ -175,7 +135,6 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				jointRounded: true,
 				pickable: false,
 				opacity: 1,
-				parameters: NO_DEPTH_WRITE,
 			}),
 		);
 	}
@@ -189,11 +148,10 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				id: "pano-coverage",
 				color: [ctx.panoDotColor.r, ctx.panoDotColor.g, ctx.panoDotColor.b],
 				scaled: ctx.panoDotScaled,
-				parameters: NO_DEPTH_WRITE,
 			}),
 		);
 
-	// Apple panoramas: same deck.gl band as Google PanoCoverageLayer.
+	// Apple Look Around panoramas: same deck.gl band as Google PanoCoverageLayer.
 	if (isProviderEnabled("apple") && getProviderSettings("apple").showPoints) {
 		layers.push(
 			new LookAroundPanoCoverageLayer({
@@ -202,121 +160,109 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		);
 	}
 
-	// Draw-order allocation: every marker instance this frame gets a global slot;
-	// higher slot = drawn later = on top (the depth pass mirrors painter's order).
-	const lodBand = ctx.lodBand;
-	const baseCount = baseMarkerCount(cm, ctx.markerOpacity, lodBand, ctx.viewBounds);
-	const seen = isSeenOverlayActive() ? getSeenOverlayEntries() : [];
-	const stagedActive = getActiveLocation();
-	const showPreview =
-		getWorkArea() === "import" || (stagedActive != null && isImportPreview(stagedActive));
-	const previewPos = showPreview ? getImportPreviewPositions() : new Float32Array(0);
-	const previewCount = previewPos.length / 2;
-	const activeLoc = getActiveLocation();
-	const selBuf = lodBand != null && cm.selOverlayCount > 0 ? cm.getSelOverlayLod(lodBand) : null;
-	const selCount = selBuf ? selBuf.count : cm.selOverlayCount;
-	const order: DrawOrder = {
-		base: 0,
-		total: baseCount + seen.length + selCount + previewCount + (activeLoc ? 1 : 0),
-	};
+	layers.push(...baseMarkerLayers(cm, ctx.markerStyle, ctx.markerOpacity, ctx.markerSize));
 
-	layers.push(
-		...baseMarkerLayers(
-			cm,
-			ctx.markerStyle,
-			ctx.markerOpacity,
-			order,
-			ctx.markerSize,
-			lodBand,
-			ctx.viewBounds,
-		),
-	);
-
-	if (seen.length > 0) {
-		layers.push(
-			dotLayer(
-				"seen-overlay",
-				seen.length,
-				order,
-				{
+	if (isSeenOverlayActive()) {
+		const seen = getSeenOverlayEntries();
+		if (seen.length > 0) {
+			layers.push(
+				new ScatterplotLayer<SeenEntry>({
+					id: "seen-overlay",
 					data: seen,
-					getPosition: (d: SeenEntry) => [d.lng, d.lat],
+					getPosition: (d) => [d.lng, d.lat],
 					getFillColor: seenEntryColor,
+					getRadius: 5,
+					radiusUnits: "pixels",
+					radiusMinPixels: 3,
+					stroked: false,
+					pickable: true,
 					updateTriggers: { getFillColor: [getSeenOnMapIds()] },
-				},
-				5,
-			),
-		);
+				}),
+			);
+		}
 	}
 
-	// Selection overlay rides on top of the base cells; the CPU hit-test gives it the
-	// same priority (selected markers resolve above unselected overlaps). In LOD mode
-	// it decimates like the base cells (selBuf), each rep keeping its selection color.
-	if (selCount > 0) {
+	// Selection overlay rides on top as its own pickable layer — otherwise clicks fall through to
+	// the cell layer where selected markers have no z-priority, and an overlapping neighbor gets
+	// picked instead of the marker on top.
+	if (cm.selOverlayCount > 0) {
 		layers.push(
 			buildMarkerLayer(
 				ctx.markerStyle,
 				"sel-overlay",
-				selCount,
-				selBuf ?? {
+				cm.selOverlayCount,
+				{
 					positions: cm.selOverlayPositions,
 					colors: cm.selOverlayColors,
 					angles: cm.selOverlayAngles,
 				},
-				selBuf ? `lod:${selBuf.version}` : `full:${cm.selOverlayVersion}`,
-				selBuf ? `lod:${selBuf.version}` : `full:${cm.selOverlayVersion}`,
-				order,
+				cm.selOverlayVersion,
+				cm.selOverlayVersion,
 				undefined,
 				ctx.markerSize,
 			),
 		);
-		order.base += selCount;
 	}
 
 	// Staged import preview markers; clicking one opens a read-only preview. Drawn *under* the
 	// active marker, which highlights whichever staged location is open — no per-index coloring.
-	if (previewCount > 0) {
-		layers.push(
-			dotLayer("import-preview", previewCount, order, {
-				data: {
-					length: previewCount,
-					attributes: { getPosition: { value: previewPos, size: 2 } },
-				},
-				getFillColor: [
-					ctx.importPreviewColor.r,
-					ctx.importPreviewColor.g,
-					ctx.importPreviewColor.b,
-					200,
-				],
-			}),
-		);
+	const stagedActive = getMapState().activeLocation;
+	if (
+		getMapState().workArea === "import" ||
+		(stagedActive != null && isImportPreview(stagedActive))
+	) {
+		const previewPos = getImportPreviewPositions();
+		const previewCount = previewPos.length / 2;
+		if (previewCount > 0) {
+			layers.push(
+				new ScatterplotLayer({
+					id: "import-preview",
+					data: {
+						length: previewCount,
+						attributes: { getPosition: { value: previewPos, size: 2 } },
+					},
+					getRadius: 6,
+					radiusUnits: "pixels",
+					radiusMinPixels: 3,
+					getFillColor: [
+						ctx.importPreviewColor.r,
+						ctx.importPreviewColor.g,
+						ctx.importPreviewColor.b,
+						200,
+					],
+					stroked: false,
+					pickable: true,
+				}),
+			);
+		}
 	}
 
 	// Active marker renders even with no committed locations so virtual previews (staged/seen)
 	// on an empty map still show — and it draws on top of the preview dots, which is the highlight.
+	const activeLoc = getMapState().activeLocation;
 	if (activeLoc) {
+		const activeColor: [number, number, number, number] = [
+			ctx.activeLocationColor.r,
+			ctx.activeLocationColor.g,
+			ctx.activeLocationColor.b,
+			255,
+		];
 		const s = MARKER_STYLE[ctx.markerStyle];
 		layers.push(
 			new SDFMarkerLayer<Location>({
-				id: `${LOCATION_LAYER_ID}-current`,
+				id: `${LOCATION_LAYER_ID}-current-sdf`,
 				data: [activeLoc],
 				getPosition: (d) => [d.lng, d.lat],
 				shape: s.shape,
 				radiusPixels: s.radiusPixels * ctx.markerSize,
-				getFillColor: [
-					ctx.activeLocationColor.r,
-					ctx.activeLocationColor.g,
-					ctx.activeLocationColor.b,
-					255,
-				],
+				getFillColor: activeColor,
 				...(s.angle ? { getAngle: (d: Location) => -d.heading } : {}),
-				orderBase: order.base,
-				orderTotal: order.total,
-				pickable: false,
-				updateTriggers: { getAngle: [ctx.markerStyle] },
+				pickable: true,
+				updateTriggers: {
+					getAngle: [ctx.markerStyle],
+				},
 			}),
 		);
-		order.base += 1;
 	}
 
 	if (ctx.showPerfectScoreCircle && activeLoc && cm.totalCount > 0) {
@@ -338,7 +284,6 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				filled: true,
 				lineWidthPixels: 1,
 				pickable: false,
-				parameters: NO_DEPTH_WRITE,
 			}),
 		);
 	}
@@ -358,7 +303,6 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				getSourcePosition: (d) => d.from,
 				getTargetPosition: (d) => d.to,
 				getColor: [0, 0, 0],
-				parameters: NO_DEPTH_WRITE,
 			}),
 		);
 	}
@@ -376,7 +320,6 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				jointRounded: true,
 				capRounded: true,
 				pickable: false,
-				parameters: NO_DEPTH_WRITE,
 			}),
 		);
 	}
@@ -415,7 +358,6 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				jointRounded: true,
 				capRounded: true,
 				pickable: false,
-				parameters: NO_DEPTH_WRITE,
 			}),
 		);
 	}

@@ -3161,6 +3161,11 @@ input.date-picker__trigger:focus {
 	color: #fff;
 	background: #2932e1;
 }
+.badge--yandex {
+	background: #fc3f1d;
+	color: #fff;
+}
+
 .badge--tencent {
 	color: #fff;
 	background: #0051da;
@@ -5812,6 +5817,10 @@ div:has(> div.gmnoprint > div.gm-style-cc [title="Keyboard shortcuts"]) {
 }
 
 /* Street View providers sidebar */
+.providers-sidebar__global {
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--pu-divider, #333);
+}
 .providers-sidebar__tabs {
 	display: flex;
 	flex-wrap: wrap;

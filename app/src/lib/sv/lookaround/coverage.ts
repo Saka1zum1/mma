@@ -9,14 +9,13 @@
  * stack is not blocked by vector paint; canvases fill in asynchronously.
  * Raster tiles use native getTileUrl and need no custom load timing.
  */
-import { PbfReader } from "pbf";
-import { VectorTile } from "@mapbox/vector-tile";
 import { google } from "@/lib/sv/opensv";
 import {
 	getProviderSettings,
 	isProviderEnabled,
 	subscribeProvidersSettings,
 } from "@/lib/sv/providers/settings";
+import { vectorTileFromBytes } from "@/lib/sv/providers/pbfCompat";
 import {
 	bumpProviderCoverageLayers,
 	registerProviderLineLayers,
@@ -148,7 +147,7 @@ async function paintMvtTile(
 	const buf = await fetchMvt(srcZ, wrapX(srcX, srcZ), srcY, signal);
 	if (!buf || signal.aborted) return;
 
-	const tile = new VectorTile(new PbfReader(new Uint8Array(buf)));
+	const tile = vectorTileFromBytes(new Uint8Array(buf));
 	const layer = tile.layers.panos;
 	if (!layer) return;
 

@@ -17,6 +17,11 @@ import {
 } from "@/lib/geo/tiles";
 import { BUILTIN_STYLE_MAP } from "@/lib/geo/mapStyles";
 import { createCompositeMapType } from "@/lib/geo/stackedMapType";
+import { createpetalBasemapLayer, type petalBasemapLanguage } from "@/lib/geo/petalTiles";
+import { createYandexBasemapLayer } from "@/lib/sv/yandex/basemap";
+import type { YandexBasemapLanguage } from "@/lib/sv/yandex/endpoints";
+import { normalizeYandexBasemapLanguage } from "@/lib/sv/yandex/endpoints";
+import { getAltBasemapSettings } from "@/lib/sv/providers/settings";
 import { getProviderLineLayers } from "@/lib/sv/providers/coverageLayers";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 
@@ -57,10 +62,37 @@ export function createSvConfigForPrefs(prefs: MapEmbedPrefs, useBlobby: boolean)
 			});
 }
 
+/** Resolve Petal basemap from shared altBasemapSettings. */
+export function resolvepetalBasemap(): {
+	enabled: boolean;
+	language: petalBasemapLanguage;
+} {
+	const s = getAltBasemapSettings().petal;
+	return {
+		enabled: s.enabled,
+		language: s.language === "zh" ? "zh" : "en",
+	};
+}
+
+/** Resolve Yandex basemap from shared altBasemapSettings. */
+export function resolveYandexBasemap(): {
+	enabled: boolean;
+	language: YandexBasemapLanguage;
+} {
+	const s = getAltBasemapSettings().yandex;
+	return {
+		enabled: s.enabled,
+		language: normalizeYandexBasemapLanguage(s.language),
+	};
+}
+
 export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackResult {
+	const petal = resolvepetalBasemap();
+	const yandexBm = resolveYandexBasemap();
 	const tileSize = new google.maps.Size(256, 256);
 	const layers: google.maps.ImageMapType[] = [];
 	const legacyMap = prefs.mapStyleName === "legacy" && prefs.mapType === "map";
+	const altBasemap = petal.enabled || yandexBm.enabled;
 
 	const extraStyles: MapStyle[] = [];
 	const builtinStyles = BUILTIN_STYLE_MAP[prefs.mapStyleName as keyof typeof BUILTIN_STYLE_MAP];
@@ -106,7 +138,11 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 		});
 	}
 
-	if (prefs.mapType === "satellite") {
+	if (petal.enabled && prefs.mapType === "map") {
+		layers.push(createpetalBasemapLayer(petal.language));
+	} else if (yandexBm.enabled && prefs.mapType === "map") {
+		layers.push(createYandexBasemapLayer(yandexBm.language));
+	} else if (prefs.mapType === "satellite") {
 		const cfg = createSatelliteTileConfig();
 		layers.push(
 			new google.maps.ImageMapType({
@@ -212,7 +248,7 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 	// Provider blue-line coverage: same construction + stack band as Google SV.
 	layers.push(...getProviderLineLayers());
 
-	if (prefs.showLabels && prefs.mapType !== "osm") {
+	if (prefs.showLabels && prefs.mapType !== "osm" && !altBasemap) {
 		const labelCfg =
 			prefs.mapType === "satellite"
 				? createSatelliteLabelsTileConfig(extraStyles)

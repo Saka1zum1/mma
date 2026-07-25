@@ -16,6 +16,7 @@ import { tweenPov } from "@/lib/sv/tweenPov";
 import { type PanoReference, nearestLinkHeading, followLinkedPanos } from "@/lib/sv/lookup";
 import { toast } from "@/lib/util/toast";
 import { downloadPano } from "@/lib/sv/panoDownload";
+import { getLocationProvider } from "@/lib/sv/providers/types";
 import { isVirtualLocation } from "@/types";
 import { reviewNext, reviewPrev } from "@/lib/review/review";
 import { registerMapKeyActionHandler } from "@/lib/map/mapKeyBindings";
@@ -37,6 +38,8 @@ interface LocationHotkeyDeps {
 	setPendingTags: Dispatch<SetStateAction<string[]>>;
 	fullscreenContainerRef: RefObject<HTMLDivElement | null>;
 	panoContainerRef: RefObject<HTMLDivElement | null>;
+	/** Active Street View / Apple / Yandex proxy. Falls back to Google singleton. */
+	panoramaRef?: RefObject<google.maps.StreetViewPanorama | null | undefined>;
 	handleSave: () => void;
 	handleClose: () => void;
 	handleDelete: () => void;
@@ -56,12 +59,17 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		setPendingTags,
 		fullscreenContainerRef,
 		panoContainerRef,
+		panoramaRef,
 		handleSave,
 		handleClose,
 		handleDelete,
 		handleReturnToSpawn,
 		handleDateChange,
 	} = deps;
+
+	const getPano = useEffectEvent(
+		() => panoramaRef?.current ?? singletonPano,
+	);
 
 	useHotkey(useBinding("locationSave"), () => {
 		if (location) handleSave();
@@ -82,49 +90,53 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleReturnToSpawn();
 	});
 	useHotkey(useBinding("pointNorth"), () => {
-		if (singletonPano) {
-			cancelTweenRef.current?.();
-			const h = singletonPano.getPov().heading;
-			if (Math.abs(h) < 1 && Math.abs(singletonPano.getPov().pitch) < 1) {
-				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: -90 });
-			} else {
-				cancelTweenRef.current = tweenPov(singletonPano, { heading: 0, pitch: 0 });
-			}
+		const pano = getPano();
+		if (!pano) return;
+		cancelTweenRef.current?.();
+		const h = pano.getPov().heading;
+		if (Math.abs(h) < 1 && Math.abs(pano.getPov().pitch) < 1) {
+			cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: -90 });
+		} else {
+			cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: 0 });
 		}
 	});
 	useHotkey(useBinding("centerRoad"), () => {
-		if (!singletonPano) return;
-		const headings = (singletonPano.getLinks() ?? [])
+		const pano = getPano();
+		if (!pano) return;
+		const headings = (pano.getLinks() ?? [])
 			.map((l) => l?.heading)
 			.filter((h): h is number => h != null);
-		const nearest = nearestLinkHeading(headings, singletonPano.getPov().heading);
+		const nearest = nearestLinkHeading(headings, pano.getPov().heading);
 		if (nearest == null) return;
 		cancelTweenRef.current?.();
-		cancelTweenRef.current = tweenPov(singletonPano, { heading: nearest, pitch: 0 });
+		cancelTweenRef.current = tweenPov(pano, { heading: nearest, pitch: 0 });
 	});
 	useHotkey(useBinding("spin180"), () => {
-		if (singletonPano) {
-			cancelTweenRef.current?.();
-			const pov = singletonPano.getPov();
-			cancelTweenRef.current = tweenPov(singletonPano, {
-				heading: (pov.heading + 180) % 360,
-				pitch: pov.pitch,
-			});
-		}
+		const pano = getPano();
+		if (!pano) return;
+		cancelTweenRef.current?.();
+		const pov = pano.getPov();
+		cancelTweenRef.current = tweenPov(pano, {
+			heading: (pov.heading + 180) % 360,
+			pitch: pov.pitch,
+		});
 	});
 	const canZoom = () => getSettings().defaultMovementMode !== "nmpz";
 	useHotkey(useBinding("zoomIn"), () => {
-		if (singletonPano && canZoom()) {
-			singletonPano.setZoom(Math.min(PANO_ZOOM.max, Math.max(0, singletonPano.getZoom()) + 1));
+		const pano = getPano();
+		if (pano && canZoom()) {
+			pano.setZoom(Math.min(PANO_ZOOM.max, Math.max(0, pano.getZoom()) + 1));
 		}
 	});
 	useHotkey(useBinding("zoomOut"), () => {
-		if (singletonPano && canZoom()) {
-			singletonPano.setZoom(Math.max(0, singletonPano.getZoom() - 1));
+		const pano = getPano();
+		if (pano && canZoom()) {
+			pano.setZoom(Math.max(0, pano.getZoom() - 1));
 		}
 	});
 	useHotkey(useBinding("panoZoomReset"), () => {
-		if (singletonPano && canZoom()) singletonPano.setZoom(PANO_ZOOM.min);
+		const pano = getPano();
+		if (pano && canZoom()) pano.setZoom(PANO_ZOOM.min);
 	});
 	useHotkey(
 		useBinding("copyLink"),
@@ -156,8 +168,13 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	});
 
 	useHotkey(useBinding("downloadPanoTile"), () => {
-		const panoId = singletonPano?.getPano();
-		if (panoId) downloadPano(panoId);
+		const panoId = getPano()?.getPano() ?? selectedPanoId ?? location?.panoId ?? null;
+		if (!panoId) return;
+		if (location) {
+			void downloadPano(panoId, { location, provider: getLocationProvider(location) });
+		} else {
+			void downloadPano(panoId);
+		}
 	});
 	useHotkey(useBinding("nextPanoDate"), () => {
 		if (!panoDates.length) return;
@@ -176,9 +193,10 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		handleDateChange(panoDates[prev].pano);
 	});
 	useHotkey(useBinding("followRoad"), () => {
-		if (!singletonPano) return;
-		const panoId = singletonPano.getPano();
-		const heading = singletonPano.getPov().heading;
+		const pano = getPano();
+		if (!pano) return;
+		const panoId = pano.getPano();
+		const heading = pano.getPov().heading;
 		if (!panoId) return;
 		const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
 		if (container) toast("Following road...", 1500, container);
@@ -193,7 +211,8 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	});
 
 	useHotkey(useBinding("refreshPano"), () => {
-		if (!singletonPano || !location) return;
+		// Google Street View only — Apple / Yandex use dedicated PSV sessions.
+		if (!singletonPano || !location || getPano() !== singletonPano) return;
 		const panoId = singletonPano.getPano();
 		const pov = singletonPano.getPov();
 		const zoom = singletonPano.getZoom();
@@ -210,7 +229,8 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 	});
 
 	useHotkey(useBinding("viewportLock"), () => {
-		if (singletonPano) toggleViewportLock(singletonPano);
+		const pano = getPano();
+		if (pano) toggleViewportLock(pano);
 	});
 
 	const quicktagSlot = (idx: number) => {

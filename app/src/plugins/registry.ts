@@ -57,14 +57,14 @@ export function isPluginCompatible(minAppVersion: string | undefined, appVersion
 	return !minAppVersion || cmpVersion(appVersion, minAppVersion) >= 0;
 }
 
-// An installed plugin is updatable when both its installed version and the registry's
-// version are known and differ. The registry only moves forward, so any mismatch means
-// a newer build is published. Empty/unknown versions never prompt an update.
+// An installed plugin is updatable when the registry has a NEWER version than what
+// is installed. If installed is newer than registry (e.g. side-loaded), no update
+// is needed. Empty/unknown versions never prompt an update.
 export function isPluginUpdatable(
 	installedVersion: string | undefined,
 	latestVersion: string | undefined,
 ): boolean {
-	return !!installedVersion && !!latestVersion && installedVersion !== latestVersion;
+	return !!installedVersion && !!latestVersion && cmpVersion(latestVersion, installedVersion) > 0;
 }
 
 // A plugin needs updating when its JS version drifts OR its sidecar drifts. A registry

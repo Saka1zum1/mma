@@ -14,6 +14,9 @@ import { stripBaidu } from "@/lib/sv/baidu/prefix";
 import { renderTencentLocationImage, stitchTencentPano } from "@/lib/sv/tencent/panoDownload";
 import { resolveTencentNear } from "@/lib/sv/tencent/api";
 import { stripTencent } from "@/lib/sv/tencent/prefix";
+import { renderYandexLocationImage, stitchYandexPano } from "@/lib/sv/yandex/panoDownload";
+import { resolveYandexNear } from "@/lib/sv/yandex/api";
+import { stripYandex } from "@/lib/sv/yandex/prefix";
 import {
 	renderLookaroundLocationImage,
 	stitchLookaroundPano,
@@ -143,6 +146,8 @@ export async function downloadPano(
 			canvas = await stitchBaiduPano(panoId, zoom);
 		} else if (provider === "tencent") {
 			canvas = await stitchTencentPano(panoId, zoom);
+		} else if (provider === "yandex") {
+			canvas = await stitchYandexPano(panoId);
 		} else if (provider === "apple") {
 			if (!opts.location) throw new Error("Look Around download needs a location");
 			canvas = await stitchLookaroundPano(opts.location, panoId, zoom);
@@ -162,7 +167,9 @@ export async function downloadPano(
 				? stripBaidu(panoId)
 				: provider === "tencent"
 					? stripTencent(panoId)
-					: panoId;
+					: provider === "yandex"
+						? stripYandex(panoId)
+						: panoId;
 		a.download = `${fileStem || panoId}.jpg`;
 		a.click();
 		URL.revokeObjectURL(a.href);
@@ -250,8 +257,12 @@ async function renderGoogleLocationImage(
 /** Modes unsupported for a provider — skip without counting as download failure. */
 export function shouldSkipPanoDownload(loc: Location, config: PanoDownloadConfig): boolean {
 	const provider = getLocationProvider(loc);
-	if (config.mode === "tile" && provider !== "google") return true;
-	if (config.mode === "thumbnail" && provider === "apple") return true;
+	// Thumbnail: Google / Baidu / Tencent only.
+	if (config.mode === "thumbnail" && (provider === "apple" || provider === "yandex")) {
+		return true;
+	}
+	// Tile: Google / Yandex / Baidu / Tencent (not Apple).
+	if (config.mode === "tile" && provider === "apple") return true;
 	return false;
 }
 
@@ -265,6 +276,7 @@ async function renderLocationImage(
 	const provider = getLocationProvider(loc);
 	if (provider === "baidu") return renderBaiduLocationImage(loc, panoId, config);
 	if (provider === "tencent") return renderTencentLocationImage(loc, panoId, config);
+	if (provider === "yandex") return renderYandexLocationImage(loc, panoId, config);
 	if (provider === "apple") return renderLookaroundLocationImage(loc, panoId, config);
 	return renderGoogleLocationImage(loc, panoId, meta, config);
 }
@@ -303,6 +315,7 @@ async function resolveMissingPanoIds(
 	const google: Location[] = [];
 	const baidu: Location[] = [];
 	const tencent: Location[] = [];
+	const yandex: Location[] = [];
 	const apple: Location[] = [];
 	for (const loc of locations) {
 		switch (getLocationProvider(loc)) {
@@ -311,6 +324,9 @@ async function resolveMissingPanoIds(
 				break;
 			case "tencent":
 				tencent.push(loc);
+				break;
+			case "yandex":
+				yandex.push(loc);
 				break;
 			case "apple":
 				apple.push(loc);
@@ -339,17 +355,21 @@ async function resolveMissingPanoIds(
 	}
 
 	await runConcurrent(
-		[...baidu, ...tencent, ...apple],
+		[...baidu, ...tencent, ...yandex, ...apple],
 		async (loc) => {
 			signal?.throwIfAborted();
 			try {
 				const prov = getLocationProvider(loc);
 				if (prov === "baidu") {
-					const meta = await resolveBaiduNear(loc.lat, loc.lng);
+					const meta = await resolveBaiduNear(loc.lat, loc.lng, 50);
 					if (meta?.id) resolved.set(loc.id, meta.id);
 					else failed.push(loc.id);
 				} else if (prov === "tencent") {
-					const meta = await resolveTencentNear(loc.lat, loc.lng);
+					const meta = await resolveTencentNear(loc.lat, loc.lng, 50);
+					if (meta?.id) resolved.set(loc.id, meta.id);
+					else failed.push(loc.id);
+				} else if (prov === "yandex") {
+					const meta = await resolveYandexNear(loc.lat, loc.lng, 50);
 					if (meta?.id) resolved.set(loc.id, meta.id);
 					else failed.push(loc.id);
 				} else {
@@ -397,7 +417,7 @@ export async function bulkDownloadPanoramas(
 	const pending = locations.flatMap((loc) => {
 		const panoId = loc.panoId ?? resolvedMap.get(loc.id);
 		if (!panoId) return [];
-		// Skip unsupported provider/mode pairs (non-Google tile, Apple thumbnail).
+		// Skip unsupported provider/mode pairs (see shouldSkipPanoDownload).
 		if (shouldSkipPanoDownload(loc, config)) return [];
 		return [{ loc, panoId }];
 	});

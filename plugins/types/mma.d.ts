@@ -22,6 +22,7 @@ export interface Plugin {
     icon: string;
     comingSoon?: boolean;
     core?: boolean;
+    experimental?: boolean;
     settings?: PluginSettingDef[];
     /** Keep the sidebar mounted (hidden) when the user leaves plugin mode.
      *  Only for plugins whose state can't be serialized (e.g. an iframe). */
@@ -33,12 +34,6 @@ export interface Plugin {
     sidebar?: ComponentType<{
         onClose: () => void;
     }>;
-    /** Toolbar button that toggles on/off (no sidebar). */
-    toolbarToggle?: {
-        getActive: () => boolean;
-        onToggle: () => void;
-        subscribe?: (cb: () => void) => () => void;
-    };
     locationPanel?: ComponentType;
 }
 export type PluginBehavior = Partial<Plugin> & {
@@ -110,6 +105,12 @@ declare const commands: {
     checkBorderFile: (level: string) => Promise<boolean>;
     downloadBorderFile: (level: string) => Promise<null>;
     borderLookup: (lat: number, lng: number, level: string) => Promise<PolygonGeometry | null>;
+    /**
+     *  Classify each `(lat, lng)` to the name of its containing feature at `level`
+     *  (subdivision names for "adm1"). `None` for points outside every feature.
+     *  Same bbox-prefiltered parallel scan as `tally_countries`, but per-point names.
+     */
+    borderClassify: (level: string, points: ([number, number])[]) => Promise<(string | null)[]>;
     /**
      *  Finds the nearest city/country for a coordinate. O(log n) k-d tree lookup.
      *  Always returns `Some` -- the GeoNames dataset covers every landmass.
@@ -209,8 +210,6 @@ declare const commands: {
      *  `level` selects border precision, falling back to "light" if unavailable.
      */
     storeCountryDistribution: (level: string) => Promise<[string, number][]>;
-    /**  Return the number of alive locations (batch + adds - dead). */
-    storeLocationCount: () => Promise<number>;
     /**
      *  Compute the bounding box [west, south, east, north]. O(N).
      *  When `selected_only` is true, restricts to the current selection.
@@ -224,11 +223,6 @@ declare const commands: {
      *  already-covered spots) pay one IPC round-trip, not one per point.
      */
     storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
-    /**
-     *  Hit-test markers at a point, returning covering markers topmost-first.
-     *  `zoom` is Google-scale; `marker_style`/`size_scale` must match the rendering surface.
-     */
-    storePick: (lat: number, lng: number, zoom: number, markerStyle: string, sizeScale: number) => Promise<PickHit[]>;
     /**
      *  Collect all distinct values for an `extra` field across all alive locations. O(N).
      *  Used by the filter UI to populate dropdown options.
@@ -408,6 +402,25 @@ declare const commands: {
     storeReviewList: (mapId: string, status: string | null) => Promise<ReviewSession[]>;
     storeReviewUpdate: (update: ReviewUpdate) => Promise<null>;
     storeReviewDelete: (id: string) => Promise<null>;
+    remoteMappingGet: (provider: string, mapId: string) => Promise<RemoteMappingRow[]>;
+    remoteMappingUpsert: (provider: string, mapId: string, rows: RemoteMappingRow[]) => Promise<null>;
+    remoteMappingDelete: (provider: string, mapId: string, localIds: number[]) => Promise<null>;
+    remoteMappingClear: (provider: string, mapId: string) => Promise<null>;
+    /**
+     *  Reconcile a linked, open map against its remote. Snapshots local state under the store lock,
+     *  drops the lock, then does all network + persistence off the async thread.
+     */
+    syncReconcile: (provider: string, mapId: string, remoteMapId: string, apiKey: string | null, firstSync: FirstSyncMode | null, resolutions: ([string, ResolutionSide])[] | null) => Promise<SyncReconcileResult>;
+    /**
+     *  Open the GeoGuessr sign-in window and wait for a `_ncfa` cookie to appear.
+     *  Returns the signed-in nickname.
+     */
+    geoguessrLogin: () => Promise<string>;
+    /**  The signed-in user, or `None` when there is no session (or it was rejected). */
+    geoguessrMe: () => Promise<GgUser | null>;
+    geoguessrLogout: () => Promise<null>;
+    /**  Local-only check: is a token stored? Says nothing about its validity. */
+    geoguessrHasSession: () => Promise<boolean>;
     /**
      *  Commit the map's uncommitted changes and return the new commit id.
      *  `message` None auto-generates a `+a -r ~m` summary.
@@ -491,6 +504,20 @@ type ComparisonType = {
 } | {
     type: "categorical";
 };
+type Conflict = {
+    key: string;
+    kind: ConflictKind;
+    /**  Base value is not persisted (only its hash), so conflicts surface local vs remote. */
+    local: NormalizedSyncLocation | null;
+    remote: NormalizedSyncLocation | null;
+};
+type ConflictKind = 
+/**  Both sides modified the same location differently. */
+"update-update" | 
+/**  One side deleted while the other modified. */
+"delete-update" | 
+/**  Both sides added the same identity with different content (hash collision only). */
+"add-add";
 /**  Result of a cross-map location copy. `target_name` feeds the toast. */
 type CopyToMapResult = {
     copied: number;
@@ -611,6 +638,11 @@ type FieldCount = {
  *  union, so the TS `FilterOp` type and `OP_LABELS` derive from this enum.
  */
 type FilterOp = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "between" | "between_anyyear" | "between_anytime" | "has" | "nothas" | "contains" | "notcontains";
+/**
+ *  First-sync seeding when both sides already have pins. Only meaningful on the first sync
+ *  (empty mapping); afterwards it's plain three-way. `Merge` never deletes.
+ */
+type FirstSyncMode = "merge" | "mirrorFromRemote" | "mirrorFromLocal";
 /**  Reverse geocode result: nearest populated place to a coordinate. */
 type GeoResult = {
     city: string;
@@ -619,6 +651,13 @@ type GeoResult = {
     country: string;
     /**  ISO 3166-1 alpha-2 (e.g. "US", "FR"). */
     country_code: string;
+};
+/**  The signed-in GeoGuessr account. */
+type GgUser = {
+    id: string;
+    nick: string;
+    /**  Avatar pin path (e.g. `pin/<hash>.png`), served under `/images/` on geoguessr.com. */
+    pin: string | null;
 };
 /**
  *  Summary of a single map found during bulk import preview.
@@ -838,12 +877,31 @@ type AltProviderSettings = {
     lineWidthScale?: number;
     pointSizeScale?: number;
 };
-/** Per-provider toggles; future providers can be added without migrating existing maps. */
+/** One alternate basemap provider slot (Petal or Yandex). */
+type AltBasemapSlot = {
+    enabled?: boolean;
+    /** Petal: `"en"` | `"zh"`. Yandex: `"ru_RU"` | `"en_RU"` | `"en_US"` | `"uk_UA"` | `"ru_UA"` | `"tr_TR"`. */
+    language?: string;
+};
+/**
+ * Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
+ * (at most one `enabled: true` at a time); the frontend enforces that on write.
+ */
+type AltBasemapSettings = {
+    petal?: AltBasemapSlot;
+    yandex?: AltBasemapSlot;
+};
+/**
+ * Google is the host default and is not configured here. Each key is optional so
+ * future providers can be added without migrating existing maps.
+ */
 type ProvidersSettings = {
     apple?: AltProviderSettings | null;
     baidu?: AltProviderSettings | null;
     tencent?: AltProviderSettings | null;
     yandex?: AltProviderSettings | null;
+    /** Shared Petal / Yandex basemap toggles (not per-provider). */
+    altBasemapSettings?: AltBasemapSettings | null;
 };
 /**
  *  Per-map editor preferences. Controls Street View lookup behavior (official vs
@@ -896,6 +954,22 @@ type MutationResult = {
         [key in number]: Tag;
     } | null;
 } & StoreStatus;
+/**
+ *  The syncable contract: the only fields that participate in diffing. Everything else is
+ *  owned by exactly one side and would register as a phantom change.
+ */
+type NormalizedSyncLocation = {
+    lat: number;
+    lng: number;
+    heading: number;
+    pitch: number;
+    zoom: number;
+    panoId: string | null;
+    /**  Remote-meaningful bits only; virtual bits are stripped. */
+    flags: number;
+    /**  Tag names, deduped and sorted. Empty for providers with no tag support. */
+    tags: string[];
+};
 /**  Equal-width bin sizing. `count` derives the width from the data range; `width` fixes it. */
 type NumericBinning = {
     by: "count";
@@ -913,14 +987,6 @@ type PartitionBucket = {
     ids: number[];
     bin: [number, number] | null;
 };
-/**
- *  One marker under the cursor. `selected` = drawn in the selection overlay
- *  (or as the active marker), i.e. above every base cell marker.
- */
-type PickHit = {
-    id: number;
-    selected: boolean;
-};
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 type PluginManifest_Deserialize = {
@@ -930,6 +996,7 @@ type PluginManifest_Deserialize = {
     icon: string;
     main: string;
     version: string;
+    experimental: boolean;
     sidecar: PluginSidecar_Deserialize | null;
 };
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
@@ -940,6 +1007,7 @@ type PluginManifest = {
     icon: string;
     main: string;
     version: string;
+    experimental?: boolean;
     sidecar?: PluginSidecar | null;
 };
 /**  A plugin's declared sidecar binary (downloaded from GitHub Releases on install). */
@@ -975,6 +1043,27 @@ type PresenceActivity = {
     smallText: string | null;
     /**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
     start: number | null;
+};
+/**
+ *  A remote-originated create for JS to apply. `remote_id` is the handle its mapping row must
+ *  carry once created (a positional push reindexes to its desired-document position).
+ */
+type PullCreate = {
+    fields: NormalizedSyncLocation;
+    remoteId: number;
+    hash: string;
+};
+/**  A remote-originated update for JS to apply to an existing local id. */
+type PullUpdate = {
+    localId: number;
+    patch: SyncPatch;
+};
+/**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
+type RemoteMappingRow = {
+    localId: number;
+    /**  Remote ids can exceed u32 (observed ~1.2e10), so i64. */
+    remoteId: number;
+    hash: string;
 };
 /**
  *  Incremental render update sent to JS after a mutation. Contains adds, position/heading
@@ -1022,6 +1111,8 @@ type RenderRequest = {
     markerStyle?: string;
     markerColor?: [number, number, number] | null;
 };
+/**  Which side won a resolved conflict; serialized as "local"/"remote". */
+type ResolutionSide = "local" | "remote";
 /**
  *  Inbound payload for creating a session. `order` is the frozen worklist (must be non-empty);
  *  the cursor starts at its first id and `reviewed` starts empty.
@@ -1228,6 +1319,11 @@ type SelectionSync = {
     bitmask: number[] | null;
     selectedCount: number;
 };
+type SideCounts = {
+    create: number;
+    update: number;
+    delete: number;
+};
 type SpacedPickResult = {
     ids: number[];
     distanceM: number;
@@ -1258,6 +1354,36 @@ type SummaryResult = {
     locationCount: number;
     version: number;
     dirtyCount: number;
+};
+/**
+ *  Only the fields a pull genuinely changes. A field the provider cannot represent reads as empty
+ *  on the remote side and must not overwrite local data, so absent fields are left untouched.
+ *  `pano_id` applies only when `pano_id_set` is true (a cleared panoId is a real change to `null`).
+ */
+type SyncPatch = {
+    lat: number | null;
+    lng: number | null;
+    heading: number | null;
+    pitch: number | null;
+    zoom: number | null;
+    panoIdSet: boolean;
+    panoId: string | null;
+    flags: number | null;
+    tags: string[] | null;
+};
+/**  Everything the reconcile settled to, for the JS side. Every array is empty on an unchanged map. */
+type SyncReconcileResult = {
+    /**  Remote-applied counts; mirror-from-local deletes fold into `delete`. */
+    pushed: SideCounts;
+    /**  Local-applied counts; mirror-from-remote deletes fold into `delete`. */
+    pulled: SideCounts;
+    adopted: number;
+    conflicts: Conflict[];
+    neededTags: string[];
+    pullCreates: PullCreate[];
+    pullUpdates: PullUpdate[];
+    pullDeleteIds: number[];
+    mirrorLocalDeleteIds: number[];
 };
 /**
  *  A user-defined label that can be applied to any number of locations.
@@ -1431,81 +1557,54 @@ declare enum ValidationState {
     GoodcamAvailable = 6
 }
 
-/** Fires when Rust sends incremental render changes (adds/removes/patches to cell buffers). */
-declare const renderDeltaBus: {
-    on: (fn: (delta: RenderDelta) => void) => () => void;
-    emit: (delta: RenderDelta) => void;
-};
-export type SelectionBitmaskHandler = (selColors: [number, number, number][], cellEntries: SelCellEntry[], setIds: (ids: SelectedIds) => void) => void;
-/** Fires when selection bitmasks are resolved. Subscribers apply per-cell masks to the render overlay. */
-declare const selBitmaskBus: {
-    on: (fn: SelectionBitmaskHandler) => () => void;
-    emit: SelectionBitmaskHandler;
-};
-
-/** Subscribe to any store mutation (map open/close, rename, edits, ...). */
-declare const subscribeStore: (fn: () => void) => () => void;
-/** Reactive list of all maps (metadata only). */
-declare const useMapList: () => MapMeta[];
-/** The list of all maps (metadata only). */
-declare const getMapList: () => MapMeta[];
-/** Re-fetch the map list from the database. */
-declare function invalidateMapList(): Promise<void>;
-/** Parsed-but-not-committed import shown while `workArea === "import"`. */
-export interface ImportStaging {
-    preview: EditorImportPreview;
-    source: "file" | "paste";
+export interface MapState {
+    mapId: string | null;
+    /** Persisted identity slice (metadata + settings). Changes rarely. */
+    map: MapData | null;
+    locationCount: number;
+    canUndo: boolean;
+    canRedo: boolean;
+    /** All tags by id, including soft-deleted ghosts (visible=false, kept for undo revival). */
+    tags: Record<number, Tag>;
+    /** Per-tag location counts for the open map, keyed by tag id. */
+    tagCounts: Record<number, number>;
+    /** Resolved count per selection node (top-level and nested), keyed by `Selection.key`.
+     *  The sole source for sidebar counts — refreshed wholesale from Rust on every sync. */
+    selectionCounts: Record<string, number>;
+    /** Extra-field keys known to exist in location data on the current map.
+     *  Populated from `StoreStatus.knownFieldKeys` on map open, extended
+     *  incrementally via `MutationResult.newFieldDefs`. */
+    knownFieldKeys: ReadonlySet<string>;
+    selections: Selection[];
+    /** Keys of selections that are "ghosted": kept in the list but excluded from the
+     *  Rust sync, so they neither render nor count toward the selected set. Ephemeral. */
+    ghostedSelections: ReadonlySet<string>;
+    selectedLocationIds: SelectedIds;
+    activeLocationId: number | null;
+    /** The location open in the editor, or null. Virtual locations (staged
+     *  imports, seen previews) live here with negative ids. */
+    activeLocation: Location | null;
+    duplicateLocations: Location[];
+    workArea: WorkArea;
+    activePluginId: string | null;
 }
-/** Ephemeral commit-diff overlay shown while `workArea === "diff"`. Position arrays are
- *  interleaved `[lng, lat]` f32; `diffMarkerVersion` bumps to rebuild the layers. */
-export interface CommitDiffPreview {
-    commitId: string;
-    hash: string;
-    counts: CommitDiff;
-    added: Float32Array;
-    removed: Float32Array;
-    modified: Float32Array;
-}
-/** Reactive per-tag location counts for the open map, keyed by tag id. */
-declare const useTagCounts: () => Record<number, number>;
-/** Per-tag location counts for the open map, keyed by tag id. */
-declare function getTagCounts(): Record<number, number>;
-/** Re-render everything derived from map content. Called automatically by `mutate`. */
-declare function refreshAfterMutation(): void;
-/** Reactive open map (metadata + settings), or null when no map is open. */
-declare const useCurrentMap: () => MapData | null;
-/** Tags that exist from the user's point of view. Raw `meta.tags` also holds soft-deleted ghosts (count=0, visible=false, kept for undo revival) — almost nothing outside the undo/revival machinery should enumerate those. */
+/** Reactive slice of the map state. Re-renders only when the selected value's
+ *  reference changes (`Object.is`), so selectors must return state fields or
+ *  cached derivations — never construct a value per call. */
+declare function useMapState<T>(selector: (s: MapState) => T): T;
+/** Imperative snapshot of the map state. */
+declare function getMapState(): Readonly<MapState>;
+/** Tags that exist from the user's point of view. Raw `tags` also holds soft-deleted ghosts (count=0, visible=false, kept for undo revival) — almost nothing outside the undo/revival machinery should enumerate those. */
 declare const getVisibleTags: () => Tag[];
-declare const useVisibleTags: () => Tag[];
 /** Raw by-id tag lookup — includes soft-deleted ghosts so stale references
  *  (e.g. a selection whose tag just died) still resolve to a name. */
 declare function getTag(id: number): Tag | undefined;
-/** Reactive counter bumped on every map-content change; subscribe to re-render on any edit. */
-declare const useMapVersion: () => number;
-/** Reactive set of all currently selected location ids. */
-declare const useSelectedLocationIds: () => SelectedIds;
-/** Reactive location currently open in the editor, or null. */
-declare const useActiveLocation: () => Location | null;
-/** Reactive locations shown in the duplicate-resolution panel. */
-declare const useDuplicateLocations: () => Location[];
-/** Reactive editor pane: "overview" | "location" | "duplicates" | "import" | "plugin". */
-declare const useWorkArea: () => WorkArea;
-declare const useImportStaging: () => ImportStaging | null;
-declare const useImportMarkerVersion: () => number;
-declare function getImportPreviewPositions(): Float32Array<ArrayBuffer>;
-declare const useCommitDiffPreview: () => CommitDiffPreview | null;
-declare const useDiffMarkerVersion: () => number;
-declare function getCommitDiffPreview(): CommitDiffPreview | null;
-declare function hasCommitDiff(): boolean;
-declare function useCommitDiff(): {
-    added: number;
-    removed: number;
-    modified: number;
-};
-/** Number of uncommitted changes (the overlay size). */
-declare function getDirtyCount(): Promise<number>;
 /** Schedule an autosave shortly. Mutations call this automatically; debounced. */
 declare function scheduleSave(): void;
+declare function cancelAutosave(): void;
+declare function waitForInflightPersist(): Promise<void> | null;
+/** Background auto-commit after an import with autoCommit set. */
+declare function scheduleAutoCommit(mapId: string, importedCount: number): void;
 /** Save any unsaved changes now instead of waiting for the autosave timer. */
 declare function flushSave(): Promise<void>;
 /** One-time store startup. The app calls this; plugins never need to. */
@@ -1518,102 +1617,30 @@ declare const mapOpen: {
     mark(phase: string): void;
 };
 /** Open a map in this window, closing any currently open map first. */
-declare function openMap(id: string): Promise<void>;
+declare function openMap$1(id: string): Promise<void>;
 /** Close the open map, saving unsaved changes first. */
-declare function closeMap(): Promise<void>;
+declare function closeMap$1(): Promise<void>;
 /** Drop the open map without persisting anything */
 declare function discardOpenMap(): void;
-/** Id of the open map, or null. */
-declare function getCurrentMapId(): string | null;
-/** The open map (metadata + settings), or null. */
-declare function getCurrentMap(): MapData | null;
-/** Returns the set of extra-field keys known to exist on the current map. */
-declare function getKnownFieldKeys(): ReadonlySet<string>;
-/** Reactive hook for `knownFieldKeys`. Re-renders when keys are added. */
-declare const useKnownFieldKeys: () => ReadonlySet<string>;
-/** The location currently open in the editor, or null. */
-declare function getActiveLocation(): Location | null;
 /** Fetch every location in the map. */
 declare function fetchAllLocations(): Promise<Location[]>;
 /** Fetch one location by id, or null if it doesn't exist. */
 declare function fetchLocation(id: number): Promise<Location | null>;
 /** Fetch locations by id (missing ids are skipped). Prefer this over per-id fetches. */
 declare function fetchLocationsByIds(ids: number[]): Promise<Location[]>;
-/** All selections including ghosted. Only for rendering/UI that needs the full list. */
-declare function getAllSelections(): Selection[];
 /** Active (non-ghosted) selections, the default for any operational logic. */
-declare const getSelections: () => Selection[];
-/** The set of all currently selected location ids (the union of all selections). */
-declare function getSelectedLocationIds(): SelectedIds;
+declare const getActiveSelections: () => Selection[];
 /** Overwrite the selected-id set directly, bypassing selection resolution. Rarely what you want -- prefer `addSelections`. */
 declare function setSelectedLocationIds(ids: SelectedIds): void;
-/** @internal Test-only. Forces a full selection re-resolve in Rust and returns
- *  the raw selected IDs. App code should use getSelectedLocationIds() instead —
- *  mutations already sync selections via MutationResult. */
-declare function syncSelections(): Promise<{
-    ids: number[];
-}>;
-/** The user-facing "which locations" concept: Rust's mechanical Scope widened with
- *  saved selections, which resolve to ids in JS (Rust never sees saved definitions). */
-export type SourceScope = Scope | {
-    kind: "saved";
-    id: string;
-};
-export interface ScopeController<S extends SourceScope = Scope> {
-    scope: S;
-    setScope(s: S): void;
-    allCount: number;
-    selectionCount: number;
-    /** Opt-in: ScopeSelector offers saved selections. Only for consumers that
-     *  narrow via resolveScopeIds rather than passing the scope to Rust. */
-    saved?: boolean;
-}
-/** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side). */
-declare function applyScope<T extends {
-    id: number;
-}>(scope: Scope, pool: T[]): T[];
-/** The id-set a scope narrows to, or null for "all". Saved scopes resolve in Rust. */
-declare function resolveScopeIds(scope: SourceScope): Promise<{
-    has(id: number): boolean;
-    size: number;
-} | null>;
-/** Group the scoped location set by a derived key — entirely in Rust, no locations fetched.
- *  Numeric bins arrive in bound order; projection keys are sorted naturally for display. */
-declare function partition(field: string, key: KeySpec, scope: Scope): Promise<PartitionBucket[]>;
-/** Reactive scope state + live counts, owned by the calling React component. Defaults to
- *  the current selection when one exists at mount, else all locations. Use this for plugins
- *  whose scope lives entirely in a React sidebar; reach for `createScope` when an imperative
- *  renderer (e.g. a deck.gl overlay) outside React also needs to read the scope. */
-declare function useScope(initial?: Scope): ScopeController;
-/** A per-consumer scope store that lives outside React, so an imperative renderer can read it
- *  synchronously and subscribe to changes while a React sidebar drives it via `use()`. Mirrors
- *  the module-store + hook idiom (cf. settings). Isolated per call — one consumer's choice never
- *  leaks into another's. */
-export interface ScopeHandle {
-    get(): Scope;
-    set(scope: Scope): void;
-    subscribe(listener: () => void): () => void;
-    /** React view of this handle: re-renders on change, with live counts. */
-    use(): ScopeController;
-}
-/** A standalone "all locations vs current selection" switch, for features that operate on a subset. */
-declare function createScope(initial?: Scope): ScopeHandle;
-/** Create a new empty map and return its metadata. */
-declare function createMap(name: string, folder?: string | null): Promise<MapMeta>;
-/** Permanently delete a map and all its data. Not undoable. */
-declare function deleteMap(id: string): Promise<void>;
-declare function renameFolder(from: string, to: string): Promise<void>;
-declare function moveMapToFolder(mapId: string, folder: string | null): Promise<void>;
-declare function deleteFolder(name: string): Promise<void>;
 declare function renameMap(id: string, name: string): Promise<void>;
 declare function updateMapLabels(id: string, labels: string[]): Promise<void>;
-declare function updateMapMeta(patch: MapMetaPatch_Deserialize): Promise<void>;
+declare function updateMapMeta(patch: MapMetaPatch_Deserialize): Promise<void> | undefined;
 /** Replace the map's extra-field definitions (types/labels for `Location.extra` keys). */
 declare function setMapExtraFields(fields: Record<string, ExtraFieldDef>): Promise<void>;
-/** Decode the inline bitmask bytes from Rust and emit to selBitmaskBus. */
+/** Decode the inline bitmask bytes from Rust and emit to the event bus. */
 declare function emitBitmask(bytes: number[]): void;
-/** Await a mutation IPC, emit its render delta, sync JS state, and schedule a save. */
-declare function mutate(p: Promise<MutationResult>): Promise<MutationResult>;
+/** Run a mutation IPC, emit its render delta, sync JS state, and schedule a save. */
+declare function mutate(fn: () => Promise<MutationResult>): Promise<MutationResult>;
 /** Add locations to the map. Rust assigns real ids and they are written back into
  *  the passed objects -- build with `createLocation` (id 0) and read `loc.id` after. Undoable. */
 declare function addLocations(locs: Location[], opts?: {
@@ -1634,18 +1661,6 @@ declare function updateLocations(updates: Update<LocationPatch_Deserialize>[], o
 declare function renameField(from: string, to: string, winner?: MergeWinner): Promise<void>;
 /** Delete extra-field `key` from every location, its definition, and references. */
 declare function deleteField(key: string): Promise<void>;
-/** All selections including ghosted. Only for rendering/UI that needs the full list. */
-declare const useAllSelections: () => Selection[];
-/** Active (non-ghosted) selections — the default for any operational logic. */
-declare const useSelections: () => Selection[];
-/** Keyed per-node selection counts (by `Selection.key`). Look up a row's count by its key. */
-declare const useSelectionCounts: () => Record<string, number>;
-/** Per-selection location counts, keyed by `Selection.key`. */
-declare function getSelectionCounts(): Record<string, number>;
-/** Reactive set of ghosted (temporarily excluded) selection keys. */
-declare const useGhostedSelections: () => ReadonlySet<string>;
-/** The set of ghosted (temporarily excluded) selection keys. */
-declare const getGhostedSelections: () => ReadonlySet<string>;
 /** Toggle a selection's ghosted state and re-sync (excludes/includes it from the overlay). */
 declare function toggleGhostSelection(key: string): Promise<void>;
 /** "Solo" a selection: ghost every other top-level selection, keep this one visible.
@@ -1681,20 +1696,6 @@ declare function selectSpacedFromSelection(opts: {
     picked: number;
     distanceM: number;
 }>;
-/** Select every location in the map. */
-declare function selectEverything(): Promise<void>;
-/** Select locations that have no tags. */
-declare function selectUntagged(): Promise<void>;
-/** Select locations with no heading set (heading 0). */
-declare function selectUnpanned(): Promise<void>;
-/** Select locations pinned to a specific panorama (panoId set). */
-declare function selectPanoIds(): Promise<void>;
-/** Select locations NOT pinned to a specific panorama (no panoId). */
-declare function selectNotPanoIds(): Promise<void>;
-/** Select locations added or modified since the last commit. */
-declare function selectUncommitted(): Promise<void>;
-/** Select locations that have another location within `distance` metres. */
-declare function selectDuplicates(distance: number): Promise<void>;
 /** Read-only preview of transitive duplicate groups (size >= 2) within `distance` metres. */
 declare function previewDuplicateGroups(distance: number): Promise<number[][]>;
 /** Merge each transitive duplicate group into one survivor (tags unioned). One undoable edit. */
@@ -1705,14 +1706,6 @@ declare function mergeDuplicates(distance: number): Promise<void>;
  * get a +5 score bonus. Returns the number pruned.
  */
 declare function pruneDuplicates(props: SelectionProps, distance: number): Promise<number>;
-/** Select all locations carrying a tag. */
-declare function selectTag(tagId: number): Promise<void>;
-/** Select locations inside a polygon. */
-declare function selectPolygon(polygon: PolygonGeometry, includeInformational?: boolean): Promise<void>;
-/** Select locations matching a field filter (e.g. `country == "FR"`, `altitude > 100`). */
-declare function selectFilter(field: string, op: FilterOp, value: unknown, value2?: unknown, tzLocal?: boolean): Promise<void>;
-/** Select the `k` locations with the highest (or lowest) value of a numeric field. */
-declare function selectTopK(field: string, k: number, ascending: boolean): Promise<void>;
 /** Edit an existing filter (or any selection) in place by key, preserving its
  *  position inside any AND/OR/Invert composite. Carries ghost state to the new key. */
 declare function updateFilterSelection(oldKey: string, props: SelectionProps): Promise<void>;
@@ -1733,7 +1726,9 @@ declare function decomposeChild(parentKey: string, childKey: string): void;
 declare function removeChildFromSelection(parentKey: string, childKey: string): void;
 /** Toggle tag selections on/off for the given tags (used by tag-pill clicks). */
 declare function toggleTagSelections(tagIds: number[]): void;
-declare const useSelectedTagIds: () => ReadonlySet<number>;
+/** Tag ids that currently have a Tag selection (cached; keyed on the selection list,
+ *  identity-stable while the set of ids is unchanged). */
+declare const getSelectedTagIds: () => ReadonlySet<number>;
 /** Open a staged-import location read-only, "as if" it were active. The location becomes
  *  virtual (negative id; ImportPreview flag) so identity and mutate-guards derive from it. */
 declare function openStagedLocation(index: number): Promise<void>;
@@ -1751,14 +1746,11 @@ declare function openDuplicateLocation(loc: Location): void;
 declare function removeDuplicate(id: number): void;
 /** Close the duplicate-resolution panel and return to the overview. */
 declare function closeDuplicates(): void;
-/** Switch the editor pane (overview, location, duplicates, import, plugin). */
+/** Transition the editor pane, enforcing state invariants:
+ *  leaving "location" clears the active location, leaving "plugin" clears the plugin id. */
 declare function setWorkArea(area: WorkArea): void;
 declare function toggleProvidersMode(): void;
 declare function exitProvidersMode(): void;
-/** Reactive id of the plugin whose sidebar is open, or null. */
-declare const useActivePluginId: () => string | null;
-/** The current editor pane. */
-declare function getWorkArea(): WorkArea;
 /** Open a plugin's sidebar (switches the editor pane to "plugin"). */
 declare function setPluginMode(pluginId: string): void;
 /** Close the plugin sidebar and return to the overview. */
@@ -1782,128 +1774,53 @@ declare function addTagToLocations(tagId: number, locationIds: number[]): Promis
 declare function removeTagFromLocations(tagId: number, locationIds: number[]): Promise<void>;
 /** Remove a tag from every location that has it. Undoable. */
 declare function removeTagFromAllLocations(tagId: number): Promise<void>;
-/** Import from a known file path. Used by file picker and drag-and-drop. */
-declare function beginImportFromPath(path: string): Promise<void>;
-/** Stage pasted text for preview. Throws if no locations are found. */
-declare function beginImportPaste(text: string): Promise<void>;
-/** Pick a file, stage it for preview. No-op if the picker is cancelled. */
-declare function beginImportFile(): Promise<void>;
-/** Commit the staged import, optionally dropping fields and applying a bulk tag. */
-declare function confirmImport(droppedFields: string[], tagName?: string): Promise<EditorImportResult | null>;
-/** Discard the staged import without committing. */
-declare function cancelImport(): void;
 /** Undo the last edit. */
 declare function undo(): Promise<void>;
 /** Redo the last undone edit. */
 declare function redo(): Promise<void>;
-/** Whether undo/redo are currently available. */
-declare function getUndoRedoState(): {
-    canUndo: boolean;
-    canRedo: boolean;
-};
-declare const useUndoRedo: () => {
-    canUndo: boolean;
-    canRedo: boolean;
-};
 /** Bake overlay, write the commit delta, create a VCS commit. Resets undo stack. */
 declare function commitMap(message?: string): Promise<string>;
-/** Interleave `[lng, lat]` pairs into an f32 buffer for deck.gl. */
-declare function diffPositions(locs: LatLng[]): Float32Array;
-/** Split a commit delta into added / removed / modified. An updated location appears in
- *  both `created` (new) and `removed` (old), keyed by id. */
-declare function categorizeCommitDelta<T extends {
-    id: number;
-}>(delta: {
-    created: T[];
-    removed: T[];
-}): {
-    added: T[];
-    removed: T[];
-    modified: T[];
-};
-/** Fetch a commit's delta and overlay its added/removed/modified locations on the map,
- *  temporarily replacing the regular markers. */
-declare function beginCommitDiffPreview(commit: CommitInfo): Promise<void>;
-/** Leave commit-diff preview and restore the regular markers. */
-declare function endCommitDiffPreview(): void;
 /** Restore the map to a previous commit's state and reopen it. Clears undo/redo. */
 declare function checkoutCommit(commitId: string): Promise<void>;
 
-export type store_CommitDiffPreview = CommitDiffPreview;
-export type store_ImportStaging = ImportStaging;
-export type store_ScopeController<S extends SourceScope = Scope> = ScopeController<S>;
-export type store_ScopeHandle = ScopeHandle;
-export type store_SourceScope = SourceScope;
+export type store_MapState = MapState;
 declare const store_addLocations: typeof addLocations;
 declare const store_addSelections: typeof addSelections;
 declare const store_addTagToLocations: typeof addTagToLocations;
-declare const store_applyScope: typeof applyScope;
-declare const store_beginCommitDiffPreview: typeof beginCommitDiffPreview;
-declare const store_beginImportFile: typeof beginImportFile;
-declare const store_beginImportFromPath: typeof beginImportFromPath;
-declare const store_beginImportPaste: typeof beginImportPaste;
-declare const store_cancelImport: typeof cancelImport;
-declare const store_categorizeCommitDelta: typeof categorizeCommitDelta;
+declare const store_cancelAutosave: typeof cancelAutosave;
 declare const store_checkoutCommit: typeof checkoutCommit;
 declare const store_closeDuplicates: typeof closeDuplicates;
-declare const store_closeMap: typeof closeMap;
 declare const store_commitMap: typeof commitMap;
 declare const store_composeSelections: typeof composeSelections;
-declare const store_confirmImport: typeof confirmImport;
-declare const store_createMap: typeof createMap;
-declare const store_createScope: typeof createScope;
 declare const store_createTags: typeof createTags;
 declare const store_decomposeChild: typeof decomposeChild;
 declare const store_deleteField: typeof deleteField;
-declare const store_deleteFolder: typeof deleteFolder;
-declare const store_deleteMap: typeof deleteMap;
 declare const store_deleteTags: typeof deleteTags;
-declare const store_diffPositions: typeof diffPositions;
 declare const store_discardOpenMap: typeof discardOpenMap;
 declare const store_duplicateLocation: typeof duplicateLocation;
 declare const store_emitBitmask: typeof emitBitmask;
-declare const store_endCommitDiffPreview: typeof endCommitDiffPreview;
 declare const store_exitPluginMode: typeof exitPluginMode;
 declare const store_exitProvidersMode: typeof exitProvidersMode;
 declare const store_fetchAllLocations: typeof fetchAllLocations;
 declare const store_fetchLocation: typeof fetchLocation;
 declare const store_fetchLocationsByIds: typeof fetchLocationsByIds;
 declare const store_flushSave: typeof flushSave;
-declare const store_getActiveLocation: typeof getActiveLocation;
-declare const store_getAllSelections: typeof getAllSelections;
-declare const store_getCommitDiffPreview: typeof getCommitDiffPreview;
-declare const store_getCurrentMap: typeof getCurrentMap;
-declare const store_getCurrentMapId: typeof getCurrentMapId;
-declare const store_getDirtyCount: typeof getDirtyCount;
-declare const store_getGhostedSelections: typeof getGhostedSelections;
-declare const store_getImportPreviewPositions: typeof getImportPreviewPositions;
-declare const store_getKnownFieldKeys: typeof getKnownFieldKeys;
-declare const store_getMapList: typeof getMapList;
-declare const store_getSelectedLocationIds: typeof getSelectedLocationIds;
-declare const store_getSelectionCounts: typeof getSelectionCounts;
-declare const store_getSelections: typeof getSelections;
+declare const store_getActiveSelections: typeof getActiveSelections;
+declare const store_getMapState: typeof getMapState;
+declare const store_getSelectedTagIds: typeof getSelectedTagIds;
 declare const store_getTag: typeof getTag;
-declare const store_getTagCounts: typeof getTagCounts;
-declare const store_getUndoRedoState: typeof getUndoRedoState;
 declare const store_getVisibleTags: typeof getVisibleTags;
-declare const store_getWorkArea: typeof getWorkArea;
-declare const store_hasCommitDiff: typeof hasCommitDiff;
 declare const store_initStore: typeof initStore;
-declare const store_invalidateMapList: typeof invalidateMapList;
 declare const store_isolateSelection: typeof isolateSelection;
 declare const store_mapOpen: typeof mapOpen;
 declare const store_mergeDuplicates: typeof mergeDuplicates;
-declare const store_moveMapToFolder: typeof moveMapToFolder;
 declare const store_mutate: typeof mutate;
 declare const store_openDuplicateLocation: typeof openDuplicateLocation;
-declare const store_openMap: typeof openMap;
 declare const store_openStagedLocation: typeof openStagedLocation;
-declare const store_partition: typeof partition;
 declare const store_previewDuplicateGroups: typeof previewDuplicateGroups;
 declare const store_previewVirtualLocation: typeof previewVirtualLocation;
 declare const store_pruneDuplicates: typeof pruneDuplicates;
 declare const store_redo: typeof redo;
-declare const store_refreshAfterMutation: typeof refreshAfterMutation;
 declare const store_removeChildFromSelection: typeof removeChildFromSelection;
 declare const store_removeDuplicate: typeof removeDuplicate;
 declare const store_removeLocations: typeof removeLocations;
@@ -1911,32 +1828,18 @@ declare const store_removeSelections: typeof removeSelections;
 declare const store_removeTagFromAllLocations: typeof removeTagFromAllLocations;
 declare const store_removeTagFromLocations: typeof removeTagFromLocations;
 declare const store_renameField: typeof renameField;
-declare const store_renameFolder: typeof renameFolder;
 declare const store_renameMap: typeof renameMap;
-declare const store_renderDeltaBus: typeof renderDeltaBus;
 declare const store_reorderSelection: typeof reorderSelection;
 declare const store_reorderTags: typeof reorderTags;
 declare const store_resetSelections: typeof resetSelections;
 declare const store_resolveLocation: typeof resolveLocation;
-declare const store_resolveScopeIds: typeof resolveScopeIds;
+declare const store_scheduleAutoCommit: typeof scheduleAutoCommit;
 declare const store_scheduleSave: typeof scheduleSave;
-declare const store_selBitmaskBus: typeof selBitmaskBus;
-declare const store_selectDuplicates: typeof selectDuplicates;
-declare const store_selectEverything: typeof selectEverything;
-declare const store_selectFilter: typeof selectFilter;
 declare const store_selectIntersection: typeof selectIntersection;
 declare const store_selectInverse: typeof selectInverse;
-declare const store_selectNotPanoIds: typeof selectNotPanoIds;
-declare const store_selectPanoIds: typeof selectPanoIds;
-declare const store_selectPolygon: typeof selectPolygon;
 declare const store_selectRandomFromSelection: typeof selectRandomFromSelection;
 declare const store_selectSpacedFromSelection: typeof selectSpacedFromSelection;
-declare const store_selectTag: typeof selectTag;
-declare const store_selectTopK: typeof selectTopK;
-declare const store_selectUncommitted: typeof selectUncommitted;
 declare const store_selectUnion: typeof selectUnion;
-declare const store_selectUnpanned: typeof selectUnpanned;
-declare const store_selectUntagged: typeof selectUntagged;
 declare const store_setActiveLocation: typeof setActiveLocation;
 declare const store_setMapExtraFields: typeof setMapExtraFields;
 declare const store_setPluginMode: typeof setPluginMode;
@@ -1944,8 +1847,6 @@ declare const store_setPolygonName: typeof setPolygonName;
 declare const store_setSelectedLocationIds: typeof setSelectedLocationIds;
 declare const store_setSelectionColors: typeof setSelectionColors;
 declare const store_setWorkArea: typeof setWorkArea;
-declare const store_subscribeStore: typeof subscribeStore;
-declare const store_syncSelections: typeof syncSelections;
 declare const store_toggleGhostAllSelections: typeof toggleGhostAllSelections;
 declare const store_toggleGhostSelection: typeof toggleGhostSelection;
 declare const store_toggleManualSelection: typeof toggleManualSelection;
@@ -1957,37 +1858,19 @@ declare const store_updateLocations: typeof updateLocations;
 declare const store_updateMapLabels: typeof updateMapLabels;
 declare const store_updateMapMeta: typeof updateMapMeta;
 declare const store_updateTags: typeof updateTags;
-declare const store_useActiveLocation: typeof useActiveLocation;
-declare const store_useActivePluginId: typeof useActivePluginId;
-declare const store_useAllSelections: typeof useAllSelections;
-declare const store_useCommitDiff: typeof useCommitDiff;
-declare const store_useCommitDiffPreview: typeof useCommitDiffPreview;
-declare const store_useCurrentMap: typeof useCurrentMap;
-declare const store_useDiffMarkerVersion: typeof useDiffMarkerVersion;
-declare const store_useDuplicateLocations: typeof useDuplicateLocations;
-declare const store_useGhostedSelections: typeof useGhostedSelections;
-declare const store_useImportMarkerVersion: typeof useImportMarkerVersion;
-declare const store_useImportStaging: typeof useImportStaging;
-declare const store_useKnownFieldKeys: typeof useKnownFieldKeys;
-declare const store_useMapList: typeof useMapList;
-declare const store_useMapVersion: typeof useMapVersion;
-declare const store_useScope: typeof useScope;
-declare const store_useSelectedLocationIds: typeof useSelectedLocationIds;
-declare const store_useSelectedTagIds: typeof useSelectedTagIds;
-declare const store_useSelectionCounts: typeof useSelectionCounts;
-declare const store_useSelections: typeof useSelections;
-declare const store_useTagCounts: typeof useTagCounts;
-declare const store_useUndoRedo: typeof useUndoRedo;
-declare const store_useVisibleTags: typeof useVisibleTags;
-declare const store_useWorkArea: typeof useWorkArea;
+declare const store_useMapState: typeof useMapState;
+declare const store_waitForInflightPersist: typeof waitForInflightPersist;
 declare namespace store {
-  export { store_addLocations as addLocations, store_addSelections as addSelections, store_addTagToLocations as addTagToLocations, store_applyScope as applyScope, store_beginCommitDiffPreview as beginCommitDiffPreview, store_beginImportFile as beginImportFile, store_beginImportFromPath as beginImportFromPath, store_beginImportPaste as beginImportPaste, store_cancelImport as cancelImport, store_categorizeCommitDelta as categorizeCommitDelta, store_checkoutCommit as checkoutCommit, store_closeDuplicates as closeDuplicates, store_closeMap as closeMap, store_commitMap as commitMap, store_composeSelections as composeSelections, store_confirmImport as confirmImport, store_createMap as createMap, store_createScope as createScope, store_createTags as createTags, store_decomposeChild as decomposeChild, store_deleteField as deleteField, store_deleteFolder as deleteFolder, store_deleteMap as deleteMap, store_deleteTags as deleteTags, store_diffPositions as diffPositions, store_discardOpenMap as discardOpenMap, store_duplicateLocation as duplicateLocation, store_emitBitmask as emitBitmask, store_endCommitDiffPreview as endCommitDiffPreview, store_exitPluginMode as exitPluginMode, store_exitProvidersMode as exitProvidersMode, store_fetchAllLocations as fetchAllLocations, store_fetchLocation as fetchLocation, store_fetchLocationsByIds as fetchLocationsByIds, store_flushSave as flushSave, store_getActiveLocation as getActiveLocation, store_getAllSelections as getAllSelections, store_getCommitDiffPreview as getCommitDiffPreview, store_getCurrentMap as getCurrentMap, store_getCurrentMapId as getCurrentMapId, store_getDirtyCount as getDirtyCount, store_getGhostedSelections as getGhostedSelections, store_getImportPreviewPositions as getImportPreviewPositions, store_getKnownFieldKeys as getKnownFieldKeys, store_getMapList as getMapList, store_getSelectedLocationIds as getSelectedLocationIds, store_getSelectionCounts as getSelectionCounts, store_getSelections as getSelections, store_getTag as getTag, store_getTagCounts as getTagCounts, store_getUndoRedoState as getUndoRedoState, store_getVisibleTags as getVisibleTags, store_getWorkArea as getWorkArea, store_hasCommitDiff as hasCommitDiff, store_initStore as initStore, store_invalidateMapList as invalidateMapList, store_isolateSelection as isolateSelection, store_mapOpen as mapOpen, store_mergeDuplicates as mergeDuplicates, store_moveMapToFolder as moveMapToFolder, store_mutate as mutate, store_openDuplicateLocation as openDuplicateLocation, store_openMap as openMap, store_openStagedLocation as openStagedLocation, store_partition as partition, store_previewDuplicateGroups as previewDuplicateGroups, store_previewVirtualLocation as previewVirtualLocation, store_pruneDuplicates as pruneDuplicates, store_redo as redo, store_refreshAfterMutation as refreshAfterMutation, store_removeChildFromSelection as removeChildFromSelection, store_removeDuplicate as removeDuplicate, store_removeLocations as removeLocations, store_removeSelections as removeSelections, store_removeTagFromAllLocations as removeTagFromAllLocations, store_removeTagFromLocations as removeTagFromLocations, store_renameField as renameField, store_renameFolder as renameFolder, store_renameMap as renameMap, store_renderDeltaBus as renderDeltaBus, store_reorderSelection as reorderSelection, store_reorderTags as reorderTags, store_resetSelections as resetSelections, store_resolveLocation as resolveLocation, store_resolveScopeIds as resolveScopeIds, store_scheduleSave as scheduleSave, store_selBitmaskBus as selBitmaskBus, store_selectDuplicates as selectDuplicates, store_selectEverything as selectEverything, store_selectFilter as selectFilter, store_selectIntersection as selectIntersection, store_selectInverse as selectInverse, store_selectNotPanoIds as selectNotPanoIds, store_selectPanoIds as selectPanoIds, store_selectPolygon as selectPolygon, store_selectRandomFromSelection as selectRandomFromSelection, store_selectSpacedFromSelection as selectSpacedFromSelection, store_selectTag as selectTag, store_selectTopK as selectTopK, store_selectUncommitted as selectUncommitted, store_selectUnion as selectUnion, store_selectUnpanned as selectUnpanned, store_selectUntagged as selectUntagged, store_setActiveLocation as setActiveLocation, store_setMapExtraFields as setMapExtraFields, store_setPluginMode as setPluginMode, store_setPolygonName as setPolygonName, store_setSelectedLocationIds as setSelectedLocationIds, store_setSelectionColors as setSelectionColors, store_setWorkArea as setWorkArea, store_subscribeStore as subscribeStore, store_syncSelections as syncSelections, store_toggleGhostAllSelections as toggleGhostAllSelections, store_toggleGhostSelection as toggleGhostSelection, store_toggleManualSelection as toggleManualSelection, store_toggleProvidersMode as toggleProvidersMode, store_toggleTagSelections as toggleTagSelections, store_undo as undo, store_updateFilterSelection as updateFilterSelection, store_updateLocations as updateLocations, store_updateMapLabels as updateMapLabels, store_updateMapMeta as updateMapMeta, store_updateTags as updateTags, store_useActiveLocation as useActiveLocation, store_useActivePluginId as useActivePluginId, store_useAllSelections as useAllSelections, store_useCommitDiff as useCommitDiff, store_useCommitDiffPreview as useCommitDiffPreview, store_useCurrentMap as useCurrentMap, store_useDiffMarkerVersion as useDiffMarkerVersion, store_useDuplicateLocations as useDuplicateLocations, store_useGhostedSelections as useGhostedSelections, store_useImportMarkerVersion as useImportMarkerVersion, store_useImportStaging as useImportStaging, store_useKnownFieldKeys as useKnownFieldKeys, store_useMapList as useMapList, store_useMapVersion as useMapVersion, store_useScope as useScope, store_useSelectedLocationIds as useSelectedLocationIds, store_useSelectedTagIds as useSelectedTagIds, store_useSelectionCounts as useSelectionCounts, store_useSelections as useSelections, store_useTagCounts as useTagCounts, store_useUndoRedo as useUndoRedo, store_useVisibleTags as useVisibleTags, store_useWorkArea as useWorkArea };
-  export type { store_CommitDiffPreview as CommitDiffPreview, store_ImportStaging as ImportStaging, store_ScopeController as ScopeController, store_ScopeHandle as ScopeHandle, store_SourceScope as SourceScope };
+  export { store_addLocations as addLocations, store_addSelections as addSelections, store_addTagToLocations as addTagToLocations, store_cancelAutosave as cancelAutosave, store_checkoutCommit as checkoutCommit, store_closeDuplicates as closeDuplicates, closeMap$1 as closeMap, store_commitMap as commitMap, store_composeSelections as composeSelections, store_createTags as createTags, store_decomposeChild as decomposeChild, store_deleteField as deleteField, store_deleteTags as deleteTags, store_discardOpenMap as discardOpenMap, store_duplicateLocation as duplicateLocation, store_emitBitmask as emitBitmask, store_exitPluginMode as exitPluginMode, store_exitProvidersMode as exitProvidersMode, store_fetchAllLocations as fetchAllLocations, store_fetchLocation as fetchLocation, store_fetchLocationsByIds as fetchLocationsByIds, store_flushSave as flushSave, store_getActiveSelections as getActiveSelections, store_getMapState as getMapState, store_getSelectedTagIds as getSelectedTagIds, store_getTag as getTag, store_getVisibleTags as getVisibleTags, store_initStore as initStore, store_isolateSelection as isolateSelection, store_mapOpen as mapOpen, store_mergeDuplicates as mergeDuplicates, store_mutate as mutate, store_openDuplicateLocation as openDuplicateLocation, openMap$1 as openMap, store_openStagedLocation as openStagedLocation, store_previewDuplicateGroups as previewDuplicateGroups, store_previewVirtualLocation as previewVirtualLocation, store_pruneDuplicates as pruneDuplicates, store_redo as redo, store_removeChildFromSelection as removeChildFromSelection, store_removeDuplicate as removeDuplicate, store_removeLocations as removeLocations, store_removeSelections as removeSelections, store_removeTagFromAllLocations as removeTagFromAllLocations, store_removeTagFromLocations as removeTagFromLocations, store_renameField as renameField, store_renameMap as renameMap, store_reorderSelection as reorderSelection, store_reorderTags as reorderTags, store_resetSelections as resetSelections, store_resolveLocation as resolveLocation, store_scheduleAutoCommit as scheduleAutoCommit, store_scheduleSave as scheduleSave, store_selectIntersection as selectIntersection, store_selectInverse as selectInverse, store_selectRandomFromSelection as selectRandomFromSelection, store_selectSpacedFromSelection as selectSpacedFromSelection, store_selectUnion as selectUnion, store_setActiveLocation as setActiveLocation, store_setMapExtraFields as setMapExtraFields, store_setPluginMode as setPluginMode, store_setPolygonName as setPolygonName, store_setSelectedLocationIds as setSelectedLocationIds, store_setSelectionColors as setSelectionColors, store_setWorkArea as setWorkArea, store_toggleGhostAllSelections as toggleGhostAllSelections, store_toggleGhostSelection as toggleGhostSelection, store_toggleManualSelection as toggleManualSelection, store_toggleProvidersMode as toggleProvidersMode, store_toggleTagSelections as toggleTagSelections, store_undo as undo, store_updateFilterSelection as updateFilterSelection, store_updateLocations as updateLocations, store_updateMapLabels as updateMapLabels, store_updateMapMeta as updateMapMeta, store_updateTags as updateTags, store_useMapState as useMapState, store_waitForInflightPersist as waitForInflightPersist };
+  export type { store_MapState as MapState };
 }
 
 /** Prompt for GeoJSON file(s) and add their polygons as selections. */
 declare function loadGeoJSON(): Promise<void>;
 
+declare const requiresMap: () => boolean;
+declare const hasSelection: () => boolean;
+declare const hasAnySelections: () => boolean;
 /** Every editor command (palette entries; all are hotkey-bindable in Settings). */
 declare const COMMANDS: {
     save: {
@@ -2003,22 +1886,22 @@ declare const COMMANDS: {
         label: string;
         icon: string;
         group: "Map";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     copyToMap: {
         label: string;
         icon: string;
         group: "Map";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     quickCopyToMap: {
         label: string;
         icon: string;
         group: "Map";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     undo: {
         label: string;
@@ -2040,74 +1923,74 @@ declare const COMMANDS: {
         label: string;
         icon: string;
         group: "Map";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     "open-history": {
         label: string;
         icon: string;
         group: "Map";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     "open-seen": {
         label: string;
         icon: string;
         group: "Map";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     "toggle-seen-overlay": {
         label: string;
         icon: string;
         group: "Map";
         execute: () => void;
-        enabled: () => boolean;
+        enabled: typeof requiresMap;
     };
     selectAll: {
         label: string;
         icon: string;
         group: "Selections";
         defaultBinding: string;
-        execute: typeof selectEverything;
+        execute: () => Promise<void>;
     };
     "select-untagged": {
         label: string;
         icon: string;
         group: "Selections";
         aliases: string[];
-        execute: typeof selectUntagged;
+        execute: () => Promise<void>;
     };
     "select-unpanned": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: typeof selectUnpanned;
+        execute: () => Promise<void>;
     };
     "select-panoid": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: typeof selectPanoIds;
+        execute: () => Promise<void>;
     };
     "select-no-panoid": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: typeof selectNotPanoIds;
+        execute: () => Promise<void>;
     };
     "select-uncommitted": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: typeof selectUncommitted;
+        execute: () => Promise<void>;
     };
     "select-reviewed": {
         label: string;
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
-        enabled: () => boolean;
+        enabled: typeof requiresMap;
     };
     "invert-selection": {
         label: string;
@@ -2147,63 +2030,63 @@ declare const COMMANDS: {
         group: "Selections";
         defaultBinding: string;
         execute: typeof resetSelections;
-        enabled: () => boolean;
+        enabled: typeof hasAnySelections;
     };
     "find-duplicates": {
         label: string;
         icon: string;
         group: "Selections";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "merge-duplicates": {
         label: string;
         icon: string;
         group: "Selections";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "filter-by-metadata": {
         label: string;
         icon: string;
         group: "Selections";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "top-k": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: () => boolean;
+        execute: () => void;
     };
     "review-selected": {
         label: string;
         icon: string;
         group: "Selections";
-        enabled: () => boolean;
-        execute: () => boolean;
+        enabled: typeof hasSelection;
+        execute: () => void;
     };
     "review-sessions": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: () => boolean;
+        execute: () => void;
     };
     "select-random": {
         label: string;
         icon: string;
         group: "Selections";
         aliases: string[];
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof hasSelection;
     };
     "select-spaced": {
         label: string;
         icon: string;
         group: "Selections";
         aliases: string[];
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof hasSelection;
     };
     "ghost-selections": {
         label: string;
@@ -2211,26 +2094,26 @@ declare const COMMANDS: {
         group: "Selections";
         aliases: string[];
         execute: () => Promise<void>;
-        enabled: () => boolean;
+        enabled: typeof hasAnySelections;
     };
     "save-selections": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof hasAnySelections;
     };
     "apply-saved-selection": {
         label: string;
         icon: string;
         group: "Selections";
-        execute: () => boolean;
+        execute: () => void;
     };
     "selection-delete-locations": {
         label: string;
         icon: string;
         group: "Selections";
-        enabled: () => boolean;
+        enabled: typeof hasSelection;
         execute: () => void;
     };
     "bulk-validate": {
@@ -2238,49 +2121,49 @@ declare const COMMANDS: {
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "bulk-enrich": {
         label: string;
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "bulk-set-field": {
         label: string;
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "bulk-clear-fields": {
         label: string;
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "bulk-pin-pano": {
         label: string;
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "bulk-heading-road": {
         label: string;
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "bulk-download-panoramas": {
         label: string;
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
-        execute: () => boolean;
+        execute: () => void;
     };
     "delete-selected-tags": {
         label: string;
@@ -2300,24 +2183,24 @@ declare const COMMANDS: {
         icon: string;
         group: "Tags";
         aliases: string[];
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     "apply-field-as-tags": {
         label: string;
         icon: string;
         group: "Tags";
         aliases: string[];
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
     "assign-doclinks": {
         label: string;
         icon: string;
         group: "Tags";
         aliases: string[];
-        execute: () => boolean;
-        enabled: () => boolean;
+        execute: () => void;
+        enabled: typeof requiresMap;
     };
 };
 export type CommandId = keyof typeof COMMANDS;
@@ -2490,6 +2373,8 @@ declare const DEFAULTS: {
     fullscreenMinimapScale: number;
     showFullscreenTagbar: boolean;
     showFullscreenDatePicker: boolean;
+    showFullscreenReviewBar: boolean;
+    showFullscreenGeocode: boolean;
     customCss: string;
     enableSeen: boolean;
     enableSeenThumbnails: boolean;
@@ -2541,6 +2426,182 @@ declare const DEFAULTS: {
 };
 export type AppSettings = typeof DEFAULTS;
 declare function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void;
+
+/** Parsed-but-not-committed import shown while `workArea === "import"`. */
+export interface ImportStaging {
+    preview: EditorImportPreview;
+    source: "file" | "paste";
+}
+declare function getImportPreviewPositions(): Float32Array<ArrayBufferLike>;
+declare function getImportStaging(): ImportStaging | null;
+/** Reset import state (called when map edit state is cleared). */
+declare function resetImportState(): void;
+/** Import from a known file path. Used by file picker and drag-and-drop. */
+declare function beginImportFromPath(path: string): Promise<void>;
+/** Stage pasted text for preview. Throws if no locations are found. */
+declare function beginImportPaste(text: string): Promise<void>;
+/** Commit the staged import, optionally dropping fields and applying a bulk tag. */
+declare function confirmImport(droppedFields: string[], tagName?: string): Promise<EditorImportResult | null>;
+/** Discard the staged import without committing. */
+declare function cancelImport(): void;
+
+export type importStaging_ImportStaging = ImportStaging;
+declare const importStaging_beginImportFromPath: typeof beginImportFromPath;
+declare const importStaging_beginImportPaste: typeof beginImportPaste;
+declare const importStaging_cancelImport: typeof cancelImport;
+declare const importStaging_confirmImport: typeof confirmImport;
+declare const importStaging_getImportPreviewPositions: typeof getImportPreviewPositions;
+declare const importStaging_getImportStaging: typeof getImportStaging;
+declare const importStaging_resetImportState: typeof resetImportState;
+declare namespace importStaging {
+  export { importStaging_beginImportFromPath as beginImportFromPath, importStaging_beginImportPaste as beginImportPaste, importStaging_cancelImport as cancelImport, importStaging_confirmImport as confirmImport, importStaging_getImportPreviewPositions as getImportPreviewPositions, importStaging_getImportStaging as getImportStaging, importStaging_resetImportState as resetImportState };
+  export type { importStaging_ImportStaging as ImportStaging };
+}
+
+declare function hasCommitDiff(): boolean;
+/** Zero the cached counts (a commit just cleared the overlay). */
+declare function resetCommitDiffCounts(): void;
+declare function useCommitDiff(): CommitDiff;
+/** Ephemeral commit-diff overlay shown while `workArea === "diff"`. Position arrays are
+ *  interleaved `[lng, lat]` f32; `diff-markers:changed` fires to rebuild the layers. */
+export interface CommitDiffPreview {
+    commitId: string;
+    hash: string;
+    counts: CommitDiff;
+    added: Float32Array;
+    removed: Float32Array;
+    modified: Float32Array;
+}
+declare function getCommitDiffPreview(): CommitDiffPreview | null;
+/** Reset diff state (called when map edit state is cleared). */
+declare function resetCommitDiffState(): void;
+/** Interleave `[lng, lat]` pairs into an f32 buffer for deck.gl. */
+declare function diffPositions(locs: LatLng[]): Float32Array;
+/** Split a commit delta into added / removed / modified. An updated location appears in
+ *  both `created` (new) and `removed` (old), keyed by id. */
+declare function categorizeCommitDelta(delta: CommitDelta): {
+    added: Location[];
+    removed: Location[];
+    modified: Location[];
+};
+/** Fetch a commit's delta and overlay its added/removed/modified locations on the map,
+ *  temporarily replacing the regular markers. */
+declare function beginCommitDiffPreview(commit: CommitInfo): Promise<void>;
+/** Leave commit-diff preview and restore the regular markers. */
+declare function endCommitDiffPreview(): void;
+
+export type commitDiff_CommitDiffPreview = CommitDiffPreview;
+declare const commitDiff_beginCommitDiffPreview: typeof beginCommitDiffPreview;
+declare const commitDiff_categorizeCommitDelta: typeof categorizeCommitDelta;
+declare const commitDiff_diffPositions: typeof diffPositions;
+declare const commitDiff_endCommitDiffPreview: typeof endCommitDiffPreview;
+declare const commitDiff_getCommitDiffPreview: typeof getCommitDiffPreview;
+declare const commitDiff_hasCommitDiff: typeof hasCommitDiff;
+declare const commitDiff_resetCommitDiffCounts: typeof resetCommitDiffCounts;
+declare const commitDiff_resetCommitDiffState: typeof resetCommitDiffState;
+declare const commitDiff_useCommitDiff: typeof useCommitDiff;
+declare namespace commitDiff {
+  export { commitDiff_beginCommitDiffPreview as beginCommitDiffPreview, commitDiff_categorizeCommitDelta as categorizeCommitDelta, commitDiff_diffPositions as diffPositions, commitDiff_endCommitDiffPreview as endCommitDiffPreview, commitDiff_getCommitDiffPreview as getCommitDiffPreview, commitDiff_hasCommitDiff as hasCommitDiff, commitDiff_resetCommitDiffCounts as resetCommitDiffCounts, commitDiff_resetCommitDiffState as resetCommitDiffState, commitDiff_useCommitDiff as useCommitDiff };
+  export type { commitDiff_CommitDiffPreview as CommitDiffPreview };
+}
+
+/** The user-facing "which locations" concept: Rust's mechanical Scope widened with
+ *  saved selections, which resolve to ids in JS (Rust never sees saved definitions). */
+export type SourceScope = Scope | {
+    kind: "saved";
+    id: string;
+};
+export interface ScopeController<S extends SourceScope = Scope> {
+    scope: S;
+    setScope(s: S): void;
+    allCount: number;
+    selectionCount: number;
+    /** Opt-in: ScopeSelector offers saved selections. Only for consumers that
+     *  narrow via resolveScopeIds rather than passing the scope to Rust. */
+    saved?: boolean;
+}
+/** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side). */
+declare function applyScope(scope: Scope, pool: Location[]): Location[];
+/** The id-set a scope narrows to, or null for "all". Saved scopes resolve in Rust. */
+declare function resolveScopeIds(scope: SourceScope): Promise<{
+    has(id: number): boolean;
+    size: number;
+} | null>;
+/** Group the scoped location set by a derived key - entirely in Rust, no locations fetched.
+ *  Numeric bins arrive in bound order; projection keys are sorted naturally for display. */
+declare function partition(field: string, key: KeySpec, scope: Scope): Promise<PartitionBucket[]>;
+/** Reactive scope state + live counts, owned by the calling React component. Defaults to
+ *  the current selection when one exists at mount, else all locations. Use this for plugins
+ *  whose scope lives entirely in a React sidebar; reach for `createScope` when an imperative
+ *  renderer (e.g. a deck.gl overlay) outside React also needs to read the scope. */
+declare function useScope(initial?: Scope): ScopeController;
+/** A per-consumer scope store that lives outside React, so an imperative renderer can read it
+ *  synchronously and subscribe to changes while a React sidebar drives it via `use()`. Mirrors
+ *  the module-store + hook idiom (cf. settings). Isolated per call - one consumer's choice never
+ *  leaks into another's. */
+export interface ScopeHandle {
+    get(): Scope;
+    set(scope: Scope): void;
+    subscribe(listener: () => void): () => void;
+    /** React view of this handle: re-renders on change, with live counts. */
+    use(): ScopeController;
+}
+/** A standalone "all locations vs current selection" switch, for features that operate on a subset. */
+declare function createScope(initial?: Scope): ScopeHandle;
+
+export type scope_ScopeController<S extends SourceScope = Scope> = ScopeController<S>;
+export type scope_ScopeHandle = ScopeHandle;
+export type scope_SourceScope = SourceScope;
+declare const scope_applyScope: typeof applyScope;
+declare const scope_createScope: typeof createScope;
+declare const scope_partition: typeof partition;
+declare const scope_resolveScopeIds: typeof resolveScopeIds;
+declare const scope_useScope: typeof useScope;
+declare namespace scope {
+  export { scope_applyScope as applyScope, scope_createScope as createScope, scope_partition as partition, scope_resolveScopeIds as resolveScopeIds, scope_useScope as useScope };
+  export type { scope_ScopeController as ScopeController, scope_ScopeHandle as ScopeHandle, scope_SourceScope as SourceScope };
+}
+
+/** Reactive list of all maps (metadata only). */
+declare function useMapList(): MapMeta[];
+/** The list of all maps (metadata only). */
+declare function getMapList(): MapMeta[];
+declare function reloadMapList(): Promise<void>;
+/** Re-fetch the map list from the database. */
+declare function invalidateMapList(): Promise<void>;
+/** Set the cached map list directly (used by initStore). */
+declare function setCachedMapList(list: MapMeta[]): void;
+/** Create a new empty map and return its metadata. */
+declare function createMap(name: string, folder?: string | null): Promise<MapMeta>;
+/** Permanently delete a map and all its data. Not undoable. */
+declare function deleteMap$1(id: string): Promise<void>;
+declare function renameFolder(from: string, to: string): Promise<void>;
+declare function moveMapToFolder(mapId: string, folder: string | null): Promise<void>;
+declare function deleteFolder(name: string): Promise<void>;
+
+declare const mapList_createMap: typeof createMap;
+declare const mapList_deleteFolder: typeof deleteFolder;
+declare const mapList_getMapList: typeof getMapList;
+declare const mapList_invalidateMapList: typeof invalidateMapList;
+declare const mapList_moveMapToFolder: typeof moveMapToFolder;
+declare const mapList_reloadMapList: typeof reloadMapList;
+declare const mapList_renameFolder: typeof renameFolder;
+declare const mapList_setCachedMapList: typeof setCachedMapList;
+declare const mapList_useMapList: typeof useMapList;
+declare namespace mapList {
+  export {
+    mapList_createMap as createMap,
+    mapList_deleteFolder as deleteFolder,
+    deleteMap$1 as deleteMap,
+    mapList_getMapList as getMapList,
+    mapList_invalidateMapList as invalidateMapList,
+    mapList_moveMapToFolder as moveMapToFolder,
+    mapList_reloadMapList as reloadMapList,
+    mapList_renameFolder as renameFolder,
+    mapList_setCachedMapList as setCachedMapList,
+    mapList_useMapList as useMapList,
+  };
+}
 
 export interface PruneResult {
     session: ReviewSession | null;
@@ -2676,8 +2737,7 @@ declare function ScopeSelector({ ctl, className, }: {
     className?: string;
 }): react_jsx_runtime.JSX.Element;
 
-/** Show a transient toast message over the map. */
-declare function toast(message: string, duration?: number): void;
+declare function toast(message: string, duration?: number, container?: HTMLElement): void;
 
 /** Get a module the app bundles (e.g. "react", "@deck.gl/core") for use inside a plugin.
  *  Lazy modules must be loaded with `preloadModules` first. */
@@ -2729,6 +2789,103 @@ declare function registerEnrichmentProvider(provider: EnrichmentProvider): void;
 declare function getFieldDef(key: string): ExtraFieldDef | undefined;
 /** Merged view of all field definitions across all layers. */
 declare function getAllFieldDefs(): Record<string, ExtraFieldDef>;
+
+export interface SelectionBitmaskPayload {
+    selColors: [number, number, number][];
+    cellEntries: SelCellEntry[];
+    setIds: (ids: SelectedIds) => void;
+}
+declare const EVENT_DEFS: {
+    "location:add": Location[];
+    "location:remove": number[];
+    "location:update": Update<LocationPatch_Deserialize>[];
+    "tag:add": Tag[];
+    "tag:remove": number[];
+    "tag:update": Update<TagPatch>[];
+    "selection:change": Selection[];
+    "active:change": number | null;
+    "map:open": MapData;
+    "map:close": void;
+    "store:changed": void;
+    "render:delta": RenderDelta;
+    "render:selection": SelectionBitmaskPayload;
+    "settings:changed": void;
+    "fullscreen:changed": void;
+    "plugins:changed": void;
+    "hotkeys:changed": void;
+    "toasts:changed": void;
+    "scene:changed": void;
+    "measure:changed": void;
+    "anchor:changed": void;
+    "viewport-lock:changed": void;
+    "trail:changed": void;
+    "altitude:changed": void;
+    "seen:changed": void;
+    "update:changed": void;
+    "review:changed": void;
+    "fields:changed": void;
+    "route:changed": void;
+    "import-markers:changed": void;
+    "diff-markers:changed": void;
+    "commit-diff:changed": void;
+};
+export type EditorEventMap = typeof EVENT_DEFS;
+export type EditorEvent = keyof EditorEventMap;
+export type EventHandler<E extends EditorEvent> = (payload: EditorEventMap[E]) => void;
+
+/** Fetch a page of the seen (visited-panorama) history. */
+declare function getSeenEntries(limit?: number, offset?: number, filter?: SeenFilter, thumbnails?: boolean): Promise<SeenEntry[]>;
+/** Number of seen entries matching the filter (all when omitted). */
+declare function getSeenCount(filter?: SeenFilter): Promise<number>;
+/** Delete the entire seen history. Not undoable. */
+declare function clearSeen(): Promise<void>;
+
+/** Open a seen entry's panorama in the Street View viewer. */
+declare function loadSeenPano(entry: SeenEntry): Promise<void>;
+
+/** True when the location is missing any of the given enrich fields (default: the enabled set). */
+declare function needsEnrichment(loc: Location, enrichFields?: string[]): boolean;
+/** One summary row per pass that did work: the core metadata pass, then every
+ *  provider that updated or failed at least one location. */
+export interface EnrichOutcome {
+    id: string;
+    label: string;
+    success: number[];
+    failed: number[];
+}
+export type EnrichResult = EnrichOutcome[];
+/** Bulk enrich: selector over the resolver engine. Runs `enrichMeta`, then the
+ *  enrichment providers (exact date among them) in dependency waves. */
+declare function enrichAll(locations: Location[], opts?: {
+    signal?: AbortSignal;
+    force?: boolean;
+    onProgress?: (done: number, total: number, label?: string) => void;
+}): Promise<EnrichResult>;
+
+/** Pin each location to a resolved panorama (sets `panoId`), so it always loads the same pano. */
+declare function bulkPinToPano(locations: Location[], opts?: {
+    signal?: AbortSignal;
+    force?: boolean;
+    useLatest?: boolean;
+    onProgress?: (done: number, total: number) => void;
+}): Promise<number>;
+
+export interface ValidationProgress {
+    progress: number;
+    results: Map<ValidationState, Location[]>;
+}
+/** Check that each location's Street View coverage still exists; returns locations grouped
+ *  by validation state. */
+declare function validateLocations(locations: Location[], opts?: {
+    signal?: AbortSignal;
+    onProgress?: (p: ValidationProgress) => void;
+}): Promise<Map<ValidationState, Location[]>>;
+
+/** Fetch full pano metadata directly from Google's internal RPC (bypasses StreetViewService). */
+declare function fetchSvMetadata(panoIds: string[]): Promise<(google.maps.StreetViewResolvedPanoramaData | null)[]>;
+
+/** URL that serves a local file over the `mma-buf://` protocol (binary Rust-to-JS transfers). */
+declare function mmaBufUrl(path: string): string;
 
 export interface MapEmbedPrefs {
     svOpacity: number;
@@ -2790,7 +2947,6 @@ export interface MapHostEvents {
     mouseout: void;
     zoom: void;
     camera: void;
-    idle: void;
     tilesloaded: void;
 }
 export interface BasemapOpts {
@@ -2838,163 +2994,92 @@ declare function getMapHost(): MapHost | null;
  */
 declare function waitForMapHost(): Promise<MapHost>;
 
-/** When true, Google SV blue-line coverage is forced to opacity 0 and GSV pano dots are omitted. */
-declare function setSvCoverageSuppressed(suppressed: boolean): void;
-declare function isSvCoverageSuppressed(): boolean;
-declare function subscribeSvCoverageSuppressed(cb: () => void): () => void;
-declare function getMapEmbedPrefs(): MapEmbedPrefs;
-declare function patchMapEmbedPrefs(patch: Partial<MapEmbedPrefs>): void;
-declare function subscribeMapEmbedPrefs(cb: () => void): () => void;
+/** @deprecated v0.8.1. Use `MMA.getMapHost()` and narrow via `hostInstance`. */
+declare function getGoogleMap(): google.maps.Map | null;
+/** @deprecated v0.8.1. Use `MMA.waitForMapHost()`. */
+declare function waitForGoogleMap(): Promise<google.maps.Map | null>;
+/** @deprecated v0.8.2. Read `MMA.getMapState().map`. */
+declare function getCurrentMap(): MapData | null;
+/** @deprecated v0.8.2. Read `MMA.getMapState().mapId`. */
+declare function getCurrentMapId(): string | null;
+/** @deprecated v0.8.2. Read `MMA.getMapState().activeLocation`. */
+declare function getActiveLocation(): Location | null;
+/** @deprecated v0.8.2. Read `MMA.getMapState().selectedLocationIds`. */
+declare function getSelectedLocationIds(): SelectedIds;
+/** @deprecated v0.8.2. Read `MMA.getMapState().workArea`. */
+declare function getWorkArea(): WorkArea;
+/** @deprecated v0.8.2. Read `MMA.getMapState().tagCounts`. */
+declare function getTagCounts(): Record<number, number>;
+/** @deprecated v0.8.2. Read `MMA.getMapState().knownFieldKeys`. */
+declare function getKnownFieldKeys(): ReadonlySet<string>;
+/** @deprecated v0.8.2. Read `MMA.getMapState().selections`. */
+declare function getAllSelections(): Selection[];
+/** @deprecated v0.8.2. Read `MMA.getMapState().ghostedSelections`. */
+declare function getGhostedSelections(): ReadonlySet<string>;
+/** @deprecated v0.8.2. Use `MMA.getActiveSelections()`. */
+declare function getSelections(): Selection[];
+/** @deprecated v0.8.2. Read `(await MMA.cmd.storeGetSummary()).dirtyCount`. */
+declare function getDirtyCount(): Promise<number>;
 
-/** A capture at (nearly) the same location with a distinct timestamp — powers the
- *  date picker for providers that expose per-visit historical imagery. */
-export interface PanoDateEntry {
-    pano: string;
-    /** Capture time, ms since epoch. */
-    timestamp: number;
-    /** Optional per-capture camera label key (provider-defined). */
-    cameraType?: string;
+declare const legacy_getActiveLocation: typeof getActiveLocation;
+declare const legacy_getAllSelections: typeof getAllSelections;
+declare const legacy_getCurrentMap: typeof getCurrentMap;
+declare const legacy_getCurrentMapId: typeof getCurrentMapId;
+declare const legacy_getDirtyCount: typeof getDirtyCount;
+declare const legacy_getGhostedSelections: typeof getGhostedSelections;
+declare const legacy_getGoogleMap: typeof getGoogleMap;
+declare const legacy_getKnownFieldKeys: typeof getKnownFieldKeys;
+declare const legacy_getSelectedLocationIds: typeof getSelectedLocationIds;
+declare const legacy_getSelections: typeof getSelections;
+declare const legacy_getTagCounts: typeof getTagCounts;
+declare const legacy_getWorkArea: typeof getWorkArea;
+declare const legacy_waitForGoogleMap: typeof waitForGoogleMap;
+declare namespace legacy {
+  export {
+    legacy_getActiveLocation as getActiveLocation,
+    legacy_getAllSelections as getAllSelections,
+    legacy_getCurrentMap as getCurrentMap,
+    legacy_getCurrentMapId as getCurrentMapId,
+    legacy_getDirtyCount as getDirtyCount,
+    legacy_getGhostedSelections as getGhostedSelections,
+    legacy_getGoogleMap as getGoogleMap,
+    legacy_getKnownFieldKeys as getKnownFieldKeys,
+    legacy_getSelectedLocationIds as getSelectedLocationIds,
+    legacy_getSelections as getSelections,
+    legacy_getTagCounts as getTagCounts,
+    legacy_getWorkArea as getWorkArea,
+    legacy_waitForGoogleMap as waitForGoogleMap,
+  };
 }
-/** Provider-owned camera badge — rendered by the app without knowing the vendor. */
-export interface PanoCameraBadge {
-    id: string;
-    label: string;
-    /** Optional CSS class(es) on the badge element (e.g. "badge--apple"). */
-    className?: string;
+
+/** Forces a full selection re-resolve in Rust and returns the raw selected IDs.
+ *  App code reads `getMapState().selectedLocationIds` — mutations already sync
+ *  selections via MutationResult. */
+declare function syncSelections(): Promise<{
+    ids: number[];
+}>;
+declare function openMap(id: string): Promise<void>;
+declare function closeMap(): Promise<void>;
+declare function deleteMap(id: string): Promise<void>;
+declare function importPaste(text: string): Promise<EditorImportResult[]>;
+declare function importFile(droppedFields: string[], tagName?: string): Promise<EditorImportResult>;
+
+declare const testApi_closeMap: typeof closeMap;
+declare const testApi_deleteMap: typeof deleteMap;
+declare const testApi_importFile: typeof importFile;
+declare const testApi_importPaste: typeof importPaste;
+declare const testApi_openMap: typeof openMap;
+declare const testApi_syncSelections: typeof syncSelections;
+declare namespace testApi {
+  export {
+    testApi_closeMap as closeMap,
+    testApi_deleteMap as deleteMap,
+    testApi_importFile as importFile,
+    testApi_importPaste as importPaste,
+    testApi_openMap as openMap,
+    testApi_syncSelections as syncSelections,
+  };
 }
-/**
- * Alternate panorama viewport session. `panorama` duck-types the Google
- * StreetViewPanorama surface used by PanoControls and LocationPreview Save.
- */
-export interface PanoProviderSession {
-    panorama: google.maps.StreetViewPanorama;
-    destroy(): void;
-    /** Alternate-date captures near the current pano, if the provider supports them. */
-    getAlternateDates?(): PanoDateEntry[];
-    /** Fires whenever `getAlternateDates()` would return a new list (e.g. after moving). */
-    subscribeAlternateDates?(cb: () => void): () => void;
-    /** Current pano elevation in metres, if known. */
-    getAltitude?(): number | null;
-    /**
-     * Root DOM node for this provider's viewport. Reparentable so fullscreen-map
-     * mini preview can own the same canvas as LocationPreview.
-     */
-    viewport?: HTMLElement;
-    /** Recompute layout after the viewport is resized or reparented (e.g. PSV autoSize). */
-    resize?(): void;
-}
-/**
- * Alternate panorama viewport provider (non-Google Street View).
- * Plugins / in-app providers register one; routing is via `location.provider`.
- */
-export interface PanoProvider {
-    id: string;
-    /** Higher priority wins when multiple providers canHandle the same location. */
-    priority?: number;
-    canHandle(location: Location): boolean;
-    /**
-     * Own the location-preview embed host for this location (Google SV is not mounted).
-     * Resolve once the viewport is ready for embed-controls.
-     */
-    open(host: HTMLElement, location: Location): Promise<PanoProviderSession>;
-    /**
-     * Default / spawn pano id for this location (date-picker Default, return-to-spawn).
-     * Prefer top-level `location.panoId`.
-     */
-    getSpawnPanoId?(location: Location): string | null;
-    /**
-     * Extra fields to merge when saving the currently viewed pano id.
-     * Provider identity (`provider` / `panoId`) is written on the location itself by the save path.
-     */
-    buildSaveExtra?(location: Location, panoId: string): Record<string, unknown>;
-    /**
-     * Date-picker display granularity. `"day"` uses day-level formatting;
-     * omit / `"month"` keeps Google-style month labels.
-     */
-    dateGranularity?: "month" | "day";
-    /**
-     * When true, skip Google exact-date RPC and use capture timestamps from
-     * alternate-date entries / location.extra.datetime.
-     */
-    ownsExactDate?: boolean;
-    /**
-     * Resolve a camera badge for the date picker. Return null to fall through
-     * to Google SV metadata (or "unofficial" for non-official Google ids).
-     */
-    resolveCameraBadge?(panoId: string, location: Location, entryCameraType?: string): PanoCameraBadge | null;
-}
-declare function registerPanoProvider(provider: PanoProvider): () => void;
-declare function findPanoProvider(location: Location): PanoProvider | null;
-
-declare const EVENT_DEFS: {
-    "location:add": Location[];
-    "location:remove": number[];
-    "location:update": Update<LocationPatch_Deserialize>[];
-    "tag:add": Tag[];
-    "tag:remove": number[];
-    "tag:update": Update<TagPatch>[];
-    "selection:change": Selection[];
-    "active:change": number | null;
-    "map:open": MapData;
-    "map:close": void;
-};
-export type EditorEventMap = typeof EVENT_DEFS;
-export type EditorEvent = keyof EditorEventMap;
-export type EventHandler<E extends EditorEvent> = (payload: EditorEventMap[E]) => void;
-
-/** Fetch a page of the seen (visited-panorama) history. */
-declare function getSeenEntries(limit?: number, offset?: number, filter?: SeenFilter, thumbnails?: boolean): Promise<SeenEntry[]>;
-/** Number of seen entries matching the filter (all when omitted). */
-declare function getSeenCount(filter?: SeenFilter): Promise<number>;
-/** Delete the entire seen history. Not undoable. */
-declare function clearSeen(): Promise<void>;
-
-/** Open a seen entry's panorama in the Street View viewer. */
-declare function loadSeenPano(entry: SeenEntry): Promise<void>;
-
-/** True when the location is missing any of the given enrich fields (default: the enabled set). */
-declare function needsEnrichment(loc: Location, enrichFields?: string[]): boolean;
-/** One summary row per pass that did work: the core metadata pass, then every
- *  provider that updated or failed at least one location. */
-export interface EnrichOutcome {
-    id: string;
-    label: string;
-    success: number[];
-    failed: number[];
-}
-export type EnrichResult = EnrichOutcome[];
-/** Bulk enrich: selector over the resolver engine. Runs `enrichMeta`, then the
- *  enrichment providers (exact date among them) in dependency waves. */
-declare function enrichAll(locations: Location[], opts?: {
-    signal?: AbortSignal;
-    force?: boolean;
-    onProgress?: (done: number, total: number, label?: string) => void;
-}): Promise<EnrichResult>;
-
-/** Pin each location to a resolved panorama (sets `panoId`), so it always loads the same pano. */
-declare function bulkPinToPano(locations: Location[], opts?: {
-    signal?: AbortSignal;
-    force?: boolean;
-    useLatest?: boolean;
-    onProgress?: (done: number, total: number) => void;
-}): Promise<number>;
-
-export interface ValidationProgress {
-    progress: number;
-    results: Map<ValidationState, Location[]>;
-}
-/** Check that each location's Street View coverage still exists; returns locations grouped
- *  by validation state. */
-declare function validateLocations(locations: Location[], opts?: {
-    signal?: AbortSignal;
-    onProgress?: (p: ValidationProgress) => void;
-}): Promise<Map<ValidationState, Location[]>>;
-
-/** Fetch full pano metadata directly from Google's internal RPC (bypasses StreetViewService). */
-declare function fetchSvMetadata(panoIds: string[]): Promise<(google.maps.StreetViewResolvedPanoramaData | null)[]>;
-
-/** URL that serves a local file over the `mma-buf://` protocol (binary Rust-to-JS transfers). */
-declare function mmaBufUrl(path: string): string;
 
 export interface LocationStore {
     locations: Map<number, Location>;
@@ -3055,19 +3140,6 @@ declare const surface: {
     createLocation: typeof createLocation;
     getMapHost: typeof getMapHost;
     waitForMapHost: typeof waitForMapHost;
-    getGoogleMap: () => google.maps.Map | null;
-    waitForGoogleMap: () => Promise<google.maps.Map | null>;
-    addClickInterceptor: (fn: (lat: number, lng: number, shiftKey: boolean) => boolean | Promise<boolean>) => () => void;
-    /** Coverage takeover for alt providers (e.g. Look Around). */
-    setSvCoverageSuppressed: typeof setSvCoverageSuppressed;
-    isSvCoverageSuppressed: typeof isSvCoverageSuppressed;
-    subscribeSvCoverageSuppressed: typeof subscribeSvCoverageSuppressed;
-    getMapEmbedPrefs: typeof getMapEmbedPrefs;
-    patchMapEmbedPrefs: typeof patchMapEmbedPrefs;
-    subscribeMapEmbedPrefs: typeof subscribeMapEmbedPrefs;
-    /** Alternate panorama viewport providers (replace Google SV in location-preview). */
-    registerPanoProvider: typeof registerPanoProvider;
-    findPanoProvider: typeof findPanoProvider;
     setSetting: typeof setSetting;
     getSettings: () => {
         showCameraBadges: boolean;
@@ -3099,6 +3171,8 @@ declare const surface: {
         fullscreenMinimapScale: number;
         showFullscreenTagbar: boolean;
         showFullscreenDatePicker: boolean;
+        showFullscreenReviewBar: boolean;
+        showFullscreenGeocode: boolean;
         customCss: string;
         enableSeen: boolean;
         enableSeenThumbnails: boolean;
@@ -3152,18 +3226,17 @@ declare const surface: {
     needsEnrichment: typeof needsEnrichment;
     fetchSvMetadata: typeof fetchSvMetadata;
     mmaBufUrl: typeof mmaBufUrl;
-    _test: {
-        openMap: (id: string) => Promise<void>;
-        closeMap: () => Promise<void>;
-        deleteMap: (id: string) => Promise<void>;
-        importPaste: (text: string) => Promise<EditorImportResult[]>;
-        importFile: (droppedFields: string[], tagName?: string) => Promise<EditorImportResult>;
-    };
+    _test: typeof testApi;
 };
 export type StoreApi = typeof store;
+export type ImportStagingApi = typeof importStaging;
+export type CommitDiffApi = typeof commitDiff;
+export type ScopeApi = typeof scope;
+export type MapListApi = typeof mapList;
 export type ReviewApi = typeof review;
 export type SurfaceApi = typeof surface;
-export interface MMA extends StoreApi, ReviewApi, SurfaceApi {
+export type LegacyApi = typeof legacy;
+export interface MMA extends StoreApi, ImportStagingApi, CommitDiffApi, ScopeApi, MapListApi, ReviewApi, SurfaceApi, LegacyApi {
 }
 declare global {
     interface Window {
@@ -3173,4 +3246,4 @@ declare global {
 }
 
 export { MMA as MMAApi, PanoType, commands };
-export type { AltProviderSettings, CellRemoval, ColorPatchEntry, CommitDelta, CommitDiff, CommitInfo, ComparisonType, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, GeoResult, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapSettings, MutationResult, NumericBinning, PartitionBucket, PickHit, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SpacedPickResult, StoreStatus, SummaryResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, CellRemoval, ColorPatchEntry, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapSettings, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };

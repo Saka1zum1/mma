@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useSyncStore } from "@/lib/events";
 import {
 	getHeaderProviderId,
 	subscribeProvidersSettings,
@@ -7,9 +7,5 @@ import type { AltSvProviderId } from "@/lib/sv/providers/types";
 
 /** Header button: last enabled provider id (while still on), else null. */
 export function useSoleEnabledProviderId(): AltSvProviderId | null {
-	return useSyncExternalStore(
-		subscribeProvidersSettings,
-		getHeaderProviderId,
-		() => null,
-	);
+	return useSyncStore(subscribeProvidersSettings, getHeaderProviderId);
 }

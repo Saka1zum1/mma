@@ -91,7 +91,7 @@ async function selectPanoOptionIndex(index: number) {
 	await sel.selectByIndex(index);
 }
 
-async function _selectDefaultPanoOption() {
+async function selectDefaultPanoOption() {
 	const sel = await waitForDateSelect();
 	await sel.selectByAttribute("value", "default");
 }
@@ -257,21 +257,9 @@ describe("LocationPreview — official pano", () => {
 	it("selecting Default clears LoadAsPanoId flag", async () => {
 		await openLocation(offDefaultId);
 		await waitForDates();
-		// first select a specific date
-		const trigger = await browser.$(".location-preview__date .select__input");
-		await trigger.click();
-		await waitForOptions(".select__content .pano-option", 1);
-		const opts = await browser.$$(".select__content .pano-option");
-		await opts[0].click();
+		await selectPanoOptionIndex(0);
 		await waitForFlag(offDefaultId, LoadAsPanoId);
-		// now select Default
-		await trigger.click();
-		await waitForOptions(".select__option.pano-option", 1);
-		await browser.execute(() => {
-			const items = document.querySelectorAll(".select__option.pano-option");
-			const def = [...items].find((el) => el.textContent?.includes("Default"));
-			if (def) (def as HTMLElement).click();
-		});
+		await selectDefaultPanoOption();
 		await waitForFlag(offDefaultId, LoadAsPanoId, false);
 		const l = await readLocation(offDefaultId);
 		const flags = l?.flags ?? -1;

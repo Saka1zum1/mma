@@ -1,10 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-	useActiveLocation,
-	useCurrentMap,
-	getActiveLocation,
-	getCurrentMap,
+	useMapState,
+	getMapState,
 	updateLocations,
 } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
@@ -19,11 +17,8 @@ import { baiduSpawnPanoId } from "@/lib/sv/baidu/session";
 import { tencentSpawnPanoId } from "@/lib/sv/tencent/session";
 import { useExactDate } from "./useExactDate";
 import { derivePanoDateState, type PanoDateState } from "./panoDate";
-import {
-	restoreSuspendedFullscreenMap,
-	registerPanoFullscreenSetter,
-	clearSuspendedPanoFullscreen,
-} from "./fullscreenModeState";
+import { onFullscreenMapChanged, onLocationCleared } from "./fullscreenModeState";
+import { singletonPano } from "@/lib/sv/panoSingleton";
 
 // Altitude lives outside React: its only reader is the imperative coordinate
 // readout, so routing it through context would re-render every consumer.
@@ -45,8 +40,6 @@ interface PanoViewerContextValue {
 	setCurrentPano: React.Dispatch<React.SetStateAction<PanoViewerContextValue["currentPano"]>>;
 	panoDates: PanoReference[];
 	setPanoDates: React.Dispatch<React.SetStateAction<PanoReference[]>>;
-	isFullscreen: boolean;
-	setIsFullscreen: React.Dispatch<React.SetStateAction<boolean>>;
 	panoReady: boolean;
 	setPanoReady: React.Dispatch<React.SetStateAction<boolean>>;
 	selectedPanoId: string | null;
@@ -69,11 +62,10 @@ interface PanoViewerContextValue {
 const PanoViewerContext = createContext<PanoViewerContextValue | null>(null);
 
 export function PanoViewerProvider({ children }: { children: ReactNode }) {
-	const location = useActiveLocation();
-	const currentMap = useCurrentMap();
+	const location = useMapState((s) => s.activeLocation);
+	const currentMap = useMapState((s) => s.map);
 	const [currentPano, setCurrentPano] = useState<PanoViewerContextValue["currentPano"]>(null);
 	const [panoDates, setPanoDates] = useState<PanoReference[]>([]);
-	const [isFullscreen, setIsFullscreen] = useState(false);
 	const [panoReady, setPanoReady] = useState(false);
 	const [coverageDefaultPanoId, setCoverageDefaultPanoId] = useState<string | null>(null);
 
@@ -148,8 +140,8 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 	// Single writer: persist the resolved exact date back to the active location's extra.
 	useEffect(() => {
 		if (exactDate.ts == null) return;
-		if (!(getCurrentMap()?.meta.settings.enrichMetadata ?? true)) return;
-		const loc = getActiveLocation();
+		if (!(getMapState().map?.meta.settings.enrichMetadata ?? true)) return;
+		const loc = getMapState().activeLocation;
 		if (!loc || loc.extra?.datetime != null) return;
 		updateLocations(
 			[{ id: loc.id, patch: { extra: { datetime: exactDate.ts, timezone: resolvedTz } } }],
@@ -157,15 +149,21 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 		);
 	}, [exactDate.ts, resolvedTz]);
 
-	useEffect(() => registerPanoFullscreenSetter(setIsFullscreen), []);
+	const fullscreenMap = useSetting("fullscreenMap");
+	const prevFullscreenMap = useRef(fullscreenMap);
+	useEffect(() => {
+		if (prevFullscreenMap.current === fullscreenMap) return;
+		prevFullscreenMap.current = fullscreenMap;
+		onFullscreenMapChanged(fullscreenMap);
+	}, [fullscreenMap]);
 
-	// Location cleared (save/delete/close): drop pano fullscreen and resume
-	// fullscreen-map if it was suspended. Must restore before clearing flags.
+	// Location cleared (save/delete/close): reset fullscreen modes and pano state.
 	useEffect(() => {
 		if (location) return;
-		setIsFullscreen(false);
-		restoreSuspendedFullscreenMap();
-		clearSuspendedPanoFullscreen();
+		onLocationCleared();
+		setCurrentPano(null);
+		setPanoReady(false);
+		if (singletonPano) singletonPano.setVisible(false);
 	}, [location]);
 
 	const value = useMemo(
@@ -174,8 +172,6 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 			setCurrentPano,
 			panoDates,
 			setPanoDates,
-			isFullscreen,
-			setIsFullscreen,
 			panoReady,
 			setPanoReady,
 			selectedPanoId,
@@ -190,7 +186,6 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 		[
 			currentPano,
 			panoDates,
-			isFullscreen,
 			panoReady,
 			selectedPanoId,
 			coverageDefaultPanoId,

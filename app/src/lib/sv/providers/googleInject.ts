@@ -9,11 +9,11 @@
  */
 import { loadOpenSV } from "@/lib/sv/opensv";
 import { schemeBase } from "@/lib/util/util";
-import { latLngFromSingleImageSearchRequest } from "@/lib/sv/baidu/officialMeta";
 import {
 	ensureBuiltinInjectAdapters,
 	getInjectAdapters,
 	getRaceableInjectAdapters,
+	parseSingleImageSearchRequest,
 } from "./injectAdapters";
 import { raceInjectProvidersNear } from "./race";
 
@@ -71,17 +71,17 @@ async function handleGetMetadata(body: unknown): Promise<Response | null> {
 }
 
 /**
- * Google SIS miss → race enabled inject adapters. First success becomes the
- * pano Google loads; slower siblings are stored for the date picker.
+ * Google SIS miss → parse request lat/lng/radiusM, race enabled inject adapters.
+ * First success becomes the pano Google loads; slower siblings go to date picker.
  */
 async function handleSingleImageSearchBody(body: unknown): Promise<unknown | null> {
 	ensureBuiltinInjectAdapters();
 	if (getRaceableInjectAdapters().length === 0) return null;
 
-	const ll = latLngFromSingleImageSearchRequest(body);
-	if (!ll) return null;
+	const query = parseSingleImageSearchRequest(body);
+	if (!query) return null;
 
-	const hit = await raceInjectProvidersNear(ll.lat, ll.lng, ll.radius);
+	const hit = await raceInjectProvidersNear(query.lat, query.lng, query.radiusM);
 	return hit?.sisBody ?? null;
 }
 

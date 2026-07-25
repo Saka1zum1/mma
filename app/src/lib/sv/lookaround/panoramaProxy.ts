@@ -5,7 +5,7 @@
  * (`/closest?radius=100&limit=1000&meta=cam,ele,tz`) feeds movement markers,
  * alternate dates, and MMA links ? no second plugin-side closest sweep.
  */
-import { getActiveLocation } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 import { log } from "@/lib/util/log";
 import type { LookaroundPano } from "./api";
 import { META_OPEN } from "./api";
@@ -158,8 +158,8 @@ export function createLookAroundPanoramaProxy(
 		for (const cb of [...dateListeners]) cb();
 		emit("links_changed");
 
-		// Altitude only ??do not rewrite spawn cameraType from a historical neighbor.
-		const active = getActiveLocation();
+		// Altitude only — do not rewrite spawn cameraType from a historical neighbor.
+		const active = getMapState().activeLocation;
 		if (active) {
 			const height = panoHeightM(pano);
 			const patch: Record<string, unknown> = {};

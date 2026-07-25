@@ -1,5 +1,10 @@
-import { useEffect, useRef, useCallback, useState, useSyncExternalStore } from "react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import { useEffect, useRef, useCallback, useState } from "react";
+import { ContextMenu } from "@base-ui-components/react/context-menu";
+import { useSyncStore } from "@/lib/events";
+import {
+	getProviderCoverageLayersEpoch,
+	subscribeProviderCoverageLayers,
+} from "@/lib/sv/providers/coverageLayers";
 import {
 	mdiGoogleStreetView,
 	mdiMapMarker,
@@ -19,19 +24,11 @@ import { getSettings, useSetting } from "@/store/settings";
 import { useMeasure } from "@/lib/sv/measure";
 import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
-import { useCurrentMap, selectPolygon, mapOpen } from "@/store/useMapStore";
+import { useMapState, addSelections, mapOpen } from "@/store/useMapStore";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
 import { setMapHost, tryInterceptDraw } from "@/lib/map/mapState";
 import { createMapHost, hostKindForMapType, type MapHost } from "@/lib/map/host";
-import {
-	isSvCoverageSuppressed,
-	subscribeSvCoverageSuppressed,
-} from "@/lib/map/svCoverageBridge";
-import {
-	getProviderCoverageLayersEpoch,
-	subscribeProviderCoverageLayers,
-} from "@/lib/sv/providers/coverageLayers";
 import { mountSearchRadiusCursor } from "@/lib/map/searchRadiusCursor";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
@@ -57,7 +54,7 @@ function ZoomReadout({ host }: { host: MapHost | null }) {
 		setZoom(host.getZoom());
 		return host.on("zoom", () => setZoom(Math.round(host.getZoom() * 100) / 100));
 	}, [host]);
-	return <> · zoom {zoom}</>;
+	return <> 路 zoom {zoom}</>;
 }
 
 export function MapEmbed({
@@ -65,7 +62,7 @@ export function MapEmbed({
 }: {
 	onAddLocation: (parsed: ParsedLocation) => void | Promise<void>;
 }) {
-	const map = useCurrentMap();
+	const map = useMapState((s) => s.map);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [host, setHost] = useState<MapHost | null>(null);
 	const hostRef = useRef<MapHost | null>(null);
@@ -75,16 +72,8 @@ export function MapEmbed({
 		<K extends keyof MapEmbedPrefs>(k: K) =>
 		(v: MapEmbedPrefs[K]) =>
 			setPrefs((p) => ({ ...p, [k]: v }));
-	const {
-		svOpacity,
-		mapType,
-		markerStyle,
-		markerOpacity,
-		showPerfectScoreCircle,
-		showSearchRadiusCursor,
-		showPreviews,
-		selectOnly,
-	} = prefs;
+	const { svOpacity, mapType, markerStyle, markerOpacity, showSearchRadiusCursor, showPreviews } =
+		prefs;
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
 	// Boolean, not the raw zoom: re-renders only when crossing the blobby threshold.
 	// The live zoom readout subscribes itself (ZoomReadout).
@@ -171,7 +160,7 @@ export function MapEmbed({
 			offs.push(
 				created.on("mousemove", (ll) => {
 					if (coordDisplayRef.current) {
-						coordDisplayRef.current.textContent = `${ll.lat.toFixed(6)}° ${ll.lng.toFixed(6)}°`;
+						coordDisplayRef.current.textContent = `${ll.lat.toFixed(6)}掳 ${ll.lng.toFixed(6)}掳`;
 					}
 				}),
 				created.on("zoom", () => {
@@ -212,22 +201,12 @@ export function MapEmbed({
 		};
 	}, [hostKind]);
 
-	const svSuppressed = useSyncExternalStore(
-		subscribeSvCoverageSuppressed,
-		isSvCoverageSuppressed,
-		isSvCoverageSuppressed,
-	);
-
 	useEffect(() => {
 		if (!host) return;
-		if (svSuppressed) {
-			host.setSvOpacity(0);
-			return;
-		}
 		const blobbySingleType =
 			prefs.svBlobby && belowBlobbyZoom && prefs.svCoverageType !== "default";
 		host.setSvOpacity(blobbySingleType ? svOpacity * 0.6 : svOpacity);
-	}, [host, svOpacity, prefs.svBlobby, belowBlobbyZoom, prefs.svCoverageType, svSuppressed]);
+	}, [host, svOpacity, prefs.svBlobby, belowBlobbyZoom, prefs.svCoverageType]);
 
 	// The editor map drives the single scene engine (delta/selection/active subscriptions)
 	useEffect(() => startSceneEngine(), []);
@@ -238,7 +217,7 @@ export function MapEmbed({
 		else clearScene();
 	}, [host, markerStyle]);
 
-	// Marker color repaints buffers in place — never a full scene reload.
+	// Marker color repaints buffers in place 鈥?never a full scene reload.
 	const markerColor = useSetting("markerColor");
 	useEffect(() => {
 		recolorScene(markerColor);
@@ -307,10 +286,8 @@ export function MapEmbed({
 	}, [host, showPreviews]);
 
 	const useBlobby = prefs.svBlobby && belowBlobbyZoom;
-
-	const coverageEpoch = useSyncExternalStore(
+	const coverageEpoch = useSyncStore(
 		subscribeProviderCoverageLayers,
-		getProviderCoverageLayersEpoch,
 		getProviderCoverageLayersEpoch,
 	);
 
@@ -370,7 +347,7 @@ export function MapEmbed({
 	});
 
 	return (
-		<ContextMenu.Root modal={false}>
+		<ContextMenu.Root>
 			<div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 			<div className="embed-controls">
 				{/* TopLeft: Map dropdown, Search */}
@@ -399,7 +376,13 @@ export function MapEmbed({
 							onDraw={(rings) => {
 								if (rings.length === 0) return;
 								if (tryInterceptDraw(rings)) return;
-								selectPolygon({ coordinates: rings as [number, number][][] });
+								addSelections([
+									{
+										type: "Polygon",
+										polygon: { coordinates: rings as [number, number][][] },
+										includeInformational: false,
+									},
+								]);
 							}}
 							freehandPathRef={freehandPathRef}
 							polygonVerticesRef={polygonVerticesRef}
@@ -417,29 +400,12 @@ export function MapEmbed({
 						alignItems: "flex-start",
 					}}
 				>
-					<MapSettingsDropdown
-						settings={{
-							markerStyle,
-							setMarkerStyle: pref("markerStyle"),
-							markerSize: prefs.markerSize,
-							setMarkerSize: pref("markerSize"),
-							showPerfectScoreCircle,
-							setShowPerfectScoreCircle: pref("showPerfectScoreCircle"),
-							showSearchRadiusCursor,
-							setShowSearchRadiusCursor: pref("showSearchRadiusCursor"),
-							showPreviews,
-							setShowPreviews: pref("showPreviews"),
-							selectOnly,
-							setSelectOnly: pref("selectOnly"),
-						}}
-					/>
+					<MapSettingsDropdown prefs={prefs} setPref={pref} />
 					<div className="map-control sv-opacity-control">
 						<Tooltip
 							content={
 								opacityTarget === "sv"
-									? svSuppressed
-										? "Adjusting coverage opacity"
-										: "Adjusting Street View opacity"
+									? "Adjusting Street View opacity"
 									: "Adjusting marker opacity"
 							}
 							side="left"
@@ -505,7 +471,7 @@ export function MapEmbed({
 						<ZoomReadout host={host} />
 						{showFps && (
 							<>
-								<span style={{ margin: "0 4px" }}>·</span>
+								<span style={{ margin: "0 4px" }}>路</span>
 								<FpsCounter />
 							</>
 						)}
@@ -599,9 +565,7 @@ export function MapEmbed({
 					</DialogContent>
 				</Dialog>
 			)}
-			<ContextMenu.Trigger asChild>
-				<span ref={contextTriggerRef} title="Context menu" />
-			</ContextMenu.Trigger>
+			<ContextMenu.Trigger render={<span ref={contextTriggerRef} title="Context menu" />} />
 			<ContextMenu.Portal>
 				<MapContextMenuContent host={host} />
 			</ContextMenu.Portal>

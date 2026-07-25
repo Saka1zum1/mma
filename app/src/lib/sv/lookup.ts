@@ -74,6 +74,7 @@ export interface ResolvedPano {
 export async function resolvePano(loc: Location): Promise<ResolvedPano> {
 	const provider = getLocationProvider(loc);
 	// Baidu / Tencent: native opensv lifecycle with prefixed ids (inject bridge).
+	// Yandex uses PanoProvider + PSV and never reaches this path for viewing.
 	if (provider === "baidu" || provider === "tencent") {
 		await installGoogleInjectBridge();
 		const pinned = hasLoadAsPanoId(loc);
@@ -442,6 +443,17 @@ export async function followLinkedPanos(
 		currentHeading = best.heading;
 	}
 	return results;
+}
+
+// --- UI helpers ---
+
+export function showToast(container: HTMLElement, message: string, timeout = 1500) {
+	const el = document.createElement("div");
+	el.textContent = message;
+	el.style.cssText =
+		"position:absolute;bottom:2rem;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:.5rem 1rem;border-radius:4px;font-size:.875rem;z-index:100;pointer-events:none;white-space:nowrap";
+	container.appendChild(el);
+	setTimeout(() => el.remove(), timeout);
 }
 
 export function svThumbnailUrl(panoId: string, heading: number, width = 320, height = 180): string {

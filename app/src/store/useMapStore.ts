@@ -998,20 +998,18 @@ export function setWorkArea(area: WorkArea) {
 }
 
 export function toggleProvidersMode() {
-	if (workArea === "providers") {
-		workArea = "overview";
+	if (state.workArea === "providers") {
+		setState({ workArea: "overview" });
 	} else {
-		workArea = "providers";
-		activePluginId = null;
-		activeLocationId = null;
+		setState({ workArea: "providers", activePluginId: null, activeLocationId: null });
 	}
-	bump();
+	emitEvent("store:changed");
 }
 
 export function exitProvidersMode() {
-	if (workArea === "providers") {
-		workArea = "overview";
-		bump();
+	if (state.workArea === "providers") {
+		setState({ workArea: "overview" });
+		emitEvent("store:changed");
 	}
 }
 

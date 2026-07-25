@@ -1,7 +1,7 @@
 import { TENCENT_META_URL, TENCENT_SEARCH_URL } from "./endpoints";
 import { tencentToGcj02 } from "./crs";
 import { supportsBaiduAt } from "@/lib/sv/baidu/chinaPolygon";
-import { bearingDeg, haversineM } from "@/lib/sv/baidu/api";
+import { bearingDeg } from "@/lib/sv/baidu/api";
 import { stripTencent } from "./prefix";
 
 export { supportsBaiduAt as supportsTencentAt };
@@ -17,7 +17,7 @@ export interface TencentNeighbor {
 
 /**
  * Navigable arrow links (Google Street View `links` / locationEntry[6]).
- * Derived from all_scenes — Tencent has no separate Links[] like Baidu.
+ * Parsed from roads: same-road neighbors at order±1.
  */
 export interface TencentLink {
 	svid: string;
@@ -52,61 +52,157 @@ interface TencentScene {
 	y: number;
 }
 
+interface TencentRoadPoint {
+	svid: string;
+	x: number;
+	y: number;
+	order?: number;
+}
+
+interface TencentRoad {
+	id: string;
+	valid?: number;
+	name?: string;
+	width?: number;
+	points?: TencentRoadPoint[];
+}
+
 interface TencentMetaDetail {
-	basic: { svid: string; dir?: string | number };
+	basic: { svid: string; dir?: string | number; trans_svid?: string };
 	addr: { x_lng: number; y_lat: number };
 	all_scenes?: TencentScene[];
+	roads?: TencentRoad[];
+	vpoints?: TencentVPoint[];
 	history?: { nodes?: { svid: string }[] };
+}
+
+interface TencentVPointLink {
+	svid: string;
+	x: number;
+	y: number;
+}
+
+interface TencentVPoint {
+	svid: string;
+	x: number;
+	y: number;
+	rdid?: string;
+	id?: number;
+	link?: TencentVPointLink[];
 }
 
 const metaCache = new Map<string, TencentPanoMeta>();
 const metaInflight = new Map<string, Promise<TencentPanoMeta | null>>();
-const SEARCH_RADIUS_M = 200;
-/** Second link: bearing separation from the first must be ~180° (±5°). */
-const OPPOSITE_DELTA_MIN = 175;
-const OPPOSITE_DELTA_MAX = 185;
+/** Fallback when caller omits radius (SIS always passes Google's radius). */
+const DEFAULT_SEARCH_RADIUS_M = 50;
 
-function neighborToLink(n: TencentNeighbor): TencentLink {
-	return { svid: n.svid, lng: n.lng, lat: n.lat, heading: n.heading };
+function roadPointOrder(point: TencentRoadPoint, fallbackIndex: number): number {
+	return typeof point.order === "number" && Number.isFinite(point.order)
+		? point.order
+		: fallbackIndex;
 }
 
-function isNearOppositeHeading(a: number, b: number): boolean {
-	const d = Math.abs(((a - b) % 360) + 360) % 360;
-	const sep = Math.max(d, 360 - d);
-	return sep >= OPPOSITE_DELTA_MIN && sep <= OPPOSITE_DELTA_MAX;
+function findRoadPoint(
+	roads: TencentRoad[] | undefined,
+	selfId: string,
+): { road: TencentRoad; point: TencentRoadPoint; pointIndex: number } | null {
+	for (const road of roads ?? []) {
+		if (!road?.points?.length) continue;
+		for (let i = 0; i < road.points.length; i += 1) {
+			const point = road.points[i];
+			if (point?.svid === selfId) return { road, point, pointIndex: i };
+		}
+	}
+	return null;
 }
 
-/**
- * Arrow links: (1) nearest all_scenes pano, (2) nearest pano whose bearing
- * is nearly opposite the first (175°–185° separation).
- */
-function selectNavigableLinks(
-	neighbors: TencentNeighbor[],
+function roadPointByOrder(road: TencentRoad, order: number): TencentRoadPoint | null {
+	if (!road.points?.length) return null;
+	const byOrder = road.points.find((p) => typeof p?.order === "number" && p.order === order);
+	if (byOrder) return byOrder;
+	if (order >= 0 && order < road.points.length) return road.points[order] ?? null;
+	return null;
+}
+
+function roadPointToLink(fromLng: number, fromLat: number, point: TencentRoadPoint): TencentLink {
+	const pos = tencentToGcj02(point.x, point.y);
+	return {
+		svid: point.svid,
+		lng: pos.lng,
+		lat: pos.lat,
+		heading: bearingDeg(fromLng, fromLat, pos.lng, pos.lat),
+	};
+}
+
+function linksFromVpoints(
+	vpoints: TencentVPoint[] | undefined,
 	selfId: string,
 	fromLng: number,
 	fromLat: number,
 ): TencentLink[] {
-	const candidates = neighbors
-		.filter((n) => n.svid && n.svid !== selfId)
-		.map((n) => ({
-			n,
-			dist: haversineM(fromLng, fromLat, n.lng, n.lat),
-		}))
-		.filter((c) => c.dist > 0.5)
-		.sort((a, b) => a.dist - b.dist);
+	const vp = vpoints?.find((v) => v?.svid === selfId);
+	if (!vp?.link?.length) return [];
 
-	if (candidates.length === 0) return [];
+	const out: TencentLink[] = [];
+	const seen = new Set<string>();
+	for (const l of vp.link) {
+		if (!l?.svid || l.svid === selfId || seen.has(l.svid)) continue;
+		const pos = tencentToGcj02(l.x, l.y);
+		seen.add(l.svid);
+		out.push({
+			svid: l.svid,
+			lng: pos.lng,
+			lat: pos.lat,
+			heading: bearingDeg(fromLng, fromLat, pos.lng, pos.lat),
+		});
+	}
+	return out;
+}
 
-	const first = candidates[0]!;
-	const links = [neighborToLink(first.n)];
+function linksFromRoads(
+	roads: TencentRoad[] | undefined,
+	vpoints: TencentVPoint[] | undefined,
+	selfId: string,
+	fromLng: number,
+	fromLat: number,
+): TencentLink[] {
+	const roadEntry = findRoadPoint(roads, selfId);
+	if (!roadEntry) return linksFromVpoints(vpoints, selfId, fromLng, fromLat);
 
-	const opposite = candidates
-		.slice(1)
-		.filter(({ n }) => isNearOppositeHeading(n.heading, first.n.heading))
-		.sort((a, b) => a.dist - b.dist)[0];
+	const { road, point, pointIndex } = roadEntry;
+	const order = roadPointOrder(point, pointIndex);
+	const prev = roadPointByOrder(road, order - 1);
+	const next = roadPointByOrder(road, order + 1);
+	const out: TencentLink[] = [];
+	const seen = new Set<string>();
 
-	if (opposite) links.push(neighborToLink(opposite.n));
-	return links;
+	const isMiddleNode = pointIndex > 0 && pointIndex < (road.points?.length ?? 0) - 1;
+	if (isMiddleNode && prev && next) {
+		for (const neighbor of [prev, next]) {
+			if (!neighbor?.svid || neighbor.svid === selfId || seen.has(neighbor.svid)) continue;
+			seen.add(neighbor.svid);
+			out.push(roadPointToLink(fromLng, fromLat, neighbor));
+		}
+		return out;
+	}
+
+	if ((prev && prev.svid !== selfId )) {
+		seen.add(prev.svid);
+		out.push(roadPointToLink(fromLng, fromLat, prev));
+	}
+
+	if ((next && next.svid !== selfId )) {
+		seen.add(next.svid);
+		out.push(roadPointToLink(fromLng, fromLat, next));
+	}
+
+	for (const link of linksFromVpoints(vpoints, selfId, fromLng, fromLat)) {
+		if (!link.svid || seen.has(link.svid)) continue;
+		seen.add(link.svid);
+		out.push(link);
+	}
+
+	return out;
 }
 
 /** Parse capture timestamp embedded in a Tencent svid. */
@@ -151,7 +247,7 @@ function parseDetail(qq: TencentMetaDetail): TencentPanoMeta {
 		neighbors.push(n);
 	}
 
-	const links = selectNavigableLinks(neighbors, id, lng, lat);
+	const links = linksFromRoads(qq.roads, qq.vpoints, id, lng, lat);
 
 	const timeline: TencentTimeEntry[] = [];
 	for (const node of qq.history?.nodes ?? []) {
@@ -164,7 +260,15 @@ function parseDetail(qq: TencentMetaDetail): TencentPanoMeta {
 			day: d.getDate(),
 		});
 	}
-
+	if(qq.basic?.trans_svid){
+		const d = parseTencentDateFromSvid(qq.basic.trans_svid);
+		timeline.push({
+			svid: qq.basic.trans_svid,
+			year: d.getFullYear(),
+			month: d.getMonth(),
+			day: d.getDate(),
+		});
+	}
 	return {
 		id,
 		lng,
@@ -206,13 +310,14 @@ export async function fetchTencentMeta(svid: string): Promise<TencentPanoMeta | 
 export async function searchTencentPano(
 	lat: number,
 	lng: number,
-	radiusM = SEARCH_RADIUS_M,
+	radiusM: number = DEFAULT_SEARCH_RADIUS_M,
 ): Promise<string | null> {
 	if (!supportsBaiduAt(lng, lat)) return null;
+	const r = Number.isFinite(radiusM) && radiusM > 0 ? radiusM : DEFAULT_SEARCH_RADIUS_M;
 	const url = new URL(TENCENT_SEARCH_URL);
 	url.searchParams.set("lat", lat.toFixed(6));
 	url.searchParams.set("lng", lng.toFixed(6));
-	url.searchParams.set("r", String(radiusM));
+	url.searchParams.set("r", String(r));
 	const res = await fetch(url.href, { signal: AbortSignal.timeout(15_000) });
 	if (!res.ok) return null;
 	const data = (await res.json()) as { detail?: { svid?: string } };
@@ -222,7 +327,7 @@ export async function searchTencentPano(
 export async function resolveTencentNear(
 	lat: number,
 	lng: number,
-	radiusM = SEARCH_RADIUS_M,
+	radiusM: number = DEFAULT_SEARCH_RADIUS_M,
 ): Promise<TencentPanoMeta | null> {
 	const id = await searchTencentPano(lat, lng, radiusM);
 	if (!id) return null;

@@ -64,6 +64,19 @@ export async function initLogging() {
 	});
 
 	window.addEventListener("unhandledrejection", (e) => {
+		// PSV / fetch cancellation on viewer teardown surfaces as AbortError.
+		const reason = e.reason;
+		const name =
+			reason && typeof reason === "object" && "name" in reason
+				? String((reason as { name: unknown }).name)
+				: "";
+		const message =
+			reason instanceof Error
+				? reason.message
+				: typeof reason === "string"
+					? reason
+					: "";
+		if (name === "AbortError" || /signal is aborted/i.test(message)) return;
 		log.error("[unhandled rejection]", e.reason);
 	});
 

@@ -2,6 +2,7 @@
  * Build Google json+protobuf GetMetadata / SingleImageSearch payloads for Baidu
  * panos (field layout matches altproviders.js ImageMetadata PBLite arrays).
  */
+import { parseSingleImageSearchRequest } from "@/lib/sv/providers/sisRequest";
 import type { BaiduLink, BaiduPanoMeta } from "./api";
 import { offsetLatLng } from "./api";
 import { prefixBaidu, isBaiduPanoId } from "./prefix";
@@ -293,16 +294,9 @@ export function baiduIdsFromGetMetadataRequest(body: unknown): string[] | null {
 export function latLngFromSingleImageSearchRequest(
 	body: unknown,
 ): { lat: number; lng: number; radius: number } | null {
-	if (!Array.isArray(body)) return null;
-	const loc = body[1];
-	if (!Array.isArray(loc)) return null;
-	const center = loc[0];
-	if (!Array.isArray(center)) return null;
-	const lat = Number(center[2]);
-	const lng = Number(center[3]);
-	const radius = Number(loc[1] ?? 100);
-	if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-	return { lat, lng, radius: Number.isFinite(radius) && radius > 0 ? radius : 100 };
+	const q = parseSingleImageSearchRequest(body);
+	if (!q) return null;
+	return { lat: q.lat, lng: q.lng, radius: q.radiusM };
 }
 
 export function isBaiduPrefixedKey(id: unknown): boolean {

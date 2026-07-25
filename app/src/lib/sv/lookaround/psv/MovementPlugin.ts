@@ -55,23 +55,38 @@ export class MovementPlugin extends AbstractPlugin {
 	private readonly marker: MovementPsv["plugins"]["markers"]["markers"][string];
 	private readonly screenFrustum: ScreenFrustum;
 	private lastMousePosition: { pitch: number; yaw: number } | null = null;
-	private mouseHasMoved = false;
 	private lastProcessedMoveEvent = 0;
 	private movementEnabled = true;
 	private readonly canMoveWithKeyboard: boolean;
+	/**
+	 * Compass bearing (radians) of PSV yaw = 0.
+	 * Look Around: 0 (sphereCorrection already north-aligns).
+	 * Yandex equirect: image-centre heading — ENU yaw is shifted so markers
+	 * land on the texture without mesh poseHeading.
+	 */
+	private yawNorthOffset = 0;
 	private nearbyPanos: NearbyEntry[] = [];
 
-	constructor(psv: MovementPsv, options: { canMoveWithKeyboard?: boolean }) {
+	constructor(
+		psv: MovementPsv,
+		options: {
+			canMoveWithKeyboard?: boolean;
+			markerImage?: string;
+			/** Compass rad of PSV yaw=0; see yawNorthOffset. */
+			yawNorthOffset?: number;
+		} = {},
+	) {
 		super(psv as never);
 		this.psv = psv;
 		this.canMoveWithKeyboard = options.canMoveWithKeyboard ?? false;
+		this.yawNorthOffset = options.yawNorthOffset ?? 0;
 
 		psv.plugins.markers.addMarker({
 			id: MARKER_ID,
 			position: { yaw: 0, pitch: 0 },
 			size: { width: 1, height: 1 },
 			scale: { zoom: [0.5, 1] },
-			image: MOVEMENT_MARKER_URL,
+			image: options.markerImage ?? MOVEMENT_MARKER_URL,
 			opacity: 0.4,
 			data: null,
 			visible: false,
@@ -93,6 +108,11 @@ export class MovementPlugin extends AbstractPlugin {
 		this.screenFrustum = new ScreenFrustum(psv as never);
 	}
 
+	/** Update compass-of-yaw0 offset (call before updatePanoMarkers when it changes). */
+	setYawNorthOffset(offsetRad: number): void {
+		this.yawNorthOffset = offsetRad;
+	}
+
 	updatePanoMarkers(refPano: LookaroundPano, panos: LookaroundPano[]): void {
 		this.nearbyPanos = [];
 		const cameraHeight = this.getCameraHeight(refPano);
@@ -110,7 +130,7 @@ export class MovementPlugin extends AbstractPlugin {
 				refPano.lat,
 				cameraHeight,
 			);
-			const position = enuToPhotoSphere(enu, 0);
+			const position = enuToPhotoSphere(enu, this.yawNorthOffset);
 			if (position.distance > MAX_DISTANCE) continue;
 
 			const scale = 0.05 + (0.5 - (0.5 * position.distance) / 100);
@@ -137,7 +157,6 @@ export class MovementPlugin extends AbstractPlugin {
 	}
 
 	private onMouseMove(e: MouseEvent): void {
-		this.mouseHasMoved = true;
 		const updateLimit = 1000 / 60.0;
 		const now = Date.now();
 		if (now - this.lastProcessedMoveEvent <= updateLimit) return;
@@ -178,21 +197,26 @@ export class MovementPlugin extends AbstractPlugin {
 	}): Promise<void> {
 		if (e.data.rightclick || !this.movementEnabled) return;
 
-		if (!this.marker.state.visible || !this.marker.config.data) {
-			if (this.mouseHasMoved) return;
-			const closest = this.getClosestPanoMarker({
+		// Prefer the hovered marker; otherwise jump to the closest on-screen
+		// neighbor under the click (don't require mouseHasMoved === false —
+		// that blocked Yandex / cropped-sphere clicks after any pointer move).
+		const hovered =
+			this.marker.state.visible && this.marker.config.data
+				? this.marker.config.data
+				: null;
+		const closest =
+			hovered ??
+			this.getClosestPanoMarker({
 				pitch: e.data.pitch,
 				yaw: e.data.yaw,
-			});
-			if (closest) await this.navigateTo(closest.pano);
-		} else {
-			const pano = this.marker.config.data;
-			this.hideMarker();
-			this.movementEnabled = false;
-			await this.navigateTo(pano);
-			this.movementEnabled = true;
-			if (this.lastMousePosition) this.mouseMovedTo(this.lastMousePosition);
-		}
+			})?.pano;
+		if (!closest) return;
+
+		this.hideMarker();
+		this.movementEnabled = false;
+		await this.navigateTo(closest);
+		this.movementEnabled = true;
+		if (this.lastMousePosition) this.mouseMovedTo(this.lastMousePosition);
 	}
 
 	private async onKeyDown(e: KeyboardEvent): Promise<void> {
@@ -200,7 +224,9 @@ export class MovementPlugin extends AbstractPlugin {
 		const direction = this.keyToDirection(e.key);
 		if (direction === null) return;
 		const position = this.psv.getPosition();
-		let yaw = Math.PI - (position.yaw + Math.PI / 2);
+		// Convert view yaw → compass-frame yaw, then to ENU move angle.
+		const compassFrameYaw = wrap(position.yaw + this.yawNorthOffset);
+		let yaw = Math.PI - (compassFrameYaw + Math.PI / 2);
 		yaw += direction;
 		await this.moveInDirection(yaw);
 	}

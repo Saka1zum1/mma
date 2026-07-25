@@ -17,6 +17,8 @@ import { getClosestPano } from "@/lib/sv/lookaround/tile";
 import { isLookmapHost, parseLookmapUrl } from "@/lib/sv/lookaround/shareLink";
 import { fetchTencentMeta } from "@/lib/sv/tencent/api";
 import { isTencentShareHost, parseTencentShareUrl } from "@/lib/sv/tencent/shareLink";
+import { fetchYandexMeta } from "@/lib/sv/yandex/api";
+import { isYandexShareHost, parseYandexShareUrl } from "@/lib/sv/yandex/shareLink";
 import { normalizeStoragePanoId } from "@/lib/sv/providers/panoIdStorage";
 
 /** A single location parsed out of a pasted Maps URL or a bare coordinate. */
@@ -269,6 +271,46 @@ async function parseTencentLocation(url: URL): Promise<ParsedLocation | null> {
 	};
 }
 
+async function parseYandexLocation(url: URL): Promise<ParsedLocation | null> {
+	const parsed = parseYandexShareUrl(url);
+	if (!parsed?.panoId) return null;
+
+	let lat = parsed.lat;
+	let lng = parsed.lng;
+	let heading = parsed.heading;
+	const pitch = parsed.pitch;
+	const panoId = parsed.panoId;
+
+	try {
+		const meta = await fetchYandexMeta(panoId);
+		if (meta) {
+			lat = meta.lat;
+			lng = meta.lng;
+			if (heading === 0 && pitch === 0) {
+				heading = meta.heading;
+			}
+		}
+	} catch {
+		/* need meta for coords */
+	}
+
+	if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+		return null;
+	}
+
+	return {
+		lat,
+		lng,
+		heading,
+		pitch,
+		zoom: 0,
+		panoId,
+		provider: "yandex",
+		flags: LocationFlag.LoadAsPanoId,
+		tags: [],
+	};
+}
+
 // One coordinate component: signed degrees, optional `°`, optional minutes (with
 // `'`/`′`) and seconds (with `"`/`″`), optional N/S/E/W hemisphere. Markers are
 // required for DMS/DDM so bare integers can't masquerade as degrees+minutes.
@@ -393,6 +435,9 @@ export async function parseMapsUrl(input: string): Promise<ParsedLocation | null
 	}
 	if (isTencentShareHost(url.hostname)) {
 		return parseTencentLocation(url);
+	}
+	if (isYandexShareHost(url.hostname)) {
+		return parseYandexLocation(url);
 	}
 
 	return parseExpandedMapsUrl(url);

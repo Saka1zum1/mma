@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
-import { useActiveLocation } from "@/store/useMapStore";
+import { useSyncStore } from "@/lib/events";
+import { useMapState } from "@/store/useMapStore";
 import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
 import { singletonDiv, singletonPano } from "@/lib/sv/panoSingleton";
@@ -33,16 +34,12 @@ function resizeMountedPano(usingAlt: boolean) {
  *  the active alt-provider viewport (Look Around PSV). LocationPreview yields ownership
  *  while this is mounted. No embed controls. */
 export function FullscreenMiniLocationPreview() {
-	const location = useActiveLocation();
+	const location = useMapState((s) => s.activeLocation);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const scale = useSetting("fullscreenMiniLocationScale");
 	const [expanded, setExpanded] = useState(false);
 	const closeTimer = useRef<number | null>(null);
-	const altViewportEpoch = useSyncExternalStore(
-		subscribeActivePanoViewport,
-		getActivePanoViewportSnapshot,
-		getActivePanoViewportSnapshot,
-	);
+	const altViewportEpoch = useSyncStore(subscribeActivePanoViewport, getActivePanoViewportSnapshot);
 	const altViewport = getActivePanoViewport();
 	const hasAltProvider = !!location && !!findPanoProvider(location);
 	const usingAlt = hasAltProvider && !!altViewport;

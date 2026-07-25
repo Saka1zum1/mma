@@ -8,7 +8,7 @@ import { TENCENT_CAMERA_BADGE, tencentSpawnPanoId } from "@/lib/sv/tencent/sessi
 import { isTencentPanoId } from "@/lib/sv/tencent/prefix";
 import { PanoType } from "@/types";
 import { useAsync } from "@/lib/hooks/useAsync";
-import { useActiveLocation } from "@/store/useMapStore";
+import { useMapState } from "@/store/useMapStore";
 import { usePanoViewer } from "./PanoViewerContext";
 
 /** Google SV camera generations (+ unofficial). Provider badges are separate. */
@@ -40,14 +40,18 @@ function asBuiltinCameraType(raw: unknown): BuiltinCameraType | null {
 }
 
 export function useCameraType(panoId: string | null): DisplayCameraBadge | null {
-	const active = useActiveLocation();
+	const active = useMapState((s) => s.activeLocation);
 	const { panoDates, dateState } = usePanoViewer();
 	const provider = active ? findPanoProvider(active) : null;
 	const isBaidu =
 		(active != null && getLocationProvider(active) === "baidu") || isBaiduPanoId(panoId);
 	const isTencent =
 		(active != null && getLocationProvider(active) === "tencent") || isTencentPanoId(panoId);
-	const providerId = isBaidu ? "baidu" : isTencent ? "tencent" : (provider?.id ?? "");
+	const providerId = isBaidu
+		? "baidu"
+		: isTencent
+			? "tencent"
+			: (provider?.id ?? "");
 	const spawnId = active
 		? isBaidu
 			? baiduSpawnPanoId(active)

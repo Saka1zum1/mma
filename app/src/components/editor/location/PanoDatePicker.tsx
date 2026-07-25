@@ -7,7 +7,7 @@ import { getLocationProvider } from "@/lib/sv/providers/types";
 import { useCameraType, type DisplayCameraBadge, type BuiltinCameraType } from "./useCameraType";
 import { usePanoViewer } from "./PanoViewerContext";
 import { NSelect } from "@/components/primitives/NSelect";
-import { useActiveLocation } from "@/store/useMapStore";
+import { useMapState } from "@/store/useMapStore";
 
 function BuiltinBadge({ type }: { type: BuiltinCameraType }) {
 	switch (type) {
@@ -76,13 +76,14 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 }: {
 	onChange: (panoId: string | null) => void;
 }) {
-	const location = useActiveLocation();
+	const location = useMapState((s) => s.activeLocation);
 	const provider = location ? findPanoProvider(location) : null;
 	// Baidu uses native Google SV lifecycle (no MMA PanoProvider) but has day-level dates.
 	const dayLevel =
 		provider?.dateGranularity === "day" ||
 		getLocationProvider(location) === "baidu" ||
-		getLocationProvider(location) === "tencent";
+		getLocationProvider(location) === "tencent" ||
+		getLocationProvider(location) === "yandex";
 	const { selectedPanoId, dateState, exactDate, resolvedTz } = usePanoViewer();
 	const { defaultEntry, sorted, isDefault, displayDate, triggerPanoId } = dateState;
 	const prevLabelRef = useRef("");

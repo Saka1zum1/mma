@@ -11,6 +11,8 @@ import { baiduDateToUnix } from "@/lib/sv/baidu/panoExtra";
 import { prefixBaidu } from "@/lib/sv/baidu/prefix";
 import type { TencentPanoMeta } from "@/lib/sv/tencent/api";
 import { prefixTencent } from "@/lib/sv/tencent/prefix";
+import type { YandexPanoMeta } from "@/lib/sv/yandex/api";
+import { prefixYandex } from "@/lib/sv/yandex/prefix";
 import type { AltSvProviderId } from "./types";
 
 export interface InjectAlternateHit {
@@ -111,6 +113,17 @@ export function alternateHitFromTencentMeta(meta: TencentPanoMeta): InjectAltern
 
 /** @deprecated Use alternateHitFromTencentMeta */
 export const chinaHitFromTencentMeta = alternateHitFromTencentMeta;
+
+export function alternateHitFromYandexMeta(meta: YandexPanoMeta): InjectAlternateHit {
+	return {
+		provider: "yandex",
+		pano: prefixYandex(meta.id),
+		lat: meta.lat,
+		lng: meta.lng,
+		timestamp: meta.captureDate.getTime(),
+		cameraType: "yandex",
+	};
+}
 
 export function clearInjectAlternates(): void {
 	hits.clear();

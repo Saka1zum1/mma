@@ -92,7 +92,18 @@ export async function renderTencentLocationImage(
 	if (!svid) return null;
 	const name = svid;
 
-	if (config.mode === "tile") return null;
+	if (config.mode === "tile") {
+		// Native equirect tiles are level 1 (16×8 @ 512). Other zooms use the same grid.
+		const blob = await fetchTencentBlob(
+			tencentPanoTileUrl(svid, TILE_LEVEL, config.tileX, config.tileY),
+		);
+		return blob
+			? {
+					blob,
+					fileName: `${name}_z${TILE_LEVEL}_x${config.tileX}_y${config.tileY}.jpg`,
+				}
+			: null;
+	}
 
 	if (config.mode === "thumbnail") {
 		const blob = await fetchTencentBlob(tencentDownloadThumbUrl(svid));

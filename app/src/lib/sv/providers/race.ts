@@ -92,8 +92,9 @@ export const raceChinaNear = raceInjectProvidersNear;
 export async function createInjectProviderLocationAtLatLng(
 	lat: number,
 	lng: number,
+	radiusM?: number,
 ): Promise<Location | null> {
-	const hit = await raceInjectProvidersNear(lat, lng);
+	const hit = await raceInjectProvidersNear(lat, lng, radiusM);
 	if (!hit) return null;
 	const loc = hit.toLocation();
 	await addLocations([loc], { hideInDelta: true });

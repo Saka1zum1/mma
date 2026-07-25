@@ -7,6 +7,7 @@
  */
 import { stripBaidu, prefixBaidu, BAIDU_PANO_PREFIX } from "@/lib/sv/baidu/prefix";
 import { stripTencent, prefixTencent, TENCENT_PANO_PREFIX } from "@/lib/sv/tencent/prefix";
+import { stripYandex, prefixYandex, YANDEX_PANO_PREFIX } from "@/lib/sv/yandex/prefix";
 import type { AltSvProviderId, SvProvider } from "./types";
 
 const STORAGE_PREFIXES: ReadonlyArray<{
@@ -17,7 +18,7 @@ const STORAGE_PREFIXES: ReadonlyArray<{
 	{ prefix: "APPLE:", provider: "apple", strip: (id) => (id.startsWith("APPLE:") ? id.slice(6) : id) },
 	{ prefix: BAIDU_PANO_PREFIX, provider: "baidu", strip: stripBaidu },
 	{ prefix: TENCENT_PANO_PREFIX, provider: "tencent", strip: stripTencent },
-	{ prefix: "YANDEX:", provider: "yandex", strip: (id) => (id.startsWith("YANDEX:") ? id.slice(7) : id) },
+	{ prefix: YANDEX_PANO_PREFIX, provider: "yandex", strip: stripYandex },
 ];
 
 export interface ParsedStoragePanoRef {
@@ -70,6 +71,8 @@ export function viewerPanoId(provider: SvProvider, storagePanoId: string): strin
 			return prefixBaidu(storagePanoId);
 		case "tencent":
 			return prefixTencent(storagePanoId);
+		case "yandex":
+			return prefixYandex(storagePanoId);
 		default:
 			return storagePanoId;
 	}

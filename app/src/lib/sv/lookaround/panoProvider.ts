@@ -4,7 +4,7 @@
 import type { Location } from "@/bindings.gen";
 import { registerPanoProvider } from "@/lib/sv/panoProvider";
 import { getLocationPanoId, getLocationProvider } from "@/lib/sv/providers/types";
-import { getActiveLocation } from "@/store/useMapStore";
+import { getMapState } from "@/store/useMapStore";
 import { getApi, META_OPEN } from "./api";
 import { resolvePanoForLocation } from "./tile";
 import { buildPanoExtra, type LookAroundCameraType } from "./panoExtra";
@@ -124,7 +124,7 @@ export function registerLookAroundPanoProvider(): () => void {
 			}
 			if (location.zoom != null) panorama.setZoom(location.zoom);
 
-			const active = getActiveLocation();
+			const active = getMapState().activeLocation;
 			if (active) void patchLocationExtra(active, buildPanoExtra(full));
 
 			const resize = () => {
@@ -149,11 +149,19 @@ export function registerLookAroundPanoProvider(): () => void {
 				getAltitude: proxy.getAltitude,
 				destroy() {
 					proxy.destroy();
+					// PSV aborts in-flight texture loads asynchronously on destroy.
+					const swallowAbort = (e: PromiseRejectionEvent) => {
+						const r = e.reason;
+						if (r instanceof Error && r.name === "AbortError") e.preventDefault();
+					};
+					window.addEventListener("unhandledrejection", swallowAbort);
 					try {
 						handle.destroy();
 					} catch {
 						/* ignore */
 					}
+					queueMicrotask(() => window.removeEventListener("unhandledrejection", swallowAbort));
+					setTimeout(() => window.removeEventListener("unhandledrejection", swallowAbort), 100);
 					container.remove();
 				},
 			};

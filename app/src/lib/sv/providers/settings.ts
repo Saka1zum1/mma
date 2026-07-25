@@ -1,18 +1,37 @@
 import { mdiApple, mdiEarth } from "@mdi/js";
-import type { AltProviderSettings, MapSettings, ProvidersSettings } from "@/bindings.gen";
+import type {
+	AltBasemapSettings,
+	AltBasemapSlot,
+	AltProviderSettings,
+	MapSettings,
+	ProvidersSettings,
+} from "@/bindings.gen";
 import {
-	getCurrentMap,
-	subscribeStore,
+	getMapState,
 	updateMapMeta,
 } from "@/store/useMapStore";
+import { subscribe } from "@/lib/events";
+import { normalizeYandexBasemapLanguage } from "@/lib/sv/yandex/endpoints";
 import type { AltSvProviderId, SvProviderCatalogEntry } from "./types";
 import { bumpProviderCoverageLayers } from "./coverageLayers";
 
 /** Re-export binding names used across the providers UI. */
-export type { AltProviderSettings, ProvidersSettings };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, ProvidersSettings };
 
 /** Runtime settings with all fields present (bindings mark fields optional via serde default). */
 export type ResolvedAltProviderSettings = Required<AltProviderSettings>;
+
+export type AltBasemapId = "petal" | "yandex";
+
+export type ResolvedAltBasemapSlot = {
+	enabled: boolean;
+	language: string;
+};
+
+export type ResolvedAltBasemapSettings = {
+	petal: ResolvedAltBasemapSlot;
+	yandex: ResolvedAltBasemapSlot;
+};
 
 /** Shared defaults for every alternate provider slot. */
 export const DEFAULT_ALT_PROVIDER_SETTINGS: ResolvedAltProviderSettings = {
@@ -31,6 +50,11 @@ export const DEFAULT_ALT_PROVIDER_SETTINGS: ResolvedAltProviderSettings = {
 	trekkerPointStroke: "rgba(173, 140, 191, 0.9)",
 	lineWidthScale: 1,
 	pointSizeScale: 1,
+};
+
+export const DEFAULT_ALT_BASEMAP_SETTINGS: ResolvedAltBasemapSettings = {
+	petal: { enabled: false, language: "en" },
+	yandex: { enabled: false, language: "ru_RU" },
 };
 
 const ALT_PROVIDER_IDS: readonly AltSvProviderId[] = [
@@ -68,8 +92,9 @@ export const PROVIDER_CATALOG: SvProviderCatalogEntry[] = [
 		id: "yandex",
 		label: "Yandex",
 		icon: mdiEarth,
+		/** Parallel race with other inject providers on blank click. */
 		priority: 5,
-		available: false,
+		available: true,
 	},
 ];
 
@@ -81,12 +106,75 @@ function normalizeProvider(
 	return { ...DEFAULT_ALT_PROVIDER_SETTINGS, ...raw };
 }
 
+function normalizeBasemapSlot(
+	raw: AltBasemapSlot | null | undefined,
+	fallback: ResolvedAltBasemapSlot,
+): ResolvedAltBasemapSlot {
+	if (!raw) return fallback;
+	return {
+		enabled: raw.enabled ?? fallback.enabled,
+		language: raw.language || fallback.language,
+	};
+}
+
+function normalizeAltBasemap(
+	raw: AltBasemapSettings | null | undefined,
+): ResolvedAltBasemapSettings {
+	if (!raw) return DEFAULT_ALT_BASEMAP_SETTINGS;
+	const petal = normalizeBasemapSlot(raw.petal, DEFAULT_ALT_BASEMAP_SETTINGS.petal);
+	const yandex = normalizeBasemapSlot(raw.yandex, DEFAULT_ALT_BASEMAP_SETTINGS.yandex);
+	// Enforce mutual exclusion when reading (petal wins if both on).
+	if (petal.enabled && yandex.enabled) {
+		return { petal, yandex: { ...yandex, enabled: false } };
+	}
+	return { petal, yandex };
+}
+
+/** Legacy per-provider petalBasemap fields (pre-altBasemapSettings). */
+type LegacyProviderSlot = AltProviderSettings & {
+	petalBasemap?: boolean;
+	petalBasemapLanguage?: string;
+};
+
+function migrateLegacyAltBasemap(bag: ProvidersSettings): AltBasemapSettings | null {
+	if (bag.altBasemapSettings) return bag.altBasemapSettings;
+
+	let petalEnabled = false;
+	let petalLang = DEFAULT_ALT_BASEMAP_SETTINGS.petal.language;
+	let yandexEnabled = false;
+	let yandexLang = DEFAULT_ALT_BASEMAP_SETTINGS.yandex.language;
+	let found = false;
+
+	for (const id of ["baidu", "tencent"] as const) {
+		const slot = bag[id] as LegacyProviderSlot | null | undefined;
+		if (!slot?.petalBasemap) continue;
+		found = true;
+		petalEnabled = true;
+		petalLang = slot.petalBasemapLanguage === "zh" ? "zh" : "en";
+	}
+
+	const ySlot = bag.yandex as LegacyProviderSlot | null | undefined;
+	if (ySlot?.petalBasemap) {
+		found = true;
+		const lang = ySlot.petalBasemapLanguage ?? "";
+		yandexLang = normalizeYandexBasemapLanguage(lang === "en" ? "en_US" : lang);
+		if (!petalEnabled) yandexEnabled = true;
+	}
+
+	if (!found) return null;
+	return {
+		petal: { enabled: petalEnabled, language: petalLang },
+		yandex: { enabled: yandexEnabled, language: yandexLang },
+	};
+}
+
 function emptyProviders(): ProvidersSettings {
 	return {
 		apple: null,
 		baidu: null,
 		tencent: null,
 		yandex: null,
+		altBasemapSettings: null,
 	};
 }
 
@@ -105,6 +193,8 @@ function parseFromMapSettings(settings: MapSettings | undefined): ProvidersSetti
 		const slot = raw[id];
 		out[id] = slot ? normalizeProvider(slot) : null;
 	}
+	out.altBasemapSettings =
+		migrateLegacyAltBasemap(raw) ?? raw.altBasemapSettings ?? null;
 	return out;
 }
 
@@ -120,6 +210,7 @@ const snapshots: Record<AltSvProviderId, ResolvedAltProviderSettings> = {
 	tencent: DEFAULT_ALT_PROVIDER_SETTINGS,
 	yandex: DEFAULT_ALT_PROVIDER_SETTINGS,
 };
+let altBasemapSnapshot: ResolvedAltBasemapSettings = DEFAULT_ALT_BASEMAP_SETTINGS;
 let boundMapId: string | null = null;
 const listeners = new Set<() => void>();
 
@@ -128,6 +219,7 @@ function refreshSnapshots() {
 		const slot = readSlot(settings, id);
 		snapshots[id] = slot ? normalizeProvider(slot) : DEFAULT_ALT_PROVIDER_SETTINGS;
 	}
+	altBasemapSnapshot = normalizeAltBasemap(settings.altBasemapSettings);
 }
 
 function emit() {
@@ -135,7 +227,7 @@ function emit() {
 }
 
 function syncFromOpenMap() {
-	const map = getCurrentMap();
+	const map = getMapState().map;
 	const mapId = map?.meta.id ?? null;
 	if (mapId !== boundMapId) {
 		boundMapId = mapId;
@@ -156,7 +248,7 @@ function syncFromOpenMap() {
 }
 
 async function persistToMap(next: ProvidersSettings): Promise<void> {
-	const map = getCurrentMap();
+	const map = getMapState().map;
 	if (!map) return;
 	await updateMapMeta({
 		settings: {
@@ -167,7 +259,7 @@ async function persistToMap(next: ProvidersSettings): Promise<void> {
 }
 
 // Keep mirror aligned when the map store changes (open / meta patch).
-subscribeStore(() => {
+subscribe("store:changed", () => {
 	syncFromOpenMap();
 });
 syncFromOpenMap();
@@ -185,8 +277,66 @@ export function getProviderSettings(id: AltSvProviderId): ResolvedAltProviderSet
 	return snapshots[id];
 }
 
+/** Stable resolved alt basemap settings (useSyncExternalStore-safe). */
+export function getAltBasemapSettings(): ResolvedAltBasemapSettings {
+	return altBasemapSnapshot;
+}
+
 export function isProviderEnabled(id: AltSvProviderId): boolean {
 	return snapshots[id].enabled;
+}
+
+/** True when every available catalog provider is enabled. */
+export function areAllProvidersEnabled(): boolean {
+	return PROVIDER_CATALOG.filter((p) => p.available).every((p) => snapshots[p.id].enabled);
+}
+
+/** Enable or disable every available alternate provider in one update. */
+export function setAllProvidersEnabled(enabled: boolean): void {
+	let bag: ProvidersSettings = { ...settings };
+	for (const p of PROVIDER_CATALOG) {
+		if (!p.available) continue;
+		const slot = bag[p.id] ? normalizeProvider(bag[p.id]) : { ...snapshots[p.id] };
+		bag = { ...bag, [p.id]: { ...slot, enabled } };
+	}
+	settings = bag;
+	refreshSnapshots();
+	emit();
+	bumpProviderCoverageLayers();
+	void persistToMap(settings);
+	if (enabled) {
+		const first = PROVIDER_CATALOG.find((p) => p.available);
+		if (first) rememberLastEnabledProvider(first.id);
+	}
+}
+
+/**
+ * Update Petal or Yandex basemap settings. Enabling one disables the other
+ * (mutually exclusive alt basemaps).
+ */
+export function updateAltBasemapSettings(
+	id: AltBasemapId,
+	patch: Partial<ResolvedAltBasemapSlot>,
+): void {
+	const current = altBasemapSnapshot;
+	const nextSlot: ResolvedAltBasemapSlot = {
+		...current[id],
+		...patch,
+	};
+	let next: ResolvedAltBasemapSettings = { ...current, [id]: nextSlot };
+
+	if (patch.enabled === true) {
+		const other: AltBasemapId = id === "petal" ? "yandex" : "petal";
+		if (next[other].enabled) {
+			next = { ...next, [other]: { ...next[other], enabled: false } };
+		}
+	}
+
+	settings = { ...settings, altBasemapSettings: next };
+	refreshSnapshots();
+	emit();
+	bumpProviderCoverageLayers();
+	void persistToMap(settings);
 }
 
 export function updateProviderSettings(
@@ -198,7 +348,11 @@ export function updateProviderSettings(
 	if (patch.enabled === true && patch.preferred === undefined) {
 		next.preferred = false;
 	}
-	let bag: ProvidersSettings = { ...settings, [id]: next };
+	let bag: ProvidersSettings = {
+		...settings,
+		[id]: next,
+		altBasemapSettings: altBasemapSnapshot,
+	};
 
 	// Prefer is exclusive across alternate providers.
 	if (patch.preferred === true) {
@@ -251,7 +405,7 @@ export function getHeaderProviderId(): AltSvProviderId | null {
 	return enabled[0]?.id ?? null;
 }
 
-/** Reset style knobs; keep enabled / preferred. */
+/** Reset style knobs; keep enabled / preferred. Does not reset alt basemap. */
 export function resetProviderSettings(id: AltSvProviderId): void {
 	const current = snapshots[id];
 	settings = {
@@ -261,6 +415,7 @@ export function resetProviderSettings(id: AltSvProviderId): void {
 			enabled: current.enabled,
 			preferred: current.preferred,
 		},
+		altBasemapSettings: altBasemapSnapshot,
 	};
 	refreshSnapshots();
 	emit();

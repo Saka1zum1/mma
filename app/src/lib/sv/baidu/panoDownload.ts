@@ -93,8 +93,13 @@ export async function renderBaiduLocationImage(
 	if (!sid) return null;
 	const name = sid;
 
-	// Tile mode is Google-only (caller skips non-Google).
-	if (config.mode === "tile") return null;
+	if (config.mode === "tile") {
+		const z = Math.min(Math.max(Math.round(config.zoom), 1), MAX_ZOOM);
+		const blob = await fetchBaiduBlob(baiduTileUrlAtZoom(sid, z, config.tileX, config.tileY));
+		return blob
+			? { blob, fileName: `${name}_z${z}_x${config.tileX}_y${config.tileY}.jpg` }
+			: null;
+	}
 
 	if (config.mode === "thumbnail") {
 		const blob = await fetchBaiduBlob(

@@ -15,9 +15,11 @@ import { buildBaiduShareUrl, shortenBaiduShareUrl } from "@/lib/sv/baidu/shareLi
 import { stripBaidu, isBaiduPanoId } from "@/lib/sv/baidu/prefix";
 import { buildTencentShareUrl } from "@/lib/sv/tencent/shareLink";
 import { stripTencent, isTencentPanoId } from "@/lib/sv/tencent/prefix";
+import { buildYandexShareUrl } from "@/lib/sv/yandex/shareLink";
+import { stripYandex, isYandexPanoId } from "@/lib/sv/yandex/prefix";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { useSettings } from "@/store/settings";
-import { getCurrentMap, getActiveLocation, useActiveLocation } from "@/store/useMapStore";
+import { getMapState, useMapState } from "@/store/useMapStore";
 import { getPanoAltitude, subscribePanoAltitude } from "./PanoViewerContext";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useHotkeyRef } from "@/lib/hooks/useHotkey";
@@ -405,7 +407,7 @@ function ReturnToSpawnControl({
 	panorama: google.maps.StreetViewPanorama;
 	onReturnToSpawn: () => void;
 }) {
-	const location = useActiveLocation();
+	const location = useMapState((s) => s.activeLocation);
 	const [hasChanged, setHasChanged] = useState(false);
 	useEffect(() => {
 		if (!location) return;
@@ -448,9 +450,9 @@ function CoordinateControl({ panorama }: { panorama: google.maps.StreetViewPanor
 	useEffect(() => {
 		const update = () => {
 			const zoom = (panorama.getZoom() ?? 0).toFixed(2);
-			let altitude = getPanoAltitude();
-			if (altitude == null) {
-				const alt = getActiveLocation()?.extra?.altitude;
+		let altitude = getPanoAltitude();
+		if (altitude == null) {
+			const alt = getMapState().activeLocation?.extra?.altitude;
 				if (typeof alt === "number" && Number.isFinite(alt)) altitude = alt;
 			}
 			if (textRef.current) {
@@ -491,7 +493,7 @@ function CoordinateControl({ panorama }: { panorama: google.maps.StreetViewPanor
 // --- PanoControls ---
 
 function PanoMetadataControl() {
-	const location = useActiveLocation();
+	const location = useMapState((s) => s.activeLocation);
 	if (!location) return null;
 	return (
 		<div
@@ -535,11 +537,13 @@ export const PanoControls = memo(function PanoControls({
 	const jumpBackwardKey = useBinding("jumpBackward");
 	const [copyState, setCopyState] = useState<"idle" | "loading" | "done">("idle");
 
-	const location = useActiveLocation();
+	const location = useMapState((s) => s.activeLocation);
 	const provider = getLocationProvider(location);
+	const panoId = panorama.getPano();
 	const isAppleLocation = provider === "apple";
-	const isBaiduLocation = provider === "baidu";
-	const isTencentLocation = provider === "tencent";
+	const isBaiduLocation = provider === "baidu" || isBaiduPanoId(panoId);
+	const isTencentLocation = provider === "tencent" || isTencentPanoId(panoId);
+	const isYandexLocation = provider === "yandex" || isYandexPanoId(panoId);
 
 	const buildMapsUrl = useCallback(() => {
 		const pos = panorama.getPosition();
@@ -564,6 +568,13 @@ export const PanoControls = memo(function PanoControls({
 			const svid = stripTencent(loc?.pano ?? "");
 			if (!svid) return null;
 			return new URL(buildTencentShareUrl(svid, pov.heading, pov.pitch));
+		}
+
+		if (isYandexLocation) {
+			const loc = panorama.getLocation();
+			const oid = stripYandex(loc?.pano ?? "");
+			if (!oid) return null;
+			return new URL(buildYandexShareUrl(oid, pos.lat(), pos.lng(), pov.heading));
 		}
 
 		const loc = panorama.getLocation();
@@ -593,7 +604,7 @@ export const PanoControls = memo(function PanoControls({
 		url.searchParams.set("coh", "235716");
 		url.searchParams.set("entry", "tts");
 		return url;
-	}, [panorama, isAppleLocation, isBaiduLocation, isTencentLocation]);
+	}, [panorama, isAppleLocation, isBaiduLocation, isTencentLocation, isYandexLocation]);
 
 	const buildAppleShareUrl = useCallback(() => {
 		const pos = panorama.getPosition();
@@ -617,6 +628,15 @@ export const PanoControls = memo(function PanoControls({
 		const svid = stripTencent(loc?.pano ?? "");
 		if (!svid || !pov) return null;
 		return buildTencentShareUrl(svid, pov.heading, pov.pitch);
+	}, [panorama]);
+
+	const buildYandexCopyUrl = useCallback(() => {
+		const loc = panorama.getLocation();
+		const pos = panorama.getPosition();
+		const pov = panorama.getPov();
+		const oid = stripYandex(loc?.pano ?? "");
+		if (!oid || !pos || !pov) return null;
+		return buildYandexShareUrl(oid, pos.lat(), pos.lng(), pov.heading);
 	}, [panorama]);
 
 	const openInMaps = useCallback(() => {
@@ -667,11 +687,20 @@ export const PanoControls = memo(function PanoControls({
 				return;
 			}
 
+			if (isYandexLocation) {
+				const link = buildYandexCopyUrl();
+				if (!link) return;
+				await navigator.clipboard.writeText(link).catch(() => {});
+				setCopyState("done");
+				setTimeout(() => setCopyState("idle"), 500);
+				return;
+			}
+
 			const url = buildMapsUrl();
 			if (!url) return;
-			const active = getActiveLocation();
-			if (!noTags && active) {
-				const tagsById = getCurrentMap()?.meta.tags ?? {};
+		const active = getMapState().activeLocation;
+		if (!noTags && active) {
+			const tagsById = getMapState().map?.meta.tags ?? {};
 				for (const id of active.tags) {
 					const name = tagsById[id]?.name;
 					if (name) url.searchParams.append("extra[tags]", name);
@@ -700,9 +729,11 @@ export const PanoControls = memo(function PanoControls({
 			buildAppleShareUrl,
 			buildBaiduCopyUrl,
 			buildTencentCopyUrl,
+			buildYandexCopyUrl,
 			isAppleLocation,
 			isBaiduLocation,
 			isTencentLocation,
+			isYandexLocation,
 		],
 	);
 
@@ -753,14 +784,16 @@ export const PanoControls = memo(function PanoControls({
 			}
 
 			try {
-				// Look Around proxy / Baidu+Tencent inject: setPosition → SIS → provider meta.
+				// Look Around proxy / inject providers: setPosition → SIS → provider meta.
 				const panoId = panorama.getPano();
 				if (
 					altProvider ||
 					isBaiduPanoId(panoId) ||
 					isTencentPanoId(panoId) ||
+					isYandexPanoId(panoId) ||
 					isBaiduLocation ||
-					isTencentLocation
+					isTencentLocation ||
+					isYandexLocation
 				) {
 					panorama.setPosition(targetLit);
 					return;
@@ -781,7 +814,7 @@ export const PanoControls = memo(function PanoControls({
 				jumpPending.current = null;
 			}
 		},
-		[panorama, altProvider, isBaiduLocation, isTencentLocation],
+		[panorama, altProvider, isBaiduLocation, isTencentLocation, isYandexLocation],
 	);
 
 	const jumpForward = useCallback(() => {
