@@ -3,6 +3,7 @@
 - Fixed Tencent Street View tile projection at max zoom and coverage-layer rendering
 - Fixed Baidu Street View link parsing for panorama navigation arrows
 - Fixed fullscreen mini Street View preview hover-expand stretching the panorama canvas
+- Fixed LocationPreview tag staging using stale map metadata (save/remove/create tags)
 
 ## v0.8.2 - 2026-07-25
 - New setting for the color of newly drawn polygons

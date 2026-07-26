@@ -700,7 +700,7 @@ export const PanoControls = memo(function PanoControls({
 			if (!url) return;
 		const active = getMapState().activeLocation;
 		if (!noTags && active) {
-			const tagsById = getMapState().map?.meta.tags ?? {};
+			const tagsById = getMapState().tags;
 				for (const id of active.tags) {
 					const name = tagsById[id]?.name;
 					if (name) url.searchParams.append("extra[tags]", name);

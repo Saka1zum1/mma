@@ -114,7 +114,7 @@ import { useLocationHotkeys } from "./useLocationHotkeys";
 
 /** Tags are staged by name, not ID, because some tags do not exist yet. */
 function idsToNames(ids: number[]): string[] {
-	const tags = getMapState().map?.meta.tags ?? {};
+	const tags = getMapState().tags;
 	return ids.map((id) => tags[id]?.name).filter((n): n is string => n != null);
 }
 
