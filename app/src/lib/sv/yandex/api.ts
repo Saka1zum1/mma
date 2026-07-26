@@ -48,8 +48,9 @@ export interface YandexPanoMeta {
 	/** Images.Tiles — native tile pixel size (typically 256×256). */
 	tileWidth: number;
 	tileHeight: number;
+	/** Thoroughfare links — compass arrows / primary jumps. */
 	links: YandexLink[];
-	/** Same as links for clickToGo overlays (Thoroughfares + Graph nodes). */
+	/** Graph nodes for clickToGo overlays (prefer same capture year). */
 	neighbors: YandexLink[];
 	timeline: YandexTimeEntry[];
 }
@@ -194,14 +195,23 @@ function parsePayload(yandex: YandexApiPayload): YandexPanoMeta | null {
 		tileWidth,
 		tileHeight,
 		links,
-		neighbors: graphNodes
-			.filter((n) => n.panoid && Number.isFinite(n.lon) && Number.isFinite(n.lat))
-			.map((n) => ({
+		neighbors: (() => {
+			const geoNodes = graphNodes.filter(
+				(n) => n.panoid && Number.isFinite(n.lon) && Number.isFinite(n.lat),
+			);
+			const captureYear = captureDate.getFullYear();
+			const sameYear = geoNodes.filter(
+				(n) => parseYandexDateFromOid(n.panoid!).getFullYear() === captureYear,
+			);
+			// If no neighbor shares the capture year, keep the full Graph set.
+			const nodes = sameYear.length > 0 ? sameYear : geoNodes;
+			return nodes.map((n) => ({
 				oid: n.panoid!,
 				lng: n.lon!,
 				lat: n.lat!,
 				heading: bearingDeg(lng, lat, n.lon!, n.lat!),
-			})),
+			}));
+		})(),
 		timeline,
 	};
 }
