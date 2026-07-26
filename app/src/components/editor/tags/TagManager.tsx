@@ -46,6 +46,7 @@ import {
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
+import { useT } from "@/lib/i18n";
 
 /** `order` rides the optimistic overlay only; persisted order goes through `reorderTags`. */
 type OptimisticTagPatch = TagPatch & { order?: number };
@@ -56,6 +57,7 @@ const NO_VIRTUAL_TAGS = {};
 const NO_ALIASES = {};
 
 export function TagManager() {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const selectedTagIds = useMapState(getSelectedTagIds);
 	const tagCounts = useMapState((s) => s.tagCounts);
@@ -201,7 +203,7 @@ export function TagManager() {
 		<>
 			<ToolBlock
 				className="tag-manager"
-				title="Tags"
+				title={t("dialog.tags")}
 				isCollapsed={collapsed}
 				onCollapse={setCollapsed}
 				collapsedAddons={
@@ -220,13 +222,13 @@ export function TagManager() {
 				addons={
 					<>
 						<TextInput
-							placeholder="Filter tags..."
+							placeholder={t("editor.filterTags")}
 							value={filterText}
 							onChange={(e) => setFilterText(e.target.value)}
 						/>
 						<span className="tag-manager__spacer"></span>
 						{tagViewMode === "tree" && (
-							<Button onClick={() => setNewFolderParent("")}>New folder</Button>
+							<Button onClick={() => setNewFolderParent("")}>{t("editor.newFolder")}</Button>
 						)}
 						<span className="tag-manager__sort button-group">
 							{(["default", "name", "amount"] as TagSortMode[]).map((mode) => (
@@ -236,7 +238,13 @@ export function TagManager() {
 									aria-checked={sortMode === mode}
 									onClick={() => setSetting("tagSortMode", mode)}
 								>
-									{mode}
+									{t(
+										mode === "default"
+											? "editor.tagSortDefault"
+											: mode === "name"
+												? "editor.tagSortName"
+												: "editor.tagSortAmount",
+									)}
 								</Button>
 							))}
 						</span>
@@ -386,6 +394,7 @@ export function TagContextMenuContent({
 	/** Tree mode only: present on folder rows to create a declared subfolder. */
 	onNewSubfolder?: () => void;
 }) {
+	const { t } = useT();
 	const [selCount, setSelCount] = useState<number | null>(null);
 
 	useEffect(() => {
@@ -410,31 +419,31 @@ export function TagContextMenuContent({
 					className="context-menu__item"
 					onClick={() => removeTagFromAllLocations(tagId)}
 				>
-					Remove from all ({fmt.format(totalCount)} locations)
+					{t("editor.removeFromAll", { count: fmt.format(totalCount) })}
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					className="context-menu__item"
 					disabled={inSel === 0}
 					onClick={() => removeTagFromLocations(tagId, [...getMapState().selectedLocationIds])}
 				>
-					Remove from selection ({fmt.format(inSel)} locations)
+					{t("editor.removeFromSelection", { count: fmt.format(inSel) })}
 				</ContextMenu.Item>
 				<ContextMenu.Item className="context-menu__item" disabled={inSel === 0} onClick={onRename}>
-					Rename in selection ({fmt.format(inSel)} locations)
+					{t("editor.renameInSelection", { count: fmt.format(inSel) })}
 				</ContextMenu.Item>
 				{onAddAlias && (
 					<ContextMenu.Item className="context-menu__item" onClick={onAddAlias}>
-						Add alias...
+						{t("editor.addAlias")}
 					</ContextMenu.Item>
 				)}
 				{onNewSubfolder && (
 					<ContextMenu.Item className="context-menu__item" onClick={onNewSubfolder}>
-						New subfolder...
+						{t("editor.newSubfolder")}
 					</ContextMenu.Item>
 				)}
 				{onRemoveAlias && (
 					<ContextMenu.Item className="context-menu__item" onClick={onRemoveAlias}>
-						Remove alias
+						{t("editor.removeAlias")}
 					</ContextMenu.Item>
 				)}
 			</ContextMenu.Popup>
@@ -455,6 +464,7 @@ function RenameInSelectionDialog({
 	aliases: Record<string, number>;
 	setAliases: (v: Record<string, number>) => void;
 }) {
+	const { t } = useT();
 	const [name, setName] = useState(tag.name);
 
 	const handleSubmit = () => {
@@ -471,7 +481,7 @@ function RenameInSelectionDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title="Rename tag in selection">
+			<DialogContent title={t("dialog.renameTagInSelection")}>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -481,9 +491,9 @@ function RenameInSelectionDialog({
 				>
 					<TextInput type="text" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-						<Button onClick={onClose}>Cancel</Button>
+						<Button onClick={onClose}>{t("common.cancel")}</Button>
 						<Button variant="primary" type="submit">
-							Rename
+							{t("common.rename")}
 						</Button>
 					</div>
 				</form>
@@ -516,6 +526,7 @@ function EditTagDialog({
 		onApplyColor: (color: string) => void;
 	};
 }) {
+	const { t, tp } = useT();
 	const [name, setName] = useState(tag.name);
 	const [cascadeOn, setCascadeOn] = useState(false);
 	const [hsl, setHsl] = useState(() => hexToHsl(tag.color));
@@ -575,7 +586,7 @@ function EditTagDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title="Edit tag">
+			<DialogContent title={t("dialog.editTag")}>
 				<form
 					className="edit-tag-modal"
 					onSubmit={(e) => {
@@ -584,7 +595,7 @@ function EditTagDialog({
 					}}
 				>
 					<div className="edit-tag-modal__name">
-						Rename:{" "}
+						{t("editor.renameTagLabel")}{" "}
 						<TextInput
 							type="text"
 							value={name}
@@ -594,13 +605,14 @@ function EditTagDialog({
 						{cascade && (
 							<label className="edit-tag-modal__cascade">
 								<Checkbox checked={cascadeOn} onChange={(e) => setCascadeOn(e.target.checked)} />
-								Rename {cascade.descendantCount} tag{cascade.descendantCount === 1 ? "" : "s"}{" "}
-								inside
+								{tp("editor.renameTagsInside", cascade.descendantCount, {
+									count: fmt.format(cascade.descendantCount),
+								})}
 							</label>
 						)}
 					</div>
 					<div className="edit-tag-modal__color">
-						<span>Color:</span>
+						<span>{t("editor.colorLabel")}</span>
 						<input
 							className="text-input hex-color"
 							type="text"
@@ -626,32 +638,33 @@ function EditTagDialog({
 									onClose();
 								}}
 							>
-								Apply to {cascade.descendantCount} tag{cascade.descendantCount === 1 ? "" : "s"}{" "}
-								inside
+								{tp("editor.applyColorInside", cascade.descendantCount, {
+									count: fmt.format(cascade.descendantCount),
+								})}
 							</Button>
 						)}
 					</div>
 					<div className="edit-tag-modal__hotkey">
-						<span>Hotkey:</span>
+						<span>{t("editor.hotkeyLabel")}</span>
 						<HotkeyInput value={hotkey} onChange={setHotkey} />
 						<Button disabled={!hotkey} onClick={() => setHotkey("")}>
-							Clear
+							{t("common.clear")}
 						</Button>
 						{(holderTag || globalConflicts.length > 0) && (
 							<p className="edit-tag-modal__hotkey-note">
-								{holderTag && <>Takes the key from "{holderTag.name}". </>}
+								{holderTag && <>{t("editor.takesKeyFrom", { name: holderTag.name })} </>}
 								{globalConflicts.length > 0 && (
-									<>Overrides "{globalConflicts[0].label}" while this map is open.</>
+									<>{t("editor.overridesWhileOpen", { label: globalConflicts[0].label })}</>
 								)}
 							</p>
 						)}
 					</div>
 					<div className="edit-tag-modal__actions">
 						<Button variant="destructive" onClick={handleDelete} data-qa="tag-delete">
-							Delete
+							{t("common.delete")}
 						</Button>
 						<Button variant="primary" type="submit" data-qa="tag-save">
-							Save
+							{t("common.save")}
 						</Button>
 					</div>
 				</form>
@@ -679,6 +692,7 @@ function VirtualTagDialog({
 	onApplyColor: (color: string) => void;
 	onReset: () => void;
 }) {
+	const { t, tp } = useT();
 	const [hsl, setHsl] = useState(() => hexToHsl(color ?? "#888888"));
 	const hexValue = hslToHex(hsl.h, hsl.s, hsl.l);
 	const segment = path.split("/").pop() || path;
@@ -686,7 +700,7 @@ function VirtualTagDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={`Edit folder "${segment}"`}>
+			<DialogContent title={t("editor.editFolder", { name: segment })}>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -695,7 +709,7 @@ function VirtualTagDialog({
 					style={{ display: "flex", flexDirection: "column", gap: "0.5rem", paddingTop: "2px" }}
 				>
 					<div className="edit-tag-modal__name">
-						Rename:{" "}
+						{t("editor.renameTagLabel")}{" "}
 						<TextInput
 							type="text"
 							value={name}
@@ -704,7 +718,7 @@ function VirtualTagDialog({
 						/>
 					</div>
 					<div className="edit-tag-modal__color">
-						<span>Color:</span>
+						<span>{t("editor.colorLabel")}</span>
 						<input
 							className="text-input hex-color"
 							type="text"
@@ -725,16 +739,18 @@ function VirtualTagDialog({
 								className="edit-tag-modal__apply-color"
 								onClick={() => onApplyColor(hexValue)}
 							>
-								Apply to {descendantCount} tag{descendantCount === 1 ? "" : "s"} inside
+								{tp("editor.applyColorInside", descendantCount, {
+									count: fmt.format(descendantCount),
+								})}
 							</Button>
 						)}
 					</div>
 					<div className="edit-tag-modal__actions">
 						<Button variant="destructive" onClick={onReset} disabled={color == null}>
-							Reset
+							{t("common.reset")}
 						</Button>
 						<Button variant="primary" type="submit">
-							Save
+							{t("common.save")}
 						</Button>
 					</div>
 				</form>
@@ -761,6 +777,7 @@ function NewFolderDialog({
 	onClose: () => void;
 	onSave: (path: string) => void;
 }) {
+	const { t } = useT();
 	const [name, setName] = useState("");
 
 	// A new folder must claim a free slot.
@@ -778,7 +795,9 @@ function NewFolderDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={parentPath ? `New folder in "${parentPath}"` : "New folder"}>
+			<DialogContent
+				title={parentPath ? t("editor.newFolderIn", { parent: parentPath }) : t("editor.newFolder")}
+			>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -791,7 +810,7 @@ function NewFolderDialog({
 							type="text"
 							value={name}
 							onChange={(e) => setName(e.target.value)}
-							placeholder="Folder name"
+							placeholder={t("editor.folderName")}
 							autoFocus
 						/>
 						<span
@@ -802,13 +821,13 @@ function NewFolderDialog({
 								color: "var(--destructive)",
 							}}
 						>
-							{collision ? `"${path}" already exists in the tree` : ""}
+							{collision ? t("editor.folderExists", { path }) : ""}
 						</span>
 					</div>
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-						<Button onClick={onClose}>Cancel</Button>
+						<Button onClick={onClose}>{t("common.cancel")}</Button>
 						<Button variant="primary" type="submit" disabled={!path || collision}>
-							Create
+							{t("common.create")}
 						</Button>
 					</div>
 				</form>
@@ -834,6 +853,7 @@ function AddAliasDialog({
 	onClose: () => void;
 	onSave: (aliasPath: string) => void;
 }) {
+	const { t } = useT();
 	const [folder, setFolder] = useState("");
 	const segment = tag.name.split("/").pop() || tag.name;
 
@@ -870,7 +890,7 @@ function AddAliasDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={`Alias "${segment}"`}>
+			<DialogContent title={t("editor.aliasTitle", { name: segment })}>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -879,7 +899,7 @@ function AddAliasDialog({
 					style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
 				>
 					<div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-						<span style={{ fontSize: "0.85em", opacity: 0.7 }}>Target folder</span>
+						<span style={{ fontSize: "0.85em", opacity: 0.7 }}>{t("editor.targetFolder")}</span>
 						<SuggestInput
 							value={folder}
 							onChange={setFolder}
@@ -887,7 +907,7 @@ function AddAliasDialog({
 							onPick={setFolder}
 							renderItem={(p) => p}
 							getKey={(p) => p}
-							placeholder="e.g. Europe/France (blank = top level)"
+							placeholder={t("editor.targetFolderPlaceholder")}
 							portal
 							autoFocus
 							pickOnEnter={false}
@@ -895,19 +915,17 @@ function AddAliasDialog({
 						<span style={{ fontSize: "0.85em", opacity: 0.7 }}>
 							{collision ? (
 								<span style={{ color: "var(--destructive)" }}>
-									"{aliasPath}" already exists in the tree
+									{t("editor.folderExists", { path: aliasPath })}
 								</span>
 							) : (
-								<>
-									Appears as <strong>{aliasPath}</strong>
-								</>
+								t("editor.appearsAs", { path: aliasPath })
 							)}
 						</span>
 					</div>
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-						<Button onClick={onClose}>Cancel</Button>
+						<Button onClick={onClose}>{t("common.cancel")}</Button>
 						<Button variant="primary" type="submit" disabled={collision}>
-							Add alias
+							{t("editor.addAliasSubmit")}
 						</Button>
 					</div>
 				</form>

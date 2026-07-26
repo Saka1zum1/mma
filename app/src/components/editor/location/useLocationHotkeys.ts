@@ -16,6 +16,7 @@ import { PANO_ZOOM } from "@/lib/sv/constants";
 import { tweenPov } from "@/lib/sv/tweenPov";
 import { type PanoReference, nearestLinkHeading, followLinkedPanos } from "@/lib/sv/lookup";
 import { toast } from "@/lib/util/toast";
+import { t, tp } from "@/lib/i18n";
 import { downloadPano } from "@/lib/sv/panoDownload";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { isVirtualLocation } from "@/types";
@@ -205,14 +206,14 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		const heading = pano.getPov().heading;
 		if (!panoId) return;
 		const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
-		if (container) toast("Following road...", 1500, container);
+		if (container) toast(t("toast.followingRoad"), 1500, container);
 		followLinkedPanos(panoId, heading)
 			.then((locs) => {
 				if (locs.length > 0) addLocations(locs);
-				if (container) toast(`Added ${locs.length} locations`, 1500, container);
+				if (container) toast(tp("toast.addedLocations", locs.length, { count: locs.length }), 1500, container);
 			})
 			.catch(() => {
-				if (container) toast("Follow road failed", 1500, container);
+				if (container) toast(t("toast.followRoadFailed"), 1500, container);
 			});
 	});
 
@@ -277,14 +278,16 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 					log.debug(`[copyToMap] ipc=${Math.round(performance.now() - t0)}ms`);
 					if (!container) return;
 					toast(
-						res.copied > 0 ? `Copied to "${res.targetName}"` : `Already in "${res.targetName}"`,
+						res.copied > 0
+							? t("toast.copiedTo", { name: res.targetName })
+							: t("toast.alreadyIn", { name: res.targetName }),
 						1500,
 						container,
 					);
 				})
 				.catch((e) => {
 					log.error("[copyToMap] failed:", e);
-					if (container) toast("Copy failed", 1500, container);
+					if (container) toast(t("toast.copyFailed"), 1500, container);
 				});
 		});
 		return () => {

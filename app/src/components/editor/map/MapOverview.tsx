@@ -11,6 +11,7 @@ import {
 	selectSpacedFromSelection,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
+import { useT, tp } from "@/lib/i18n";
 import { sortTagsByMode } from "@/lib/util/util";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { useSetting } from "@/store/settings";
@@ -34,6 +35,7 @@ import { PinnedToolbar } from "./PinnedToolbar";
 import { SaveSelectionsDialog, ApplySavedSelectionDialog } from "./SavedSelectionDialogs";
 
 function RandomPickPanel() {
+	const { t } = useT();
 	const [value, setValue] = useState("");
 	const total = useMapState((s) => s.selectedLocationIds).size;
 	const parsed = Math.floor(Number(value));
@@ -47,26 +49,27 @@ function RandomPickPanel() {
 				if (!valid) return;
 				const picked = selectRandomFromSelection(count);
 				if (picked > 0)
-					toast(`Selected ${fmt.format(picked)} random location${picked !== 1 ? "s" : ""}`);
+					toast(tp("toast.selectedRandomLocations", picked, { count: fmt.format(picked) }));
 			}}
 		>
 			<TextInput
 				type="number"
 				min={1}
 				style={{ width: "7rem" }}
-				placeholder="Count"
+				placeholder={t("editor.count")}
 				value={value}
 				onChange={(e) => setValue(e.target.value)}
 			/>
-			<span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>
+			<span style={{ opacity: 0.6 }}>{t("editor.ofTotal", { total: fmt.format(total) })}</span>
 			<Button type="submit" disabled={!valid}>
-				Pick
+				{t("editor.pick")}
 			</Button>
 		</form>
 	);
 }
 
 function SpacedPickPanel() {
+	const { t, tp } = useT();
 	const [mode, setMode] = useState<"count" | "distance">("count");
 	const [value, setValue] = useState("");
 	const total = useMapState((s) => s.selectedLocationIds).size;
@@ -80,8 +83,13 @@ function SpacedPickPanel() {
 		selectSpacedFromSelection(opts)
 			.then(({ picked, distanceM }) => {
 				if (picked === 0) return;
-				const spacing = distanceM > 0 ? `, at least ${fmt.format(distanceM)}m apart` : "";
-				toast(`Selected ${fmt.format(picked)} location${picked !== 1 ? "s" : ""}${spacing}`);
+				const spacing =
+					distanceM > 0
+						? t("editor.spacedApartSuffix", { distance: fmt.format(distanceM) })
+						: "";
+				toast(
+					tp("toast.selectedLocations", picked, { count: fmt.format(picked) }) + spacing,
+				);
 			})
 			.catch((err) => toast(String(err)));
 	};
@@ -89,20 +97,22 @@ function SpacedPickPanel() {
 	return (
 		<form className="selection-manager__inline-form" onSubmit={handleSubmit}>
 			<NSelect value={mode} onChange={(e) => setMode(e.target.value as "count" | "distance")}>
-				<option value="count">Count</option>
-				<option value="distance">Min distance (m)</option>
+				<option value="count">{t("editor.count")}</option>
+				<option value="distance">{t("editor.minDistanceM")}</option>
 			</NSelect>
 			<TextInput
 				type="number"
 				min={1}
 				style={{ width: "7rem" }}
-				placeholder={mode === "count" ? "Count" : "Meters"}
+				placeholder={mode === "count" ? t("editor.count") : t("editor.meters")}
 				value={value}
 				onChange={(e) => setValue(e.target.value)}
 			/>
-			{mode === "count" && <span style={{ opacity: 0.6 }}>of {fmt.format(total)}</span>}
+			{mode === "count" && (
+				<span style={{ opacity: 0.6 }}>{t("editor.ofTotal", { total: fmt.format(total) })}</span>
+			)}
 			<Button type="submit" disabled={!valid}>
-				Pick
+				{t("editor.pick")}
 			</Button>
 		</form>
 	);
@@ -123,6 +133,7 @@ function TopKPanel({
 	ascending: boolean;
 	setAscending: (v: boolean) => void;
 }) {
+	const { t } = useT();
 	const fields = useExtraFieldKeys();
 	const field = fieldProp || fields[0]?.key || "";
 	return (
@@ -145,8 +156,8 @@ function TopKPanel({
 				value={ascending ? "bottom" : "top"}
 				onChange={(e) => setAscending(e.target.value === "bottom")}
 			>
-				<option value="top">Top</option>
-				<option value="bottom">Bottom</option>
+				<option value="top">{t("editor.top")}</option>
+				<option value="bottom">{t("editor.bottom")}</option>
 			</NSelect>
 			<TextInput
 				type="number"
@@ -156,17 +167,18 @@ function TopKPanel({
 				onChange={(e) => setCount(Math.max(1, Number(e.target.value)))}
 			/>
 			<Button type="submit" disabled={!field}>
-				Select
+				{t("common.select")}
 			</Button>
 		</form>
 	);
 }
 
 function SelectedCount({ className }: { className?: string }) {
+	const { t } = useT();
 	const total = useMapState((s) => s.selectedLocationIds.size);
 	return (
 		<span className={className}>
-			<span className="mono">{fmt.format(total)}</span> selected
+			<span className="mono">{fmt.format(total)}</span> {t("editor.selected")}
 		</span>
 	);
 }
@@ -184,6 +196,7 @@ function SelectionList() {
 }
 
 function BulkTagForm() {
+	const { t } = useT();
 	const [bulkTagInput, setBulkTagInput] = useState("");
 	const hasSelection = useMapState((s) => s.selectedLocationIds.size > 0);
 	const visibleTags = useMapState(getVisibleTags);
@@ -221,7 +234,7 @@ function BulkTagForm() {
 				<SuggestInput
 					containerClassName="tag-input__suggest"
 					inputClassName="tag-input__value"
-					placeholder="Bulk-add tag..."
+					placeholder={t("editor.bulkAddTag")}
 					disabled={!hasSelection}
 					value={bulkTagInput}
 					onChange={setBulkTagInput}
@@ -238,6 +251,7 @@ function BulkTagForm() {
 }
 
 export function MapOverview({ hidden }: { hidden?: boolean }) {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const [selectionsCollapsed, setSelectionsCollapsed] = useState(false);
 	const [dupDistance, setDupDistance] = useState(1);
@@ -274,7 +288,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 
 			<ToolBlock
 				className="selection-manager"
-				title="Selections"
+				title={t("dialog.selections")}
 				isCollapsed={selectionsCollapsed}
 				onCollapse={setSelectionsCollapsed}
 				collapsedAddons={<SelectedCount />}
@@ -283,7 +297,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 						<SelectedCount className="selection-manager__count" />
 						<span className="selection-manager__space" />
 						<PluginToolbar />
-						<Button onClick={() => openDialog("command-palette")}>Commands...</Button>
+						<Button onClick={() => openDialog("command-palette")}>{t("editor.commands")}</Button>
 					</>
 				}
 			>
@@ -308,7 +322,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 									}}
 								>
 									<label>
-										Distance (m):{" "}
+										{t("editor.distanceM")}{" "}
 										<TextInput
 											type="number"
 											min="0"
@@ -317,8 +331,8 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 											onChange={(e) => setDupDistance(Number(e.target.value))}
 										/>
 									</label>
-									<Button type="submit">Find</Button>
-									<Button onClick={() => setShowMergeDuplicates(true)}>Merge</Button>
+									<Button type="submit">{t("common.find")}</Button>
+									<Button onClick={() => setShowMergeDuplicates(true)}>{t("common.merge")}</Button>
 								</form>
 							),
 						},
@@ -326,7 +340,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 							render: () => (
 								<FilterForm
 									persistKey={map.meta.id}
-									submitLabel="Add filter"
+									submitLabel={t("editor.addFilter")}
 									onSubmit={(field, op, value, value2, tzLocal) => {
 										addSelections([{ type: "Filter", field, op, value, value2, tzLocal }]);
 									}}

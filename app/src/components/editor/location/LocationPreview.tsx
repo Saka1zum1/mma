@@ -111,6 +111,7 @@ import { patchLocationExtra } from "@/lib/sv/lookaround/patchExtra";
 import { PanoDatePicker } from "./PanoDatePicker";
 import { usePanoNavigation } from "./usePanoNavigation";
 import { useLocationHotkeys } from "./useLocationHotkeys";
+import { useT } from "@/lib/i18n";
 
 /** Tags are staged by name, not ID, because some tags do not exist yet. */
 function idsToNames(ids: number[]): string[] {
@@ -129,6 +130,7 @@ const TagEditor = memo(function TagEditor({
 	onChangeTags: React.Dispatch<React.SetStateAction<string[]>>;
 	isImport: boolean;
 }) {
+	const { t } = useT();
 	const [tagInput, setTagInput] = useState("");
 	const visibleTags = useMapState(getVisibleTags);
 	const tagCounts = useMapState((s) => s.tagCounts);
@@ -171,12 +173,7 @@ const TagEditor = memo(function TagEditor({
 	};
 
 	if (isImport) {
-		return (
-			<p>
-				This location is still being imported and cannot be modified. Complete the import before
-				making changes.
-			</p>
-		);
+		return <p>{t("editor.importBlocked")}</p>;
 	}
 
 	return (
@@ -200,7 +197,7 @@ const TagEditor = memo(function TagEditor({
 						<input
 							className="form-add-tag__input"
 							type="text"
-							placeholder="Add a tag…"
+							placeholder={t("editor.addTagPlaceholder")}
 							value={tagInput}
 							onChange={(e) => setTagInput(e.target.value)}
 						/>
@@ -234,7 +231,31 @@ const TagEditor = memo(function TagEditor({
 	);
 });
 
+function GeocodeDisplay({ geoResult }: { geoResult: GeoDisplay | null }) {
+	if (!geoResult?.countryCode && !geoResult?.address) return null;
+	return (
+		<>
+			{geoResult.countryCode && (
+				<Tooltip content={GEOCODE_PROVIDER_LABELS[getSettings().geocodeProvider]}>
+					<span>
+						<img
+							height={15}
+							width={20}
+							src={`/flags/${geoResult.countryCode.toUpperCase()}.svg`}
+							alt={geoResult.countryCode}
+							style={{ borderRadius: "2px", verticalAlign: "middle" }}
+						/>
+					</span>
+				</Tooltip>
+			)}
+			{geoResult.countryCode && geoResult.address && " "}
+			{geoResult.address && <span>{geoResult.address}</span>}
+		</>
+	);
+}
+
 export function LocationPreview() {
+	const { t } = useT();
 	const location = useMapState((s) => s.activeLocation);
 	const map = useMapState((s) => s.map);
 	const reviewSession = useReviewSession();
@@ -1112,9 +1133,11 @@ export function LocationPreview() {
 					)}
 					{lockInfo && (
 						<div className="viewport-lock-badge">
-							VIEWPORT LOCK h <span className="mono">{lockInfo.relHeading.toFixed(1)}</span> p{" "}
-							<span className="mono">{lockInfo.relPitch.toFixed(1)}</span> z{" "}
-							<span className="mono">{lockInfo.lockedZoom.toFixed(1)}</span>
+							{t("editor.viewportLock", {
+								heading: lockInfo.relHeading.toFixed(1),
+								pitch: lockInfo.relPitch.toFixed(1),
+								zoom: lockInfo.lockedZoom.toFixed(1),
+							})}
 						</div>
 					)}
 					{isFullscreen && appSettings.showFullscreenMinimap && <FullscreenMiniMap />}
@@ -1134,32 +1157,28 @@ export function LocationPreview() {
 							<PanoDatePicker onChange={handleDateChange} />
 						</div>
 					)}
+					{isFullscreen && appSettings.showFullscreenGeocode && (
+						<div className="fullscreen-geocode">
+							<GeocodeDisplay geoResult={geoResult} />
+						</div>
+					)}
 				</div>
 				<div className="location-preview__meta">
 					<span className="location-preview__description">
-						{geoResult?.countryCode && (
-							<Tooltip content={GEOCODE_PROVIDER_LABELS[getSettings().geocodeProvider]}>
-								<span>
-									<img
-										height={15}
-										width={20}
-										src={`/flags/${geoResult.countryCode.toUpperCase()}.svg`}
-										alt={geoResult.countryCode}
-										style={{ borderRadius: "2px", verticalAlign: "middle" }}
-									/>
-								</span>
-							</Tooltip>
-						)}
-						{geoResult?.countryCode && geoResult.address && " "}
-						{geoResult?.address && <span>{geoResult.address}</span>}
-						{(geoResult?.address || geoResult?.countryCode) && (
-							<span className="location-preview__timestamp-sep"> · </span>
+						{!isFullscreen && (
+							<>
+								<GeocodeDisplay geoResult={geoResult} />
+								{(geoResult?.address || geoResult?.countryCode) && (
+									<span className="location-preview__timestamp-sep"> · </span>
+								)}
+							</>
 						)}
 						<span className="location-preview__timestamps">
-							Created {relativeTime(location.createdAt)}
+							{t("editor.created", { time: relativeTime(location.createdAt) })}
 							{location.modifiedAt != null && (
 								<>
-									{" · "}Modified {relativeTime(location.modifiedAt)}
+									{" · "}
+									{t("editor.modified", { time: relativeTime(location.modifiedAt) })}
 								</>
 							)}
 						</span>
@@ -1169,24 +1188,24 @@ export function LocationPreview() {
 					</div>
 					<div className="location-preview__actions">
 						<Button variant="primary" onClick={handleSave} data-qa="location-save">
-							{isSeenPreview(location) ? "Add to map" : "Save"}
+							{isSeenPreview(location) ? t("editor.addToMap") : t("common.save")}
 						</Button>
 						{isReviewMode ? (
 							<div style={{ display: "flex", justifyContent: "space-around" }}>
-								<Tooltip content="Go to previous location (Control+Left)">
+								<Tooltip content={t("editor.prevLocation")}>
 									<Button
 										onClick={() => reviewPrev()}
 										disabled={reviewSession ? isAtStart(reviewSession) : true}
-										aria-label="Go to previous location (Control+Left)"
+										aria-label={t("editor.prevLocation")}
 										data-qa="review-prev"
 									>
 										<Icon path={mdiChevronLeft} />
 									</Button>
 								</Tooltip>
-								<Tooltip content="Go to next location (Control+Right)">
+								<Tooltip content={t("editor.nextLocation")}>
 									<Button
 										onClick={handleClose}
-										aria-label="Go to next location (Control+Right)"
+										aria-label={t("editor.nextLocation")}
 										data-qa="review-next"
 									>
 										<Icon path={mdiChevronRight} />
@@ -1195,11 +1214,11 @@ export function LocationPreview() {
 							</div>
 						) : (
 							<Button onClick={handleClose} data-qa="location-close">
-								Close
+								{t("common.close")}
 							</Button>
 						)}
 						<Button variant="destructive" onClick={handleDelete} data-qa="location-delete">
-							Delete
+							{t("common.delete")}
 						</Button>
 					</div>
 					<div className="location-preview__tags">

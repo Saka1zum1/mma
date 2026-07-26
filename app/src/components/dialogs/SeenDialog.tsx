@@ -12,6 +12,7 @@ import {
 	getSeenMaps,
 } from "@/lib/seen/seen";
 import type { SeenEntry, SeenFilter } from "@/bindings.gen";
+import { useT } from "@/lib/i18n";
 
 const PAGE_SIZE = 9;
 
@@ -66,6 +67,7 @@ export function SeenDialog({
 	onOpenChange: (open: boolean) => void;
 	onLoadPano: (entry: SeenEntry) => void;
 }) {
+	const { t } = useT();
 	const [entries, setEntries] = useState<SeenEntry[]>([]);
 	const [total, setTotal] = useState(0);
 	const [page, setPage] = useState(0);
@@ -148,14 +150,14 @@ export function SeenDialog({
 
 	return (
 		<Dialog open={open && ready} onOpenChange={onOpenChange}>
-			<DialogContent title={`Seen (${total})`} className="seen-dialog">
+			<DialogContent title={t("seen.title", { count: total })} className="seen-dialog">
 				<div className="seen-dialog__filters">
 					<NSelect
 						className="seen-dialog__select"
 						value={filterCountry || "_all"}
 						onChange={(e) => setFilterCountry(e.target.value === "_all" ? "" : e.target.value)}
 					>
-						<option value="_all">All countries</option>
+						<option value="_all">{t("seen.allCountries")}</option>
 						{countries.map((c) => (
 							<option key={c} value={c}>
 								{c.toUpperCase()}
@@ -167,7 +169,7 @@ export function SeenDialog({
 						value={filterMap || "_all"}
 						onChange={(e) => setFilterMap(e.target.value === "_all" ? "" : e.target.value)}
 					>
-						<option value="_all">All maps</option>
+						<option value="_all">{t("seen.allMaps")}</option>
 						{maps.map((m) => (
 							<option key={m.id} value={m.id}>
 								{m.name}
@@ -177,14 +179,14 @@ export function SeenDialog({
 					<TextInput
 						className="seen-dialog__search"
 						type="text"
-						placeholder="Search address..."
+						placeholder={t("seen.searchAddress")}
 						value={filterSearch}
 						onChange={(e) => handleSearchInput(e.target.value)}
 					/>
 				</div>
 				<div className="seen-dialog__grid">
 					{entries.length === 0 && !loading ? (
-						<div className="seen-dialog__empty">No panos found.</div>
+						<div className="seen-dialog__empty">{t("seen.noPanosFound")}</div>
 					) : (
 						entries.map((e) => <SeenEntryCard key={e.id} entry={e} onLoad={handleLoad} />)
 					)}
@@ -195,18 +197,18 @@ export function SeenDialog({
 						onClick={handleClear}
 						onBlur={() => setConfirmingClear(false)}
 					>
-						{confirmingClear ? "Are you sure?" : "Clear"}
+						{confirmingClear ? t("common.areYouSure") : t("common.clear")}
 					</Button>
 					<div className="seen-dialog__pagination">
 						<Button disabled={page === 0 || loading} onClick={() => load(page - 1, buildFilter())}>
-							Prev
+							{t("common.previous")}
 						</Button>
 						<span className="mono">{totalPages > 0 ? `${page + 1} / ${totalPages}` : "0 / 0"}</span>
 						<Button
 							disabled={page >= totalPages - 1 || loading}
 							onClick={() => load(page + 1, buildFilter())}
 						>
-							Next
+							{t("common.next")}
 						</Button>
 					</div>
 				</div>

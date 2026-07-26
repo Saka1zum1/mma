@@ -13,6 +13,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { mdiClose } from "@mdi/js";
+import { useT } from "@/lib/i18n";
 
 export function SaveSelectionsDialog({
 	open,
@@ -25,6 +26,7 @@ export function SaveSelectionsDialog({
 	name: string;
 	onNameChange: (v: string) => void;
 }) {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const selections = useMapState((s) => s.selections);
 	const saveableItems: SavedSelectionItem[] = (() => {
@@ -49,9 +51,9 @@ export function SaveSelectionsDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Save current selections">
+			<DialogContent title={t("dialog.saveCurrentSelections")}>
 				{saveableItems.length === 0 ? (
-					<p>No saveable selections active.</p>
+					<p>{t("editor.noSaveableSelections")}</p>
 				) : (
 					<form
 						onSubmit={(e) => {
@@ -63,7 +65,7 @@ export function SaveSelectionsDialog({
 						<TextInput
 							value={name}
 							onChange={(e) => onNameChange(e.target.value)}
-							placeholder="Name this selection..."
+							placeholder={t("editor.nameSelectionPlaceholder")}
 							autoFocus
 						/>
 						<div className="saved-selection-row__rules">
@@ -80,9 +82,9 @@ export function SaveSelectionsDialog({
 							))}
 						</div>
 						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-							<Button onClick={() => onOpenChange(false)}>Cancel</Button>
+							<Button onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
 							<Button variant="primary" type="submit" disabled={!name.trim()}>
-								Save
+								{t("common.save")}
 							</Button>
 						</div>
 					</form>
@@ -99,14 +101,15 @@ export function ApplySavedSelectionDialog({
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 }) {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const saved = useSetting("savedSelections");
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Apply saved selection">
+			<DialogContent title={t("dialog.applySavedSelection")}>
 				{saved.length === 0 ? (
-					<p>No saved selections.</p>
+					<p>{t("editor.noSavedSelections")}</p>
 				) : (
 					<div className="saved-selection-list">
 						{saved.map((s) => (
@@ -128,7 +131,7 @@ export function ApplySavedSelectionDialog({
 											e.stopPropagation();
 											deleteSavedSelection(s.id);
 										}}
-										title="Delete"
+										title={t("common.delete")}
 									>
 										<Icon path={mdiClose} size={14} />
 									</button>

@@ -6,6 +6,7 @@ import { getSettings } from "@/store/settings";
 import { fetchAllLocations } from "@/store/useMapStore";
 import { subscribeMany, LOCATION_DATA_EVENTS } from "@/lib/events";
 import { usePluginState, createPluginStorage } from "@/plugins/registry";
+import { useT } from "@/lib/i18n";
 import "./distribution.css";
 
 type Source = "coords" | "metadata";
@@ -49,6 +50,7 @@ function computeDistribution(locations: Location[]): { entries: CountryEntry[]; 
 }
 
 export function DistributionSidebar({ onClose }: { onClose: () => void }) {
+	const { t, tp } = useT();
 	const [entries, setEntries] = useState<CountryEntry[]>([]);
 	const [unknown, setUnknown] = useState(0);
 	const [total, setTotal] = useState(0);
@@ -101,25 +103,30 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 	const maxCount = entries.length > 0 ? entries[0].count : 1;
 
 	return (
-		<Sidebar title="Distribution" onBack={onClose} className="distribution-sidebar">
+		<Sidebar title={t("plugin.distribution.title")} onBack={onClose} className="distribution-sidebar">
 			<SegmentedControl<Source>
 				value={metaAvailable ? source : "coords"}
 				onChange={setSource}
 				options={[
-					{ value: "coords", label: "Coordinates" },
+					{ value: "coords", label: t("plugin.distribution.coordinates") },
 					{
 						value: "metadata",
-						label: "Metadata",
+						label: t("plugin.distribution.metadata"),
 						disabled: !metaAvailable,
-						title: metaAvailable ? undefined : "Enrich metadata fields to enable",
+						title: metaAvailable ? undefined : t("plugin.distribution.metadataDisabledHint"),
 					},
 				]}
 			/>
 			<div className="distribution-sidebar__summary">
-				{total} location{total !== 1 ? "s" : ""} across {entries.length} countr
-				{entries.length !== 1 ? "ies" : "y"}
+				{t("plugin.distribution.summary", {
+					total,
+					locations: tp("plugin.distribution.locationCount", total),
+					countries: tp("plugin.distribution.countryCount", entries.length),
+				})}
 				{unknown > 0 && (
-					<span className="distribution-sidebar__unknown"> ({unknown} without country data)</span>
+					<span className="distribution-sidebar__unknown">
+						{t("plugin.distribution.withoutCountryData", { count: unknown })}
+					</span>
 				)}
 			</div>
 

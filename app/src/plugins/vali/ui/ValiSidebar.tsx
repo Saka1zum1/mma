@@ -5,6 +5,7 @@ import type { ValiLocation } from "@/bindings.gen";
 import { createLocation, LocationFlag } from "@/types";
 import { createTags } from "@/store/useMapStore";
 import { Sidebar } from "@/components/primitives/Sidebar";
+import { useT } from "@/lib/i18n";
 import { log } from "@/lib/util/log";
 import "./vali.css";
 
@@ -40,6 +41,7 @@ async function importLocations(valiLocs: ValiLocation[], tagName: string): Promi
 }
 
 export function ValiSidebar({ onClose }: { onClose: () => void }) {
+	const { t } = useT();
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const runningRef = useRef(false);
 
@@ -72,9 +74,9 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 	}, []);
 
 	return (
-		<Sidebar title="Vali" onBack={onClose} className="vali-sidebar" flush>
+		<Sidebar title={t("plugin.vali.title")} onBack={onClose} className="vali-sidebar" flush>
 			<div className="vali-sidebar__iframe-wrap">
-				<iframe ref={iframeRef} src={VALIG_URL} title="Vali" />
+				<iframe ref={iframeRef} src={VALIG_URL} title={t("plugin.vali.title")} />
 			</div>
 		</Sidebar>
 	);

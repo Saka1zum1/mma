@@ -12,6 +12,6 @@ export function buildYandexExtra(meta: YandexPanoMeta): LocationSvExtra {
 		datetime: Math.floor(d.getTime() / 1000),
 		drivingDirection: meta.heading,
 	};
-	if (meta.author) extra.uploader = meta.author;
+	if (meta.author) extra.uploaderName = meta.author;
 	return extra;
 }

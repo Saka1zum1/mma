@@ -6,6 +6,7 @@ import { toast } from "@/lib/util/toast";
 import { fmt } from "@/lib/util/format";
 import { log } from "@/lib/util/log";
 import { useAsync } from "@/lib/hooks/useAsync";
+import { useT } from "@/lib/i18n";
 
 interface Props {
 	open: boolean;
@@ -20,6 +21,7 @@ interface Preview {
 }
 
 export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
+	const { t } = useT();
 	const [merging, setMerging] = useState(false);
 
 	const { data: preview, loading } = useAsync<Preview | null>(async () => {
@@ -40,7 +42,10 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 		try {
 			await mergeDuplicates(distance);
 			toast(
-				`Merged ${fmt.format(preview?.mergedAway ?? 0)} duplicates into ${fmt.format(preview?.groups ?? 0)} locations`,
+				t("toast.mergedDuplicates", {
+					mergedAway: fmt.format(preview?.mergedAway ?? 0),
+					groups: fmt.format(preview?.groups ?? 0),
+				}),
 			);
 			onOpenChange(false);
 		} catch (e) {
@@ -48,33 +53,37 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 		} finally {
 			setMerging(false);
 		}
-	}, [distance, preview, onOpenChange]);
+	}, [distance, preview, onOpenChange, t]);
 
 	const nothing = !loading && preview != null && preview.groups === 0;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Merge duplicates" className="merge-duplicates">
+			<DialogContent title={t("dialog.mergeDuplicates")} className="merge-duplicates">
 				{loading && (
 					<div className="merge-duplicates__loading">
 						<div className="merge-duplicates__spinner" />
 					</div>
 				)}
 				{nothing && (
-					<p className="merge-duplicates__status">No duplicate groups within {distance}m.</p>
+					<p className="merge-duplicates__status">
+						{t("merge.noGroups", { distance: String(distance) })}
+					</p>
 				)}
 				{!loading && preview != null && preview.groups > 0 && (
 					<>
 						<p className="merge-duplicates__status">
-							{fmt.format(preview.groups)} group{preview.groups !== 1 ? "s" : ""} within {distance}
-							m. Merging removes {fmt.format(preview.mergedAway)} location
-							{preview.mergedAway !== 1 ? "s" : ""}, keeping one survivor each (tags combined).
-							Largest group: {fmt.format(preview.largest)}.
+							{t("merge.preview", {
+								groups: fmt.format(preview.groups),
+								distance: String(distance),
+								mergedAway: fmt.format(preview.mergedAway),
+								largest: fmt.format(preview.largest),
+							})}
 						</p>
 						<div className="merge-duplicates__actions">
-							<Button onClick={() => onOpenChange(false)}>Cancel</Button>
+							<Button onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
 							<Button variant="primary" onClick={handleMerge} disabled={merging}>
-								{merging ? "Merging..." : "Merge"}
+								{merging ? t("merge.merging") : t("common.merge")}
 							</Button>
 						</div>
 					</>

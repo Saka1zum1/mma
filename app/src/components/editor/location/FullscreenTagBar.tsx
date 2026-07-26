@@ -7,6 +7,7 @@ import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
 import { Icon } from "@/components/primitives/Icon";
 import { useSetting, setSetting } from "@/store/settings";
 import { displayTagName } from "@/store/selections";
+import { useT } from "@/lib/i18n";
 
 export function FullscreenTagBar({
 	pendingTags,
@@ -17,6 +18,7 @@ export function FullscreenTagBar({
 	onChangeTags: (tags: string[]) => void;
 	tags: Tag[];
 }) {
+	const { t } = useT();
 	const [input, setInput] = useState("");
 	const [focused, setFocused] = useState(false);
 	const [hovered, setHovered] = useState(false);
@@ -83,7 +85,7 @@ export function FullscreenTagBar({
 						<input
 							className="form-add-tag__input fullscreen-tagbar__input"
 							type="text"
-							placeholder="Add a tag..."
+							placeholder={t("editor.addTagPlaceholder")}
 							spellCheck={false}
 							value={input}
 							onChange={(e) => setInput(e.target.value)}
@@ -96,7 +98,7 @@ export function FullscreenTagBar({
 			<button
 				type="button"
 				className="fullscreen-tagbar__collapse"
-				aria-label={collapsed ? "Expand tag bar" : "Collapse tag bar"}
+				aria-label={collapsed ? t("editor.expandTagBar") : t("editor.collapseTagBar")}
 				onClick={() => setSetting("fullscreenTagbarCollapsed", !collapsed)}
 			>
 				<Icon path={collapsed ? mdiChevronUp : mdiChevronDown} size={16} />

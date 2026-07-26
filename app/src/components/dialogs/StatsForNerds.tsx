@@ -3,6 +3,7 @@ import { cmd } from "@/lib/commands";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
 import { getMapState } from "@/store/useMapStore";
+import { useT, type MessageKey, type MessageParams } from "@/lib/i18n";
 import {
 	startFrameMeter,
 	stopFrameMeter,
@@ -115,35 +116,80 @@ interface LiveStats {
 const fmtInt = (n: number) => Math.round(n).toLocaleString();
 const fmtMB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
-function liveRows(live: LiveStats): [string, string][] {
+function liveRows(
+	live: LiveStats,
+	t: (key: MessageKey, params?: MessageParams) => string,
+): [string, string][] {
 	const { frame, deck, scene } = live;
 	const rows: [string, string][] = [
-		["FPS", `${frame.fps} (p95 ${frame.p95.toFixed(1)} ms, worst ${frame.worst.toFixed(0)} ms)`],
-		["Long tasks", `${frame.longTasks} (${fmtInt(frame.longTaskMs)} ms)`],
+		[
+			t("stats.fps"),
+			t("stats.fpsValue", {
+				fps: frame.fps,
+				p95: frame.p95.toFixed(1),
+				worst: frame.worst.toFixed(0),
+			}),
+		],
+		[
+			t("stats.longTasks"),
+			t("stats.longTasksValue", { count: frame.longTasks, ms: fmtInt(frame.longTaskMs) }),
+		],
 	];
 	if (scene) {
 		rows.push(
-			["Markers", `${fmtInt(scene.totalMarkers)} (${fmtInt(scene.onScreenMarkers)} on screen)`],
-			["Selection overlay", fmtInt(scene.selOverlay)],
-			["Layers", String(scene.layers)],
 			[
-				"Marker quad",
-				`${scene.quadSidePx.toFixed(1)}px ${scene.markerStyle} x${scene.markerSize} @ ${scene.dpr}dpr`,
+				t("stats.markers"),
+				t("stats.markersValue", {
+					total: fmtInt(scene.totalMarkers),
+					onScreen: fmtInt(scene.onScreenMarkers),
+				}),
 			],
-			["Est fragments", `${(scene.estFragments / 1e6).toFixed(1)}M / frame`],
-			["Overdraw", `${scene.overdraw.toFixed(2)}x viewport`],
+			[t("stats.selectionOverlay"), fmtInt(scene.selOverlay)],
+			[t("stats.layers"), String(scene.layers)],
+			[
+				t("stats.markerQuad"),
+				t("stats.markerQuadValue", {
+					size: scene.quadSidePx.toFixed(1),
+					style: scene.markerStyle,
+					markerSize: scene.markerSize,
+					dpr: scene.dpr,
+				}),
+			],
+			[
+				t("stats.estFragments"),
+				t("stats.estFragmentsValue", { count: (scene.estFragments / 1e6).toFixed(1) }),
+			],
+			[
+				t("stats.overdraw"),
+				t("stats.overdrawValue", { ratio: scene.overdraw.toFixed(2) }),
+			],
 		);
 	} else {
-		rows.push(["Markers", "no map open"]);
+		rows.push([t("stats.markers"), t("stats.markersNoMap")]);
 	}
 	if (deck) {
 		rows.push(
-			["Deck layers drawn", `${deck.drawLayersCount} of ${deck.layersCount}`],
-			["CPU / frame", `${deck.cpuTimePerFrame.toFixed(2)} ms`],
-			["GPU / frame", deck.gpuTimePerFrame > 0 ? `${deck.gpuTimePerFrame.toFixed(2)} ms` : "n/a"],
 			[
-				"GPU memory",
-				`${fmtMB(deck.gpuMemory)} (buf ${fmtMB(deck.bufferMemory)}, tex ${fmtMB(deck.textureMemory)})`,
+				t("stats.deckLayersDrawn"),
+				t("stats.deckLayersDrawnValue", {
+					drawn: deck.drawLayersCount,
+					total: deck.layersCount,
+				}),
+			],
+			[t("stats.cpuPerFrame"), t("stats.cpuPerFrameValue", { ms: deck.cpuTimePerFrame.toFixed(2) })],
+			[
+				t("stats.gpuPerFrame"),
+				deck.gpuTimePerFrame > 0
+					? t("stats.gpuPerFrameValue", { ms: deck.gpuTimePerFrame.toFixed(2) })
+					: t("stats.na"),
+			],
+			[
+				t("stats.gpuMemory"),
+				t("stats.gpuMemoryValue", {
+					total: fmtMB(deck.gpuMemory),
+					buffer: fmtMB(deck.bufferMemory),
+					texture: fmtMB(deck.textureMemory),
+				}),
 			],
 		);
 	}
@@ -151,6 +197,7 @@ function liveRows(live: LiveStats): [string, string][] {
 }
 
 export function StatsForNerds({ onClose }: { onClose: () => void }) {
+	const { t } = useT();
 	const [stats, setStats] = useState<Stats | null>(null);
 	const [live, setLive] = useState<LiveStats | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -216,7 +263,7 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 					}}
 				>
 					<span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-1)" }}>
-						Stats for Nerds
+						{t("stats.title")}
 					</span>
 					<button
 						onClick={onClose}
@@ -228,8 +275,9 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 							fontSize: 18,
 							padding: "0 4px",
 						}}
+						aria-label={t("common.close")}
 					>
-						x
+						×
 					</button>
 				</div>
 				{error && <div style={{ color: "var(--destructive)" }}>{error}</div>}
@@ -237,24 +285,24 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 					<table style={{ width: "100%", borderCollapse: "collapse" }}>
 						<tbody>
 							{[
-								["Version", stats.appVersion],
-								["Build", stats.buildMode],
-								["Maps", stats.maps],
-								["Locations", stats.locations.toLocaleString()],
-								["Tags", stats.tags],
-								["Commits", stats.commits],
-								["Pending saves", stats.pendingSaves],
-								["DB size", stats.dbSize],
-								["Journal mode", stats.journalMode],
-								["Foreign keys", stats.foreignKeys],
-								["opensv", stats.opensvVersion],
-								["WebGL", stats.webglRenderer],
-								["DPR", stats.devicePixelRatio],
-								["Viewport", stats.viewport],
-								["JS heap", stats.memory],
-								["Startup", stats.startup],
-								["Uptime", stats.uptime],
-								["User agent", stats.userAgent],
+								[t("stats.version"), stats.appVersion],
+								[t("stats.build"), stats.buildMode],
+								[t("stats.maps"), stats.maps],
+								[t("stats.locations"), stats.locations.toLocaleString()],
+								[t("stats.tags"), stats.tags],
+								[t("stats.commits"), stats.commits],
+								[t("stats.pendingSaves"), stats.pendingSaves],
+								[t("stats.dbSize"), stats.dbSize],
+								[t("stats.journalMode"), stats.journalMode],
+								[t("stats.foreignKeys"), stats.foreignKeys],
+								[t("stats.opensv"), stats.opensvVersion],
+								[t("stats.webgl"), stats.webglRenderer],
+								[t("stats.dpr"), stats.devicePixelRatio],
+								[t("stats.viewport"), stats.viewport],
+								[t("stats.jsHeap"), stats.memory],
+								[t("stats.startup"), stats.startup],
+								[t("stats.uptime"), stats.uptime],
+								[t("stats.userAgent"), stats.userAgent],
 							].map(([label, value]) => (
 								<tr key={label}>
 									<td
@@ -287,11 +335,11 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 								letterSpacing: "0.05em",
 							}}
 						>
-							Rendering (live)
+							{t("stats.renderingLive")}
 						</div>
 						<table style={{ width: "100%", borderCollapse: "collapse" }}>
 							<tbody>
-								{liveRows(live).map(([label, value]) => (
+								{liveRows(live, t).map(([label, value]) => (
 									<tr key={label}>
 										<td
 											className="text-muted"

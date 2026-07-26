@@ -3506,6 +3506,11 @@ body.mm-tag-dragging * {
 	min-width: 0;
 	flex: 1;
 }
+.tag__count {
+	margin-left: 0.375rem;
+	font-weight: 600;
+	vertical-align: middle;
+}
 .tag__button {
 	cursor: pointer;
 	color: inherit;
@@ -5232,8 +5237,24 @@ body {
 .location-preview__panorama.hide-pano-ui .viewport-lock-badge,
 .location-preview__panorama.hide-pano-ui .fullscreen-minimap,
 .location-preview__panorama.hide-pano-ui .fullscreen-bottom-tray,
-.location-preview__panorama.hide-pano-ui .fullscreen-date-picker {
+.location-preview__panorama.hide-pano-ui .fullscreen-date-picker,
+.location-preview__panorama.hide-pano-ui .fullscreen-geocode {
 	visibility: hidden !important;
+}
+
+.fullscreen-geocode {
+	position: absolute;
+	bottom: 0px;
+	left: 240px;
+	z-index: 12;
+	max-width: calc(100% - 16px);
+	padding: 4px 10px;
+	background: rgba(0, 0, 0, 0.7);
+	color: #fff;
+	font-size: 0.75rem;
+	line-height: 1rem;
+	border-radius: 4px;
+	pointer-events: auto;
 }
 
 .tag-find-replace-modal {

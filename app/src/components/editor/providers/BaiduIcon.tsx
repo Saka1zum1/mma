@@ -1,18 +1,24 @@
+import { useT } from "@/lib/i18n";
+
 /** Baidu brand mark for provider chrome (tabs / header). */
 export function BaiduIcon({
 	size = 16,
 	className,
+	label,
 }: {
 	size?: number;
 	className?: string;
+	label?: string;
 }) {
+	const { t } = useT();
+	const ariaLabel = label ?? t("provider.baidu");
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
 			width={size}
 			height={size}
 			viewBox="0 0 512 512"
-			aria-label="Baidu"
+			aria-label={ariaLabel}
 			className={className}
 		>
 			<circle cx="256" cy="256" r="256" fill="#fff" />

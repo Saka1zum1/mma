@@ -3,6 +3,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { searchManual } from "@/components/manual/search";
 import { openManual } from "@/store/router";
+import { useT } from "@/lib/i18n";
 import "@/components/manual/manual.css";
 
 export function ManualSearch({
@@ -12,6 +13,7 @@ export function ManualSearch({
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 }) {
+	const { t } = useT();
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -45,7 +47,7 @@ export function ManualSearch({
 					aria-describedby={undefined}
 				>
 					<VisuallyHidden.Root>
-						<RadixDialog.Title>Search the manual</RadixDialog.Title>
+						<RadixDialog.Title>{t("manual.searchTitle")}</RadixDialog.Title>
 					</VisuallyHidden.Root>
 					<div className="manual-search__panel">
 						<input
@@ -57,12 +59,12 @@ export function ManualSearch({
 								setActive(0);
 							}}
 							onKeyDown={onKeyDown}
-							placeholder="Search the manual..."
+							placeholder={t("manual.searchPlaceholder")}
 							className="command-palette__input"
 						/>
 						<div className="command-palette__scroll manual-search__results">
 							{query.trim() && results.length === 0 && (
-								<div className="manual-search__empty">No results.</div>
+								<div className="manual-search__empty">{t("manual.noResults")}</div>
 							)}
 							{results.map((r, i) => (
 								<button

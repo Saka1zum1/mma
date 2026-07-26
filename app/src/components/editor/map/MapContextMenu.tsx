@@ -10,6 +10,7 @@ import {
 import { useEventValue } from "@/lib/events";
 import { getContextMenuTarget } from "@/lib/map/contextMenu";
 import { hostInstance, type MapHost } from "@/lib/map/host";
+import { useT } from "@/lib/i18n";
 
 interface MapContextMenuProps {
 	host: MapHost | null;
@@ -17,6 +18,7 @@ interface MapContextMenuProps {
 
 export const MapContextMenuContent = forwardRef<HTMLDivElement, MapContextMenuProps>(
 	({ host }, ref) => {
+		const { t } = useT();
 		const { isMeasuring } = useMeasureState();
 		const anchor = useEventValue("anchor:changed", getLatLngAnchor);
 		// The measure tool is Google-only (measuretool-googlemaps-v3).
@@ -27,7 +29,7 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement, MapContextMenuPr
 				<ContextMenu.Popup className="context-menu" ref={ref}>
 					{isMeasuring ? (
 						<ContextMenu.Item className="context-menu__item" onClick={endMeasure}>
-							End measurement
+							{t("context.endMeasurement")}
 						</ContextMenu.Item>
 					) : (
 						gMap && (
@@ -37,7 +39,7 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement, MapContextMenuPr
 									startMeasure(gMap, getContextMenuTarget().latLng);
 								}}
 							>
-								Start measurement
+								{t("context.startMeasurement")}
 							</ContextMenu.Item>
 						)
 					)}
@@ -48,20 +50,20 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement, MapContextMenuPr
 							navigator.clipboard.writeText(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
 						}}
 					>
-						Copy coordinates
+						{t("context.copyCoordinates")}
 					</ContextMenu.Item>
 					<ContextMenu.Item
 						className="context-menu__item"
 						onClick={() => setLatLngAnchor(getContextMenuTarget().latLng)}
 					>
-						Set latitude/longitude anchors
+						{t("context.setAnchors")}
 					</ContextMenu.Item>
 					<ContextMenu.Item
 						className="context-menu__item"
 						disabled={!anchor}
 						onClick={() => setLatLngAnchor(null)}
 					>
-						Clear latitude/longitude anchors
+						{t("context.clearAnchors")}
 					</ContextMenu.Item>
 				</ContextMenu.Popup>
 			</ContextMenu.Positioner>

@@ -3,6 +3,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiClose, mdiChevronLeft, mdiChevronRight } from "@mdi/js";
 import { CHAPTERS } from "@/components/manual/chapters";
 import { MANUAL_COMPONENTS, ManualNav } from "@/components/manual/components";
+import { useT } from "@/lib/i18n";
 import "@/components/manual/manual.css";
 
 export function Manual({
@@ -14,6 +15,7 @@ export function Manual({
 	onNavigate: (id: string) => void;
 	onClose: () => void;
 }) {
+	const { t } = useT();
 	const found = CHAPTERS.findIndex((c) => c.id === chapterId);
 	const index = found >= 0 ? found : 0;
 	const contentRef = useRef<HTMLDivElement>(null);
@@ -41,8 +43,8 @@ export function Manual({
 			<div className="manual">
 				<aside className="manual__sidebar">
 					<div className="manual__sidebar-head">
-						<span className="manual__title">Manual</span>
-						<button className="icon-button" onClick={onClose} aria-label="Close manual">
+						<span className="manual__title">{t("manual.title")}</span>
+						<button className="icon-button" onClick={onClose} aria-label={t("manual.close")}>
 							<Icon path={mdiClose} />
 						</button>
 					</div>

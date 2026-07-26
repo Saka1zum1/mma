@@ -36,6 +36,7 @@ const EVENT_DEFS = {
 	"render:delta": event<RenderDelta>(),
 	"render:selection": event<SelectionBitmaskPayload>(),
 	"settings:changed": event<void>(),
+	"locale:changed": event<void>(),
 	"fullscreen:changed": event<void>(),
 	"plugins:changed": event<void>(),
 	"hotkeys:changed": event<void>(),

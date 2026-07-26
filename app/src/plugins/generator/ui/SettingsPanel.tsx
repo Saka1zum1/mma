@@ -4,6 +4,7 @@ import { NSelect } from "@/components/primitives/NSelect";
 import { Radio } from "@/components/primitives/Radio";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { Section, SegmentedControl } from "@/components/primitives/Sidebar";
+import { useT } from "@/lib/i18n";
 
 function Check({
 	label,
@@ -89,21 +90,22 @@ export function SettingsPanel({
 	settings: GeneratorSettings;
 	onChange: (patch: Partial<GeneratorSettings>) => void;
 }) {
+	const { t } = useT();
 	const set = <K extends keyof GeneratorSettings>(key: K, val: GeneratorSettings[K]) =>
 		onChange({ [key]: val });
 
 	return (
 		<div className="generator-settings">
-			<Section title="Coverage settings">
+			<Section title={t("plugin.generator.coverageSettings")}>
 				{!settings.rejectOfficial && (
 					<>
 						<Check
-							label="Reject unofficial"
+							label={t("plugin.generator.rejectUnofficial")}
 							checked={settings.rejectUnofficial}
 							onChange={(v) => set("rejectUnofficial", v)}
 						/>
 						<Check
-							label="Reject gen 1"
+							label={t("plugin.generator.rejectGen1")}
 							checked={settings.rejectGen1}
 							onChange={(v) => set("rejectGen1", v)}
 						/>
@@ -112,7 +114,7 @@ export function SettingsPanel({
 				{settings.rejectUnofficial && !settings.rejectOfficial && !settings.rejectGen1 && (
 					<>
 						<Check
-							label="Find generation"
+							label={t("plugin.generator.findGeneration")}
 							checked={settings.findGeneration}
 							onChange={(v) => set("findGeneration", v)}
 						/>
@@ -122,38 +124,38 @@ export function SettingsPanel({
 									value={String(settings.generation)}
 									onChange={(v) => set("generation", Number(v) as 1 | 23 | 4)}
 									options={[
-										{ value: "1", label: "Gen 1" },
-										{ value: "23", label: "Gen 2/3" },
-										{ value: "4", label: "Gen 4" },
+										{ value: "1", label: t("plugin.generator.gen1") },
+										{ value: "23", label: t("plugin.generator.gen23") },
+										{ value: "4", label: t("plugin.generator.gen4") },
 									]}
 								/>
 							</div>
 						)}
 						<Check
-							label="Find trekker coverage"
+							label={t("plugin.generator.findTrekkerCoverage")}
 							checked={settings.rejectDescription}
 							onChange={(v) => set("rejectDescription", v)}
 						/>
 					</>
 				)}
 				<Check
-					label="Find unofficial coverage"
+					label={t("plugin.generator.findUnofficialCoverage")}
 					checked={settings.rejectOfficial}
 					onChange={(v) => set("rejectOfficial", v)}
 				/>
 			</Section>
 
-			<Section title="Location settings">
+			<Section title={t("plugin.generator.locationSettings")}>
 				{settings.rejectUnofficial && !settings.rejectOfficial && (
 					<Check
-						label="Reject locations without date"
+						label={t("plugin.generator.rejectDateless")}
 						checked={settings.rejectDateless}
 						onChange={(v) => set("rejectDateless", v)}
 					/>
 				)}
 				{settings.rejectUnofficial && !settings.rejectOfficial && !settings.rejectDescription && (
 					<Check
-						label="Reject locations without description"
+						label={t("plugin.generator.rejectNoDescription")}
 						checked={settings.rejectNoDescription}
 						onChange={(v) => set("rejectNoDescription", v)}
 					/>
@@ -161,19 +163,19 @@ export function SettingsPanel({
 				{settings.rejectUnofficial && !settings.rejectOfficial && (
 					<>
 						<Check
-							label="Only one panorama on location"
+							label={t("plugin.generator.onlyOnePano")}
 							checked={settings.onlyOneInTimeframe}
 							onChange={(v) => set("onlyOneInTimeframe", v)}
-							title="Only allow locations that don't have other nearby coverage in timeframe."
+							title={t("plugin.generator.onlyOnePanoHint")}
 						/>
 						<Check
-							label="Check linked panos"
+							label={t("plugin.generator.checkLinkedPanos")}
 							checked={settings.checkLinks}
 							onChange={(v) => set("checkLinks", v)}
 						/>
 						{settings.checkLinks && (
 							<NumberInput
-								label="Depth"
+								label={t("plugin.generator.depth")}
 								value={settings.linksDepth}
 								onChange={(v) => set("linksDepth", v)}
 								min={1}
@@ -185,22 +187,22 @@ export function SettingsPanel({
 				)}
 			</Section>
 
-			<Section title="Map making settings">
+			<Section title={t("plugin.generator.mapMakingSettings")}>
 				{settings.rejectUnofficial && !settings.rejectOfficial && (
 					<>
 						<Check
-							label="Find intersection locations"
+							label={t("plugin.generator.findIntersectionLocations")}
 							checked={settings.getIntersection}
 							onChange={(v) => set("getIntersection", v)}
 						/>
 						<Check
-							label="Find curve locations"
+							label={t("plugin.generator.findCurveLocations")}
 							checked={settings.pinpointSearch}
 							onChange={(v) => set("pinpointSearch", v)}
 						/>
 						{settings.pinpointSearch && (
 							<NumberInput
-								label="Pinpointable angle"
+								label={t("plugin.generator.pinpointableAngle")}
 								value={settings.pinpointAngle}
 								onChange={(v) => set("pinpointAngle", v)}
 								min={45}
@@ -209,7 +211,7 @@ export function SettingsPanel({
 							/>
 						)}
 						<Check
-							label="Adjust heading"
+							label={t("plugin.generator.adjustHeading")}
 							checked={settings.adjustHeading}
 							onChange={(v) => set("adjustHeading", v)}
 						/>
@@ -221,13 +223,13 @@ export function SettingsPanel({
 									value={settings.headingReference}
 									onChange={(v) => set("headingReference", v as "link" | "forward" | "backward")}
 									options={[
-										{ value: "link", label: "Along road" },
-										{ value: "forward", label: "To front of car" },
-										{ value: "backward", label: "To back of car" },
+										{ value: "link", label: t("plugin.generator.alongRoad") },
+										{ value: "forward", label: t("plugin.generator.toFrontOfCar") },
+										{ value: "backward", label: t("plugin.generator.toBackOfCar") },
 									]}
 								/>
 								<NumberInput
-									label="Deviation"
+									label={t("plugin.generator.deviation")}
 									value={settings.headingDeviation}
 									onChange={(v) => set("headingDeviation", v)}
 									min={0}
@@ -237,13 +239,13 @@ export function SettingsPanel({
 							</>
 						)}
 						<Check
-							label="Adjust pitch"
+							label={t("plugin.generator.adjustPitch")}
 							checked={settings.adjustPitch}
 							onChange={(v) => set("adjustPitch", v)}
 						/>
 						{settings.adjustPitch && (
 							<NumberInput
-								label="Pitch deviation"
+								label={t("plugin.generator.pitchDeviation")}
 								value={settings.pitchDeviation}
 								onChange={(v) => set("pitchDeviation", v)}
 								min={-90}
@@ -252,13 +254,13 @@ export function SettingsPanel({
 							/>
 						)}
 						<Check
-							label="Adjust zoom"
+							label={t("plugin.generator.adjustZoom")}
 							checked={settings.adjustZoom}
 							onChange={(v) => set("adjustZoom", v)}
 						/>
 						{settings.adjustZoom && (
 							<NumberInput
-								label="Zoom level"
+								label={t("plugin.generator.zoomLevel")}
 								value={settings.zoomLevel}
 								onChange={(v) => set("zoomLevel", v)}
 								min={0}
@@ -268,7 +270,7 @@ export function SettingsPanel({
 							/>
 						)}
 						<Check
-							label="Choose random date in time range"
+							label={t("plugin.generator.chooseRandomDate")}
 							checked={settings.randomInTimeline}
 							onChange={(v) => set("randomInTimeline", v)}
 						/>
@@ -276,50 +278,50 @@ export function SettingsPanel({
 				)}
 			</Section>
 
-			<Section title="General settings">
+			<Section title={t("plugin.generator.generalSettings")}>
 				<NumberInput
-					label="Radius"
+					label={t("plugin.generator.radius")}
 					value={settings.radius}
 					onChange={(v) => set("radius", v)}
 					min={10}
 					max={1000000}
 				/>
 				<label className="generator-settings__number">
-					Sampling
+					{t("plugin.generator.sampling")}
 					<SegmentedControl
 						value={settings.samplingMode}
 						onChange={(v) => set("samplingMode", v as GeneratorSettings["samplingMode"])}
 						options={[
-							{ value: "random", label: "Random" },
-							{ value: "poisson", label: "Uniform" },
-							{ value: "blueline", label: "Coverage" },
-							{ value: "kernels", label: "Grow" },
+							{ value: "random", label: t("plugin.generator.sampling.random") },
+							{ value: "poisson", label: t("plugin.generator.sampling.poisson") },
+							{ value: "blueline", label: t("plugin.generator.sampling.blueline") },
+							{ value: "kernels", label: t("plugin.generator.sampling.kernels") },
 						]}
 					/>
 				</label>
 				<NumberInput
-					label="Generators"
+					label={t("plugin.generator.generators")}
 					value={settings.numGenerators}
 					onChange={(v) => set("numGenerators", v)}
 					min={1}
 					max={10}
 				/>
 				<NumberInput
-					label="Speed"
+					label={t("plugin.generator.speed")}
 					value={settings.speed}
 					onChange={(v) => set("speed", v)}
 					min={1}
 					max={1000}
 				/>
 				<Check
-					label="Only check one country/polygon at a time"
+					label={t("plugin.generator.oneRegionAtATime")}
 					checked={settings.oneCountryAtATime}
 					onChange={(v) => set("oneCountryAtATime", v)}
 				/>
 				{!settings.selectMonths && (
 					<div className="generator-settings__date-range">
 						<label className="generator-settings__date-label">
-							From{" "}
+							{t("plugin.generator.from")}{" "}
 							<DatePicker
 								mode="month"
 								value={settings.fromDate}
@@ -327,7 +329,7 @@ export function SettingsPanel({
 							/>
 						</label>
 						<label className="generator-settings__date-label">
-							To{" "}
+							{t("plugin.generator.to")}{" "}
 							<DatePicker mode="month" value={settings.toDate} onChange={(v) => set("toDate", v)} />
 						</label>
 					</div>
@@ -335,7 +337,7 @@ export function SettingsPanel({
 				{!settings.rejectOfficial && (
 					<>
 						<Check
-							label="Filter by month"
+							label={t("plugin.generator.filterByMonth")}
 							checked={settings.selectMonths}
 							onChange={(v) => set("selectMonths", v)}
 						/>
@@ -343,7 +345,7 @@ export function SettingsPanel({
 							<div className="generator-settings__indent">
 								<div className="generator-settings__date-range">
 									<label className="generator-settings__date-label">
-										From month{" "}
+										{t("plugin.generator.fromMonth")}{" "}
 										<input
 											className="text-input"
 											style={{ width: "3rem" }}
@@ -352,7 +354,7 @@ export function SettingsPanel({
 										/>
 									</label>
 									<label className="generator-settings__date-label">
-										to{" "}
+										{t("plugin.generator.toMonth")}{" "}
 										<input
 											className="text-input"
 											style={{ width: "3rem" }}
@@ -363,7 +365,7 @@ export function SettingsPanel({
 								</div>
 								<div className="generator-settings__date-range">
 									<label className="generator-settings__date-label">
-										Between years{" "}
+										{t("plugin.generator.betweenYears")}{" "}
 										<input
 											className="text-input"
 											style={{ width: "4rem" }}
@@ -372,7 +374,7 @@ export function SettingsPanel({
 										/>
 									</label>
 									<label className="generator-settings__date-label">
-										and{" "}
+										{t("plugin.generator.betweenYearsAnd")}{" "}
 										<input
 											className="text-input"
 											style={{ width: "4rem" }}
@@ -388,13 +390,13 @@ export function SettingsPanel({
 				{!settings.rejectOfficial && (
 					<>
 						<Check
-							label="Filter by minimum distance from locations"
+							label={t("plugin.generator.filterByDistance")}
 							checked={settings.findRegions}
 							onChange={(v) => set("findRegions", v)}
 						/>
 						{settings.findRegions && (
 							<NumberInput
-								label="km"
+								label={t("plugin.generator.km")}
 								value={settings.regionRadius}
 								onChange={(v) => set("regionRadius", v)}
 								min={1}
@@ -404,13 +406,13 @@ export function SettingsPanel({
 					</>
 				)}
 				<Check
-					label="Skip near existing map locations"
+					label={t("plugin.generator.skipNearExisting")}
 					checked={settings.skipExisting}
 					onChange={(v) => set("skipExisting", v)}
 				/>
 				{settings.skipExisting && (
 					<NumberInput
-						label="m"
+						label={t("plugin.generator.m")}
 						value={settings.skipExistingRadius}
 						onChange={(v) => set("skipExistingRadius", v)}
 						min={1}
@@ -418,14 +420,14 @@ export function SettingsPanel({
 					/>
 				)}
 				<Check
-					label="Check all dates"
+					label={t("plugin.generator.checkAllDates")}
 					checked={settings.checkAllDates}
 					onChange={(v) => set("checkAllDates", v)}
 				/>
 			</Section>
-			<Section title="Advanced filters" defaultOpen={false}>
+			<Section title={t("plugin.generator.advancedFilters")} defaultOpen={false}>
 				<Check
-					label="Search in panorama description"
+					label={t("plugin.generator.searchInDescription")}
 					checked={settings.searchInDescription}
 					onChange={(v) => set("searchInDescription", v)}
 				/>
@@ -436,8 +438,8 @@ export function SettingsPanel({
 								value={settings.searchFilterType}
 								onChange={(v) => set("searchFilterType", v as "include" | "exclude")}
 								options={[
-									{ value: "include", label: "Include" },
-									{ value: "exclude", label: "Exclude" },
+									{ value: "include", label: t("plugin.generator.search.include") },
+									{ value: "exclude", label: t("plugin.generator.search.exclude") },
 								]}
 							/>
 							<NSelect
@@ -447,38 +449,38 @@ export function SettingsPanel({
 									set("searchMode", e.target.value as GeneratorSettings["searchMode"])
 								}
 							>
-								<option value="contains">Contains</option>
-								<option value="fullword">Full word</option>
-								<option value="startswith">Starts with</option>
-								<option value="endswith">Ends with</option>
-								<option value="sectionmatch">Section match</option>
+								<option value="contains">{t("plugin.generator.search.contains")}</option>
+								<option value="fullword">{t("plugin.generator.search.fullWord")}</option>
+								<option value="startswith">{t("plugin.generator.search.startsWith")}</option>
+								<option value="endswith">{t("plugin.generator.search.endsWith")}</option>
+								<option value="sectionmatch">{t("plugin.generator.search.sectionMatch")}</option>
 							</NSelect>
 						</div>
 						<input
 							className="text-input"
 							type="text"
-							placeholder="Comma-separated terms"
+							placeholder={t("plugin.generator.commaSeparatedTerms")}
 							value={settings.searchTerms}
 							onChange={(e) => set("searchTerms", e.target.value)}
 						/>
 					</div>
 				)}
 				<Check
-					label="Filter by number of links"
+					label={t("plugin.generator.filterByLinks")}
 					checked={settings.filterByLinks}
 					onChange={(v) => set("filterByLinks", v)}
 				/>
 				{settings.filterByLinks && (
 					<div className="generator-settings__indent generator-settings__date-range">
 						<NumberInput
-							label="Min"
+							label={t("plugin.generator.min")}
 							value={settings.minLinks}
 							onChange={(v) => set("minLinks", v)}
 							min={0}
 							max={10}
 						/>
 						<NumberInput
-							label="Max"
+							label={t("plugin.generator.max")}
 							value={settings.maxLinks}
 							onChange={(v) => set("maxLinks", v)}
 							min={0}
@@ -488,12 +490,12 @@ export function SettingsPanel({
 				)}
 			</Section>
 
-			<Section title="Visualization" defaultOpen={false}>
+			<Section title={t("plugin.generator.visualization")} defaultOpen={false}>
 				<Check
-					label="Show search coverage"
+					label={t("plugin.generator.showSearchCoverage")}
 					checked={settings.showSearchOverlay}
 					onChange={(v) => set("showSearchOverlay", v)}
-					title="Draw where the generator has searched, as a growing overlay. Clears when you stop."
+					title={t("plugin.generator.showSearchCoverageHint")}
 				/>
 			</Section>
 		</div>

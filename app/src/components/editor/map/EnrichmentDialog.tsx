@@ -22,25 +22,27 @@ import { useMapSetting } from "@/store/useMapSetting";
 import type { ExtraFieldDef } from "@/bindings.gen";
 import type { MergeWinner } from "@/lib/data/fieldOps";
 import { mdiClose, mdiDatabasePlusOutline, mdiInformationOutline } from "@mdi/js";
+import { useT } from "@/lib/i18n";
+import type { MessageKey } from "@/locales/en";
 
 type Comparison = NonNullable<ExtraFieldDef["comparison"]>;
 const FIELD_TYPES: ExtraFieldDef["type"][] = ["string", "number", "date", "month", "enum", "array"];
-const TYPE_LABELS: Record<ExtraFieldDef["type"], string> = {
-	string: "Text",
-	number: "Number",
-	date: "Date/time",
-	month: "Month (YYYY-MM)",
-	enum: "Enum",
-	array: "Array",
+const TYPE_LABEL_KEYS: Record<ExtraFieldDef["type"], MessageKey> = {
+	string: "editor.fieldType.string",
+	number: "editor.fieldType.number",
+	date: "editor.fieldType.date",
+	month: "editor.fieldType.month",
+	enum: "editor.fieldType.enum",
+	array: "editor.fieldType.array",
 };
 
 // How a field is compared during disambiguation. "auto" = inferred from type.
 type CompToken = "auto" | "linear" | "circular" | "categorical";
-const COMP_OPTIONS: { token: CompToken; label: string }[] = [
-	{ token: "auto", label: "Auto" },
-	{ token: "linear", label: "Numeric" },
-	{ token: "circular", label: "Circular" },
-	{ token: "categorical", label: "Categorical" },
+const COMP_OPTIONS: { token: CompToken; labelKey: MessageKey }[] = [
+	{ token: "auto", labelKey: "editor.compAuto" },
+	{ token: "linear", labelKey: "editor.compNumeric" },
+	{ token: "circular", labelKey: "editor.compCircular" },
+	{ token: "categorical", labelKey: "editor.compCategorical" },
 ];
 const DEFAULT_PERIOD = 360;
 
@@ -95,10 +97,11 @@ function buildRows(): FieldRow[] {
 }
 
 function CoverageIcon({ ratio }: { ratio: number }) {
+	const { t } = useT();
 	const pct = Math.round(ratio * 100);
 	return (
 		<svg className="manage-fields-table__coverage" width="18" height="18" viewBox="0 0 14 14">
-			<title>{pct}% of locations</title>
+			<title>{t("editor.coveragePercent", { pct: String(pct) })}</title>
 			<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
 			{ratio > 0 && (
 				<circle
@@ -127,27 +130,28 @@ interface RenamePrompt {
  *  defined (label, type, comparison, rename, delete). Every edit applies
  *  immediately; destructive ones confirm first. */
 export function EnrichmentButton() {
+	const { t } = useT();
 	const [open, setOpen] = useState(false);
 	const [enrichMetadata, setEnrichMetadata] = useMapSetting("enrichMetadata");
 	const [enrichFields, setEnrichFields] = useMapSetting("enrichFields");
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<Tooltip content="Enrichment" side="bottom">
+			<Tooltip content={t("dialog.enrichment")} side="bottom">
 				<DialogTrigger asChild>
-					<button className="icon-button" type="button" aria-label="Enrichment">
+					<button className="icon-button" type="button" aria-label={t("dialog.enrichment")}>
 						<Icon path={mdiDatabasePlusOutline} />
 					</button>
 				</DialogTrigger>
 			</Tooltip>
-			<DialogContent title="Enrichment" className="enrichment-modal">
+			<DialogContent title={t("dialog.enrichment")} className="enrichment-modal">
 				<label className="enrichment-modal__toggle">
-					<Switch checked={enrichMetadata} onChange={setEnrichMetadata} label="Enrich locations" />
-					Automatically save metadata to locations
+					<Switch checked={enrichMetadata} onChange={setEnrichMetadata} label={t("editor.enrichLocations")} />
+					{t("editor.enrichAutoSave")}
 					<button
 						className="icon-button icon-button--inline"
 						type="button"
-						title="Open manual chapter"
+						title={t("editor.openManualChapter")}
 						style={{ marginLeft: "0.4rem" }}
 						onClick={(e) => {
 							e.preventDefault();
@@ -171,6 +175,7 @@ function FieldsTable({
 	enrichFields: string[] | null;
 	setEnrichFields: (v: string[] | null) => void;
 }) {
+	const { t } = useT();
 	const [rows, setRows] = useState(buildRows);
 	const [renamePrompt, setRenamePrompt] = useState<RenamePrompt | null>(null);
 	const [deleteKey, setDeleteKey] = useState<string | null>(null);
@@ -309,11 +314,11 @@ function FieldsTable({
 				<thead>
 					<tr>
 						<th />
-						<th>Enrich</th>
-						<th>Field</th>
-						<th>Label</th>
-						<th>Type</th>
-						<th>Compare as</th>
+						<th>{t("editor.enrichColumn")}</th>
+						<th>{t("editor.fieldColumn")}</th>
+						<th>{t("editor.labelColumn")}</th>
+						<th>{t("editor.typeColumn")}</th>
+						<th>{t("editor.compareAsColumn")}</th>
 						<th />
 					</tr>
 				</thead>
@@ -327,7 +332,7 @@ function FieldsTable({
 								<Checkbox
 									checked={row.enrichable && isEnrichOn(row.key)}
 									disabled={!row.enrichable}
-									title={row.enrichable ? undefined : "Not an enrichment field"}
+									title={row.enrichable ? undefined : t("editor.notEnrichmentField")}
 									onChange={(e) => toggleEnrich(row.key, e.target.checked)}
 								/>
 							</td>
@@ -382,9 +387,9 @@ function FieldsTable({
 										updateRow(row.key, { type: e.target.value as ExtraFieldDef["type"] }, true)
 									}
 								>
-									{FIELD_TYPES.map((t) => (
-										<option key={t} value={t}>
-											{TYPE_LABELS[t]}
+									{FIELD_TYPES.map((ft) => (
+										<option key={ft} value={ft}>
+											{t(TYPE_LABEL_KEYS[ft])}
 										</option>
 									))}
 								</NSelect>
@@ -415,8 +420,8 @@ function FieldsTable({
 									{COMP_OPTIONS.map((o) => (
 										<option key={o.token} value={o.token}>
 											{o.token === "circular" && row.comparison?.type === "circular"
-												? `Circular · ${row.comparison.period}`
-												: o.label}
+												? t("editor.compCircularPeriod", { period: String(row.comparison.period) })
+												: t(o.labelKey)}
 										</option>
 									))}
 								</NSelect>
@@ -425,7 +430,7 @@ function FieldsTable({
 								<button
 									className="manage-fields-table__delete"
 									type="button"
-									title={row.present ? "Delete field" : undefined}
+									title={row.present ? t("dialog.deleteField") : undefined}
 									disabled={busy || !row.present}
 									onClick={() => setDeleteKey(row.key)}
 								>
@@ -439,51 +444,49 @@ function FieldsTable({
 
 			<Dialog open={renamePrompt !== null} onOpenChange={(open) => !open && cancelRename()}>
 				<DialogContent
-					title={renamePrompt?.merge ? "Merge field" : "Rename field"}
+					title={renamePrompt?.merge ? t("dialog.mergeField") : t("dialog.renameField")}
 					className="period-prompt"
 				>
 					{renamePrompt && (
 						<>
 							<p className="period-prompt__help">
-								{renamePrompt.merge ? (
-									<>
-										Merge <code>{renamePrompt.key}</code> into existing field{" "}
-										<code>{renamePrompt.target}</code> across {renamePrompt.affected} location
-										{renamePrompt.affected === 1 ? "" : "s"}. This cannot be undone.
-									</>
-								) : (
-									<>
-										Rename <code>{renamePrompt.key}</code> to <code>{renamePrompt.target}</code>{" "}
-										across {renamePrompt.affected} location
-										{renamePrompt.affected === 1 ? "" : "s"}. This cannot be undone.
-									</>
-								)}
+								{renamePrompt.merge
+									? t("editor.mergeFieldHelp", {
+											from: renamePrompt.key,
+											to: renamePrompt.target,
+											count: String(renamePrompt.affected),
+										})
+									: t("editor.renameFieldHelp", {
+											from: renamePrompt.key,
+											to: renamePrompt.target,
+											count: String(renamePrompt.affected),
+										})}
 							</p>
 							{renamePrompt.merge && (
 								<fieldset className="manage-fields-action__winner">
-									<legend>On conflict, keep:</legend>
+									<legend>{t("editor.onConflictKeep")}</legend>
 									<label>
 										<Radio
 											checked={renamePrompt.winner === "from"}
 											onChange={() => setRenamePrompt({ ...renamePrompt, winner: "from" })}
 										/>{" "}
-										<code>{renamePrompt.key}</code>&apos;s values
+										{t("editor.fromValues", { name: renamePrompt.key })}
 									</label>
 									<label>
 										<Radio
 											checked={renamePrompt.winner === "to"}
 											onChange={() => setRenamePrompt({ ...renamePrompt, winner: "to" })}
 										/>{" "}
-										<code>{renamePrompt.target}</code>&apos;s values
+										{t("editor.fromValues", { name: renamePrompt.target })}
 									</label>
 								</fieldset>
 							)}
 							<div className="period-prompt__actions">
 								<Button variant="primary" disabled={busy} onClick={confirmRename}>
-									{renamePrompt.merge ? "Merge" : "Rename"}
+									{renamePrompt.merge ? t("common.merge") : t("common.rename")}
 								</Button>
 								<Button disabled={busy} onClick={cancelRename}>
-									Cancel
+									{t("common.cancel")}
 								</Button>
 							</div>
 						</>
@@ -492,28 +495,24 @@ function FieldsTable({
 			</Dialog>
 
 			<Dialog open={deleteKey !== null} onOpenChange={(open) => !open && setDeleteKey(null)}>
-				<DialogContent title="Delete field" className="period-prompt">
+				<DialogContent title={t("dialog.deleteField")} className="period-prompt">
 					<p className="period-prompt__help">
-						Delete <code>{deleteKey}</code> and clear its values from every location? This cannot be
-						undone.
+						{t("editor.deleteFieldConfirm", { name: deleteKey ?? "" })}
 					</p>
 					<div className="period-prompt__actions">
 						<Button variant="destructive" disabled={busy} onClick={confirmDelete}>
-							Delete field
+							{t("dialog.deleteField")}
 						</Button>
 						<Button disabled={busy} onClick={() => setDeleteKey(null)}>
-							Cancel
+							{t("common.cancel")}
 						</Button>
 					</div>
 				</DialogContent>
 			</Dialog>
 
 			<Dialog open={periodPrompt !== null} onOpenChange={(open) => !open && setPeriodPrompt(null)}>
-				<DialogContent title="Circular period" className="period-prompt">
-					<p className="period-prompt__help">
-						Value at which this field wraps around (e.g. 360 for degrees, 24 for hours, 12 for
-						months).
-					</p>
+				<DialogContent title={t("dialog.circularPeriod")} className="period-prompt">
+					<p className="period-prompt__help">{t("editor.circularPeriodHelp")}</p>
 					<form
 						onSubmit={(e) => {
 							e.preventDefault();
@@ -530,9 +529,9 @@ function FieldsTable({
 						/>
 						<div className="period-prompt__actions">
 							<Button variant="primary" type="submit">
-								Set
+								{t("editor.set")}
 							</Button>
-							<Button onClick={() => setPeriodPrompt(null)}>Cancel</Button>
+							<Button onClick={() => setPeriodPrompt(null)}>{t("common.cancel")}</Button>
 						</div>
 					</form>
 				</DialogContent>

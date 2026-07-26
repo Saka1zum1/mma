@@ -5,12 +5,8 @@ import { useMapState, checkoutCommit } from "@/store/useMapStore";
 import { beginCommitDiffPreview } from "@/store/commitDiff";
 import { cmd } from "@/lib/commands";
 import type { CommitInfo } from "@/bindings.gen";
-
-const fmt = new Intl.NumberFormat("en");
-const dateFmt = new Intl.DateTimeFormat("en", {
-	dateStyle: "medium",
-	timeStyle: "short",
-});
+import { useT } from "@/lib/i18n";
+import { fmt } from "@/lib/util/format";
 
 function diffLabel(c: CommitInfo): ReactNode | null {
 	const parts: ReactNode[] = [];
@@ -40,11 +36,17 @@ function diffLabel(c: CommitInfo): ReactNode | null {
 }
 
 export function VersionHistory({ onClose }: { onClose: () => void }) {
+	const { t, locale } = useT();
 	const map = useMapState((s) => s.map);
 	const [commits, setCommits] = useState<CommitInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [restoring, setRestoring] = useState<string | null>(null);
 	const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+	const dateFmt = new Intl.DateTimeFormat(locale === "zh-Hans" ? "zh-CN" : "en", {
+		dateStyle: "medium",
+		timeStyle: "short",
+	});
 
 	useEffect(() => {
 		if (!map) return;
@@ -75,9 +77,9 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title="Version history" className="version-history-modal">
+			<DialogContent title={t("dialog.versionHistory")} className="version-history-modal">
 				{commits.length === 0 && (
-					<p className="text-muted">No commits yet. Press Commit to create your first version.</p>
+					<p className="text-muted">{t("versionHistory.noCommits")}</p>
 				)}
 				{commits.length > 0 && (
 					<div style={{ maxHeight: 400, overflowY: "auto" }}>
@@ -89,10 +91,12 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 										borderBottom: "1px solid var(--border-subtle)",
 									}}
 								>
-									<th style={{ padding: "6px 8px" }}>Date</th>
-									<th style={{ padding: "6px 8px" }}>Hash</th>
-									<th style={{ padding: "6px 8px" }}>Changes</th>
-									<th style={{ padding: "6px 8px", textAlign: "right" }}>Locations</th>
+									<th style={{ padding: "6px 8px" }}>{t("versionHistory.date")}</th>
+									<th style={{ padding: "6px 8px" }}>{t("versionHistory.hash")}</th>
+									<th style={{ padding: "6px 8px" }}>{t("common.changes")}</th>
+									<th style={{ padding: "6px 8px", textAlign: "right" }}>
+										{t("versionHistory.locations")}
+									</th>
 									<th style={{ padding: "6px 8px" }}></th>
 								</tr>
 							</thead>
@@ -105,7 +109,7 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 										<tr
 											key={c.id}
 											onClick={() => hasDiff && viewDiff(c)}
-											title={hasDiff ? "View changes on the map" : undefined}
+											title={hasDiff ? t("versionHistory.viewChanges") : undefined}
 											style={{
 												borderBottom: "1px solid var(--border-subtle)",
 												cursor: hasDiff ? "pointer" : "default",
@@ -129,7 +133,9 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 													color: diff ? undefined : msg ? undefined : "var(--text-3)",
 												}}
 											>
-												{diff ?? msg ?? (i === 0 ? "(latest)" : "(no changes)")}
+												{diff ??
+													msg ??
+													(i === 0 ? t("versionHistory.latest") : t("versionHistory.noChanges"))}
 											</td>
 											<td className="mono" style={{ padding: "6px 8px", textAlign: "right" }}>
 												{fmt.format(c.locationCount)}
@@ -145,12 +151,12 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 													onBlur={() => confirmingId === c.id && setConfirmingId(null)}
 												>
 													{restoring === c.id
-														? "Restoring..."
+														? t("versionHistory.restoring")
 														: confirmingId === c.id
-															? "Are you sure?"
+															? t("versionHistory.areYouSure")
 															: i === 0
-																? "Revert"
-																: "Restore"}
+																? t("versionHistory.revert")
+																: t("versionHistory.restore")}
 												</Button>
 											</td>
 										</tr>

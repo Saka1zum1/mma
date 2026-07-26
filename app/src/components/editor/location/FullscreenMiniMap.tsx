@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSyncStore } from "@/lib/events";
+import { useT } from "@/lib/i18n";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
@@ -64,6 +65,7 @@ async function ensureMinimapHost(
 }
 
 export function FullscreenMiniMap() {
+	const { t } = useT();
 	const { lat, lng } = usePanoViewer();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
@@ -153,7 +155,7 @@ export function FullscreenMiniMap() {
 				<button
 					type="button"
 					className="fullscreen-minimap__size-btn"
-					aria-label="Smaller minimap"
+					aria-label={t("editor.smallerMinimap")}
 					disabled={scale <= MINIMAP_SCALE.min}
 					onClick={() => setScale(scale - MINIMAP_SCALE_STEP)}
 				>
@@ -162,7 +164,7 @@ export function FullscreenMiniMap() {
 				<button
 					type="button"
 					className="fullscreen-minimap__size-btn"
-					aria-label="Larger minimap"
+					aria-label={t("editor.largerMinimap")}
 					disabled={scale >= MINIMAP_SCALE.max}
 					onClick={() => setScale(scale + MINIMAP_SCALE_STEP)}
 				>

@@ -8,26 +8,37 @@ import { useCameraType, type DisplayCameraBadge, type BuiltinCameraType } from "
 import { usePanoViewer } from "./PanoViewerContext";
 import { NSelect } from "@/components/primitives/NSelect";
 import { useMapState } from "@/store/useMapStore";
+import { useT } from "@/lib/i18n";
+import type { MessageKey } from "@/locales/en";
 
 function BuiltinBadge({ type }: { type: BuiltinCameraType }) {
-	switch (type) {
-		case "unofficial":
-			return <span className="pano-option__badge badge badge--unofficial">unofficial</span>;
-		case "gen1":
-			return <span className="pano-option__badge badge badge--gen1">Gen1</span>;
-		case "gen2":
-			return <span className="pano-option__badge badge badge--gen2">Gen2/3</span>;
-		case "gen4":
-			return <span className="pano-option__badge badge badge--gen4">Gen4</span>;
-		case "badcam":
-			return <span className="pano-option__badge badge badge--badcam">Badcam</span>;
-		case "tripod":
-			return <span className="pano-option__badge badge badge--tripod">Tripod</span>;
-		case "trekker":
-			return <span className="pano-option__badge badge badge--rb">Trekker</span>;
-		default:
-			return null;
-	}
+	const { t } = useT();
+	const badgeKeys: Record<BuiltinCameraType, MessageKey | null> = {
+		unofficial: "editor.badgeUnofficial",
+		gen1: "editor.badgeGen1",
+		gen2: "editor.badgeGen2",
+		gen4: "editor.badgeGen4",
+		badcam: "editor.badgeBadcam",
+		tripod: "editor.badgeTripod",
+		trekker: "editor.badgeTrekker",
+	};
+	const key = badgeKeys[type];
+	if (!key) return null;
+	const className =
+		type === "unofficial"
+			? "badge--unofficial"
+			: type === "gen1"
+				? "badge--gen1"
+				: type === "gen2"
+					? "badge--gen2"
+					: type === "gen4"
+						? "badge--gen4"
+						: type === "badcam"
+							? "badge--badcam"
+							: type === "tripod"
+								? "badge--tripod"
+								: "badge--rb";
+	return <span className={`pano-option__badge badge ${className}`}>{t(key)}</span>;
 }
 
 function ProviderBadge({ badge }: { badge: PanoCameraBadge }) {
@@ -76,6 +87,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 }: {
 	onChange: (panoId: string | null) => void;
 }) {
+	const { t } = useT();
 	const location = useMapState((s) => s.activeLocation);
 	const provider = location ? findPanoProvider(location) : null;
 	// Baidu uses native Google SV lifecycle (no MMA PanoProvider) but has day-level dates.
@@ -91,7 +103,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 	const fmt = dayLevel ? panoDayFmt : dateFmt;
 	const displayLabel = displayDate
 		? isDefault
-			? `Default (${fmt.format(displayDate)})`
+			? t("editor.defaultWithDate", { date: fmt.format(displayDate) })
 			: fmt.format(displayDate)
 		: prevLabelRef.current;
 	if (displayLabel) prevLabelRef.current = displayLabel;
@@ -135,7 +147,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 		return (
 			<NSelect className="pano-date-select" disabled>
 				<button type="button" className="pano-date-select__trigger">
-					<span className="pano-value">No dates</span>
+					<span className="pano-value">{t("editor.noDates")}</span>
 				</button>
 			</NSelect>
 		);
@@ -147,7 +159,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 			<NSelect className="pano-date-select" disabled value="default">
 				<button type="button" className="pano-date-select__trigger">
 					<span className="pano-value">
-						{triggerLabel ?? "Default"}
+						{triggerLabel ?? t("editor.defaultLabel")}
 						<span style={{ display: "flex", gap: 4, alignItems: "center" }}>
 							{shouldShowBadge(triggerCamera, showBadges) && (
 								<PanoBadge camera={triggerCamera} />
@@ -182,15 +194,15 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 					<span className="badge badge--number">{sorted.length}</span>
 				</span>
 			</button>
-			<optgroup label="Specific Panorama">
+			<optgroup label={t("editor.specificPanorama")}>
 				{sorted.map((d) => (
 					<PanoOption key={d.pano} pano={d} dayLevel={dayLevel} />
 				))}
 			</optgroup>
-			<optgroup label="Default / auto-updating">
+			<optgroup label={t("editor.defaultAutoUpdating")}>
 				<option value="default" className="pano-option">
 					<span className="pano-option__name">
-						Default
+						{t("editor.defaultLabel")}
 						{defaultDate ? ` (${fmt.format(defaultDate)})` : ""}
 					</span>
 				</option>

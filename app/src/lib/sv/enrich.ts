@@ -16,6 +16,7 @@ import { SV_CONCURRENCY } from "@/lib/sv/constants";
 import { log } from "@/lib/util/log";
 import { cmd } from "@/lib/commands";
 import { toast } from "@/lib/util/toast";
+import { t } from "@/lib/i18n";
 import type { Location } from "@/bindings.gen";
 
 /** True when the location is missing any of the given enrich fields (default: the enabled set). */
@@ -170,12 +171,12 @@ let adm1Ready: Promise<boolean> | null = null;
 function ensureAdm1(): Promise<boolean> {
 	adm1Ready ??= (async () => {
 		if (await cmd.checkBorderFile("adm1")) return true;
-		toast("Subdivision borders missing - downloading...");
+		toast(t("toast.subdivisionDownloading"));
 		try {
 			await cmd.downloadBorderFile("adm1");
 			return true;
 		} catch {
-			toast("Couldn't download subdivision borders - check your connection");
+			toast(t("toast.subdivisionDownloadFailed"));
 			adm1Ready = null;
 			return false;
 		}

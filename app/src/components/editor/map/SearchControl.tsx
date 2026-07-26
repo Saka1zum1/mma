@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { parseMapsUrl, parseCoordinates, type ParsedLocation } from "@/lib/data/importExport";
+import { toBcp47, useT, getLocale } from "@/lib/i18n";
 import type { LatLng } from "@/types";
 
 type PlaceResult = LatLng & {
@@ -14,6 +15,7 @@ export function SearchControl({
 	onResult: (lat: number, lng: number, name: string) => void;
 	onAddLocation: (parsed: ParsedLocation) => void | Promise<void>;
 }) {
+	const { t } = useT();
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<PlaceResult[]>([]);
 	const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -28,7 +30,7 @@ export function SearchControl({
 			try {
 				const res = await fetch(
 					`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-					{ headers: { "Accept-Language": "en" } },
+					{ headers: { "Accept-Language": toBcp47(getLocale()) } },
 				);
 				if (!res.ok) return;
 				const data = await res.json();
@@ -67,7 +69,7 @@ export function SearchControl({
 		<SuggestInput
 			containerClassName="map-control search-control"
 			inputClassName="search-control__input"
-			placeholder="Search for places…"
+			placeholder={t("map.searchPlaces")}
 			value={query}
 			onChange={(v) => {
 				setQuery(v);

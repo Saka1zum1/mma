@@ -36,7 +36,12 @@ import { useDiscordPresence } from "@/lib/discord/presence";
 import { initRemoteHost } from "@/lib/remote/host";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
+import { initI18n, syncLocaleFromSettings, useT } from "@/lib/i18n";
+import { subscribe } from "@/lib/events";
 import "@/plugins";
+
+initI18n();
+subscribe("settings:changed", syncLocaleFromSettings);
 
 // Dynamic import (deck.gl/luma.gl out of the initial bundle) WITHOUT React.lazy/Suspense —
 // a Suspense boundary makes React 19 render the editor in a low-priority lane (~260ms/open).
@@ -103,6 +108,7 @@ function EditorRoot() {
 /** Floating UI shared by both window roles: settings/plugins gears, update pill, and the
  *  app-level dialogs. Hidden by App while a window is self-destructing. */
 function AppChrome() {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const isMapList = !useTargetMapId();
 	const manualChapter = useManualChapter();
@@ -131,11 +137,11 @@ function AppChrome() {
 						href="https://discord.gg/4wPNJTuzD8"
 						target="_blank"
 						rel="noopener noreferrer"
-						title="Join the Discord"
+						title={t("app.joinDiscord")}
 					>
 						<Icon path={mdiDiscord} />
 					</a>
-					<button className="settings-gear" onClick={() => openManual()} title="Manual">
+					<button className="settings-gear" onClick={() => openManual()} title={t("common.manual")}>
 						<Icon path={mdiBookOpenPageVariantOutline} />
 					</button>
 				</div>
@@ -151,27 +157,29 @@ function AppChrome() {
 							{update.phase === "available" && (
 								<>
 									<button className="update-pill__label" onClick={installUpdate}>
-										v{update.version} - download update
+										{t("app.downloadUpdate", { version: update.version })}
 									</button>
-									<button className="update-pill__dismiss" onClick={dismissUpdate} title="Dismiss">
+									<button className="update-pill__dismiss" onClick={dismissUpdate} title={t("app.dismiss")}>
 										<Icon path={mdiClose} size={14} />
 									</button>
 								</>
 							)}
 							{update.phase === "downloading" && (
-								<span className="update-pill__label">Downloading {update.percent}%</span>
+								<span className="update-pill__label">
+									{t("app.downloadingPercent", { percent: String(update.percent) })}
+								</span>
 							)}
 							{update.phase === "ready" && (
 								<button className="update-pill__label" onClick={relaunchApp}>
-									Restart to update
+									{t("app.restartToUpdate")}
 								</button>
 							)}
 							{update.phase === "error" && (
 								<>
 									<button className="update-pill__label" onClick={installUpdate}>
-										Update failed - retry
+										{t("app.updateFailedRetry")}
 									</button>
-									<button className="update-pill__dismiss" onClick={dismissUpdate} title="Dismiss">
+									<button className="update-pill__dismiss" onClick={dismissUpdate} title={t("app.dismiss")}>
 										<Icon path={mdiClose} size={14} />
 									</button>
 								</>
@@ -179,10 +187,10 @@ function AppChrome() {
 						</div>
 					)}
 					{isMapList && <BulkActions />}
-					<button className="settings-gear" onClick={() => setShowPlugins(true)} title="Plugins">
+					<button className="settings-gear" onClick={() => setShowPlugins(true)} title={t("dialog.plugins")}>
 						<Icon path={mdiPuzzle} />
 					</button>
-					<button className="settings-gear" onClick={() => setShowSettings(true)} title="Settings">
+					<button className="settings-gear" onClick={() => setShowSettings(true)} title={t("dialog.settings")}>
 						<Icon path={mdiCog} />
 					</button>
 				</div>

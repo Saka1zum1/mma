@@ -45,16 +45,18 @@ import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/Ma
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { type MapEmbedPrefs, DEFAULT_PREFS, toggledOpacity } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
+import { useT } from "@/lib/i18n";
 
 /** Live zoom text with its own zoom subscription, so zooming doesn't re-render MapEmbed. */
 function ZoomReadout({ host }: { host: MapHost | null }) {
+	const { t } = useT();
 	const [zoom, setZoom] = useState(() => host?.getZoom() ?? 2);
 	useEffect(() => {
 		if (!host) return;
 		setZoom(host.getZoom());
 		return host.on("zoom", () => setZoom(Math.round(host.getZoom() * 100) / 100));
 	}, [host]);
-	return <> zoom {zoom}</>;
+	return <> {t("editor.zoomReadout", { zoom: String(zoom) })}</>;
 }
 
 export function MapEmbed({
@@ -62,6 +64,7 @@ export function MapEmbed({
 }: {
 	onAddLocation: (parsed: ParsedLocation) => void | Promise<void>;
 }) {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [host, setHost] = useState<MapHost | null>(null);
@@ -413,8 +416,8 @@ export function MapEmbed({
 						<Tooltip
 							content={
 								opacityTarget === "sv"
-									? "Adjusting Street View opacity"
-									: "Adjusting marker opacity"
+									? t("editor.adjustingSvOpacity")
+									: t("editor.adjustingMarkerOpacity")
 							}
 							side="left"
 						>
@@ -437,7 +440,7 @@ export function MapEmbed({
 							onChange={(e) =>
 								pref(opacityTarget === "sv" ? "svOpacity" : "markerOpacity")(Number(e.target.value))
 							}
-							title={opacityTarget === "sv" ? "Street View layer opacity" : "Marker layer opacity"}
+							title={opacityTarget === "sv" ? t("editor.svLayerOpacity") : t("editor.markerLayerOpacity")}
 						/>
 					</div>
 				</div>
@@ -446,13 +449,13 @@ export function MapEmbed({
 					style={fullscreenMap ? { left: 0, bottom: 10 } : { right: 0, bottom: 10 }}
 				>
 					<div className="map-control map-control--button white">
-						<Tooltip content="Zoom in" side="left">
-							<button onClick={zoomIn} aria-label="Zoom in">
+						<Tooltip content={t("common.zoomIn")} side="left">
+							<button onClick={zoomIn} aria-label={t("common.zoomIn")}>
 								<Icon path={mdiPlus} size={18} />
 							</button>
 						</Tooltip>
-						<Tooltip content="Zoom out" side="left">
-							<button onClick={zoomOut} aria-label="Zoom out">
+						<Tooltip content={t("common.zoomOut")} side="left">
+							<button onClick={zoomOut} aria-label={t("common.zoomOut")}>
 								<Icon path={mdiMinus} size={18} />
 							</button>
 						</Tooltip>
@@ -488,7 +491,7 @@ export function MapEmbed({
 			</div>
 			{showStylesDialog && (
 				<Dialog open onOpenChange={(open) => !open && setShowStylesDialog(false)}>
-					<DialogContent title="Manage map styles" className="map-styles-modal">
+					<DialogContent title={t("dialog.manageMapStyles")} className="map-styles-modal">
 						{customStyles.length > 0 && (
 							<ul className="map-style-list">
 								{customStyles.map((s) => (
@@ -501,7 +504,7 @@ export function MapEmbed({
 												onClick={() => {
 													navigator.clipboard.writeText(JSON.stringify(s.style, null, 2));
 												}}
-												aria-label="Copy JSON"
+												aria-label={t("editor.copyJson")}
 											>
 												<Icon path={mdiContentCopy} size={20} />
 											</button>
@@ -513,7 +516,7 @@ export function MapEmbed({
 													setCustomStyles(next);
 													if (prefs.mapStyleName === s.name) pref("mapStyleName")("default");
 												}}
-												aria-label="Delete style"
+												aria-label={t("editor.deleteStyle")}
 											>
 												<Icon path={mdiDelete} size={20} />
 											</button>
@@ -522,8 +525,8 @@ export function MapEmbed({
 								))}
 							</ul>
 						)}
-						<strong>New style</strong>
-						<p style={{ margin: 0 }}>Paste a Google Maps style JSON array below.</p>
+						<strong>{t("editor.newStyle")}</strong>
+						<p style={{ margin: 0 }}>{t("editor.pasteStyleJson")}</p>
 						<form
 							onSubmit={(ev) => {
 								ev.preventDefault();
@@ -545,7 +548,7 @@ export function MapEmbed({
 							<p>
 								<TextInput
 									name="name"
-									placeholder="Style name"
+									placeholder={t("editor.styleName")}
 									required
 									style={{ width: "100%" }}
 								/>
@@ -554,7 +557,7 @@ export function MapEmbed({
 								<textarea
 									name="style"
 									className="text-input"
-									placeholder='[{"featureType":"water","stylers":[{"color":"#ff0000"}]}]'
+									placeholder={t("editor.styleJsonPlaceholder")}
 									rows={5}
 									style={{
 										width: "100%",
@@ -566,14 +569,14 @@ export function MapEmbed({
 							</p>
 							<p>
 								<Button variant="primary" type="submit">
-									Upload
+									{t("common.upload")}
 								</Button>
 							</p>
 						</form>
 					</DialogContent>
 				</Dialog>
 			)}
-			<ContextMenu.Trigger render={<span ref={contextTriggerRef} title="Context menu" />} />
+			<ContextMenu.Trigger render={<span ref={contextTriggerRef} title={t("editor.contextMenu")} />} />
 			<ContextMenu.Portal>
 				<MapContextMenuContent host={host} />
 			</ContextMenu.Portal>

@@ -4,6 +4,7 @@ import { TagPill } from "@/components/primitives/TagPill";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
+import { useT } from "@/lib/i18n";
 
 export function TagFindReplaceDialog({
 	open,
@@ -12,6 +13,7 @@ export function TagFindReplaceDialog({
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 }) {
+	const { t, tp } = useT();
 	const [find, setFind] = useState("");
 	const [replace, setReplace] = useState("");
 	const [applied, setApplied] = useState(false);
@@ -45,10 +47,10 @@ export function TagFindReplaceDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent title="Find and replace in tag names" className="tag-find-replace-modal">
+			<DialogContent title={t("dialog.findReplaceTags")} className="tag-find-replace-modal">
 				<div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}>
 					<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-						<span style={{ width: 60 }}>Find</span>
+						<span style={{ width: 60 }}>{t("common.find")}</span>
 						<TextInput
 							style={{ flex: 1 }}
 							value={find}
@@ -56,12 +58,12 @@ export function TagFindReplaceDialog({
 								setFind(e.target.value);
 								setApplied(false);
 							}}
-							placeholder="Text to find..."
+							placeholder={t("editor.findPlaceholder")}
 							autoFocus
 						/>
 					</label>
 					<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-						<span style={{ width: 60 }}>Replace</span>
+						<span style={{ width: 60 }}>{t("common.replace")}</span>
 						<TextInput
 							style={{ flex: 1 }}
 							value={replace}
@@ -69,13 +71,13 @@ export function TagFindReplaceDialog({
 								setReplace(e.target.value);
 								setApplied(false);
 							}}
-							placeholder="Replace with..."
+							placeholder={t("editor.replacePlaceholder")}
 						/>
 					</label>
 					{find && (
 						<div>
 							<p style={{ margin: "0 0 0.25rem", fontSize: "0.85rem", color: "var(--text-2)" }}>
-								{matches.length} tag{matches.length !== 1 ? "s" : ""} will be affected:
+								{tp("editor.tagsAffected", matches.length, { count: String(matches.length) })}
 							</p>
 							<ul
 								style={{
@@ -107,24 +109,26 @@ export function TagFindReplaceDialog({
 						</div>
 					)}
 					<p style={{ margin: 0, fontSize: "0.8rem", color: "var(--accent)" }}>
-						Tag renames cannot be undone.
+						{t("editor.tagRenamesIrreversible")}
 					</p>
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-						<Button onClick={() => handleOpenChange(false)}>{applied ? "Close" : "Cancel"}</Button>
+						<Button onClick={() => handleOpenChange(false)}>
+							{applied ? t("common.close") : t("common.cancel")}
+						</Button>
 						{!applied && (
 							<Button
 								variant="primary"
 								disabled={!find || matches.length === 0}
 								onClick={handleApply}
 							>
-								Replace {matches.length} tag{matches.length !== 1 ? "s" : ""}
+								{tp("editor.replaceTags", matches.length, { count: String(matches.length) })}
 							</Button>
 						)}
 						{applied && (
 							<span
 								style={{ alignSelf: "center", color: "var(--constructive)", fontSize: "0.85rem" }}
 							>
-								Done!
+								{t("editor.done")}
 							</span>
 						)}
 					</div>

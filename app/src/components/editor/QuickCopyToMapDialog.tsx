@@ -7,8 +7,10 @@ import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { getMapState } from "@/store/useMapStore";
 import { isVirtualLocation } from "@/types";
 import { toast } from "@/lib/util/toast";
+import { useT } from "@/lib/i18n";
 
 export function QuickCopyToMapDialog({ onClose }: { onClose: () => void }) {
+	const { t } = useT();
 	const [maps, setMaps] = useState<MapMeta[] | null>(null);
 	const [query, setQuery] = useState("");
 	const contentRef = useRef<HTMLDivElement>(null);
@@ -44,7 +46,9 @@ export function QuickCopyToMapDialog({ onClose }: { onClose: () => void }) {
 				const container = contentRef.current;
 				if (container)
 					toast(
-						res.copied > 0 ? `Copied to "${res.targetName}"` : `Already in "${res.targetName}"`,
+						res.copied > 0
+							? t("toast.copiedTo", { name: res.targetName })
+							: t("toast.alreadyIn", { name: res.targetName }),
 						1500,
 						container,
 					);
@@ -53,7 +57,7 @@ export function QuickCopyToMapDialog({ onClose }: { onClose: () => void }) {
 			.catch((e) => {
 				log.error("[quickCopy] failed:", e);
 				const container = contentRef.current;
-				if (container) toast("Copy failed", 1500, container);
+				if (container) toast(t("toast.copyFailed"), 1500, container);
 				setTimeout(onClose, 600);
 			});
 	};
@@ -65,11 +69,11 @@ export function QuickCopyToMapDialog({ onClose }: { onClose: () => void }) {
 				if (!open) onClose();
 			}}
 		>
-			<DialogContent title="Copy location to map" className="copy-to-map-modal-host">
+			<DialogContent title={t("dialog.copyLocationToMap")} className="copy-to-map-modal-host">
 				<div className="copy-to-map-modal" ref={contentRef}>
 					<SuggestInput
 						containerClassName="copy-to-map-modal__add"
-						placeholder="Search for a map..."
+						placeholder={t("copyToMap.searchPlaceholder")}
 						value={query}
 						onChange={setQuery}
 						suggestions={suggestions}
@@ -79,7 +83,7 @@ export function QuickCopyToMapDialog({ onClose }: { onClose: () => void }) {
 						autoFocus
 						renderItem={(m) => (
 							<>
-								<strong>{m.name || "(unnamed)"}</strong>
+								<strong>{m.name || t("copyToMap.unnamed")}</strong>
 								{m.folder && <span className="search-result__context"> &middot; {m.folder}</span>}
 							</>
 						)}

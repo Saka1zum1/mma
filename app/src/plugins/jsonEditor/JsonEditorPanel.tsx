@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import type { Location, Tag } from "@/bindings.gen";
 import { createTags } from "@/store/useMapStore";
 import { locDate } from "@/lib/util/format";
+import { useT } from "@/lib/i18n";
 
 function tagIdsToNames(tagIds: number[], tags: Record<string, Tag>): string[] {
 	return tagIds.map((id) => tags[id]?.name ?? String(id));
@@ -23,6 +24,7 @@ async function resolveTagNames(names: string[]): Promise<number[]> {
 }
 
 export function JsonEditorPanel() {
+	const { t } = useT();
 	const active = MMA.getMapState().activeLocation;
 	const prevIdRef = useRef(active?.id);
 	const [text, setText] = useState(() => (active ? serializeActive(active) : ""));
@@ -65,13 +67,13 @@ export function JsonEditorPanel() {
 	return (
 		<div style={{ fontSize: "12px" }}>
 			<div style={{ fontSize: "11px", opacity: 0.5, marginBottom: 4 }}>
-				id: {active.id}
+				{t("plugin.jsonEditor.id")} {active.id}
 				<br />
-				created: {locDate(active.createdAt).toISOString()}
+				{t("plugin.jsonEditor.created")} {locDate(active.createdAt).toISOString()}
 				{active.modifiedAt && (
 					<>
 						<br />
-						modified: {locDate(active.modifiedAt).toISOString()}
+						{t("plugin.jsonEditor.modified")} {locDate(active.modifiedAt).toISOString()}
 					</>
 				)}
 			</div>
@@ -99,9 +101,11 @@ export function JsonEditorPanel() {
 			{error && <div style={{ color: "#e53e3e", fontSize: "11px", marginTop: 4 }}>{error}</div>}
 			<div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
 				<button className="button" onClick={handleSave}>
-					Apply
+					{t("common.apply")}
 				</button>
-				{saved && <span style={{ color: "var(--constructive)", fontSize: "11px" }}>Saved</span>}
+				{saved && (
+					<span style={{ color: "var(--constructive)", fontSize: "11px" }}>{t("common.saved")}</span>
+				)}
 			</div>
 		</div>
 	);

@@ -13,12 +13,14 @@ import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { fmt } from "@/lib/util/format";
 import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
+import { useT } from "@/lib/i18n";
 
 interface Props {
 	onClose: () => void;
 }
 
 export function ExportDialog({ onClose }: Props) {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const selectedIds = useMapState((s) => s.selectedLocationIds);
 	const locationCount = useMapState((s) => s.locationCount);
@@ -60,41 +62,41 @@ export function ExportDialog({ onClose }: Props) {
 			if (ok !== false) toast(success);
 		} catch (e) {
 			log.error("[export] failed:", e);
-			toast("Export failed");
+			toast(t("toast.exportFailed"));
 		}
 	};
 
 	const copyJson = withFeedback(
 		async () =>
 			navigator.clipboard.writeText(await (await fetch(mmaBufUrl(await jsonPath()))).text()),
-		"Copied JSON to clipboard",
+		t("toast.copiedJson"),
 	);
 	const downloadJson = withFeedback(
 		async () => saveToFile(await jsonPath(), "json"),
-		`Downloaded ${baseName}.json`,
+		t("toast.downloadedFile", { name: `${baseName}.json` }),
 	);
 
 	const copyCsv = withFeedback(
 		async () =>
 			navigator.clipboard.writeText(await (await fetch(mmaBufUrl(await csvPath()))).text()),
-		"Copied CSV to clipboard",
+		t("toast.copiedCsv"),
 	);
 	const downloadCsv = withFeedback(
 		async () => saveToFile(await csvPath(), "csv"),
-		`Downloaded ${baseName}.csv`,
+		t("toast.downloadedFile", { name: `${baseName}.csv` }),
 	);
 
 	const downloadGeoJson = withFeedback(
 		async () => saveToFile(await geojsonPath(), "geojson"),
-		`Downloaded ${baseName}.geojson`,
+		t("toast.downloadedFile", { name: `${baseName}.geojson` }),
 	);
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title="Export" className="export-modal">
+			<DialogContent title={t("dialog.export")} className="export-modal">
 				<div className="export-modal__settings">
 					<div className="export-modal__filename">
-						<label htmlFor={`${uid}name`}>File name:</label>
+						<label htmlFor={`${uid}name`}>{t("export.fileName")}</label>
 						<TextInput
 							id={`${uid}name`}
 							type="text"
@@ -112,7 +114,7 @@ export function ExportDialog({ onClose }: Props) {
 								checked={scope.kind === "all"}
 								onChange={() => setScope({ kind: "all" })}
 							/>
-							Export everything ({fmt.format(locationCount)} locations)
+							{t("editor.exportEverything", { count: fmt.format(locationCount) })}
 						</label>
 						<label>
 							<Radio
@@ -123,7 +125,7 @@ export function ExportDialog({ onClose }: Props) {
 								disabled={selCount === 0}
 							/>
 							<span style={selCount === 0 ? { opacity: 0.7 } : undefined}>
-								Export selection ({fmt.format(selCount)} locations)
+								{t("editor.exportSelection", { count: fmt.format(selCount) })}
 							</span>
 						</label>
 					</div>
@@ -134,7 +136,7 @@ export function ExportDialog({ onClose }: Props) {
 								checked={saveZoom}
 								onChange={(e) => setSaveZoom(e.target.checked)}
 							/>
-							Save zoom levels
+							{t("export.saveZoomLevels")}
 						</label>
 						<label>
 							<Checkbox
@@ -142,12 +144,9 @@ export function ExportDialog({ onClose }: Props) {
 								checked={saveExtras}
 								onChange={(e) => setSaveExtras(e.target.checked)}
 							/>
-							Save app data
+							{t("export.saveAppData")}
 							<br />
-							<small className="export-modal__help">
-								Include app-specific data like tags. Not including this makes the file smaller,
-								which can help when uploading maps with 100K+ locations to GeoGuessr.
-							</small>
+							<small className="export-modal__help">{t("export.saveAppDataHelp")}</small>
 						</label>
 						<label>
 							<Checkbox
@@ -155,47 +154,42 @@ export function ExportDialog({ onClose }: Props) {
 								checked={bypassUnpanned}
 								onChange={(e) => setBypassUnpanned(e.target.checked)}
 							/>
-							Bypass GeoGuessr auto-panning for locations with 0 heading
+							{t("export.bypassUnpanned")}
 							<br />
-							<small className="export-modal__help">
-								GeoGuessr auto-pans locations that point straight north along the road. To keep your
-								unpanned locations unpanned, enable this option.
-							</small>
+							<small className="export-modal__help">{t("export.bypassUnpannedHelp")}</small>
 						</label>
 					</div>
 				</div>
 				<div className="export-modal__formats">
 					<div className="export-modal__format export-modal__format--json">
-						<h3 className="export-modal__subhead">As JSON (recommended)</h3>
+						<h3 className="export-modal__subhead">{t("export.asJson")}</h3>
 						<div className="export-modal__export-buttons">
 							<Button onClick={copyJson} disabled={!navigator.clipboard} data-qa="json-copy">
-								Copy
+								{t("common.copy")}
 							</Button>
 							<Button onClick={downloadJson} data-qa="json-dl">
-								Download
+								{t("common.download")}
 							</Button>
 						</div>
 					</div>
 					<div className="export-modal__format export-modal__format--csv">
-						<h3 className="export-modal__subhead">As CSV</h3>
-						<p>
-							CSV exports do <em>not</em> retain camera orientation and pano&nbsp;IDs.
-						</p>
+						<h3 className="export-modal__subhead">{t("export.asCsv")}</h3>
+						<p>{t("export.csvNote")}</p>
 						<div className="export-modal__export-buttons">
 							<Button onClick={copyCsv} disabled={!navigator.clipboard} data-qa="csv-copy">
-								Copy
+								{t("common.copy")}
 							</Button>
 							<Button onClick={downloadCsv} data-qa="csv-dl">
-								Download
+								{t("common.download")}
 							</Button>
 						</div>
 					</div>
 					<div className="export-format export-modal__format--geojson">
-						<h3 className="export-modal__subhead">As GeoJSON</h3>
-						<p>For use in non-GeoGuessr mapping tools.</p>
+						<h3 className="export-modal__subhead">{t("export.asGeoJson")}</h3>
+						<p>{t("export.geoJsonNote")}</p>
 						<div className="export-modal__export-buttons">
 							<Button onClick={downloadGeoJson} data-qa="geojson-download">
-								Download
+								{t("common.download")}
 							</Button>
 						</div>
 					</div>

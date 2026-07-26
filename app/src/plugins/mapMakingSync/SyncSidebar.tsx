@@ -5,9 +5,11 @@ import { ConnectionUser, SyncSidebar as SharedSyncSidebar } from "@/lib/sync/ui/
 import type { Remote } from "./map-making-web-api";
 import * as auth from "./controller";
 import { controller } from "./controller";
+import { useT } from "@/lib/i18n";
 
 /** The shared sync sidebar, with map-making.app's API-key auth plugged into it. */
 export function SyncSidebar({ onClose }: { onClose: () => void }) {
+	const { t } = useT();
 	const [keyDraft, setKeyDraft] = useState(auth.getApiKey());
 	const [user, setUser] = useState<Remote.User | null>(auth.getCachedUser());
 	const [busy, setBusy] = useState(false);
@@ -52,7 +54,7 @@ export function SyncSidebar({ onClose }: { onClose: () => void }) {
 						setUser(null);
 					}}
 				>
-					Change key
+					{t("plugin.sync.changeKey")}
 				</button>
 			}
 		/>
@@ -72,18 +74,18 @@ export function SyncSidebar({ onClose }: { onClose: () => void }) {
 				aria-hidden
 				style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
 			/>
-			<Field label="API key" hint="Get one at map-making.app/keys">
+			<Field label={t("plugin.sync.apiKey")} hint={t("plugin.sync.apiKeyHint")}>
 				<input
 					className="input"
 					type="password"
 					autoComplete="current-password"
 					value={keyDraft}
 					onChange={(e) => setKeyDraft(e.target.value)}
-					placeholder="paste API key"
+					placeholder={t("plugin.sync.apiKeyPlaceholder")}
 				/>
 			</Field>
 			<button className="button button--primary" type="submit" disabled={busy || !keyDraft}>
-				{busy ? "Validating..." : "Validate"}
+				{busy ? t("plugin.sync.validating") : t("plugin.sync.validate")}
 			</button>
 			{error && (
 				<p className="mma-input__help" style={{ color: "var(--red-9, #e5484d)" }}>

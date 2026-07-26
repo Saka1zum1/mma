@@ -35,6 +35,7 @@ import { Command } from "@tauri-apps/plugin-shell";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings";
+import { t, tp, getLocale, LOCALES } from "@/lib/i18n";
 import { getSavedSelections, savedToSelectionProps, describeRule } from "@/store/savedSelections";
 import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen";
 import { loadSeenPano } from "@/lib/sv/panoSingleton";
@@ -208,6 +209,12 @@ const surface = {
 	// --- Settings ---
 	setSetting,
 	getSettings: () => ({ ...getSettings() }),
+
+	// --- i18n ---
+	t,
+	tp,
+	getLocale,
+	LOCALES,
 
 	// --- Saved selections ---
 	getSavedSelections,

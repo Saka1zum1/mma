@@ -12,6 +12,7 @@ import { svThumbnailUrl } from "@/lib/sv/lookup";
 import { TagPill } from "@/components/primitives/TagPill";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
+import { useT } from "@/lib/i18n";
 
 function DuplicateItem({
 	location,
@@ -28,6 +29,7 @@ function DuplicateItem({
 	onClick: () => void;
 	tagMap: Record<number, { name: string; color: string }>;
 }) {
+	const { t } = useT();
 	const thumbSrc = location.panoId ? svThumbnailUrl(location.panoId, location.heading) : null;
 
 	return (
@@ -45,7 +47,7 @@ function DuplicateItem({
 			<div className="duplicate-item__tags">
 				{location.tags.length > 0 ? (
 					<>
-						<strong>Tags:</strong>{" "}
+						<strong>{t("editor.tagsLabel")}:</strong>{" "}
 						{location.tags.map((tid) => {
 							const tag = tagMap[tid];
 							if (!tag) return null;
@@ -53,13 +55,13 @@ function DuplicateItem({
 						})}
 					</>
 				) : (
-					<em>No tags</em>
+					<em>{t("editor.noTags")}</em>
 				)}
 			</div>
 			<div className="duplicate-item__meta">{Math.round(location.heading)}&deg;</div>
 			<div className="duplicate-item__actions">
 				<Button variant="destructive" onClick={onDelete}>
-					Delete
+					{t("common.delete")}
 				</Button>
 			</div>
 		</li>
@@ -67,6 +69,7 @@ function DuplicateItem({
 }
 
 export default function SameLocation() {
+	const { t, tp } = useT();
 	const locations = useMapState((s) => s.duplicateLocations);
 	const tagMap = useMapState((s) => s.tags);
 
@@ -119,13 +122,8 @@ export default function SameLocation() {
 
 	return (
 		<section className="duplicates">
-			<h2>
-				<span className="mono">{locations.length}</span> locations
-			</h2>
-			<p>
-				Multiple locations were selected around this coordinate. Click one of the thumbnails below
-				to view that location.
-			</p>
+			<h2>{tp("editor.sameLocationHeading", locations.length, { count: locations.length })}</h2>
+			<p>{t("editor.sameLocationIntro")}</p>
 			<ul className="duplicates__location-list">
 				{sorted.map((loc) => (
 					<DuplicateItem
@@ -140,17 +138,17 @@ export default function SameLocation() {
 				))}
 			</ul>
 			<div className="duplicates__actions">
-				<Tooltip content="Delete all duplicate locations, except the selected ones" side="bottom">
+				<Tooltip content={t("editor.keepSelectedTooltip")} side="bottom">
 					<Button variant="destructive" disabled={selected.size === 0} onClick={keepSelected}>
-						Keep selected
+						{t("editor.keepSelected")}
 					</Button>
 				</Tooltip>
-				<Tooltip content="Delete selected locations" side="bottom">
+				<Tooltip content={t("editor.deleteSelectedTooltip")} side="bottom">
 					<Button variant="destructive" disabled={selected.size === 0} onClick={deleteSelected}>
-						Delete selected
+						{t("editor.deleteSelected")}
 					</Button>
 				</Tooltip>
-				<Button onClick={closeDuplicates}>Cancel</Button>
+				<Button onClick={closeDuplicates}>{t("common.cancel")}</Button>
 			</div>
 		</section>
 	);

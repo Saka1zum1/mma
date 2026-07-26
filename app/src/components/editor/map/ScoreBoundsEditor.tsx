@@ -11,6 +11,7 @@ import {
 } from "@/lib/geo/scoring";
 import { TextInput } from "@/components/primitives/TextInput";
 import { Radio } from "@/components/primitives/Radio";
+import { useT } from "@/lib/i18n";
 
 type Mode = "auto" | "world" | "fixed";
 
@@ -21,6 +22,7 @@ function modeOf(bounds: ScoreBounds): Mode {
 
 /** "Scoring" section of the edit-map modal. */
 export function ScoreBoundsEditor() {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const bounds: ScoreBounds = map?.meta.scoreBounds ?? "auto";
 	const mode = modeOf(bounds);
@@ -68,26 +70,32 @@ export function ScoreBoundsEditor() {
 	const autoError = mode === "auto" ? resolvedError : null;
 	const fixedError =
 		mode === "fixed" ? resolvedError : resolveScoreMaxError(lastFixedRef.current, []);
+	const compassLabels = [
+		t("editor.compassSouth"),
+		t("editor.compassWest"),
+		t("editor.compassNorth"),
+		t("editor.compassEast"),
+	] as const;
 
 	return (
 		<fieldset className="fieldset">
 			<legend className="fieldset__header">
-				Scoring <span className="fieldset__divider" />
+				{t("editor.scoringTitle")} <span className="fieldset__divider" />
 			</legend>
 			<label className="settings-popup__item">
 				<Radio name="score-bounds" checked={mode === "auto"} onChange={() => setMode("auto")} />
-				Automatic based on locations
+				{t("editor.scoreBoundsAuto")}
 				{autoError != null && ` (${formatDistance(autoError)})`}
 			</label>
 
 			<label className="settings-popup__item">
 				<Radio name="score-bounds" checked={mode === "world"} onChange={() => setMode("world")} />
-				World map (ACW, {formatDistance(WORLD_MAX_ERROR)})
+				{t("editor.scoreBoundsWorld", { distance: formatDistance(WORLD_MAX_ERROR) })}
 			</label>
 
 			<label className="settings-popup__item">
 				<Radio name="score-bounds" checked={mode === "fixed"} onChange={() => setMode("fixed")} />
-				Fixed bounds
+				{t("editor.scoreBoundsFixed")}
 				{fixedError != null && ` (${formatDistance(fixedError)})`}
 			</label>
 
@@ -101,7 +109,7 @@ export function ScoreBoundsEditor() {
 						alignItems: "center",
 					}}
 				>
-					{(["S", "W", "N", "E"] as const).map((label, i) => (
+					{compassLabels.map((label, i) => (
 						<Fragment key={label}>
 							<span style={{ fontSize: ".8rem" }}>{label}</span>
 							<TextInput

@@ -15,23 +15,26 @@ import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { mdiUndo, mdiRedo } from "@mdi/js";
 import { fmt } from "@/lib/util/format";
+import { useT } from "@/lib/i18n";
 
 function LocationTotal() {
+	const { t } = useT();
 	const locationCount = useMapState((s) => s.locationCount);
 	return (
 		<span className="map-meta__total">
-			<span className="mono">{fmt.format(locationCount)}</span> locations
+			{t("editor.locationsCount", { count: fmt.format(locationCount) })}
 		</span>
 	);
 }
 
 function CommitControls() {
+	const { t } = useT();
 	const diff = useCommitDiff();
 	const hasDiff = hasCommitDiff();
 	return (
 		<>
 			<Button variant="primary" disabled={!hasDiff} onClick={() => commitMap()}>
-				Commit
+				{t("editor.commit")}
 			</Button>
 			{hasDiff && (
 				<span className="map-meta__count mono">
@@ -45,29 +48,30 @@ function CommitControls() {
 }
 
 function UndoRedoControls() {
+	const { t } = useT();
 	const canUndo = useMapState((s) => s.canUndo);
 	const canRedo = useMapState((s) => s.canRedo);
 	return (
 		<>
-			<Tooltip content="Undo">
+			<Tooltip content={t("common.undo")}>
 				<button
 					type="button"
 					className="icon-button"
 					disabled={!canUndo}
 					style={{ color: canUndo ? undefined : "var(--text-3)" }}
-					aria-label="Undo"
+					aria-label={t("common.undo")}
 					onClick={undo}
 				>
 					<Icon path={mdiUndo} />
 				</button>
 			</Tooltip>
-			<Tooltip content="Redo">
+			<Tooltip content={t("common.redo")}>
 				<button
 					type="button"
 					className="icon-button"
 					disabled={!canRedo}
 					style={{ color: canRedo ? undefined : "var(--text-3)" }}
-					aria-label="Redo"
+					aria-label={t("common.redo")}
 					onClick={redo}
 				>
 					<Icon path={mdiRedo} />
@@ -78,6 +82,7 @@ function UndoRedoControls() {
 }
 
 export function MapMetaBar() {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const [showExport, setShowExport] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
@@ -89,11 +94,11 @@ export function MapMetaBar() {
 	const importFile = useCallback(async () => {
 		const path = await openFileDialog({
 			multiple: false,
-			filters: [{ name: "Map data", extensions: ["json", "csv"] }],
+			filters: [{ name: t("editor.importFilterName"), extensions: ["json", "csv"] }],
 		});
 		if (!path || typeof path !== "string") return;
 		await beginImportFromPath(path);
-	}, []);
+	}, [t]);
 	useDialog("import", importFile);
 	useDialog("history", () => setShowHistory(true));
 	useDialog("seen", () => setShowSeen(true));
@@ -111,10 +116,10 @@ export function MapMetaBar() {
 			</span>
 			<span className="map-meta__spacer"></span>
 			<div className="map-meta__import">
-				<Button onClick={() => setShowSeen(true)}>Seen</Button>
-				<Button onClick={() => setShowHistory(true)}>History</Button>
-				<Button onClick={importFile}>Import file</Button>
-				<Button onClick={() => setShowExport(true)}>Export</Button>
+				<Button onClick={() => setShowSeen(true)}>{t("editor.seen")}</Button>
+				<Button onClick={() => setShowHistory(true)}>{t("common.history")}</Button>
+				<Button onClick={importFile}>{t("editor.importFile")}</Button>
+				<Button onClick={() => setShowExport(true)}>{t("common.export")}</Button>
 			</div>
 			{showExport && <ExportDialog onClose={() => setShowExport(false)} />}
 			{showHistory && <VersionHistory onClose={() => setShowHistory(false)} />}

@@ -6,6 +6,7 @@ import { mdiMinus, mdiPlus } from "@mdi/js";
 import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
 import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
+import { useT } from "@/lib/i18n";
 
 const PREVIEW_SCALE = range([0.5, 2]);
 const PREVIEW_SCALE_STEP = 0.5;
@@ -19,6 +20,7 @@ export const ChipHostContext = createContext<HTMLElement | null>(null);
 
 /** Floating chip chrome for fullscreen-map mode: hover-expand + scale buttons. */
 export function FullscreenMiniLocationPreview({ children }: { children: ReactNode }) {
+	const { t } = useT();
 	const host = useContext(ChipHostContext);
 	const scale = useSetting("fullscreenMiniLocationScale");
 	const boxRef = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export function FullscreenMiniLocationPreview({ children }: { children: ReactNod
 				<button
 					type="button"
 					className="fullscreen-mini-location__size-btn"
-					aria-label="Smaller location preview"
+					aria-label={t("editor.smallerPreview")}
 					disabled={scale <= PREVIEW_SCALE.min}
 					onClick={() => setScale(scale - PREVIEW_SCALE_STEP)}
 				>
@@ -74,7 +76,7 @@ export function FullscreenMiniLocationPreview({ children }: { children: ReactNod
 				<button
 					type="button"
 					className="fullscreen-mini-location__size-btn"
-					aria-label="Larger location preview"
+					aria-label={t("editor.largerPreview")}
 					disabled={scale >= PREVIEW_SCALE.max}
 					onClick={() => setScale(scale + PREVIEW_SCALE_STEP)}
 				>

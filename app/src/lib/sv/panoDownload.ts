@@ -5,6 +5,7 @@ import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import type { PanoData } from "@/lib/sv/svRunner";
 import { runConcurrent } from "@/lib/util/concurrent";
 import { toast } from "@/lib/util/toast";
+import { t } from "@/lib/i18n";
 import { mmaBufUrl } from "@/lib/util/util";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import type { SvProvider } from "@/lib/sv/providers/types";
@@ -173,9 +174,9 @@ export async function downloadPano(
 		a.download = `${fileStem || panoId}.jpg`;
 		a.click();
 		URL.revokeObjectURL(a.href);
-		toast("Panorama downloaded");
+		toast(t("toast.panoramaDownloaded"));
 	} catch {
-		toast("Panorama download failed");
+		toast(t("toast.panoramaDownloadFailed"));
 	}
 }
 

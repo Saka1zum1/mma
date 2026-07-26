@@ -28,6 +28,8 @@ import {
 } from "@/lib/sv/yandex/endpoints";
 import type { AltSvProviderId } from "@/lib/sv/providers/types";
 import { setWorkArea } from "@/store/useMapStore";
+import { useT } from "@/lib/i18n";
+import type { MessageKey } from "@/locales/en";
 
 const STYLE_KEYS: (keyof ResolvedAltProviderSettings)[] = [
 	"lineColor",
@@ -66,49 +68,37 @@ function alphaOf(color: string, fallback: number): number {
 
 const DEFAULT_TAB: AltSvProviderId = "apple";
 
-function initialProviderTab(): AltSvProviderId {
-	return getHeaderProviderId() ?? DEFAULT_TAB;
-}
-
-function providerHint(id: AltSvProviderId): { prefer: string; fallback: string; lines: string } {
-	if (id === "baidu") {
+function providerHintKeys(id: AltSvProviderId): {
+	prefer: MessageKey;
+	fallback: MessageKey;
+	lines: MessageKey;
+} {
+	if (id === "baidu" || id === "tencent") {
 		return {
-			prefer:
-				"When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.",
-			fallback:
-				"When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.",
-			lines: "Lines (raster)",
-		};
-	}
-	if (id === "tencent") {
-		return {
-			prefer:
-				"When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.",
-			fallback:
-				"When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.",
-			lines: "Lines (PMTiles)",
+			prefer: "editor.providerPreferBaiduTencent",
+			fallback: "editor.providerFallbackBaiduTencent",
+			lines: id === "baidu" ? "editor.linesRaster" : "editor.linesPmtiles",
 		};
 	}
 	if (id === "yandex") {
 		return {
-			prefer:
-				"When preferred, blank clicks try enabled inject providers (Baidu / Tencent / Yandex) in parallel — first response becomes the default pano, siblings appear in the date picker. Existing pins always open by their own provider field.",
-			fallback:
-				"When enabled, clicking a spot without Yandex coverage opens Google Street View instead.",
-			lines: "Lines (raster)",
+			prefer: "editor.providerPreferYandex",
+			fallback: "editor.providerFallbackYandex",
+			lines: "editor.linesRaster",
 		};
 	}
 	return {
-		prefer:
-			"When preferred and enabled, blank map clicks create Look Around locations first (Google is the fallback). Only one provider can be preferred at a time. Existing pins always open by their own provider field.",
-		fallback:
-			"When enabled, clicking a spot without Look Around coverage opens Google Street View instead.",
-		lines: "Lines (raster + MVT)",
+		prefer: "editor.providerPreferApple",
+		fallback: "editor.providerFallbackApple",
+		lines: "editor.linesRasterMvt",
 	};
 }
 
 export function ProvidersSidebar() {
-	const [activeProvider, setActiveProvider] = useState<AltSvProviderId>(initialProviderTab);
+	const { t } = useT();
+	const [activeProvider, setActiveProvider] = useState<AltSvProviderId>(
+		() => getHeaderProviderId() ?? DEFAULT_TAB,
+	);
 
 	const getCfg = useCallback(() => getProviderSettings(activeProvider), [activeProvider]);
 	const cfg = useSyncStore(subscribeProvidersSettings, getCfg);
@@ -117,7 +107,7 @@ export function ProvidersSidebar() {
 	const altBasemap = useSyncStore(subscribeProvidersSettings, getAltBasemapSettings);
 	const enabled = cfg.enabled;
 	const label = getProviderLabel(activeProvider);
-	const hints = providerHint(activeProvider);
+	const hints = providerHintKeys(activeProvider);
 	const showPoints = activeProvider === "apple";
 
 	const setCfg = useCallback(
@@ -144,11 +134,11 @@ export function ProvidersSidebar() {
 
 	return (
 		<Sidebar
-			title="Street View providers"
+			title={t("editor.streetViewProviders")}
 			onBack={() => setWorkArea("overview")}
 			actions={
 				<button className="providers-sidebar__reset" type="button" onClick={reset}>
-					Reset
+					{t("common.resetToDefault")}
 				</button>
 			}
 			className="providers-sidebar"
@@ -158,11 +148,11 @@ export function ProvidersSidebar() {
 					className="providers-sidebar__control"
 					checked={allProvidersEnabled}
 					onChange={setAllProvidersEnabled}
-					label="Enable all providers"
+					label={t("editor.enableAllProviders")}
 				/>
 			</div>
 
-			<div className="providers-sidebar__tabs" role="tablist" aria-label="Providers">
+			<div className="providers-sidebar__tabs" role="tablist" aria-label={t("editor.providersTablist")}>
 				{PROVIDER_CATALOG.map((p) => {
 					const active = p.id === activeProvider;
 					const on = p.available && getProviderSettings(p.id).enabled;
@@ -175,7 +165,9 @@ export function ProvidersSidebar() {
 							aria-disabled={!p.available}
 							disabled={!p.available}
 							className={`providers-sidebar__tab${active ? " is-active" : ""}${on ? " is-on" : ""}`}
-							title={p.available ? p.label : `${p.label} (coming soon)`}
+							title={
+								p.available ? p.label : t("editor.comingSoon", { label: p.label })
+							}
 							onClick={() => {
 								if (p.available) setActiveProvider(p.id);
 							}}
@@ -192,25 +184,25 @@ export function ProvidersSidebar() {
 					className="providers-sidebar__control"
 					checked={cfg.enabled}
 					onChange={(v) => setCfg({ enabled: v })}
-					label="Enable"
+					label={t("common.enable")}
 				/>
 				<SwitchRow
 					className="providers-sidebar__control"
 					checked={cfg.preferred}
 					disabled={!enabled}
 					onChange={(v) => setCfg({ preferred: v })}
-					label="Prefer on map click"
+					label={t("editor.preferOnMapClick")}
 				/>
-				<p className="providers-sidebar__hint">{hints.prefer}</p>
+				<p className="providers-sidebar__hint">{t(hints.prefer)}</p>
 			</Section>
 
-			<Section title="Coverage layers" defaultOpen>
+			<Section title={t("editor.coverageLayers")} defaultOpen>
 				<SwitchRow
 					className="providers-sidebar__control"
 					checked={cfg.showLines}
 					disabled={!enabled}
 					onChange={(v) => setCfg({ showLines: v })}
-					label={hints.lines}
+					label={t(hints.lines)}
 				/>
 				{showPoints && (
 					<SwitchRow
@@ -218,11 +210,11 @@ export function ProvidersSidebar() {
 						checked={cfg.showPoints}
 						disabled={!enabled}
 						onChange={(v) => setCfg({ showPoints: v })}
-						label="Panorama points (z≥16)"
+						label={t("editor.panoramaPoints")}
 					/>
 				)}
 				<Slider
-					label="Lines opacity"
+					label={t("editor.linesOpacity")}
 					value={cfg.lineOpacity}
 					min={0}
 					max={1}
@@ -233,7 +225,7 @@ export function ProvidersSidebar() {
 				{showPoints && (
 					<>
 						<Slider
-							label="Points opacity"
+							label={t("editor.pointsOpacity")}
 							value={cfg.pointsOpacity}
 							min={0}
 							max={1}
@@ -242,7 +234,7 @@ export function ProvidersSidebar() {
 							onChange={(v) => setCfg({ pointsOpacity: v })}
 						/>
 						<Slider
-							label="Line width"
+							label={t("editor.lineWidth")}
 							value={cfg.lineWidthScale}
 							min={0.5}
 							max={3}
@@ -252,7 +244,7 @@ export function ProvidersSidebar() {
 							format={(v) => `${v.toFixed(1)}×`}
 						/>
 						<Slider
-							label="Point size"
+							label={t("editor.pointSize")}
 							value={cfg.pointSizeScale}
 							min={0.5}
 							max={3}
@@ -265,17 +257,21 @@ export function ProvidersSidebar() {
 				)}
 			</Section>
 
-			<Section title="Colors" defaultOpen>
+			<Section title={t("editor.colors")} defaultOpen>
 				{activeProvider != "apple" ? (
 					<ColorRow
-						label= {activeProvider=="baidu" || activeProvider=="yandex" ? "Coverage line filter color": "Coverage line color"}
+						label={
+							activeProvider == "baidu" || activeProvider == "yandex"
+								? t("editor.coverageLineFilterColor")
+								: t("editor.coverageLineColor")
+						}
 						value={cfg.lineColor}
 						disabled={!enabled}
 						onChange={(c) => setCfg({ lineColor: c })}
 					/>
 				) : (
 					<ColorRow
-						label="Car line"
+						label={t("editor.carLine")}
 						value={cfg.lineColor}
 						disabled={!enabled}
 						onChange={(c) => setCfg({ lineColor: c })}
@@ -284,13 +280,13 @@ export function ProvidersSidebar() {
 				{showPoints && (
 					<>
 						<ColorRow
-							label="Trekker line"
+							label={t("editor.trekkerLine")}
 							value={cfg.trekkerLineColor}
 							disabled={!enabled}
 							onChange={(c) => setCfg({ trekkerLineColor: c })}
 						/>
 						<ColorRow
-							label="Car point"
+							label={t("editor.carPoint")}
 							value={cfg.pointStroke}
 							disabled={!enabled}
 							onChange={(stroke) =>
@@ -301,7 +297,7 @@ export function ProvidersSidebar() {
 							}
 						/>
 						<ColorRow
-							label="Trekker point"
+							label={t("editor.trekkerPoint")}
 							value={cfg.trekkerPointStroke}
 							disabled={!enabled}
 							onChange={(stroke) =>
@@ -316,17 +312,17 @@ export function ProvidersSidebar() {
 			</Section>
 
 			{activeProvider === "baidu" || activeProvider === "tencent" ? (
-				<Section title="Basemap" defaultOpen>
+				<Section title={t("editor.basemap")} defaultOpen>
 					<>
 						<SwitchRow
 							className="providers-sidebar__control"
 							checked={altBasemap.petal.enabled}
 							disabled={!enabled}
 							onChange={(v) => updateAltBasemapSettings("petal", { enabled: v })}
-							label="Petal Maps"
+							label={t("editor.petalMaps")}
 						/>
 						<div className="providers-sidebar__control">
-							<label htmlFor={`sv-${activeProvider}-petal-lang`}>Language</label>
+							<label htmlFor={`sv-${activeProvider}-petal-lang`}>{t("common.language")}</label>
 							<NSelect
 								id={`sv-${activeProvider}-petal-lang`}
 								value={altBasemap.petal.language === "zh" ? "zh" : "en"}
@@ -337,24 +333,24 @@ export function ProvidersSidebar() {
 									})
 								}
 							>
-								<option value="en">English</option>
-								<option value="zh">中文</option>
+								<option value="en">{t("locale.en")}</option>
+								<option value="zh">{t("locale.zh-Hans")}</option>
 							</NSelect>
 						</div>
 					</>
 				</Section>
 			) : activeProvider === "yandex" ? (
-				<Section title="Basemap" defaultOpen>
+				<Section title={t("editor.basemap")} defaultOpen>
 					<>
 						<SwitchRow
 							className="providers-sidebar__control"
 							checked={altBasemap.yandex.enabled}
 							disabled={!enabled}
 							onChange={(v) => updateAltBasemapSettings("yandex", { enabled: v })}
-							label="Yandex Maps"
+							label={t("editor.yandexMaps")}
 						/>
 						<div className="providers-sidebar__control">
-							<label htmlFor="sv-yandex-basemap-lang">Language</label>
+							<label htmlFor="sv-yandex-basemap-lang">{t("common.language")}</label>
 							<NSelect
 								id="sv-yandex-basemap-lang"
 								value={normalizeYandexBasemapLanguage(altBasemap.yandex.language)}
@@ -376,14 +372,14 @@ export function ProvidersSidebar() {
 				</Section>
 			) : null}
 
-			<Section title="Behavior" defaultOpen>
+			<Section title={t("editor.behavior")} defaultOpen>
 				<SwitchRow
 					className="providers-sidebar__control"
 					checked={cfg.fallbackToGoogle}
 					onChange={(v) => setCfg({ fallbackToGoogle: v })}
-					label="Fallback to Google Street View"
+					label={t("editor.fallbackToGoogle")}
 				/>
-				<p className="providers-sidebar__hint">{hints.fallback}</p>
+				<p className="providers-sidebar__hint">{t(hints.fallback)}</p>
 			</Section>
 		</Sidebar>
 	);

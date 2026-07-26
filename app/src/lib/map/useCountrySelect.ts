@@ -4,6 +4,7 @@ import { getSettings } from "@/store/settings";
 import { cmd } from "@/lib/commands";
 import { useHeldHotkeyClick } from "@/lib/map/useHeldHotkeyClick";
 import { toast } from "@/lib/util/toast";
+import { t } from "@/lib/i18n";
 
 export function useCountrySelect() {
 	useHeldHotkeyClick(
@@ -11,7 +12,7 @@ export function useCountrySelect() {
 		useCallback((lat, lng, shiftKey) => {
 			const { borderDetail, subdivisionDetail } = getSettings();
 			if (shiftKey && subdivisionDetail === "off") {
-				toast("Subdivision borders are off — enable them in Settings");
+				toast(t("toast.subdivisionOff"));
 				return;
 			}
 			const level = shiftKey ? subdivisionDetail : borderDetail;
@@ -22,11 +23,11 @@ export function useCountrySelect() {
 					geometry = await lookup();
 				} catch (e) {
 					if (level === "light" || (await cmd.checkBorderFile(level))) throw e;
-					toast("Border data missing -- downloading...");
+					toast(t("toast.borderDownloading"));
 					try {
 						await cmd.downloadBorderFile(level);
 					} catch {
-						toast("Couldn't download border data -- check your connection");
+						toast(t("toast.borderDownloadFailed"));
 						return;
 					}
 					geometry = await lookup();

@@ -19,13 +19,19 @@ import { Slider } from "@/components/primitives/Slider";
 import { hexToRgbObj, rgbToHex, resolveSvColorHex } from "@/lib/util/color";
 import { useMapSetting } from "@/store/useMapSetting";
 import { ScoreBoundsEditor } from "./ScoreBoundsEditor";
+import { useT } from "@/lib/i18n";
+import type { MessageKey } from "@/locales/en";
 
-const MAP_TYPE_LABELS: Record<MapTypeKey, string> = {
-	map: "Map",
-	satellite: "Satellite",
-	osm: "OSM",
-	vector: "Vector",
+const MAP_TYPE_KEYS: Record<MapTypeKey, MessageKey> = {
+	map: "editor.mapTypeMap",
+	satellite: "editor.mapTypeSatellite",
+	osm: "editor.mapTypeOsm",
+	vector: "editor.mapTypeVector",
 };
+
+function mapTypeLabel(t: (key: MessageKey) => string, type: MapTypeKey): string {
+	return t(MAP_TYPE_KEYS[type]);
+}
 
 export interface LayerConfig {
 	prefs: MapEmbedPrefs;
@@ -45,11 +51,12 @@ function SearchRadiusSlider({
 	value: number | null;
 	onChange: (v: number | null) => void;
 }) {
+	const { t } = useT();
 	const [dragging, setDragging] = useState<number | null>(null);
 	const display = dragging ?? value ?? 50;
 	return (
 		<label className="settings-popup__item settings-popup__select">
-			Min search radius:{" "}
+			{t("editor.minSearchRadius")}{" "}
 			<Slider
 				min={10}
 				max={500}
@@ -71,73 +78,76 @@ function SearchRadiusSlider({
 }
 
 function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
+	const { t } = useT();
 	const { prefs: p, setPref } = e;
 	return (
 		<div className="layer-config">
 			{/* Layers */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
-					Layers <span className="layer-config__divider" />
+					{t("editor.layers")} <span className="layer-config__divider" />
 				</legend>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.showTerrain}
 					disabled={!e.supportsTerrain}
 					onChange={(v) => setPref("showTerrain")(v)}
-					label="Terrain"
+					label={t("editor.terrain")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked
 					disabled
 					onChange={() => {}}
-					label="Street View"
+					label={t("editor.streetViewLayer")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.showLabels}
 					disabled={!e.supportsLabels}
 					onChange={(v) => setPref("showLabels")(v)}
-					label="Labels"
+					label={t("editor.labels")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.svPanoramas}
 					onChange={(v) => setPref("svPanoramas")(v)}
-					label="Panoramas (requires close zoom)"
+					label={t("editor.panoramasCloseZoom")}
 				/>
 			</fieldset>
 			{/* Street View */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
-					Street&nbsp;View <span className="layer-config__divider" />
+					{t("editor.streetViewLayer")}&nbsp;<span className="layer-config__divider" />
 				</legend>
 				<div
 					className="layer-config__item"
 					style={{ display: "flex", justifyContent: "space-between" }}
 				>
-					<span>Show lines:</span>
+					<span>{t("editor.showLines")}</span>
 					<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
 						<div className="button-group">
-							{[
-								{ value: "official" as SvCoverageType, name: "Official" },
-								{ value: "unofficial" as SvCoverageType, name: "Unofficial" },
-								{ value: "default" as SvCoverageType, name: "All" },
-							].map((opt) => (
+							{(
+								[
+									{ value: "official" as SvCoverageType, labelKey: "editor.svOfficial" as const },
+									{ value: "unofficial" as SvCoverageType, labelKey: "editor.svUnofficial" as const },
+									{ value: "default" as SvCoverageType, labelKey: "editor.svAll" as const },
+								] as const
+							).map((opt) => (
 								<Button
 									key={opt.value}
 									className="button-group__button"
 									aria-checked={p.svCoverageType === opt.value}
 									onClick={() => setPref("svCoverageType")(opt.value)}
 								>
-									{opt.name}
+									{t(opt.labelKey)}
 								</Button>
 							))}
 						</div>
 						<ColorPicker
 							color={hexToRgbObj(resolveSvColorHex(p.svColor))}
 							onChange={(c) => setPref("svColor")(rgbToHex(c))}
-							ariaLabel="Coverage line color"
+							ariaLabel={t("editor.coverageLineColor")}
 						/>
 					</div>
 				</div>
@@ -145,74 +155,74 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 					className="layer-config__item"
 					checked={p.svThickness === "high"}
 					onChange={(v) => setPref("svThickness")(v ? "high" : "default")}
-					label="Make the lines thinner"
+					label={t("editor.thinnerLines")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.svBlobby}
 					onChange={(v) => setPref("svBlobby")(v)}
-					label="Use blobby layer while zoomed out"
+					label={t("editor.blobbyLayer")}
 				/>
 			</fieldset>
 			{/* Settings */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
-					Settings <span className="layer-config__divider" />
+					{t("dialog.settings")} <span className="layer-config__divider" />
 				</legend>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.boldCountryBorders}
 					disabled={!e.supportsStyling}
 					onChange={(v) => setPref("boldCountryBorders")(v)}
-					label="Emphasise country borders"
+					label={t("editor.emphasiseCountryBorders")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.boldSubdivisionBorders}
 					disabled={!e.supportsStyling}
 					onChange={(v) => setPref("boldSubdivisionBorders")(v)}
-					label="Emphasise subdivision borders"
+					label={t("editor.emphasiseSubdivisionBorders")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.hideRoadLabels}
 					disabled={!e.supportsStyling}
 					onChange={(v) => setPref("hideRoadLabels")(v)}
-					label="Hide road labels"
+					label={t("editor.hideRoadLabels")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.hidePoi}
 					disabled={!e.supportsStyling}
 					onChange={(v) => setPref("hidePoi")(v)}
-					label="Hide points of interest"
+					label={t("editor.hidePoi")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.hideTransit}
 					disabled={!e.supportsStyling}
 					onChange={(v) => setPref("hideTransit")(v)}
-					label="Hide transit"
+					label={t("editor.hideTransit")}
 				/>
 				<SwitchRow
 					className="layer-config__item"
 					checked={p.hideHighways}
 					disabled={!e.supportsStyling}
 					onChange={(v) => setPref("hideHighways")(v)}
-					label="Hide highways"
+					label={t("editor.hideHighways")}
 				/>
 			</fieldset>
 			{/* Map style */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
-					Map&nbsp;style <span className="layer-config__divider" />
+					{t("editor.mapStyleSection")}&nbsp;<span className="layer-config__divider" />
 				</legend>
 				{p.mapType === "vector" ? (
 					<div
 						className="layer-config__item settings-popup__select"
 						style={{ display: "flex", alignItems: "center", gap: 4 }}
 					>
-						Style:{" "}
+						{t("editor.styleLabel")}{" "}
 						<NSelect
 							className="nselect--limited"
 							value={p.vectorStyleName}
@@ -231,7 +241,7 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 						className="layer-config__item settings-popup__select"
 						style={{ display: "flex", alignItems: "center", gap: 4 }}
 					>
-						Style:{" "}
+						{t("editor.styleLabel")}{" "}
 						<NSelect
 							className="nselect--limited"
 							value={p.mapStyleName}
@@ -252,7 +262,7 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 						</NSelect>
 						<button
 							className="icon-button icon-button--inline"
-							title="Manage map styles"
+							title={t("dialog.manageMapStyles")}
 							onClick={(ev) => {
 								ev.preventDefault();
 								e.onManageStyles();
@@ -287,21 +297,22 @@ function BasemapSelector({
 	onSelect: (type: MapTypeKey) => void;
 	onMouseEnter?: () => void;
 }) {
+	const { t } = useT();
 	return (
 		<div className="map-type-control__basemap">
-			{MAP_TYPES.map((t) => (
+			{MAP_TYPES.map((mt) => (
 				<button
-					key={t}
+					key={mt}
 					type="button"
 					className="map-type-control__button"
-					data-state={selected === t ? "on" : "off"}
-					onClick={() => onSelect(t)}
+					data-state={selected === mt ? "on" : "off"}
+					onClick={() => onSelect(mt)}
 					onMouseEnter={onMouseEnter}
 				>
 					<div className="map-type-control__background">
-						<img src={previewUrls[t]} alt="" draggable={false} />
+						<img src={previewUrls[mt]} alt="" draggable={false} />
 					</div>
-					<span>{MAP_TYPE_LABELS[t]}</span>
+					<span>{mapTypeLabel(t, mt)}</span>
 				</button>
 			))}
 		</div>
@@ -375,6 +386,7 @@ function useMapTypeCompact(
 }
 
 export function MapTypeDropdown({ layerConfig }: { layerConfig: LayerConfig }) {
+	const { t } = useT();
 	const [isOpen, setIsOpen] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const basemapMeasureRef = useRef<HTMLDivElement>(null);
@@ -453,7 +465,7 @@ export function MapTypeDropdown({ layerConfig }: { layerConfig: LayerConfig }) {
 						className="map-control__menu-button"
 						onClick={() => setIsOpen(!isOpen)}
 					>
-						{MAP_TYPE_LABELS[layerConfig.prefs.mapType]}
+						{mapTypeLabel(t, layerConfig.prefs.mapType)}
 					</button>
 					{settingsPopup}
 				</>
@@ -490,6 +502,7 @@ export function MapSettingsDropdown({
 	prefs: MapEmbedPrefs;
 	setPref: <K extends keyof MapEmbedPrefs>(k: K) => (v: MapEmbedPrefs[K]) => void;
 }) {
+	const { t } = useT();
 	const [pointAlongRoad, setPointAlongRoad] = useMapSetting("pointAlongRoad");
 	const [preferDirection, setPreferDirection] = useMapSetting("preferDirection");
 	const [preferOfficial, setPreferOfficial] = useMapSetting("preferOfficial");
@@ -509,7 +522,7 @@ export function MapSettingsDropdown({
 			style={{ position: "relative" }}
 		>
 			<button className="map-control__menu-button" onClick={() => setIsOpen(!isOpen)}>
-				Map settings
+				{t("dialog.mapSettings")}
 			</button>
 			{isOpen && (
 				<div
@@ -525,88 +538,88 @@ export function MapSettingsDropdown({
 				>
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">
-							Selecting new locations <span className="fieldset__divider" />
+							{t("editor.selectingNewLocations")} <span className="fieldset__divider" />
 						</legend>
 						<SwitchRow
 							checked={pointAlongRoad}
 							onChange={setPointAlongRoad}
-							label="Point view along the road by default"
+							label={t("editor.pointAlongRoad")}
 						/>
 						{pointAlongRoad && (
 							<label className="settings-popup__item settings-popup__select">
-								Direction:{" "}
+								{t("editor.direction")}{" "}
 								<NSelect
 									className="nselect--compact"
 									value={preferDirection ?? ""}
 									onChange={(e) => setPreferDirection(e.target.value || null)}
 								>
-									<option value="">None</option>
-									<option value="forwards">Forwards</option>
-									<option value="backwards">Backwards</option>
-									<option value="north">Most Northern</option>
-									<option value="east">Most Eastern</option>
-									<option value="south">Most Southern</option>
-									<option value="west">Most Western</option>
-									<option value="random">Random</option>
+									<option value="">{t("editor.directionNone")}</option>
+									<option value="forwards">{t("editor.directionForwards")}</option>
+									<option value="backwards">{t("editor.directionBackwards")}</option>
+									<option value="north">{t("editor.directionNorth")}</option>
+									<option value="east">{t("editor.directionEast")}</option>
+									<option value="south">{t("editor.directionSouth")}</option>
+									<option value="west">{t("editor.directionWest")}</option>
+									<option value="random">{t("editor.directionRandom")}</option>
 								</NSelect>
 							</label>
 						)}
 						<SwitchRow
 							checked={preferOfficial}
 							onChange={setPreferOfficial}
-							label="Prefer official coverage over unofficial"
+							label={t("editor.preferOfficial")}
 						/>
 						<SwitchRow
 							checked={preferHigherQuality}
 							onChange={setPreferHigherQuality}
-							label="Prefer higher quality over newer images"
+							label={t("editor.preferHigherQuality")}
 						/>
 						<SwitchRow
 							checked={onlyOfficial}
 							onChange={setOnlyOfficial}
-							label="Disallow unofficial coverage"
+							label={t("editor.disallowUnofficial")}
 						/>
 						<SwitchRow
 							checked={defaultPanoId}
 							onChange={setDefaultPanoId}
-							label="Use Pano ID locations by default"
+							label={t("editor.usePanoIdDefault")}
 						/>
 						<SearchRadiusSlider value={searchRadius} onChange={setSearchRadius} />
 					</fieldset>
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">
-							Map behaviour <span className="fieldset__divider" />
+							{t("editor.mapBehaviour")} <span className="fieldset__divider" />
 						</legend>
 						<SwitchRow
 							checked={p.showPreviews}
 							onChange={setPref("showPreviews")}
-							label="Show location previews when hovering the map"
+							label={t("editor.showLocationPreviews")}
 						/>
 						<SwitchRow
 							checked={p.selectOnly}
 							onChange={setPref("selectOnly")}
-							label="Select-only mode"
+							label={t("editor.selectOnlyMode")}
 						/>
 					</fieldset>
 					<ScoreBoundsEditor />
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">
-							Display <span className="fieldset__divider" />
+							{t("editor.display")} <span className="fieldset__divider" />
 						</legend>
 						<label className="settings-popup__item settings-popup__select">
-							Marker style:{" "}
+							{t("editor.markerStyle")}{" "}
 							<NSelect
 								className="nselect--compact"
 								value={p.markerStyle}
 								onChange={(e) => setPref("markerStyle")(e.target.value as MarkerStyle)}
 							>
-								<option value="pin">Pin</option>
-								<option value="circle">Circle</option>
-								<option value="arrow">Camera direction arrow</option>
+								<option value="pin">{t("editor.markerPin")}</option>
+								<option value="circle">{t("editor.markerCircle")}</option>
+								<option value="arrow">{t("editor.markerArrow")}</option>
 							</NSelect>
 						</label>
 						<label className="settings-popup__item settings-popup__slider">
-							Marker size:{" "}
+							{t("editor.markerSize")}{" "}
 							<Slider
 								min={0.5}
 								max={3}
@@ -618,12 +631,12 @@ export function MapSettingsDropdown({
 						<SwitchRow
 							checked={p.showPerfectScoreCircle}
 							onChange={setPref("showPerfectScoreCircle")}
-							label="Display 5K radius"
+							label={t("editor.display5kRadius")}
 						/>
 						<SwitchRow
 							checked={p.showSearchRadiusCursor}
 							onChange={setPref("showSearchRadiusCursor")}
-							label="Show click search radius at cursor"
+							label={t("editor.showSearchRadiusCursor")}
 						/>
 					</fieldset>
 				</div>

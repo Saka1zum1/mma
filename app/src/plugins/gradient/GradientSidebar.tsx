@@ -11,23 +11,24 @@ import { isNumericField, colorPartition } from "./gradientMath";
 import { partition, useScope } from "@/store/scope";
 import { usePluginState } from "@/plugins/registry";
 import { useSetting } from "@/store/settings";
+import { useT, type MessageKey } from "@/lib/i18n";
 import "./gradient.css";
 
 interface GradientPreset {
-	name: string;
+	id: MessageKey;
 	stops: [number, number, number][];
 }
 
 const PRESETS: GradientPreset[] = [
 	{
-		name: "Blue-Red",
+		id: "plugin.gradient.preset.blueRed",
 		stops: [
 			[66, 133, 244],
 			[234, 67, 53],
 		],
 	},
 	{
-		name: "Green-Yellow-Red",
+		id: "plugin.gradient.preset.greenYellowRed",
 		stops: [
 			[52, 168, 83],
 			[251, 188, 4],
@@ -35,14 +36,14 @@ const PRESETS: GradientPreset[] = [
 		],
 	},
 	{
-		name: "Purple-Orange",
+		id: "plugin.gradient.preset.purpleOrange",
 		stops: [
 			[136, 84, 208],
 			[255, 152, 0],
 		],
 	},
 	{
-		name: "Cool-Warm",
+		id: "plugin.gradient.preset.coolWarm",
 		stops: [
 			[33, 150, 243],
 			[200, 200, 200],
@@ -50,7 +51,7 @@ const PRESETS: GradientPreset[] = [
 		],
 	},
 	{
-		name: "Viridis",
+		id: "plugin.gradient.preset.viridis",
 		stops: [
 			[68, 1, 84],
 			[59, 82, 139],
@@ -100,7 +101,18 @@ function defaultGradientField(fields: FieldEntry[]): string {
 	return (fields.find((f) => f.key === "altitude") ?? fields[0])?.key ?? "";
 }
 
+const PROJECTION_KEYS: Record<string, MessageKey> = {
+	[RANGE_ID]: "plugin.gradient.projection.range",
+	value: "plugin.gradient.projection.value",
+	year: "plugin.gradient.projection.year",
+	yearMonth: "plugin.gradient.projection.yearMonth",
+	day: "plugin.gradient.projection.day",
+	monthOfYear: "plugin.gradient.projection.monthOfYear",
+	hourOfDay: "plugin.gradient.projection.hourOfDay",
+};
+
 export function GradientSidebar({ onClose }: { onClose: () => void }) {
+	const { t, tp } = useT();
 	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("gradient", "fieldKey", () =>
 		defaultGradientField(buildGradientFields(MMA.getMapState().knownFieldKeys)),
 	);
@@ -189,16 +201,16 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 	}, [fieldKey, projectionId, presetIdx, bucketCount, reversed, scopeCtl.scope]);
 
 	return (
-		<Sidebar title="Gradient" onBack={onClose} className="gradient-sidebar">
+		<Sidebar title={t("plugin.gradient.title")} onBack={onClose} className="gradient-sidebar">
 			{fields.length === 0 ? (
-				<EmptyState>No extra fields on this map. Enrich locations first.</EmptyState>
+				<EmptyState>{t("plugin.gradient.emptyNoFields")}</EmptyState>
 			) : (
 				<>
-					<Field label="Apply to">
+					<Field label={t("plugin.gradient.applyTo")}>
 						<ScopeSelector ctl={scopeCtl} />
 					</Field>
 					<div className="gradient-sidebar__row">
-						<Field label="Field">
+						<Field label={t("plugin.gradient.field")}>
 							<NSelect
 								value={fieldKey}
 								onChange={(e) => {
@@ -218,7 +230,7 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 								))}
 							</NSelect>
 						</Field>
-						<Field label="Group by">
+						<Field label={t("plugin.gradient.groupBy")}>
 							<NSelect
 								value={projectionId}
 								disabled={projOptions.length <= 1}
@@ -228,14 +240,14 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							>
 								{projOptions.map((p) => (
 									<option key={p.id} value={p.id}>
-										{p.label}
+										{t(PROJECTION_KEYS[p.id] ?? "plugin.gradient.projection.value")}
 									</option>
 								))}
 							</NSelect>
 						</Field>
 					</div>
 
-					<Field label="Buckets">
+					<Field label={t("plugin.gradient.buckets")}>
 						<SegmentedControl
 							value={bucketCount}
 							onChange={setBucketCount}
@@ -243,21 +255,22 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 								value: n,
 								label: String(n),
 								disabled: projectionId !== RANGE_ID,
-								title: projectionId !== RANGE_ID ? "Only applies to Range grouping" : undefined,
+								title:
+									projectionId !== RANGE_ID ? t("plugin.gradient.bucketRangeOnly") : undefined,
 							}))}
 						/>
 					</Field>
 
-					<Field label="Gradient">
+					<Field label={t("plugin.gradient.gradient")}>
 						<div className="gradient-sidebar__presets">
 							{PRESETS.map((p, i) => (
 								<button
-									key={p.name}
+									key={p.id}
 									className={`gradient-sidebar__preset ${i === presetIdx ? "gradient-sidebar__preset--active" : ""}`}
 									onClick={() => {
 										setPresetIdx(i);
 									}}
-									title={p.name}
+									title={t(p.id)}
 								>
 									<div
 										className="gradient-sidebar__preset-bar"
@@ -269,12 +282,12 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							))}
 						</div>
 						<div className="gradient-sidebar__preview-labels">
-							<span>Low</span>
-							<span>High</span>
+							<span>{t("plugin.gradient.low")}</span>
+							<span>{t("plugin.gradient.high")}</span>
 						</div>
 						<label className="gradient-sidebar__check">
 							<Checkbox checked={reversed} onChange={(e) => setReversed(e.target.checked)} />
-							Reverse
+							{t("plugin.gradient.reverse")}
 						</label>
 					</Field>
 
@@ -284,15 +297,20 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							onClick={applyGradient}
 							disabled={applying || !fieldKey}
 						>
-							Apply
+							{t("plugin.gradient.apply")}
 						</button>
 						{lastResult != null && (
 							<span className="gradient-sidebar__result">
 								{!lastResult.applied
-									? `${lastResult.groups} groups. Too many to color (max ${MAX_GROUPS}).`
+									? t("plugin.gradient.resultTooMany", {
+											groups: lastResult.groups,
+											max: MAX_GROUPS,
+										})
 									: lastResult.groups === 0
-										? "No groups found"
-										: `${lastResult.groups} group${lastResult.groups === 1 ? "" : "s"} applied`}
+										? t("plugin.gradient.resultNoGroups")
+										: tp("plugin.gradient.resultApplied", lastResult.groups, {
+												count: lastResult.groups,
+											})}
 							</span>
 						)}
 					</div>

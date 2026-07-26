@@ -57,6 +57,7 @@ import { startTencentProvider } from "@/lib/sv/tencent/bootstrap";
 import { startYandexProvider } from "@/lib/sv/yandex/bootstrap";
 import SameLocation from "@/components/editor/SameLocation";
 import { log } from "@/lib/util/log";
+import { useT } from "@/lib/i18n";
 import { useCountrySelect } from "@/lib/map/useCountrySelect";
 import { useDeletePolygon } from "@/lib/map/useDeletePolygon";
 import { useMapKeyBindings } from "@/lib/map/mapKeyBindings";
@@ -217,6 +218,7 @@ function SplitHandle({ onSplitChange }: { onSplitChange: (v: number) => void }) 
 }
 
 export function MapEditor() {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const hasDoclinks = useMapState((s) => doclinkedTags(s.tags).length > 0);
 	// Warm the doclink HTML cache once per map open, so the panel is instant.
@@ -355,11 +357,11 @@ export function MapEditor() {
 					>
 						{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
 						<header>
-						<Tooltip content="Back to map list" side="bottom" align="start">
+						<Tooltip content={t("editor.backToMapList")} side="bottom" align="start">
 							<a
 								href="#"
 								style={{ textDecoration: "none" }}
-								aria-label="Back to map list"
+								aria-label={t("editor.backToMapList")}
 								onClick={(e) => {
 									e.preventDefault();
 									goToList();
@@ -370,14 +372,14 @@ export function MapEditor() {
 						</Tooltip>
 						<h1>{map.meta.name}</h1>
 						<Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-							<Tooltip content="Edit map" side="bottom">
+							<Tooltip content={t("editor.editMap")} side="bottom">
 								<DialogTrigger asChild>
-									<button className="icon-button" type="button" aria-label="Edit map">
+									<button className="icon-button" type="button" aria-label={t("editor.editMap")}>
 										<Icon path={mdiPencil} />
 									</button>
 								</DialogTrigger>
 							</Tooltip>
-							<DialogContent title="Map settings" className="edit-map-modal">
+							<DialogContent title={t("dialog.mapSettings")} className="edit-map-modal">
 								<MapRenameForm mapId={map.meta.id} currentName={map.meta.name} />
 							</DialogContent>
 						</Dialog>
@@ -385,8 +387,8 @@ export function MapEditor() {
 						<Tooltip
 							content={
 								workArea === "providers"
-									? "Close Street View providers"
-									: "Street View providers"
+									? t("editor.closeStreetViewProviders")
+									: t("editor.streetViewProviders")
 							}
 							side="bottom"
 							align="end"
@@ -394,7 +396,7 @@ export function MapEditor() {
 							<button
 								className="icon-button"
 								type="button"
-								aria-label="Street View providers"
+								aria-label={t("editor.streetViewProviders")}
 								aria-pressed={workArea === "providers"}
 								onClick={() => toggleProvidersMode()}
 							>
@@ -408,11 +410,11 @@ export function MapEditor() {
 					</header>
 					<div className="side-header">
 						{hasDoclinks && (
-							<Tooltip content="Doclinks" side="bottom">
+							<Tooltip content={t("editor.doclinks")} side="bottom">
 								<button
 									className="icon-button"
 									type="button"
-									aria-label="Toggle doclink panel"
+									aria-label={t("editor.toggleDoclinkPanel")}
 									onClick={() => setDocPanelOpen(!docPanelOpen)}
 								>
 									<Icon path={mdiFileDocumentOutline} />
@@ -443,7 +445,7 @@ export function MapEditor() {
 					<CommandPalette />
 					{fileDragging && (
 						<div className="file-drop-overlay">
-							<div className="file-drop-overlay__content">Drop file to import</div>
+							<div className="file-drop-overlay__content">{t("mapList.dropToImport")}</div>
 						</div>
 					)}
 				</div>

@@ -41,6 +41,7 @@ import {
 	mdiContentCopy,
 	mdiImageFilterHdrOutline,
 } from "@mdi/js";
+import { useT } from "@/lib/i18n";
 
 // --- Compass ---
 
@@ -229,6 +230,7 @@ export function sendHideCar(hide: boolean) {
 // --- Pano control subcomponents ---
 
 function CompassControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
+	const { t } = useT();
 	const [links, setLinks] = useState<google.maps.StreetViewLink[]>([]);
 	const controlRef = useRef<HTMLDivElement>(null);
 	const animRef = useRef<{ stop: () => void; target: { heading: number; pitch: number } } | null>(
@@ -316,14 +318,11 @@ function CompassControl({ panorama }: { panorama: google.maps.StreetViewPanorama
 		>
 			<div className="map-control map-control--transparent">
 				<div className="compass-control" ref={controlRef}>
-					<Tooltip
-						content="Click to point north (N). Ctrl+click to cycle through linked panoramas."
-						side="right"
-					>
+					<Tooltip content={t("editor.pointNorth")} side="right">
 						<button
 							className="compass-control__button"
 							onClick={pointNorth}
-							aria-label="Point north"
+							aria-label={t("editor.pointNorthLabel")}
 						>
 							<Compass panorama={panorama} />
 						</button>
@@ -346,6 +345,7 @@ function CompassControl({ panorama }: { panorama: google.maps.StreetViewPanorama
 }
 
 function ZoomControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
+	const { t } = useT();
 	const [atMin, setAtMin] = useState(() => (panorama.getZoom() ?? 0) <= PANO_ZOOM.min);
 	const [atZero, setAtZero] = useState(() => (panorama.getZoom() ?? 0) <= 0);
 	useEffect(() => {
@@ -380,18 +380,18 @@ function ZoomControl({ panorama }: { panorama: google.maps.StreetViewPanorama })
 			style={{ inset: "auto auto 112px 0px" }}
 		>
 			<div className="map-control map-control--button">
-				<Tooltip content="Zoom in" side="right">
-					<button onClick={zoomIn} aria-label="Zoom in">
+				<Tooltip content={t("common.zoomIn")} side="right">
+					<button onClick={zoomIn} aria-label={t("common.zoomIn")}>
 						<Icon path={mdiPlus} />
 					</button>
 				</Tooltip>
-				<Tooltip content="Reset zoom" side="right">
-					<button disabled={atMin} onClick={resetZoom} aria-label="Reset zoom">
+				<Tooltip content={t("editor.resetZoom")} side="right">
+					<button disabled={atMin} onClick={resetZoom} aria-label={t("editor.resetZoom")}>
 						<Icon path={mdiImageFilterCenterFocus} />
 					</button>
 				</Tooltip>
-				<Tooltip content="Zoom out" side="right">
-					<button disabled={atZero} onClick={zoomOut} aria-label="Zoom out">
+				<Tooltip content={t("common.zoomOut")} side="right">
+					<button disabled={atZero} onClick={zoomOut} aria-label={t("common.zoomOut")}>
 						<Icon path={mdiMinus} />
 					</button>
 				</Tooltip>
@@ -407,6 +407,7 @@ function ReturnToSpawnControl({
 	panorama: google.maps.StreetViewPanorama;
 	onReturnToSpawn: () => void;
 }) {
+	const { t } = useT();
 	const location = useMapState((s) => s.activeLocation);
 	const [hasChanged, setHasChanged] = useState(false);
 	useEffect(() => {
@@ -435,8 +436,8 @@ function ReturnToSpawnControl({
 			style={{ inset: "auto auto 56px 0px" }}
 		>
 			<div className="map-control map-control--button">
-				<Tooltip content="Return to spawn (R)" side="right">
-					<button disabled={!hasChanged} onClick={onReturnToSpawn} aria-label="Return to spawn (R)">
+				<Tooltip content={t("editor.returnToSpawn")} side="right">
+					<button disabled={!hasChanged} onClick={onReturnToSpawn} aria-label={t("editor.returnToSpawn")}>
 						<Icon path={mdiHome} />
 					</button>
 				</Tooltip>
@@ -446,6 +447,7 @@ function ReturnToSpawnControl({
 }
 
 function CoordinateControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
+	const { t } = useT();
 	const textRef = useRef<HTMLSpanElement>(null);
 	useEffect(() => {
 		const update = () => {
@@ -459,8 +461,8 @@ function CoordinateControl({ panorama }: { panorama: google.maps.StreetViewPanor
 				// null = unknown → hide; 0 is a valid sea-level reading and must show.
 				textRef.current.textContent =
 					altitude == null
-						? ` zoom ${zoom}`
-						: ` ${altitude.toFixed(2)}m · zoom ${zoom}`;
+						? ` ${t("editor.zoomReadout", { zoom })}`
+						: ` ${t("editor.altitudeZoom", { altitude: altitude.toFixed(2), zoom })}`;
 			}
 		};
 		const zoomListener = panorama.addListener("zoom_changed", update);
@@ -493,6 +495,7 @@ function CoordinateControl({ panorama }: { panorama: google.maps.StreetViewPanor
 // --- PanoControls ---
 
 function PanoMetadataControl() {
+	const { t } = useT();
 	const location = useMapState((s) => s.activeLocation);
 	if (!location) return null;
 	return (
@@ -505,7 +508,9 @@ function PanoMetadataControl() {
 				className="map-control coordinate-control is-dark"
 				style={{ fontSize: "10px", display: "flex", flexDirection: "column", gap: "2px" }}
 			>
-				<span>Pinned pano: {hasLoadAsPanoId(location) ? "yes" : "no"}</span>
+				<span>
+					{hasLoadAsPanoId(location) ? t("editor.pinnedPanoYes") : t("editor.pinnedPanoNo")}
+				</span>
 				{location.extra &&
 					Object.entries(location.extra).map(([key, val]) => (
 						<span key={key}>
@@ -531,6 +536,7 @@ export const PanoControls = memo(function PanoControls({
 	/** True when an alt pano provider (e.g. Look Around) owns the viewport. */
 	altProvider?: boolean;
 }) {
+	const { t } = useT();
 	const vis = useSettings();
 	const fullscreenKey = useBinding("toggleFullscreen");
 	const jumpForwardKey = useBinding("jumpForward");
@@ -835,13 +841,13 @@ export const PanoControls = memo(function PanoControls({
 				>
 					<div className="map-control map-control--button">
 						<Tooltip
-							content={`Toggle fullscreen (${fullscreenKey.toUpperCase()})`}
+							content={t("editor.toggleFullscreen", { key: fullscreenKey.toUpperCase() })}
 							side="bottom"
 							align="end"
 						>
 							<button
 								onClick={onFullscreen}
-								aria-label={`Toggle fullscreen (${fullscreenKey.toUpperCase()})`}
+								aria-label={t("editor.toggleFullscreen", { key: fullscreenKey.toUpperCase() })}
 							>
 								{isFullscreen ? <Icon path={mdiFullscreenExit} /> : <Icon path={mdiFullscreen} />}
 							</button>
@@ -857,22 +863,22 @@ export const PanoControls = memo(function PanoControls({
 					style={{ inset: "56px 0px auto auto" }}
 				>
 					<div className="map-control map-control--button">
-						<Tooltip content={`Jump forward 100 metres (${jumpForwardKey})`} side="left">
+						<Tooltip content={t("editor.jumpForward", { key: jumpForwardKey })} side="left">
 							<button
 								ref={jumpForwardRef}
 								disabled={vis.defaultMovementMode !== "moving"}
 								onClick={jumpForward}
-								aria-label={`Jump forward 100 metres (${jumpForwardKey})`}
+								aria-label={t("editor.jumpForward", { key: jumpForwardKey })}
 							>
 								100m
 							</button>
 						</Tooltip>
-						<Tooltip content={`Jump backward 100 metres (${jumpBackwardKey})`} side="left">
+						<Tooltip content={t("editor.jumpBackward", { key: jumpBackwardKey })} side="left">
 							<button
 								ref={jumpBackwardRef}
 								disabled={vis.defaultMovementMode !== "moving"}
 								onClick={jumpBackward}
-								aria-label={`Jump backward 100 metres (${jumpBackwardKey})`}
+								aria-label={t("editor.jumpBackward", { key: jumpBackwardKey })}
 							>
 								-100m
 							</button>
@@ -898,15 +904,15 @@ export const PanoControls = memo(function PanoControls({
 			>
 				{vis.showMapLinks && (
 					<div className="map-control map-control--button map-links-control">
-						<Tooltip content="Open in maps" side="top" align="start">
-							<button onClick={openInMaps} aria-label="Open in maps">
+						<Tooltip content={t("editor.openInMaps")} side="top" align="start">
+							<button onClick={openInMaps} aria-label={t("editor.openInMaps")}>
 								<Icon path={mdiOpenInNew} />
 							</button>
 						</Tooltip>
-						<Tooltip content="Copy link - Shift: without tags, Alt: long URL" side="right">
+						<Tooltip content={t("editor.copyLinkHint")} side="right">
 							<button
 								onClick={(e) => doCopy({ long: e.altKey, noTags: e.shiftKey })}
-								aria-label="Copy link"
+								aria-label={t("editor.copyLink")}
 							>
 								{copyState === "loading" ? (
 									<Icon path={mdiLoading} className="spin" />

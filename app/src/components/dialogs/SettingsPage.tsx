@@ -59,6 +59,9 @@ import { log } from "@/lib/util/log";
 import type { DataLocation } from "@/bindings.gen";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
+import { LOCALES, hotkeyLabel, useT, type AppLocale } from "@/lib/i18n";
+import { localizeOptions } from "@/lib/i18n/helpers";
+import type { MessageKey } from "@/locales/en";
 
 /** Non-row section content. Hidden during search unless the section title
  *  matched, or `match` (a keyword string for content with no SettingRows)
@@ -136,31 +139,36 @@ function SettingSelect<K extends keyof AppSettings>({
 
 const BLOCKED_COMBOS = new Set(["Mod++", "Mod+-"]);
 
-function getBlockedReason(e: KeyboardEvent): string | null {
+function getBlockedReason(
+	e: KeyboardEvent,
+	t: (key: MessageKey, params?: Record<string, string | number>) => string,
+): string | null {
 	const combo = buildComboString(e);
 	if (!combo) return null;
 	if (e.altKey) {
 		const conflict = getAltSlowConflict(combo);
 		if (conflict) {
-			return `${formatBinding(combo)} conflicts with "${conflict.label}" (Alt is the slow modifier for navigation)`;
+			return t("settings.hotkey.altSlowConflict", {
+				combo: formatBinding(combo),
+				label: hotkeyLabel(conflict.action),
+			});
 		}
 	}
-	if (BLOCKED_COMBOS.has(combo))
-		return "Intercepted by the app window before shortcuts can reach it";
+	if (BLOCKED_COMBOS.has(combo)) return t("settings.hotkey.blockedByWindow");
 	return null;
 }
 
 function HotkeyRow({
 	action,
-	label,
 	flash,
 	onJump,
 }: {
 	action: HotkeyAction;
-	label: string;
 	flash: boolean;
 	onJump: (action: string) => void;
 }) {
+	const { t } = useT();
+	const label = hotkeyLabel(action);
 	const binding = useBinding(action);
 	const [recording, setRecording] = useState(false);
 	const [blocked, setBlocked] = useState<string | null>(null);
@@ -194,7 +202,7 @@ function HotkeyRow({
 				return;
 			}
 
-			const reason = getBlockedReason(e.nativeEvent);
+			const reason = getBlockedReason(e.nativeEvent, t);
 			if (reason) {
 				setBlocked(reason);
 				return;
@@ -213,7 +221,7 @@ function HotkeyRow({
 			setBinding(action, combo);
 			cancel();
 		},
-		[action, cancel],
+		[action, cancel, t],
 	);
 
 	const reassign = useCallback(() => {
@@ -236,14 +244,16 @@ function HotkeyRow({
 					pending ? (
 						<div className="hotkey-reassign" onKeyDown={(e) => e.key === "Escape" && cancel()}>
 							<span className="hotkey-reassign__msg">
-								<code className="mono">{formatBinding(pending.combo)}</code> is bound to{" "}
-								<strong>{pending.conflicts.map((c) => c.label).join(", ")}</strong>
+								{t("settings.hotkey.reassignPrompt", {
+									combo: formatBinding(pending.combo),
+									actions: pending.conflicts.map((c) => hotkeyLabel(c.action)).join(", "),
+								})}
 							</span>
 							<Button variant="primary" className="hotkey-reset" autoFocus onClick={reassign}>
-								Reassign
+								{t("settings.hotkey.reassign")}
 							</Button>
 							<Button className="hotkey-reset" onClick={cancel}>
-								Cancel
+								{t("common.cancel")}
 							</Button>
 						</div>
 					) : (
@@ -252,7 +262,7 @@ function HotkeyRow({
 								ref={inputRef}
 								className="hotkey-record"
 								readOnly
-								value={blocked ? "Try another key..." : "Press a key..."}
+								value={blocked ? t("settings.hotkey.tryAnotherKey") : t("settings.hotkey.pressKey")}
 								onKeyDown={handleKeyDown}
 								onBlur={() => {
 									setRecording(false);
@@ -266,7 +276,7 @@ function HotkeyRow({
 					<code
 						className={`hotkey-display mono${!binding ? " hotkey-display--empty" : ""}`}
 						onClick={() => setRecording(true)}
-						title="Click to rebind"
+						title={t("settings.clickToRebind")}
 					>
 						{binding ? formatBinding(binding) : " "}
 					</code>
@@ -277,10 +287,10 @@ function HotkeyRow({
 							key={c.action}
 							className="hotkey-conflict"
 							onClick={() => onJump(c.action)}
-							title={`Also bound to "${c.label}" - click to jump there`}
+							title={t("settings.hotkey.alsoBoundTo", { label: hotkeyLabel(c.action) })}
 						>
 							<Icon path={mdiAlertCircleOutline} className="hotkey-conflict__icon" />
-							{c.label}
+							{hotkeyLabel(c.action)}
 						</button>
 					))}
 			</td>
@@ -289,9 +299,9 @@ function HotkeyRow({
 					<Button
 						className="hotkey-reset"
 						onClick={() => resetBinding(action)}
-						title="Reset to default"
+						title={t("common.resetToDefault")}
 					>
-						Reset
+						{t("common.reset")}
 					</Button>
 				)}
 			</td>
@@ -309,6 +319,7 @@ const GROUPS: HotkeyGroup[] = [
 ];
 
 function KeyboardBody() {
+	const { t } = useT();
 	const [filter, setFilter] = useState("");
 	const [flash, setFlash] = useState<string | null>(null);
 	const lower = filter.toLowerCase();
@@ -322,12 +333,24 @@ function KeyboardBody() {
 		window.setTimeout(() => setFlash((cur) => (cur === action ? null : cur)), 1500);
 	}, []);
 
+	const groupTitle = (group: HotkeyGroup): string => {
+		const map: Record<HotkeyGroup, MessageKey> = {
+			Commands: "settings.hotkey.commands",
+			Global: "settings.hotkey.global",
+			"Map Navigation": "settings.hotkey.mapNavigation",
+			"Location Editor": "settings.hotkey.locationEditor",
+			Quicktag: "settings.hotkey.quicktag",
+			Review: "settings.hotkey.review",
+		};
+		return t(map[group]);
+	};
+
 	return (
 		<Aux>
 			<div className="settings-hotkey-filter">
 				<TextInput
 					type="text"
-					placeholder="Filter shortcuts..."
+					placeholder={t("settings.filterShortcuts")}
 					value={filter}
 					onChange={(e) => setFilter(e.target.value)}
 					style={{ width: "100%" }}
@@ -338,18 +361,18 @@ function KeyboardBody() {
 					(d) =>
 						d.group === group &&
 						(!lower ||
-							d.label.toLowerCase().includes(lower) ||
+							hotkeyLabel(d.action).toLowerCase().includes(lower) ||
 							getBinding(d.action).toLowerCase().includes(lower)),
 				);
 				if (defs.length === 0) return null;
 				return (
 					<div key={group}>
-						<h3 className="settings-group">{group}</h3>
+						<h3 className="settings-group">{groupTitle(group)}</h3>
 						<table className="settings-hotkey-table">
 							<thead>
 								<tr>
-									<th>Action</th>
-									<th>Binding</th>
+									<th>{t("settings.action")}</th>
+									<th>{t("settings.binding")}</th>
 									<th></th>
 								</tr>
 							</thead>
@@ -358,7 +381,6 @@ function KeyboardBody() {
 									<HotkeyRow
 										key={d.action}
 										action={d.action}
-										label={d.label}
 										flash={flash === d.action}
 										onJump={jumpTo}
 									/>
@@ -369,46 +391,56 @@ function KeyboardBody() {
 				);
 			})}
 			<div style={{ marginTop: ".5rem" }}>
-				<Button onClick={resetAllBindings}>Reset all to defaults</Button>
+				<Button onClick={resetAllBindings}>{t("common.resetAllDefaults")}</Button>
 			</div>
 		</Aux>
 	);
 }
 
 function StreetViewBody() {
+	const { t } = useT();
 	const s = useSettings();
 	const controls: { key: keyof typeof s; label: string }[] = [
-		{ key: "showFullscreenButton", label: "Fullscreen button" },
-		{ key: "showJumpButtons", label: "Jump forward/backward buttons" },
-		{ key: "showCompass", label: "Compass (wind rose)" },
-		{ key: "showCompassTape", label: "Compass (heading tape)" },
-		{ key: "showZoom", label: "Zoom controls" },
-		{ key: "showReturnToSpawn", label: "Return to spawn button" },
-		{ key: "showMapLinks", label: "Map links (open in maps, copy link)" },
-		{ key: "showCoordinateDisplay", label: "Coordinate / zoom display" },
-		{ key: "showPanoMetadata", label: "Show pano metadata" },
+		{ key: "showFullscreenButton", label: t("settings.showFullscreenButton") },
+		{ key: "showJumpButtons", label: t("settings.showJumpButtons") },
+		{ key: "showCompass", label: t("settings.showCompass") },
+		{ key: "showCompassTape", label: t("settings.showCompassTape") },
+		{ key: "showZoom", label: t("settings.showZoom") },
+		{ key: "showReturnToSpawn", label: t("settings.showReturnToSpawn") },
+		{ key: "showMapLinks", label: t("settings.showMapLinks") },
+		{ key: "showCoordinateDisplay", label: t("settings.showCoordinateDisplay") },
+		{ key: "showPanoMetadata", label: t("settings.showPanoMetadata") },
 	];
+	const movementOptions = localizeOptions(MOVEMENT_MODES, (k) =>
+		t(`settings.movement.${k}` as MessageKey),
+	);
+	const exactDateOptions = localizeOptions(EXACT_DATE_FORMATS, (k) =>
+		t(`settings.exactDate.${k}` as MessageKey),
+	);
+	const dateTzOptions = localizeOptions(DATE_TIMEZONES, (k) =>
+		t(`settings.dateTimezone.${k}` as MessageKey),
+	);
 
 	return (
 		<>
-			<GroupHeading>Navigation</GroupHeading>
-			<SettingRow setting="showLinksControl" label="Show link arrows (ground navigation)" />
-			<SettingRow setting="clickToGo" label="Show click-to-go navigation" />
+			<GroupHeading>{t("settings.group.navigation")}</GroupHeading>
+			<SettingRow setting="showLinksControl" label={t("settings.showLinksControl")} />
+			<SettingRow setting="clickToGo" label={t("settings.clickToGo")} />
 			{s.clickToGo && (
 				<>
-					<SettingRow sub setting="showNavArrow" label="Show navigation X" />
-					<SettingRow sub setting="showGroundArrow" label="Show ground arrow" />
+					<SettingRow sub setting="showNavArrow" label={t("settings.showNavArrow")} />
+					<SettingRow sub setting="showGroundArrow" label={t("settings.showGroundArrow")} />
 				</>
 			)}
-			<SettingRow setting="showRoadLabels" label="Show road labels" />
-			<SettingRow setting="showCar" label="Show car" />
-			<SettingRow setting="showCrosshair" label="Show crosshair" />
+			<SettingRow setting="showRoadLabels" label={t("settings.showRoadLabels")} />
+			<SettingRow setting="showCar" label={t("settings.showCar")} />
+			<SettingRow setting="showCrosshair" label={t("settings.showCrosshair")} />
 			<SettingRow
-				label="Default movement mode"
-				control={<SettingSelect setting="defaultMovementMode" options={MOVEMENT_MODES} />}
+				label={t("settings.defaultMovementMode")}
+				control={<SettingSelect setting="defaultMovementMode" options={movementOptions} />}
 			/>
 			<SettingRow
-				label="Pano look speed"
+				label={t("settings.panoLookSpeed")}
 				control={
 					<SettingSlider
 						value={s.panoLookSpeed}
@@ -420,22 +452,22 @@ function StreetViewBody() {
 				}
 			/>
 			<SettingRow
-				label="Preview aspect ratio"
+				label={t("settings.previewAspectRatio")}
 				control={<SettingSelect setting="previewAspectRatio" options={PREVIEW_ASPECT_RATIOS} />}
 			/>
 
-			<GroupHeading>Viewer controls</GroupHeading>
+			<GroupHeading>{t("settings.group.viewerControls")}</GroupHeading>
 			{controls.map(({ key, label }) => (
 				<SettingRow key={key} setting={key} label={label} />
 			))}
 
-			<GroupHeading>Fullscreen</GroupHeading>
-			<SettingRow setting="showFullscreenMinimap" label="Show minimap in fullscreen" />
+			<GroupHeading>{t("settings.group.fullscreen")}</GroupHeading>
+			<SettingRow setting="showFullscreenMinimap" label={t("settings.showFullscreenMinimap")} />
 			<SettingRow
 				sub
 				disabled={!s.showFullscreenMinimap}
-				label="Minimap close delay"
-				description="How long the minimap stays expanded after the pointer leaves it."
+				label={t("settings.fullscreenMinimapCloseDelay")}
+				description={t("settings.minimapCloseDelayDesc")}
 				control={
 					<SettingSlider
 						value={s.fullscreenMinimapCloseDelay}
@@ -448,39 +480,49 @@ function StreetViewBody() {
 					/>
 				}
 			/>
-			<SettingRow setting="showFullscreenTagbar" label="Show tag bar in fullscreen" />
-			<SettingRow setting="showFullscreenDatePicker" label="Show date picker in fullscreen" />
-			<SettingRow setting="showFullscreenReviewBar" label="Show review bar in fullscreen" />
-			<SettingRow setting="showFullscreenGeocode" label="Show geocoding info in fullscreen" />
-
-			<GroupHeading>Date picker</GroupHeading>
-			<SettingRow setting="showCameraBadges" label="Show camera type badges (Gen1, Gen2, etc.)" />
+			<SettingRow setting="showFullscreenTagbar" label={t("settings.showFullscreenTagbar")} />
 			<SettingRow
-				label="Exact date format"
-				control={<SettingSelect setting="exactDateFormat" options={EXACT_DATE_FORMATS} />}
+				setting="showFullscreenDatePicker"
+				label={t("settings.showFullscreenDatePicker")}
+			/>
+			<SettingRow setting="showFullscreenReviewBar" label={t("settings.showFullscreenReviewBar")} />
+			<SettingRow setting="showFullscreenGeocode" label={t("settings.showFullscreenGeocode")} />
+
+			<GroupHeading>{t("settings.group.datePicker")}</GroupHeading>
+			<SettingRow setting="showCameraBadges" label={t("settings.showCameraBadges")} />
+			<SettingRow
+				label={t("settings.exactDateFormat")}
+				control={<SettingSelect setting="exactDateFormat" options={exactDateOptions} />}
 			/>
 			<SettingRow
-				label="Exact date timezone"
-				control={<SettingSelect setting="dateTimezone" options={DATE_TIMEZONES} />}
+				label={t("settings.dateTimezone")}
+				control={<SettingSelect setting="dateTimezone" options={dateTzOptions} />}
 			/>
 		</>
 	);
 }
 
 function MarkersBody() {
+	const { t } = useT();
 	const s = useSettings();
+	const opacityOptions = localizeOptions(OPACITY_TOGGLE_MODES, (k) =>
+		t(`settings.opacityToggle.${k}` as MessageKey),
+	);
+	const polygonColorOptions = localizeOptions(POLYGON_COLOR_MODES, (k) =>
+		t(`settings.polygonColor.${k}` as MessageKey),
+	);
 	return (
 		<>
-			<GroupHeading>Fullscreen</GroupHeading>
-			<SettingRow setting="showFullscreenMapMeta" label="Show map meta bar in fullscreen" />
+			<GroupHeading>{t("settings.group.fullscreen")}</GroupHeading>
+			<SettingRow setting="showFullscreenMapMeta" label={t("settings.showFullscreenMapMeta")} />
 			<SettingRow
 				setting="showFullscreenMiniLocationPreview"
-				label="Show mini location preview in fullscreen"
+				label={t("settings.showFullscreenMiniLocationPreview")}
 			/>
 
-			<GroupHeading>Navigation</GroupHeading>
+			<GroupHeading>{t("settings.group.navigation")}</GroupHeading>
 			<SettingRow
-				label="Pan speed"
+				label={t("settings.mapPanSpeed")}
 				control={
 					<SettingSlider
 						value={s.mapPanSpeed}
@@ -491,11 +533,11 @@ function MarkersBody() {
 					/>
 				}
 			/>
-			<SettingRow setting="panToImported" label="Pan to imported locations" />
+			<SettingRow setting="panToImported" label={t("settings.panToImported")} />
 			<SettingRow
 				sub
 				disabled={!s.panToImported}
-				label="Paste zoom padding"
+				label={t("settings.pastePadding")}
 				control={
 					<SettingSlider
 						value={s.pastePadding}
@@ -509,8 +551,8 @@ function MarkersBody() {
 				}
 			/>
 			<SettingRow
-				label="Alt slow-down"
-				description="Hold Alt to slow down map panning and pano look."
+				label={t("settings.slowModifier")}
+				description={t("settings.altSlowDesc")}
 				control={
 					<SettingSlider
 						value={s.slowModifier}
@@ -524,82 +566,82 @@ function MarkersBody() {
 			/>
 
 			<SettingRow
-				label="Layer opacity toggle"
-				description="What the Street View and marker opacity hotkeys restore a hidden layer to."
-				control={<SettingSelect setting="opacityToggleMode" options={OPACITY_TOGGLE_MODES} />}
+				label={t("settings.opacityToggleMode")}
+				description={t("settings.opacityToggleDesc")}
+				control={<SettingSelect setting="opacityToggleMode" options={opacityOptions} />}
 			/>
 
-			<GroupHeading>Markers</GroupHeading>
+			<GroupHeading>{t("settings.group.markers")}</GroupHeading>
 			<SettingRow
-				label="Default marker color"
+				label={t("settings.markerColor")}
 				control={
 					<ColorPicker
 						color={s.markerColor}
 						onChange={(color) => setSetting("markerColor", color)}
-						ariaLabel="Default marker color"
+						ariaLabel={t("settings.markerColor")}
 					/>
 				}
 			/>
 			<SettingRow
-				label="Active marker color"
+				label={t("settings.activeLocationColor")}
 				control={
 					<ColorPicker
 						color={s.activeLocationColor}
 						onChange={(color) => setSetting("activeLocationColor", color)}
-						ariaLabel="Active location marker color"
+						ariaLabel={t("settings.activeLocationColor")}
 					/>
 				}
 			/>
 			<SettingRow
-				label="Staged marker color"
+				label={t("settings.importPreviewColor")}
 				control={
 					<ColorPicker
 						color={s.importPreviewColor}
 						onChange={(color) => setSetting("importPreviewColor", color)}
-						ariaLabel="Staged import marker color"
+						ariaLabel={t("settings.importPreviewColor")}
 					/>
 				}
 			/>
 			<SettingRow
 				setting="followActiveInReview"
-				label="Center map on active location during review"
+				label={t("settings.followActiveInReview")}
 			/>
 
-			<GroupHeading>Panorama dots</GroupHeading>
+			<GroupHeading>{t("settings.group.panoramaDots")}</GroupHeading>
 			<SettingRow
-				label="Dot color"
+				label={t("settings.panoDotColor")}
 				control={
 					<ColorPicker
 						color={s.panoDotColor}
 						onChange={(color) => setSetting("panoDotColor", color)}
-						ariaLabel="Panorama dot color"
+						ariaLabel={t("settings.panoDotColor")}
 					/>
 				}
 			/>
 			<SettingRow
-				label="Dot size"
+				label={t("settings.panoDotScaled")}
 				control={
 					<NSelect
 						value={s.panoDotScaled ? "scaled" : "constant"}
 						onChange={(e) => setSetting("panoDotScaled", e.target.value === "scaled")}
 					>
-						<option value="constant">Constant on screen</option>
-						<option value="scaled">Grow when zoomed in</option>
+						<option value="constant">{t("settings.panoDot.constant")}</option>
+						<option value="scaled">{t("settings.panoDot.scaled")}</option>
 					</NSelect>
 				}
 			/>
 
-			<GroupHeading>Selections</GroupHeading>
+			<GroupHeading>{t("settings.group.selections")}</GroupHeading>
 			<SettingRow
-				label="Polygon color"
+				label={t("settings.polygonColor")}
 				control={
 					<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-						<SettingSelect setting="polygonColorMode" options={POLYGON_COLOR_MODES} />
+						<SettingSelect setting="polygonColorMode" options={polygonColorOptions} />
 						{s.polygonColorMode === "fixed" && (
 							<ColorPicker
 								color={s.polygonColor}
 								onChange={(color) => setSetting("polygonColor", color)}
-								ariaLabel="Default polygon color"
+								ariaLabel={t("settings.polygonColor")}
 							/>
 						)}
 					</span>
@@ -612,7 +654,14 @@ function MarkersBody() {
 }
 
 function BorderDetailGroup() {
+	const { t } = useT();
 	const s = useSettings();
+	const borderOptions = localizeOptions(BORDER_DETAILS, (k) =>
+		t(`settings.border.${k}` as MessageKey),
+	);
+	const subdivisionOptions = localizeOptions(SUBDIVISION_DETAILS, (k) =>
+		t(`settings.subdivision.${k}` as MessageKey),
+	);
 	const [mediumReady, setMediumReady] = useState<boolean | null>(null);
 	const [heavyReady, setHeavyReady] = useState<boolean | null>(null);
 	const [adm1Ready, setAdm1Ready] = useState<boolean | null>(null);
@@ -656,7 +705,11 @@ function BorderDetailGroup() {
 			else setHeavyReady(true);
 			setSetting("borderDetail", level);
 		} catch (e) {
-			setError(`Download failed: ${e instanceof Error ? e.message : String(e)}`);
+			setError(
+				t("settings.borderDownloadFailed", {
+					message: e instanceof Error ? e.message : String(e),
+				}),
+			);
 		} finally {
 			setDownloading(null);
 		}
@@ -674,30 +727,34 @@ function BorderDetailGroup() {
 			setAdm1Ready(true);
 			setSetting("subdivisionDetail", level);
 		} catch (e) {
-			setError(`Download failed: ${e instanceof Error ? e.message : String(e)}`);
+			setError(
+				t("settings.borderDownloadFailed", {
+					message: e instanceof Error ? e.message : String(e),
+				}),
+			);
 		} finally {
 			setDownloading(null);
 		}
 	};
 
 	const statusLabel = (level: "medium" | "heavy") => {
-		if (downloading === level) return " (downloading...)";
+		if (downloading === level) return t("settings.downloading");
 		const ready = level === "medium" ? mediumReady : heavyReady;
 		if (ready === null) return "";
-		return ready ? "" : " (will download)";
+		return ready ? "" : t("settings.willDownload");
 	};
 
 	const subdivisionStatus = () => {
-		if (downloading === "adm1") return " (downloading...)";
+		if (downloading === "adm1") return t("settings.downloading");
 		if (adm1Ready === null) return "";
-		return adm1Ready ? "" : " (~45MB, will download)";
+		return adm1Ready ? "" : t("settings.adm1WillDownload");
 	};
 
 	return (
 		<>
-			<GroupHeading>Borders</GroupHeading>
+			<GroupHeading>{t("settings.group.borders")}</GroupHeading>
 			<SettingRow
-				label="Country data"
+				label={t("settings.borderDetail")}
 				control={
 					<NSelect
 						className="nselect--compact"
@@ -705,7 +762,7 @@ function BorderDetailGroup() {
 						onChange={(e) => handleChange(e.target.value as BorderDetail)}
 						disabled={downloading !== null}
 					>
-						{Object.entries(BORDER_DETAILS).map(([value, label]) => (
+						{Object.entries(borderOptions).map(([value, label]) => (
 							<option key={value} value={value}>
 								{label}
 								{value !== "light" && statusLabel(value as "medium" | "heavy")}
@@ -715,7 +772,7 @@ function BorderDetailGroup() {
 				}
 			/>
 			<SettingRow
-				label="Subdivision data"
+				label={t("settings.subdivisionDetail")}
 				control={
 					<NSelect
 						className="nselect--compact"
@@ -723,7 +780,7 @@ function BorderDetailGroup() {
 						onChange={(e) => handleSubdivisionChange(e.target.value as SubdivisionDetail)}
 						disabled={downloading !== null}
 					>
-						{Object.entries(SUBDIVISION_DETAILS).map(([value, label]) => (
+						{Object.entries(subdivisionOptions).map(([value, label]) => (
 							<option key={value} value={value}>
 								{label}
 								{value !== "off" && subdivisionStatus()}
@@ -736,7 +793,7 @@ function BorderDetailGroup() {
 				<Aux>
 					{downloading && (
 						<p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", opacity: 0.7 }}>
-							Downloading border data...
+							{t("settings.downloadingBorders")}
 						</p>
 					)}
 					{error && <p className="settings-popup__warning">{error}</p>}
@@ -747,31 +804,44 @@ function BorderDetailGroup() {
 }
 
 function EditingBody() {
+	const { t } = useT();
 	const s = useSettings();
+	const tagViewOptions = localizeOptions(TAG_VIEW_MODES, (k) =>
+		t(`settings.tagView.${k}` as MessageKey),
+	);
+	const tagFolderColorOptions = localizeOptions(TAG_FOLDER_COLOR_MODES, (k) =>
+		t(`settings.tagFolderColor.${k}` as MessageKey),
+	);
+	const seenResolutionOptions = localizeOptions(SEEN_RESOLUTIONS, (k) =>
+		t(`settings.seen.${k}` as MessageKey),
+	);
+	const geocodeOptions = localizeOptions(GEOCODE_PROVIDERS, (k) =>
+		t(`settings.geocode.${k}` as MessageKey),
+	);
 	const limitIndex = Math.max(
 		0,
 		(TAG_SUGGESTION_LIMITS as readonly number[]).indexOf(s.tagSuggestionLimit),
 	);
 	return (
 		<>
-			<GroupHeading>Tags</GroupHeading>
+			<GroupHeading>{t("settings.group.tags")}</GroupHeading>
 			<SettingRow
-				label="View mode"
-				control={<SettingSelect setting="tagViewMode" options={TAG_VIEW_MODES} />}
+				label={t("settings.tagViewMode")}
+				control={<SettingSelect setting="tagViewMode" options={tagViewOptions} />}
 			/>
 			{s.tagViewMode === "tree" && (
 				<>
 					<SettingRow
 						sub
-						label="Folder color"
+						label={t("settings.tagFolderColor")}
 						control={
 							<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-								<SettingSelect setting="tagFolderColorMode" options={TAG_FOLDER_COLOR_MODES} />
+								<SettingSelect setting="tagFolderColorMode" options={tagFolderColorOptions} />
 								{s.tagFolderColorMode === "direct" && (
 									<ColorPicker
 										color={s.tagFolderColor}
 										onChange={(color) => setSetting("tagFolderColor", color)}
-										ariaLabel="Default folder color"
+										ariaLabel={t("settings.tagFolderColor")}
 									/>
 								)}
 							</span>
@@ -780,13 +850,13 @@ function EditingBody() {
 					<SettingRow
 						sub
 						setting="truncateTagPaths"
-						label="Truncate tag names to shortest unique path"
+						label={t("settings.truncateTagPaths")}
 					/>
 				</>
 			)}
-			<SettingRow setting="animateTagReorder" label="Animate tags during drag reorder" />
+			<SettingRow setting="animateTagReorder" label={t("settings.animateTagReorder")} />
 			<SettingRow
-				label="Tag gap"
+				label={t("settings.tagGap")}
 				control={
 					<SettingSlider
 						value={s.tagGap}
@@ -799,7 +869,7 @@ function EditingBody() {
 				}
 			/>
 			<SettingRow
-				label="Suggestions shown"
+				label={t("settings.tagSuggestionLimit")}
 				control={
 					<SettingSlider
 						value={limitIndex}
@@ -807,41 +877,41 @@ function EditingBody() {
 						max={TAG_SUGGESTION_LIMITS.length - 1}
 						step={1}
 						onChange={(v) => setSetting("tagSuggestionLimit", TAG_SUGGESTION_LIMITS[v])}
-						format={() => (s.tagSuggestionLimit === 0 ? "All" : String(s.tagSuggestionLimit))}
+						format={() =>
+							s.tagSuggestionLimit === 0 ? t("common.all") : String(s.tagSuggestionLimit)
+						}
 					/>
 				}
 			/>
 
-			<GroupHeading>Seen</GroupHeading>
-			<SettingRow setting="enableSeen" label="Log viewed panos" />
+			<GroupHeading>{t("settings.group.seen")}</GroupHeading>
+			<SettingRow setting="enableSeen" label={t("settings.enableSeen")} />
 			{s.enableSeen && (
 				<>
-					<SettingRow sub setting="enableSeenThumbnails" label="Save thumbnails" />
+					<SettingRow sub setting="enableSeenThumbnails" label={t("settings.enableSeenThumbnails")} />
 					{s.enableSeenThumbnails && (
 						<SettingRow
 							sub
-							label="Thumbnail resolution"
-							control={<SettingSelect setting="seenResolution" options={SEEN_RESOLUTIONS} />}
+							label={t("settings.seenResolution")}
+							control={<SettingSelect setting="seenResolution" options={seenResolutionOptions} />}
 						/>
 					)}
 				</>
 			)}
 
-			<GroupHeading>Geocoding</GroupHeading>
+			<GroupHeading>{t("settings.group.geocoding")}</GroupHeading>
 			<SettingRow
-				label="Provider"
-				control={<SettingSelect setting="geocodeProvider" options={GEOCODE_PROVIDERS} />}
+				label={t("settings.geocodeProvider")}
+				control={<SettingSelect setting="geocodeProvider" options={geocodeOptions} />}
 			/>
 			{s.geocodeProvider === "nominatim" && (
 				<>
 					<Aux>
-						<p className="settings-popup__warning">
-							Without an API key, requests may be rate-limited by Nominatim's usage policy.
-						</p>
+						<p className="settings-popup__warning">{t("settings.nominatimWarning")}</p>
 					</Aux>
 					<SettingRow
 						sub
-						label="API key (optional)"
+						label={t("settings.nominatimApiKey")}
 						control={
 							<TextInput
 								type="text"
@@ -857,6 +927,7 @@ function EditingBody() {
 }
 
 function MapListBlock() {
+	const { t } = useT();
 	const s = useSettings();
 	const fields = s.mapListFields;
 
@@ -874,15 +945,15 @@ function MapListBlock() {
 	return (
 		<Aux match="map list fields columns row">
 			<p className="text-muted" style={{ margin: "0.25rem 0", fontSize: "0.85rem" }}>
-				Fields shown on each map row (labels are always shown)
+				{t("settings.mapListFieldsHint")}
 			</p>
-			{Object.entries(MAP_LIST_FIELDS).map(([value, label]) => (
+			{Object.keys(MAP_LIST_FIELDS).map((value) => (
 				<label key={value} className="settings-checkbox-item">
 					<Checkbox
 						checked={fields.includes(value as MapListField)}
 						onChange={() => toggle(value as MapListField)}
 					/>
-					{label}
+					{t(`settings.mapList.${value}` as MessageKey)}
 				</label>
 			))}
 		</Aux>
@@ -891,25 +962,26 @@ function MapListBlock() {
 
 declare const __APP_VERSION__: string;
 
-const UPDATE_STATUS: Record<string, string> = {
-	idle: "Updates haven't been checked yet.",
-	checking: "Checking for updates...",
-	"up-to-date": "You're on the latest version.",
-	downloading: "Downloading update...",
-	ready: "Update installed. Restart to apply.",
-};
-
 function UpdateBlock() {
+	const { t } = useT();
 	const update = useUpdateState();
 	const version = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 	const checking = update.phase === "checking";
 	const badgeMod = update.phase === "up-to-date" ? " settings-updates__version--latest" : "";
 	const status =
 		update.phase === "available"
-			? `Version ${update.version} is available.`
+			? t("settings.versionAvailable", { version: update.version ?? "" })
 			: update.phase === "error"
-				? (update.error ?? "Update check failed.")
-				: UPDATE_STATUS[update.phase];
+				? (update.error ?? t("settings.update.checkFailed"))
+				: update.phase === "idle"
+					? t("settings.update.idle")
+					: update.phase === "checking"
+						? t("settings.update.checking")
+						: update.phase === "up-to-date"
+							? t("settings.update.upToDate")
+							: update.phase === "downloading"
+								? t("settings.update.downloading")
+								: t("settings.updateInstalled");
 
 	return (
 		<Aux match="update version check release restart install">
@@ -926,8 +998,8 @@ function UpdateBlock() {
 						className="icon-button settings-updates__check"
 						onClick={checkForUpdate}
 						disabled={checking || update.phase === "downloading"}
-						title="Check for updates"
-						aria-label="Check for updates"
+						title={t("settings.checkForUpdates")}
+						aria-label={t("settings.checkForUpdates")}
 					>
 						<Icon
 							path={mdiRefresh}
@@ -943,7 +1015,7 @@ function UpdateBlock() {
 				</div>
 				{update.phase === "available" && (
 					<div className="settings-aux__col">
-						<span>Version {update.version} is available</span>
+						<span>{t("settings.versionAvailable", { version: update.version ?? "" })}</span>
 						{update.notes && (
 							<pre
 								style={{
@@ -958,7 +1030,7 @@ function UpdateBlock() {
 							</pre>
 						)}
 						<Button variant="primary" onClick={installUpdate}>
-							Download and install
+							{t("settings.downloadAndInstall")}
 						</Button>
 					</div>
 				)}
@@ -970,9 +1042,9 @@ function UpdateBlock() {
 				)}
 				{update.phase === "ready" && (
 					<div className="settings-aux__row">
-						<span>Update installed. Restart to apply.</span>
+						<span>{t("settings.updateInstalled")}</span>
 						<Button variant="primary" onClick={relaunchApp}>
-							Restart now
+							{t("settings.restartNow")}
 						</Button>
 					</div>
 				)}
@@ -982,24 +1054,48 @@ function UpdateBlock() {
 }
 
 function ApplicationBody() {
+	const { t } = useT();
+	const language = useSetting("language");
+	const languageOptions = localizeOptions(LOCALES, (k) => t(`locale.${k}` as MessageKey));
+
 	return (
 		<>
-			<GroupHeading>Startup</GroupHeading>
-			<SettingRow setting="restoreSession" label="Restore open maps on startup" />
+			<GroupHeading>{t("settings.group.language")}</GroupHeading>
+			<SettingRow
+				label={t("settings.language")}
+				description={t("settings.languageDesc")}
+				control={
+					<NSelect
+						className="nselect--compact"
+						value={language}
+						onChange={(e) => setSetting("language", e.target.value as AppLocale)}
+					>
+						{Object.entries(languageOptions).map(([value, label]) => (
+							<option key={value} value={value}>
+								{label}
+							</option>
+						))}
+					</NSelect>
+				}
+			/>
 
-			<GroupHeading>Map list</GroupHeading>
+			<GroupHeading>{t("settings.group.startup")}</GroupHeading>
+			<SettingRow setting="restoreSession" label={t("settings.restoreSession")} />
+
+			<GroupHeading>{t("settings.group.mapList")}</GroupHeading>
 			<MapListBlock />
 
-			<GroupHeading>Updates</GroupHeading>
+			<GroupHeading>{t("settings.group.updates")}</GroupHeading>
 			<UpdateBlock />
 
-			<GroupHeading>Data</GroupHeading>
+			<GroupHeading>{t("settings.group.data")}</GroupHeading>
 			<DataBody />
 		</>
 	);
 }
 
 function CustomCssBlock() {
+	const { t } = useT();
 	const s = useSettings();
 	return (
 		<Aux match="custom css stylesheet style theme">
@@ -1007,8 +1103,7 @@ function CustomCssBlock() {
 				className="settings-css-editor"
 				value={s.customCss}
 				onChange={(e) => setSetting("customCss", e.target.value)}
-				placeholder="/* Your custom CSS here */
-.location-preview__panorama { border: 2px solid red; }"
+				placeholder={t("settings.customCssPlaceholder")}
 				spellCheck={false}
 			/>
 		</Aux>
@@ -1022,24 +1117,28 @@ function generateApiKey(): string {
 }
 
 function IntegrationsBody() {
+	const { t } = useT();
 	const enabled = useSetting("remoteApi");
 	const key = useSetting("remoteApiKey");
+	const discordOptions = localizeOptions(DISCORD_PRESENCE_MODES, (k) =>
+		t(`settings.discord.${k}` as MessageKey),
+	);
 	return (
 		<>
-			<GroupHeading>Discord</GroupHeading>
+			<GroupHeading>{t("settings.group.discord")}</GroupHeading>
 			<SettingRow
-				label="Rich Presence"
-				control={<SettingSelect setting="discordPresence" options={DISCORD_PRESENCE_MODES} />}
+				label={t("settings.discordPresence")}
+				control={<SettingSelect setting="discordPresence" options={discordOptions} />}
 			/>
 
-			<GroupHeading>Remote API</GroupHeading>
+			<GroupHeading>{t("settings.group.remoteApi")}</GroupHeading>
 			<SettingRow
 				checked={enabled}
 				onChange={(v) => {
 					if (v && !key) setSetting("remoteApiKey", generateApiKey());
 					setSetting("remoteApi", v);
 				}}
-				label="Enable local REST API"
+				label={t("settings.remoteApi")}
 			/>
 			{enabled && (
 				<Aux match="api key regenerate remote token">
@@ -1052,7 +1151,9 @@ function IntegrationsBody() {
 							style={{ flex: 1 }}
 							onFocus={(e) => e.target.select()}
 						/>
-						<Button onClick={() => setSetting("remoteApiKey", generateApiKey())}>Regenerate</Button>
+						<Button onClick={() => setSetting("remoteApiKey", generateApiKey())}>
+							{t("common.regenerate")}
+						</Button>
 					</div>
 				</Aux>
 			)}
@@ -1061,6 +1162,7 @@ function IntegrationsBody() {
 }
 
 function DataBody() {
+	const { t } = useT();
 	const [loc, setLoc] = useState<DataLocation | null>(null);
 	// undefined = no dialog; string = chosen folder; null = reset to default.
 	const [pending, setPending] = useState<string | null | undefined>(undefined);
@@ -1074,9 +1176,9 @@ function DataBody() {
 	}, []);
 
 	const pick = useCallback(async () => {
-		const picked = await openDialog({ directory: true, title: "Choose data folder" });
+		const picked = await openDialog({ directory: true, title: t("settings.chooseDataFolder") });
 		if (typeof picked === "string") setPending(picked);
-	}, []);
+	}, [t]);
 
 	const apply = useCallback(async () => {
 		setBusy(true);
@@ -1085,10 +1187,10 @@ function DataBody() {
 			await relaunchApp();
 		} catch (e) {
 			log.error("data folder relaunch failed", e);
-			toast("Couldn't relaunch automatically -- restart the app to apply.");
+			toast(t("toast.relaunchFailed"));
 			setBusy(false);
 		}
-	}, [pending]);
+	}, [pending, t]);
 
 	const target = pending ?? loc?.default_path ?? "";
 
@@ -1098,27 +1200,26 @@ function DataBody() {
 				{loc?.path ?? "..."}
 			</code>
 			<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-				<Button onClick={pick}>Change folder...</Button>
-				<Button onClick={() => cmd.openDataFolder()}>Open data folder</Button>
-				{loc?.is_custom && <Button onClick={() => setPending(null)}>Reset to default</Button>}
+				<Button onClick={pick}>{t("settings.changeFolder")}</Button>
+				<Button onClick={() => cmd.openDataFolder()}>{t("settings.openDataFolder")}</Button>
+				{loc?.is_custom && (
+					<Button onClick={() => setPending(null)}>{t("common.resetToDefault")}</Button>
+				)}
 			</div>
 
 			<Dialog open={pending !== undefined} onOpenChange={(o) => !o && setPending(undefined)}>
-				<DialogContent title="Change data folder">
-					<p>Map data will be stored in:</p>
+				<DialogContent title={t("dialog.changeDataFolder")}>
+					<p>{t("settings.dataFolderPrompt")}</p>
 					<code style={{ display: "block", wordBreak: "break-all", margin: "8px 0" }}>
 						{target}
 					</code>
-					<p className="text-muted">
-						Existing maps are not moved automatically. Copy them from the current folder if you want
-						to keep them. The app must relaunch to apply.
-					</p>
+					<p className="text-muted">{t("settings.dataFolderWarning")}</p>
 					<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
 						<Button onClick={() => setPending(undefined)} disabled={busy}>
-							Cancel
+							{t("common.cancel")}
 						</Button>
 						<Button variant="primary" onClick={apply} disabled={busy}>
-							Relaunch now
+							{t("settings.relaunchNow")}
 						</Button>
 					</div>
 				</DialogContent>
@@ -1128,16 +1229,17 @@ function DataBody() {
 }
 
 function AdvancedBody() {
+	const { t } = useT();
 	return (
 		<>
-			<GroupHeading>Custom CSS</GroupHeading>
+			<GroupHeading>{t("settings.group.customCss")}</GroupHeading>
 			<CustomCssBlock />
 
-			<GroupHeading>Debug</GroupHeading>
-			<SettingRow setting="showFps" label="Show FPS counter" />
+			<GroupHeading>{t("settings.group.debug")}</GroupHeading>
+			<SettingRow setting="showFps" label={t("settings.showFps")} />
 			<Aux match="log file logs diagnostics">
 				<div style={{ display: "flex", gap: 8 }}>
-					<Button onClick={() => cmd.openLogFile()}>Open log file</Button>
+					<Button onClick={() => cmd.openLogFile()}>{t("settings.openLogFile")}</Button>
 				</div>
 			</Aux>
 		</>
@@ -1146,18 +1248,18 @@ function AdvancedBody() {
 
 type Section = {
 	id: string;
-	title: string;
+	titleKey: MessageKey;
 	Body: () => ReactNode;
 };
 
 const SECTIONS: Section[] = [
-	{ id: "keyboard", title: "Keyboard", Body: KeyboardBody },
-	{ id: "streetview", title: "Street View", Body: StreetViewBody },
-	{ id: "map", title: "Map", Body: MarkersBody },
-	{ id: "editing", title: "Editing", Body: EditingBody },
-	{ id: "application", title: "Application", Body: ApplicationBody },
-	{ id: "integrations", title: "Integrations", Body: IntegrationsBody },
-	{ id: "advanced", title: "Advanced", Body: AdvancedBody },
+	{ id: "keyboard", titleKey: "settings.section.keyboard", Body: KeyboardBody },
+	{ id: "streetview", titleKey: "settings.section.streetView", Body: StreetViewBody },
+	{ id: "map", titleKey: "settings.section.map", Body: MarkersBody },
+	{ id: "editing", titleKey: "settings.section.editing", Body: EditingBody },
+	{ id: "application", titleKey: "settings.section.application", Body: ApplicationBody },
+	{ id: "integrations", titleKey: "settings.section.integrations", Body: IntegrationsBody },
+	{ id: "advanced", titleKey: "settings.section.advanced", Body: AdvancedBody },
 ];
 
 function SectionShell({
@@ -1171,8 +1273,10 @@ function SectionShell({
 	query: string;
 	hidden?: boolean;
 }) {
+	const { t } = useT();
+	const title = t(section.titleKey);
 	const sectionMatched =
-		mode === "single" || query === "" || section.title.toLowerCase().includes(query);
+		mode === "single" || query === "" || title.toLowerCase().includes(query);
 	const Body = section.Body;
 	return (
 		<SettingsSearchContext.Provider value={{ query, searching: mode === "search", sectionMatched }}>
@@ -1182,7 +1286,7 @@ function SectionShell({
 				style={hidden ? { display: "none" } : undefined}
 			>
 				<div className="settings-section__head">
-					<h2 className="settings-section__title">{section.title}</h2>
+					<h2 className="settings-section__title">{title}</h2>
 				</div>
 				<Body />
 			</section>
@@ -1197,6 +1301,7 @@ export function SettingsPage({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
+	const { t } = useT();
 	const [selected, setSelected] = useState<string>(SECTIONS[0].id);
 	const [query, setQuery] = useState("");
 	const q = query.trim().toLowerCase();
@@ -1208,12 +1313,12 @@ export function SettingsPage({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Settings" className="settings-page">
+			<DialogContent title={t("dialog.settings")} className="settings-page">
 				<nav className="settings-rail">
 					<TextInput
 						type="text"
 						className="settings-rail__search"
-						placeholder="Search settings..."
+						placeholder={t("settings.searchPlaceholder")}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						onKeyDown={(e) => {
@@ -1235,7 +1340,7 @@ export function SettingsPage({
 									setQuery("");
 								}}
 							>
-								{s.title}
+								{t(s.titleKey)}
 							</button>
 						))}
 					</div>

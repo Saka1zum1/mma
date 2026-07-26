@@ -22,6 +22,7 @@ import { loadAndActivatePlugin, loadUserPlugin } from "@/plugins/index";
 import { cmd } from "@/lib/commands";
 import { listen } from "@tauri-apps/api/event";
 import { log } from "@/lib/util/log";
+import { useT, pluginCatalogName, pluginCatalogDescription } from "@/lib/i18n";
 
 const REGISTRY_URL = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins/registry.json";
 
@@ -131,24 +132,26 @@ interface PluginEntry {
 	requiresApp?: string;
 }
 
+import type { MessageKey } from "@/locales/en";
+
 /** Small hover-explained markers on a card. Each either derives from the loaded
  *  plugin's shape or from what the plugin declares about itself. */
 const CARD_LABELS: {
 	key: string;
 	icon: string;
-	tooltip: string;
+	tooltipKey: MessageKey;
 	applies: (entry: PluginEntry) => boolean;
 }[] = [
 	{
 		key: "experimental",
 		icon: mdiFlaskOutline,
-		tooltip: "Experimental",
+		tooltipKey: "plugins.experimental",
 		applies: (e) => !!e.experimental,
 	},
 	{
 		key: "enrichment",
 		icon: mdiAutoFix,
-		tooltip: "Enrichment only: adds data fields, no panel of its own",
+		tooltipKey: "plugins.enrichmentOnly",
 		applies: (e) => e.installed && isBackgroundPlugin(e.id),
 	},
 ];
@@ -174,6 +177,9 @@ function PluginCard({
 }: PluginCardProps) {
 	const { id, name, description, icon, core, installed, enabled, comingSoon, requiresApp } = entry;
 	const [busy, setBusy] = useState(false);
+	const { t } = useT();
+	const displayName = pluginCatalogName(id, name);
+	const displayDescription = pluginCatalogDescription(id, description);
 
 	const run = (fn: (id: string) => void | Promise<void>) => async () => {
 		setBusy(true);
@@ -191,16 +197,16 @@ function PluginCard({
 			<div className="plugin-card__icon">{icon ? <Icon path={icon} size={32} /> : null}</div>
 			<div className="plugin-card__info">
 				<div className="plugin-card__name">
-					{name}
+					{displayName}
 					{CARD_LABELS.filter((l) => l.applies(entry)).map((l) => (
-						<Tooltip key={l.key} content={l.tooltip}>
-							<span className="plugin-card__label" aria-label={l.tooltip}>
+						<Tooltip key={l.key} content={t(l.tooltipKey)}>
+							<span className="plugin-card__label" aria-label={t(l.tooltipKey)}>
 								<Icon path={l.icon} size={14} />
 							</span>
 						</Tooltip>
 					))}
 				</div>
-				{description && <div className="plugin-card__desc">{description}</div>}
+				{displayDescription && <div className="plugin-card__desc">{displayDescription}</div>}
 			</div>
 			{!comingSoon && (
 				<div className="plugin-card__actions">
@@ -212,8 +218,12 @@ function PluginCard({
 							className="plugin-card__action-btn plugin-card__action-btn--install"
 							onClick={run(onInstall)}
 							disabled={busy || !!requiresApp}
-							title={requiresApp ? `Requires app v${requiresApp} or newer` : "Install"}
-							aria-label="Install"
+							title={
+								requiresApp
+									? t("plugins.requiresApp", { version: requiresApp })
+									: t("common.install")
+							}
+							aria-label={t("common.install")}
 						>
 							<Icon path={mdiDownload} size={16} />
 						</button>
@@ -222,7 +232,7 @@ function PluginCard({
 							checked={enabled}
 							onChange={(next) => (next ? onEnable(id) : onDisable(id))}
 							disabled={busy}
-							label={enabled ? "Disable" : "Enable"}
+							label={enabled ? t("common.disable") : t("common.enable")}
 						/>
 					)}
 					{installed && !core && entry.updatable && (
@@ -232,12 +242,12 @@ function PluginCard({
 							disabled={busy || !!requiresApp}
 							title={
 								requiresApp
-									? `Update requires app v${requiresApp} or newer`
+									? t("plugins.updateRequiresApp", { version: requiresApp })
 									: entry.latestVersion
-										? `Update to v${entry.latestVersion}`
-										: "Update"
+										? t("plugins.updateTo", { version: entry.latestVersion })
+										: t("common.update")
 							}
-							aria-label="Update"
+							aria-label={t("common.update")}
 						>
 							<Icon path={mdiRefresh} size={16} />
 						</button>
@@ -247,8 +257,8 @@ function PluginCard({
 							className="plugin-card__action-btn plugin-card__action-btn--uninstall"
 							onClick={() => onUninstall(id)}
 							disabled={busy}
-							title="Uninstall"
-							aria-label="Uninstall"
+							title={t("common.uninstall")}
+							aria-label={t("common.uninstall")}
 						>
 							<Icon path={mdiTrashCanOutline} size={16} />
 						</button>
@@ -267,6 +277,7 @@ export function PluginMarketplace({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
+	const { t } = useT();
 	const [tab, setTab] = useState<Tab>("core");
 	const [registry, setRegistry] = useState<RegistryEntry[] | null>(registryCache);
 	const [fetchError, setFetchError] = useState<string | null>(null);
@@ -468,19 +479,19 @@ export function PluginMarketplace({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Plugins" className="plugin-marketplace">
+			<DialogContent title={t("dialog.plugins")} className="plugin-marketplace">
 				<div className="plugin-marketplace__tabs">
 					<button
 						className={`plugin-marketplace__tab ${tab === "core" ? "plugin-marketplace__tab--active" : ""}`}
 						onClick={() => setTab("core")}
 					>
-						Core
+						{t("plugins.core")}
 					</button>
 					<button
 						className={`plugin-marketplace__tab ${tab === "additional" ? "plugin-marketplace__tab--active" : ""}`}
 						onClick={() => setTab("additional")}
 					>
-						Additional
+						{t("plugins.additional")}
 					</button>
 				</div>
 
@@ -532,7 +543,7 @@ export function PluginMarketplace({
 							/>
 						))}
 						{registry && installedEntries.length === 0 && registryEntries.length === 0 && (
-							<div className="plugin-marketplace__empty">No additional plugins available.</div>
+							<div className="plugin-marketplace__empty">{t("plugins.emptyAdditional")}</div>
 						)}
 					</div>
 				)}

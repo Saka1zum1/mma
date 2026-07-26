@@ -11,22 +11,16 @@ import {
 	renameReview,
 } from "@/lib/review/review";
 import type { ReviewSession } from "@/bindings.gen";
+import { useT } from "@/lib/i18n";
+import { relativeTime } from "@/lib/util/format";
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
 	const d = new Date(iso);
-	return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function formatRelative(iso: string): string {
-	const diff = Date.now() - new Date(iso).getTime();
-	const mins = Math.floor(diff / 60_000);
-	if (mins < 1) return "just now";
-	if (mins < 60) return `${mins}m ago`;
-	const hrs = Math.floor(mins / 60);
-	if (hrs < 24) return `${hrs}h ago`;
-	const days = Math.floor(hrs / 24);
-	if (days < 30) return `${days}d ago`;
-	return formatDate(iso);
+	return d.toLocaleDateString(locale === "zh-Hans" ? "zh-CN" : undefined, {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
 }
 
 export function ReviewSessionsModal({
@@ -36,6 +30,7 @@ export function ReviewSessionsModal({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
+	const { t, locale } = useT();
 	const [filter, setFilter] = useState<"active" | "done">("active");
 	const [sessions, setSessions] = useState<ReviewSession[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -62,7 +57,7 @@ export function ReviewSessionsModal({
 	};
 
 	const handleDelete = async (id: string) => {
-		setSessions((prev) => prev.filter((s) => s.id !== id)); // drop in place
+		setSessions((prev) => prev.filter((s) => s.id !== id));
 		await deleteSession(id);
 	};
 
@@ -82,33 +77,33 @@ export function ReviewSessionsModal({
 		const name = draft.trim();
 		setEditingId(null);
 		if (!id || !name) return;
-		setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s))); // patch in place
+		setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
 		await renameReview(id, name);
 	};
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title="Review sessions" className="review-sessions-modal">
+			<DialogContent title={t("dialog.reviewSessions")} className="review-sessions-modal">
 				<div className="review-sessions__tabs">
 					<button
 						className={`review-sessions__tab${filter === "active" ? " is-active" : ""}`}
 						onClick={() => setFilter("active")}
 					>
-						In progress
+						{t("review.inProgress")}
 					</button>
 					<button
 						className={`review-sessions__tab${filter === "done" ? " is-active" : ""}`}
 						onClick={() => setFilter("done")}
 					>
-						Completed
+						{t("review.completed")}
 					</button>
 				</div>
 
 				{loading ? (
-					<p className="review-sessions__empty">Loading...</p>
+					<p className="review-sessions__empty">{t("common.loading")}</p>
 				) : sessions.length === 0 ? (
 					<p className="review-sessions__empty">
-						{filter === "active" ? "No reviews in progress." : "No completed reviews."}
+						{filter === "active" ? t("review.noActive") : t("review.noCompleted")}
 					</p>
 				) : (
 					<ul className="review-sessions__list">
@@ -148,21 +143,25 @@ export function ReviewSessionsModal({
 										) : (
 											<div
 												className="review-sessions__name"
-												title="Click to rename"
+												title={t("review.clickToRename")}
 												onClick={() => startEdit(s)}
 											>
-												{s.name || "Review"}
+												{s.name || t("review.defaultName")}
 											</div>
 										)}
 										<div className="review-sessions__meta">
 											<span>
-												{s.reviewed.length} / {s.order.length} reviewed ({pct}%)
+												{t("review.reviewedProgress", {
+													reviewed: s.reviewed.length,
+													total: s.order.length,
+													pct,
+												})}
 											</span>
 											<span title={new Date(s.createdAt).toLocaleString()}>
-												Started {formatDate(s.createdAt)}
+												{t("review.started", { date: formatDate(s.createdAt, locale) })}
 											</span>
 											<span title={new Date(s.updatedAt).toLocaleString()}>
-												Updated {formatRelative(s.updatedAt)}
+												{t("review.updated", { time: relativeTime(s.updatedAt) })}
 											</span>
 										</div>
 										<div className="review-sessions__bar">
@@ -172,8 +171,8 @@ export function ReviewSessionsModal({
 									<div className="review-sessions__actions">
 										<button
 											className="icon-button"
-											title="Select reviewed"
-											aria-label="Select reviewed"
+											title={t("review.selectReviewed")}
+											aria-label={t("review.selectReviewed")}
 											onClick={() => handleSelect(s, "reviewed")}
 											data-qa="review-select-reviewed"
 										>
@@ -181,8 +180,8 @@ export function ReviewSessionsModal({
 										</button>
 										<button
 											className="icon-button"
-											title="Select unreviewed"
-											aria-label="Select unreviewed"
+											title={t("review.selectUnreviewed")}
+											aria-label={t("review.selectUnreviewed")}
 											onClick={() => handleSelect(s, "unreviewed")}
 											data-qa="review-select-unreviewed"
 										>
@@ -196,13 +195,13 @@ export function ReviewSessionsModal({
 												data-qa="review-resume"
 											>
 												<Icon path={mdiPlay} size={16} />
-												Resume
+												{t("review.resume")}
 											</Button>
 										)}
 										<button
 											className="icon-button review-sessions__delete"
-											title="Delete session"
-											aria-label="Delete session"
+											title={t("review.deleteSession")}
+											aria-label={t("review.deleteSession")}
 											onClick={() => handleDelete(s.id)}
 											data-qa="review-session-delete"
 										>

@@ -9,14 +9,15 @@ import { Button } from "@/components/primitives/Button";
 import { useMapSetting } from "@/store/useMapSetting";
 import { getMapCopyBindingKey, withMapCopyBinding } from "@/lib/map/mapKeyBindings";
 import { getMapState } from "@/store/useMapStore";
+import { useT } from "@/lib/i18n";
 
 /** Assign per-map hotkeys that copy the active location into other maps.
  *  Shows only configured maps; new targets are added via autocomplete (type a
  *  map name), then keyed. Bindings persist to this map's settings as changed. */
 export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
+	const { t } = useT();
 	const [maps, setMaps] = useState<MapMeta[] | null>(null);
 	const [bindings, setBindings] = useMapSetting("keyBindings");
-	// Added via autocomplete but not yet keyed; persisted only once a key is recorded.
 	const [pendingIds, setPendingIds] = useState<string[]>([]);
 	const [query, setQuery] = useState("");
 
@@ -66,7 +67,6 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 		if (combo) {
 			setPendingIds((prev) => prev.filter((p) => p !== id));
 		} else if (!pendingIds.includes(id)) {
-			// Cleared via Backspace: keep the row visible, just unkeyed.
 			setPendingIds((prev) => [...prev, id]);
 		}
 	};
@@ -78,12 +78,9 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 				if (!open) onClose();
 			}}
 		>
-			<DialogContent title="Copy location to map (hotkeys)" className="copy-to-map-modal-host">
+			<DialogContent title={t("dialog.copyLocationToMapHotkeys")} className="copy-to-map-modal-host">
 				<div className="copy-to-map-modal">
-					<p className="copy-to-map-modal__hint">
-						Pressing an assigned key while a location is open copies that location into the map
-						(duplicates are skipped).
-					</p>
+					<p className="copy-to-map-modal__hint">{t("copyToMap.hint")}</p>
 					{rowIds.length > 0 && (
 						<ul className="copy-to-map-modal__list">
 							{rowIds.map((id) => {
@@ -92,11 +89,11 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 								return (
 									<li key={id} className="copy-to-map-modal__row">
 										<span className="copy-to-map-modal__name">
-											{meta ? meta.name || "(unnamed)" : "(missing map)"}
+											{meta ? meta.name || t("copyToMap.unnamed") : t("copyToMap.missingMap")}
 											{meta?.folder && <small> · {meta.folder}</small>}
 										</span>
 										<HotkeyInput value={key} onChange={(combo) => setRowKey(id, combo)} />
-										<Button onClick={() => removeRow(id)}>Remove</Button>
+										<Button onClick={() => removeRow(id)}>{t("common.remove")}</Button>
 									</li>
 								);
 							})}
@@ -104,7 +101,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 					)}
 					<SuggestInput
 						containerClassName="copy-to-map-modal__add"
-						placeholder="Add a map..."
+						placeholder={t("copyToMap.addMapPlaceholder")}
 						value={query}
 						onChange={setQuery}
 						suggestions={suggestions}
@@ -114,7 +111,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 						autoFocus
 						renderItem={(m) => (
 							<>
-								<strong>{m.name || "(unnamed)"}</strong>
+								<strong>{m.name || t("copyToMap.unnamed")}</strong>
 								{m.folder && <span className="search-result__context"> · {m.folder}</span>}
 							</>
 						)}

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiArrowLeft, mdiChevronDown, mdiChevronRight } from "@mdi/js";
+import { useT } from "@/lib/i18n";
 /** Standard right-hand sidebar chrome (title, back button, scrollable body). Use for plugin sidebars. */
 export function Sidebar({
 	title,
@@ -17,11 +18,12 @@ export function Sidebar({
 	flush?: boolean;
 	children: ReactNode;
 }) {
+	const { t } = useT();
 	return (
 		<section className={`map-sidebar plugin-sidebar${className ? ` ${className}` : ""}`}>
 			<header className="plugin-sidebar__header">
 				{onBack && (
-					<button className="icon-button" type="button" aria-label="Back" onClick={onBack}>
+					<button className="icon-button" type="button" aria-label={t("common.back")} onClick={onBack}>
 						<Icon path={mdiArrowLeft} />
 					</button>
 				)}

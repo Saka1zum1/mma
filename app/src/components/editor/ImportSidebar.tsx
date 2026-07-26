@@ -9,6 +9,7 @@ import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
+import { useT } from "@/lib/i18n";
 
 const FIELD_PREFS_KEY = "import-field-prefs";
 const AUTOCOMMIT_ACK_KEY = "import-autocommit-ack";
@@ -36,6 +37,7 @@ function previewColor(name: string): string {
 
 /** Import staging sidebar: field picker, file tags, bulk tag, and warnings. */
 export function ImportSidebar() {
+	const { t, tp } = useT();
 	const staging = useEventValue("store:changed", getImportStaging);
 	const visibleTags = useMapState(getVisibleTags);
 	const [droppedFields, setDroppedFields] = useState(loadDroppedFields);
@@ -67,7 +69,6 @@ export function ImportSidebar() {
 		setTagInput("");
 	};
 
-	// Large imports autocommit (not undoable) -- warn first unless the user opted out.
 	const requestImport = () => {
 		if (preview.willAutoCommit && !autoCommitAcked()) {
 			setConfirmAutoCommit(true);
@@ -85,10 +86,10 @@ export function ImportSidebar() {
 	const handleImport = async () => {
 		setImporting(true);
 		setError(null);
-		const t = trace("import");
+		const traceId = trace("import");
 		try {
 			const r = await confirmImport([...droppedFields], bulkTag ?? undefined);
-			t.end({ imported: r?.importedCount ?? 0 });
+			traceId.end({ imported: r?.importedCount ?? 0 });
 		} catch (e: unknown) {
 			log.error("[import] failed:", e);
 			setError(e instanceof Error ? e.message : String(e));
@@ -98,28 +99,30 @@ export function ImportSidebar() {
 
 	const sortedFields = [...preview.fields].sort((a, b) => a.key.localeCompare(b.key));
 
-	// Reuse an existing tag's color if the name matches; else a placeholder.
 	const existing = bulkTag
-		? visibleTags.find((t) => t.name.toLowerCase() === bulkTag.toLowerCase())
+		? visibleTags.find((tag) => tag.name.toLowerCase() === bulkTag.toLowerCase())
 		: undefined;
 	const bulkColor = existing?.color ?? (bulkTag ? previewColor(bulkTag) : "");
 
 	return (
 		<section className="importer import-sidebar">
 			<header className="import-sidebar__header">
-				<h2 className="import-sidebar__title">Import</h2>
+				<h2 className="import-sidebar__title">{t("import.title")}</h2>
 				<span className="import-sidebar__count">
-					<span className="mono">{fmt.format(preview.locationCount)}</span> location
-					{preview.locationCount !== 1 ? "s" : ""}
+					<span className="mono">
+						{tp("import.locationCount", preview.locationCount, {
+							count: fmt.format(preview.locationCount),
+						})}
+					</span>
 				</span>
 			</header>
 
 			{preview.tags.length > 0 && (
 				<div className="import-sidebar__section">
-					<span className="import-sidebar__label">Tags in file</span>
+					<span className="import-sidebar__label">{t("import.tagsInFile")}</span>
 					<ul className="tag-list">
-						{preview.tags.map((t) => (
-							<TagPill as="li" key={t.id} small color={t.color} label={t.name} />
+						{preview.tags.map((tag) => (
+							<TagPill as="li" key={tag.id} small color={tag.color} label={tag.name} />
 						))}
 					</ul>
 				</div>
@@ -127,7 +130,7 @@ export function ImportSidebar() {
 
 			{sortedFields.length > 0 && (
 				<div className="import-sidebar__section">
-					<span className="import-sidebar__label">Fields</span>
+					<span className="import-sidebar__label">{t("import.fields")}</span>
 					<div className="importer__fields">
 						{sortedFields.map((f) => (
 							<label key={f.key} className="importer__field">
@@ -141,7 +144,7 @@ export function ImportSidebar() {
 			)}
 
 			<div className="import-sidebar__section">
-				<span className="import-sidebar__label">Tag all imported locations</span>
+				<span className="import-sidebar__label">{t("import.tagAllImported")}</span>
 				<ul className="tag-list">
 					{bulkTag ? (
 						<TagPill
@@ -157,7 +160,7 @@ export function ImportSidebar() {
 								<input
 									className="form-add-tag__input"
 									type="text"
-									placeholder="Add a tag…"
+									placeholder={t("import.addTagPlaceholder")}
 									value={tagInput}
 									onChange={(e) => setTagInput(e.target.value)}
 								/>
@@ -169,7 +172,11 @@ export function ImportSidebar() {
 
 			{preview.warnings.length > 0 && (
 				<details className="import-sidebar__section">
-					<summary>{preview.warnings.length} warning(s)</summary>
+					<summary>
+						{tp("import.warnings", preview.warnings.length, {
+							count: fmt.format(preview.warnings.length),
+						})}
+					</summary>
 					<ul>
 						{preview.warnings.map((w, i) => (
 							<li key={i}>{w}</li>
@@ -178,36 +185,36 @@ export function ImportSidebar() {
 				</details>
 			)}
 
-			{error && <p className="importer__error">Error: {error}</p>}
+			{error && <p className="importer__error">{t("import.error", { message: error })}</p>}
 
 			<div className="import-sidebar__actions">
 				<Button variant="primary" onClick={requestImport} disabled={importing}>
-					{importing ? "Importing…" : "Import"}
+					{importing ? t("import.importing") : t("common.import")}
 				</Button>
 				<Button onClick={cancelImport} disabled={importing}>
-					Discard
+					{t("import.discard")}
 				</Button>
 			</div>
 
 			<Dialog open={confirmAutoCommit} onOpenChange={setConfirmAutoCommit}>
-				<DialogContent title="Large import">
+				<DialogContent title={t("dialog.largeImport")}>
 					<p>
-						This import has {fmt.format(preview.locationCount)} locations, which is too many to keep
-						as an undoable change. It will be committed automatically and cannot be undone
-						afterward. You can still restore it later from history.
+						{t("import.largeImportBody", {
+							count: fmt.format(preview.locationCount),
+						})}
 					</p>
 					<label className="import-sidebar__ack">
 						<Checkbox
 							checked={dontWarnAgain}
 							onChange={(e) => setDontWarnAgain(e.target.checked)}
 						/>
-						Don't warn me again
+						{t("import.dontWarnAgain")}
 					</label>
 					<div className="import-sidebar__actions">
 						<Button variant="primary" onClick={proceedAutoCommit}>
-							Import and commit
+							{t("import.importAndCommit")}
 						</Button>
-						<Button onClick={() => setConfirmAutoCommit(false)}>Cancel</Button>
+						<Button onClick={() => setConfirmAutoCommit(false)}>{t("common.cancel")}</Button>
 					</div>
 				</DialogContent>
 			</Dialog>

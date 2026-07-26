@@ -18,6 +18,7 @@ import {
 	getVisibleTags,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
+import { useT } from "@/lib/i18n";
 import { downloadBlob } from "@/lib/util/util";
 import { stepFilterWindow } from "@/lib/data/fieldOps";
 import { cmd } from "@/lib/commands";
@@ -124,6 +125,7 @@ export const SelectionRow = memo(function SelectionRow({
 	parentKey?: string | null;
 	inheritedGhost?: boolean;
 }) {
+	const { t, tp } = useT();
 	const map = useMapState((s) => s.map);
 	const tagColor = useMapState((s) => {
 		const i = innerOf(selection);
@@ -189,7 +191,7 @@ export const SelectionRow = memo(function SelectionRow({
 	const handleRename = () => {
 		if (selection.props.type !== "Polygon") return;
 		const current = selection.props.polygon.properties?.name ?? "";
-		const next = window.prompt("Polygon name", current);
+		const next = window.prompt(t("editor.polygonNamePrompt"), current);
 		if (next != null) setPolygonName(selection.key, next);
 	};
 
@@ -328,7 +330,7 @@ export const SelectionRow = memo(function SelectionRow({
 					{selectionDisplayName(selection)}
 				</span>
 				{isDropTarget && dropZone === "on" && (
-					<span className="selection-row__drop-hint">{drag?.altKey ? "OR" : "AND"}</span>
+					<span className="selection-row__drop-hint">{drag?.altKey ? t("editor.dropHintOr") : t("editor.dropHintAnd")}</span>
 				)}
 				<span className="selection-row__size mono">{fmt.format(count)}</span>
 				<span className="selection-row__actions">
@@ -337,7 +339,7 @@ export const SelectionRow = memo(function SelectionRow({
 							<button
 								className="icon-button"
 								type="button"
-								aria-label="Previous period"
+								aria-label={t("editor.previousPeriod")}
 								onClick={() => stepFilter(-1)}
 							>
 								<Icon path={mdiChevronLeft} size={18} />
@@ -345,7 +347,7 @@ export const SelectionRow = memo(function SelectionRow({
 							<button
 								className="icon-button"
 								type="button"
-								aria-label="Next period"
+								aria-label={t("editor.nextPeriod")}
 								onClick={() => stepFilter(1)}
 							>
 								<Icon path={mdiChevronRight} size={18} />
@@ -355,7 +357,7 @@ export const SelectionRow = memo(function SelectionRow({
 					<Menu.Root onOpenChange={(open) => !open && setView("contextmenu")}>
 						<Menu.Trigger
 							render={
-								<button className="icon-button" type="button" aria-label="Selection options">
+								<button className="icon-button" type="button" aria-label={t("editor.selectionOptions")}>
 									<Icon path={mdiDotsVertical} />
 								</button>
 							}
@@ -380,14 +382,14 @@ export const SelectionRow = memo(function SelectionRow({
 												className="context-menu__item"
 												onClick={() => selectInverse([selection.key])}
 											>
-												Invert selection
+												{t("editor.invertSelection")}
 											</Menu.Item>
 											{selection.props.type === "Filter" && (
 												<Menu.Item
 													className="context-menu__item"
 													onClick={() => setEditingFilter(true)}
 												>
-													Edit filter
+													{t("editor.editFilter")}
 												</Menu.Item>
 											)}
 											<Menu.Item
@@ -398,7 +400,7 @@ export const SelectionRow = memo(function SelectionRow({
 													beginReview(ids, selection);
 												}}
 											>
-												Review selection
+												{t("editor.reviewSelection")}
 											</Menu.Item>
 											{selection.props.type !== "Tag" && (
 												<Menu.Item
@@ -410,7 +412,7 @@ export const SelectionRow = memo(function SelectionRow({
 														setSavingTag(true);
 													}}
 												>
-													Save as tag
+													{t("editor.saveAsTag")}
 												</Menu.Item>
 											)}
 											{pruneDistance(selection) != null && (
@@ -422,10 +424,10 @@ export const SelectionRow = memo(function SelectionRow({
 															selection.props,
 															pruneDistance(selection)!,
 														);
-														toast(`Pruned ${fmt.format(n)} duplicate${n === 1 ? "" : "s"}`);
+														toast(tp("toast.prunedDuplicates", n, { count: fmt.format(n) }));
 													}}
 												>
-													Prune duplicates
+													{t("editor.pruneDuplicates")}
 												</Menu.Item>
 											)}
 											{selection.props.type !== "Tag" && (
@@ -434,23 +436,23 @@ export const SelectionRow = memo(function SelectionRow({
 													closeOnClick={false}
 													onClick={() => setView("color")}
 												>
-													Change color
+													{t("editor.changeColor")}
 												</Menu.Item>
 											)}
 											{isPoly && (
 												<>
 													<Menu.Separator className="context-menu__separator" />
 													<Menu.Item className="context-menu__item" onClick={handleDownloadGeoJSON}>
-														Download GeoJSON
+														{t("editor.downloadGeoJSON")}
 													</Menu.Item>
 													<Menu.Item className="context-menu__item" onClick={handleRename}>
-														Rename
+														{t("common.rename")}
 													</Menu.Item>
 												</>
 											)}
 											<Menu.Separator className="context-menu__separator" />
 											<Menu.Item className="context-menu__item" onClick={onRemove}>
-												Deselect
+												{t("editor.deselect")}
 											</Menu.Item>
 										</>
 									)}
@@ -462,8 +464,8 @@ export const SelectionRow = memo(function SelectionRow({
 						<button
 							className="icon-button"
 							type="button"
-							aria-label={ghosted ? "Un-ghost selection" : "Ghost selection"}
-							title="Ghost selection (Alt-click to isolate)"
+							aria-label={ghosted ? t("editor.unGhostSelection") : t("editor.ghostSelection")}
+							title={t("editor.ghostSelectionHint")}
 							onClick={(e) =>
 								e.altKey ? isolateSelection(selection.key) : toggleGhostSelection(selection.key)
 							}
@@ -471,7 +473,7 @@ export const SelectionRow = memo(function SelectionRow({
 							<Icon path={ghosted ? mdiGhost : mdiGhostOutline} />
 						</button>
 					)}
-					<button className="icon-button" type="button" onClick={onRemove} aria-label="Deselect">
+					<button className="icon-button" type="button" onClick={onRemove} aria-label={t("editor.deselect")}>
 						<Icon path={mdiClose} />
 					</button>
 				</span>
@@ -479,7 +481,7 @@ export const SelectionRow = memo(function SelectionRow({
 			{editingFilter && selection.props.type === "Filter" && (
 				<FilterForm
 					initial={filterPropsToSeed(selection.props)}
-					submitLabel="Update filter"
+					submitLabel={t("editor.updateFilter")}
 					onSubmit={(field, op, value, value2, tzLocal) =>
 						updateFilterSelection(selection.key, {
 							type: "Filter",
@@ -500,7 +502,7 @@ export const SelectionRow = memo(function SelectionRow({
 					if (!v) setTagName("");
 				}}
 			>
-				<DialogContent title="Save selection as tag">
+				<DialogContent title={t("dialog.saveSelectionAsTag")}>
 					<form
 						onSubmit={(e) => {
 							e.preventDefault();
@@ -512,7 +514,7 @@ export const SelectionRow = memo(function SelectionRow({
 							value={tagName}
 							onChange={(e) => setTagName(e.target.value)}
 							onFocus={(e) => e.currentTarget.select()}
-							placeholder="Tag name..."
+							placeholder={t("editor.tagNamePlaceholder")}
 							autoFocus
 						/>
 						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
@@ -522,10 +524,10 @@ export const SelectionRow = memo(function SelectionRow({
 									setTagName("");
 								}}
 							>
-								Cancel
+								{t("common.cancel")}
 							</Button>
 							<Button variant="primary" type="submit" disabled={!tagName.trim()}>
-								Create tag
+								{t("editor.createTag")}
 							</Button>
 						</div>
 					</form>

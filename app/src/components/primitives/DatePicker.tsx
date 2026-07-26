@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/primitives/Checkbox";
 import { mdiClose } from "@mdi/js";
 import { dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { MONTHS, parseTypedDate } from "@/lib/util/date";
+import { useT } from "@/lib/i18n";
 
 interface DatePickerProps {
 	mode: "date" | "month";
@@ -188,6 +189,7 @@ export function DatePicker({
 	onYearSelect,
 	wallClock,
 }: DatePickerProps) {
+	const { t } = useT();
 	const [open, setOpen] = useState(false);
 	// Hand-typed text while the trigger input is being edited; null = displaying.
 	const [draft, setDraft] = useState<string | null>(null);
@@ -397,7 +399,7 @@ export function DatePicker({
 							{showTime && !anyYear && (
 								<div className="date-picker__time">
 									<label>
-										Time:
+										{t("datePicker.time")}
 										<input
 											type="time"
 											value={time}
@@ -407,7 +409,7 @@ export function DatePicker({
 									<button
 										type="button"
 										className="date-picker__time-clear"
-										title="Clear time (whole day)"
+										title={t("datePicker.clearTime")}
 										disabled={!time || time === "00:00"}
 										onClick={() => handleTimeChange("")}
 									>

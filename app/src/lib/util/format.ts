@@ -1,21 +1,47 @@
+import { subscribe } from "@/lib/events";
+import { getLocale, t, toBcp47 } from "@/lib/i18n";
+
 export const APP_NAME = "Map Making App";
 
-export const fmt = new Intl.NumberFormat("en");
-export const dateFmt = new Intl.DateTimeFormat("en-US", {
+function localeTag() {
+	return toBcp47(getLocale());
+}
+
+export let fmt = new Intl.NumberFormat("en");
+export let dateFmt = new Intl.DateTimeFormat("en-US", {
 	year: "numeric",
 	month: "short",
 });
-export const shortDateFmt = new Intl.DateTimeFormat("en-US", {
+export let shortDateFmt = new Intl.DateTimeFormat("en-US", {
 	month: "short",
 	day: "numeric",
 	year: "numeric",
 });
 /** Day-level date like "21 May 2021" (alt pano providers / historical pickers). */
-export const panoDayFmt = new Intl.DateTimeFormat("en-GB", {
+export let panoDayFmt = new Intl.DateTimeFormat("en-GB", {
 	day: "numeric",
 	month: "short",
 	year: "numeric",
 });
+
+function refreshFormatters() {
+	const tag = localeTag();
+	fmt = new Intl.NumberFormat(tag);
+	dateFmt = new Intl.DateTimeFormat(tag, { year: "numeric", month: "short" });
+	shortDateFmt = new Intl.DateTimeFormat(tag, {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+	panoDayFmt = new Intl.DateTimeFormat(tag === "en" ? "en-GB" : tag, {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+	});
+}
+
+refreshFormatters();
+subscribe("locale:changed", refreshFormatters);
 
 /** Location timestamps are Unix seconds; JS Date wants milliseconds. */
 export function locDate(secs: number): Date {
@@ -48,9 +74,9 @@ const DAY = 86_400_000;
 export function relativeTime(time: string | number): string {
 	const ms = typeof time === "number" ? time * 1000 : new Date(time).getTime();
 	const delta = Date.now() - ms;
-	if (delta < MINUTE) return "just now";
-	if (delta < HOUR) return `${Math.floor(delta / MINUTE)}m ago`;
-	if (delta < DAY) return `${Math.floor(delta / HOUR)}h ago`;
-	if (delta < 30 * DAY) return `${Math.floor(delta / DAY)}d ago`;
+	if (delta < MINUTE) return t("time.justNow");
+	if (delta < HOUR) return t("time.minutesAgo", { count: Math.floor(delta / MINUTE) });
+	if (delta < DAY) return t("time.hoursAgo", { count: Math.floor(delta / HOUR) });
+	if (delta < 30 * DAY) return t("time.daysAgo", { count: Math.floor(delta / DAY) });
 	return shortDateFmt.format(new Date(ms));
 }

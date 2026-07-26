@@ -1,4 +1,5 @@
 import { emit as emitEvent, useEventValue } from "@/lib/events";
+import { isAppLocale, type AppLocale } from "@/lib/i18n/types";
 import type { SavedSelection } from "./savedSelections";
 import type { TagSortMode } from "@/types";
 import type { PinnedEntry } from "./commandDefs";
@@ -199,6 +200,8 @@ const DEFAULTS = {
 		"bulk-enrich",
 	] as PinnedEntry[],
 	hasSeenWelcome: false,
+	/** UI language (`en`, `zh-Hans`, …). Catalogs live under `src/locales/`. */
+	language: "en" as AppLocale,
 };
 export type AppSettings = typeof DEFAULTS;
 
@@ -215,6 +218,7 @@ try {
 	const stored = localStorage.getItem(STORAGE_KEY);
 	if (stored) {
 		settings = { ...DEFAULTS, ...JSON.parse(stored) };
+		if (!isAppLocale(settings.language)) settings.language = DEFAULTS.language;
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 	}
 } catch {

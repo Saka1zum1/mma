@@ -13,6 +13,8 @@ import { getBinding, useBinding } from "@/lib/util/hotkeys";
 import { getMapState, closeMap } from "@/store/useMapStore";
 import { useMapList } from "@/store/mapList";
 import { goToMap } from "@/store/router";
+import { commandLabel, useT } from "@/lib/i18n";
+import type { MessageKey } from "@/locales/en";
 
 interface PaletteContext {
 	close: () => void;
@@ -41,6 +43,7 @@ function PaletteItem({
 	pinned?: boolean;
 	keywords?: string[];
 }) {
+	const { t } = useT();
 	const ctx = useContext(Ctx);
 	const handleSelect = useCallback(() => {
 		try {
@@ -72,7 +75,7 @@ function PaletteItem({
 			{commandId && (
 				<button
 					className="command-palette__pin"
-					title={pinned ? "Unpin from toolbar" : "Pin to toolbar"}
+					title={pinned ? t("editor.unpinFromToolbar") : t("editor.pinToToolbar")}
 					onPointerDown={(e) => {
 						e.preventDefault();
 						e.stopPropagation();
@@ -102,24 +105,31 @@ function formatBinding(binding: string): string {
 		.replace("ArrowDown", "↓");
 }
 
-const COMMAND_GROUPS: CommandGroup[] = ["Map", "Bulk Operations", "Selections", "Tags"];
+const COMMAND_GROUP_KEYS: Record<CommandGroup, MessageKey> = {
+	Map: "editor.commandGroupMap",
+	"Bulk Operations": "editor.commandGroupBulk",
+	Selections: "editor.commandGroupSelections",
+	Tags: "editor.commandGroupTags",
+};
 
 function MainCommands() {
+	const { t } = useT();
 	const ctx = useContext(Ctx);
 	const commands = getCommands();
 	const pinnedSet = new Set(useSetting("pinnedCommands"));
+	const groups = Object.keys(COMMAND_GROUP_KEYS) as CommandGroup[];
 
 	return (
 		<>
-			{COMMAND_GROUPS.map((group) => {
+			{groups.map((group) => {
 				const groupCmds = commands.filter((c) => c.group === group);
 				if (groupCmds.length === 0) return null;
 				return (
-					<Command.Group key={group} heading={group}>
+					<Command.Group key={group} heading={t(COMMAND_GROUP_KEYS[group])}>
 						{groupCmds.map((cmd) => (
 							<PaletteItem
 								key={cmd.id}
-								label={cmd.label}
+								label={commandLabel(cmd.id)}
 								icon={cmd.icon ? <Icon path={cmd.icon} size={18} /> : undefined}
 								onSelect={cmd.execute}
 								disabled={cmd.enabled ? !cmd.enabled() : false}
@@ -131,7 +141,7 @@ function MainCommands() {
 						))}
 						{group === "Map" && (
 							<PaletteItem
-								label="Open map..."
+								label={t("editor.openMap")}
 								onSelect={() => ctx.setPage("maps")}
 								closeOnSelect={false}
 							/>
@@ -144,21 +154,22 @@ function MainCommands() {
 }
 
 function MapSwitcher() {
+	const { t } = useT();
 	const ctx = useContext(Ctx);
 	const maps = useMapList();
 	const currentId = getMapState().mapId;
 	const others = maps.filter((m) => m.id !== currentId);
 
 	return (
-		<Command.Group heading="Switch map">
+		<Command.Group heading={t("editor.switchMap")}>
 			<PaletteItem
-				label="Back"
+				label={t("common.back")}
 				onSelect={() => ctx.setPage(null)}
 				icon={<UndoIcon />}
 				closeOnSelect={false}
 			/>
 			{others.length === 0 ? (
-				<Command.Empty>No other maps.</Command.Empty>
+				<Command.Empty>{t("editor.noOtherMaps")}</Command.Empty>
 			) : (
 				others.map((m) => (
 					<PaletteItem
@@ -173,6 +184,7 @@ function MapSwitcher() {
 }
 
 function PaletteContent({ onChangeOpen }: { onChangeOpen: (v: boolean) => void }) {
+	const { t } = useT();
 	const [inputValue, setInputValue] = useState("");
 	const [page, setPage] = useState<string | null>(null);
 
@@ -203,7 +215,7 @@ function PaletteContent({ onChangeOpen }: { onChangeOpen: (v: boolean) => void }
 					value={inputValue}
 					onValueChange={setInputValue}
 					autoFocus
-					placeholder="Type command"
+					placeholder={t("editor.typeCommand")}
 					className="command-palette__input"
 				/>
 				<Command.List className="command-palette__scroll">
@@ -217,6 +229,7 @@ function PaletteContent({ onChangeOpen }: { onChangeOpen: (v: boolean) => void }
 }
 
 export function CommandPalette() {
+	const { t } = useT();
 	const [open, setOpen] = useState(false);
 	const [bulkOp, setBulkOp] = useState<BulkOperation | null>(null);
 	useHotkey(useBinding("openCommandPalette"), () => setOpen((v) => !v));
@@ -232,7 +245,7 @@ export function CommandPalette() {
 					<RadixDialog.Overlay className="modal__backdrop" />
 					<RadixDialog.Content className="modal command-palette" aria-describedby={undefined}>
 						<VisuallyHidden.Root>
-							<RadixDialog.Title>Command Palette</RadixDialog.Title>
+							<RadixDialog.Title>{t("editor.commandPalette")}</RadixDialog.Title>
 						</VisuallyHidden.Root>
 						<PaletteContent onChangeOpen={setOpen} />
 					</RadixDialog.Content>
