@@ -40,6 +40,7 @@ fn patch() -> LocationPatch {
         pitch: None,
         zoom: None,
         pano_id: None,
+        provider: None,
         flags: None,
         tags: None,
         extra: None,

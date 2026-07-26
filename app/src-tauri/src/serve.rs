@@ -5,7 +5,7 @@
 //!
 //! Gate: `--features web-serve`. Entry: the `mma-serve` bin.
 
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_webserve::{register_scheme, SchemeRequest, SchemeResponse};
 
 use crate::{location_store, storage};
@@ -102,6 +102,18 @@ fn register_web_schemes() {
             &url,
             ct,
             req.user_agent,
+            req.body,
+        ))
+    });
+    register_scheme("ggapi", |req: SchemeRequest| {
+        let method =
+            reqwest::Method::from_bytes(req.method.as_bytes()).unwrap_or(reqwest::Method::GET);
+        let content_type = (!req.content_type.is_empty()).then_some(req.content_type);
+        relay(crate::geoguessr::proxy(
+            method,
+            &req.path,
+            Some(&req.query),
+            content_type,
             req.body,
         ))
     });

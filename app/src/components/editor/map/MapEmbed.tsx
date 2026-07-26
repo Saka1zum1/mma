@@ -54,7 +54,7 @@ function ZoomReadout({ host }: { host: MapHost | null }) {
 		setZoom(host.getZoom());
 		return host.on("zoom", () => setZoom(Math.round(host.getZoom() * 100) / 100));
 	}, [host]);
-	return <> 路 zoom {zoom}</>;
+	return <> zoom {zoom}</>;
 }
 
 export function MapEmbed({
@@ -172,7 +172,7 @@ export function MapEmbed({
 			offs.push(
 				created.on("mousemove", (ll) => {
 					if (coordDisplayRef.current) {
-						coordDisplayRef.current.textContent = `${ll.lat.toFixed(6)}掳 ${ll.lng.toFixed(6)}掳`;
+						coordDisplayRef.current.textContent = `${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}`;
 					}
 				}),
 				created.on("zoom", () => {
@@ -479,7 +479,7 @@ export function MapEmbed({
 						<ZoomReadout host={host} />
 						{showFps && (
 							<>
-								<span style={{ margin: "0 4px" }}>路</span>
+								<span style={{ margin: "0 4px" }}></span>
 								<FpsCounter />
 							</>
 						)}

@@ -97,14 +97,14 @@ export const commands = {
 	/**  Lightweight status query: location count, version, and dirty flag. */
 	storeGetSummary: () => __TAURI_INVOKE<SummaryResult>("store_get_summary"),
 	/**  Return metadata for every map in the database. */
-	storeListMaps: () => __TAURI_INVOKE<MapMeta[]>("store_list_maps").then((v) => (v.map(i=>({...i,settings:({...i.settings,providers:i.settings.providers}),extra:({...i.extra,fields:i.extra.fields==null?i.extra.fields:Object.fromEntries(Object.entries(i.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})) as typeof v)),
+	storeListMaps: () => __TAURI_INVOKE<MapMeta[]>("store_list_maps").then((v) => (v.map(i=>({...i,settings:({...i.settings,providers:({...i.settings.providers,apple:i.settings.providers.apple==null?i.settings.providers.apple:i.settings.providers.apple,baidu:i.settings.providers.baidu==null?i.settings.providers.baidu:i.settings.providers.baidu,tencent:i.settings.providers.tencent==null?i.settings.providers.tencent:i.settings.providers.tencent,yandex:i.settings.providers.yandex==null?i.settings.providers.yandex:i.settings.providers.yandex})}),extra:({...i.extra,fields:i.extra.fields==null?i.extra.fields:Object.fromEntries(Object.entries(i.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})) as typeof v)),
 	/**  Fetch a single map's metadata by ID. Returns `None` if not found. */
-	storeGetMap: (id: string) => __TAURI_INVOKE<MapData | null>("store_get_map", { id }).then((v) => (v==null?v:({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:v.meta.settings.providers}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
+	storeGetMap: (id: string) => __TAURI_INVOKE<MapData | null>("store_get_map", { id }).then((v) => (v==null?v:({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:({...v.meta.settings.providers,apple:v.meta.settings.providers.apple==null?v.meta.settings.providers.apple:v.meta.settings.providers.apple,baidu:v.meta.settings.providers.baidu==null?v.meta.settings.providers.baidu:v.meta.settings.providers.baidu,tencent:v.meta.settings.providers.tencent==null?v.meta.settings.providers.tencent:v.meta.settings.providers.tencent,yandex:v.meta.settings.providers.yandex==null?v.meta.settings.providers.yandex:v.meta.settings.providers.yandex})}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
 	/**
 	 *  Create a new empty map with default settings. Returns the full metadata
 	 *  (including the generated UUID) so the frontend can navigate to it immediately.
 	 */
-	storeCreateMap: (name: string, folder: string | null) => __TAURI_INVOKE<MapData>("store_create_map", { name, folder }).then((v) => (({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:v.meta.settings.providers}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
+	storeCreateMap: (name: string, folder: string | null) => __TAURI_INVOKE<MapData>("store_create_map", { name, folder }).then((v) => (({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:({...v.meta.settings.providers,apple:v.meta.settings.providers.apple==null?v.meta.settings.providers.apple:v.meta.settings.providers.apple,baidu:v.meta.settings.providers.baidu==null?v.meta.settings.providers.baidu:v.meta.settings.providers.baidu,tencent:v.meta.settings.providers.tencent==null?v.meta.settings.providers.tencent:v.meta.settings.providers.tencent,yandex:v.meta.settings.providers.yandex==null?v.meta.settings.providers.yandex:v.meta.settings.providers.yandex})}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
 	/**  Delete a map and all its data: database rows and files on disk. */
 	storeDeleteMap: (id: string) => __TAURI_INVOKE<null>("store_delete_map", { id }),
 	/**  Apply a partial update to a map's metadata; `None` fields are left unchanged. */
@@ -401,6 +401,71 @@ export const commands = {
 };
 
 /* Types */
+/**
+ *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
+ *  (at most one `enabled: true` at a time); the frontend enforces that on write.
+ */
+export type AltBasemapSettings = {
+	petal?: AltBasemapSlot,
+	yandex?: AltBasemapSlot,
+};
+
+/**  One alternate basemap provider slot (Petal or Yandex). */
+export type AltBasemapSlot = {
+	enabled?: boolean,
+	/**  Petal: `"en"` | `"zh"`. Yandex: `"ru_RU"` | `"en_RU"` | `"en_US"` | `"uk_UA"` | `"ru_UA"` | `"tr_TR"`. */
+	language?: string,
+};
+
+/**
+ *  Per-provider Street View settings (coverage overlay + click behavior).
+ *  Shape is shared across alternate providers; omitted keys mean "use frontend defaults".
+ */
+
+/**
+ *  Per-provider Street View settings (coverage overlay + click behavior).
+ *  Shape is shared across alternate providers; omitted keys mean "use frontend defaults".
+ */
+export type AltProviderSettings_Deserialize = {
+	enabled?: boolean,
+	preferred?: boolean,
+	fallbackToGoogle?: boolean,
+	showLines?: boolean,
+	showPoints?: boolean,
+	lineOpacity?: number,
+	pointsOpacity?: number,
+	lineColor?: string,
+	trekkerLineColor?: string,
+	pointFill?: string,
+	pointStroke?: string,
+	trekkerPointFill?: string,
+	trekkerPointStroke?: string,
+	lineWidthScale?: number,
+	pointSizeScale?: number,
+};
+
+/**
+ *  Per-provider Street View settings (coverage overlay + click behavior).
+ *  Shape is shared across alternate providers; omitted keys mean "use frontend defaults".
+ */
+export type AltProviderSettings = {
+	enabled: boolean,
+	preferred: boolean,
+	fallbackToGoogle: boolean,
+	showLines: boolean,
+	showPoints: boolean,
+	lineOpacity: number,
+	pointsOpacity: number,
+	lineColor: string,
+	trekkerLineColor: string,
+	pointFill: string,
+	pointStroke: string,
+	trekkerPointFill: string,
+	trekkerPointStroke: string,
+	lineWidthScale: number,
+	pointSizeScale: number,
+};
+
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
@@ -709,6 +774,7 @@ export type LocationPatch_Deserialize = {
 	pitch?: number | null,
 	zoom?: number | null,
 	panoId?: string | null,
+	/**  Imagery provider discriminator (`"google"`, `"apple"`, …). */
 	provider?: string | null,
 	flags?: number | null,
 	tags?: number[] | null,
@@ -729,12 +795,18 @@ export type LocationPatch = {
 	pitch: number | null,
 	zoom: number | null,
 	panoId: string | null,
+	/**  Imagery provider discriminator (`"google"`, `"apple"`, …). */
 	provider: string | null,
 	flags: number | null,
 	tags: number[] | null,
 	extra: any | null,
 	createdAt: number | null,
 	modifiedAt: number | null,
+};
+
+
+export type MapData_Deserialize = {
+	meta: MapMeta_Deserialize,
 };
 
 export type MapData = {
@@ -768,21 +840,6 @@ export type MapKeyBinding = {
  *  Full metadata for a map, deserialized from the SQLite `maps` row.
  *  JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
  */
-export type MapMeta = {
-	id: string,
-	name: string,
-	description: string,
-	folder: string | null,
-	settings: MapSettings,
-	scoreBounds: ScoreBounds,
-	extra: MapExtra,
-	tags: { [key in string]: Tag },
-	labels: string[],
-	locationCount: number,
-	createdAt: string,
-	updatedAt: string,
-	lastOpenedAt: string | null,
-};
 
 /**
  *  Partial update for map metadata. Only non-`None` fields are written.
@@ -797,7 +854,7 @@ export type MapMetaPatch_Deserialize = {
 	name?: string | null,
 	description?: string | null,
 	folder?: string | null,
-	settings?: MapSettings | null,
+	settings?: MapSettings_Deserialize | null,
 	scoreBounds?: ScoreBounds | null,
 	extra?: MapExtra | null,
 	tags?: { [key in string]: Tag } | null,
@@ -819,51 +876,56 @@ export type MapMetaPatch = {
 	labels: string[] | null,
 };
 
-/** Shape is shared across alternate providers; omitted keys mean "use frontend defaults". */
-export type AltProviderSettings = {
-	enabled?: boolean,
-	preferred?: boolean,
-	fallbackToGoogle?: boolean,
-	showLines?: boolean,
-	showPoints?: boolean,
-	lineOpacity?: number,
-	pointsOpacity?: number,
-	lineColor?: string,
-	trekkerLineColor?: string,
-	pointFill?: string,
-	pointStroke?: string,
-	trekkerPointFill?: string,
-	trekkerPointStroke?: string,
-	lineWidthScale?: number,
-	pointSizeScale?: number,
+/**
+ *  Full metadata for a map, deserialized from the SQLite `maps` row.
+ *  JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
+ */
+export type MapMeta_Deserialize = {
+	id: string,
+	name: string,
+	description: string,
+	folder: string | null,
+	settings: MapSettings_Deserialize,
+	scoreBounds: ScoreBounds,
+	extra: MapExtra,
+	tags: { [key in string]: Tag },
+	labels: string[],
+	locationCount: number,
+	createdAt: string,
+	updatedAt: string,
+	lastOpenedAt: string | null,
 };
 
-/** Per-provider toggles; future providers can be added without migrating existing maps. */
-/** One alternate basemap provider slot (Petal or Yandex). */
-export type AltBasemapSlot = {
-	enabled?: boolean,
-	language?: string | null,
-};
-
-export type AltBasemapSettings = {
-	petal?: AltBasemapSlot,
-	yandex?: AltBasemapSlot,
-};
-
-export type ProvidersSettings = {
-	apple?: AltProviderSettings | null,
-	baidu?: AltProviderSettings | null,
-	tencent?: AltProviderSettings | null,
-	yandex?: AltProviderSettings | null,
-	/** Shared Petal / Yandex basemap toggles (not per-provider). */
-	altBasemapSettings?: AltBasemapSettings | null,
+/**
+ *  Full metadata for a map, deserialized from the SQLite `maps` row.
+ *  JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
+ */
+export type MapMeta = {
+	id: string,
+	name: string,
+	description: string,
+	folder: string | null,
+	settings: MapSettings,
+	scoreBounds: ScoreBounds,
+	extra: MapExtra,
+	tags: { [key in string]: Tag },
+	labels: string[],
+	locationCount: number,
+	createdAt: string,
+	updatedAt: string,
+	lastOpenedAt: string | null,
 };
 
 /**
  *  Per-map editor preferences. Controls Street View lookup behavior (official vs
  *  unofficial, camera type filters), export defaults, and metadata enrichment.
  */
-export type MapSettings = {
+
+/**
+ *  Per-map editor preferences. Controls Street View lookup behavior (official vs
+ *  unofficial, camera type filters), export defaults, and metadata enrichment.
+ */
+export type MapSettings_Deserialize = {
 	pointAlongRoad?: boolean,
 	preferDirection?: string | null,
 	preferOfficial?: boolean,
@@ -885,6 +947,36 @@ export type MapSettings = {
 	 *  there. Tree-view only; clicking the alias leaf toggles the real tag.
 	 */
 	aliases?: { [key in string]: number },
+	/**  Alternate Street View providers (Apple Look Around, …). */
+	providers?: ProvidersSettings_Deserialize,
+};
+
+/**
+ *  Per-map editor preferences. Controls Street View lookup behavior (official vs
+ *  unofficial, camera type filters), export defaults, and metadata enrichment.
+ */
+export type MapSettings = {
+	pointAlongRoad: boolean,
+	preferDirection: string | null,
+	preferOfficial: boolean,
+	preferHigherQuality: boolean,
+	onlyOfficial: boolean,
+	cameraTypes: string[] | null,
+	defaultPanoId: boolean,
+	exportZoom: boolean,
+	exportUnpanned: boolean,
+	exportExtras: boolean,
+	searchRadius: number | null,
+	enrichMetadata: boolean,
+	enrichFields: string[] | null,
+	keyBindings: MapKeyBinding[],
+	/**  Virtual tag-tree nodes keyed by full slash path. Tree-view only. */
+	virtualTags: { [key in string]: VirtualTag },
+	/**
+	 *  Tag aliases: a second tree location (full slash path) -> the real tag id shown
+	 *  there. Tree-view only; clicking the alias leaf toggles the real tag.
+	 */
+	aliases: { [key in string]: number },
 	/**  Alternate Street View providers (Apple Look Around, …). */
 	providers: ProvidersSettings,
 };
@@ -997,6 +1089,40 @@ export type PresenceActivity = {
 	smallText: string | null,
 	/**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
 	start: number | null,
+};
+
+/**
+ *  Alternate Street View provider settings bag on a map.
+ *  Google is the host default and is not configured here. Each key is optional so
+ *  future providers can be added without migrating existing maps.
+ */
+
+/**
+ *  Alternate Street View provider settings bag on a map.
+ *  Google is the host default and is not configured here. Each key is optional so
+ *  future providers can be added without migrating existing maps.
+ */
+export type ProvidersSettings_Deserialize = {
+	apple?: AltProviderSettings_Deserialize | null,
+	baidu?: AltProviderSettings_Deserialize | null,
+	tencent?: AltProviderSettings_Deserialize | null,
+	yandex?: AltProviderSettings_Deserialize | null,
+	/**  Shared Petal / Yandex basemap toggles (not per-provider). */
+	altBasemapSettings?: AltBasemapSettings | null,
+};
+
+/**
+ *  Alternate Street View provider settings bag on a map.
+ *  Google is the host default and is not configured here. Each key is optional so
+ *  future providers can be added without migrating existing maps.
+ */
+export type ProvidersSettings = {
+	apple: AltProviderSettings | null,
+	baidu: AltProviderSettings | null,
+	tencent: AltProviderSettings | null,
+	yandex: AltProviderSettings | null,
+	/**  Shared Petal / Yandex basemap toggles (not per-provider). */
+	altBasemapSettings: AltBasemapSettings | null,
 };
 
 /**

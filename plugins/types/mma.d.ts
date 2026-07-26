@@ -453,6 +453,66 @@ declare const commands: {
     valiSubdivisions: (country: string) => Promise<string>;
 };
 /**
+ *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
+ *  (at most one `enabled: true` at a time); the frontend enforces that on write.
+ */
+type AltBasemapSettings = {
+    petal?: AltBasemapSlot;
+    yandex?: AltBasemapSlot;
+};
+/**  One alternate basemap provider slot (Petal or Yandex). */
+type AltBasemapSlot = {
+    enabled?: boolean;
+    /**  Petal: `"en"` | `"zh"`. Yandex: `"ru_RU"` | `"en_RU"` | `"en_US"` | `"uk_UA"` | `"ru_UA"` | `"tr_TR"`. */
+    language?: string;
+};
+/**
+ *  Per-provider Street View settings (coverage overlay + click behavior).
+ *  Shape is shared across alternate providers; omitted keys mean "use frontend defaults".
+ */
+/**
+ *  Per-provider Street View settings (coverage overlay + click behavior).
+ *  Shape is shared across alternate providers; omitted keys mean "use frontend defaults".
+ */
+type AltProviderSettings_Deserialize = {
+    enabled?: boolean;
+    preferred?: boolean;
+    fallbackToGoogle?: boolean;
+    showLines?: boolean;
+    showPoints?: boolean;
+    lineOpacity?: number;
+    pointsOpacity?: number;
+    lineColor?: string;
+    trekkerLineColor?: string;
+    pointFill?: string;
+    pointStroke?: string;
+    trekkerPointFill?: string;
+    trekkerPointStroke?: string;
+    lineWidthScale?: number;
+    pointSizeScale?: number;
+};
+/**
+ *  Per-provider Street View settings (coverage overlay + click behavior).
+ *  Shape is shared across alternate providers; omitted keys mean "use frontend defaults".
+ */
+type AltProviderSettings = {
+    enabled: boolean;
+    preferred: boolean;
+    fallbackToGoogle: boolean;
+    showLines: boolean;
+    showPoints: boolean;
+    lineOpacity: number;
+    pointsOpacity: number;
+    lineColor: string;
+    trekkerLineColor: string;
+    pointFill: string;
+    pointStroke: string;
+    trekkerPointFill: string;
+    trekkerPointStroke: string;
+    lineWidthScale: number;
+    pointSizeScale: number;
+};
+/**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
  */
@@ -752,6 +812,7 @@ type LocationPatch_Deserialize = {
     pitch?: number | null;
     zoom?: number | null;
     panoId?: string | null;
+    /**  Imagery provider discriminator (`"google"`, `"apple"`, …). */
     provider?: string | null;
     flags?: number | null;
     tags?: number[] | null;
@@ -771,12 +832,16 @@ type LocationPatch = {
     pitch: number | null;
     zoom: number | null;
     panoId: string | null;
+    /**  Imagery provider discriminator (`"google"`, `"apple"`, …). */
     provider: string | null;
     flags: number | null;
     tags: number[] | null;
     extra: any | null;
     createdAt: number | null;
     modifiedAt: number | null;
+};
+type MapData_Deserialize = {
+    meta: MapMeta_Deserialize;
 };
 type MapData = {
     meta: MapMeta;
@@ -813,23 +878,6 @@ type MapKeyBinding = {
  *  Full metadata for a map, deserialized from the SQLite `maps` row.
  *  JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
  */
-type MapMeta = {
-    id: string;
-    name: string;
-    description: string;
-    folder: string | null;
-    settings: MapSettings;
-    scoreBounds: ScoreBounds;
-    extra: MapExtra;
-    tags: {
-        [key in string]: Tag;
-    };
-    labels: string[];
-    locationCount: number;
-    createdAt: string;
-    updatedAt: string;
-    lastOpenedAt: string | null;
-};
 /**
  *  Partial update for map metadata. Only non-`None` fields are written.
  *  `folder: Some(None)` explicitly unsets the folder (moves to root).
@@ -842,7 +890,7 @@ type MapMetaPatch_Deserialize = {
     name?: string | null;
     description?: string | null;
     folder?: string | null;
-    settings?: MapSettings | null;
+    settings?: MapSettings_Deserialize | null;
     scoreBounds?: ScoreBounds | null;
     extra?: MapExtra | null;
     tags?: {
@@ -866,55 +914,57 @@ type MapMetaPatch = {
     } | null;
     labels: string[] | null;
 };
-/** Shape is shared across alternate providers; omitted keys mean "use frontend defaults". */
-type AltProviderSettings = {
-    enabled?: boolean;
-    preferred?: boolean;
-    fallbackToGoogle?: boolean;
-    showLines?: boolean;
-    showPoints?: boolean;
-    lineOpacity?: number;
-    pointsOpacity?: number;
-    lineColor?: string;
-    trekkerLineColor?: string;
-    pointFill?: string;
-    pointStroke?: string;
-    trekkerPointFill?: string;
-    trekkerPointStroke?: string;
-    lineWidthScale?: number;
-    pointSizeScale?: number;
-};
-/** One alternate basemap provider slot (Petal or Yandex). */
-type AltBasemapSlot = {
-    enabled?: boolean;
-    /** Petal: `"en"` | `"zh"`. Yandex: `"ru_RU"` | `"en_RU"` | `"en_US"` | `"uk_UA"` | `"ru_UA"` | `"tr_TR"`. */
-    language?: string;
+/**
+ *  Full metadata for a map, deserialized from the SQLite `maps` row.
+ *  JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
+ */
+type MapMeta_Deserialize = {
+    id: string;
+    name: string;
+    description: string;
+    folder: string | null;
+    settings: MapSettings_Deserialize;
+    scoreBounds: ScoreBounds;
+    extra: MapExtra;
+    tags: {
+        [key in string]: Tag;
+    };
+    labels: string[];
+    locationCount: number;
+    createdAt: string;
+    updatedAt: string;
+    lastOpenedAt: string | null;
 };
 /**
- * Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
- * (at most one `enabled: true` at a time); the frontend enforces that on write.
+ *  Full metadata for a map, deserialized from the SQLite `maps` row.
+ *  JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
  */
-type AltBasemapSettings = {
-    petal?: AltBasemapSlot;
-    yandex?: AltBasemapSlot;
-};
-/**
- * Google is the host default and is not configured here. Each key is optional so
- * future providers can be added without migrating existing maps.
- */
-type ProvidersSettings = {
-    apple?: AltProviderSettings | null;
-    baidu?: AltProviderSettings | null;
-    tencent?: AltProviderSettings | null;
-    yandex?: AltProviderSettings | null;
-    /** Shared Petal / Yandex basemap toggles (not per-provider). */
-    altBasemapSettings?: AltBasemapSettings | null;
+type MapMeta = {
+    id: string;
+    name: string;
+    description: string;
+    folder: string | null;
+    settings: MapSettings;
+    scoreBounds: ScoreBounds;
+    extra: MapExtra;
+    tags: {
+        [key in string]: Tag;
+    };
+    labels: string[];
+    locationCount: number;
+    createdAt: string;
+    updatedAt: string;
+    lastOpenedAt: string | null;
 };
 /**
  *  Per-map editor preferences. Controls Street View lookup behavior (official vs
  *  unofficial, camera type filters), export defaults, and metadata enrichment.
  */
-type MapSettings = {
+/**
+ *  Per-map editor preferences. Controls Street View lookup behavior (official vs
+ *  unofficial, camera type filters), export defaults, and metadata enrichment.
+ */
+type MapSettings_Deserialize = {
     pointAlongRoad?: boolean;
     preferDirection?: string | null;
     preferOfficial?: boolean;
@@ -938,6 +988,39 @@ type MapSettings = {
      *  there. Tree-view only; clicking the alias leaf toggles the real tag.
      */
     aliases?: {
+        [key in string]: number;
+    };
+    /**  Alternate Street View providers (Apple Look Around, …). */
+    providers?: ProvidersSettings_Deserialize;
+};
+/**
+ *  Per-map editor preferences. Controls Street View lookup behavior (official vs
+ *  unofficial, camera type filters), export defaults, and metadata enrichment.
+ */
+type MapSettings = {
+    pointAlongRoad: boolean;
+    preferDirection: string | null;
+    preferOfficial: boolean;
+    preferHigherQuality: boolean;
+    onlyOfficial: boolean;
+    cameraTypes: string[] | null;
+    defaultPanoId: boolean;
+    exportZoom: boolean;
+    exportUnpanned: boolean;
+    exportExtras: boolean;
+    searchRadius: number | null;
+    enrichMetadata: boolean;
+    enrichFields: string[] | null;
+    keyBindings: MapKeyBinding[];
+    /**  Virtual tag-tree nodes keyed by full slash path. Tree-view only. */
+    virtualTags: {
+        [key in string]: VirtualTag;
+    };
+    /**
+     *  Tag aliases: a second tree location (full slash path) -> the real tag id shown
+     *  there. Tree-view only; clicking the alias leaf toggles the real tag.
+     */
+    aliases: {
         [key in string]: number;
     };
     /**  Alternate Street View providers (Apple Look Around, …). */
@@ -1050,6 +1133,37 @@ type PresenceActivity = {
     smallText: string | null;
     /**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
     start: number | null;
+};
+/**
+ *  Alternate Street View provider settings bag on a map.
+ *  Google is the host default and is not configured here. Each key is optional so
+ *  future providers can be added without migrating existing maps.
+ */
+/**
+ *  Alternate Street View provider settings bag on a map.
+ *  Google is the host default and is not configured here. Each key is optional so
+ *  future providers can be added without migrating existing maps.
+ */
+type ProvidersSettings_Deserialize = {
+    apple?: AltProviderSettings_Deserialize | null;
+    baidu?: AltProviderSettings_Deserialize | null;
+    tencent?: AltProviderSettings_Deserialize | null;
+    yandex?: AltProviderSettings_Deserialize | null;
+    /**  Shared Petal / Yandex basemap toggles (not per-provider). */
+    altBasemapSettings?: AltBasemapSettings | null;
+};
+/**
+ *  Alternate Street View provider settings bag on a map.
+ *  Google is the host default and is not configured here. Each key is optional so
+ *  future providers can be added without migrating existing maps.
+ */
+type ProvidersSettings = {
+    apple: AltProviderSettings | null;
+    baidu: AltProviderSettings | null;
+    tencent: AltProviderSettings | null;
+    yandex: AltProviderSettings | null;
+    /**  Shared Petal / Yandex basemap toggles (not per-provider). */
+    altBasemapSettings: AltBasemapSettings | null;
 };
 /**
  *  A remote-originated create for JS to apply. `remote_id` is the handle its mapping row must
@@ -3283,4 +3397,4 @@ declare global {
 }
 
 export { MMA as MMAApi, PanoType, commands };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, CellRemoval, ColorPatchEntry, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapSettings, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CellRemoval, ColorPatchEntry, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };

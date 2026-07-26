@@ -1640,6 +1640,9 @@ impl Store {
         let old_coords = (loc.lat, loc.lng);
         apply_patch!(loc, patch; lat, lng, heading, pitch, zoom, created_at, modified_at);
         apply_patch!(clone loc, patch; pano_id, tags);
+        if let Some(ref v) = patch.provider {
+            loc.provider = Some(v.clone());
+        }
         if let Some(v) = patch.flags {
             loc.flags = LocationFlags::from_bits_retain(v);
         }
@@ -2002,6 +2005,8 @@ pub struct LocationPatch {
     #[serde(default, deserialize_with = "nullable")]
     #[specta(type = Option<Option<String>>)]
     pub pano_id: Option<Option<String>>,
+    /// Imagery provider discriminator (`"google"`, `"apple"`, …).
+    pub provider: Option<String>,
     pub flags: Option<u32>,
     pub tags: Option<Vec<u32>>,
     #[serde(default, deserialize_with = "nullable")]
