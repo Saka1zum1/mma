@@ -5032,24 +5032,32 @@ body {
 	position: absolute;
 	bottom: 8px;
 	right: 8px;
-	width: 250px;
-	height: 140px;
+	width: min(var(--fs-mini-loc-w, 480px), calc(100% - 16px));
+	height: min(var(--fs-mini-loc-h, 270px), calc(100% - 16px));
 	border: 2px solid rgba(255, 255, 255, 0.4);
 	border-radius: 4px;
 	z-index: 12;
 	pointer-events: auto;
 	overflow: hidden;
-	opacity: 0.45;
-	transition: opacity 0.2s;
+	/* --fs-mini-flip is the FLIP inverse for +/- scale steps: the box jumps to its
+	   new size (so the pano stays crisp) and this animates it back from the old one. */
+	transform: scale(calc(var(--fs-mini-k, 0.52) * var(--fs-mini-flip, 1)));
+	transform-origin: bottom right;
+	transition: transform 0.2s;
 }
 .fullscreen-mini-location.is-expanded {
-	width: min(var(--fs-mini-loc-w, 480px), calc(100% - 16px));
-	height: min(var(--fs-mini-loc-h, 270px), calc(100% - 16px));
-	opacity: 1;
+	transform: scale(var(--fs-mini-flip, 1));
 }
+/* Dim the imagery, not the frame: opacity on the chip itself would drag the
+   border down with it (a white border at 0.4 reads black at 0.45 opacity). */
 .fullscreen-mini-location__pano {
 	position: absolute;
 	inset: 0;
+	opacity: 0.45;
+	transition: opacity 0.2s;
+}
+.fullscreen-mini-location.is-expanded .fullscreen-mini-location__pano {
+	opacity: 1;
 }
 .fullscreen-mini-location__size {
 	position: absolute;
