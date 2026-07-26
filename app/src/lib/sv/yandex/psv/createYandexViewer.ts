@@ -24,7 +24,7 @@ import {
 	ensureYandexCrossfadeCanvas,
 	runYandexNavigationCrossfade,
 } from "./navigationCrossfade";
-import { psvYawToCompass, yandexYawNorthOffsetRad } from "./orientation";
+import { compassToPsvYaw, psvYawToCompass, yandexYawNorthOffsetRad } from "./orientation";
 import { buildYandexTilesPanorama, SPHERE_RESOLUTION, type YandexTilesPanorama } from "./tiles";
 
 const NAV_CROSSFADE_MS = 150;
@@ -257,6 +257,11 @@ export async function createYandexViewer(
 		async navigateTo(meta, resetView = false) {
 			const gen = ++loadGen;
 			const viewer = handle.viewer as TilesViewer;
+			// Preserve compass heading across hops: yaw 0 is image-centre, so keeping
+			// the previous PSV yaw would rotate the world when meta.heading changes.
+			const prevPos = viewer.getPosition();
+			const keepCompass = psvYawToCompass(prevPos.yaw, currentMeta.heading);
+			const keepPitch = prevPos.pitch;
 			const next = await buildYandexTilesPanorama(meta);
 			if (destroyed || gen !== loadGen) {
 				next.dispose();
@@ -268,8 +273,9 @@ export async function createYandexViewer(
 			await viewer.setPanorama(panoramaPayload(next), {
 				transition: false,
 				showLoader: false,
-				// yaw 0 = image centre (road / Origin view); compass via orientation.ts
-				position: resetView ? { yaw: 0, pitch: 0 } : undefined,
+				position: resetView
+					? { yaw: 0, pitch: 0 }
+					: { yaw: compassToPsvYaw(keepCompass, meta.heading), pitch: keepPitch },
 			});
 			if (destroyed || gen !== loadGen) {
 				next.dispose();

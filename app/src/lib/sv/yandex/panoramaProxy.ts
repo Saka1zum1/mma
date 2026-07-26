@@ -33,9 +33,10 @@ function toGoogleLatLng(lat: number, lng: number): google.maps.LatLng {
 	} as google.maps.LatLng;
 }
 
+/** Compass-control arrows use Thoroughfare links only — not Graph neighbors. */
 function streetViewLinks(meta: YandexPanoMeta): google.maps.StreetViewLink[] {
 	const byOid = new Map<string, google.maps.StreetViewLink>();
-	for (const l of [...meta.links, ...meta.neighbors]) {
+	for (const l of meta.links) {
 		if (!l.oid || byOid.has(l.oid)) continue;
 		byOid.set(l.oid, {
 			pano: l.oid,
