@@ -100,7 +100,7 @@ function useEventSubscription(evt: EditorEvent | readonly EditorEvent[]) {
  *  - producers must reassign the published reference, never mutate it in place */
 export function useEventValue<T>(evt: EditorEvent | readonly EditorEvent[], getValue: () => T): T {
 	const { sub } = useEventSubscription(evt);
-	return useSyncExternalStore(sub, getValue);
+	return useSyncExternalStore(sub, getValue, getValue);
 }
 
 /** React hook: re-renders when the given event(s) fire. Returns a version counter. */
@@ -110,7 +110,7 @@ export function useEvent(evt: EditorEvent | readonly EditorEvent[]): number {
 		() => events.reduce((sum, e) => sum + (versions.get(e) ?? 0), 0),
 		[events],
 	);
-	return useSyncExternalStore(sub, snap);
+	return useSyncExternalStore(sub, snap, snap);
 }
 
 /** Non-hook read of the version counter for a single event. */
