@@ -1,3 +1,9 @@
+## v0.8.4 - 2026-07-27
+- **Built-in language setting** (English / Simplified Chinese) with app-wide UI localization
+- Message catalogs for settings, dialogs, commands, hotkeys, plugins, and the plugin marketplace
+- Locale-aware date and number formatting
+- Fullscreen geocoding overlay now respects the show-geocode setting
+
 ## v0.8.3 - 2026-07-26
 - **Yandex Street View provider** (coverage, preview, jump, download, and basemap)
 - Fixed Tencent Street View tile projection at max zoom and coverage-layer rendering
