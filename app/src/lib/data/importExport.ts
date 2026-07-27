@@ -1,4 +1,4 @@
-import { imageKeyToPanoId } from "@/lib/sv/svMeta";
+import { fetchSvMetadata, imageKeyToPanoId } from "@/lib/sv/svMeta";
 import { fovToZoom, schemeBase } from "@/lib/util/util";
 import { LocationFlag } from "@/types";
 import type { Location } from "@/bindings.gen";
@@ -19,7 +19,14 @@ import { fetchTencentMeta } from "@/lib/sv/tencent/api";
 import { isTencentShareHost, parseTencentShareUrl } from "@/lib/sv/tencent/shareLink";
 import { fetchYandexMeta } from "@/lib/sv/yandex/api";
 import { isYandexShareHost, parseYandexShareUrl } from "@/lib/sv/yandex/shareLink";
-import { normalizeStoragePanoId } from "@/lib/sv/providers/panoIdStorage";
+import {
+	normalizeStoragePanoId,
+	parsePrefixedStoragePanoId,
+} from "@/lib/sv/providers/panoIdStorage";
+import { isOfficialPano } from "@/lib/sv/panoId";
+import { BAIDU_PANO_PREFIX } from "@/lib/sv/baidu/prefix";
+import { TENCENT_PANO_PREFIX } from "@/lib/sv/tencent/prefix";
+import { YANDEX_PANO_PREFIX } from "@/lib/sv/yandex/prefix";
 
 /** A single location parsed out of a pasted Maps URL or a bare coordinate. */
 export type ParsedLocation = Pick<
@@ -309,6 +316,143 @@ async function parseYandexLocation(url: URL): Promise<ParsedLocation | null> {
 		flags: LocationFlag.LoadAsPanoId,
 		tags: [],
 	};
+}
+
+/** Baidu sdata ids: 26 digits + trailing uppercase letter (commonly start with 09). */
+const BAIDU_RAW_PANO_RE = /^09\d{24}[A-Z]$/;
+/** Tencent svid: exactly 23 digits with an embedded capture timestamp. */
+const TENCENT_RAW_PANO_RE = /^\d{23}$/;
+/** Yandex oid: underscore-separated segments ending in a Unix timestamp. */
+const YANDEX_RAW_PANO_RE = /^\d+_\d+_\d+_\d{9,10}$/;
+
+function panoLocation(
+	provider: SvProvider,
+	panoId: string,
+	lat: number,
+	lng: number,
+	heading = 0,
+	pitch = 0,
+): ParsedLocation {
+	return {
+		lat,
+		lng,
+		heading,
+		pitch,
+		zoom: 0,
+		panoId,
+		provider,
+		flags: LocationFlag.LoadAsPanoId,
+		tags: [],
+	};
+}
+
+async function resolveGooglePanoId(panoId: string): Promise<ParsedLocation | null> {
+	try {
+		const [data] = await fetchSvMetadata([panoId]);
+		const ll = data?.location?.latLng;
+		if (!ll) return null;
+		const lat = typeof ll.lat === "function" ? ll.lat() : Number(ll.lat);
+		const lng = typeof ll.lng === "function" ? ll.lng() : Number(ll.lng);
+		if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+		const heading = Number(data.tiles?.centerHeading) || 0;
+		return panoLocation("google", panoId, lat, lng, heading, 0);
+	} catch {
+		return null;
+	}
+}
+
+async function resolveBaiduPanoId(panoId: string): Promise<ParsedLocation | null> {
+	try {
+		const meta = await fetchBaiduMeta(panoId);
+		if (!meta) return null;
+		return panoLocation("baidu", normalizeStoragePanoId(panoId) ?? panoId, meta.lat, meta.lng, meta.heading, meta.pitch);
+	} catch {
+		return null;
+	}
+}
+
+async function resolveTencentPanoId(panoId: string): Promise<ParsedLocation | null> {
+	try {
+		const meta = await fetchTencentMeta(panoId);
+		if (!meta) return null;
+		return panoLocation(
+			"tencent",
+			normalizeStoragePanoId(panoId) ?? panoId,
+			meta.lat,
+			meta.lng,
+			meta.heading,
+			0,
+		);
+	} catch {
+		return null;
+	}
+}
+
+async function resolveYandexPanoId(panoId: string): Promise<ParsedLocation | null> {
+	try {
+		const meta = await fetchYandexMeta(panoId);
+		if (!meta) return null;
+		return panoLocation(
+			"yandex",
+			normalizeStoragePanoId(panoId) ?? panoId,
+			meta.lat,
+			meta.lng,
+			meta.heading,
+			0,
+		);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Parse a bare panorama id (optionally provider-prefixed) into a location by
+ * fetching provider metadata for lat/lng. Tries Google, then Baidu, Tencent,
+ * and Yandex shape checks. Apple Look Around has no id→coords API.
+ */
+export async function parsePanoId(input: string): Promise<ParsedLocation | null> {
+	const text = input.trim();
+	if (!text || /\s/.test(text) || text.includes("://")) return null;
+
+	const prefixed = parsePrefixedStoragePanoId(text);
+	if (prefixed.inferredProvider === "baidu" || text.startsWith(BAIDU_PANO_PREFIX)) {
+		return resolveBaiduPanoId(prefixed.panoId);
+	}
+	if (prefixed.inferredProvider === "tencent" || text.startsWith(TENCENT_PANO_PREFIX)) {
+		return resolveTencentPanoId(prefixed.panoId);
+	}
+	if (prefixed.inferredProvider === "yandex" || text.startsWith(YANDEX_PANO_PREFIX)) {
+		return resolveYandexPanoId(prefixed.panoId);
+	}
+	if (prefixed.inferredProvider === "apple" || text.startsWith("APPLE:")) {
+		// Look Around needs coordinates to resolve; bare panoid alone is not enough.
+		return null;
+	}
+
+	// Shape-based detection in provider priority order.
+	if (isOfficialPano(text)) {
+		const google = await resolveGooglePanoId(text);
+		if (google) return google;
+	}
+	if (BAIDU_RAW_PANO_RE.test(text)) {
+		const baidu = await resolveBaiduPanoId(text);
+		if (baidu) return baidu;
+	}
+	if (TENCENT_RAW_PANO_RE.test(text)) {
+		const tencent = await resolveTencentPanoId(text);
+		if (tencent) return tencent;
+	}
+	if (YANDEX_RAW_PANO_RE.test(text)) {
+		const yandex = await resolveYandexPanoId(text);
+		if (yandex) return yandex;
+	}
+	// Google unofficial / photosphere ids (CAoS…, F:…, longer base64url).
+	if (text.startsWith("F:") || (/^[-_A-Za-z0-9]{23,}$/.test(text) && /[A-Za-z]/.test(text))) {
+		const google = await resolveGooglePanoId(text);
+		if (google) return google;
+	}
+
+	return null;
 }
 
 // One coordinate component: signed degrees, optional `°`, optional minutes (with

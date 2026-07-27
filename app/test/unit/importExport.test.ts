@@ -463,3 +463,20 @@ describe("parsedLocationsToImportJson (property-based)", () => {
 		);
 	});
 });
+
+describe("parsePanoId", () => {
+	it("returns null for empty, whitespace, URLs, and Apple-only ids", async () => {
+		const { parsePanoId } = await import("@/lib/data/importExport");
+		expect(await parsePanoId("")).toBeNull();
+		expect(await parsePanoId("   ")).toBeNull();
+		expect(await parsePanoId("https://maps.google.com")).toBeNull();
+		expect(await parsePanoId("not a pano")).toBeNull();
+		expect(await parsePanoId("APPLE:12345")).toBeNull();
+	});
+
+	it("rejects non-matching shapes without calling providers", async () => {
+		const { parsePanoId } = await import("@/lib/data/importExport");
+		expect(await parsePanoId("short")).toBeNull();
+		expect(await parsePanoId("12345")).toBeNull();
+	});
+});

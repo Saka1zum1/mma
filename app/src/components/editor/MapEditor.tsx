@@ -37,6 +37,7 @@ import { useSettings } from "@/store/settings";
 import {
 	parseMapsUrl,
 	parseCoordinates,
+	parsePanoId,
 	parseUrlList,
 	parsedLocationsToImportJson,
 } from "@/lib/data/importExport";
@@ -79,7 +80,8 @@ function usePasteHandler() {
 			// Single line -> direct add + open; anything multi-line (JSON, CSV,
 			// URL lists) -> staged import flow
 			if (!text.trim().includes("\n")) {
-				const parsed = (await parseMapsUrl(text)) ?? parseCoordinates(text);
+				const parsed =
+					(await parseMapsUrl(text)) ?? (await parsePanoId(text)) ?? parseCoordinates(text);
 				if (parsed) {
 					await addParsedLocations([parsed]);
 					return;
