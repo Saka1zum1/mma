@@ -87,15 +87,27 @@ export function buildTargetOverlay(
 	}));
 	const overlay = new Uint8Array(TARGET_OVERLAY_WIDTH * TARGET_OVERLAY_HEIGHT);
 
-	for (let y = 0; y < 1; y += 1 / TARGET_OVERLAY_HEIGHT) {
-		let distance: number;
-		if (y > 0.48 && y <= 0.5) distance = 100;
-		else if (y > 0.5 && y <= 0.52) distance = 80;
-		else if (y > 0.52 && y <= 0.54) distance = 60;
-		else if (y > 0.54 && y <= 0.58) distance = 35;
-		else if (y > 0.58 && y <= 0.64) distance = 15;
-		else continue;
+	/**
+	 * Row → distance (metres) for the click-to-go probe. The overlay only has
+	 * TARGET_OVERLAY_HEIGHT=16 rows, sampled at y = row/16, so a row's "distance
+	 * band" must be chosen per integer row rather than by testing a continuous y
+	 * against narrow percentage bounds — several of those bounds (e.g. (0.5, 0.52])
+	 * are narrower than one row (1/16 ≈ 0.0625) and never contain a sampled y,
+	 * which used to leave those rows unset (defaulting to index 0, an arbitrary
+	 * neighbor rather than "no candidate"). Rows 0-8 (at/above the horizon, where
+	 * most "keep going forward" clicks land) were the most under-covered band,
+	 * which is why wrong-direction jumps clustered around upward/far clicks.
+	 */
+	const rowDistanceM = (row: number): number => {
+		if (row <= 8) return 100; // at/above horizon — aim as far as possible
+		if (row === 9) return 80;
+		if (row === 10) return 60;
+		if (row === 11) return 35;
+		return 15; // steep downward angle, near the viewer's feet
+	};
 
+	for (let yi = 0; yi < TARGET_OVERLAY_HEIGHT; yi += 1) {
+		const distance = rowDistanceM(yi);
 		for (let x = 0; x < 1; x += 1 / TARGET_OVERLAY_WIDTH) {
 			const heading = (x - 0.5) * 360 + origin.heading;
 			const dest = offsetLatLng(origin.lat, origin.lng, heading, distance);
@@ -110,10 +122,6 @@ export function buildTargetOverlay(
 					bestD = d;
 				}
 			}
-			const yi = Math.min(
-				TARGET_OVERLAY_HEIGHT - 1,
-				Math.round(y * TARGET_OVERLAY_HEIGHT),
-			);
 			const xi = Math.min(TARGET_OVERLAY_WIDTH - 1, Math.round(x * TARGET_OVERLAY_WIDTH));
 			overlay[yi * TARGET_OVERLAY_WIDTH + xi] = best.index;
 		}
