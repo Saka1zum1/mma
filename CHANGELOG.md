@@ -3,7 +3,8 @@
 - Fixed Baidu and Tencent **Click-to-Go** occasionally jumping to the opposite panorama when clicking toward the upper-center of the viewport (positive pitch)
 - Restored **reverse geocode provider** in Street View settings, with a clearer label and description
 - Enrichment dialog dropdowns now scroll when option lists are long
-- CI: reduced `rust-tests` linker failures on GitHub Actions (use `lld`, cap parallel build jobs)
+- Fixed e2e suite crash when Node loads app modules without Vite (`import.meta.env.DEV`)
+- CI: cap `rust-tests` parallel build jobs to reduce linker OOM on GitHub Actions
 
 ## v0.8.4 - 2026-07-27
 - **Built-in language setting** (English / Simplified Chinese) with app-wide UI localization

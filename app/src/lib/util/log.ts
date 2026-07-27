@@ -26,7 +26,8 @@ function fmt(msg: string, ...args: unknown[]): string {
 	);
 }
 
-const DEV = import.meta.env.DEV;
+// Optional: Node/tsx (e2e specs) load this module without Vite, so `import.meta.env` is undefined.
+const DEV = Boolean(import.meta.env?.DEV);
 
 /* eslint-disable no-console */
 export const log = {

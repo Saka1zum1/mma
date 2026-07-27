@@ -1,6 +1,6 @@
 import { log } from "@/lib/util/log";
 
-const ENABLED: boolean = import.meta.env.DEV;
+const ENABLED: boolean = Boolean(import.meta.env?.DEV);
 
 /**
  * Trace sequential steps within a function. Each `.step()` logs the time
