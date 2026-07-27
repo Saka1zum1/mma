@@ -1,3 +1,10 @@
+## v0.8.5 - 2026-07-27
+- **Paste or search bare pano IDs** (Google, Baidu, Tencent, Yandex) to create a Street View location without a full maps URL
+- Fixed Baidu and Tencent **Click-to-Go** occasionally jumping to the opposite panorama when clicking toward the upper-center of the viewport (positive pitch)
+- Restored **reverse geocode provider** in Street View settings, with a clearer label and description
+- Enrichment dialog dropdowns now scroll when option lists are long
+- CI: reduced `rust-tests` linker failures on GitHub Actions (use `lld`, cap parallel build jobs)
+
 ## v0.8.4 - 2026-07-27
 - **Built-in language setting** (English / Simplified Chinese) with app-wide UI localization
 - Message catalogs for settings, dialogs, commands, hotkeys, plugins, and the plugin marketplace
