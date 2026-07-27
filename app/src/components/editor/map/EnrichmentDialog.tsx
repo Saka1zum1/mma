@@ -381,6 +381,7 @@ function FieldsTable({
 							</td>
 							<td>
 								<NSelect
+									className="nselect--limited"
 									value={row.type}
 									disabled={!row.present}
 									onChange={(e) =>
@@ -396,6 +397,7 @@ function FieldsTable({
 							</td>
 							<td>
 								<NSelect
+									className="nselect--limited"
 									value={compToToken(row.comparison)}
 									disabled={!row.present}
 									onChange={(e) => {
