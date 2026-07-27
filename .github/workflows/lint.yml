@@ -60,13 +60,20 @@ jobs:
           submodules: recursive
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+          packages: libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev lld
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
-      - run: cargo test
+          # Bust stale/corrupt cache entries that can surface as `linking with cc failed`.
+          prefix-key: rust-tests-v2
+      - name: Run cargo test
         working-directory: app/src-tauri
+        env:
+          # Cap parallel link/compile pressure on 7GB runners (OOM kills look like cc exit 1).
+          CARGO_BUILD_JOBS: "2"
+          RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+        run: cargo test
 
   js-tests:
     runs-on: ubuntu-latest
