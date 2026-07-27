@@ -477,21 +477,6 @@ export type CellRemoval = {
 };
 
 /**
- *  One location's selection-membership change, projected onto the render buffers.
- *  The RGBA is the base-layer color, and `a` says which way it went: a gained row is
- *  transparent there (a=0) and drawn by the overlay in `r,g,b`; a lost row (a=255) gets
- *  the opaque marker color back and drops out of the overlay.
- */
-export type ColorPatchEntry = {
-	cell: string,
-	cellIndex: number,
-	r: number,
-	g: number,
-	b: number,
-	a: number,
-};
-
-/**
  *  A commit's delta, returned to the frontend for the per-commit diff viewer.
  *  An updated location appears in both `created` (new) and `removed` (old).
  */
@@ -1150,38 +1135,47 @@ export type RemoteMappingRow = {
 };
 
 /**
- *  Incremental render update sent to JS after a mutation. Contains adds, position/heading
- *  patches, swap-removals, and color patches (for selection overlay changes).
+ *  Incremental render update sent to JS after a mutation: adds, patches, and removals.
+ *  Every entry states the row's resulting selection state, so applying a delta is
+ *  idempotent and the base cells and the selection overlay cannot drift apart.
  *  `full_reset` signals JS to discard all cell data and re-fetch via `store_fill_render_file`.
  */
 export type RenderDelta = {
 	added: RenderEntry[],
 	updated: RenderPatchEntry[],
 	removed: CellRemoval[],
-	colorPatches: ColorPatchEntry[],
 	fullReset: boolean,
 };
 
-/**  A newly-added marker to a render cell: position, heading, and base color. */
+/**  A marker appended to a render cell: position, heading, and selection state. */
 export type RenderEntry = {
 	cell: string,
 	id: number,
 	lng: number,
 	lat: number,
 	heading: number,
-	r: number,
-	g: number,
-	b: number,
-	a: number,
+	/**  `None` = drawn by the base layer, `Some(rgb)` = drawn by the selection overlay. */
+	sel: [number, number, number] | null,
+	/**
+	 *  The slot this row vacated when it crossed cells. Present only for a move, so JS
+	 *  mirrors the swap-remove and carries the overlay entry across instead of inferring
+	 *  a move from an unrelated removed/added pair.
+	 */
+	movedFrom: CellRemoval | null,
 };
 
-/**  Partial update to an existing marker within its cell (position and/or heading changed). */
+/**
+ *  Update to an existing marker within its cell. Position and heading are `None` when
+ *  unchanged; `sel` always states the row's current selection state, so a membership
+ *  change with no movement is just a patch with no coordinates.
+ */
 export type RenderPatchEntry = {
 	cell: string,
 	cellIndex: number,
 	lng: number | null,
 	lat: number | null,
 	heading: number | null,
+	sel: [number, number, number] | null,
 };
 
 /**

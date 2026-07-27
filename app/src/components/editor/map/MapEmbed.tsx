@@ -21,7 +21,7 @@ import { svThumbnailUrl, svSearchRadius } from "@/lib/sv/lookup";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 import { getSettings, useSetting } from "@/store/settings";
-import { useMeasure } from "@/lib/sv/measure";
+import { useMeasure, useMeasureInteraction } from "@/lib/sv/measure";
 import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
 import { useMapState, addSelections, mapOpen } from "@/store/useMapStore";
@@ -105,7 +105,7 @@ export function MapEmbed({
 	const freehandPathRef = useRef<number[][] | null>(null);
 	const polygonVerticesRef = useRef<number[][] | null>(null);
 	const contextTriggerRef = useRef<HTMLSpanElement>(null);
-	const { isMeasuring } = useMeasure();
+	const isMeasuring = useMeasure();
 
 	const dispatchContextMenu = useCallback((clientX: number, clientY: number) => {
 		contextTriggerRef.current?.dispatchEvent(
@@ -125,6 +125,8 @@ export function MapEmbed({
 		panToActiveHotkey: true,
 		keyboardNav: true,
 	});
+
+	useMeasureInteraction(host);
 
 	useEffect(() => {
 		if (!host || !showSearchRadiusCursor) return;
@@ -578,7 +580,7 @@ export function MapEmbed({
 			)}
 			<ContextMenu.Trigger render={<span ref={contextTriggerRef} title={t("editor.contextMenu")} />} />
 			<ContextMenu.Portal>
-				<MapContextMenuContent host={host} />
+				<MapContextMenuContent />
 			</ContextMenu.Portal>
 		</ContextMenu.Root>
 	);

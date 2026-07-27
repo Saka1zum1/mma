@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { CellBuffer, CellManager, type CellRenderEntry } from "@/lib/render/CellManager";
-
-// Default marker color from the Rust render pipeline
-const DEFAULT_R = 42,
-	DEFAULT_G = 42,
-	DEFAULT_B = 42,
-	DEFAULT_A = 255;
+import {
+	CellBuffer,
+	CellManager,
+	type SelCellEntry,
+	type SelColor,
+	type SelectedIds,
+} from "@/lib/render/CellManager";
+import type { RenderDelta, RenderEntry } from "@/bindings.gen";
 
 function entry(
 	cell: string,
@@ -13,44 +14,19 @@ function entry(
 	lng: number,
 	lat: number,
 	heading = 0,
-	r = DEFAULT_R,
-	g = DEFAULT_G,
-	b = DEFAULT_B,
-	a = DEFAULT_A,
-): CellRenderEntry {
-	return { cell, id, lng, lat, heading, r, g, b, a };
+	sel: SelColor = null,
+): RenderEntry {
+	return { cell, id, lng, lat, heading, sel, movedFrom: null };
 }
 
+/** A render delta with everything defaulted, so a case names only what it exercises. */
+function delta(parts: Partial<RenderDelta> = {}): RenderDelta {
+	return { added: [], updated: [], removed: [], fullReset: false, ...parts };
+}
 
-// Simulates the active-location logic from MapEmbed.buildLayers:
-// - Restore old active to default color (unless selected)
-// - Hide new active (alpha=0)
-function simulateActiveSwitch(
-	mgr: CellManager,
-	prevActiveId: number | null,
-	newActiveId: number | null,
-	selectedIds: Set<number>,
-): void {
-	if (prevActiveId != null && prevActiveId !== newActiveId) {
-		if (!selectedIds.has(prevActiveId)) {
-			for (const cb of mgr.cells.values()) {
-				const idx = cb.idToIndex.get(prevActiveId);
-				if (idx != null) {
-					cb.patchVisible(idx, 255);
-					break;
-				}
-			}
-		}
-	}
-	if (newActiveId != null) {
-		for (const cb of mgr.cells.values()) {
-			const idx = cb.idToIndex.get(newActiveId);
-			if (idx != null) {
-				cb.patchVisible(idx, 0);
-				break;
-			}
-		}
-	}
+/** A coordinate-free patch: the shape a pure membership change arrives as. */
+function selPatch(cell: string, cellIndex: number, sel: SelColor) {
+	return { cell, cellIndex, lng: null, lat: null, heading: null, sel };
 }
 
 /** Base-layer visibility byte for a location, or null if it has no marker. There is no
@@ -72,40 +48,42 @@ function isHidden(mgr: CellManager, id: number): boolean {
 	return getVisible(mgr, id) === 0;
 }
 
-function selectAll(mgr: CellManager, color: [number, number, number] = [255, 0, 0]): Set<number> {
-	const cellEntries = [];
+/** Per-cell entries selecting the rows `pick` accepts, the shape Rust's bitmask decodes to. */
+function bitmaskFor(mgr: CellManager, pick: (id: number) => boolean): SelCellEntry[] {
+	const cellEntries: SelCellEntry[] = [];
 	for (const [cellChar, cb] of mgr.cells) {
 		const n = cb.count;
-		const byteLen = Math.ceil(n / 8);
-		const mask = new Uint8Array(byteLen);
-		for (let i = 0; i < n; i++) mask[i >> 3] |= 1 << (i & 7);
-		cellEntries.push({ cellChar, locCount: n, sels: [{ kind: "mask" as const, mask }] });
+		const mask = new Uint8Array(Math.ceil(n / 8));
+		for (let i = 0; i < n; i++) {
+			if (pick(cb.ids[i])) mask[i >> 3] |= 1 << (i & 7);
+		}
+		cellEntries.push({ cellChar, locCount: n, sels: [{ kind: "mask", mask }] });
 	}
-	return mgr.applySelectionBitmasks([color], cellEntries);
+	return cellEntries;
+}
+
+function selectAll(mgr: CellManager, color: [number, number, number] = [255, 0, 0]): SelectedIds {
+	return mgr.applySelectionBitmasks(
+		[color],
+		bitmaskFor(mgr, () => true),
+	);
 }
 
 function selectIds(
 	mgr: CellManager,
 	ids: Set<number>,
 	color: [number, number, number] = [255, 0, 0],
-): Set<number> {
-	const cellEntries = [];
-	for (const [cellChar, cb] of mgr.cells) {
-		const n = cb.count;
-		const byteLen = Math.ceil(n / 8);
-		const mask = new Uint8Array(byteLen);
-		for (let i = 0; i < n; i++) {
-			if (ids.has(cb.ids[i])) mask[i >> 3] |= 1 << (i & 7);
-		}
-		cellEntries.push({ cellChar, locCount: n, sels: [{ kind: "mask" as const, mask }] });
-	}
-	return mgr.applySelectionBitmasks([color], cellEntries);
+): SelectedIds {
+	return mgr.applySelectionBitmasks(
+		[color],
+		bitmaskFor(mgr, (id) => ids.has(id)),
+	);
 }
 
-function clearSelection(mgr: CellManager): Set<number> {
-	const cellEntries = [];
+function clearSelection(mgr: CellManager): SelectedIds {
+	const cellEntries: SelCellEntry[] = [];
 	for (const [cellChar, cb] of mgr.cells) {
-		cellEntries.push({ cellChar, locCount: cb.count, masks: [] as Uint8Array[] });
+		cellEntries.push({ cellChar, locCount: cb.count, sels: [] });
 	}
 	return mgr.applySelectionBitmasks([], cellEntries);
 }
@@ -115,7 +93,7 @@ function clearSelection(mgr: CellManager): Set<number> {
 // ---------------------------------------------------------------------------
 
 function assertNoDoubleMarkers(mgr: CellManager) {
-	const overlayIds = new Set(mgr.selOverlayIds.slice(0, mgr.selOverlayCount));
+	const overlayIds = new Set(mgr.overlay.ids.slice(0, mgr.overlay.count));
 	for (const cb of mgr.cells.values()) {
 		for (let i = 0; i < cb.count; i++) {
 			const id = cb.ids[i];
@@ -130,7 +108,7 @@ function assertNoDoubleMarkers(mgr: CellManager) {
 }
 
 function assertNoVanishedMarkers(mgr: CellManager, activeId: number | null = null) {
-	const overlayIdSet = new Set(mgr.selOverlayIds.slice(0, mgr.selOverlayCount));
+	const overlayIdSet = new Set(mgr.overlay.ids.slice(0, mgr.overlay.count));
 	for (const cb of mgr.cells.values()) {
 		for (let i = 0; i < cb.count; i++) {
 			const id = cb.ids[i];
@@ -146,10 +124,10 @@ function assertNoVanishedMarkers(mgr: CellManager, activeId: number | null = nul
 }
 
 function assertOverlayPositionsMatch(mgr: CellManager) {
-	for (let i = 0; i < mgr.selOverlayCount; i++) {
-		const id = mgr.selOverlayIds[i];
-		const overlayLng = mgr.selOverlayPositions[i * 2];
-		const overlayLat = mgr.selOverlayPositions[i * 2 + 1];
+	for (let i = 0; i < mgr.overlay.count; i++) {
+		const id = mgr.overlay.ids[i];
+		const overlayLng = mgr.overlay.positions[i * 2];
+		const overlayLat = mgr.overlay.positions[i * 2 + 1];
 		for (const cb of mgr.cells.values()) {
 			const idx = cb.idToIndex.get(id);
 			if (idx != null) {
@@ -169,16 +147,13 @@ function assertOverlayPositionsMatch(mgr: CellManager) {
 function assertAllVisible(mgr: CellManager) {
 	for (const cb of mgr.cells.values()) {
 		for (let i = 0; i < cb.count; i++) {
-			expect(
-				cb.visible[i],
-				`ID ${cb.ids[i]} has alpha=${cb.visible[i]}, expected 255`,
-			).toBe(255);
+			expect(cb.visible[i], `ID ${cb.ids[i]} has alpha=${cb.visible[i]}, expected 255`).toBe(255);
 		}
 	}
 }
 
 function assertOverlayEmpty(mgr: CellManager) {
-	expect(mgr.selOverlayCount).toBe(0);
+	expect(mgr.overlay.count).toBe(0);
 }
 
 /** idToIndex must be the exact inverse of ids[0..count]. */
@@ -247,7 +222,7 @@ function seedLocations(mgr: CellManager, n: number, cell = "s"): void {
 	for (let i = 1; i <= n; i++) {
 		entries.push(entry(cell, i, i * 10, i * 20));
 	}
-	mgr.applyDelta({ added: entries, updated: [], removed: [], colorPatches: [] });
+	mgr.applyDelta(delta({ added: entries }));
 }
 
 // ===========================================================================
@@ -263,28 +238,26 @@ describe("Active location switch invariants", () => {
 	});
 
 	it("activating a location hides it in the main layer", () => {
-		simulateActiveSwitch(mgr, null, 1, new Set());
+		mgr.setActive(1);
 		expect(isHidden(mgr, 1)).toBe(true);
 	});
 
 	it("deactivating a location makes it visible again", () => {
-		simulateActiveSwitch(mgr, null, 1, new Set());
-		simulateActiveSwitch(mgr, 1, null, new Set());
+		mgr.setActive(1);
+		mgr.setActive(null);
 		expect(getVisible(mgr, 1)).toBe(255);
 	});
 
 	it("switching active restores the previous and hides the new", () => {
-		simulateActiveSwitch(mgr, null, 1, new Set());
-		simulateActiveSwitch(mgr, 1, 2, new Set());
+		mgr.setActive(1);
+		mgr.setActive(2);
 		expect(isVisible(mgr, 1)).toBe(true);
 		expect(isHidden(mgr, 2)).toBe(true);
 	});
 
 	it("rapid switching through N locations leaves only the last hidden", () => {
-		let prev: number | null = null;
 		for (let id = 1; id <= 5; id++) {
-			simulateActiveSwitch(mgr, prev, id, new Set());
-			prev = id;
+			mgr.setActive(id);
 		}
 		for (let id = 1; id <= 4; id++) {
 			expect(isVisible(mgr, id)).toBe(true);
@@ -293,15 +266,15 @@ describe("Active location switch invariants", () => {
 	});
 
 	it("activating the same location twice is idempotent", () => {
-		simulateActiveSwitch(mgr, null, 3, new Set());
-		simulateActiveSwitch(mgr, 3, 3, new Set());
+		mgr.setActive(3);
+		mgr.setActive(3);
 		expect(isHidden(mgr, 3)).toBe(true);
 		// All others still visible
 		for (const id of [1, 2, 4, 5]) expect(isVisible(mgr, id)).toBe(true);
 	});
 
 	it("activating a nonexistent ID does not corrupt other entries", () => {
-		simulateActiveSwitch(mgr, null, 999, new Set());
+		mgr.setActive(999);
 		for (let id = 1; id <= 5; id++) {
 			expect(isVisible(mgr, id)).toBe(true);
 		}
@@ -325,7 +298,7 @@ describe("Selection and main layer consistency", () => {
 		for (let id = 1; id <= 10; id++) {
 			expect(isHidden(mgr, id)).toBe(true);
 		}
-		expect(mgr.selOverlayCount).toBe(10);
+		expect(mgr.overlay.count).toBe(10);
 		assertNoDoubleMarkers(mgr);
 	});
 
@@ -339,7 +312,7 @@ describe("Selection and main layer consistency", () => {
 				expect(isVisible(mgr, id)).toBe(true);
 			}
 		}
-		expect(mgr.selOverlayCount).toBe(3);
+		expect(mgr.overlay.count).toBe(3);
 		assertNoDoubleMarkers(mgr);
 		assertNoVanishedMarkers(mgr);
 	});
@@ -362,9 +335,9 @@ describe("Selection and main layer consistency", () => {
 	it("re-selecting with different color replaces old overlay", () => {
 		selectAll(mgr, [255, 0, 0]);
 		selectAll(mgr, [0, 0, 255]);
-		for (let i = 0; i < mgr.selOverlayCount; i++) {
-			expect(mgr.selOverlayColors[i * 4]).toBe(0);
-			expect(mgr.selOverlayColors[i * 4 + 2]).toBe(255);
+		for (let i = 0; i < mgr.overlay.count; i++) {
+			expect(mgr.overlay.colors[i * 4]).toBe(0);
+			expect(mgr.overlay.colors[i * 4 + 2]).toBe(255);
 		}
 		assertNoDoubleMarkers(mgr);
 	});
@@ -376,25 +349,24 @@ describe("Selection and main layer consistency", () => {
 
 	it("overlay angles match main layer angles", () => {
 		mgr = new CellManager();
-		mgr.applyDelta({
-			added: [entry("s", 1, 10, 20, 45), entry("s", 2, 30, 40, 135), entry("s", 3, 50, 60, 270)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 10, 20, 45), entry("s", 2, 30, 40, 135), entry("s", 3, 50, 60, 270)],
+			}),
+		);
 		selectAll(mgr);
-		for (let i = 0; i < mgr.selOverlayCount; i++) {
-			const id = mgr.selOverlayIds[i];
+		for (let i = 0; i < mgr.overlay.count; i++) {
+			const id = mgr.overlay.ids[i];
 			const cb = mgr.cells.get("s")!;
 			const idx = cb.idToIndex.get(id)!;
-			expect(mgr.selOverlayAngles[i]).toBeCloseTo(cb.angles[idx]);
+			expect(mgr.overlay.angles[i]).toBeCloseTo(cb.angles[idx]);
 		}
 	});
 
 	it("overlay colors all have full alpha", () => {
 		selectAll(mgr, [100, 200, 50]);
-		for (let i = 0; i < mgr.selOverlayCount; i++) {
-			expect(mgr.selOverlayColors[i * 4 + 3]).toBe(255);
+		for (let i = 0; i < mgr.overlay.count; i++) {
+			expect(mgr.overlay.colors[i * 4 + 3]).toBe(255);
 		}
 	});
 });
@@ -412,44 +384,44 @@ describe("Active location + selection interaction", () => {
 	});
 
 	it("selected location made active: stays hidden in main (no restore flash)", () => {
-		const selectedIds = selectIds(mgr, new Set([3]));
-		simulateActiveSwitch(mgr, null, 3, selectedIds);
+		selectIds(mgr, new Set([3]));
+		mgr.setActive(3);
 		expect(isHidden(mgr, 3)).toBe(true);
 		assertNoDoubleMarkers(mgr);
 	});
 
 	it("active location that gets selected: doesn't get restored to default", () => {
-		simulateActiveSwitch(mgr, null, 2, new Set());
+		mgr.setActive(2);
 		expect(isHidden(mgr, 2)).toBe(true);
 
-		const selectedIds = selectIds(mgr, new Set([2, 4]));
+		selectIds(mgr, new Set([2, 4]));
 		// applySelectionBitmasks resets colors for all entries in the cell,
 		// so id=2 is hidden from selection, not just from active
 		expect(isHidden(mgr, 2)).toBe(true);
 		expect(isHidden(mgr, 4)).toBe(true);
 
 		// Now switch active away — the old active is still selected, so no restore
-		simulateActiveSwitch(mgr, 2, 5, selectedIds);
+		mgr.setActive(5);
 		expect(isHidden(mgr, 2)).toBe(true); // still hidden (selected)
 		expect(isHidden(mgr, 5)).toBe(true); // hidden (now active)
 	});
 
 	it("clearing selection while location is active keeps it hidden", () => {
-		const selectedIds = selectIds(mgr, new Set([3]));
-		simulateActiveSwitch(mgr, null, 3, selectedIds);
+		selectIds(mgr, new Set([3]));
+		mgr.setActive(3);
 
 		clearSelection(mgr);
 		// Active takes precedence — re-hide after clear restored it
-		simulateActiveSwitch(mgr, 3, 3, new Set());
+		mgr.setActive(3);
 		expect(isHidden(mgr, 3)).toBe(true);
 		assertOverlayEmpty(mgr);
 	});
 
 	it("deactivating an unselected location after selection clear restores it fully", () => {
 		selectIds(mgr, new Set([3]));
-		simulateActiveSwitch(mgr, null, 3, new Set([3]));
+		mgr.setActive(3);
 		clearSelection(mgr);
-		simulateActiveSwitch(mgr, 3, null, new Set());
+		mgr.setActive(null);
 		expect(getVisible(mgr, 3)).toBe(255);
 	});
 });
@@ -469,12 +441,11 @@ describe("Deltas during active selections", () => {
 	it("adding entries during selection: new entries not in overlay", () => {
 		selectIds(mgr, new Set([1, 2]));
 
-		mgr.applyDelta({
-			added: [entry("s", 6, 60, 70)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 6, 60, 70)],
+			}),
+		);
 
 		// New entry should be visible in main (selection bitmask hasn't been reapplied)
 		expect(isVisible(mgr, 6)).toBe(true);
@@ -485,22 +456,21 @@ describe("Deltas during active selections", () => {
 
 	it("removing selected entry: overlay becomes stale, re-select fixes it", () => {
 		selectIds(mgr, new Set([1, 2, 3]));
-		expect(mgr.selOverlayCount).toBe(3);
+		expect(mgr.overlay.count).toBe(3);
 
 		// Remove id=2 via swap-remove
 		const cb = mgr.cells.get("s")!;
 		const idx = cb.idToIndex.get(2)!;
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: idx, id: 2 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: idx, id: 2 }],
+			}),
+		);
 
 		// Re-apply selection without id=2
 		selectIds(mgr, new Set([1, 3]));
-		expect(mgr.selOverlayCount).toBe(2);
-		const overlayIds = new Set(mgr.selOverlayIds.slice(0, mgr.selOverlayCount));
+		expect(mgr.overlay.count).toBe(2);
+		const overlayIds = new Set(mgr.overlay.ids.slice(0, mgr.overlay.count));
 		expect(overlayIds.has(2)).toBe(false);
 		assertNoDoubleMarkers(mgr);
 		assertNoVanishedMarkers(mgr);
@@ -513,39 +483,39 @@ describe("Deltas during active selections", () => {
 		// Move id=3
 		const cb = mgr.cells.get("s")!;
 		const idx = cb.idToIndex.get(3)!;
-		mgr.applyDelta({
-			added: [],
-			updated: [{ cell: "s", cellIndex: idx, lng: 999, lat: 888 }],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				updated: [
+					{ cell: "s", cellIndex: idx, lng: 999, lat: 888, heading: null, sel: [255, 0, 0] },
+				],
+			}),
+		);
 
 		// Re-select to rebuild overlay
 		selectAll(mgr);
 		assertOverlayPositionsMatch(mgr);
-		const oi = mgr.selOverlayIds.indexOf(3);
-		expect(mgr.selOverlayPositions[oi * 2]).toBeCloseTo(999);
-		expect(mgr.selOverlayPositions[oi * 2 + 1]).toBeCloseTo(888);
+		const oi = mgr.overlay.ids.indexOf(3);
+		expect(mgr.overlay.positions[oi * 2]).toBeCloseTo(999);
+		expect(mgr.overlay.positions[oi * 2 + 1]).toBeCloseTo(888);
 	});
 
 	it("position patch moves the overlay entry with the marker, without a re-select", () => {
 		selectAll(mgr);
 		const cb = mgr.cells.get("s")!;
 		const idx = cb.idToIndex.get(3)!;
-		const vBefore = mgr.selOverlayVersion;
+		const vBefore = mgr.overlay.version;
 
-		mgr.applyDelta({
-			added: [],
-			updated: [{ cell: "s", cellIndex: idx, lng: 999, lat: 888, heading: 45 }],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				updated: [{ cell: "s", cellIndex: idx, lng: 999, lat: 888, heading: 45, sel: [255, 0, 0] }],
+			}),
+		);
 
-		const oi = mgr.selOverlayIds.indexOf(3);
-		expect(mgr.selOverlayPositions[oi * 2]).toBeCloseTo(999);
-		expect(mgr.selOverlayPositions[oi * 2 + 1]).toBeCloseTo(888);
-		expect(mgr.selOverlayAngles[oi]).toBeCloseTo(45);
-		expect(mgr.selOverlayVersion).toBeGreaterThan(vBefore);
+		const oi = mgr.overlay.ids.indexOf(3);
+		expect(mgr.overlay.positions[oi * 2]).toBeCloseTo(999);
+		expect(mgr.overlay.positions[oi * 2 + 1]).toBeCloseTo(888);
+		expect(mgr.overlay.angles[oi]).toBeCloseTo(45);
+		expect(mgr.overlay.version).toBeGreaterThan(vBefore);
 		assertOverlayPositionsMatch(mgr);
 	});
 
@@ -554,63 +524,54 @@ describe("Deltas during active selections", () => {
 		const cb = mgr.cells.get("s")!;
 		const idx = cb.idToIndex.get(2)!;
 
-		// A selected row moving to another cell arrives as removed + added, hidden in the
-		// base layer (a=0); the overlay entry must follow it or the marker vanishes.
-		mgr.applyDelta({
-			added: [entry("t", 2, 7, 8, 0, DEFAULT_R, DEFAULT_G, DEFAULT_B, 0)],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: idx, id: 2 }],
-			colorPatches: [],
-		});
+		// A selected row moving to another cell arrives as one entry carrying the slot it
+		// vacated; the overlay entry follows it rather than being dropped and rebuilt.
+		mgr.applyDelta(
+			delta({
+				added: [
+					{
+						cell: "t",
+						id: 2,
+						lng: 7,
+						lat: 8,
+						heading: 0,
+						sel: [255, 0, 0],
+						movedFrom: { cell: "s", cellIndex: idx, id: 2 },
+					},
+				],
+			}),
+		);
 
 		expect(mgr.selectedIds().has(2)).toBe(true);
-		const oi = mgr.selOverlayIds.slice(0, mgr.selOverlayCount).indexOf(2);
+		const oi = mgr.overlay.ids.slice(0, mgr.overlay.count).indexOf(2);
 		expect(oi).toBeGreaterThanOrEqual(0);
-		expect(mgr.selOverlayPositions[oi * 2]).toBeCloseTo(7);
-		expect(mgr.selOverlayPositions[oi * 2 + 1]).toBeCloseTo(8);
+		expect(mgr.overlay.positions[oi * 2]).toBeCloseTo(7);
+		expect(mgr.overlay.positions[oi * 2 + 1]).toBeCloseTo(8);
 		// The entry keeps its selection colour; nothing re-sends it.
-		expect(mgr.selOverlayColors[oi * 4]).toBe(255);
+		expect(mgr.overlay.colors[oi * 4]).toBe(255);
 		assertNoDoubleMarkers(mgr);
 		assertNoVanishedMarkers(mgr);
 	});
 
-	it("a stale gained patch is compacted out instead of counted as id 0", () => {
+	it("a patch with a stale cell index is ignored, not turned into a phantom entry", () => {
 		selectIds(mgr, new Set([1]));
-		const before = mgr.selOverlayCount;
+		const before = mgr.overlay.count;
 
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [],
-			colorPatches: [{ cell: "s", cellIndex: 9999, r: 1, g: 2, b: 3, a: 0 }],
-		});
+		mgr.applyDelta(delta({ updated: [selPatch("s", 9999, [1, 2, 3])] }));
 
-		expect(mgr.selOverlayCount).toBe(before);
+		expect(mgr.overlay.count).toBe(before);
 		expect(mgr.selectedIds().has(0)).toBe(false);
 	});
 
-	it("deselect patch on an unselected entry leaves the overlay untouched", () => {
+	it("an unselected patch on an already-unselected row leaves the overlay untouched", () => {
 		selectIds(mgr, new Set([1, 2]));
-		const vBefore = mgr.selOverlayVersion;
+		const vBefore = mgr.overlay.version;
 
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [],
-			colorPatches: [
-				{
-					cell: "s",
-					cellIndex: mgr.cells.get("s")!.idToIndex.get(4)!,
-					r: 200,
-					g: 100,
-					b: 50,
-					a: 255,
-				},
-			],
-		});
+		const idx = mgr.cells.get("s")!.idToIndex.get(4)!;
+		mgr.applyDelta(delta({ updated: [selPatch("s", idx, null)] }));
 
-		expect(mgr.selOverlayVersion).toBe(vBefore);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.version).toBe(vBefore);
+		expect(mgr.overlay.count).toBe(2);
 	});
 
 	it("deselect patch drops the entry and restores its base colour", () => {
@@ -618,15 +579,10 @@ describe("Deltas during active selections", () => {
 		const cb = mgr.cells.get("s")!;
 		const cellIndex = cb.idToIndex.get(2)!;
 
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [],
-			colorPatches: [{ cell: "s", cellIndex, r: 42, g: 42, b: 42, a: 255 }],
-		});
+		mgr.applyDelta(delta({ updated: [selPatch("s", cellIndex, null)] }));
 
-		expect(mgr.selOverlayCount).toBe(1);
-		expect([...mgr.selOverlayIds.slice(0, 1)]).toEqual([1]);
+		expect(mgr.overlay.count).toBe(1);
+		expect([...mgr.overlay.ids.slice(0, 1)]).toEqual([1]);
 		expect(cb.visible[cellIndex]).toBe(255);
 		expect(mgr.selectedIds().has(2)).toBe(false);
 	});
@@ -637,20 +593,13 @@ describe("Deltas during active selections", () => {
 		const cellIndex = cb.idToIndex.get(2)!;
 
 		// Same id patched selected twice: the overlay must still hold exactly one entry.
-		const patch = {
-			cell: "s",
-			cellIndex,
-			r: 0,
-			g: 200,
-			b: 0,
-			a: 0,
-		};
-		mgr.applyDelta({ added: [], updated: [], removed: [], colorPatches: [patch] });
-		mgr.applyDelta({ added: [], updated: [], removed: [], colorPatches: [patch] });
+		const patch = selPatch("s", cellIndex, [0, 200, 0]);
+		mgr.applyDelta(delta({ updated: [patch] }));
+		mgr.applyDelta(delta({ updated: [patch] }));
 
-		expect(mgr.selOverlayCount).toBe(2);
-		const oi = mgr.selOverlayIds.indexOf(2);
-		expect([...mgr.selOverlayColors.slice(oi * 4, oi * 4 + 4)]).toEqual([0, 200, 0, 255]);
+		expect(mgr.overlay.count).toBe(2);
+		const oi = mgr.overlay.ids.indexOf(2);
+		expect([...mgr.overlay.colors.slice(oi * 4, oi * 4 + 4)]).toEqual([0, 200, 0, 255]);
 		expect(cb.visible[cellIndex]).toBe(0);
 	});
 });
@@ -659,29 +608,24 @@ describe("Deltas during active selections", () => {
 // 5. Membership patches target the right row
 // ===========================================================================
 
-describe("Membership propagation via colorPatches", () => {
+describe("Membership propagation via selection patches", () => {
 	let mgr: CellManager;
 
 	beforeEach(() => {
 		mgr = new CellManager();
-		mgr.applyDelta({
-			added: [entry("s", 1, 1, 1), entry("s", 2, 2, 2), entry("s", 3, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 1, 1), entry("s", 2, 2, 2), entry("s", 3, 3, 3)],
+			}),
+		);
 	});
 
 	it("a patch hides only the rows it names", () => {
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [],
-			colorPatches: [
-				{ cell: "s", cellIndex: 0, r: 50, g: 200, b: 50, a: 0 },
-				{ cell: "s", cellIndex: 1, r: 50, g: 200, b: 50, a: 0 },
-			],
-		});
+		mgr.applyDelta(
+			delta({
+				updated: [selPatch("s", 0, [50, 200, 50]), selPatch("s", 1, [50, 200, 50])],
+			}),
+		);
 
 		expect(getVisible(mgr, 1)).toBe(0);
 		expect(getVisible(mgr, 2)).toBe(0);
@@ -691,19 +635,13 @@ describe("Membership propagation via colorPatches", () => {
 	it("a patch after swap-remove targets the row now at that index", () => {
 		const cb = mgr.cells.get("s")!;
 		// Remove id=1 (index 0); id=3 swaps into index 0.
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 1 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 1 }],
+			}),
+		);
 
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [],
-			colorPatches: [{ cell: "s", cellIndex: 0, r: 0, g: 255, b: 0, a: 0 }],
-		});
+		mgr.applyDelta(delta({ updated: [selPatch("s", 0, [0, 255, 0])] }));
 
 		expect(cb.ids[0]).toBe(3);
 		expect(getVisible(mgr, 3)).toBe(0);
@@ -727,12 +665,11 @@ describe("No ghost or double markers after complex sequences", () => {
 		selectIds(mgr, new Set([3, 7]));
 		// Remove one selected entry
 		const idx3 = mgr.cells.get("s")!.idToIndex.get(3)!;
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: idx3, id: 3 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: idx3, id: 3 }],
+			}),
+		);
 		clearSelection(mgr);
 		assertAllVisible(mgr);
 		assertOverlayEmpty(mgr);
@@ -740,12 +677,11 @@ describe("No ghost or double markers after complex sequences", () => {
 
 	it("select → add → re-select including new → clear: no ghosts", () => {
 		selectIds(mgr, new Set([1, 2]));
-		mgr.applyDelta({
-			added: [entry("s", 11, 110, 220)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 11, 110, 220)],
+			}),
+		);
 		selectIds(mgr, new Set([1, 2, 11]));
 		assertNoDoubleMarkers(mgr);
 		assertNoVanishedMarkers(mgr);
@@ -768,12 +704,11 @@ describe("No ghost or double markers after complex sequences", () => {
 
 	it("undo-redo cycle with interleaved selection: invariants hold", () => {
 		// Add 3 locations
-		mgr.applyDelta({
-			added: [entry("s", 20, 200, 200), entry("s", 21, 210, 210), entry("s", 22, 220, 220)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 20, 200, 200), entry("s", 21, 210, 210), entry("s", 22, 220, 220)],
+			}),
+		);
 
 		// Select some
 		selectIds(mgr, new Set([20, 21]));
@@ -781,12 +716,11 @@ describe("No ghost or double markers after complex sequences", () => {
 
 		// "Delete" id=20
 		const idx20 = mgr.cells.get("s")!.idToIndex.get(20)!;
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: idx20, id: 20 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: idx20, id: 20 }],
+			}),
+		);
 
 		// Re-select without 20
 		selectIds(mgr, new Set([21]));
@@ -794,18 +728,17 @@ describe("No ghost or double markers after complex sequences", () => {
 		assertNoVanishedMarkers(mgr);
 
 		// "Undo" — re-add 20
-		mgr.applyDelta({
-			added: [entry("s", 20, 200, 200)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 20, 200, 200)],
+			}),
+		);
 
 		// Re-select including 20
 		selectIds(mgr, new Set([20, 21]));
 		assertNoDoubleMarkers(mgr);
 		assertNoVanishedMarkers(mgr);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.count).toBe(2);
 	});
 
 	it("removing all entries clears overlay naturally", () => {
@@ -814,12 +747,11 @@ describe("No ghost or double markers after complex sequences", () => {
 		for (let id = 10; id >= 1; id--) {
 			const cb = mgr.cells.get("s")!;
 			const idx = cb.idToIndex.get(id)!;
-			mgr.applyDelta({
-				added: [],
-				updated: [],
-				removed: [{ cell: "s", cellIndex: idx, id }],
-				colorPatches: [],
-			});
+			mgr.applyDelta(
+				delta({
+					removed: [{ cell: "s", cellIndex: idx, id }],
+				}),
+			);
 		}
 		expect(mgr.totalCount).toBe(0);
 		// Overlay is stale (not auto-cleared), but if we re-select on empty, it clears
@@ -837,18 +769,17 @@ describe("Multi-cell render consistency", () => {
 
 	beforeEach(() => {
 		mgr = new CellManager();
-		mgr.applyDelta({
-			added: [
-				entry("s", 1, 10, 20),
-				entry("s", 2, 30, 40),
-				entry("t", 3, 50, 60),
-				entry("t", 4, 70, 80),
-				entry("u", 5, 90, 100),
-			],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [
+					entry("s", 1, 10, 20),
+					entry("s", 2, 30, 40),
+					entry("t", 3, 50, 60),
+					entry("t", 4, 70, 80),
+					entry("u", 5, 90, 100),
+				],
+			}),
+		);
 	});
 
 	it("selecting across cells: each cell's entries handled independently", () => {
@@ -873,12 +804,11 @@ describe("Multi-cell render consistency", () => {
 		selectIds(mgr, new Set([1, 3])); // s:1 and t:3
 
 		// Remove from cell "s"
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: mgr.cells.get("s")!.idToIndex.get(1)!, id: 1 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: mgr.cells.get("s")!.idToIndex.get(1)!, id: 1 }],
+			}),
+		);
 
 		// id=3 in cell "t" should still be hidden from the stale overlay
 		expect(isHidden(mgr, 3)).toBe(true);
@@ -928,14 +858,14 @@ describe("Multiple overlapping selections", () => {
 
 		// ID=3 is in both selections, but gets one entry, in the later (blue) colour.
 		const indices3 = [];
-		for (let i = 0; i < mgr.selOverlayCount; i++) {
-			if (mgr.selOverlayIds[i] === 3) indices3.push(i);
+		for (let i = 0; i < mgr.overlay.count; i++) {
+			if (mgr.overlay.ids[i] === 3) indices3.push(i);
 		}
 		expect(indices3.length).toBe(1);
-		expect(mgr.selOverlayColors[indices3[0] * 4]).toBe(0);
-		expect(mgr.selOverlayColors[indices3[0] * 4 + 2]).toBe(255);
+		expect(mgr.overlay.colors[indices3[0] * 4]).toBe(0);
+		expect(mgr.overlay.colors[indices3[0] * 4 + 2]).toBe(255);
 		// Five distinct locations selected, five entries: no stacked duplicates.
-		expect(mgr.selOverlayCount).toBe(5);
+		expect(mgr.overlay.count).toBe(5);
 	});
 
 	it("all entries in all selections have alpha=0 in main (even overlapping)", () => {
@@ -984,12 +914,12 @@ describe("Version tracking for deck.gl update triggers", () => {
 	});
 
 	it("selOverlayVersion increments on each bitmask application", () => {
-		const v0 = mgr.selOverlayVersion;
+		const v0 = mgr.overlay.version;
 		selectAll(mgr);
-		expect(mgr.selOverlayVersion).toBeGreaterThan(v0);
-		const v1 = mgr.selOverlayVersion;
+		expect(mgr.overlay.version).toBeGreaterThan(v0);
+		const v1 = mgr.overlay.version;
 		clearSelection(mgr);
-		expect(mgr.selOverlayVersion).toBeGreaterThan(v1);
+		expect(mgr.overlay.version).toBeGreaterThan(v1);
 	});
 
 	it("colorVersion increments on a visibility patch", () => {
@@ -1014,10 +944,10 @@ describe("Version tracking for deck.gl update triggers", () => {
 });
 
 // ===========================================================================
-// 10. buildSelectionOverlay (explicit color patches path)
+// 10. SelectionOverlay: the id index must survive swap-removes
 // ===========================================================================
 
-describe("buildSelectionOverlay (explicit patches)", () => {
+describe("SelectionOverlay id index", () => {
 	let mgr: CellManager;
 
 	beforeEach(() => {
@@ -1025,41 +955,56 @@ describe("buildSelectionOverlay (explicit patches)", () => {
 		seedLocations(mgr, 5);
 	});
 
-	it("builds overlay with correct positions and colors", () => {
-		const cb = mgr.cells.get("s")!;
-		mgr.buildSelectionOverlay([
-			{ cell: "s", cellIndex: 0, r: 255, g: 0, b: 0, a: 255 },
-			{ cell: "s", cellIndex: 2, r: 0, g: 255, b: 0, a: 255 },
-		]);
-		expect(mgr.selOverlayCount).toBe(2);
-		expect(mgr.selOverlayIds[0]).toBe(cb.ids[0]);
-		expect(mgr.selOverlayIds[1]).toBe(cb.ids[2]);
-		expect(mgr.selOverlayColors[0]).toBe(255); // red
-		expect(mgr.selOverlayColors[4]).toBe(0); // green channel of second entry
-		expect(mgr.selOverlayColors[5]).toBe(255);
+	it("set is idempotent and restates colour in place", () => {
+		const ov = mgr.overlay;
+		ov.set(1, 10, 20, 0, [255, 0, 0]);
+		ov.set(1, 10, 20, 0, [0, 0, 255]);
+		expect(ov.count).toBe(1);
+		expect([...ov.colors.slice(0, 4)]).toEqual([0, 0, 255, 255]);
 	});
 
-	it("empty patches produce empty overlay", () => {
-		mgr.buildSelectionOverlay([]);
-		assertOverlayEmpty(mgr);
+	it("delete swap-removes and keeps every surviving id findable", () => {
+		const ov = mgr.overlay;
+		for (const id of [1, 2, 3, 4, 5]) ov.set(id, id, id, 0, [255, 0, 0]);
+
+		ov.delete(1); // id 5 swaps into slot 0
+		ov.delete(3);
+
+		expect(ov.count).toBe(3);
+		for (const id of [2, 4, 5]) {
+			expect(ov.has(id), `id ${id} should still be in the overlay`).toBe(true);
+			const slot = [...ov.ids.slice(0, ov.count)].indexOf(id);
+			expect(ov.positions[slot * 2], `id ${id} position followed its slot`).toBeCloseTo(id);
+		}
+		for (const id of [1, 3]) expect(ov.has(id)).toBe(false);
 	});
 
-	it("out-of-bounds cellIndex is compacted out, not counted", () => {
-		mgr.buildSelectionOverlay([{ cell: "s", cellIndex: 999, r: 255, g: 0, b: 0, a: 255 }]);
-		// A skipped slot must not be counted, or a zeroed phantom entry (id 0) leaks out.
-		expect(mgr.selOverlayCount).toBe(0);
+	it("deleting an absent id is a no-op", () => {
+		const ov = mgr.overlay;
+		ov.set(1, 1, 1, 0, [255, 0, 0]);
+		const v = ov.version;
+		ov.delete(99);
+		expect(ov.count).toBe(1);
+		expect(ov.version).toBe(v);
 	});
 
-	it("appendToSelectionOverlay adds without replacing", () => {
-		mgr.buildSelectionOverlay([{ cell: "s", cellIndex: 0, r: 255, g: 0, b: 0, a: 255 }]);
-		mgr.appendToSelectionOverlay([{ cell: "s", cellIndex: 1, r: 0, g: 0, b: 255, a: 255 }]);
-		expect(mgr.selOverlayCount).toBe(2);
-		// First entry still red
-		expect(mgr.selOverlayColors[0]).toBe(255);
-		expect(mgr.selOverlayColors[2]).toBe(0);
-		// Second entry blue
-		expect(mgr.selOverlayColors[4]).toBe(0);
-		expect(mgr.selOverlayColors[6]).toBe(255);
+	it("selectedIds snapshots, so a later delete does not rewrite it", () => {
+		const ov = mgr.overlay;
+		ov.set(1, 1, 1, 0, [255, 0, 0]);
+		ov.set(2, 2, 2, 0, [255, 0, 0]);
+		const snapshot = ov.selectedIds();
+		ov.delete(1);
+		expect(snapshot.has(1)).toBe(true);
+		expect(ov.has(1)).toBe(false);
+	});
+
+	it("clear empties membership without leaving stale bits", () => {
+		const ov = mgr.overlay;
+		for (const id of [1, 2, 3]) ov.set(id, id, id, 0, [255, 0, 0]);
+		ov.clear();
+		expect(ov.count).toBe(0);
+		for (const id of [1, 2, 3]) expect(ov.has(id)).toBe(false);
+		expect(ov.selectedIds().size).toBe(0);
 	});
 });
 
@@ -1072,7 +1017,7 @@ describe("initFromBinary clears selection state", () => {
 		const mgr = new CellManager();
 		seedLocations(mgr, 5);
 		selectAll(mgr);
-		expect(mgr.selOverlayCount).toBe(5);
+		expect(mgr.overlay.count).toBe(5);
 
 		// Re-init from a minimal binary (1 cell, 2 entries, 0 selection)
 		const buf = buildMinimalBinary("s", [
@@ -1082,7 +1027,7 @@ describe("initFromBinary clears selection state", () => {
 		mgr.initFromBinary(buf);
 
 		expect(mgr.totalCount).toBe(2);
-		expect(mgr.selOverlayCount).toBe(0);
+		expect(mgr.overlay.count).toBe(0);
 		assertAllVisible(mgr);
 	});
 });
@@ -1183,38 +1128,35 @@ describe("CellManager totalCount consistency", () => {
 	});
 
 	it("stays correct through adds across multiple cells", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 1, 1), entry("t", 2, 2, 2), entry("u", 3, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 1, 1), entry("t", 2, 2, 2), entry("u", 3, 3, 3)],
+			}),
+		);
 		assertTotalCountConsistent(mgr, "after add to 3 cells");
 	});
 
 	it("stays correct through mixed adds and removes", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 1, 1), entry("s", 2, 2, 2), entry("t", 3, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 1, 1), entry("s", 2, 2, 2), entry("t", 3, 3, 3)],
+			}),
+		);
 		assertTotalCountConsistent(mgr, "after initial add");
 
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 1 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 1 }],
+			}),
+		);
 		assertTotalCountConsistent(mgr, "after remove from s");
 
-		mgr.applyDelta({
-			added: [entry("t", 4, 4, 4), entry("u", 5, 5, 5)],
-			updated: [],
-			removed: [{ cell: "t", cellIndex: 0, id: 3 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("t", 4, 4, 4), entry("u", 5, 5, 5)],
+				removed: [{ cell: "t", cellIndex: 0, id: 3 }],
+			}),
+		);
 		assertTotalCountConsistent(mgr, "after simultaneous add+remove");
 	});
 
@@ -1225,12 +1167,11 @@ describe("CellManager totalCount consistency", () => {
 		const cb = mgr.cells.get("s")!;
 		for (let i = cb.count - 1; i >= 0; i--) {
 			const id = cb.ids[i];
-			mgr.applyDelta({
-				added: [],
-				updated: [],
-				removed: [{ cell: "s", cellIndex: i, id }],
-				colorPatches: [],
-			});
+			mgr.applyDelta(
+				delta({
+					removed: [{ cell: "s", cellIndex: i, id }],
+				}),
+			);
 		}
 		assertTotalCountConsistent(mgr, "after remove all");
 		expect(mgr.totalCount).toBe(0);
@@ -1245,9 +1186,7 @@ describe("CellManager totalCount consistency", () => {
 
 	it("stays correct after initFromBinary", () => {
 		seedLocations(mgr, 5);
-		const buf = buildMinimalBinary("s", [
-			{ id: 100, lng: 1, lat: 2, heading: 0, visible: 255 },
-		]);
+		const buf = buildMinimalBinary("s", [{ id: 100, lng: 1, lat: 2, heading: 0, visible: 255 }]);
 		mgr.initFromBinary(buf);
 		assertTotalCountConsistent(mgr, "after initFromBinary");
 	});
@@ -1265,35 +1204,33 @@ describe("No duplicate IDs across cells", () => {
 	});
 
 	it("normal multi-cell add has no duplicates", () => {
-		mgr.applyDelta({
-			added: [
-				entry("s", 1, 1, 1),
-				entry("t", 2, 2, 2),
-				entry("u", 3, 3, 3),
-				entry("s", 4, 4, 4),
-				entry("t", 5, 5, 5),
-			],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [
+					entry("s", 1, 1, 1),
+					entry("t", 2, 2, 2),
+					entry("u", 3, 3, 3),
+					entry("s", 4, 4, 4),
+					entry("t", 5, 5, 5),
+				],
+			}),
+		);
 		assertNoDuplicateIdsAcrossCells(mgr);
 	});
 
 	it("remove from one cell + add to another with different IDs: no duplicates", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 1, 1), entry("t", 2, 2, 2)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 1, 1), entry("t", 2, 2, 2)],
+			}),
+		);
 
-		mgr.applyDelta({
-			added: [entry("t", 3, 3, 3)],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 1 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("t", 3, 3, 3)],
+				removed: [{ cell: "s", cellIndex: 0, id: 1 }],
+			}),
+		);
 		assertNoDuplicateIdsAcrossCells(mgr, "after cross-cell mutation");
 	});
 
@@ -1303,35 +1240,32 @@ describe("No duplicate IDs across cells", () => {
 		for (let i = 0; i < 200; i++) {
 			entries.push(entry(cells[i % cells.length], i + 1, i, i));
 		}
-		mgr.applyDelta({ added: entries, updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: entries }));
 		assertNoDuplicateIdsAcrossCells(mgr, "200 entries across 4 cells");
 	});
 
 	it("undo-redo sequence maintains no duplicates", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 1, 1), entry("s", 2, 2, 2), entry("t", 3, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 1, 1), entry("s", 2, 2, 2), entry("t", 3, 3, 3)],
+			}),
+		);
 		assertNoDuplicateIdsAcrossCells(mgr, "initial");
 
 		// "Delete" id=1 from cell s
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: mgr.cells.get("s")!.idToIndex.get(1)!, id: 1 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: mgr.cells.get("s")!.idToIndex.get(1)!, id: 1 }],
+			}),
+		);
 		assertNoDuplicateIdsAcrossCells(mgr, "after delete");
 
 		// "Undo" — re-add id=1 back to cell s
-		mgr.applyDelta({
-			added: [entry("s", 1, 1, 1)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 1, 1)],
+			}),
+		);
 		assertNoDuplicateIdsAcrossCells(mgr, "after undo");
 	});
 });
@@ -1349,18 +1283,17 @@ describe("Structural integrity (all three invariants) through operation sequence
 
 	it("holds through a realistic editing session", () => {
 		// User opens map — locations load across cells
-		mgr.applyDelta({
-			added: [
-				entry("s", 1, 10, 20),
-				entry("s", 2, 30, 40),
-				entry("t", 3, 50, 60),
-				entry("t", 4, 70, 80),
-				entry("u", 5, 90, 100),
-			],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [
+					entry("s", 1, 10, 20),
+					entry("s", 2, 30, 40),
+					entry("t", 3, 50, 60),
+					entry("t", 4, 70, 80),
+					entry("u", 5, 90, 100),
+				],
+			}),
+		);
 		assertStructuralIntegrity(mgr, "after open");
 
 		// User selects some locations
@@ -1368,26 +1301,24 @@ describe("Structural integrity (all three invariants) through operation sequence
 		assertStructuralIntegrity(mgr, "after select");
 
 		// User adds a new location
-		mgr.applyDelta({
-			added: [entry("s", 6, 110, 120)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 6, 110, 120)],
+			}),
+		);
 		assertStructuralIntegrity(mgr, "after add during selection");
 
 		// User deletes two locations
 		const sIdx2 = mgr.cells.get("s")!.idToIndex.get(2)!;
 		const tIdx4 = mgr.cells.get("t")!.idToIndex.get(4)!;
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [
-				{ cell: "s", cellIndex: sIdx2, id: 2 },
-				{ cell: "t", cellIndex: tIdx4, id: 4 },
-			],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [
+					{ cell: "s", cellIndex: sIdx2, id: 2 },
+					{ cell: "t", cellIndex: tIdx4, id: 4 },
+				],
+			}),
+		);
 		assertStructuralIntegrity(mgr, "after delete 2 locations");
 
 		// User clears selection
@@ -1396,21 +1327,19 @@ describe("Structural integrity (all three invariants) through operation sequence
 
 		// User updates a location (position patch)
 		const uIdx5 = mgr.cells.get("u")!.idToIndex.get(5)!;
-		mgr.applyDelta({
-			added: [],
-			updated: [{ cell: "u", cellIndex: uIdx5, lng: 999, lat: 888, heading: 45 }],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				updated: [{ cell: "u", cellIndex: uIdx5, lng: 999, lat: 888, heading: 45, sel: null }],
+			}),
+		);
 		assertStructuralIntegrity(mgr, "after position update");
 
 		// User undoes the delete (re-add)
-		mgr.applyDelta({
-			added: [entry("s", 2, 30, 40), entry("t", 4, 70, 80)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 2, 30, 40), entry("t", 4, 70, 80)],
+			}),
+		);
 		assertStructuralIntegrity(mgr, "after undo delete");
 
 		// User selects everything and clears
@@ -1460,7 +1389,7 @@ describe("Structural integrity (all three invariants) through operation sequence
 			for (let i = 0; i < 5; i++) {
 				newEntries.push(entry(cells[i % 3], nextId++, nextId * 10, nextId * 20));
 			}
-			mgr.applyDelta({ added: newEntries, updated: [], removed: [], colorPatches: [] });
+			mgr.applyDelta(delta({ added: newEntries }));
 			assertStructuralIntegrity(mgr, `round ${round} after add`);
 
 			// Remove the first entry from each cell that has one
@@ -1471,7 +1400,7 @@ describe("Structural integrity (all three invariants) through operation sequence
 				}
 			}
 			if (removals.length > 0) {
-				mgr.applyDelta({ added: [], updated: [], removed: removals, colorPatches: [] });
+				mgr.applyDelta(delta({ removed: removals }));
 				assertStructuralIntegrity(mgr, `round ${round} after remove`);
 			}
 		}
@@ -1499,7 +1428,8 @@ function buildMultiCellBinary(cells: { cell: string; entries: BinaryEntry[] }[])
 	let size = 4; // u32 cell_count
 	for (const c of cells) {
 		const n = c.entries.length;
-		size += 5 + n * 4 + n * 2 * 4 + n + n * 4; // header + ids + positions + visible + angles
+		// header+pad + ids + positions + visible+pad + angles
+		size += 8 + n * 4 + n * 2 * 4 + n + ((4 - (n & 3)) & 3) + n * 4;
 	}
 	size += 4; // sel_count
 
@@ -1516,6 +1446,7 @@ function buildMultiCellBinary(cells: { cell: string; entries: BinaryEntry[] }[])
 		off += 1;
 		dv.setUint32(off, n, true);
 		off += 4;
+		off += 3; // alignment pad
 		for (const e of c.entries) {
 			dv.setUint32(off, e.id, true);
 			off += 4;
@@ -1530,6 +1461,7 @@ function buildMultiCellBinary(cells: { cell: string; entries: BinaryEntry[] }[])
 			dv.setUint8(off, e.visible);
 			off += 1;
 		}
+		off += (4 - (n & 3)) & 3; // pad visible to 4
 		for (const e of c.entries) {
 			dv.setFloat32(off, e.heading, true);
 			off += 4;

@@ -38,7 +38,7 @@ function previewColor(name: string): string {
 /** Import staging sidebar: field picker, file tags, bulk tag, and warnings. */
 export function ImportSidebar() {
 	const { t, tp } = useT();
-	const staging = useEventValue("store:changed", getImportStaging);
+	const staging = useEventValue("import-markers:changed", getImportStaging);
 	const visibleTags = useMapState(getVisibleTags);
 	const [droppedFields, setDroppedFields] = useState(loadDroppedFields);
 	const [bulkTag, setBulkTag] = useState<string | null>(null);

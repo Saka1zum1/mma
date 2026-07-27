@@ -19,6 +19,8 @@ import type {
 	DeckOverlayProps,
 } from "@/lib/map/host";
 
+const DEFAULT_CURSOR = "crosshair";
+
 type GmEvent = { srcEvent?: { domEvent?: Event } };
 
 const EVENT_NAMES: Record<keyof MapHostEvents, string> = {
@@ -125,7 +127,7 @@ class GoogleMapHost implements MapHostContract<"google"> {
 			mapTypeControl: false,
 			clickableIcons: false,
 			gestureHandling: "greedy",
-			draggableCursor: "crosshair",
+			draggableCursor: DEFAULT_CURSOR,
 			backgroundColor: getStyleBackgroundColor(prefs.mapStyleName),
 			styles: [{ stylers: [{ visibility: "off" }] }],
 		});
@@ -213,6 +215,10 @@ class GoogleMapHost implements MapHostContract<"google"> {
 		p.draw = () => {};
 		p.setMap(this.map);
 		this.projector = p;
+	}
+
+	setCursor(v: string | null) {
+		this.map.setOptions({ draggableCursor: v ?? DEFAULT_CURSOR });
 	}
 
 	setDraggable(v: boolean) {

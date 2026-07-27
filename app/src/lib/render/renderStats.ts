@@ -129,7 +129,7 @@ export function computeRenderStats(): RenderStats | null {
 	return {
 		totalMarkers: scene.totalCount,
 		onScreenMarkers: onScreen,
-		selOverlay: scene.selOverlayCount,
+		selOverlay: scene.overlay.count,
 		layers,
 		markerStyle: prefs.markerStyle,
 		markerSize: prefs.markerSize,

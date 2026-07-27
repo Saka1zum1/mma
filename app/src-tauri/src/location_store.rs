@@ -96,14 +96,12 @@ fn assemble_selection_bitmask<'a>(
 /// is O(min(set size, render size)) rather than O(render size) per selection: sparse sets
 /// walk their members and probe `id_to_cell_idx`/`id_to_index`; dense sets (where
 /// member-walking would do the same work anyway) scan the cell arrays directly.
-fn selection_cell_indices(render: &RenderState, set: &RoaringBitmap) -> [Vec<u32>; 32] {
+fn selection_cell_indices(
+    render: &RenderState,
+    render_size: usize,
+    set: &RoaringBitmap,
+) -> [Vec<u32>; 32] {
     let mut out: [Vec<u32>; 32] = std::array::from_fn(|_| Vec::new());
-    let render_size: usize = render
-        .cells
-        .iter()
-        .filter_map(|o| o.as_ref())
-        .map(|cr| cr.id_order.len())
-        .sum();
     if (set.len() as usize) <= render_size {
         for id in set {
             let Some(&ci) = render.id_to_cell_idx.get(id as usize) else {
@@ -118,9 +116,6 @@ fn selection_cell_indices(render: &RenderState, set: &RoaringBitmap) -> [Vec<u32
             if let Some(&li) = cr.id_to_index.get(&id) {
                 out[ci as usize].push(li as u32);
             }
-        }
-        for v in &mut out {
-            v.sort_unstable();
         }
     } else {
         for (ci, opt) in render.cells.iter().enumerate() {
@@ -145,7 +140,7 @@ fn serialize_cell_segment(ci: usize, cr: &CellRender, per_sel: &[[Vec<u32>; 32]]
     seg.push(BASE32[ci]);
     seg.extend_from_slice(&(n as u32).to_le_bytes());
     // Per selection, emit one of two self-describing formats (format byte first):
-    //   1 = index-list: u32 count + count*u32 selected local indices (sparse → O(selected))
+    //   1 = index-list: u32 count + count*u32 selected local indices, unordered (sparse → O(selected))
     //   0 = bitmask:    mask_bytes raw bits (dense → smaller than an index list)
     // The index-list lets JS rebuild the overlay in O(selected) instead of scanning N bits.
     for sel_cells in per_sel {
@@ -243,6 +238,17 @@ pub(crate) struct RenderState {
     pub id_to_cell_idx: Vec<u8>,
     pub arrow_style: bool,
     pub marker_color: [u8; 3],
+}
+
+impl RenderState {
+    /// Total rendered marker count across all cells.
+    fn total_len(&self) -> usize {
+        self.cells
+            .iter()
+            .filter_map(|o| o.as_ref())
+            .map(|cr| cr.id_order.len())
+            .sum()
+    }
 }
 
 /// A selection together with its resolved membership. One value rather than two parallel
@@ -362,9 +368,10 @@ pub(crate) struct EditEntry {
     pub removed: Vec<Location>,
 }
 
+/// Ids whose selection membership changed in a mutation. Carries no colour:
+/// `SelectionState::color_for` is the one place a selection colour is decided.
 struct MembershipDelta {
-    gained: Vec<(u32, [u8; 3])>,
-    lost: Vec<u32>,
+    changed: HashSet<u32>,
 }
 
 /// Everything derived from a single O(N) pass over all alive locations. Computed
@@ -558,44 +565,14 @@ impl Store {
             None
         };
 
-        // Step 2: Derive render delta (mutates render_cells).
-        let mut delta = self.derive_render_delta(&changes);
+        // Step 2: Derive the render delta (mutates render_cells). Every entry it emits
+        // states the row's selection state, so membership changes need no second channel:
+        // a row that only gained or lost a selection comes out as a coordinate-free patch.
+        let changed = membership_delta.map(|md| md.changed).unwrap_or_default();
+        let delta = self.derive_render_delta(&changes, &changed);
 
-        // Step 3: Project membership changes onto colorPatches. This is the whole
-        // incremental selection update: gained rows go transparent in the base layer
-        // (the overlay draws them in the selection color), lost rows go back to the
-        // marker color and drop out of the overlay. Rows lost by deletion have no cell
-        // left to patch; JS drops those from the overlay via `delta.removed`.
-        if let Some(ref md) = membership_delta {
-            let [mr, mg, mb] = self.render.marker_color;
-            for &(id, color) in &md.gained {
-                if let Some((cell, cell_index)) = self.cell_lookup(id) {
-                    delta.color_patches.push(ColorPatchEntry {
-                        cell,
-                        cell_index,
-                        r: color[0],
-                        g: color[1],
-                        b: color[2],
-                        a: 0,
-                    });
-                }
-            }
-            for &id in &md.lost {
-                if let Some((cell, cell_index)) = self.cell_lookup(id) {
-                    delta.color_patches.push(ColorPatchEntry {
-                        cell,
-                        cell_index,
-                        r: mr,
-                        g: mg,
-                        b: mb,
-                        a: 255,
-                    });
-                }
-            }
-        }
-
-        // Step 4: Only a full resolve ships a bitmask. The incremental path is carried
-        // entirely by the colorPatches above, which cost O(changed) instead of the
+        // Step 3: Only a full resolve ships a bitmask. The incremental path is carried
+        // entirely by the delta above, which costs O(changed) instead of the
         // O(rows in the affected cells) that a per-cell bitmask rebuild costs.
         let selection_sync = if has_selections {
             if full_resolve {
@@ -644,18 +621,6 @@ impl Store {
         }
     }
 
-    /// Return the RGBA color for a location in the base render layer.
-    /// Selected locations are transparent (alpha=0) because they are drawn separately
-    /// by the selection overlay layer with their selection color.
-    fn base_color(&self, id: u32) -> (u8, u8, u8, u8) {
-        if self.selections.ids.contains(id) {
-            (0, 0, 0, 0)
-        } else {
-            let [r, g, b] = self.render.marker_color;
-            (r, g, b, 255)
-        }
-    }
-
     /// Whether any active selection requires a full O(S*N) resolve rather than
     /// incremental membership updates (composites and duplicates depend on global state).
     fn selections_need_full_resolve(&self) -> bool {
@@ -672,10 +637,26 @@ impl Store {
         })
     }
 
+    /// Render angle for a heading. Only arrow markers point anywhere.
+    fn render_angle(&self, heading: f64) -> f32 {
+        if self.render.arrow_style {
+            -(heading as f32)
+        } else {
+            0.0
+        }
+    }
+
     /// Project the changeset onto render cells, returning the render delta and keeping
     /// `render_cells` / `id_to_cell_idx` in sync. This is the single place cell
     /// membership is mutated for adds / removes / moves.
-    fn derive_render_delta(&mut self, changes: &ChangeSet) -> RenderDelta {
+    ///
+    /// `membership_changed` carries the ids whose selection membership moved, so a row that
+    /// changed selection without moving still gets a patch stating its new state.
+    fn derive_render_delta(
+        &mut self,
+        changes: &ChangeSet,
+        membership_changed: &HashSet<u32>,
+    ) -> RenderDelta {
         let mut delta = RenderDelta {
             full_reset: changes.full_reset,
             ..Default::default()
@@ -689,83 +670,55 @@ impl Store {
 
         for loc in &changes.added {
             let ci = render_cell_idx(loc.lat, loc.lng);
-            let (r, g, b, a) = self.base_color(loc.id);
             self.cell_add_render(ci, loc.id);
-            let angle = if self.render.arrow_style {
-                -(loc.heading as f32)
-            } else {
-                0.0
-            };
             delta.added.push(RenderEntry {
                 cell: cell_key_from_idx(ci),
                 id: loc.id,
                 lng: loc.lng as f32,
                 lat: loc.lat as f32,
-                heading: angle,
-                r,
-                g,
-                b,
-                a,
+                heading: self.render_angle(loc.heading),
+                sel: self.selections.color_for(loc.id),
+                moved_from: None,
             });
         }
 
         for (old, new) in &changes.updated {
             let pos_changed = old.lat != new.lat || old.lng != new.lng;
             let heading_changed = old.heading != new.heading;
-            if pos_changed {
-                let new_ci = render_cell_idx(new.lat, new.lng);
-                let old_ci = self
-                    .render
-                    .id_to_cell_idx
-                    .get(new.id as usize)
-                    .copied()
-                    .unwrap_or(255);
-                if old_ci != new_ci {
-                    if let Some(removal) = self.cell_remove_render(new.id) {
-                        delta.removed.push(removal);
-                    }
-                    let (r, g, b, a) = self.base_color(new.id);
-                    self.cell_add_render(new_ci, new.id);
-                    let angle = if self.render.arrow_style {
-                        -(new.heading as f32)
-                    } else {
-                        0.0
-                    };
-                    delta.added.push(RenderEntry {
-                        cell: cell_key_from_idx(new_ci),
-                        id: new.id,
-                        lng: new.lng as f32,
-                        lat: new.lat as f32,
-                        heading: angle,
-                        r,
-                        g,
-                        b,
-                        a,
-                    });
-                    continue;
-                }
+            let new_ci = render_cell_idx(new.lat, new.lng);
+            let old_ci = self
+                .render
+                .id_to_cell_idx
+                .get(new.id as usize)
+                .copied()
+                .unwrap_or(255);
+
+            // Crossing cells is a move, not a delete plus an unrelated create: the vacated
+            // slot rides along on the entry so the overlay entry can follow the row.
+            if pos_changed && old_ci != new_ci {
+                let moved_from = self.cell_remove_render(new.id);
+                self.cell_add_render(new_ci, new.id);
+                delta.added.push(RenderEntry {
+                    cell: cell_key_from_idx(new_ci),
+                    id: new.id,
+                    lng: new.lng as f32,
+                    lat: new.lat as f32,
+                    heading: self.render_angle(new.heading),
+                    sel: self.selections.color_for(new.id),
+                    moved_from,
+                });
+                continue;
             }
-            if pos_changed || heading_changed {
-                if let Some((cell, ci)) = self.cell_lookup(new.id) {
-                    let angle = if self.render.arrow_style {
-                        -(new.heading as f32)
-                    } else {
-                        0.0
-                    };
+
+            if pos_changed || heading_changed || membership_changed.contains(&new.id) {
+                if let Some((cell, cell_index)) = self.cell_lookup(new.id) {
                     delta.updated.push(RenderPatchEntry {
                         cell,
-                        cell_index: ci,
-                        lng: if pos_changed {
-                            Some(new.lng as f32)
-                        } else {
-                            None
-                        },
-                        lat: if pos_changed {
-                            Some(new.lat as f32)
-                        } else {
-                            None
-                        },
-                        heading: if heading_changed { Some(angle) } else { None },
+                        cell_index,
+                        lng: pos_changed.then_some(new.lng as f32),
+                        lat: pos_changed.then_some(new.lat as f32),
+                        heading: heading_changed.then(|| self.render_angle(new.heading)),
+                        sel: self.selections.color_for(new.id),
                     });
                 }
             }
@@ -775,7 +728,8 @@ impl Store {
     }
 
     /// Update selection membership sets for incremental changes (adds/removes/updates).
-    /// Returns which IDs gained or lost selection so callers can emit colorPatches.
+    /// Returns which ids crossed in or out of a selection, so the render delta can state
+    /// their new selection state.
     fn update_selection_membership(&mut self, changes: &ChangeSet) -> MembershipDelta {
         let mut was_selected: HashSet<u32> = HashSet::new();
 
@@ -825,30 +779,18 @@ impl Store {
             .map(|r| (r.sel.key.clone(), r.set.len() as u32))
             .collect();
 
-        let mut gained = Vec::new();
-        let mut lost = Vec::new();
+        let mut changed = HashSet::new();
         for loc in changes
             .added
             .iter()
             .chain(changes.updated.iter().map(|(_, n)| n))
         {
-            let is_now = self.selections.ids.contains(loc.id);
-            let was_before = was_selected.contains(&loc.id);
-            if is_now && !was_before {
-                let color = self.selections.color_for(loc.id).unwrap_or([255, 0, 0]);
-                gained.push((loc.id, color));
-            } else if !is_now && was_before {
-                lost.push(loc.id);
+            if self.selections.ids.contains(loc.id) != was_selected.contains(&loc.id) {
+                changed.insert(loc.id);
             }
         }
-        // Removed locations that were selected
-        for &id in &changes.removed {
-            if was_selected.contains(&id) {
-                lost.push(id);
-            }
-        }
-
-        MembershipDelta { gained, lost }
+        // A removed row leaves the overlay with its cell; nothing to state about it.
+        MembershipDelta { changed }
     }
 
     /// Full selection membership resolve: recomputes every member set, the union, and the
@@ -876,8 +818,8 @@ impl Store {
     }
 
     /// Build the full selection bitmask from the current render cells + member sets.
-    /// Every cell is rebuilt; incremental membership changes ride the render delta's
-    /// colorPatches instead (see `finish_mutation`).
+    /// Every cell is rebuilt; incremental membership changes ride the `sel` field on the
+    /// render delta's own entries instead (see `finish_mutation`).
     fn build_selection_bitmask(&self) -> SelectionSync {
         let counts = self.selections.node_counts.clone();
         let selected_count = self.selections.ids.len() as usize;
@@ -887,11 +829,12 @@ impl Store {
         // Route selections to per-cell indices (parallel over selections, O(selected)),
         // then serialize the cells in parallel; segments are self-describing so
         // order is irrelevant.
+        let render_total = self.render.total_len();
         let routed: Vec<[Vec<u32>; 32]> = self
             .selections
             .resolved
             .par_iter()
-            .map(|r| selection_cell_indices(&self.render, &r.set))
+            .map(|r| selection_cell_indices(&self.render, render_total, &r.set))
             .collect();
         let segments: Vec<Vec<u8>> = self
             .render
@@ -1863,8 +1806,9 @@ pub struct SummaryResult {
     pub dirty_count: usize,
 }
 
-/// Incremental render update sent to JS after a mutation. Contains adds, position/heading
-/// patches, swap-removals, and color patches (for selection overlay changes).
+/// Incremental render update sent to JS after a mutation: adds, patches, and removals.
+/// Every entry states the row's resulting selection state, so applying a delta is
+/// idempotent and the base cells and the selection overlay cannot drift apart.
 /// `full_reset` signals JS to discard all cell data and re-fetch via `store_fill_render_file`.
 #[derive(serde::Serialize, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -1872,7 +1816,6 @@ pub struct RenderDelta {
     pub added: Vec<RenderEntry>,
     pub updated: Vec<RenderPatchEntry>,
     pub removed: Vec<CellRemoval>,
-    pub color_patches: Vec<ColorPatchEntry>,
     pub full_reset: bool,
 }
 
@@ -1899,7 +1842,7 @@ impl ChangeSet {
     }
 }
 
-/// A newly-added marker to a render cell: position, heading, and base color.
+/// A marker appended to a render cell: position, heading, and selection state.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderEntry {
@@ -1908,13 +1851,17 @@ pub struct RenderEntry {
     pub lng: f32,
     pub lat: f32,
     pub heading: f32,
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub a: u8,
+    /// `None` = drawn by the base layer, `Some(rgb)` = drawn by the selection overlay.
+    pub sel: Option<[u8; 3]>,
+    /// The slot this row vacated when it crossed cells. Present only for a move, so JS
+    /// mirrors the swap-remove and carries the overlay entry across instead of inferring
+    /// a move from an unrelated removed/added pair.
+    pub moved_from: Option<CellRemoval>,
 }
 
-/// Partial update to an existing marker within its cell (position and/or heading changed).
+/// Update to an existing marker within its cell. Position and heading are `None` when
+/// unchanged; `sel` always states the row's current selection state, so a membership
+/// change with no movement is just a patch with no coordinates.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderPatchEntry {
@@ -1923,6 +1870,7 @@ pub struct RenderPatchEntry {
     pub lng: Option<f32>,
     pub lat: Option<f32>,
     pub heading: Option<f32>,
+    pub sel: Option<[u8; 3]>,
 }
 
 /// A swap-removal from a render cell. JS must move the last element into `cell_index`
@@ -1933,21 +1881,6 @@ pub struct CellRemoval {
     pub cell: String,
     pub cell_index: usize,
     pub id: u32,
-}
-
-/// One location's selection-membership change, projected onto the render buffers.
-/// The RGBA is the base-layer color, and `a` says which way it went: a gained row is
-/// transparent there (a=0) and drawn by the overlay in `r,g,b`; a lost row (a=255) gets
-/// the opaque marker color back and drops out of the overlay.
-#[derive(serde::Serialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ColorPatchEntry {
-    pub cell: String,
-    pub cell_index: usize,
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub a: u8,
 }
 
 /// Selection bitmask sync payload. `bitmask` carries the packed per-cell bitmask bytes
@@ -3424,10 +3357,13 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     }
 
     // Serialize: u32 cell_count, per cell:
-    //   [1 byte geohash char][u32 count][u32[] ids][f32[] positions][u8[] visible][f32[] angles]
+    //   [1 byte geohash char][u32 count][3 pad][u32[] ids][f32[] positions][u8[] visible][pad to 4][f32[] angles]
+    // Arrays sit 4-byte aligned within the buffer so JS wraps them as views without copying.
     let body_cap: usize = (0..32)
         .filter_map(|ci| cells[ci].as_ref())
-        .map(|o| 5 + o.ids.len() * 4 + o.positions.len() * 4 + o.visible.len() + o.angles.len() * 4)
+        .map(|o| {
+            8 + o.ids.len() * 4 + o.positions.len() * 4 + o.visible.len() + 3 + o.angles.len() * 4
+        })
         .sum();
     let sel_cap = if sel_ov.ids.is_empty() {
         0
@@ -3447,32 +3383,23 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         let count = out.ids.len() as u32;
         buf.push(BASE32[ci]);
         buf.extend_from_slice(&count.to_le_bytes());
-        for &id in &out.ids {
-            buf.extend_from_slice(&id.to_le_bytes());
-        }
-        for &v in &out.positions {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
+        buf.extend_from_slice(&[0u8; 3]);
+        // cast_slice = native-endian; all supported targets are little-endian like the JS side.
+        buf.extend_from_slice(bytemuck::cast_slice(&out.ids));
+        buf.extend_from_slice(bytemuck::cast_slice(&out.positions));
         buf.extend_from_slice(&out.visible);
-        for &v in &out.angles {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
+        buf.extend_from_slice(&[0u8; 3][..(4 - out.visible.len() % 4) % 4]);
+        buf.extend_from_slice(bytemuck::cast_slice(&out.angles));
     }
 
     // Selection overlay: [u32 count][f32[] positions][u8[] colors][f32[] angles][u32[] ids]
     let sel_count = sel_ov.ids.len() as u32;
     buf.extend_from_slice(&sel_count.to_le_bytes());
     if sel_count > 0 {
-        for &v in &sel_ov.positions {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
+        buf.extend_from_slice(bytemuck::cast_slice(&sel_ov.positions));
         buf.extend_from_slice(&sel_ov.colors);
-        for &v in &sel_ov.angles {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
-        for &id in &sel_ov.ids {
-            buf.extend_from_slice(&id.to_le_bytes());
-        }
+        buf.extend_from_slice(bytemuck::cast_slice(&sel_ov.angles));
+        buf.extend_from_slice(bytemuck::cast_slice(&sel_ov.ids));
     }
 
     log::debug!(
@@ -3862,9 +3789,10 @@ pub async fn store_sync_selections(
 
         // 3. Route selections to per-cell indices (O(selected), not O(S*N)), then
         //    serialize the per-cell bitmask binary. Cells are independent → parallel.
+        let render_total = store.render.total_len();
         let routed: Vec<[Vec<u32>; 32]> = live
             .par_iter()
-            .map(|r| selection_cell_indices(&store.render, &r.set))
+            .map(|r| selection_cell_indices(&store.render, render_total, &r.set))
             .collect();
         let segments: Vec<Vec<u8>> = store
             .render
@@ -3885,13 +3813,6 @@ pub async fn store_sync_selections(
         store.selections.node_counts = counts.clone();
         store.selections.version += 1;
 
-        let render_total: usize = store
-            .render
-            .cells
-            .iter()
-            .filter_map(|o| o.as_ref())
-            .map(|cr| cr.id_order.len())
-            .sum();
         log::debug!("[cmd] store_sync_selections total={}ms sels={} selected={} cells={} buf_size={} batch_rows={} overlay_adds={} dead={} alive={} render_total={} first_set_len={} counts={:?}",
             _t.elapsed().as_millis(), sels.len(), selected_count, num_cells, buf.len(),
             store.batch.as_ref().map_or(0, |b| b.num_rows()), store.overlay.adds.len(),

@@ -35,6 +35,7 @@ const EVENT_DEFS = {
 	"store:changed": event<void>(),
 	"render:delta": event<RenderDelta>(),
 	"render:selection": event<SelectionBitmaskPayload>(),
+	"map-list:changed": event<void>(),
 	"settings:changed": event<void>(),
 	"locale:changed": event<void>(),
 	"fullscreen:changed": event<void>(),
@@ -152,6 +153,19 @@ const eventsWithPrefix = <P extends string>(
 	prefix: [EventsWithPrefix<P>] extends [never] ? `No events match prefix "${P}:"` : P,
 ): EventsWithPrefix<P>[] =>
 	ALL_EVENTS.filter((e): e is EventsWithPrefix<P> => e.startsWith(`${prefix}:`));
+
+/** Signals that change what the map overlay draws. A module whose state reaches
+ *  `buildSceneLayers` belongs here; every map surface repaints on all of them, so such a
+ *  module emits its own event and never calls back into the surface. Not prefix-derived:
+ *  the members share a consequence, not a namespace. */
+export const OVERLAY_REPAINT_EVENTS = [
+	"store:changed",
+	"scene:changed",
+	"trail:changed",
+	"seen:changed",
+	"anchor:changed",
+	"measure:changed",
+] as const satisfies readonly EditorEvent[];
 
 /** The events that fire whenever location data changes. */
 export const LOCATION_DATA_EVENTS = eventsWithPrefix("location");

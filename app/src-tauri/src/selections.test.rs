@@ -276,6 +276,69 @@ fn geometry_bbox_antimeridian() {
 }
 
 #[test]
+fn prepared_geometry_matches_point_in_geometry() {
+    // PreparedGeometry (per-ring bbox + cached antimeridian flag) must agree with the
+    // per-point path everywhere, or polygon selections change under the optimization.
+    let square = |x0: f64, y0: f64, x1: f64, y1: f64| {
+        vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]
+    };
+    let geoms = vec![
+        // plain polygon
+        PolygonGeometry {
+            coordinates: vec![square(0.0, 0.0, 10.0, 10.0)],
+            extra_polygons: None,
+            properties: None,
+        },
+        // polygon with a hole
+        PolygonGeometry {
+            coordinates: vec![square(0.0, 0.0, 10.0, 10.0), square(4.0, 4.0, 6.0, 6.0)],
+            extra_polygons: None,
+            properties: None,
+        },
+        // antimeridian-crossing (wrapped coords)
+        PolygonGeometry {
+            coordinates: vec![vec![
+                [170.0, -10.0],
+                [-170.0, -10.0],
+                [-170.0, 10.0],
+                [170.0, 10.0],
+                [170.0, -10.0],
+            ]],
+            extra_polygons: None,
+            properties: None,
+        },
+        // antimeridian-crossing (unwrapped coords, lng > 180)
+        PolygonGeometry {
+            coordinates: vec![square(170.0, -10.0, 190.0, 10.0)],
+            extra_polygons: None,
+            properties: None,
+        },
+        // multipolygon: island near the origin + island past the dateline
+        PolygonGeometry {
+            coordinates: vec![square(0.0, 0.0, 10.0, 10.0)],
+            extra_polygons: Some(vec![vec![square(175.0, -5.0, 185.0, 5.0)]]),
+            properties: None,
+        },
+    ];
+    for geom in &geoms {
+        let prepared = PreparedGeometry::new(geom);
+        let mut lat = -20.0;
+        while lat <= 20.0 {
+            let mut lng = -180.0;
+            while lng < 180.0 {
+                assert_eq!(
+                    prepared.contains(lng, lat),
+                    point_in_geometry(lng, lat, geom),
+                    "divergence at ({lng}, {lat})"
+                );
+                lng += 0.5;
+            }
+            lat += 0.5;
+        }
+    }
+}
+
+#[test]
 fn polygon_resolve_across_antimeridian() {
     let ring = vec![
         [170.0, -10.0],
@@ -1251,6 +1314,65 @@ fn duplicates_finds_nearby() {
     assert!(!ids.contains(&3));
 }
 
+// Chain A~B~C at ~1.1m steps, 2m threshold, A-C out of range: every point with a
+// within-distance neighbour is a duplicate. C's only witness pair (B, C) fires from
+// anchor B, so B must not be skipped just because an earlier anchor grouped it.
+#[test]
+fn duplicates_chain_marks_all_members() {
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let adds = vec![
+        loc(1, 0.00000, 0.0),
+        loc(2, 0.00001, 0.0),
+        loc(3, 0.00002, 0.0),
+    ];
+    let view = make_view(None, &dead, &patches, &adds);
+    let ids = resolve(&view, &SelectionProps::Duplicates { distance: 2.0 });
+    assert_eq!(ids, vec![1, 2, 3]);
+}
+
+// The Duplicates selection and the merge dialog's groups are two views of the same
+// relation: "has a neighbour within d" == "member of a component of size >= 2".
+#[test]
+fn duplicates_bitmask_matches_flattened_groups() {
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let adds = vec![
+        // chain of three
+        loc(1, 0.00000, 0.0),
+        loc(2, 0.00001, 0.0),
+        loc(3, 0.00002, 0.0),
+        // tight pair
+        loc(4, 10.0, 10.0),
+        loc(5, 10.000005, 10.0),
+        // singletons
+        loc(6, 20.0, 20.0),
+        loc(7, -30.0, 40.0),
+        // coincident stack
+        loc(8, 50.0, 50.0),
+        loc(9, 50.0, 50.0),
+        loc(10, 50.0, 50.0),
+    ];
+    let view = make_view(None, &dead, &patches, &adds);
+    for d in [0.5, 2.0, 25.0] {
+        let selected = resolve(&view, &SelectionProps::Duplicates { distance: d });
+        let mut grouped: Vec<u32> = find_duplicate_groups(&view, d).into_iter().flatten().collect();
+        grouped.sort_unstable();
+        assert_eq!(selected, grouped, "bitmask != groups at d={d}");
+    }
+}
+
+// Dense cluster: every member of a same-cell stack is a duplicate at d > 0.
+#[test]
+fn duplicates_dense_cluster_marks_every_member() {
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let adds: Vec<Location> = (0..50).map(|i| loc(i + 1, 12.0, 34.0)).collect();
+    let view = make_view(None, &dead, &patches, &adds);
+    let ids = resolve(&view, &SelectionProps::Duplicates { distance: 5.0 });
+    assert_eq!(ids.len(), 50);
+}
+
 // distance == 0 means exact-coordinate duplicates. Must not overflow (debug) and must
 // match only locations at the identical coordinate. (#69)
 #[test]
@@ -1465,6 +1587,43 @@ fn extra_filter_eq_on_adds() {
         },
     );
     assert_eq!(ids, vec![1]);
+}
+
+// Base-batch extras go through the byte-scan path (no full JSON parse per row):
+// top-level keys resolve; the same key nested inside another value must not.
+#[test]
+fn extra_filter_scans_base_batch_top_level_only() {
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let mut l1 = loc(1, 0.0, 0.0);
+    l1.extra = Some(serde_json::from_str(r#"{"alt":100,"note":"a\"b}","wrap":{"alt":999}}"#).unwrap());
+    let mut l2 = loc(2, 0.0, 0.0);
+    l2.extra = Some(serde_json::from_str(r#"{"wrap":{"alt":100}}"#).unwrap());
+    let batch = locations_to_batch(&[l1, l2]);
+    let adds: Vec<Location> = vec![];
+    let view = make_view(Some(&batch), &dead, &patches, &adds);
+
+    let filter = |field: &str, op: FilterOp, value: serde_json::Value| SelectionProps::Filter {
+        field: field.into(),
+        op,
+        value,
+        value2: None,
+        tz_local: false,
+    };
+    // l1 matches on its top-level alt; l2's nested alt must not count.
+    assert_eq!(
+        resolve(&view, &filter("alt", FilterOp::Eq, serde_json::json!(100))),
+        vec![1]
+    );
+    assert_eq!(
+        resolve(&view, &filter("alt", FilterOp::Has, serde_json::Value::Null)),
+        vec![1]
+    );
+    // Escaped quote and brace inside a string value must not derail the scan.
+    assert_eq!(
+        resolve(&view, &filter("note", FilterOp::Eq, serde_json::json!("a\"b}"))),
+        vec![1]
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -1708,6 +1867,47 @@ fn topk_works_on_base_batch() {
         },
     );
     assert_eq!(ids, vec![2]); // 30 is highest
+}
+
+#[test]
+fn topk_zero_k_selects_nothing() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"alt": 100})),
+        loc_extra(2, serde_json::json!({"alt": 200})),
+    ];
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let view = make_view(None, &dead, &patches, &locs);
+    let ids = resolve(
+        &view,
+        &SelectionProps::TopK {
+            field: "alt".into(),
+            k: 0,
+            ascending: false,
+        },
+    );
+    assert_eq!(ids, Vec::<u32>::new());
+}
+
+#[test]
+fn topk_k_equals_len_selects_all() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"alt": 100})),
+        loc_extra(2, serde_json::json!({"alt": 300})),
+        loc_extra(3, serde_json::json!({"alt": 200})),
+    ];
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let view = make_view(None, &dead, &patches, &locs);
+    let ids = resolve(
+        &view,
+        &SelectionProps::TopK {
+            field: "alt".into(),
+            k: 3,
+            ascending: false,
+        },
+    );
+    assert_eq!(ids, vec![1, 2, 3]);
 }
 
 #[test]

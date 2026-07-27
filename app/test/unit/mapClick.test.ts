@@ -15,7 +15,7 @@ const pick = (id: string | undefined, index: number): PickingInfo =>
 
 const fakeCm = (over: Partial<CellManager>): CellManager =>
 	({
-		selOverlayIds: new Uint32Array(0),
+		overlay: { ids: new Uint32Array(0) },
 		resolvePickFromCell: () => null,
 		...over,
 	}) as unknown as CellManager;
@@ -27,8 +27,10 @@ describe("resolvePickedId (shared pick resolution)", () => {
 		expect(await resolvePickedId(fakeCm({}), pick("cell:abc", -1))).toBeNull();
 	});
 
-	it("reads a selection-overlay pick from selOverlayIds", async () => {
-		const cm = fakeCm({ selOverlayIds: new Uint32Array([10, 20, 30]) });
+	it("reads a selection-overlay pick from the overlay ids", async () => {
+		const cm = fakeCm({
+			overlay: { ids: new Uint32Array([10, 20, 30]) } as CellManager["overlay"],
+		});
 		expect(await resolvePickedId(cm, pick("sel-overlay", 1))).toBe(20);
 	});
 

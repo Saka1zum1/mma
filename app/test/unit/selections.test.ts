@@ -93,10 +93,23 @@ describe("polygon color mode", () => {
 	it("random gives each polygon its own key-hashed color", () => {
 		setSetting("polygonColorMode", "random");
 		const a = build();
-		const b = build();
+		const other = buildSelection({
+			type: "Polygon",
+			polygon: {
+				coordinates: [
+					[
+						[5, 5],
+						[6, 5],
+						[6, 6],
+						[5, 5],
+					],
+				],
+			},
+			includeInformational: false,
+		});
 		expect(a.color).toEqual(colorForKey(a.key));
-		expect(b.color).toEqual(colorForKey(b.key));
-		expect(a.key).not.toBe(b.key);
+		expect(other.color).toEqual(colorForKey(other.key));
+		expect(a.key).not.toBe(other.key);
 	});
 
 	it("fixed gives every polygon the configured color", () => {
@@ -110,6 +123,46 @@ describe("polygon color mode", () => {
 		setSetting("polygonColorMode", "fixed");
 		setSetting("polygonColor", { r: 1, g: 2, b: 3 });
 		expect(buildSelection({ type: "Untagged" }).color).toEqual(colorForKey("untagged"));
+	});
+});
+
+describe("polygon selection keys", () => {
+	const square = (o: number) => ({
+		coordinates: [
+			[
+				[o, o],
+				[o + 1, o],
+				[o + 1, o + 1],
+				[o, o] as [number, number],
+			],
+		],
+	});
+	const build = (polygon: ReturnType<typeof square>) =>
+		buildSelection({ type: "Polygon", polygon, includeInformational: false });
+
+	it("identical geometry keys identically, so rebuilds keep identity", () => {
+		// Key is identity for recolor/reorder/remove; a rebuild (replaceSelection,
+		// tree transforms) must not mint a fresh key for an unchanged polygon.
+		expect(build(square(0)).key).toBe(build(square(0)).key);
+	});
+
+	it("different geometry gets different keys", () => {
+		expect(build(square(0)).key).not.toBe(build(square(5)).key);
+		const withHole = {
+			coordinates: [...square(0).coordinates, ...square(0.25).coordinates],
+		};
+		expect(build(withHole).key).not.toBe(build(square(0)).key);
+		const multi = {
+			...square(0),
+			extraPolygons: [square(5).coordinates],
+		};
+		expect(build(multi).key).not.toBe(build(square(0)).key);
+	});
+
+	it("identical repeat adds dedupe instead of stacking", () => {
+		const once = addSelection([], { type: "Polygon", polygon: square(0), includeInformational: false });
+		const twice = addSelection(once, { type: "Polygon", polygon: square(0), includeInformational: false });
+		expect(twice.length).toBe(1);
 	});
 });
 

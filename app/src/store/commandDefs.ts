@@ -71,6 +71,7 @@ import { selectReviewedHistory } from "@/lib/review/review";
 import { openDialog } from "./dialogBus";
 
 const requiresMap = () => getMapState().map !== null;
+const hasActiveLocation = () => getMapState().activeLocation != null;
 const hasSelection = () => getMapState().selectedLocationIds.size > 0;
 const hasAnySelections = () => getMapState().selections.length > 0;
 const openBulkOp = (op: string) => () => openDialog("bulk-op", op);
@@ -105,8 +106,11 @@ const COMMANDS = {
 		label: "Copy location to map...",
 		icon: mdiMapMarkerPlus,
 		group: "Map",
-		execute: () => openDialog("quick-copy-to-map"),
-		enabled: requiresMap,
+		execute: () => {
+			const id = getMapState().activeLocation?.id;
+			if (id != null) openDialog("quick-copy-to-map", id);
+		},
+		enabled: hasActiveLocation,
 	},
 	undo: {
 		label: "Undo",

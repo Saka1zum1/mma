@@ -4303,6 +4303,8 @@ body {
 	margin-left: 10px !important;
 }
 .context-menu {
+	/* The popup takes focus on open; highlighted items carry the focus cue, not this box. */
+	outline: none;
 	color: var(--text-1);
 	width: max-content;
 	z-index: 10000;
@@ -4320,6 +4322,7 @@ body {
 .context-menu__item {
 	background: 0 0;
 	border: none;
+	outline: none;
 	padding: 0 1rem;
 	display: block;
 }
@@ -4331,7 +4334,6 @@ body {
 }
 .context-menu__item:where(:hover, :focus, [data-highlighted]):not([data-disabled]) {
 	background: #ffffff14;
-	outline: none;
 }
 .context-menu__separator {
 	height: 1px;

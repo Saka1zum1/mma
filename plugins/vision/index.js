@@ -132,13 +132,91 @@ async function spawnEmbed(panoIds, onMetaProgress) {
   const cd = await clipCacheDir();
   return spawnCommand(["embed", "--input", inputPath, "--model-dir", md, "--cache-dir", cd]);
 }
+var serve = null;
+var serveUnsupported = false;
+async function startServe() {
+  try {
+    const md = await modelDir();
+    const cd = await clipCacheDir();
+    const run = await MMA.sidecar.spawn("vision", "mma-vision", [
+      "serve",
+      "--model-dir",
+      md,
+      "--cache-dir",
+      cd
+    ]);
+    run.onStderr((line) => console.error("[vision serve]", line));
+    const port = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("serve start timeout")), 15e3);
+      run.onLine((line) => {
+        try {
+          const p = JSON.parse(line)?.port;
+          if (typeof p === "number") {
+            clearTimeout(timer);
+            resolve(p);
+          }
+        } catch {
+        }
+      });
+      run.onExit(() => {
+        clearTimeout(timer);
+        reject(new Error("serve exited on startup"));
+      });
+    });
+    run.onExit(() => {
+      serve = null;
+    });
+    return { port, kill: () => run.kill() };
+  } catch (e) {
+    console.error("[vision] serve unavailable, using one-shot search:", e);
+    serveUnsupported = true;
+    return null;
+  }
+}
+async function serveSearch(path, payload) {
+  if (serveUnsupported) return null;
+  const handle = await (serve ??= startServe());
+  if (!handle) return null;
+  try {
+    const res = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`serve responded ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    console.error("[vision] serve request failed:", e);
+    serve = null;
+    return null;
+  }
+}
+function stopServe() {
+  void serve?.then((h) => h?.kill());
+  serve = null;
+}
+function resolvedRun(lines) {
+  const proc = {
+    kill() {
+    },
+    onLine(cb) {
+      for (const line of lines) cb(line);
+    },
+    onStderr() {
+    }
+  };
+  return { process: proc, done: Promise.resolve() };
+}
 async function spawnTextSearch(query, k, threshold) {
+  const served = await serveSearch("/search-text", { query, k, threshold });
+  if (served) return resolvedRun([JSON.stringify(served)]);
   const inputPath = await writeInputFile({ query, k, threshold });
   const md = await modelDir();
   const cd = await clipCacheDir();
   return spawnCommand(["search-text", "--input", inputPath, "--model-dir", md, "--cache-dir", cd]);
 }
 async function spawnImageSearch(panoId, k, threshold) {
+  const served = await serveSearch("/search-image", { panoId, k, threshold });
+  if (served) return resolvedRun([JSON.stringify(served)]);
   const inputPath = await writeInputFile({ panoId, k, threshold });
   const cd = await clipCacheDir();
   return spawnCommand(["search-image", "--input", inputPath, "--cache-dir", cd]);
@@ -336,6 +414,7 @@ function FindSimilarButton() {
 // vision/src/index.tsx
 MMA.registerPlugin({
   activate() {
+    return () => stopServe();
   },
   sidebar: VisionSidebar,
   locationPanel: FindSimilarButton,

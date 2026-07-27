@@ -1,20 +1,12 @@
-import { useState, useEffect } from "react";
-import { useMeasureState, endMeasure } from "@/lib/sv/measure";
+import { useIsMeasuring, useMeasureLength, endMeasure } from "@/lib/sv/measure";
 import { formatDistance, computeScore, useScoreMaxError } from "@/lib/geo/scoring";
 
 export function MeasurementBar() {
-	const { isMeasuring, instance } = useMeasureState();
+	const isMeasuring = useIsMeasuring();
+	const length = useMeasureLength();
 	const maxError = useScoreMaxError();
-	const [, forceUpdate] = useState({});
 
-	useEffect(() => {
-		if (!instance) return;
-		const cb = () => forceUpdate({});
-		instance.addListener("measure_change", cb);
-		return () => instance.removeListener("measure_change");
-	}, [instance]);
-
-	if (!isMeasuring || !instance) return null;
+	if (!isMeasuring) return null;
 
 	return (
 		<div
@@ -23,9 +15,9 @@ export function MeasurementBar() {
 		>
 			<div className="map-control measurement-control">
 				<p className="measurement-control__measurements">
-					Distance: {formatDistance(instance.length ?? 0)}
+					Distance: {formatDistance(length)}
 					<br />
-					Score: {computeScore(instance.length ?? 0, maxError)}
+					Score: {computeScore(length, maxError)}
 				</p>
 				<button className="button measurement-control__end" onClick={endMeasure}>
 					End

@@ -48,7 +48,7 @@ export const isLocationLayer = (id?: string) =>
 export async function resolvePickedId(cm: CellManager, info: PickingInfo): Promise<number | null> {
 	if (typeof info.index !== "number" || info.index < 0) return null;
 	const layerId = info.layer?.id ?? "";
-	if (layerId === "sel-overlay") return cm.selOverlayIds[info.index] ?? null;
+	if (layerId === "sel-overlay") return cm.overlay.ids[info.index] ?? null;
 	if (layerId.startsWith("cell:")) {
 		const cellKey = layerId.split(":")[1];
 		const local = cm.resolvePickFromCell(cellKey, info.index);
@@ -180,7 +180,8 @@ export async function createLocationAtLatLng(
 		return null;
 	}
 	loc.provider = loc.provider ?? "google";
-	await addLocations([loc], { hideInDelta: true });
+	t.step("lookup");
+	await addLocations([loc]);
 	t.step("addLocations");
 	setActiveLocation(loc);
 	t.step("setActive");
@@ -239,8 +240,7 @@ export async function handleMapClick(
 
 	if (domEvent instanceof MouseEvent && domEvent.button !== 0) return;
 
-	if (ctx.measuring) return;
-
+	// Interceptors first: the measure tool consumes the click to place a node.
 	if (
 		info.coordinate &&
 		(await tryInterceptClick(
@@ -250,6 +250,8 @@ export async function handleMapClick(
 		))
 	)
 		return;
+
+	if (ctx.measuring) return;
 
 	if (isLocationLayer(info.layer?.id)) {
 		const picked = await resolvePicked();

@@ -16,7 +16,7 @@ const wire = vi.hoisted(() => ({
 
 vi.mock("@/lib/commands", () => {
 	const mutationResult = () => ({
-		delta: { added: [], updated: [], removed: [], colorPatches: [], fullReset: false },
+		delta: { added: [], updated: [], removed: [], fullReset: false },
 		locationCount: 1,
 		canUndo: true,
 		canRedo: false,

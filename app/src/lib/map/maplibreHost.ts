@@ -283,6 +283,10 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 		return { lat: ll.lat, lng: ll.lng };
 	}
 
+	setCursor(v: string | null) {
+		this.map.getCanvas().style.cursor = v ?? "";
+	}
+
 	setDraggable(v: boolean) {
 		if (v) this.map.dragPan.enable();
 		else this.map.dragPan.disable();

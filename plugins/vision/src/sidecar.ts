@@ -119,7 +119,100 @@ export async function spawnEmbed(
 	return spawnCommand(["embed", "--input", inputPath, "--model-dir", md, "--cache-dir", cd]);
 }
 
+// --- Resident search server ---
+// `serve` keeps the models and embedding cache loaded across queries, so repeat
+// searches skip the ONNX/tokenizer/cache load that dominates one-shot commands.
+// It idles out on its own (and we kill it on plugin close); searches fall back to
+// the one-shot commands when serve is unavailable (e.g. an older installed sidecar).
+
+interface ServeHandle {
+	port: number;
+	kill(): void;
+}
+
+let serve: Promise<ServeHandle | null> | null = null;
+let serveUnsupported = false;
+
+async function startServe(): Promise<ServeHandle | null> {
+	try {
+		const md = await modelDir();
+		const cd = await clipCacheDir();
+		const run = await MMA.sidecar.spawn("vision", "mma-vision", [
+			"serve", "--model-dir", md, "--cache-dir", cd,
+		]);
+		run.onStderr((line) => console.error("[vision serve]", line));
+		const port = await new Promise<number>((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error("serve start timeout")), 15000);
+			run.onLine((line) => {
+				try {
+					const p = JSON.parse(line)?.port;
+					if (typeof p === "number") {
+						clearTimeout(timer);
+						resolve(p);
+					}
+				} catch {}
+			});
+			run.onExit(() => {
+				clearTimeout(timer);
+				reject(new Error("serve exited on startup"));
+			});
+		});
+		// Idle exit or crash: forget the handle so the next search respawns.
+		run.onExit(() => {
+			serve = null;
+		});
+		return { port, kill: () => run.kill() };
+	} catch (e) {
+		console.error("[vision] serve unavailable, using one-shot search:", e);
+		serveUnsupported = true;
+		return null;
+	}
+}
+
+async function serveSearch(
+	path: string,
+	payload: unknown,
+): Promise<{ results: { panoId: string; score: number }[] } | null> {
+	if (serveUnsupported) return null;
+	const handle = await (serve ??= startServe());
+	if (!handle) return null;
+	try {
+		const res = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
+			method: "POST",
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) throw new Error(`serve responded ${res.status}`);
+		return await res.json();
+	} catch (e) {
+		// Server likely idled out between checks; drop it and let this query
+		// take the one-shot path. The next search respawns serve.
+		console.error("[vision] serve request failed:", e);
+		serve = null;
+		return null;
+	}
+}
+
+/** Kill the resident server (plugin cleanup). */
+export function stopServe() {
+	void serve?.then((h) => h?.kill());
+	serve = null;
+}
+
+/** Wrap an already-available result in the {process, done} shape callers expect. */
+function resolvedRun(lines: string[]): { process: SidecarProcess; done: Promise<void> } {
+	const proc: SidecarProcess = {
+		kill() {},
+		onLine(cb) {
+			for (const line of lines) cb(line);
+		},
+		onStderr() {},
+	};
+	return { process: proc, done: Promise.resolve() };
+}
+
 export async function spawnTextSearch(query: string, k: number | null, threshold: number | null): ReturnType<typeof spawnCommand> {
+	const served = await serveSearch("/search-text", { query, k, threshold });
+	if (served) return resolvedRun([JSON.stringify(served)]);
 	const inputPath = await writeInputFile({ query, k, threshold });
 	const md = await modelDir();
 	const cd = await clipCacheDir();
@@ -127,6 +220,8 @@ export async function spawnTextSearch(query: string, k: number | null, threshold
 }
 
 export async function spawnImageSearch(panoId: string, k: number | null, threshold: number | null): ReturnType<typeof spawnCommand> {
+	const served = await serveSearch("/search-image", { panoId, k, threshold });
+	if (served) return resolvedRun([JSON.stringify(served)]);
 	const inputPath = await writeInputFile({ panoId, k, threshold });
 	const cd = await clipCacheDir();
 	return spawnCommand(["search-image", "--input", inputPath, "--cache-dir", cd]);

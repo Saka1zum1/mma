@@ -318,13 +318,7 @@ function resetMapState() {
 	setState({ knownFieldKeys: new Set() });
 	resetForMapChange();
 
-	emitEvent("render:delta", {
-		added: [],
-		updated: [],
-		removed: [],
-		colorPatches: [],
-		fullReset: true,
-	});
+	emitEvent("render:delta", { added: [], updated: [], removed: [], fullReset: true });
 	setState({ canUndo: false, canRedo: false, tags: {}, tagCounts: {}, locationCount: 0 });
 	emitEvent("store:changed");
 }
@@ -473,7 +467,7 @@ function applySelectionSync(sync: SelectionSync) {
 }
 
 const EMPTY_MUTATION: MutationResult = {
-	delta: { added: [], updated: [], removed: [], colorPatches: [], fullReset: false },
+	delta: { added: [], updated: [], removed: [], fullReset: false },
 	selectionSync: null,
 	newFieldDefs: null,
 	tags: null,
@@ -499,16 +493,13 @@ export async function mutate(fn: () => Promise<MutationResult>): Promise<Mutatio
 
 /** Add locations to the map. Rust assigns real ids and they are written back into
  *  the passed objects -- build with `createLocation` (id 0) and read `loc.id` after. Undoable. */
-export async function addLocations(locs: Location[], opts?: { hideInDelta?: boolean }) {
+export async function addLocations(locs: Location[]) {
 	if (locs.length === 0) return;
 	const t = trace("add");
 	const r = await mutate(() => cmd.storeAddLocations(locs));
 	t.end({ delta: `+${r.delta.added.length} -${r.delta.removed.length}` });
 	for (let i = 0; i < r.delta.added.length && i < locs.length; i++) {
 		locs[i].id = r.delta.added[i].id;
-	}
-	if (opts?.hideInDelta) {
-		for (const entry of r.delta.added) entry.a = 0;
 	}
 	emitEvent("location:add", locs);
 }
@@ -1205,13 +1196,7 @@ export async function checkoutCommit(commitId: string) {
 		canRedo: false,
 	});
 
-	emitEvent("render:delta", {
-		added: [],
-		updated: [],
-		removed: [],
-		colorPatches: [],
-		fullReset: true,
-	});
+	emitEvent("render:delta", { added: [], updated: [], removed: [], fullReset: true });
 	emitEvent("store:changed");
 	await invalidateMapList();
 }

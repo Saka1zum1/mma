@@ -4,8 +4,7 @@ import { hasLoadAsPanoId, LocationFlag } from "@/types";
 import { PANO_ZOOM, SV_JUMP_RADIUS } from "@/lib/sv/constants";
 import { google } from "@/lib/sv/opensv";
 import { lookupStreetView } from "@/lib/sv/lookup";
-import { shortenMapsUrl } from "@/lib/sv/shortUrl";
-import { isOfficialPano } from "@/lib/sv/panoId";
+import { shortenMapsUrl, mapsPanoUrl, fovForZoom, appendLinkTags } from "@/lib/sv/mapsLink";
 import {
 	buildLookmapOpenUrl,
 	buildLookmapShareUrl,
@@ -543,6 +542,7 @@ export const PanoControls = memo(function PanoControls({
 	const jumpBackwardKey = useBinding("jumpBackward");
 	const [copyState, setCopyState] = useState<"idle" | "loading" | "done">("idle");
 
+	// Built from the LIVE pano, not the saved location: the link shares what you're looking at.
 	const location = useMapState((s) => s.activeLocation);
 	const provider = getLocationProvider(location);
 	const panoId = panorama.getPano();
@@ -585,31 +585,14 @@ export const PanoControls = memo(function PanoControls({
 
 		const loc = panorama.getLocation();
 		if (!loc) return null;
-		const fov = (360 / Math.PI) * Math.atan(0.75 * Math.pow(2, 1 - panorama.getZoom()));
-		const panoId = loc.pano ?? "";
-
-		// Official panos embed a Street View thumbnail (!6s) so the link unfurls with a preview.
-		let data: string;
-		if (isOfficialPano(panoId)) {
-			const thumb = new URL("https://streetviewpixels-pa.googleapis.com/v1/thumbnail");
-			thumb.searchParams.set("panoid", panoId);
-			thumb.searchParams.set("cb_client", "maps_sv.share");
-			thumb.searchParams.set("w", "900");
-			thumb.searchParams.set("h", "600");
-			thumb.searchParams.set("yaw", String(pov.heading));
-			thumb.searchParams.set("pitch", String(-pov.pitch));
-			thumb.searchParams.set("thumbfov", fov.toFixed(0));
-			data = `!3m5!1e1!3m3!1s${panoId}!2e0!6s${encodeURIComponent(thumb.toString())}`;
-		} else {
-			data = `!3m4!1e1!3m2!1s${panoId}!2e0`;
-		}
-
-		const url = new URL(
-			`https://www.google.com/maps/@${pos.lat()},${pos.lng()},3a,${fov.toFixed(1)}y,${pov.heading.toFixed(2)}h,${(pov.pitch + 90).toFixed(2)}t/data=${data}`,
-		);
-		url.searchParams.set("coh", "235716");
-		url.searchParams.set("entry", "tts");
-		return url;
+		return mapsPanoUrl({
+			lat: pos.lat(),
+			lng: pos.lng(),
+			heading: pov.heading,
+			pitch: pov.pitch,
+			fov: fovForZoom(panorama.getZoom()),
+			panoId: loc.pano ?? "",
+		});
 	}, [panorama, isAppleLocation, isBaiduLocation, isTencentLocation, isYandexLocation]);
 
 	const buildAppleShareUrl = useCallback(() => {
@@ -704,15 +687,8 @@ export const PanoControls = memo(function PanoControls({
 
 			const url = buildMapsUrl();
 			if (!url) return;
-		const active = getMapState().activeLocation;
-		if (!noTags && active) {
-			const tagsById = getMapState().tags;
-				for (const id of active.tags) {
-					const name = tagsById[id]?.name;
-					if (name) url.searchParams.append("extra[tags]", name);
-				}
-				if (!hasLoadAsPanoId(active)) url.searchParams.set("extra[loadMode]", "latLng");
-			}
+			const active = getMapState().activeLocation;
+			if (!noTags && active) appendLinkTags(url, active, getMapState().tags);
 			const longStr = url.toString();
 			if (long) {
 				await navigator.clipboard.writeText(longStr).catch(() => {});

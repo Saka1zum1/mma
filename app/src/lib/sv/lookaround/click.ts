@@ -43,7 +43,7 @@ export async function createAppleLocationAtLatLng(
 		extra: buildPanoExtra(pano),
 	});
 
-	await addLocations([loc], { hideInDelta: true });
+	await addLocations([loc]);
 	setActiveLocation(loc);
 	return loc;
 }

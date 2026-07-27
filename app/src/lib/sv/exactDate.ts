@@ -3,8 +3,10 @@ const RPC_URL =
 
 const MAX_RETRIES = 3;
 
+// A failed probe must throw, never read as "no images": the bisection treats a
+// negative as evidence and would silently converge on a wrong timestamp.
 async function singleImageSearch(body: string, signal?: AbortSignal): Promise<string> {
-	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+	for (let attempt = 0; ; attempt++) {
 		const res = await fetch(RPC_URL, {
 			method: "POST",
 			headers: { "content-type": "application/json+protobuf" },
@@ -16,12 +18,11 @@ async function singleImageSearch(body: string, signal?: AbortSignal): Promise<st
 				await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
 				continue;
 			}
-			return "Search returned no images.";
+			throw new Error(`SingleImageSearch unavailable (HTTP ${res.status})`);
 		}
-		if (!res.ok) return "Search returned no images.";
+		if (!res.ok) throw new Error(`SingleImageSearch failed (HTTP ${res.status})`);
 		return await res.text();
 	}
-	return "Search returned no images.";
 }
 
 async function checkTimestamp(
@@ -36,6 +37,13 @@ async function checkTimestamp(
 	const text = await singleImageSearch(data, signal);
 	return !text.includes("Search returned no images.");
 }
+
+/** Interior probes per search round. Each round issues BRANCH concurrent range checks
+ *  splitting [lo, hi) into BRANCH+1 segments, so the window shrinks by that factor per
+ *  round-trip: ~9 sequential rounds instead of ~22 bisection steps for a month window.
+ *  More probes per round would cut rounds further but multiply total RPC volume, which
+ *  is the shared bottleneck when enrichment runs many locations concurrently. */
+const BRANCH = 4;
 
 export async function resolveExactTimestamp(
 	lat: number,
@@ -64,19 +72,31 @@ export async function resolveExactTimestamp(
 		throw new Error("Failed to resolve exact date: not a candidate");
 	}
 
-	while (true) {
+	// Invariant: an image exists in (lo, hi]. checkTimestamp(lo, c) is monotone in c,
+	// so each round's probe results are a prefix of falses then trues; the earliest
+	// image sits between the last false cut and the first true cut.
+	while (hi - lo > accuracy) {
 		const range = hi - lo;
-		const mid = lo + Math.floor(range / 2);
-
-		if (range <= accuracy) {
-			if (hiInit - mid <= 1) throw new Error("Failed to resolve exact date");
-			return mid;
+		const cuts: number[] = [];
+		for (let k = 1; k <= BRANCH; k++) {
+			const c = lo + Math.floor((range * k) / (BRANCH + 1));
+			if (c > lo && c < hi && c !== cuts[cuts.length - 1]) cuts.push(c);
 		}
+		if (cuts.length === 0) cuts.push(lo + Math.floor(range / 2));
 
-		if (await checkTimestamp(lat, lng, lo, mid, radius, signal)) {
-			hi = mid;
+		const results = await Promise.all(
+			cuts.map((c) => checkTimestamp(lat, lng, lo, c, radius, signal)),
+		);
+		const first = results.findIndex(Boolean);
+		if (first === -1) {
+			lo = cuts[cuts.length - 1];
 		} else {
-			lo = mid;
+			hi = cuts[first];
+			if (first > 0) lo = cuts[first - 1];
 		}
 	}
+
+	const mid = lo + Math.floor((hi - lo) / 2);
+	if (hiInit - mid <= 1) throw new Error("Failed to resolve exact date");
+	return mid;
 }

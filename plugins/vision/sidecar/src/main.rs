@@ -2,6 +2,7 @@ mod fetch;
 mod embed;
 mod project;
 mod search;
+mod serve;
 
 use clap::{Parser, Subcommand};
 use std::io::{self, Write};
@@ -44,6 +45,17 @@ enum Command {
         input: String,
         #[arg(long)]
         cache_dir: String,
+    },
+    /// Resident search server: models + cache stay loaded across queries.
+    /// Prints `{"port":N}` on stdout, serves /search-text, /search-image, /ping
+    /// on 127.0.0.1, and exits by itself after `idle_secs` without a request.
+    Serve {
+        #[arg(long)]
+        model_dir: String,
+        #[arg(long)]
+        cache_dir: String,
+        #[arg(long, default_value_t = 600)]
+        idle_secs: u64,
     },
     /// Debug: fetch, stitch, crop a single pano and save images
     DebugCrops {
@@ -125,6 +137,9 @@ fn main() {
             let out = serde_json::to_string(&results).unwrap();
             writeln!(stdout, "{out}").ok();
             stdout.flush().ok();
+        }
+        Command::Serve { model_dir, cache_dir, idle_secs } => {
+            serve::run(&model_dir, &cache_dir, idle_secs);
         }
         Command::DebugCrops { pano_id, world_width, world_height, output_dir } => {
             let out = std::path::Path::new(&output_dir);

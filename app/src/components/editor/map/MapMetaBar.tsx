@@ -88,7 +88,7 @@ export function MapMetaBar() {
 	const [showHistory, setShowHistory] = useState(false);
 	const [showSeen, setShowSeen] = useState(false);
 	const [showCopyToMap, setShowCopyToMap] = useState(false);
-	const [showQuickCopy, setShowQuickCopy] = useState(false);
+	const [quickCopyId, setQuickCopyId] = useState<number | null>(null);
 
 	useDialog("export", () => setShowExport(true));
 	const importFile = useCallback(async () => {
@@ -103,7 +103,7 @@ export function MapMetaBar() {
 	useDialog("history", () => setShowHistory(true));
 	useDialog("seen", () => setShowSeen(true));
 	useDialog("copy-to-map", () => setShowCopyToMap(true));
-	useDialog("quick-copy-to-map", () => setShowQuickCopy(true));
+	useDialog("quick-copy-to-map", (id) => setQuickCopyId(id));
 
 	if (!map) return null;
 
@@ -125,7 +125,9 @@ export function MapMetaBar() {
 			{showHistory && <VersionHistory onClose={() => setShowHistory(false)} />}
 			{showSeen && <SeenDialog open onOpenChange={setShowSeen} onLoadPano={loadSeenPano} />}
 			{showCopyToMap && <CopyToMapDialog onClose={() => setShowCopyToMap(false)} />}
-			{showQuickCopy && <QuickCopyToMapDialog onClose={() => setShowQuickCopy(false)} />}
+			{quickCopyId != null && (
+				<QuickCopyToMapDialog locationId={quickCopyId} onClose={() => setQuickCopyId(null)} />
+			)}
 		</>
 	);
 }

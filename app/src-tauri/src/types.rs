@@ -93,18 +93,7 @@ impl RawExtra {
     /// matching value slice is parsed. Keys are matched on raw bytes (a key written
     /// with JSON escapes won't match its unescaped form).
     pub fn get(&self, key: &str) -> Option<serde_json::Value> {
-        let s = self.0.get();
-        let b = s.as_bytes();
-        let mut out = None;
-        scan_fields(b, |fs| {
-            if &b[fs.key.clone()] == key.as_bytes() {
-                out = serde_json::from_str(&s[fs.value.clone()]).ok();
-                true
-            } else {
-                false
-            }
-        });
-        out
+        json_field(self.0.get(), key)
     }
 
     /// Visit each top-level `(key, raw_value)` without allocating a map. `raw_value` is
@@ -118,6 +107,22 @@ impl RawExtra {
             false
         });
     }
+}
+
+/// One top-level member's value from raw object-JSON, without parsing the whole
+/// document. First match wins; raw-byte key match (same contract as [`RawExtra::get`]).
+pub(crate) fn json_field(s: &str, key: &str) -> Option<serde_json::Value> {
+    let b = s.as_bytes();
+    let mut out = None;
+    scan_fields(b, |fs| {
+        if &b[fs.key.clone()] == key.as_bytes() {
+            out = serde_json::from_str(&s[fs.value.clone()]).ok();
+            true
+        } else {
+            false
+        }
+    });
+    out
 }
 
 /// One top-level member found by [`scan_fields`]: the key's content bytes (without

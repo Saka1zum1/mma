@@ -70,24 +70,71 @@ fn search(
     k: Option<usize>,
     threshold: Option<f32>,
     exclude: Option<&str>,
-    score_fn: impl Fn(f32) -> f32,
+    score_fn: impl Fn(f32) -> f32 + Sync,
 ) -> Vec<SearchHit> {
-    let mut results: Vec<SearchHit> = cache.entries.iter()
+    use rayon::prelude::*;
+    if k == Some(0) {
+        return vec![];
+    }
+    let desc = |a: &(&String, f32), b: &(&String, f32)| {
+        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+    };
+    // Score borrowing the ids; only the k winners get cloned into SearchHits.
+    let mut scored: Vec<(&String, f32)> = cache.entries.par_iter()
         .filter(|(pid, _)| exclude.is_none_or(|ex| pid.as_str() != ex))
-        .map(|(pid, crops)| SearchHit {
-            pano_id: pid.clone(),
-            score: (score_fn(max_crop_score(query, crops)) * 10000.0).round() / 10000.0,
+        .map(|(pid, crops)| {
+            (pid, (score_fn(max_crop_score(query, crops)) * 10000.0).round() / 10000.0)
         })
+        .filter(|(_, s)| threshold.is_none_or(|t| *s >= t))
         .collect();
-
-    if let Some(t) = threshold {
-        results.retain(|r| r.score >= t);
-    }
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     if let Some(k) = k {
-        results.truncate(k);
+        if k < scored.len() {
+            scored.select_nth_unstable_by(k - 1, desc);
+            scored.truncate(k);
+        }
     }
-    results
+    scored.sort_by(desc);
+    scored.into_iter()
+        .map(|(pid, score)| SearchHit { pano_id: pid.clone(), score })
+        .collect()
+}
+
+/// Text query pipeline held together so a resident process loads the tokenizer,
+/// scoring table, and ONNX session once instead of per query (the dominant
+/// per-search cost by far).
+pub struct TextSearcher {
+    tokenizer: tokenizers::Tokenizer,
+    scoring: Scoring,
+    session: embed::Session,
+}
+
+impl TextSearcher {
+    pub fn load(model_dir: &str) -> Result<Self, String> {
+        let tokenizer_path = Path::new(model_dir).join("tokenizer.json");
+        let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
+            .map_err(|e| format!("failed to load tokenizer: {e}"))?;
+        Ok(Self {
+            tokenizer,
+            scoring: Scoring::load(model_dir),
+            session: embed::load_text_encoder(model_dir),
+        })
+    }
+
+    pub fn search(&mut self, cache: &EmbedCache, input: &TextSearchInput) -> SearchResults {
+        if cache.entries.is_empty() {
+            return SearchResults { results: vec![] };
+        }
+        match embed::embed_text(&mut self.session, &self.tokenizer, &input.query) {
+            Ok(query_emb) => SearchResults {
+                results: search(cache, &query_emb, input.k, input.threshold, None,
+                    |cos| text_probability(cos, &self.scoring)),
+            },
+            Err(e) => {
+                eprintln!("text encoding error: {e}");
+                SearchResults { results: vec![] }
+            }
+        }
+    }
 }
 
 pub fn text_search(input: &TextSearchInput, model_dir: &str, cache_dir: &str) -> SearchResults {
@@ -95,27 +142,13 @@ pub fn text_search(input: &TextSearchInput, model_dir: &str, cache_dir: &str) ->
     if cache.entries.is_empty() {
         return SearchResults { results: vec![] };
     }
-
-    let tokenizer_path = Path::new(model_dir).join("tokenizer.json");
-    let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
-        .unwrap_or_else(|e| panic!("failed to load tokenizer: {e}"));
-
-    let scoring = Scoring::load(model_dir);
-    let mut session = embed::load_text_encoder(model_dir);
-    match embed::embed_text(&mut session, &tokenizer, &input.query) {
-        Ok(query_emb) => SearchResults {
-            results: search(&cache, &query_emb, input.k, input.threshold, None,
-                |cos| text_probability(cos, &scoring)),
-        },
-        Err(e) => {
-            eprintln!("text encoding error: {e}");
-            SearchResults { results: vec![] }
-        }
-    }
+    let mut searcher =
+        TextSearcher::load(model_dir).unwrap_or_else(|e| panic!("{e}"));
+    searcher.search(&cache, input)
 }
 
-pub fn image_search(input: &ImageSearchInput, cache_dir: &str) -> SearchResults {
-    let cache = EmbedCache::load(cache_dir);
+/// Image-to-image search over an already-loaded cache.
+pub fn image_search_in(cache: &EmbedCache, input: &ImageSearchInput) -> SearchResults {
     let Some(ref_crops) = cache.entries.get(&input.pano_id) else {
         eprintln!("pano {} not in cache", input.pano_id);
         return SearchResults { results: vec![] };
@@ -131,9 +164,13 @@ pub fn image_search(input: &ImageSearchInput, cache_dir: &str) -> SearchResults 
     if norm > 0.0 { for v in &mut ref_emb { *v /= norm; } }
 
     SearchResults {
-        results: search(&cache, &ref_emb, input.k, input.threshold, Some(&input.pano_id),
+        results: search(cache, &ref_emb, input.k, input.threshold, Some(&input.pano_id),
             |cos| cos),
     }
+}
+
+pub fn image_search(input: &ImageSearchInput, cache_dir: &str) -> SearchResults {
+    image_search_in(&EmbedCache::load(cache_dir), input)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 import type { Layer, Position } from "@deck.gl/core";
-import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer } from "@deck.gl/layers";
+import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer, TextLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
 import { baseMarkerLayers, buildMarkerLayer, MARKER_STYLE } from "@/lib/render/markerLayer";
 import PanoCoverageLayer from "@/lib/render/PanoCoverageLayer";
@@ -21,7 +21,12 @@ import { getMapState } from "@/store/useMapStore";
 import { getCommitDiffPreview } from "@/store/commitDiff";
 import { getImportPreviewPositions } from "@/store/importStaging";
 import { getTrail } from "@/lib/sv/svTrail";
-import { getLatLngAnchor } from "@/lib/sv/measure";
+import {
+	getLatLngAnchor,
+	getMeasurePoints,
+	getMeasureSegments,
+	MEASURE_NODE_PX,
+} from "@/lib/sv/measure";
 import type { RGB } from "@/lib/util/color";
 
 export const LOCATION_LAYER_ID = "locations";
@@ -194,19 +199,19 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 	// Selection overlay rides on top as its own pickable layer — otherwise clicks fall through to
 	// the cell layer where selected markers have no z-priority, and an overlapping neighbor gets
 	// picked instead of the marker on top.
-	if (cm.selOverlayCount > 0) {
+	if (cm.overlay.count > 0) {
 		layers.push(
 			buildMarkerLayer(
 				ctx.markerStyle,
 				"sel-overlay",
-				cm.selOverlayCount,
+				cm.overlay.count,
 				{
-					positions: cm.selOverlayPositions,
-					angles: cm.selOverlayAngles,
-					color: { kind: "perMarker", colors: cm.selOverlayColors },
+					positions: cm.overlay.positions,
+					angles: cm.overlay.angles,
+					color: { kind: "perMarker", colors: cm.overlay.colors },
 				},
-				cm.selOverlayVersion,
-				cm.selOverlayVersion,
+				cm.overlay.version,
+				cm.overlay.version,
 				undefined,
 				ctx.markerSize,
 			),
@@ -349,6 +354,60 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				lineWidthUnits: "pixels",
 				getLineWidth: 1,
 				getLineColor: [0, 0, 0, 180],
+				pickable: false,
+			}),
+		);
+	}
+
+	const measurePoints = getMeasurePoints();
+	if (measurePoints.length >= 2) {
+		layers.push(
+			new PathLayer({
+				id: "measure-path",
+				data: [normalizeRing(measurePoints)],
+				getPath: (d) => d,
+				getColor: [0, 0, 0, 255],
+				getWidth: 2,
+				widthUnits: "pixels" as const,
+				jointRounded: true,
+				capRounded: true,
+				pickable: false,
+			}),
+		);
+	}
+	if (measurePoints.length >= 2) {
+		layers.push(
+			new TextLayer({
+				id: "measure-labels",
+				data: getMeasureSegments(),
+				getPosition: (d) => d.at,
+				getText: (d) => d.label,
+				getSize: 13,
+				getColor: [0, 0, 0, 255],
+				getPixelOffset: [0, -12],
+				background: true,
+				getBackgroundColor: [255, 255, 255, 235],
+				backgroundPadding: [5, 3],
+				fontFamily: '"Open Sans", sans-serif',
+				fontWeight: 600,
+				characterSet: "auto",
+				pickable: false,
+			}),
+		);
+	}
+	if (measurePoints.length > 0) {
+		layers.push(
+			new ScatterplotLayer({
+				id: "measure-nodes",
+				data: measurePoints,
+				getPosition: (d) => d,
+				radiusUnits: "pixels" as const,
+				getRadius: MEASURE_NODE_PX,
+				getFillColor: [255, 255, 255, 255],
+				stroked: true,
+				lineWidthUnits: "pixels" as const,
+				getLineWidth: 2,
+				getLineColor: [0, 0, 0, 255],
 				pickable: false,
 			}),
 		);

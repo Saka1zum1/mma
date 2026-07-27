@@ -10,7 +10,7 @@ import { useT } from "@/lib/i18n";
  *  arrow restores the regular markers. */
 export function DiffSidebar() {
 	const { t } = useT();
-	const diff = useEventValue("store:changed", getCommitDiffPreview);
+	const diff = useEventValue("diff-markers:changed", getCommitDiffPreview);
 	if (!diff) return null;
 	const { counts } = diff;
 

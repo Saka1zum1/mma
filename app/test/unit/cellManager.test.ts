@@ -3,13 +3,30 @@ import {
 	CellBuffer,
 	CellManager,
 	decodeSelectionBitmask,
-	type CellRenderEntry,
-	type CellDelta,
 	type SelEntry,
+	type SelColor,
 } from "@/lib/render/CellManager";
+import type { RenderDelta, RenderEntry } from "@/bindings.gen";
 
-function entry(cell: string, id: number, lng: number, lat: number, heading = 0): CellRenderEntry {
-	return { cell, id, lng, lat, heading, r: 42, g: 42, b: 42, a: 255 };
+function entry(
+	cell: string,
+	id: number,
+	lng: number,
+	lat: number,
+	heading = 0,
+	sel: SelColor = null,
+): RenderEntry {
+	return { cell, id, lng, lat, heading, sel, movedFrom: null };
+}
+
+/** A render delta with everything defaulted, so a case names only what it exercises. */
+function delta(parts: Partial<RenderDelta> = {}): RenderDelta {
+	return { added: [], updated: [], removed: [], fullReset: false, ...parts };
+}
+
+/** A coordinate-free patch: the shape a pure membership change arrives as. */
+function selPatch(cell: string, cellIndex: number, sel: SelColor) {
+	return { cell, cellIndex, lng: null, lat: null, heading: null, sel };
 }
 
 /** A dense-bitmask SelEntry, the shape applySelectionBitmasks consumes. */
@@ -124,117 +141,121 @@ describe("CellManager", () => {
 	});
 
 	it("applyDelta adds entries to cells", () => {
-		const delta: CellDelta = {
+		const d: RenderDelta = delta({
 			added: [entry("s", 1, 10, 20), entry("s", 2, 30, 40), entry("t", 3, 50, 60)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		};
-		mgr.applyDelta(delta);
+		});
+		mgr.applyDelta(d);
 		expect(mgr.totalCount).toBe(3);
 		expect(mgr.cells.get("s")!.count).toBe(2);
 		expect(mgr.cells.get("t")!.count).toBe(1);
 	});
 
 	it("applyDelta removes entries", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 10, 20), entry("s", 2, 30, 40)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 1 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 10, 20), entry("s", 2, 30, 40)],
+			}),
+		);
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 1 }],
+			}),
+		);
 		expect(mgr.totalCount).toBe(1);
 	});
 
 	it("applyDelta patches positions", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 10, 20, 0)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
-		mgr.applyDelta({
-			added: [],
-			updated: [{ cell: "s", cellIndex: 0, heading: 90 }],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 10, 20, 0)],
+			}),
+		);
+		mgr.applyDelta(
+			delta({
+				updated: [{ cell: "s", cellIndex: 0, lng: null, lat: null, heading: 90, sel: null }],
+			}),
+		);
 		expect(mgr.cells.get("s")!.angles[0]).toBeCloseTo(90);
 	});
 
-	it("applyDelta patches colors", () => {
-		mgr.applyDelta({ added: [entry("s", 1, 10, 20)], updated: [], removed: [], colorPatches: [] });
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [],
-			colorPatches: [{ cell: "s", cellIndex: 0, r: 255, g: 0, b: 0, a: 0 }],
-		});
-		const cb = mgr.cells.get("s")!;
-		expect(cb.visible[0]).toBe(0);
+	it("a patch that only states selection hides the base row and fills the overlay", () => {
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20)] }));
+		mgr.applyDelta(
+			delta({
+				updated: [selPatch("s", 0, [255, 0, 0])],
+			}),
+		);
+		expect(mgr.cells.get("s")!.visible[0]).toBe(0);
+		expect(mgr.overlay.count).toBe(1);
+		expect(mgr.overlay.ids[0]).toBe(1);
+		expect(mgr.selectedIds().has(1)).toBe(true);
+	});
+
+	it("a patch stating no selection returns the row to the base layer", () => {
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20, 0, [255, 0, 0])] }));
+		expect(mgr.overlay.count).toBe(1);
+		mgr.applyDelta(
+			delta({
+				updated: [selPatch("s", 0, null)],
+			}),
+		);
+		expect(mgr.cells.get("s")!.visible[0]).toBe(255);
+		expect(mgr.overlay.count).toBe(0);
 	});
 
 	it("applyDelta with fullReset clears everything first", () => {
-		mgr.applyDelta({ added: [entry("s", 1, 10, 20)], updated: [], removed: [], colorPatches: [] });
-		mgr.applyDelta({
-			added: [entry("t", 2, 30, 40)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-			fullReset: true,
-		});
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20)] }));
+		mgr.applyDelta(
+			delta({
+				added: [entry("t", 2, 30, 40)],
+				removed: [],
+				fullReset: true,
+			}),
+		);
 		// fullReset isn't handled in applyDelta — it's handled by the caller. But the delta still applies.
 		// So totalCount should be 2 (original + new)
 		expect(mgr.totalCount).toBe(2);
 	});
 
 	it("resolvePickFromCell returns correct id", () => {
-		mgr.applyDelta({
-			added: [entry("s", 42, 10, 20), entry("s", 99, 30, 40)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 42, 10, 20), entry("s", 99, 30, 40)],
+			}),
+		);
 		expect(mgr.resolvePickFromCell("s", 0)).toBe(42);
 		expect(mgr.resolvePickFromCell("s", 1)).toBe(99);
 	});
 
 	it("resolvePickFromCell returns null for invalid", () => {
 		expect(mgr.resolvePickFromCell("x", 0)).toBeNull();
-		mgr.applyDelta({ added: [entry("s", 1, 10, 20)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20)] }));
 		expect(mgr.resolvePickFromCell("s", 5)).toBeNull();
 	});
 
 	it("version increments on each delta", () => {
 		const v0 = mgr.version;
-		mgr.applyDelta({ added: [entry("s", 1, 10, 20)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20)] }));
 		expect(mgr.version).toBe(v0 + 1);
-		mgr.applyDelta({ added: [], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [] }));
 		expect(mgr.version).toBe(v0 + 2);
 	});
 
 	it("clear resets everything", () => {
-		mgr.applyDelta({ added: [entry("s", 1, 10, 20)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20)] }));
 		mgr.clear();
 		expect(mgr.totalCount).toBe(0);
 		expect(mgr.cells.size).toBe(0);
 	});
 
 	it("add then remove then add reuses cell correctly", () => {
-		mgr.applyDelta({ added: [entry("s", 1, 10, 20)], updated: [], removed: [], colorPatches: [] });
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 1 }],
-			colorPatches: [],
-		});
-		mgr.applyDelta({ added: [entry("s", 2, 30, 40)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20)] }));
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 1 }],
+			}),
+		);
+		mgr.applyDelta(delta({ added: [entry("s", 2, 30, 40)] }));
 		expect(mgr.totalCount).toBe(1);
 		expect(mgr.resolvePickFromCell("s", 0)).toBe(2);
 	});
@@ -244,9 +265,9 @@ describe("CellManager", () => {
 	it("initFromBinary parses render buffer correctly", () => {
 		// Build a binary buffer matching Rust's format:
 		// [u32 cell_count]
-		// per cell: [u8 geohash_char][u32 count][u32[] ids][f32[] positions][u8[] visible][f32[] angles]
+		// per cell: [u8 geohash_char][u32 count][3 pad][u32[] ids][f32[] positions][u8[] visible][pad to 4][f32[] angles]
 		// [u32 sel_count] (0 for no selections)
-		const buf = new ArrayBuffer(4 + (5 + 2 * 4 + 2 * 2 * 4 + 2 + 2 * 4) + 4);
+		const buf = new ArrayBuffer(4 + (8 + 2 * 4 + 2 * 2 * 4 + 2 + 2 + 2 * 4) + 4);
 		const dv = new DataView(buf);
 		let off = 0;
 
@@ -259,6 +280,8 @@ describe("CellManager", () => {
 		// 2 locations
 		dv.setUint32(off, 2, true);
 		off += 4;
+		// alignment pad
+		off += 3;
 		// ids
 		dv.setUint32(off, 42, true);
 		off += 4;
@@ -273,11 +296,12 @@ describe("CellManager", () => {
 		off += 4;
 		dv.setFloat32(off, 40.5, true);
 		off += 4;
-		// visible (one byte per loc)
+		// visible (one byte per loc) + pad to 4
 		dv.setUint8(off, 255);
 		off += 1;
 		dv.setUint8(off, 255);
 		off += 1;
+		off += 2;
 		// angles
 		dv.setFloat32(off, 90, true);
 		off += 4;
@@ -342,14 +366,17 @@ describe("CellManager", () => {
 		dv.setUint32(off, 7, true);
 
 		mgr.initFromBinary(buf);
-		expect(mgr.selOverlayCount).toBe(1);
-		expect(mgr.selOverlayIds[0]).toBe(7);
-		expect(mgr.selOverlayPositions[0]).toBeCloseTo(5.5);
-		expect(mgr.selOverlayColors[0]).toBe(255);
+		expect(mgr.overlay.count).toBe(1);
+		expect(mgr.overlay.ids[0]).toBe(7);
+		expect(mgr.overlay.positions[0]).toBeCloseTo(5.5);
+		expect(mgr.overlay.colors[0]).toBe(255);
+		// The loaded overlay is indexed, not just drawn: membership answers come off it.
+		expect(mgr.overlay.has(7)).toBe(true);
+		expect(mgr.selectedIds().has(7)).toBe(true);
 	});
 
 	it("initFromBinary clears previous state", () => {
-		mgr.applyDelta({ added: [entry("x", 1, 1, 1)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("x", 1, 1, 1)] }));
 		expect(mgr.totalCount).toBe(1);
 
 		const buf = new ArrayBuffer(4 + 4);
@@ -361,19 +388,71 @@ describe("CellManager", () => {
 		expect(mgr.cells.size).toBe(0);
 	});
 
-	it("buildSelectionOverlay creates overlay from color patches", () => {
-		mgr.applyDelta({
-			added: [entry("s", 1, 10, 20, 45), entry("s", 2, 30, 40, 90)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
-		mgr.buildSelectionOverlay([{ cell: "s", cellIndex: 0, r: 255, g: 0, b: 0, a: 255 }]);
-		expect(mgr.selOverlayCount).toBe(1);
-		expect(mgr.selOverlayIds[0]).toBe(1);
-		expect(mgr.selOverlayPositions[0]).toBeCloseTo(10);
-		expect(mgr.selOverlayPositions[1]).toBeCloseTo(20);
-		expect(mgr.selOverlayColors[0]).toBe(255);
+	it("an added entry that is already selected goes straight into the overlay", () => {
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 10, 20, 45, [255, 0, 0]), entry("s", 2, 30, 40, 90)],
+			}),
+		);
+		expect(mgr.overlay.count).toBe(1);
+		expect(mgr.overlay.ids[0]).toBe(1);
+		expect(mgr.overlay.positions[0]).toBeCloseTo(10);
+		expect(mgr.overlay.positions[1]).toBeCloseTo(20);
+		expect(mgr.overlay.colors[0]).toBe(255);
+		expect(mgr.cells.get("s")!.visible[0]).toBe(0);
+		expect(mgr.cells.get("s")!.visible[1]).toBe(255);
+	});
+
+	it("movedFrom carries a selected row's overlay entry across cells", () => {
+		mgr.applyDelta(delta({ added: [entry("s", 1, 10, 20, 0, [0, 255, 0])] }));
+		expect(mgr.overlay.count).toBe(1);
+
+		mgr.applyDelta(
+			delta({
+				added: [
+					{
+						cell: "t",
+						id: 1,
+						lng: 99,
+						lat: 88,
+						heading: 0,
+						sel: [0, 255, 0],
+						movedFrom: { cell: "s", cellIndex: 0, id: 1 },
+					},
+				],
+			}),
+		);
+
+		expect(mgr.totalCount).toBe(1);
+		expect(mgr.cells.get("s")!.count).toBe(0);
+		expect(mgr.cells.get("t")!.count).toBe(1);
+		// One overlay entry, following the row rather than dropping and re-adding.
+		expect(mgr.overlay.count).toBe(1);
+		expect(mgr.overlay.ids[0]).toBe(1);
+		expect(mgr.overlay.positions[0]).toBeCloseTo(99);
+		expect(mgr.overlay.positions[1]).toBeCloseTo(88);
+		expect(mgr.cells.get("t")!.visible[0]).toBe(0);
+	});
+
+	it("setActive hides the active row and restores it, without disturbing selection", () => {
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 1, 10, 20), entry("s", 2, 30, 40, 0, [255, 0, 0])],
+			}),
+		);
+		const cb = mgr.cells.get("s")!;
+
+		mgr.setActive(1);
+		expect(cb.visible[0]).toBe(0);
+
+		// The selected row stays hidden when it stops being active — the overlay draws it.
+		mgr.setActive(2);
+		expect(cb.visible[0]).toBe(255);
+		expect(cb.visible[1]).toBe(0);
+
+		mgr.setActive(null);
+		expect(cb.visible[1]).toBe(0);
+		expect(mgr.overlay.has(2)).toBe(true);
 	});
 });
 
@@ -391,12 +470,11 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("basic bitmask selects correct IDs", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// bitmask: select index 1 only (id=20)
 		const mask = new Uint8Array([0b010]); // bit 1 set
@@ -411,12 +489,11 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("idx-format selection matches the equivalent mask", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// Sparse index-list: select local indices 0 and 2 (ids 10, 30).
 		const idxIds = mgr.applySelectionBitmasks(
@@ -428,7 +505,7 @@ describe("applySelectionBitmasks", () => {
 		expect(idxIds.has(30)).toBe(true);
 		expect(idxIds.has(20)).toBe(false);
 		expect([...idxIds].sort((a, b) => a - b)).toEqual([10, 30]);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.count).toBe(2);
 
 		// The equivalent dense mask (bits 0 and 2) must yield the same selected set.
 		const maskIds = mgr.applySelectionBitmasks(
@@ -439,12 +516,11 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("idx-format ignores indices past the cell's count", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
+			}),
+		);
 
 		// Index 5 is out of bounds for a 2-location cell -> clamped, only index 0 (id 10) selected.
 		const ids = mgr.applySelectionBitmasks(
@@ -454,24 +530,22 @@ describe("applySelectionBitmasks", () => {
 		expect(ids.size).toBe(1);
 		expect(ids.has(10)).toBe(true);
 		expect([...ids]).toEqual([10]);
-		expect(mgr.selOverlayCount).toBe(1);
+		expect(mgr.overlay.count).toBe(1);
 	});
 
 	it("bitmask after swap-remove still maps to correct IDs", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// Remove index 0 (id=10) — id=30 swaps into index 0
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			}),
+		);
 
 		// After swap-remove: ids = [30, 20], count = 2
 		const cb = mgr.cells.get("s")!;
@@ -490,40 +564,36 @@ describe("applySelectionBitmasks", () => {
 
 	it("slot reuse: remove tagged, add untagged, bitmask should not select untagged", () => {
 		// 3 entries: id=10 (tagged), id=20 (tagged), id=30 (not tagged)
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// Remove the tagged ones (indices 0 and 1)
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
-			colorPatches: [],
-		});
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [
-				{ cell: "s", cellIndex: 0, id: 30 }, // 30 swapped to 0 after first remove
-			],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			}),
+		);
+		mgr.applyDelta(
+			delta({
+				removed: [
+					{ cell: "s", cellIndex: 0, id: 30 }, // 30 swapped to 0 after first remove
+				],
+			}),
+		);
 
 		// Now only id=20 at index 0
 		expect(mgr.cells.get("s")!.count).toBe(1);
 		expect(mgr.cells.get("s")!.ids[0]).toBe(20);
 
 		// Add new untagged entries that fill the freed slots
-		mgr.applyDelta({
-			added: [entry("s", 40, 4, 4), entry("s", 50, 5, 5)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 40, 4, 4), entry("s", 50, 5, 5)],
+			}),
+		);
 
 		// ids = [20, 40, 50]
 		// A bitmask that only selects the originally-tagged id=20 (index 0)
@@ -538,12 +608,11 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("multiple selections: an overlapping loc gets one entry in the last selection's color", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// Selection 0 (red): indices 0,1
 		// Selection 1 (blue): indices 1,2
@@ -563,28 +632,27 @@ describe("applySelectionBitmasks", () => {
 		expect(selectedIds.has(30)).toBe(true);
 
 		// Three selected locations, three entries: the overlap is resolved, not stacked.
-		expect(mgr.selOverlayCount).toBe(3);
-		const indices20 = mgr.selOverlayIds
-			.slice(0, mgr.selOverlayCount)
+		expect(mgr.overlay.count).toBe(3);
+		const indices20 = mgr.overlay.ids
+			.slice(0, mgr.overlay.count)
 			.reduce<number[]>((acc, id, i) => (id === 20 ? [...acc, i] : acc), []);
 		expect(indices20.length).toBe(1);
 		// The later selection (blue) wins the shared row.
-		expect(mgr.selOverlayColors[indices20[0] * 4]).toBe(0);
-		expect(mgr.selOverlayColors[indices20[0] * 4 + 2]).toBe(255);
+		expect(mgr.overlay.colors[indices20[0] * 4]).toBe(0);
+		expect(mgr.overlay.colors[indices20[0] * 4 + 2]).toBe(255);
 		// The rows only one selection claims keep their own colour.
-		const idx10 = mgr.selOverlayIds.indexOf(10);
-		expect(mgr.selOverlayColors[idx10 * 4]).toBe(255);
-		const idx30 = mgr.selOverlayIds.indexOf(30);
-		expect(mgr.selOverlayColors[idx30 * 4 + 2]).toBe(255);
+		const idx10 = mgr.overlay.ids.indexOf(10);
+		expect(mgr.overlay.colors[idx10 * 4]).toBe(255);
+		const idx30 = mgr.overlay.ids.indexOf(30);
+		expect(mgr.overlay.colors[idx30 * 4 + 2]).toBe(255);
 	});
 
 	it("selected entries get alpha=0 in main layer (hidden)", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
+			}),
+		);
 
 		const mask = new Uint8Array([0b01]); // select index 0 only
 		mgr.applySelectionBitmasks(
@@ -598,12 +666,11 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("unselected entries become visible again", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
+			}),
+		);
 
 		// First, select both
 		mgr.applySelectionBitmasks(
@@ -628,23 +695,21 @@ describe("applySelectionBitmasks", () => {
 	// -----------------------------------------------------------------------
 
 	it("remove then re-add (undo delete) keeps IDs consistent for bitmask", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// Delete id=20 (index 1): id=30 swaps to index 1
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 1, id: 20 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 1, id: 20 }],
+			}),
+		);
 
 		// Undo: re-add id=20
-		mgr.applyDelta({ added: [entry("s", 20, 2, 2)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("s", 20, 2, 2)] }));
 
 		// Now: ids should be [10, 30, 20] (30 swapped to 1, 20 appended at 2)
 		const cb = mgr.cells.get("s")!;
@@ -666,21 +731,19 @@ describe("applySelectionBitmasks", () => {
 
 	it("full undo/redo cycle: add 3, delete 1, undo delete, redo delete", () => {
 		// Add 3
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 		expect(mgr.totalCount).toBe(3);
 
 		// Delete id=10 (index 0)
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			}),
+		);
 		expect(mgr.totalCount).toBe(2);
 		const cbAfterDel = mgr.cells.get("s")!;
 		expect(cbAfterDel.count).toBe(2);
@@ -688,17 +751,16 @@ describe("applySelectionBitmasks", () => {
 		expect(cbAfterDel.ids[1]).toBe(20);
 
 		// Undo delete (re-add id=10)
-		mgr.applyDelta({ added: [entry("s", 10, 1, 1)], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [entry("s", 10, 1, 1)] }));
 		expect(mgr.totalCount).toBe(3);
 		expect(mgr.resolvePickFromCell("s", 2)).toBe(10);
 
 		// Redo delete (remove id=10 again, now at index 2)
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 2, id: 10 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 2, id: 10 }],
+			}),
+		);
 		expect(mgr.totalCount).toBe(2);
 		const cb = mgr.cells.get("s")!;
 		expect(cb.count).toBe(2);
@@ -708,17 +770,16 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("cross-cell bitmask: each cell maps independently", () => {
-		mgr.applyDelta({
-			added: [
-				entry("s", 10, 1, 1),
-				entry("s", 20, 2, 2),
-				entry("t", 30, 3, 3),
-				entry("t", 40, 4, 4),
-			],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [
+					entry("s", 10, 1, 1),
+					entry("s", 20, 2, 2),
+					entry("t", 30, 3, 3),
+					entry("t", 40, 4, 4),
+				],
+			}),
+		);
 
 		// Select index 1 in cell "s" (id=20) and index 0 in cell "t" (id=30)
 		const maskS = new Uint8Array([0b10]);
@@ -738,17 +799,16 @@ describe("applySelectionBitmasks", () => {
 	});
 
 	it("partial bitmask: sending one cell preserves other cells' overlay", () => {
-		mgr.applyDelta({
-			added: [
-				entry("s", 10, 1, 1),
-				entry("s", 20, 2, 2),
-				entry("t", 30, 3, 3),
-				entry("t", 40, 4, 4),
-			],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [
+					entry("s", 10, 1, 1),
+					entry("s", 20, 2, 2),
+					entry("t", 30, 3, 3),
+					entry("t", 40, 4, 4),
+				],
+			}),
+		);
 
 		// Full bitmask: select id=20 in "s" and id=30 in "t"
 		mgr.applySelectionBitmasks(
@@ -758,7 +818,7 @@ describe("applySelectionBitmasks", () => {
 				{ cellChar: "t", locCount: 2, sels: [maskSel(new Uint8Array([0b01]))] },
 			],
 		);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.count).toBe(2);
 
 		// Partial bitmask: only update cell "s", now select id=10 instead of id=20
 		const ids = mgr.applySelectionBitmasks(
@@ -770,16 +830,15 @@ describe("applySelectionBitmasks", () => {
 		expect(ids.has(10)).toBe(true);
 		expect(ids.has(20)).toBe(false);
 		expect(ids.has(30)).toBe(true);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.count).toBe(2);
 	});
 
 	it("partial bitmask: deselecting all in one cell keeps other cells' overlay", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("t", 20, 2, 2)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("t", 20, 2, 2)],
+			}),
+		);
 
 		// Select both
 		mgr.applySelectionBitmasks(
@@ -789,7 +848,7 @@ describe("applySelectionBitmasks", () => {
 				{ cellChar: "t", locCount: 1, sels: [maskSel(new Uint8Array([0b1]))] },
 			],
 		);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.count).toBe(2);
 
 		// Deselect cell "s" only
 		const ids = mgr.applySelectionBitmasks(
@@ -799,31 +858,29 @@ describe("applySelectionBitmasks", () => {
 
 		expect(ids.has(10)).toBe(false);
 		expect(ids.has(20)).toBe(true);
-		expect(mgr.selOverlayCount).toBe(1);
+		expect(mgr.overlay.count).toBe(1);
 	});
 
 	it("deleted location's overlay entry is dropped on next bitmask", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2)],
+			}),
+		);
 
 		// Select both
 		mgr.applySelectionBitmasks(
 			[[255, 0, 0]],
 			[{ cellChar: "s", locCount: 2, sels: [maskSel(new Uint8Array([0b11]))] }],
 		);
-		expect(mgr.selOverlayCount).toBe(2);
+		expect(mgr.overlay.count).toBe(2);
 
 		// Delete id=10 (swap-remove at index 0, id=20 moves to index 0)
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			}),
+		);
 
 		// Partial bitmask for cell "s" — only 1 entry now (id=20), selected
 		const ids = mgr.applySelectionBitmasks(
@@ -833,16 +890,15 @@ describe("applySelectionBitmasks", () => {
 
 		expect(ids.has(20)).toBe(true);
 		expect(ids.has(10)).toBe(false);
-		expect(mgr.selOverlayCount).toBe(1);
+		expect(mgr.overlay.count).toBe(1);
 	});
 
 	it("_removedIds does not leak across mutations", () => {
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// Select all three
 		mgr.applySelectionBitmasks(
@@ -851,12 +907,11 @@ describe("applySelectionBitmasks", () => {
 		);
 
 		// Mutation 1: delete id=10
-		mgr.applyDelta({
-			added: [],
-			updated: [],
-			removed: [{ cell: "s", cellIndex: 0, id: 10 }],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				removed: [{ cell: "s", cellIndex: 0, id: 10 }],
+			}),
+		);
 		mgr.applySelectionBitmasks(
 			[[255, 0, 0]],
 			[{ cellChar: "s", locCount: 2, sels: [maskSel(new Uint8Array([0b11]))] }],
@@ -864,7 +919,7 @@ describe("applySelectionBitmasks", () => {
 
 		// Mutation 2: no removals, just a bitmask refresh.
 		// id=30 should NOT be dropped by stale _removedIds from mutation 1.
-		mgr.applyDelta({ added: [], updated: [], removed: [], colorPatches: [] });
+		mgr.applyDelta(delta({ added: [] }));
 		const ids = mgr.applySelectionBitmasks(
 			[[255, 0, 0]],
 			[{ cellChar: "s", locCount: 2, sels: [maskSel(new Uint8Array([0b11]))] }],
@@ -958,12 +1013,11 @@ describe("decodeSelectionBitmask", () => {
 
 	it("decoded entries drive applySelectionBitmasks", () => {
 		const mgr = new CellManager();
-		mgr.applyDelta({
-			added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
-			updated: [],
-			removed: [],
-			colorPatches: [],
-		});
+		mgr.applyDelta(
+			delta({
+				added: [entry("s", 10, 1, 1), entry("s", 20, 2, 2), entry("s", 30, 3, 3)],
+			}),
+		);
 
 		// 1 selection (red), cell "s" locCount=3, idx list [0, 2] -> ids 10 and 30
 		const bytes = [

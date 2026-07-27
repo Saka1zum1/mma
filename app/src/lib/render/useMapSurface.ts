@@ -8,7 +8,7 @@ import { useSetting, getSettings } from "@/store/settings";
 import { useScoreMaxError } from "@/lib/geo/scoring";
 import { handleMapClick, handleMapHover } from "@/lib/map/mapClick";
 import { getMapState } from "@/store/useMapStore";
-import { subscribe, subscribeMany } from "@/lib/events";
+import { subscribe, subscribeMany, OVERLAY_REPAINT_EVENTS } from "@/lib/events";
 import { subscribeProviderCoverageLayers } from "@/lib/sv/providers/coverageLayers";
 import { getReviewSession } from "@/lib/review/review";
 import { useHotkey } from "@/lib/hooks/useHotkey";
@@ -119,14 +119,7 @@ export function useMapSurface(
 		});
 	});
 
-	useEffect(
-		() =>
-			subscribeMany(
-				["store:changed", "scene:changed", "trail:changed", "seen:changed", "anchor:changed"],
-				scheduleRebuild,
-			),
-		[],
-	);
+	useEffect(() => subscribeMany(OVERLAY_REPAINT_EVENTS, scheduleRebuild), []);
 
 	// Alt-provider enable / style toggles rebuild Apple coverage dots (line layers
 	// refresh via MapEmbed applyPrefs on the same coverage epoch).

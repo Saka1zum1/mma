@@ -44,10 +44,18 @@ struct ArchDataset {
 }
 
 /// A loaded dataset: either parsed-and-owned (bundled "light") or a validated mmap of an
-/// rkyv archive (downloaded levels), read zero-copy on every lookup.
+/// rkyv archive (downloaded levels), read zero-copy on every lookup. Per-feature bboxes
+/// are computed once at load (`None` for empty geometry) so no lookup path re-walks
+/// every vertex just to build its broad-phase filter.
 enum Dataset {
-    Owned(Vec<BorderFeature>),
-    Mapped(memmap2::Mmap),
+    Owned {
+        features: Vec<BorderFeature>,
+        bboxes: Vec<Option<[f64; 4]>>,
+    },
+    Mapped {
+        mmap: memmap2::Mmap,
+        bboxes: Vec<Option<[f64; 4]>>,
+    },
 }
 
 impl Dataset {
@@ -444,7 +452,11 @@ fn load_dataset(level: &str) -> AppResult<()> {
             "Loaded {} border features for level 'light'",
             features.len()
         );
-        Dataset::Owned(features)
+        let bboxes = features
+            .iter()
+            .map(|f| selections::geometry_bbox(&f.geometry))
+            .collect();
+        Dataset::Owned { features, bboxes }
     } else {
         let path = crate::storage::app_data_dir()?
             .join("borders")
@@ -456,11 +468,13 @@ fn load_dataset(level: &str) -> AppResult<()> {
             .map_err(|e| format!("Failed to mmap borders-{level}.rkyv: {e}"))?;
         rkyv::check_archived_root::<ArchDataset>(&mmap[..])
             .map_err(|e| format!("Corrupt border archive borders-{level}.rkyv: {e:?}"))?;
+        let archived = Dataset::archived(&mmap);
         log::info!(
             "Mapped {} border features for level '{level}'",
-            Dataset::archived(&mmap).features.len()
+            archived.features.len()
         );
-        Dataset::Mapped(mmap)
+        let bboxes = archived.features.iter().map(arch_feature_bbox).collect();
+        Dataset::Mapped { mmap, bboxes }
     };
 
     cache().lock().unwrap().insert(level.to_string(), dataset);
@@ -578,10 +592,11 @@ pub fn border_lookup(lat: f64, lng: f64, level: String) -> AppResult<Option<Poly
     let datasets = cache().lock().unwrap();
     let ds = datasets.get(&level).unwrap();
 
+    let hit = |bb: &Option<[f64; 4]>| matches!(bb, Some(bb) if selections::in_bbox(lng, lat, bb));
     match ds {
-        Dataset::Owned(features) => {
-            for feature in features {
-                if selections::point_in_geometry(lng, lat, &feature.geometry) {
+        Dataset::Owned { features, bboxes } => {
+            for (feature, bb) in features.iter().zip(bboxes) {
+                if hit(bb) && selections::point_in_geometry(lng, lat, &feature.geometry) {
                     let mut geom = feature.geometry.clone();
                     geom.properties = Some(serde_json::json!({
                         "name": feature.name,
@@ -591,9 +606,9 @@ pub fn border_lookup(lat: f64, lng: f64, level: String) -> AppResult<Option<Poly
                 }
             }
         }
-        Dataset::Mapped(mmap) => {
-            for f in Dataset::archived(mmap).features.iter() {
-                if arch_point_in_feature(lng, lat, f) {
+        Dataset::Mapped { mmap, bboxes } => {
+            for (f, bb) in Dataset::archived(mmap).features.iter().zip(bboxes) {
+                if hit(bb) && arch_point_in_feature(lng, lat, f) {
                     return Ok(Some(arch_to_geometry(f)));
                 }
             }
@@ -616,32 +631,30 @@ pub fn border_classify(level: String, points: Vec<(f64, f64)>) -> AppResult<Vec<
     let ds = datasets.get(&level).unwrap();
 
     Ok(match ds {
-        Dataset::Owned(features) => {
-            let feats = features
-                .iter()
-                .filter_map(|f| selections::geometry_bbox(&f.geometry).map(|bb| (bb, f)))
-                .collect();
-            classify_scan(
-                feats,
-                &points,
-                |lng, lat, f| selections::point_in_geometry(lng, lat, &f.geometry),
-                |f| f.name.as_str(),
-            )
-        }
-        Dataset::Mapped(mmap) => {
-            let feats = Dataset::archived(mmap)
-                .features
-                .iter()
-                .filter_map(|f| arch_feature_bbox(f).map(|bb| (bb, f)))
-                .collect();
-            classify_scan(
-                feats,
-                &points,
-                |lng, lat, f| arch_point_in_feature(lng, lat, f),
-                |f| f.name.as_str(),
-            )
-        }
+        Dataset::Owned { features, bboxes } => classify_scan(
+            zip_bboxes(features.iter(), bboxes),
+            &points,
+            |lng, lat, f| selections::point_in_geometry(lng, lat, &f.geometry),
+            |f| f.name.as_str(),
+        ),
+        Dataset::Mapped { mmap, bboxes } => classify_scan(
+            zip_bboxes(Dataset::archived(mmap).features.iter(), bboxes),
+            &points,
+            |lng, lat, f| arch_point_in_feature(lng, lat, f),
+            |f| f.name.as_str(),
+        ),
     })
+}
+
+/// Pair features with their load-time bboxes, dropping empty-geometry features.
+fn zip_bboxes<'a, T>(
+    features: impl Iterator<Item = &'a T>,
+    bboxes: &[Option<[f64; 4]>],
+) -> Vec<([f64; 4], &'a T)> {
+    features
+        .zip(bboxes)
+        .filter_map(|(f, bb)| bb.map(|bb| (bb, f)))
+        .collect()
 }
 
 /// Bbox-prefiltered parallel point classification, generic over the feature backend.
@@ -689,31 +702,18 @@ pub fn tally_countries(level: &str, coords: &[(f64, f64)]) -> AppResult<Vec<(Str
     let ds = datasets.get(&level).unwrap();
 
     Ok(match ds {
-        Dataset::Owned(features) => {
-            let feats = features
-                .iter()
-                .filter_map(|f| selections::geometry_bbox(&f.geometry).map(|bb| (bb, f)))
-                .collect();
-            tally_scan(
-                feats,
-                coords,
-                |lng, lat, f| selections::point_in_geometry(lng, lat, &f.geometry),
-                |f| f.code.as_str(),
-            )
-        }
-        Dataset::Mapped(mmap) => {
-            let feats = Dataset::archived(mmap)
-                .features
-                .iter()
-                .filter_map(|f| arch_feature_bbox(f).map(|bb| (bb, f)))
-                .collect();
-            tally_scan(
-                feats,
-                coords,
-                |lng, lat, f| arch_point_in_feature(lng, lat, f),
-                |f| f.code.as_str(),
-            )
-        }
+        Dataset::Owned { features, bboxes } => tally_scan(
+            zip_bboxes(features.iter(), bboxes),
+            coords,
+            |lng, lat, f| selections::point_in_geometry(lng, lat, &f.geometry),
+            |f| f.code.as_str(),
+        ),
+        Dataset::Mapped { mmap, bboxes } => tally_scan(
+            zip_bboxes(Dataset::archived(mmap).features.iter(), bboxes),
+            coords,
+            |lng, lat, f| arch_point_in_feature(lng, lat, f),
+            |f| f.code.as_str(),
+        ),
     })
 }
 

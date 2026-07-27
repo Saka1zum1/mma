@@ -196,8 +196,8 @@ declare const en: {
     readonly "plugins.catalog.disambiguate.name": "Disambiguate";
     readonly "plugins.catalog.distribution.description": "View how locations are distributed across countries";
     readonly "plugins.catalog.distribution.name": "Distribution";
-    readonly "plugins.catalog.generator.description": "Generate locations from Street View coverage";
-    readonly "plugins.catalog.generator.name": "Map generator";
+    readonly "plugins.catalog.map-generator.description": "Generate locations from Street View coverage";
+    readonly "plugins.catalog.map-generator.name": "Map generator";
     readonly "plugins.catalog.geoguessr.description": "Push and pull locations to/from a linked GeoGuessr map";
     readonly "plugins.catalog.geoguessr.name": "GeoGuessr";
     readonly "plugins.catalog.gradient.description": "Color locations by field value using gradient buckets";
@@ -467,7 +467,18 @@ declare const en: {
     readonly "mapList.yourMaps": "Your Maps";
     readonly "context.clearAnchors": "Clear latitude/longitude anchors";
     readonly "context.copyCoordinates": "Copy coordinates";
+    readonly "context.copyPanoId": "Copy pano ID";
+    readonly "context.copyStreetViewLink": "Copy Street View link";
+    readonly "context.copyToMap": "Copy to map...";
+    readonly "context.deleteLocation": "Delete location";
+    readonly "context.deleteNPolygons.one": "Delete {count} polygon here";
+    readonly "context.deleteNPolygons.other": "Delete {count} polygons here";
+    readonly "context.deleteThisPolygon": "Delete this polygon";
+    readonly "context.downloadPanorama": "Download panorama";
+    readonly "context.duplicateLocation": "Duplicate location";
     readonly "context.endMeasurement": "End measurement";
+    readonly "context.selectThisCountry": "Select this country";
+    readonly "context.selectThisSubdivision": "Select this subdivision";
     readonly "context.setAnchors": "Set latitude/longitude anchors";
     readonly "context.startMeasurement": "Start measurement";
     readonly "toast.addedLocations.one": "Added {count} location";
@@ -478,6 +489,7 @@ declare const en: {
     readonly "toast.copiedCsv": "Copied CSV to clipboard";
     readonly "toast.copiedJson": "Copied JSON to clipboard";
     readonly "toast.copiedTo": "Copied to {name}";
+    readonly "toast.linkCopied": "Link copied";
     readonly "toast.copyFailed": "Copy failed";
     readonly "toast.downloadedFile": "Downloaded {name}";
     readonly "toast.exportFailed": "Export failed";
@@ -2121,20 +2133,6 @@ type CellRemoval = {
     id: number;
 };
 /**
- *  One location's selection-membership change, projected onto the render buffers.
- *  The RGBA is the base-layer color, and `a` says which way it went: a gained row is
- *  transparent there (a=0) and drawn by the overlay in `r,g,b`; a lost row (a=255) gets
- *  the opaque marker color back and drops out of the overlay.
- */
-type ColorPatchEntry = {
-    cell: string;
-    cellIndex: number;
-    r: number;
-    g: number;
-    b: number;
-    a: number;
-};
-/**
  *  A commit's delta, returned to the frontend for the per-commit diff viewer.
  *  An updated location appears in both `created` (new) and `removed` (old).
  */
@@ -2786,36 +2784,45 @@ type RemoteMappingRow = {
     hash: string;
 };
 /**
- *  Incremental render update sent to JS after a mutation. Contains adds, position/heading
- *  patches, swap-removals, and color patches (for selection overlay changes).
+ *  Incremental render update sent to JS after a mutation: adds, patches, and removals.
+ *  Every entry states the row's resulting selection state, so applying a delta is
+ *  idempotent and the base cells and the selection overlay cannot drift apart.
  *  `full_reset` signals JS to discard all cell data and re-fetch via `store_fill_render_file`.
  */
 type RenderDelta = {
     added: RenderEntry[];
     updated: RenderPatchEntry[];
     removed: CellRemoval[];
-    colorPatches: ColorPatchEntry[];
     fullReset: boolean;
 };
-/**  A newly-added marker to a render cell: position, heading, and base color. */
+/**  A marker appended to a render cell: position, heading, and selection state. */
 type RenderEntry = {
     cell: string;
     id: number;
     lng: number;
     lat: number;
     heading: number;
-    r: number;
-    g: number;
-    b: number;
-    a: number;
+    /**  `None` = drawn by the base layer, `Some(rgb)` = drawn by the selection overlay. */
+    sel: [number, number, number] | null;
+    /**
+     *  The slot this row vacated when it crossed cells. Present only for a move, so JS
+     *  mirrors the swap-remove and carries the overlay entry across instead of inferring
+     *  a move from an unrelated removed/added pair.
+     */
+    movedFrom: CellRemoval | null;
 };
-/**  Partial update to an existing marker within its cell (position and/or heading changed). */
+/**
+ *  Update to an existing marker within its cell. Position and heading are `None` when
+ *  unchanged; `sel` always states the row's current selection state, so a membership
+ *  change with no movement is just a patch with no coordinates.
+ */
 type RenderPatchEntry = {
     cell: string;
     cellIndex: number;
     lng: number | null;
     lat: number | null;
     heading: number | null;
+    sel: [number, number, number] | null;
 };
 /**
  *  Parameters for a full render rebuild. `marker_style` ("arrow" or "pin") determines
@@ -3363,9 +3370,7 @@ declare function emitBitmask(bytes: number[]): void;
 declare function mutate(fn: () => Promise<MutationResult>): Promise<MutationResult>;
 /** Add locations to the map. Rust assigns real ids and they are written back into
  *  the passed objects -- build with `createLocation` (id 0) and read `loc.id` after. Undoable. */
-declare function addLocations(locs: Location[], opts?: {
-    hideInDelta?: boolean;
-}): Promise<void>;
+declare function addLocations(locs: Location[]): Promise<void>;
 /** Clone a location in place and return the new id, or null if it doesn't exist. Undoable. */
 declare function duplicateLocation(id: number): Promise<number | null>;
 /** Remove locations by id. Undoable. */
@@ -3593,6 +3598,7 @@ declare namespace store {
 declare function loadGeoJSON(): Promise<void>;
 
 declare const requiresMap: () => boolean;
+declare const hasActiveLocation: () => boolean;
 declare const hasSelection: () => boolean;
 declare const hasAnySelections: () => boolean;
 /** Every editor command (palette entries; all are hotkey-bindable in Settings). */
@@ -3625,7 +3631,7 @@ declare const COMMANDS: {
         icon: string;
         group: "Map";
         execute: () => void;
-        enabled: typeof requiresMap;
+        enabled: typeof hasActiveLocation;
     };
     undo: {
         label: string;
@@ -4556,6 +4562,7 @@ declare const EVENT_DEFS: {
     "store:changed": void;
     "render:delta": RenderDelta;
     "render:selection": SelectionBitmaskPayload;
+    "map-list:changed": void;
     "settings:changed": void;
     "locale:changed": void;
     "fullscreen:changed": void;
@@ -4721,6 +4728,8 @@ export interface MapHostContract<K extends MapHostKind = MapHostKind> {
     once<K extends keyof MapHostEvents>(event: K, fn: (arg: MapHostEvents[K]) => void): () => void;
     containerPxToLatLng(x: number, y: number): LatLng | null;
     setDraggable(v: boolean): void;
+    /** CSS cursor over the map; null restores the host's default. */
+    setCursor(v: string | null): void;
     setDoubleClickZoom(v: boolean): void;
     createDeckOverlay(): DeckOverlayHandle;
     triggerClickAt(latLng: LatLng): void;
@@ -5007,4 +5016,4 @@ declare global {
 }
 
 export { MMA as MMAApi, PanoType, commands };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CellRemoval, ColorPatchEntry, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };

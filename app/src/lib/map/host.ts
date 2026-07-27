@@ -1,9 +1,8 @@
 // MapHost: the single interface every map surface (editor map, minimap) binds to.
 // Hosts wrap a concrete basemap engine (Google Maps via opensv, MapLibre GL for
 // vector tiles) behind one camera/event/overlay contract so consumers never
-// branch on the engine. Engine-only features (e.g. the measure tool) reach the
-// raw engine through `hostInstance(host, kind)` and degrade when the active
-// host is a different engine.
+// branch on the engine. Engine-only features reach the raw engine through
+// `hostInstance(host, kind)` and degrade when the active host is a different engine.
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
 import type maplibregl from "maplibre-gl";
@@ -67,6 +66,8 @@ export interface MapHostContract<K extends MapHostKind = MapHostKind> {
 
 	containerPxToLatLng(x: number, y: number): LatLng | null;
 	setDraggable(v: boolean): void;
+	/** CSS cursor over the map; null restores the host's default. */
+	setCursor(v: string | null): void;
 	setDoubleClickZoom(v: boolean): void;
 
 	createDeckOverlay(): DeckOverlayHandle;

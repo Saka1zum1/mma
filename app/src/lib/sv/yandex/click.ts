@@ -38,7 +38,7 @@ export async function createYandexLocationAtLatLng(
 		extra: buildYandexExtra(meta),
 	});
 
-	await addLocations([loc], { hideInDelta: true });
+	await addLocations([loc]);
 	setActiveLocation(loc);
 	return loc;
 }

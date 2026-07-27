@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use ndarray::Array3;
-use ort::session::Session;
+pub use ort::session::Session;
 use ort::value::Tensor;
 use serde::{Deserialize, Serialize};
 
@@ -203,6 +203,14 @@ pub fn embed_text(session: &mut Session, tokenizer: &tokenizers::Tokenizer, text
 const CACHE_VERSION: u32 = 6;
 const CACHE_FILE: &str = "embeddings_v6.bin";
 
+/// Modification time of the on-disk cache; `None` when absent. Lets a resident
+/// process detect that a concurrent `embed` run rewrote the cache.
+pub fn cache_mtime(cache_dir: &str) -> Option<std::time::SystemTime> {
+    fs::metadata(Path::new(cache_dir).join(CACHE_FILE))
+        .and_then(|m| m.modified())
+        .ok()
+}
+
 #[derive(Default)]
 pub struct EmbedCache {
     pub entries: HashMap<String, Vec<[f32; EMBED_DIM]>>,
@@ -228,9 +236,12 @@ impl EmbedCache {
             let mut crops = Vec::with_capacity(NUM_CROPS);
             for c in 0..NUM_CROPS {
                 let mut emb = [0f32; EMBED_DIM];
-                for (i, val) in emb.iter_mut().enumerate() {
-                    let off = pos + (c * EMBED_DIM + i) * 4;
-                    *val = f32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+                let off = pos + c * EMBED_DIM * 4;
+                for (val, chunk) in emb
+                    .iter_mut()
+                    .zip(data[off..off + EMBED_DIM * 4].chunks_exact(4))
+                {
+                    *val = f32::from_le_bytes(chunk.try_into().unwrap());
                 }
                 crops.push(emb);
             }

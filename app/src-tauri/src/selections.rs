@@ -288,23 +288,33 @@ impl<'a, 'v> RowRef<'a, 'v> {
                     .and_then(|v| v.as_str().map(str::to_owned)),
             ),
             RowInner::Base(v, i) => {
-                let extras: Option<serde_json::Map<String, serde_json::Value>> =
-                    v.extras.and_then(|c| {
-                        if c.is_null(*i) {
-                            return None;
+                // One byte-scan collects both members; only their value slices parse.
+                let mut fv_extra: Option<serde_json::Value> = None;
+                let mut tz: Option<String> = None;
+                if let Some(s) = v
+                    .extras
+                    .and_then(|c| (!c.is_null(*i)).then(|| c.value(*i)))
+                {
+                    let b = s.as_bytes();
+                    crate::types::scan_fields(b, |fs| {
+                        let k = &b[fs.key.clone()];
+                        // Not else-if: `field` may itself be "timezone".
+                        if tz.is_none() && k == b"timezone" {
+                            tz = serde_json::from_str::<serde_json::Value>(&s[fs.value.clone()])
+                                .ok()
+                                .and_then(|v| v.as_str().map(str::to_owned));
                         }
-                        serde_json::from_str(c.value(*i)).ok()
+                        if fv_extra.is_none() && k == field.as_bytes() {
+                            fv_extra = serde_json::from_str(&s[fs.value.clone()]).ok();
+                        }
+                        tz.is_some() && fv_extra.is_some()
                     });
-                let tz = extras
-                    .as_ref()
-                    .and_then(|m| m.get("timezone"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned);
+                }
                 // Built-in names come from their columns; keep in sync with resolve_field_arrow.
                 let fv = match field {
                     "lat" | "lng" | "heading" | "pitch" | "zoom" | "id" | "createdAt"
                     | "modifiedAt" => resolve_field_arrow(v, *i, field),
-                    _ => extras.as_ref().and_then(|m| m.get(field).cloned()),
+                    _ => fv_extra,
                 };
                 (fv, tz)
             }
@@ -717,12 +727,15 @@ fn resolve_leaf_mask(view: &LocView, props: &SelectionProps) -> Vec<bool> {
             let inc = *include_informational;
             match geometry_bbox(polygon) {
                 None => vec![false; n],
-                Some(bb) => view.resolve_mask(|r| {
-                    if !inc && r.flags().contains(LocationFlags::INFORMATIONAL) {
-                        return false;
-                    }
-                    in_bbox(r.lng(), r.lat(), &bb) && point_in_geometry(r.lng(), r.lat(), polygon)
-                }),
+                Some(bb) => {
+                    let prepared = PreparedGeometry::new(polygon);
+                    view.resolve_mask(|r| {
+                        if !inc && r.flags().contains(LocationFlags::INFORMATIONAL) {
+                            return false;
+                        }
+                        in_bbox(r.lng(), r.lat(), &bb) && prepared.contains(r.lng(), r.lat())
+                    })
+                }
             }
         }
         SelectionProps::TopK {
@@ -750,18 +763,23 @@ fn resolve_leaf_mask(view: &LocView, props: &SelectionProps) -> Vec<bool> {
                     entries.push((view.batch_rows + j, v));
                 }
             }
-            if *ascending {
-                entries.sort_unstable_by(|a, b| {
-                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-                });
-            } else {
-                entries.sort_unstable_by(|a, b| {
-                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-                });
+            let k = *k as usize;
+            let asc = |a: &(usize, f64), b: &(usize, f64)| {
+                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+            };
+            if k > 0 && k < entries.len() {
+                if *ascending {
+                    entries.select_nth_unstable_by(k - 1, asc);
+                } else {
+                    entries.select_nth_unstable_by(k - 1, |a, b| asc(b, a));
+                }
+                entries.truncate(k);
             }
             let mut mask = vec![false; n];
-            for &(i, _) in entries.iter().take(*k as usize) {
-                mask[i] = true;
+            if k > 0 {
+                for &(i, _) in &entries {
+                    mask[i] = true;
+                }
             }
             mask
         }
@@ -833,6 +851,97 @@ pub(crate) fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
         j = i;
     }
     inside
+}
+
+/// Crossing-number loop with no per-edge normalization; callers pre-normalize.
+#[inline]
+fn ring_test_raw(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
+    let mut inside = false;
+    let n = ring.len();
+    let mut j = n.wrapping_sub(1);
+    for i in 0..n {
+        let [xi, yi] = ring[i];
+        let [xj, yj] = ring[j];
+        if ((yi > lat) != (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+/// One ring preprocessed for repeated point tests: the antimeridian flag and bbox are
+/// computed once here instead of once per tested point, and a crossing ring stores a
+/// pre-normalized copy so the crossing-number loop runs branch-free.
+pub(crate) struct PreparedRing<'a> {
+    ring: std::borrow::Cow<'a, [[f64; 2]]>,
+    crosses: bool,
+    /// `[min_lng, min_lat, max_lng, max_lat]`, in [0,360) space when `crosses`.
+    bb: [f64; 4],
+}
+
+impl<'a> PreparedRing<'a> {
+    pub(crate) fn new(ring: &'a [[f64; 2]]) -> Self {
+        let crosses = ring_crosses_antimeridian(ring);
+        let ring: std::borrow::Cow<'a, [[f64; 2]]> = if crosses {
+            std::borrow::Cow::Owned(
+                ring.iter()
+                    .map(|&[lng, lat]| [normalize_lng(lng), lat])
+                    .collect(),
+            )
+        } else {
+            std::borrow::Cow::Borrowed(ring)
+        };
+        let mut bb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+        let mut any = false;
+        extend_bbox_with_ring(&mut bb, &mut any, false, &ring);
+        Self { ring, crosses, bb }
+    }
+
+    /// Bbox reject, then the raw crossing test. Equivalent to `point_in_ring`.
+    #[inline]
+    pub(crate) fn contains(&self, lng: f64, lat: f64) -> bool {
+        let lng = if self.crosses { normalize_lng(lng) } else { lng };
+        lng >= self.bb[0]
+            && lng <= self.bb[2]
+            && lat >= self.bb[1]
+            && lat <= self.bb[3]
+            && ring_test_raw(lng, lat, &self.ring)
+    }
+}
+
+/// A whole geometry (primary polygon + extras) preprocessed with per-ring bboxes and
+/// antimeridian flags. Build once per resolve; `contains` is then bbox-rejected per
+/// polygon and per hole instead of paying the O(V) antimeridian pre-scan per point.
+pub(crate) struct PreparedGeometry<'a> {
+    /// Each entry is one polygon: outer ring first, then holes.
+    polys: Vec<Vec<PreparedRing<'a>>>,
+}
+
+impl<'a> PreparedGeometry<'a> {
+    pub(crate) fn new(geom: &'a PolygonGeometry) -> Self {
+        let prep = |rings: &'a [Vec<[f64; 2]>]| -> Vec<PreparedRing<'a>> {
+            rings.iter().map(|r| PreparedRing::new(r)).collect()
+        };
+        let mut polys = vec![prep(&geom.coordinates)];
+        if let Some(extras) = &geom.extra_polygons {
+            for p in extras {
+                polys.push(prep(p));
+            }
+        }
+        Self { polys }
+    }
+
+    /// Equivalent to `point_in_geometry`.
+    #[inline]
+    pub(crate) fn contains(&self, lng: f64, lat: f64) -> bool {
+        self.polys.iter().any(|rings| match rings.split_first() {
+            Some((outer, holes)) => {
+                outer.contains(lng, lat) && !holes.iter().any(|h| h.contains(lng, lat))
+            }
+            None => false,
+        })
+    }
 }
 
 /// Test point-in-polygon with holes over rings yielded as slices: inside the outer
@@ -1015,17 +1124,15 @@ impl SpatialHash {
     }
 }
 
-/// Grid broad-phase pair sweep shared by the duplicate bitmask/groups/prune paths.
-/// Calls `pair(state, pi, pj)` (pi < pj) for every index pair within `distance_m` metres.
-/// `skip_anchor(state, pi)` short-circuits a whole anchor scan — the bitmask path relies
-/// on it to stay near-linear when many points share one cell. O(N) average with uniform
-/// distribution, O(N^2) worst case if all points fall in one grid cell.
+/// Grid broad-phase pair sweep shared by the duplicate groups/prune paths.
+/// Calls `pair(state, pi, pj)` (pi < pj) for every index pair within `distance_m`
+/// metres. O(N) average with uniform distribution, O(N^2) worst case if all points
+/// fall in one grid cell.
 fn for_pairs_within<S>(
     n: usize,
     pos: impl Fn(usize) -> (f64, f64),
     distance_m: f64,
     state: &mut S,
-    skip_anchor: impl Fn(&S, usize) -> bool,
     mut pair: impl FnMut(&mut S, usize, usize),
 ) {
     if n < 2 {
@@ -1050,9 +1157,6 @@ fn for_pairs_within<S>(
         }
         for idxs in groups.values() {
             for (a, &pi) in idxs.iter().enumerate() {
-                if skip_anchor(state, pi) {
-                    continue;
-                }
                 for &pj in &idxs[a + 1..] {
                     pair(state, pi, pj);
                 }
@@ -1072,9 +1176,6 @@ fn for_pairs_within<S>(
     let grid = SpatialHash::build(&cells);
     let thresh_m2 = distance_m * distance_m;
     for pi in 0..n {
-        if skip_anchor(state, pi) {
-            continue;
-        }
         let (lat, lng) = pos(pi);
         let (cx, cy) = cells[pi];
         let cos_lat = lat.to_radians().cos();
@@ -1103,8 +1204,13 @@ fn for_pairs_within<S>(
     }
 }
 
-/// Grid-accelerated spatial duplicate detection.
+/// Grid-accelerated spatial duplicate detection: `mask[global_idx] = true` for every
+/// location with at least one other location within `distance_m`. A per-point
+/// predicate rather than a pair sweep: the grid is read-only after build, so points
+/// are tested in parallel, and each test early-exits on its first neighbour — a
+/// dense cluster costs O(1) per member instead of O(members) pair callbacks.
 fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
+    use rayon::prelude::*;
     struct Pt {
         lat: f64,
         lng: f64,
@@ -1139,22 +1245,77 @@ fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
     }
 
     let n = points.len();
-    let mut state = (vec![false; n], mask); // (in_group, mask)
-    for_pairs_within(
-        n,
-        |i| (points[i].lat, points[i].lng),
-        distance_m,
-        &mut state,
-        |s, pi| s.0[pi],
-        |s, pi, pj| {
-            if s.0[pj] {
-                return;
+    if n < 2 {
+        return;
+    }
+
+    let cell_deg = distance_m / 111_000.0 * 1.5;
+    // Degenerate radius: "within 0 m" means exact-coordinate equality — count
+    // occupancy per exact coordinate; every member of a bucket of >= 2 is a dup. (#69)
+    if !(cell_deg > 0.0) {
+        let key = |p: &Pt| -> Option<(u64, u64)> {
+            if !p.lat.is_finite() || !p.lng.is_finite() {
+                return None;
             }
-            s.0[pj] = true;
-            s.1[points[pj].global_idx] = true;
-            s.1[points[pi].global_idx] = true;
-        },
-    );
+            // `+ 0.0` folds -0.0 into +0.0 so the two compare equal.
+            Some(((p.lat + 0.0).to_bits(), (p.lng + 0.0).to_bits()))
+        };
+        let mut counts: HashMap<(u64, u64), u32> = HashMap::new();
+        for p in &points {
+            if let Some(k) = key(p) {
+                *counts.entry(k).or_insert(0) += 1;
+            }
+        }
+        for p in &points {
+            if key(p).is_some_and(|k| counts[&k] >= 2) {
+                mask[p.global_idx] = true;
+            }
+        }
+        return;
+    }
+
+    let cells: Vec<(i32, i32)> = points
+        .iter()
+        .map(|p| {
+            (
+                (p.lng / cell_deg).floor() as i32,
+                (p.lat / cell_deg).floor() as i32,
+            )
+        })
+        .collect();
+    let grid = SpatialHash::build(&cells);
+    let thresh_m2 = distance_m * distance_m;
+
+    let has_neighbor = |pi: usize| -> bool {
+        let (lat, lng) = (points[pi].lat, points[pi].lng);
+        let (cx, cy) = cells[pi];
+        let cos_lat = lat.to_radians().cos();
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let (nx, ny) = (cx.saturating_add(dx), cy.saturating_add(dy));
+                for &pj in grid.bucket(nx, ny) {
+                    let pj = pj as usize;
+                    if pj == pi || cells[pj] != (nx, ny) {
+                        continue;
+                    }
+                    if equirect_m2(lat, lng, points[pj].lat, points[pj].lng, cos_lat) <= thresh_m2 {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    };
+    let marks: Vec<bool> = (0..n)
+        .into_par_iter()
+        .with_min_len(4096)
+        .map(has_neighbor)
+        .collect();
+    for (i, p) in points.iter().enumerate() {
+        if marks[i] {
+            mask[p.global_idx] = true;
+        }
+    }
 }
 
 /// Transitive (connected-component) spatial grouping. Two locations are linked when within
@@ -1183,7 +1344,7 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
         return Vec::new();
     }
 
-    // Union-find with path halving.
+    // Union-find with path halving and union by size.
     fn find(parent: &mut [usize], mut x: usize) -> usize {
         while parent[x] != x {
             parent[x] = parent[parent[x]];
@@ -1191,22 +1352,24 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
         }
         x
     }
-    let mut parent: Vec<usize> = (0..n).collect();
+    let mut uf: (Vec<usize>, Vec<u32>) = ((0..n).collect(), vec![1; n]);
 
     for_pairs_within(
         n,
         |i| (points[i].lat, points[i].lng),
         distance_m,
-        &mut parent,
-        |_, _| false,
-        |parent, pi, pj| {
-            let ra = find(parent, pi);
-            let rb = find(parent, pj);
+        &mut uf,
+        |uf, pi, pj| {
+            let ra = find(&mut uf.0, pi);
+            let rb = find(&mut uf.0, pj);
             if ra != rb {
-                parent[ra] = rb;
+                let (small, big) = if uf.1[ra] < uf.1[rb] { (ra, rb) } else { (rb, ra) };
+                uf.0[small] = big;
+                uf.1[big] += uf.1[small];
             }
         },
     );
+    let mut parent = uf.0;
 
     let mut comps: HashMap<usize, Vec<u32>> = HashMap::new();
     for pi in 0..n {
@@ -1277,7 +1440,6 @@ fn neighbor_lists(locs: &[&Location], distance_m: f64) -> Vec<Vec<usize>> {
         |i| (locs[i].lat, locs[i].lng),
         distance_m,
         &mut out,
-        |_, _| false,
         |out, pi, pj| {
             out[pi].push(pj);
             out[pj].push(pi);
@@ -1323,36 +1485,32 @@ fn prune_thinning(locs: &[&Location], distance_m: f64) -> Vec<u32> {
     let neighbors = neighbor_lists(locs, distance_m);
     let mut deg: Vec<u32> = neighbors.iter().map(|v| v.len() as u32).collect();
     let mut removed = vec![false; n];
-    // Stack with O(1) membership removal: all nodes at the current max degree are
-    // processed before recounting; a neighbour of a removed node leaves the stack
-    // even if it still sits at max degree.
-    let mut stack: Vec<usize> = Vec::new();
-    let mut pos: HashMap<usize, usize> = HashMap::new();
-    loop {
-        let max = deg.iter().copied().max().unwrap_or(0);
-        if max == 0 {
-            break;
+    // Bucket queue by degree: O(n + m) total instead of an O(n) max-scan per round.
+    // A degree drop re-files the node; the entry left in the old bucket goes stale
+    // and is skipped on pop (deg mismatch), so no in-place removal is needed.
+    let max_deg = deg.iter().copied().max().unwrap_or(0) as usize;
+    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); max_deg + 1];
+    for i in 0..n {
+        if deg[i] > 0 {
+            buckets[deg[i] as usize].push(i);
         }
-        for i in 0..n {
-            if deg[i] == max {
-                pos.insert(i, stack.len());
-                stack.push(i);
-            }
+    }
+    let mut cur = max_deg;
+    while cur > 0 {
+        let Some(i) = buckets[cur].pop() else {
+            cur -= 1;
+            continue;
+        };
+        if removed[i] || deg[i] as usize != cur {
+            continue;
         }
-        while let Some(t) = stack.pop() {
-            pos.remove(&t);
-            deg[t] = 0;
-            removed[t] = true;
-            for &u in &neighbors[t] {
+        removed[i] = true;
+        deg[i] = 0;
+        for &u in &neighbors[i] {
+            if !removed[u] && deg[u] > 0 {
+                deg[u] -= 1;
                 if deg[u] > 0 {
-                    deg[u] -= 1;
-                }
-                if let Some(p) = pos.remove(&u) {
-                    let last = stack.pop().unwrap();
-                    if p < stack.len() {
-                        stack[p] = last;
-                        pos.insert(last, p);
-                    }
+                    buckets[deg[u] as usize].push(u);
                 }
             }
         }
@@ -1428,9 +1586,9 @@ fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_
             if extras.is_null(idx) {
                 return None;
             }
-            let map: serde_json::Map<String, serde_json::Value> =
-                serde_json::from_str(extras.value(idx)).ok()?;
-            map.get(field).cloned()
+            // Byte-scan for the one key; parses only its value slice instead of the
+            // whole extras document per row.
+            crate::types::json_field(extras.value(idx), field)
         }
     }
 }

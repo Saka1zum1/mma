@@ -44,7 +44,7 @@ import { openMap, mutate, getMapState } from "@/store/useMapStore";
 import type { MutationResult, Tag } from "@/bindings.gen";
 
 const result = (over: Partial<MutationResult> = {}): MutationResult => ({
-	delta: { added: [], updated: [], removed: [], colorPatches: [], fullReset: false },
+	delta: { added: [], updated: [], removed: [], fullReset: false },
 	selectionSync: null,
 	newFieldDefs: null,
 	tags: null,

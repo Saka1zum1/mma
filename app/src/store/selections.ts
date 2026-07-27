@@ -1,7 +1,7 @@
 /** Pure selection transforms. These only manipulate the JS selection tree; Rust resolves the actual bitmasks. */
 
 import { match, P } from "ts-pattern";
-import type { FilterOp, Tag } from "@/bindings.gen";
+import type { FilterOp, PolygonGeometry, Tag } from "@/bindings.gen";
 import { getVisibleTags, getTag } from "@/store/useMapStore";
 import { hslToRgb } from "@/lib/util/color";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
@@ -95,13 +95,33 @@ export function resolveLocations(props: SelectionProps): number[] {
 		.otherwise(() => []);
 }
 
+/** Key a polygon by hashing its raw coordinates: identical geometry = identical key,
+ *  so any path that rebuilds the Selection (composites, tree transforms) keeps the
+ *  leaf's identity instead of minting a fresh one and breaking key-is-identity. */
+function polygonKey(geom: PolygonGeometry): string {
+	let h1 = 0xdeadbeef | 0;
+	let h2 = 0x41c6ce57 | 0;
+	const f64 = new Float64Array(2);
+	const u32 = new Uint32Array(f64.buffer);
+	const foldRing = (ring: [number, number][]) => {
+		for (const [lng, lat] of ring) {
+			f64[0] = lng;
+			f64[1] = lat;
+			h1 = Math.imul(h1 ^ u32[0], 2654435761) ^ u32[1];
+			h2 = Math.imul(h2 ^ u32[2], 1597334677) ^ u32[3];
+		}
+	};
+	for (const ring of geom.coordinates) foldRing(ring);
+	for (const poly of geom.extraPolygons ?? []) for (const ring of poly) foldRing(ring);
+	return `polygon:${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}`;
+}
+
 function keyForProps(props: SelectionProps, locations: number[]): string {
 	return (
 		match(props)
 			.with({ type: "Locations" }, () => locationsKey(locations))
 			.with({ type: "Everything" }, () => "everything")
-			// polygon keys are unique per draw; use a generated id stored on first init
-			.with({ type: "Polygon" }, () => `polygon:${crypto.randomUUID()}`)
+			.with({ type: "Polygon" }, (p) => polygonKey(p.polygon))
 			.with({ type: "Tag" }, (p) => `tag:${p.tagId}`)
 			.with({ type: "Untagged" }, () => "untagged")
 			.with({ type: "Unpanned" }, () => "unpanned")

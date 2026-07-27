@@ -42,9 +42,25 @@ pub fn unix_to_hour_min(ts: f64) -> (u32, u32) {
 /// The DST-correct UTC offset (in seconds) of an IANA timezone at a given instant.
 /// `None` if the timezone name doesn't parse. Used to bucket an absolute instant
 /// into the wall-clock time at a location ("the date where the photo was taken").
+/// The name→Tz parse is memoized per thread (called per row in filter resolves);
+/// the offset itself is always computed per instant so DST stays correct.
 pub fn tz_offset_seconds(tz_name: &str, ts: f64) -> Option<i32> {
     use chrono::{Offset, TimeZone};
-    let tz: chrono_tz::Tz = tz_name.parse().ok()?;
+    thread_local! {
+        static TZ_CACHE: std::cell::RefCell<std::collections::HashMap<String, Option<chrono_tz::Tz>>> =
+            std::cell::RefCell::new(std::collections::HashMap::new());
+    }
+    let tz = TZ_CACHE.with(|c| {
+        let mut m = c.borrow_mut();
+        match m.get(tz_name) {
+            Some(v) => *v,
+            None => {
+                let v = tz_name.parse().ok();
+                m.insert(tz_name.to_owned(), v);
+                v
+            }
+        }
+    })?;
     let dt = DateTime::<Utc>::from_timestamp(ts as i64, 0)?;
     Some(
         tz.offset_from_utc_datetime(&dt.naive_utc())

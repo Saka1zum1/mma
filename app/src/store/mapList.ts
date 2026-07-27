@@ -7,7 +7,7 @@ let cachedMapList: MapMeta[] = [];
 
 /** Reactive list of all maps (metadata only). */
 export function useMapList(): MapMeta[] {
-	return useEventValue("store:changed", () => cachedMapList);
+	return useEventValue("map-list:changed", () => cachedMapList);
 }
 
 /** The list of all maps (metadata only). */
@@ -17,7 +17,7 @@ export function getMapList() {
 
 export async function reloadMapList() {
 	cachedMapList = await cmd.storeListMaps();
-	emitEvent("store:changed");
+	emitEvent("map-list:changed");
 }
 
 /** Re-fetch the map list from the database. */
@@ -47,7 +47,7 @@ export async function deleteMap(id: string) {
 
 export async function renameFolder(from: string, to: string) {
 	cachedMapList = cachedMapList.map((m) => (m.folder === from ? { ...m, folder: to } : m));
-	emitEvent("store:changed");
+	emitEvent("map-list:changed");
 	await cmd.storeRenameFolder(from, to);
 	await invalidateMapList();
 }
@@ -56,7 +56,7 @@ export async function moveMapToFolder(mapId: string, folder: string | null) {
 	const idx = cachedMapList.findIndex((m) => m.id === mapId);
 	if (idx !== -1) {
 		cachedMapList = cachedMapList.map((m) => (m.id === mapId ? { ...m, folder } : m));
-		emitEvent("store:changed");
+		emitEvent("map-list:changed");
 	}
 	await cmd.storeUpdateMapMeta(mapId, { folder: folder ?? null });
 	tauriEmit("map-list-changed");

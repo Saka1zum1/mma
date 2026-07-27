@@ -33,7 +33,7 @@ export async function createTencentLocationAtLatLng(
 		extra: buildTencentExtra(meta),
 	});
 
-	await addLocations([loc], { hideInDelta: true });
+	await addLocations([loc]);
 	setActiveLocation(loc);
 	return loc;
 }

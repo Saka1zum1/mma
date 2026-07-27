@@ -6,7 +6,7 @@ type DialogPayloads = {
 	history: void;
 	seen: void;
 	"copy-to-map": void;
-	"quick-copy-to-map": void;
+	"quick-copy-to-map": number;
 	"tag-find-replace": void;
 	"apply-field-as-tags": void;
 	"merge-duplicates": void;

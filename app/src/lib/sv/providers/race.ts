@@ -97,7 +97,7 @@ export async function createInjectProviderLocationAtLatLng(
 	const hit = await raceInjectProvidersNear(lat, lng, radiusM);
 	if (!hit) return null;
 	const loc = hit.toLocation();
-	await addLocations([loc], { hideInDelta: true });
+	await addLocations([loc]);
 	setActiveLocation(loc);
 	return loc;
 }

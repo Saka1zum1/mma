@@ -125,6 +125,33 @@ fn classify_scan_names_points_in_order() {
     );
 }
 
+#[test]
+fn bbox_prefilter_does_not_change_lookup() {
+    // border_lookup now rejects features by their load-time bbox before the crossing
+    // test; the first matching feature must be the same one the unfiltered scan finds.
+    let features = super::parse_geojson(include_str!("../data/borders.json")).unwrap();
+    let bboxes: Vec<_> = features
+        .iter()
+        .map(|f| selections::geometry_bbox(&f.geometry))
+        .collect();
+    let mut lat = -80.0;
+    while lat <= 80.0 {
+        let mut lng = -180.0;
+        while lng < 180.0 {
+            let plain = features
+                .iter()
+                .position(|f| selections::point_in_geometry(lng, lat, &f.geometry));
+            let filtered = features.iter().zip(&bboxes).position(|(f, bb)| {
+                matches!(bb, Some(bb) if selections::in_bbox(lng, lat, bb))
+                    && selections::point_in_geometry(lng, lat, &f.geometry)
+            });
+            assert_eq!(plain, filtered, "divergence at ({lng}, {lat})");
+            lng += 10.0;
+        }
+        lat += 10.0;
+    }
+}
+
 /// Regenerate the shipped border archives from their GeoJSON sources. Not part of the
 /// normal suite -- run on purpose when a source dataset changes:
 ///   cargo test -p map-making-app gen_rkyv_artifacts -- --ignored --nocapture

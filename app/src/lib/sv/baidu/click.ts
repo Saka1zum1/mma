@@ -34,7 +34,7 @@ export async function createBaiduLocationAtLatLng(
 		extra: buildBaiduExtra(meta),
 	});
 
-	await addLocations([loc], { hideInDelta: true });
+	await addLocations([loc]);
 	setActiveLocation(loc);
 	return loc;
 }

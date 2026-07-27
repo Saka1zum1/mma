@@ -16,7 +16,6 @@ import type { MarkerStyle } from "@/types";
 let markerDefault: [number, number, number, number] = [42, 42, 42, 255];
 
 const scene = new CellManager();
-let prevActiveId: number | null = null;
 let lastMarkerStyle: MarkerStyle = "pin";
 let loadToken = 0;
 
@@ -24,29 +23,8 @@ export function getScene(): CellManager {
 	return scene;
 }
 
-function patchMarker(id: number, visible: number) {
-	for (const cb of scene.cells.values()) {
-		const idx = cb.idToIndex.get(id);
-		if (idx != null) {
-			cb.patchVisible(idx, visible);
-			return;
-		}
-	}
-}
-
-// Reflect the active location in the scene: hide its base marker (the active overlay draws
-// it) and restore the previously-active one — unless it's selected. Fast path: no refetch.
-function applyActive() {
-	const activeId = getMapState().activeLocation?.id ?? null;
-	if (
-		prevActiveId != null &&
-		prevActiveId !== activeId &&
-		!getMapState().selectedLocationIds.has(prevActiveId)
-	) {
-		patchMarker(prevActiveId, 255);
-	}
-	prevActiveId = activeId;
-	if (activeId != null) patchMarker(activeId, 0);
+function syncActive(): boolean {
+	return scene.setActive(getMapState().activeLocation?.id ?? null);
 }
 
 export function setMarkerDefaultColor(r: number, g: number, b: number) {
@@ -111,7 +89,7 @@ async function doLoadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
 		scene.initFromBinary(buf);
 		t.step("parse");
 		mapOpen.mark("markers");
-		applyActive();
+		syncActive();
 		// The reloaded binary carries the selection overlay; re-derive the id set from it,
 		// since any bitmask decode in `mutate` ran against the pre-reload scene.
 		setSelectedLocationIds(scene.selectedIds());
@@ -124,7 +102,6 @@ async function doLoadScene(markerStyle: MarkerStyle, mc?: RGB): Promise<void> {
 
 export function clearScene() {
 	scene.clear();
-	prevActiveId = null;
 	emitEvent("scene:changed");
 }
 
@@ -136,15 +113,12 @@ export function startSceneEngine(): () => void {
 			return;
 		}
 		const t = trace("delta", { summary: true });
+		const before = scene.overlay.version;
 		const affected = scene.applyDelta(delta);
-		const aid = getMapState().activeLocation?.id ?? null;
-		if (aid != null) patchMarker(aid, 0);
 		// No bitmask follows an incremental mutation; applyDelta already folded membership in.
-		if (delta.colorPatches.length > 0 || delta.removed.length > 0) {
-			setSelectedLocationIds(scene.selectedIds());
-		}
+		if (scene.overlay.version !== before) setSelectedLocationIds(scene.selectedIds());
 		t.end({ affected: affected.size, added: delta.added.length, removed: delta.removed.length });
-		if (affected.size > 0 || delta.colorPatches.length > 0) emitEvent("scene:changed");
+		if (affected.size > 0 || scene.overlay.version !== before) emitEvent("scene:changed");
 	});
 
 	const unsubSel = subscribeEvent("render:selection", ({ selColors, cellEntries, setIds }) => {
@@ -156,13 +130,9 @@ export function startSceneEngine(): () => void {
 	});
 
 	// Active-location switch fires a plain store mutation (store_set_active is fire-and-forget,
-	// no delta). Re-derive the scene's active highlight when the id changes.
+	// no delta). `setActive` is a no-op when the id hasn't moved.
 	const unsubStore = subscribeEvent("store:changed", () => {
-		const activeId = getMapState().activeLocation?.id ?? null;
-		if (activeId !== prevActiveId) {
-			applyActive();
-			emitEvent("scene:changed");
-		}
+		if (syncActive()) emitEvent("scene:changed");
 	});
 
 	return () => {
