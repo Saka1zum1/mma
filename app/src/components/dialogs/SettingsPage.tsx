@@ -72,13 +72,19 @@ function Aux({ children, match }: { children: ReactNode; match?: string }) {
 	return <div className="settings-aux">{children}</div>;
 }
 
-/** A sub-group heading inside a section. Visible only when the section is fully
- *  shown (not searching, or section title matched) so search results collapse
- *  cleanly under the section breadcrumb. */
+/** A sub-group heading inside a section. Visible when the section is fully
+ *  shown, or when searching and the heading text itself matches the query. */
 function GroupHeading({ children }: { children: ReactNode }) {
-	const { auxVisible } = useSettingsSearch();
-	if (!auxVisible) return null;
-	return <h3 className="settings-group">{children}</h3>;
+	const { query, searching, auxVisible } = useSettingsSearch();
+	if (auxVisible) return <h3 className="settings-group">{children}</h3>;
+	if (
+		searching &&
+		typeof children === "string" &&
+		children.toLowerCase().includes(query)
+	) {
+		return <h3 className="settings-group">{children}</h3>;
+	}
+	return null;
 }
 
 function SettingSlider({
@@ -420,6 +426,9 @@ function StreetViewBody() {
 	const dateTzOptions = localizeOptions(DATE_TIMEZONES, (k) =>
 		t(`settings.dateTimezone.${k}` as MessageKey),
 	);
+	const geocodeOptions = localizeOptions(GEOCODE_PROVIDERS, (k) =>
+		t(`settings.geocode.${k}` as MessageKey),
+	);
 
 	return (
 		<>
@@ -487,6 +496,31 @@ function StreetViewBody() {
 			/>
 			<SettingRow setting="showFullscreenReviewBar" label={t("settings.showFullscreenReviewBar")} />
 			<SettingRow setting="showFullscreenGeocode" label={t("settings.showFullscreenGeocode")} />
+
+			<GroupHeading>{t("settings.group.geocoding")}</GroupHeading>
+			<SettingRow
+				label={t("settings.geocodeProvider")}
+				description={t("settings.geocodeProviderDesc")}
+				control={<SettingSelect setting="geocodeProvider" options={geocodeOptions} />}
+			/>
+			{s.geocodeProvider === "nominatim" && (
+				<>
+					<Aux match="nominatim geocode reverse osm openstreetmap api key">
+						<p className="settings-popup__warning">{t("settings.nominatimWarning")}</p>
+					</Aux>
+					<SettingRow
+						sub
+						label={t("settings.nominatimApiKey")}
+						control={
+							<TextInput
+								type="text"
+								value={s.nominatimApiKey}
+								onChange={(e) => setSetting("nominatimApiKey", e.target.value)}
+							/>
+						}
+					/>
+				</>
+			)}
 
 			<GroupHeading>{t("settings.group.datePicker")}</GroupHeading>
 			<SettingRow setting="showCameraBadges" label={t("settings.showCameraBadges")} />
@@ -815,9 +849,6 @@ function EditingBody() {
 	const seenResolutionOptions = localizeOptions(SEEN_RESOLUTIONS, (k) =>
 		t(`settings.seen.${k}` as MessageKey),
 	);
-	const geocodeOptions = localizeOptions(GEOCODE_PROVIDERS, (k) =>
-		t(`settings.geocode.${k}` as MessageKey),
-	);
 	const limitIndex = Math.max(
 		0,
 		(TAG_SUGGESTION_LIMITS as readonly number[]).indexOf(s.tagSuggestionLimit),
@@ -896,30 +927,6 @@ function EditingBody() {
 							control={<SettingSelect setting="seenResolution" options={seenResolutionOptions} />}
 						/>
 					)}
-				</>
-			)}
-
-			<GroupHeading>{t("settings.group.geocoding")}</GroupHeading>
-			<SettingRow
-				label={t("settings.geocodeProvider")}
-				control={<SettingSelect setting="geocodeProvider" options={geocodeOptions} />}
-			/>
-			{s.geocodeProvider === "nominatim" && (
-				<>
-					<Aux>
-						<p className="settings-popup__warning">{t("settings.nominatimWarning")}</p>
-					</Aux>
-					<SettingRow
-						sub
-						label={t("settings.nominatimApiKey")}
-						control={
-							<TextInput
-								type="text"
-								value={s.nominatimApiKey}
-								onChange={(e) => setSetting("nominatimApiKey", e.target.value)}
-							/>
-						}
-					/>
 				</>
 			)}
 		</>

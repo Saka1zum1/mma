@@ -270,7 +270,8 @@ declare const en: {
     readonly "settings.geocodeLabel.google": "Google Street View";
     readonly "settings.geocodeLabel.local": "Local reverse geocode";
     readonly "settings.geocodeLabel.nominatim": "OpenStreetMap (Nominatim)";
-    readonly "settings.geocodeProvider": "Provider";
+    readonly "settings.geocodeProvider": "Reverse geocode provider";
+    readonly "settings.geocodeProviderDesc": "Used for place names shown under the panorama";
     readonly "settings.group.borders": "Borders";
     readonly "settings.group.commands": "Commands";
     readonly "settings.group.customCss": "Custom CSS";
