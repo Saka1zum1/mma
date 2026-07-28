@@ -40,9 +40,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      # apt-get (not cache-apt-pkgs-action): the cache action can restore .so files
+      # without pkg-config .pc metadata, so glib-sys fails with "glib-2.0 not found".
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libglib2.0-dev
+          pkg-config --exists 'glib-2.0 >= 2.70'
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -58,18 +64,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      # Keep the package list aligned with clippy. Adding packages (e.g. lld) can
-      # make cache-apt-pkgs-action restore a cache without pkg-config metadata,
-      # which then fails glib-sys with "Package glib-2.0 was not found".
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libglib2.0-dev
+          pkg-config --exists 'glib-2.0 >= 2.70'
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
-          # Bust caches left from the broken lld / incomplete apt restore experiment.
-          prefix-key: rust-tests-v3
+          prefix-key: rust-tests-v4
       - name: Run cargo test
         working-directory: app/src-tauri
         env:

@@ -4,7 +4,7 @@
 - Restored **reverse geocode provider** in Street View settings, with a clearer label and description
 - Enrichment dialog dropdowns now scroll when option lists are long
 - Fixed e2e suite crash when Node loads app modules without Vite (`import.meta.env.DEV`)
-- CI: cap `rust-tests` parallel build jobs to reduce linker OOM on GitHub Actions
+- CI: install GTK/WebKit deps via `apt-get` so `pkg-config` finds glib (fixes rust-tests)
 
 ## v0.8.4 - 2026-07-27
 - **Built-in language setting** (English / Simplified Chinese) with app-wide UI localization
