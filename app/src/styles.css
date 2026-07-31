@@ -2170,12 +2170,14 @@ input[type="range"]:disabled {
 	padding: 0;
 	line-height: 1.25rem;
 	display: flex;
+	white-space: nowrap;
 }
 .layer-config__divider {
 	background: #0000004d;
-	width: 100%;
+	flex: 1 1 auto;
+	min-width: 0;
 	height: 1px;
-	display: block;
+	align-self: center;
 }
 .layer-config__item {
 	display: block;
@@ -3412,7 +3414,35 @@ input.date-picker__trigger:focus {
 	margin-left: auto;
 }
 .tag-manager__spacer {
-	flex-grow: 1;
+	flex: 1 1 auto;
+	min-width: 0.5rem;
+}
+.tag-manager .tool-block__header {
+	flex-wrap: nowrap;
+	min-width: 0;
+}
+.tag-manager__toolbar {
+	align-items: center;
+	gap: 0.5rem;
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-wrap: nowrap;
+}
+.tag-manager__filter {
+	flex: 0 1 10rem;
+	min-width: 5rem;
+	max-width: 12rem;
+}
+.tag-manager__view.button-group {
+	flex-shrink: 0;
+}
+.tag-manager__toolbar .button,
+.tag-manager__toolbar .button-group__button {
+	white-space: nowrap;
+	font-size: 0.9rem;
+	line-height: 1.2;
+	padding-inline: 0.45rem;
 }
 .tag-manager.is-collapsed {
 	overflow: hidden;

@@ -118,7 +118,7 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 			{/* Street View */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
-					{t("editor.streetViewLayer")}&nbsp;<span className="layer-config__divider" />
+					{t("editor.streetViewLayer")} <span className="layer-config__divider" />
 				</legend>
 				<div
 					className="layer-config__item"
@@ -215,7 +215,7 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 			{/* Map style */}
 			<fieldset className="layer-config__group">
 				<legend className="layer-config__header">
-					{t("editor.mapStyleSection")}&nbsp;<span className="layer-config__divider" />
+					{t("editor.mapStyleSection")} <span className="layer-config__divider" />
 				</legend>
 				{p.mapType === "vector" ? (
 					<div
