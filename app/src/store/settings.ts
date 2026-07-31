@@ -50,6 +50,8 @@ export const TAG_VIEW_MODES = {
 export const TAG_FOLDER_COLOR_MODES = {
 	direct: "Fixed color",
 	firstChild: "Inherit first child",
+	random: "Random",
+	childGradient: "Child tag gradient",
 } as const;
 export const OPACITY_TOGGLE_MODES = {
 	previous: "Last used opacity",
@@ -170,7 +172,9 @@ const DEFAULTS = {
 	truncateTagPaths: true,
 	/** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
 	 *  `firstChild` inherits the first own-colored descendant in display order,
-	 *  with tagFolderColor as the fallback for colorless subtrees. */
+	 *  with tagFolderColor as the fallback for colorless subtrees.
+	 *  `random` uses a deterministic color from the folder path; `childGradient` paints
+	 *  a gradient from descendant tag colors (fallback: tagFolderColor). */
 	tagFolderColorMode: "direct" as TagFolderColorMode,
 	tagFolderColor: { r: 136, g: 136, b: 136 } as RGB,
 	tagSortMode: "default" as TagSortMode,

@@ -1,6 +1,7 @@
 import type { Tag, VirtualTag } from "@/bindings.gen";
 import type { TagSortMode } from "@/types";
 import type { TagFolderColorMode } from "@/store/settings";
+import { colorForName } from "@/lib/util/color";
 
 export interface TagTreeNode {
 	segment: string;
@@ -10,6 +11,8 @@ export interface TagTreeNode {
 	parentPath: string;
 	tag: Tag | null;
 	inheritedColor: string;
+	/** Row fill: solid hex or CSS `linear-gradient(...)` when folder color mode uses gradients. */
+	rowBackground: string;
 	children: TagTreeNode[];
 	descendantTagIds: number[];
 	/** Min `order` across descendant tags — used for "default" sort parity with flat mode.
@@ -24,6 +27,15 @@ export interface TagTreeNode {
  *  tagless node is a declared empty folder (a virtualTags key no tag passes through) and
  *  renders as a folder row; filtering can also leave transient tagless nodes behind. */
 export const isLeafTag = (n: TagTreeNode) => n.children.length === 0 && n.tag != null;
+
+/** Initial `virtualTags` entry when the user creates an empty folder. */
+export function defaultVirtualFolderEntry(
+	path: string,
+	mode: TagFolderColorMode,
+): VirtualTag {
+	if (mode === "random") return { color: colorForName(path) };
+	return {};
+}
 
 /** Every occupied tree path (tags, aliases, declared folders + all their ancestors) --
  *  mirrors buildTagTree's occupancy, so a free slot here is a free slot in the tree. */
@@ -76,6 +88,7 @@ function ensurePath(root: TagTreeNode[], parts: string[]): TagTreeNode {
 				parentPath,
 				tag: null,
 				inheritedColor: "",
+				rowBackground: "",
 				children: [],
 				descendantTagIds: [],
 				sortOrder: 0,
@@ -154,15 +167,67 @@ export function buildTagTree(
 		return null;
 	}
 
+	/** Leaf-tag colors under `node`, in display order (deduped). */
+	function descendantLeafTagColors(node: TagTreeNode): string[] {
+		const out: string[] = [];
+		const seen = new Set<string>();
+		const walk = (n: TagTreeNode) => {
+			if (n.tag && isLeafTag(n)) {
+				const c = n.tag.color;
+				if (!seen.has(c)) {
+					seen.add(c);
+					out.push(c);
+				}
+			}
+			for (const child of n.children) walk(child);
+		};
+		walk(node);
+		return out;
+	}
+
+	function gradientFromTagColors(colors: string[]): string | null {
+		if (colors.length === 0) return null;
+		if (colors.length === 1) return colors[0];
+		const stops = colors
+			.map((c, i) => `${c} ${Math.round((i / (colors.length - 1)) * 100)}%`)
+			.join(", ");
+		return `linear-gradient(90deg, ${stops})`;
+	}
+
 	// Runs after sortNodes so firstChild mode sees children in display order.
 	function propagateColor(nodes: TagTreeNode[], parentColor: string | null) {
 		for (const node of nodes) {
-			// Real tag color wins; otherwise a virtual-tag color for this path; else derive.
 			const ownColor = ownColorOf(node);
-			const derived =
-				ownColor ?? (folderColor.mode === "firstChild" ? firstDescendantColor(node) : null);
+			let derived: string | null = ownColor;
+			let rowBackground: string | null = null;
+
+			if (!ownColor) {
+				switch (folderColor.mode) {
+					case "random":
+						derived = colorForName(node.fullPath);
+						break;
+					case "firstChild":
+						derived = firstDescendantColor(node);
+						break;
+					case "childGradient": {
+						const cols = descendantLeafTagColors(node);
+						const painted = gradientFromTagColors(cols);
+						if (painted?.startsWith("linear-gradient")) {
+							rowBackground = painted;
+							derived = cols[0] ?? null;
+						} else {
+							derived = painted;
+						}
+						break;
+					}
+					default:
+						break;
+				}
+			}
+
 			const effectiveColor = derived ?? parentColor ?? folderColor.color;
 			node.inheritedColor = effectiveColor;
+			node.rowBackground = rowBackground ?? effectiveColor;
 			propagateColor(node.children, effectiveColor);
 		}
 	}
@@ -235,6 +300,26 @@ export function rangeToggleTagIds(
 /** Map each `/`-delimited name to the shortest trailing path-segment run that uniquely
  *  identifies it within `names`. A name with no collision collapses to its last segment;
  *  one whose suffix is shared widens until distinct, falling back to the full path. */
+/** Labels for tree rows when `truncateTagPaths` is on (tags + declared folder paths). */
+export function buildTreePathLabels(
+	tagNames: string[],
+	folderPaths: string[],
+	enabled: boolean,
+): Map<string, string> | null {
+	if (!enabled) return null;
+	const all = [...new Set([...tagNames, ...folderPaths])];
+	return shortestUniqueSuffixes(all);
+}
+
+export function treeNodeDisplayLabel(
+	node: Pick<TagTreeNode, "tag" | "fullPath" | "segment">,
+	labels: Map<string, string> | null,
+): string {
+	if (!labels) return node.segment;
+	if (node.tag) return labels.get(node.tag.name) ?? node.tag.name;
+	return labels.get(node.fullPath) ?? node.segment;
+}
+
 export function shortestUniqueSuffixes(names: string[]): Map<string, string> {
 	const parts = names.map((n) => n.split("/"));
 	const out = new Map<string, string>();

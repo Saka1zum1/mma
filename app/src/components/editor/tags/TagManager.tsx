@@ -20,6 +20,7 @@ import {
 	removeTagFromAllLocations,
 	getVisibleTags,
 	removeTagFromLocations,
+	createTags,
 } from "@/store/useMapStore";
 import type { TagSortMode } from "@/types";
 import type { Tag, TagPatch, Update, VirtualTag } from "@/bindings.gen";
@@ -33,6 +34,7 @@ import { fmt } from "@/lib/util/format";
 import { hexToHsl, hslToHex } from "@/lib/util/color";
 import { TagPill } from "@/components/primitives/TagPill";
 import { useSetting, setSetting } from "@/store/settings";
+import { displayTagName } from "@/store/selections";
 import { sortTagsByMode } from "@/lib/util/util";
 import { useMapSetting } from "@/store/useMapSetting";
 import { HotkeyInput } from "@/components/primitives/HotkeyInput";
@@ -43,6 +45,7 @@ import {
 	cascadeRename,
 	collectOccupiedPaths,
 	syncAliasSegments,
+	defaultVirtualFolderEntry,
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
@@ -62,6 +65,8 @@ export function TagManager() {
 	const selectedTagIds = useMapState(getSelectedTagIds);
 	const tagCounts = useMapState((s) => s.tagCounts);
 	const tagViewMode = useSetting("tagViewMode");
+	const tagFolderColorMode = useSetting("tagFolderColorMode");
+	const truncateTagPaths = useSetting("truncateTagPaths");
 	const [filterText, setFilterText] = useState("");
 	const sortMode = useSetting("tagSortMode");
 	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags", NO_VIRTUAL_TAGS);
@@ -76,6 +81,7 @@ export function TagManager() {
 	const [editingVirtualPath, setEditingVirtualPath] = useState<string | null>(null);
 	// Parent path for a pending new declared folder ("" = root, null = dialog closed).
 	const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+	const [creatingTag, setCreatingTag] = useState(false);
 	const treeRef = useRef<TagTreeHandle>(null);
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
@@ -211,25 +217,43 @@ export function TagManager() {
 						{sortedTags.slice(0, 20).map((tag) => (
 							<TagPill
 								as="li"
-								key={tag.id}
+								key={`${tag.id}-${tagViewMode}-${truncateTagPaths}`}
 								small
 								color={tag.color}
-								label={`${tag.name} (${fmt.format(tagCounts[tag.id] ?? 0)})`}
+								label={`${displayTagName(tag.name)} (${fmt.format(tagCounts[tag.id] ?? 0)})`}
 							/>
 						))}
 					</ul>
 				}
 				addons={
-					<>
+					<div className="tag-manager__toolbar">
 						<TextInput
+							className="tag-manager__filter"
 							placeholder={t("editor.filterTags")}
 							value={filterText}
 							onChange={(e) => setFilterText(e.target.value)}
 						/>
-						<span className="tag-manager__spacer"></span>
-						{tagViewMode === "tree" && (
-							<Button onClick={() => setNewFolderParent("")}>{t("editor.newFolder")}</Button>
-						)}
+						<span className="tag-manager__spacer" aria-hidden />
+						<span className="tag-manager__view button-group">
+							{(["flat", "tree"] as const).map((mode) => (
+								<Button
+									key={mode}
+									className="button-group__button"
+									aria-checked={tagViewMode === mode}
+									onClick={() => setSetting("tagViewMode", mode)}
+								>
+									{t(`settings.tagView.${mode}`)}
+								</Button>
+							))}
+						</span>
+						<Button onClick={() => setCreatingTag(true)}>{t("editor.createTag")}</Button>
+						<Button
+							disabled={tagViewMode !== "tree"}
+							title={tagViewMode !== "tree" ? t("settings.tagView.tree") : undefined}
+							onClick={() => setNewFolderParent("")}
+						>
+							{t("editor.newFolder")}
+						</Button>
 						<span className="tag-manager__sort button-group">
 							{(["default", "name", "amount"] as TagSortMode[]).map((mode) => (
 								<Button
@@ -248,7 +272,7 @@ export function TagManager() {
 								</Button>
 							))}
 						</span>
-					</>
+					</div>
 				}
 			>
 				<TagTreeView
@@ -263,15 +287,26 @@ export function TagManager() {
 					onEditTag={handleEditTreeTag}
 					onEditVirtual={setEditingVirtualPath}
 					onRenameTag={setRenamingTag}
-					onAddAlias={addAlias}
+					onAddAlias={tagViewMode === "tree" ? addAlias : undefined}
 					onRemoveAlias={removeAlias}
 					onReorder={commitReorder}
 					onMoveInto={commitMoveInto}
-					onNewFolder={setNewFolderParent}
+					onNewFolder={tagViewMode === "tree" ? setNewFolderParent : undefined}
 					onDeleteFolder={deleteFolder}
 					filterText={filterText}
 				/>
 			</ToolBlock>
+
+			{creatingTag && (
+				<NewTagDialog
+					tags={tags}
+					onClose={() => setCreatingTag(false)}
+					onSave={async (name) => {
+						await createTags([name]);
+						setCreatingTag(false);
+					}}
+				/>
+			)}
 
 			{editingTreeTag && (
 				<EditTagDialog
@@ -353,7 +388,10 @@ export function TagManager() {
 					aliases={aliases}
 					onClose={() => setNewFolderParent(null)}
 					onSave={(path) => {
-						setVirtualTags({ ...virtualTags, [path]: {} });
+						setVirtualTags({
+							...virtualTags,
+							[path]: defaultVirtualFolderEntry(path, tagFolderColorMode),
+						});
 						setNewFolderParent(null);
 					}}
 				/>
@@ -751,6 +789,71 @@ function VirtualTagDialog({
 						</Button>
 						<Button variant="primary" type="submit">
 							{t("common.save")}
+						</Button>
+					</div>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** Create a tag from the Tags section (name only; color is auto-assigned). */
+function NewTagDialog({
+	tags,
+	onClose,
+	onSave,
+}: {
+	tags: Tag[];
+	onClose: () => void;
+	onSave: (name: string) => void | Promise<void>;
+}) {
+	const { t } = useT();
+	const [name, setName] = useState("");
+	const [busy, setBusy] = useState(false);
+
+	const trimmed = name.trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+	const collision =
+		!!trimmed && tags.some((x) => x.name.toLowerCase() === trimmed.toLowerCase());
+
+	return (
+		<Dialog open onOpenChange={(open) => !open && onClose()}>
+			<DialogContent title={t("editor.createTag")}>
+				<form
+					onSubmit={async (e) => {
+						e.preventDefault();
+						if (!trimmed || collision || busy) return;
+						setBusy(true);
+						try {
+							await onSave(trimmed);
+						} finally {
+							setBusy(false);
+						}
+					}}
+					style={{ display: "flex", flexDirection: "column", gap: "0.75rem", paddingTop: "0.5rem" }}
+				>
+					<div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+						<TextInput
+							type="text"
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							placeholder={t("tag.namePlaceholder")}
+							autoFocus
+						/>
+						<span
+							style={{
+								fontSize: "0.85em",
+								minHeight: "1.25em",
+								lineHeight: "1.25em",
+								color: "var(--destructive)",
+							}}
+						>
+							{collision ? t("editor.folderExists", { path: trimmed }) : ""}
+						</span>
+					</div>
+					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+						<Button onClick={onClose}>{t("common.cancel")}</Button>
+						<Button variant="primary" type="submit" disabled={!trimmed || collision || busy}>
+							{t("common.create")}
 						</Button>
 					</div>
 				</form>

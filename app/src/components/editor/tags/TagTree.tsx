@@ -20,6 +20,7 @@ import { fmt } from "@/lib/util/format";
 import { toggleTagSelections } from "@/store/useMapStore";
 import { useStableHandler } from "@/lib/hooks/useStableHandler";
 import { useSetting } from "@/store/settings";
+import { useT } from "@/lib/i18n";
 import { TagContextMenuContent } from "./TagManager";
 import {
 	rangeToggleTagIds,
@@ -30,6 +31,8 @@ import {
 	buildTagTree,
 	sumCounts,
 	isLeafTag,
+	buildTreePathLabels,
+	treeNodeDisplayLabel,
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
@@ -54,12 +57,13 @@ interface TagTreeCallbacks {
 	onEditTag: (node: TagTreeNode) => void;
 	onEditVirtual: (fullPath: string) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
-	onAddAlias: (tag: { id: number; name: string }) => void;
+	onAddAlias?: (tag: { id: number; name: string }) => void;
 	onRemoveAlias: (aliasPath: string) => void;
-	onNewFolder: (parentPath: string) => void;
+	onNewFolder?: (parentPath: string) => void;
 	onDeleteFolder: (path: string) => void;
 	onRowClick: (node: TagTreeNode, shiftKey: boolean, altKey: boolean) => void;
 	onToggleExpanded: (path: string) => void;
+	nodeLabel: (node: TagTreeNode) => string;
 	drag: TreeDragHandlers;
 }
 
@@ -98,7 +102,7 @@ interface TagTreeViewProps {
 	onEditTag: (node: TagTreeNode) => void;
 	onEditVirtual: (fullPath: string) => void;
 	onRenameTag: (tag: { id: number; name: string }) => void;
-	onAddAlias: (tag: { id: number; name: string }) => void;
+	onAddAlias?: (tag: { id: number; name: string }) => void;
 	onRemoveAlias: (aliasPath: string) => void;
 	/** Commit a drag reorder (full DFS tag-id order). Must render the new order
 	 *  optimistically -- the drop handler clears its drag state synchronously. */
@@ -107,7 +111,7 @@ interface TagTreeViewProps {
 	 *  Same optimistic contract as onReorder. */
 	onMoveInto: (move: TagMoveResult) => void;
 	/** Open the new-folder dialog under `parentPath` ("" = root). */
-	onNewFolder: (parentPath: string) => void;
+	onNewFolder?: (parentPath: string) => void;
 	/** Delete a declared folder subtree (only offered when it holds no tags). */
 	onDeleteFolder: (path: string) => void;
 	filterText: string;
@@ -137,6 +141,21 @@ export function TagTreeView({
 }: TagTreeViewProps & { ref?: React.Ref<TagTreeHandle> }) {
 	const folderColorMode = useSetting("tagFolderColorMode");
 	const folderColorRgb = useSetting("tagFolderColor");
+	const tagViewMode = useSetting("tagViewMode");
+	const truncateTagPaths = useSetting("truncateTagPaths");
+	const pathLabels = useMemo(
+		() =>
+			buildTreePathLabels(
+				tags.map((t) => t.name),
+				Object.keys(virtualTags),
+				tagViewMode === "tree" && truncateTagPaths,
+			),
+		[tags, virtualTags, tagViewMode, truncateTagPaths],
+	);
+	const nodeLabel = useCallback(
+		(node: TagTreeNode) => treeNodeDisplayLabel(node, pathLabels),
+		[pathLabels],
+	);
 	const tree = useMemo(
 		() =>
 			buildTagTree(tags, sortMode, tagCounts, virtualTags, aliases, split, {
@@ -289,7 +308,7 @@ export function TagTreeView({
 				if (isLeafTag(node)) {
 					setDragLeaf({
 						color: node.tag!.color,
-						label: node.segment,
+						label: nodeLabel(node),
 						count: tagCounts[node.tag!.id] ?? 0,
 						extra: 0,
 					});
@@ -444,6 +463,7 @@ export function TagTreeView({
 			onDeleteFolder,
 			onRowClick: handleRowClick,
 			onToggleExpanded: toggleExpanded,
+			nodeLabel,
 			drag,
 		}),
 		[
@@ -456,6 +476,7 @@ export function TagTreeView({
 			onDeleteFolder,
 			handleRowClick,
 			toggleExpanded,
+			nodeLabel,
 			drag,
 		],
 	);
@@ -546,8 +567,10 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 		onDeleteFolder,
 		onRowClick,
 		onToggleExpanded,
+		nodeLabel,
 		drag,
 	} = useContext(TagTreeCtx);
+	const { t } = useT();
 	const hasChildren = node.children.length > 0;
 	const isOpen = forceExpanded || expandedPaths.has(node.fullPath);
 	const childPills = hasChildren ? node.children.filter(isLeafTag) : [];
@@ -566,8 +589,7 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 
 	const effectiveSelected = isSelected || allChildrenSelected;
 
-	const bg = node.inheritedColor;
-	const fg = textColorFor(bg);
+	const fg = textColorFor(node.inheritedColor);
 	const count = sumCounts(node, tagCounts);
 
 	const handleChevronClick = (e: React.MouseEvent) => {
@@ -583,7 +605,12 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 						<div
 							className={`tag-tree__row${effectiveSelected ? " is-selected" : ""}${someChildrenSelected ? " is-partial" : ""}${dragPaths?.has(node.fullPath) ? " is-dragging" : ""}${dropTarget?.position === "into" && dropTarget.path === node.fullPath ? " is-drop-into" : ""}`}
 							style={{
-								backgroundColor: bg,
+								background: node.rowBackground.startsWith("linear-gradient")
+									? node.rowBackground
+									: undefined,
+								backgroundColor: node.rowBackground.startsWith("linear-gradient")
+									? undefined
+									: node.rowBackground,
 								color: fg,
 								marginLeft: `${depth * 1.25}rem`,
 								cursor: "pointer",
@@ -604,7 +631,7 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 							) : (
 								<span className="tag-tree__chevron-spacer" />
 							)}
-							<span className="tag-tree__label">{node.segment}</span>
+							<span className="tag-tree__label">{nodeLabel(node)}</span>
 							{!node.tag && (
 								<Icon
 									path={mdiFolder}
@@ -634,26 +661,32 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 							tagId={node.tag!.id}
 							totalCount={sumCounts(node, tagCounts)}
 							onRename={() => onRenameTag({ id: node.tag!.id, name: node.tag!.name })}
-							onAddAlias={() => onAddAlias({ id: node.tag!.id, name: node.tag!.name })}
-							onNewSubfolder={() => onNewFolder(node.fullPath)}
+							onAddAlias={
+								onAddAlias
+									? () => onAddAlias({ id: node.tag!.id, name: node.tag!.name })
+									: undefined
+							}
+							onNewSubfolder={onNewFolder ? () => onNewFolder(node.fullPath) : undefined}
 						/>
 					</ContextMenu.Portal>
 				) : (
 					<ContextMenu.Portal>
 						<ContextMenu.Positioner>
 							<ContextMenu.Popup className="context-menu">
-								<ContextMenu.Item
-									className="context-menu__item"
-									onClick={() => onNewFolder(node.fullPath)}
-								>
-									New subfolder...
-								</ContextMenu.Item>
+								{onNewFolder && (
+									<ContextMenu.Item
+										className="context-menu__item"
+										onClick={() => onNewFolder(node.fullPath)}
+									>
+										{t("editor.newSubfolder")}
+									</ContextMenu.Item>
+								)}
 								{node.descendantTagIds.length === 0 && (
 									<ContextMenu.Item
 										className="context-menu__item"
 										onClick={() => onDeleteFolder(node.fullPath)}
 									>
-										Delete folder
+										{t("editor.deleteFolder")}
 									</ContextMenu.Item>
 								)}
 							</ContextMenu.Popup>
@@ -807,7 +840,7 @@ const TagTreeLeaf = memo(function TagTreeLeaf({
 	isSelected: boolean;
 	isDragging: boolean;
 }) {
-	const { onEditTag, onRenameTag, onAddAlias, onRemoveAlias, onRowClick, drag } =
+	const { onEditTag, onRenameTag, onAddAlias, onRemoveAlias, onRowClick, drag, nodeLabel } =
 		useContext(TagTreeCtx);
 	const tag = node.tag!;
 
@@ -818,7 +851,7 @@ const TagTreeLeaf = memo(function TagTreeLeaf({
 					<TagPill
 						as="li"
 						color={tag.color}
-						label={node.segment}
+						label={nodeLabel(node)}
 						count={count}
 						className={clsx(
 							isSelected && "is-selected",
@@ -849,7 +882,11 @@ const TagTreeLeaf = memo(function TagTreeLeaf({
 					tagId={tag.id}
 					totalCount={count}
 					onRename={() => onRenameTag({ id: tag.id, name: tag.name })}
-					onAddAlias={node.isAlias ? undefined : () => onAddAlias({ id: tag.id, name: tag.name })}
+					onAddAlias={
+						node.isAlias || !onAddAlias
+							? undefined
+							: () => onAddAlias({ id: tag.id, name: tag.name })
+					}
 					onRemoveAlias={node.isAlias ? () => onRemoveAlias(node.fullPath) : undefined}
 				/>
 			</ContextMenu.Portal>

@@ -837,7 +837,7 @@ function BorderDetailGroup() {
 	);
 }
 
-function EditingBody() {
+function TagsBody() {
 	const { t } = useT();
 	const s = useSettings();
 	const tagViewOptions = localizeOptions(TAG_VIEW_MODES, (k) =>
@@ -845,9 +845,6 @@ function EditingBody() {
 	);
 	const tagFolderColorOptions = localizeOptions(TAG_FOLDER_COLOR_MODES, (k) =>
 		t(`settings.tagFolderColor.${k}` as MessageKey),
-	);
-	const seenResolutionOptions = localizeOptions(SEEN_RESOLUTIONS, (k) =>
-		t(`settings.seen.${k}` as MessageKey),
 	);
 	const limitIndex = Math.max(
 		0,
@@ -860,31 +857,27 @@ function EditingBody() {
 				label={t("settings.tagViewMode")}
 				control={<SettingSelect setting="tagViewMode" options={tagViewOptions} />}
 			/>
-			{s.tagViewMode === "tree" && (
-				<>
-					<SettingRow
-						sub
-						label={t("settings.tagFolderColor")}
-						control={
-							<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-								<SettingSelect setting="tagFolderColorMode" options={tagFolderColorOptions} />
-								{s.tagFolderColorMode === "direct" && (
-									<ColorPicker
-										color={s.tagFolderColor}
-										onChange={(color) => setSetting("tagFolderColor", color)}
-										ariaLabel={t("settings.tagFolderColor")}
-									/>
-								)}
-							</span>
-						}
-					/>
-					<SettingRow
-						sub
-						setting="truncateTagPaths"
-						label={t("settings.truncateTagPaths")}
-					/>
-				</>
-			)}
+			<SettingRow
+				sub
+				label={t("settings.tagFolderColor")}
+				control={
+					<span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+						<SettingSelect setting="tagFolderColorMode" options={tagFolderColorOptions} />
+						{s.tagFolderColorMode === "direct" && (
+							<ColorPicker
+								color={s.tagFolderColor}
+								onChange={(color) => setSetting("tagFolderColor", color)}
+								ariaLabel={t("settings.tagFolderColor")}
+							/>
+						)}
+					</span>
+				}
+			/>
+			<SettingRow
+				sub
+				setting="truncateTagPaths"
+				label={t("settings.truncateTagPaths")}
+			/>
 			<SettingRow setting="animateTagReorder" label={t("settings.animateTagReorder")} />
 			<SettingRow
 				label={t("settings.tagGap")}
@@ -914,7 +907,18 @@ function EditingBody() {
 					/>
 				}
 			/>
+		</>
+	);
+}
 
+function EditingBody() {
+	const { t } = useT();
+	const s = useSettings();
+	const seenResolutionOptions = localizeOptions(SEEN_RESOLUTIONS, (k) =>
+		t(`settings.seen.${k}` as MessageKey),
+	);
+	return (
+		<>
 			<GroupHeading>{t("settings.group.seen")}</GroupHeading>
 			<SettingRow setting="enableSeen" label={t("settings.enableSeen")} />
 			{s.enableSeen && (
@@ -1263,6 +1267,7 @@ const SECTIONS: Section[] = [
 	{ id: "keyboard", titleKey: "settings.section.keyboard", Body: KeyboardBody },
 	{ id: "streetview", titleKey: "settings.section.streetView", Body: StreetViewBody },
 	{ id: "map", titleKey: "settings.section.map", Body: MarkersBody },
+	{ id: "tags", titleKey: "settings.section.tags", Body: TagsBody },
 	{ id: "editing", titleKey: "settings.section.editing", Body: EditingBody },
 	{ id: "application", titleKey: "settings.section.application", Body: ApplicationBody },
 	{ id: "integrations", titleKey: "settings.section.integrations", Body: IntegrationsBody },

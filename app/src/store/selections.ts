@@ -10,6 +10,7 @@ import { isVariant, unionTuple, type Variant } from "@/types/util";
 import { pointInPolygon } from "@/lib/geo/geo";
 import { getSettings } from "@/store/settings";
 import { shortestUniqueSuffixes } from "@/components/editor/tags/tagTreeRange";
+import { subscribe } from "@/lib/events";
 
 import type { Selection, SelectionProps } from "@/bindings.gen";
 
@@ -570,6 +571,15 @@ export function selectionDisplayName(sel: Selection): string {
 }
 
 let suffixCache: { tags: Tag[]; suffixes: Map<string, string> } | null = null;
+
+subscribe("settings:changed", () => {
+	suffixCache = null;
+});
+
+/** Drop cached truncated labels (e.g. after tag list changes). */
+export function invalidateTagDisplayCache(): void {
+	suffixCache = null;
+}
 
 /** Display label for a tag NAME. In tree view with `truncateTagPaths` on, collapses the
  *  `/`-path to its shortest unique suffix; otherwise returns the name verbatim. Uniqueness

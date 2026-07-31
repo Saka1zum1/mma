@@ -242,11 +242,13 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 
 	const quicktagSlot = (idx: number) => {
 		if (!location || !getMapState().map) return;
-		const tags = sortTagsByMode(
+		const all = sortTagsByMode(
 			getVisibleTags(),
 			getSettings().tagSortMode,
 			getMapState().tagCounts,
 		);
+		const limit = getSettings().tagSuggestionLimit;
+		const tags = limit > 0 ? all.slice(0, limit) : all;
 		if (idx >= tags.length) return;
 		const tag = tags[idx];
 		const has = pendingTags.includes(tag.name);

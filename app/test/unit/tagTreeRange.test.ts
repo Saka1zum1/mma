@@ -433,6 +433,19 @@ describe("folder colors", () => {
 		const tree = buildTagTree([mkTag(1, "F/x", "#ff0000")], "default", {});
 		expect(tree[0].inheritedColor).toBe("#888888");
 	});
+
+	it("random mode paints colorless folders from the folder path", () => {
+		const tree = build([mkTag(1, "F/x", "#ff0000")], { mode: "random", color: "#888888" });
+		expect(tree[0].inheritedColor).not.toBe("#888888");
+		expect(tree[0].rowBackground).toBe(tree[0].inheritedColor);
+	});
+
+	it("childGradient mode builds a gradient from descendant tag colors", () => {
+		const tags = [mkTag(1, "F/a", "#ff0000", 1), mkTag(2, "F/b", "#0000ff", 2)];
+		const tree = build(tags, { mode: "childGradient", color: "#888888" });
+		expect(tree[0].rowBackground.startsWith("linear-gradient")).toBe(true);
+		expect(tree[0].inheritedColor).toBe("#ff0000");
+	});
 });
 
 describe("cascadeRename", () => {

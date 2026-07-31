@@ -48,10 +48,16 @@ export function FullscreenTagBar({
 
 	const pendingLower = new Set(pendingTags.map((n) => n.toLowerCase()));
 	const sorted = sortTagsByMode(tags, tagSortMode, getMapState().tagCounts);
+	const suggestionLimit = useSetting("tagSuggestionLimit");
 	const available = sorted.filter((t) => !pendingLower.has(t.name.toLowerCase()));
+	const capped =
+		suggestionLimit > 0 ? available.slice(0, suggestionLimit) : available;
 	const filtered = input.trim()
-		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase()))
-		: available;
+		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase())).slice(
+				0,
+				suggestionLimit || available.length,
+			)
+		: capped;
 
 	return (
 		<div

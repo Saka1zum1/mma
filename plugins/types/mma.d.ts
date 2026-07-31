@@ -355,6 +355,7 @@ declare const en: {
     readonly "settings.section.keyboard": "Keyboard";
     readonly "settings.section.map": "Map";
     readonly "settings.section.streetView": "Street View";
+    readonly "settings.section.tags": "Tags";
     readonly "settings.seen.high": "High (640x360)";
     readonly "settings.seen.low": "Low (160x90)";
     readonly "settings.seen.medium": "Medium (320x180)";
@@ -390,6 +391,8 @@ declare const en: {
     readonly "settings.tagFolderColor": "Folder color";
     readonly "settings.tagFolderColor.direct": "Fixed color";
     readonly "settings.tagFolderColor.firstChild": "Inherit first child";
+    readonly "settings.tagFolderColor.random": "Random";
+    readonly "settings.tagFolderColor.childGradient": "Child tag gradient";
     readonly "settings.tagGap": "Tag gap";
     readonly "settings.tagSuggestionLimit": "Suggestions shown";
     readonly "settings.tagView.flat": "Flat";
@@ -587,7 +590,7 @@ declare const en: {
     readonly "editor.coverageLineFilterColor": "Coverage line filter color";
     readonly "editor.coveragePercent": "{pct}% of locations";
     readonly "editor.created": "Created {time}";
-    readonly "editor.createTag": "Create tag";
+    readonly "editor.createTag": "Create virtual tag";
     readonly "editor.currentSelection": "Current selection ({count})";
     readonly "editor.defaultAutoUpdating": "Default / auto-updating";
     readonly "editor.defaultLabel": "Default";
@@ -725,6 +728,7 @@ declare const en: {
     readonly "editor.newFolderIn": "New folder in \"{parent}\"";
     readonly "editor.newStyle": "New style";
     readonly "editor.newSubfolder": "New subfolder...";
+    readonly "editor.deleteFolder": "Delete folder";
     readonly "editor.nextLocation": "Go to next location (Control+Right)";
     readonly "editor.nextPeriod": "Next period";
     readonly "editor.noDates": "No dates";
@@ -4044,6 +4048,8 @@ declare const TAG_VIEW_MODES: {
 declare const TAG_FOLDER_COLOR_MODES: {
     readonly direct: "Fixed color";
     readonly firstChild: "Inherit first child";
+    readonly random: "Random";
+    readonly childGradient: "Child tag gradient";
 };
 declare const OPACITY_TOGGLE_MODES: {
     readonly previous: "Last used opacity";
@@ -4158,7 +4164,9 @@ declare const DEFAULTS: {
     truncateTagPaths: boolean;
     /** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
      *  `firstChild` inherits the first own-colored descendant in display order,
-     *  with tagFolderColor as the fallback for colorless subtrees. */
+     *  with tagFolderColor as the fallback for colorless subtrees.
+     *  `random` uses a deterministic color from the folder path; `childGradient` paints
+     *  a gradient from descendant tag colors (fallback: tagFolderColor). */
     tagFolderColorMode: TagFolderColorMode;
     tagFolderColor: RGB;
     tagSortMode: TagSortMode;
