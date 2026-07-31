@@ -1,3 +1,11 @@
+## v0.8.6 - 2026-07-31
+- **Tags settings section** for tree view, path truncation, folder colors, and suggestion limit
+- Tag manager **flat/tree toggle**, **create tag**, and always-visible new-folder control (disabled in flat view)
+- Folder row colors: **random** (path-based) and **child tag gradient** modes; refresh tag labels when those settings change
+- Fullscreen tag bar and location hotkeys respect **tag suggestion limit**
+- Turning off Baidu/Tencent or Yandex providers **disables the matching alt basemap** when it was active
+- Layer config section headers and tag manager toolbar stay on one line (no awkward wrapping)
+
 ## v0.8.5 - 2026-07-27
 - **Paste or search bare pano IDs** (Google, Baidu, Tencent, Yandex) to create a Street View location without a full maps URL
 - Fixed Baidu and Tencent **Click-to-Go** occasionally jumping to the opposite panorama when clicking toward the upper-center of the viewport (positive pitch)
