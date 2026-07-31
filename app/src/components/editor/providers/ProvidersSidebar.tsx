@@ -110,9 +110,19 @@ export function ProvidersSidebar() {
 	const hints = providerHintKeys(activeProvider);
 	const showPoints = activeProvider === "apple";
 
+	const disableAltBasemapForProvider = useCallback((id: AltSvProviderId) => {
+		const basemap = getAltBasemapSettings();
+		if (id === "baidu" || id === "tencent") {
+			if (basemap.petal.enabled) updateAltBasemapSettings("petal", { enabled: false });
+		} else if (id === "yandex") {
+			if (basemap.yandex.enabled) updateAltBasemapSettings("yandex", { enabled: false });
+		}
+	}, []);
+
 	const setCfg = useCallback(
 		(patch: Partial<ResolvedAltProviderSettings>) => {
 			updateProviderSettings(activeProvider, patch);
+			if (patch.enabled === false) disableAltBasemapForProvider(activeProvider);
 			const keys = Object.keys(patch) as (keyof ResolvedAltProviderSettings)[];
 			if (keys.some((k) => STYLE_KEYS.includes(k))) {
 				if (activeProvider === "apple") rebuildStyledLayers();
@@ -121,8 +131,17 @@ export function ProvidersSidebar() {
 				else if (activeProvider === "yandex") rebuildYandexStyledLayers();
 			}
 		},
-		[activeProvider],
+		[activeProvider, disableAltBasemapForProvider],
 	);
+
+	const setAllProviders = useCallback((enabled: boolean) => {
+		setAllProvidersEnabled(enabled);
+		if (!enabled) {
+			const basemap = getAltBasemapSettings();
+			if (basemap.petal.enabled) updateAltBasemapSettings("petal", { enabled: false });
+			if (basemap.yandex.enabled) updateAltBasemapSettings("yandex", { enabled: false });
+		}
+	}, []);
 
 	const reset = useCallback(() => {
 		resetProviderSettings(activeProvider);
@@ -147,7 +166,7 @@ export function ProvidersSidebar() {
 				<SwitchRow
 					className="providers-sidebar__control"
 					checked={allProvidersEnabled}
-					onChange={setAllProvidersEnabled}
+					onChange={setAllProviders}
 					label={t("editor.enableAllProviders")}
 				/>
 			</div>
