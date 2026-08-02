@@ -1,0 +1,169 @@
+import { useState } from "react";
+import clsx from "clsx";
+import { useEvent } from "@/lib/events";
+import { Icon } from "@/components/primitives/Icon";
+import { Tooltip } from "@/components/primitives/Tooltip";
+import { Button } from "@/components/primitives/Button";
+import { TextInput } from "@/components/primitives/TextInput";
+import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { useT } from "@/lib/i18n";
+import { mdiGraphOutline, mdiStopCircleOutline } from "@mdi/js";
+import {
+	isExpandingSvLinks,
+	startExpandSvLinks,
+	stopExpandSvLinks,
+	type ExpandProgress,
+} from "@/lib/sv/expandLinks";
+import { useMapState } from "@/store/useMapStore";
+import { useDialog } from "@/store/dialogBus";
+import { toast } from "@/lib/util/toast";
+
+const DEFAULT_MAX = 200;
+
+/** icon-button in selection-manager__bar; dialog asks for max count + shows progress. */
+export function ExpandSvLinksButton() {
+	const { t } = useT();
+	useEvent("plugins:changed");
+	const hasSelection = useMapState((s) => s.selectedLocationIds.size > 0);
+	const running = isExpandingSvLinks();
+	const [open, setOpen] = useState(false);
+	const [maxCount, setMaxCount] = useState(String(DEFAULT_MAX));
+	const [progress, setProgress] = useState<ExpandProgress | null>(null);
+
+	const openDialogUi = () => {
+		if (!hasSelection) {
+			toast(t("command.expandSvLinksNeedSelection"));
+			return;
+		}
+		setProgress(null);
+		setOpen(true);
+	};
+
+	useDialog("expand-sv-links", () => {
+		if (isExpandingSvLinks()) {
+			stopExpandSvLinks();
+			setProgress(null);
+			return;
+		}
+		openDialogUi();
+	});
+
+	const onToolbarClick = () => {
+		if (running) {
+			stopExpandSvLinks();
+			setProgress(null);
+			return;
+		}
+		openDialogUi();
+	};
+
+	const start = async () => {
+		const max = Math.max(1, Math.floor(Number(maxCount) || DEFAULT_MAX));
+		setMaxCount(String(max));
+		setProgress({ added: 0, max, queued: 0, done: false });
+		try {
+			const added = await startExpandSvLinks({
+				maxCount: max,
+				onProgress: setProgress,
+			});
+			toast(t("command.expandSvLinksDone", { count: added }));
+			setOpen(false);
+			setProgress(null);
+		} catch (e) {
+			const err = e as Error;
+			if (err?.name === "AbortError") {
+				toast(t("command.expandSvLinksStopped"));
+			} else if (err?.message === "no-selection") {
+				toast(t("command.expandSvLinksNeedSelection"));
+			} else if (err?.message === "no-provider") {
+				toast(t("command.expandSvLinksNeedProvider"));
+			} else if (err?.message === "already-running") {
+				toast(t("command.expandSvLinksStarted"));
+			} else {
+				toast(String(err?.message ?? e));
+			}
+			setProgress(null);
+		}
+	};
+
+	const closeDialog = () => {
+		if (isExpandingSvLinks()) stopExpandSvLinks();
+		setOpen(false);
+		setProgress(null);
+	};
+
+	const pct =
+		progress && progress.max > 0
+			? Math.min(1, progress.added / progress.max)
+			: 0;
+
+	return (
+		<>
+			<Tooltip
+				content={running ? t("command.expandSvLinksStop") : t("command.expandSvLinks")}
+				side="bottom"
+			>
+				<button
+					type="button"
+					className={clsx("icon-button", {
+						"is-active": running || open,
+						"is-disabled": !running && !hasSelection,
+					})}
+					aria-label={
+						running ? t("command.expandSvLinksStop") : t("command.expandSvLinks")
+					}
+					aria-pressed={running}
+					onClick={onToolbarClick}
+				>
+					<Icon path={running ? mdiStopCircleOutline : mdiGraphOutline} />
+				</button>
+			</Tooltip>
+
+			<Dialog
+				open={open}
+				onOpenChange={(v) => {
+					if (!v) closeDialog();
+				}}
+			>
+				<DialogContent title={t("command.expandSvLinks")} className="expand-sv-links-dialog">
+					<p className="expand-sv-links-dialog__hint">{t("command.expandSvLinksHint")}</p>
+					<label className="expand-sv-links-dialog__field">
+						<span>{t("command.expandSvLinksMax")}</span>
+						<TextInput
+							type="number"
+							min={1}
+							max={5000}
+							value={maxCount}
+							disabled={running}
+							onChange={(e) => setMaxCount(e.target.value)}
+						/>
+					</label>
+					{progress && (
+						<div className="expand-sv-links-dialog__progress">
+							<progress className="bulk-operation__bar" value={pct} max={1} />
+							<span>
+								{t("command.expandSvLinksProgressDetail", {
+									added: progress.added,
+									max: progress.max,
+									queued: progress.queued,
+								})}
+							</span>
+						</div>
+					)}
+					<div className="expand-sv-links-dialog__actions">
+						{running ? (
+							<Button variant="destructive" onClick={() => stopExpandSvLinks()}>
+								{t("command.expandSvLinksStop")}
+							</Button>
+						) : (
+							<Button variant="primary" onClick={() => void start()}>
+								{t("command.expandSvLinksStart")}
+							</Button>
+						)}
+						<Button onClick={closeDialog}>{t("common.close")}</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+		</>
+	);
+}

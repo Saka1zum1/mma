@@ -1,0 +1,197 @@
+/* Keep section cards at natural height so the sidebar body scrolls
+   instead of flex-shrinking fields until they disappear (see generator.css). */
+.hyperlapse-sidebar .plugin-sidebar__body > * {
+	flex-shrink: 0;
+}
+
+.hyperlapse-sidebar__hint {
+	font-size: 12px;
+	opacity: 0.7;
+	margin: 4px 0 8px;
+}
+
+.hyperlapse-sidebar__row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+}
+
+.hyperlapse-sidebar__row .text-input {
+	flex: 1;
+	min-width: 0;
+}
+
+.hyperlapse-sidebar__actions {
+	display: flex;
+	gap: 8px;
+	padding: 8px 0;
+}
+
+.hyperlapse-sidebar__actions > .button {
+	flex: 1;
+}
+
+.hyperlapse-sidebar__progress {
+	font-size: 11px;
+	opacity: 0.75;
+	margin: 0 0 8px;
+}
+
+.hyperlapse-sidebar__saved {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 280px;
+	overflow-y: auto;
+}
+
+.hyperlapse-sidebar__saved-item {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 2px;
+	border-radius: 4px;
+}
+
+.hyperlapse-sidebar__saved-item.is-active {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+.hyperlapse-sidebar__saved-meta {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.hyperlapse-sidebar__saved-name {
+	font-size: 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.hyperlapse-sidebar__saved-meta small {
+	opacity: 0.55;
+	font-size: 10px;
+}
+
+.hyperlapse-sidebar__saved-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.hyperlapse-viewer-dialog {
+	width: min(96vw, 1100px);
+	max-width: 1100px;
+}
+
+.hyperlapse-viewer {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-height: 0;
+}
+
+.hyperlapse-viewer__canvas {
+	position: relative;
+	width: 100%;
+	height: min(60vh, 560px);
+	min-height: 240px;
+	background: #111;
+	border-radius: 6px;
+	overflow: hidden;
+	touch-action: none;
+	cursor: grab;
+}
+
+.hyperlapse-viewer__canvas:active {
+	cursor: grabbing;
+}
+
+.hyperlapse-viewer__canvas canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+/* Element fullscreen on the canvas container itself. */
+.hyperlapse-viewer__canvas:fullscreen,
+.hyperlapse-viewer__canvas--fs:fullscreen {
+	width: 100%;
+	height: 100%;
+	border-radius: 0;
+	background: #000;
+}
+
+.hyperlapse-viewer__fs-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	z-index: 2;
+	background: rgba(0, 0, 0, 0.45);
+	color: #fff;
+}
+
+.hyperlapse-viewer__fs-btn:hover {
+	background: rgba(0, 0, 0, 0.65);
+}
+
+.hyperlapse-viewer__pov {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	font-size: 12px;
+}
+
+.hyperlapse-viewer__pov-field {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.hyperlapse-viewer__pov-field > span {
+	opacity: 0.7;
+	white-space: nowrap;
+}
+
+.hyperlapse-viewer__pov-field .n-select,
+.hyperlapse-viewer__pov-field .text-input {
+	min-width: 110px;
+	max-width: 140px;
+}
+
+.hyperlapse-viewer__pov-hint {
+	opacity: 0.55;
+	font-size: 10px;
+}
+
+.hyperlapse-viewer__controls {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+	flex-shrink: 0;
+}
+
+.hyperlapse-viewer__scrub {
+	flex: 1;
+	min-width: 120px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.hyperlapse-viewer__pos {
+	font-size: 11px;
+	opacity: 0.7;
+	white-space: nowrap;
+}

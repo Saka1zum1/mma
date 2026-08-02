@@ -18,6 +18,7 @@ type DialogPayloads = {
 	"command-palette": void;
 	"bulk-op": string;
 	"inline-panel": string;
+	"expand-sv-links": void;
 };
 
 export type DialogKey = keyof DialogPayloads;

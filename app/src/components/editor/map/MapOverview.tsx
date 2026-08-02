@@ -32,6 +32,7 @@ import { fmt } from "@/lib/util/format";
 import { useDialog, openDialog } from "@/store/dialogBus";
 import { SelectionRow } from "./SelectionRow";
 import { PinnedToolbar } from "./PinnedToolbar";
+import { ExpandSvLinksButton } from "./ExpandSvLinksButton";
 import { SaveSelectionsDialog, ApplySavedSelectionDialog } from "./SavedSelectionDialogs";
 
 function RandomPickPanel() {
@@ -304,6 +305,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				<SelectionList />
 
 				<PinnedToolbar
+					insertAfter={{ commandId: "bulk-enrich", node: <ExpandSvLinksButton /> }}
 					right={<BulkTagForm />}
 					panels={{
 						"select-random": {

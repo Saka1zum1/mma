@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import clsx from "clsx";
 import { Icon } from "@/components/primitives/Icon";
@@ -29,8 +29,9 @@ export function DialogContent({
 	className,
 	title,
 	children,
+	headerExtra,
 	...props
-}: RadixDialog.DialogContentProps & { title: string }) {
+}: RadixDialog.DialogContentProps & { title: string; headerExtra?: ReactNode }) {
 	return (
 		<RadixDialog.Portal>
 			<RadixDialog.Overlay className="modal__backdrop" />
@@ -54,11 +55,14 @@ export function DialogContent({
 				<div className={clsx("modal__dialog", className)}>
 					<header className={clsx("modal__header", className ? `${className}__header` : null)}>
 						<RadixDialog.Title className="modal__title">{title}</RadixDialog.Title>
-						<RadixDialog.Close asChild>
-							<button type="button" className="icon-button modal__close">
-								<Icon path={mdiClose} />
-							</button>
-						</RadixDialog.Close>
+						<div className="modal__header-actions">
+							{headerExtra}
+							<RadixDialog.Close asChild>
+								<button type="button" className="icon-button modal__close">
+									<Icon path={mdiClose} />
+								</button>
+							</RadixDialog.Close>
+						</div>
 					</header>
 					<div className="modal__content">{children}</div>
 				</div>
