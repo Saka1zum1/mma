@@ -220,7 +220,7 @@ function defaultPivotField(fields: FieldEntry[]): string {
 }
 
 export function PivotSidebar({ onClose }: { onClose: () => void }) {
-	const { t, locale } = useT();
+	const { t } = useT();
 	const [rowSourceRaw, setRowSource] = usePluginState<RowSource>("pivot", "rowSource", "active");
 	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("pivot", "fieldKey", () =>
 		defaultPivotField(buildPivotFields(MMA.getMapState().knownFieldKeys)),
@@ -260,7 +260,7 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 		} finally {
 			setLoading(false);
 		}
-	}, [rowSource, fieldKey, fields, bucketCount, locale]);
+	}, [rowSource, fieldKey, fields, bucketCount]);
 
 	const debouncedRecompute = useDebouncedCallback(recompute, 150);
 
