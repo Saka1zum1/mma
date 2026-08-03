@@ -110,10 +110,12 @@ class GoogleMapHost implements MapHostContract<"google"> {
 	readonly map: google.maps.Map;
 	private svLayer: google.maps.ImageMapType | null = null;
 	private svOpacity: number;
+	private skipCoverage: boolean;
 	private overlays = new Set<GoogleDeckOverlay>();
 
 	constructor(container: HTMLElement, prefs: MapEmbedPrefs, opts: CreateHostOpts) {
 		this.svOpacity = prefs.svOpacity;
+		this.skipCoverage = opts.skipCoverage ?? false;
 		this.map = new google.maps.Map(container, {
 			center: opts.camera?.center ?? { lat: 0, lng: 0 },
 			zoom: opts.camera?.zoom ?? 2,
@@ -245,9 +247,10 @@ class GoogleMapHost implements MapHostContract<"google"> {
 		const { mapType: stack, svLayer } = resolveStackForPrefs(prefs, {
 			useBlobby: opts.useBlobby,
 			customStyles: opts.customStyles,
+			skipCoverage: this.skipCoverage,
 		});
 		this.svLayer = svLayer;
-		this.svLayer.setOpacity(this.svOpacity);
+		this.svLayer?.setOpacity(this.svOpacity);
 		this.map.mapTypes.set("stack", stack);
 		this.map.setMapTypeId("stack");
 		const bg = getStyleBackgroundColor(prefs.mapStyleName);

@@ -121,12 +121,14 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 	private svRev = 0;
 	private svOpacity: number;
 	private styleName: string;
+	private skipCoverage: boolean;
 
 	private outer: HTMLElement;
 	private mapDiv: HTMLDivElement;
 
 	constructor(container: HTMLElement, prefs: MapEmbedPrefs, opts: CreateHostOpts) {
 		this.svOpacity = prefs.svOpacity;
+		this.skipCoverage = opts.skipCoverage ?? false;
 		this.svCfg = createSvConfigForPrefs(prefs, opts.useBlobby);
 		this.styleName = prefs.vectorStyleName;
 		// Oversized, clipped inner container = tile prefetch margin (see PREFETCH_MARGIN).
@@ -192,6 +194,7 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 	}
 
 	private addSvLayer() {
+		if (this.skipCoverage) return;
 		if (this.map.getSource(SV_SOURCE)) return;
 		this.map.addSource(SV_SOURCE, {
 			type: "raster",

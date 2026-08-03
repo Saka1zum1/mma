@@ -40,6 +40,8 @@ export const CUSTOM_STYLES_KEY = "mma_custom_styles";
 interface BuildOpts {
 	useBlobby: boolean;
 	customStyles?: MapStyle[];
+	/** Omit SV + provider coverage raster layers (e.g. GeoGuessr guess map). */
+	skipCoverage?: boolean;
 }
 
 /** SV coverage tile config for the current prefs; shared by the Google raster stack
@@ -243,10 +245,11 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 	});
 	const blobbySingleType = opts.useBlobby && !(showOfficial && showUnofficial);
 	svLayer.setOpacity(blobbySingleType ? prefs.svOpacity * 0.6 : prefs.svOpacity);
-	layers.push(svLayer);
-
-	// Provider blue-line coverage: same construction + stack band as Google SV.
-	layers.push(...getProviderLineLayers());
+	if (!opts.skipCoverage) {
+		layers.push(svLayer);
+		// Provider blue-line coverage: same construction + stack band as Google SV.
+		layers.push(...getProviderLineLayers());
+	}
 
 	if (prefs.showLabels && prefs.mapType !== "osm" && !altBasemap) {
 		const labelCfg =
@@ -269,8 +272,12 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 
 export function resolveStackForPrefs(
 	prefs: MapEmbedPrefs,
-	opts: { useBlobby: boolean; customStyles: CustomStyle[] },
+	opts: { useBlobby: boolean; customStyles: CustomStyle[]; skipCoverage?: boolean },
 ): MapStackResult {
 	const custom = opts.customStyles.find((s) => s.name === prefs.mapStyleName);
-	return buildMapStack(prefs, { useBlobby: opts.useBlobby, customStyles: custom?.style });
+	return buildMapStack(prefs, {
+		useBlobby: opts.useBlobby,
+		customStyles: custom?.style,
+		skipCoverage: opts.skipCoverage,
+	});
 }

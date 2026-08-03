@@ -100,6 +100,8 @@ export interface CreateHostOpts extends BasemapOpts {
 	camera?: { center: LatLng; zoom: number };
 	// Show the engine's scale control (editor map only).
 	scaleControl?: boolean;
+	/** Hide SV and third-party provider coverage overlays on this host. */
+	skipCoverage?: boolean;
 }
 
 export async function createMapHost(
