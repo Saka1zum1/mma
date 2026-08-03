@@ -71,7 +71,7 @@ export class PovController {
 			"lat" | "lng" | "heading" | "pitch" | "drivingDirection" | "textureCenterHeading"
 		>,
 	): FrameLook {
-		let heading = 0;
+		let heading: number;
 		switch (this.lookMode) {
 			case "lookAt":
 				if (this.lookAt) {

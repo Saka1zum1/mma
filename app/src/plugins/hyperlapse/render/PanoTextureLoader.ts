@@ -23,7 +23,7 @@ export async function stitchFrameImage(
 	meta: HyperlapseFrameMeta,
 ): Promise<HTMLCanvasElement | null> {
 	const zoom = Math.min(meta.zoom, MAX_PANO_ZOOM);
-	let image: HTMLCanvasElement | null = null;
+	let image: HTMLCanvasElement | null;
 	switch (meta.provider) {
 		case "baidu":
 			image = await stitchBaiduPano(meta.panoId, zoom);

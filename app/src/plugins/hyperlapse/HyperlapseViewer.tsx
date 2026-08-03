@@ -21,7 +21,15 @@ import { FrameRenderer } from "./render/FrameRenderer";
 import { AnimationController } from "./render/AnimationController";
 import { FrameTexturePool } from "./render/FrameTexturePool";
 import { PovController } from "./pov";
-import type { HyperlapseFrameMeta, HyperlapseSettings, LookMode } from "./types";
+import type { HyperlapseFrameMeta, HyperlapseSettings, LookMode, ViewFilter } from "./types";
+import type { MessageKey } from "@/locales/en";
+
+const VIEW_FILTER_LABEL: Record<ViewFilter, MessageKey> = {
+	none: "plugin.hyperlapse.viewFilterNone",
+	vivid: "plugin.hyperlapse.viewFilterVivid",
+	vintage: "plugin.hyperlapse.viewFilterVintage",
+	mono: "plugin.hyperlapse.viewFilterMono",
+};
 
 export function HyperlapseViewer({
 	open,
@@ -52,6 +60,7 @@ export function HyperlapseViewer({
 	const [ready, setReady] = useState(false);
 	const [canvasFs, setCanvasFs] = useState(false);
 	const [lookMode, setLookMode] = useState<LookMode>(settings.lookMode);
+	const [viewFilter, setViewFilter] = useState<ViewFilter>(settings.viewFilter);
 	const dragRef = useRef<{
 		x: number;
 		y: number;
@@ -101,6 +110,7 @@ export function HyperlapseViewer({
 			pov.fromSettings(settings);
 			pov.resetOffsets();
 			setLookMode(pov.lookMode);
+			setViewFilter(settings.viewFilter);
 
 			const renderer = new FrameRenderer(el, {
 				width: w,
@@ -189,6 +199,10 @@ export function HyperlapseViewer({
 		lookMode,
 		ready,
 	]);
+
+	useEffect(() => {
+		setViewFilter(settings.viewFilter);
+	}, [settings.viewFilter]);
 
 	useEffect(() => {
 		const onFs = () => {
@@ -305,6 +319,11 @@ export function HyperlapseViewer({
 		animRef.current?.syncPov();
 	};
 
+	const changeViewFilter = (filter: ViewFilter) => {
+		setViewFilter(filter);
+		onSettingsPatch?.({ viewFilter: filter });
+	};
+
 	const resetRoll = () => {
 		povRef.current.resetRoll();
 		animRef.current?.paintNow();
@@ -324,6 +343,7 @@ export function HyperlapseViewer({
 						className={clsx("hyperlapse-viewer__canvas", {
 							"hyperlapse-viewer__canvas--fs": canvasFs,
 						})}
+						data-filter={viewFilter}
 						tabIndex={-1}
 						onPointerDown={onPointerDown}
 						onPointerMove={onPointerMove}
@@ -366,6 +386,21 @@ export function HyperlapseViewer({
 								<option value="lookAt">{t("plugin.hyperlapse.lookModeLookAt")}</option>
 								<option value="fixed">{t("plugin.hyperlapse.lookModeFixed")}</option>
 								<option value="free">{t("plugin.hyperlapse.lookModeFree")}</option>
+							</NSelect>
+						</label>
+						<label className="hyperlapse-viewer__pov-field">
+							<span>{t("plugin.hyperlapse.viewFilter")}</span>
+							<NSelect
+								value={viewFilter}
+								disabled={!ready}
+								className="nselect--limited"
+								onChange={(e) => changeViewFilter(e.target.value as ViewFilter)}
+							>
+								{(Object.keys(VIEW_FILTER_LABEL) as ViewFilter[]).map((id) => (
+									<option key={id} value={id}>
+										{t(VIEW_FILTER_LABEL[id])}
+									</option>
+								))}
 							</NSelect>
 						</label>
 						{lookMode === "fixed" && (

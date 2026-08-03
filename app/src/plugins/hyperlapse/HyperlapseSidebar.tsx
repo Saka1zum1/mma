@@ -25,6 +25,7 @@ import {
 	type LookMode,
 	type PlaybackMode,
 	type SavedSequence,
+	type ViewFilter,
 } from "./types";
 import { buildSequence } from "./route/SequenceBuilder";
 import { setRouteOverlay, clearRouteOverlay } from "./routeOverlay";
@@ -266,6 +267,19 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							<option value="once">{t("plugin.hyperlapse.modeOnce")}</option>
 							<option value="loop">{t("plugin.hyperlapse.modeLoop")}</option>
 							<option value="pingpong">{t("plugin.hyperlapse.modePingpong")}</option>
+						</NSelect>
+					</Field>
+					<Field label={t("plugin.hyperlapse.viewFilter")}>
+						<NSelect
+							value={settings.viewFilter}
+							onChange={(e) =>
+								patchSettings({ viewFilter: e.target.value as ViewFilter })
+							}
+						>
+							<option value="none">{t("plugin.hyperlapse.viewFilterNone")}</option>
+							<option value="vivid">{t("plugin.hyperlapse.viewFilterVivid")}</option>
+							<option value="vintage">{t("plugin.hyperlapse.viewFilterVintage")}</option>
+							<option value="mono">{t("plugin.hyperlapse.viewFilterMono")}</option>
 						</NSelect>
 					</Field>
 					<Field label={t("plugin.hyperlapse.smooth")} row>

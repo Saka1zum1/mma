@@ -122,6 +122,64 @@
 	height: 100%;
 }
 
+/* Screen-space look filters (inspired by Saka1zum1/roadtrip glfx presets). */
+.hyperlapse-viewer__canvas[data-filter]:not([data-filter="none"])::before,
+.hyperlapse-viewer__canvas[data-filter]:not([data-filter="none"])::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 1;
+}
+
+/* Soft vignette + film grain noise for all active looks. */
+.hyperlapse-viewer__canvas[data-filter]:not([data-filter="none"])::after {
+	background:
+		radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.55) 100%),
+		url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+	background-size: 100% 100%, 180px 180px;
+	opacity: 0.85;
+	mix-blend-mode: multiply;
+}
+
+.hyperlapse-viewer__canvas[data-filter="vintage"] canvas {
+	filter: contrast(1.25) saturate(0.25) brightness(1.02);
+}
+
+.hyperlapse-viewer__canvas[data-filter="vintage"]::before {
+	/* Warm soft-light wash + CRT scanlines (roadtrip filter 1 post_filter). */
+	background:
+		repeating-linear-gradient(
+			to bottom,
+			rgba(0, 0, 0, 0.14) 0,
+			rgba(0, 0, 0, 0.14) 1px,
+			transparent 1px,
+			transparent 3px
+		),
+		rgba(255, 200, 0, 0.12);
+	mix-blend-mode: soft-light;
+	opacity: 1;
+}
+
+.hyperlapse-viewer__canvas[data-filter="vivid"] canvas {
+	filter: brightness(1.1) saturate(1.65) contrast(1.05);
+}
+
+.hyperlapse-viewer__canvas[data-filter="vivid"]::before {
+	/* Mild radial soften stand-in for zoomBlur. */
+	background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.12) 100%);
+	opacity: 1;
+}
+
+.hyperlapse-viewer__canvas[data-filter="mono"] canvas {
+	filter: grayscale(1) contrast(1.5) brightness(1.02);
+}
+
+.hyperlapse-viewer__canvas[data-filter="mono"]::before {
+	background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.18) 100%);
+	opacity: 1;
+}
+
 /* Element fullscreen on the canvas container itself. */
 .hyperlapse-viewer__canvas:fullscreen,
 .hyperlapse-viewer__canvas--fs:fullscreen {

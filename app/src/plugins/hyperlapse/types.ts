@@ -1,5 +1,9 @@
 import type { SvProvider } from "@/lib/sv/providers/types";
 import type { LatLng } from "@/types";
+import { DEFAULT_VIEW_FILTER, normalizeViewFilter, type ViewFilter } from "./filters";
+
+export type { ViewFilter } from "./filters";
+export { VIEW_FILTERS, DEFAULT_VIEW_FILTER } from "./filters";
 
 function normHeading(h: number): number {
 	return ((h % 360) + 360) % 360;
@@ -60,6 +64,8 @@ export interface HyperlapseSettings {
 	/** When true, use fixedPitch instead of each frame’s pitch. */
 	useFixedPitch: boolean;
 	fixedPitch: number;
+	/** Screen-space look filter (roadtrip-style). */
+	viewFilter: ViewFilter;
 }
 
 export const DEFAULT_SETTINGS: HyperlapseSettings = {
@@ -73,6 +79,7 @@ export const DEFAULT_SETTINGS: HyperlapseSettings = {
 	fixedHeading: 0,
 	useFixedPitch: false,
 	fixedPitch: 0,
+	viewFilter: DEFAULT_VIEW_FILTER,
 };
 
 export interface BuildProgress {
@@ -111,6 +118,7 @@ export function normalizeSettings(raw: Partial<HyperlapseSettings> | null | unde
 		else s.lookMode = "drive";
 	}
 	if (s.lookMode === "lookAt" && !s.lookAt) s.lookMode = "drive";
+	s.viewFilter = normalizeViewFilter(s.viewFilter);
 	return s;
 }
 
