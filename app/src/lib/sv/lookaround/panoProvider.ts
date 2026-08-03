@@ -12,6 +12,16 @@ import { createLookAroundPanoramaProxy } from "./panoramaProxy";
 import { patchLocationExtra } from "./patchExtra";
 import { setHotPano, takeHotPano } from "./sessionStore";
 import { openPano, type PanoViewerHandle } from "./viewer";
+import { MovementPlugin } from "./psv/MovementPlugin";
+
+function bindPsvMovementMode(viewer: unknown, mode: "moving" | "no-move" | "nmpz") {
+	const v = viewer as {
+		plugins?: { movement?: MovementPlugin };
+		getPlugin?: (id: unknown) => MovementPlugin | null;
+	};
+	const movement = v.getPlugin?.(MovementPlugin) ?? v.plugins?.movement ?? null;
+	movement?.setMovementEnabled(mode === "moving");
+}
 
 let unregister: (() => void) | null = null;
 
@@ -144,6 +154,7 @@ export function registerLookAroundPanoProvider(): () => void {
 				panorama,
 				viewport: container,
 				resize,
+				setMovementMode: (mode) => bindPsvMovementMode(handle, mode),
 				getAlternateDates: proxy.getAlternateDates,
 				subscribeAlternateDates: proxy.subscribeAlternateDates,
 				getAltitude: proxy.getAltitude,

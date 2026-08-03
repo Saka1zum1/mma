@@ -13,6 +13,16 @@ import { stripYandex } from "./prefix";
 import { YANDEX_CAMERA_BADGE } from "./session";
 import { setHotYandexMeta, takeHotYandexMeta } from "./sessionStore";
 import { openYandexPano } from "./viewer";
+import { MovementPlugin } from "@/lib/sv/lookaround/psv/MovementPlugin";
+
+function bindPsvMovementMode(viewer: unknown, mode: "moving" | "no-move" | "nmpz") {
+	const v = viewer as {
+		plugins?: { movement?: MovementPlugin };
+		getPlugin?: (id: unknown) => MovementPlugin | null;
+	};
+	const movement = v.getPlugin?.(MovementPlugin) ?? v.plugins?.movement ?? null;
+	movement?.setMovementEnabled(mode === "moving");
+}
 
 let unregister: (() => void) | null = null;
 
@@ -95,6 +105,7 @@ export function registerYandexPanoProvider(): () => void {
 				panorama,
 				viewport: container,
 				resize,
+				setMovementMode: (mode) => bindPsvMovementMode(handle.viewer, mode),
 				getAlternateDates: proxy.getAlternateDates,
 				subscribeAlternateDates: proxy.subscribeAlternateDates,
 				getAltitude: proxy.getAltitude,

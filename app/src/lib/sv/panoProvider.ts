@@ -40,6 +40,8 @@ export interface PanoProviderSession {
 	viewport?: HTMLElement;
 	/** Recompute layout after the viewport is resized or reparented (e.g. PSV autoSize). */
 	resize?(): void;
+	/** Toggle click-to-go / link markers for alt-provider viewers (PSV MovementPlugin). */
+	setMovementMode?(mode: "moving" | "no-move" | "nmpz"): void;
 }
 
 /**

@@ -81,7 +81,7 @@ const TAPE_DEG_WIDTH = 180;
 const TAPE_PX_PER_DEG = 1.5;
 const TAPE_WIDTH_PX = TAPE_DEG_WIDTH * TAPE_PX_PER_DEG;
 
-function CompassTape({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
+export function CompassTape({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
 	const innerRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		const update = () => {
@@ -228,7 +228,7 @@ export function sendHideCar(hide: boolean) {
 
 // --- Pano control subcomponents ---
 
-function CompassControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
+export function CompassControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
 	const { t } = useT();
 	const [links, setLinks] = useState<google.maps.StreetViewLink[]>([]);
 	const controlRef = useRef<HTMLDivElement>(null);

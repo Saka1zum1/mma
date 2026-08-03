@@ -113,6 +113,11 @@ export class MovementPlugin extends AbstractPlugin {
 		this.yawNorthOffset = offsetRad;
 	}
 
+	setMovementEnabled(enabled: boolean): void {
+		this.movementEnabled = enabled;
+		if (!enabled) this.hideMarker();
+	}
+
 	updatePanoMarkers(refPano: LookaroundPano, panos: LookaroundPano[]): void {
 		this.nearbyPanos = [];
 		const cameraHeight = this.getCameraHeight(refPano);
