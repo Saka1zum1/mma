@@ -1,0 +1,74 @@
+import { resolveCountryName, streakRunBeforeLastRound, type RoundResult, type StreakMode } from "./GameState";
+import type { useT } from "@/lib/i18n";
+
+type TFn = ReturnType<typeof useT>["t"];
+
+function truthCountryLabel(r: RoundResult, locale: string): string {
+	return (
+		resolveCountryName(r.countryCode, r.countryName, locale) ??
+		r.countryCode ??
+		"Unknown"
+	);
+}
+
+function guessCountryLabel(r: RoundResult, locale: string): string {
+	return (
+		resolveCountryName(r.guessCountryCode, r.guessCountryName, locale) ??
+		r.guessCountryCode ??
+		"Unknown"
+	);
+}
+
+function truthStateLabel(r: RoundResult, locale: string): string {
+	return r.admin?.trim() || truthCountryLabel(r, locale);
+}
+
+function guessStateLabel(r: RoundResult, locale: string): string {
+	return r.guessAdmin?.trim() || guessCountryLabel(r, locale);
+}
+
+export function streakResultMessage(
+	result: RoundResult,
+	rounds: RoundResult[],
+	streakMode: StreakMode,
+	streak: number,
+	stateStreak: number,
+	t: TFn,
+	locale: string,
+): string | null {
+	if (streakMode === "off") return null;
+
+	if (streakMode === "country") {
+		if (result.streakHit === null) return null;
+		if (result.streakHit) {
+			return t("plugin.geoguessrGame.streakIndeedCountry", {
+				name: truthCountryLabel(result, locale),
+				n: String(streak),
+			});
+		}
+		const prior = streakRunBeforeLastRound(rounds, "country");
+		if (prior > 0) {
+			return t("plugin.geoguessrGame.streakEndedCountry", { n: String(prior) });
+		}
+		return t("plugin.geoguessrGame.streakGuessWrongCountry", {
+			guess: guessCountryLabel(result, locale),
+			correct: truthCountryLabel(result, locale),
+		});
+	}
+
+	if (result.stateStreakHit === null) return null;
+	if (result.stateStreakHit) {
+		return t("plugin.geoguessrGame.streakIndeedState", {
+			name: truthStateLabel(result, locale),
+			n: String(stateStreak),
+		});
+	}
+	const prior = streakRunBeforeLastRound(rounds, "state");
+	if (prior > 0) {
+		return t("plugin.geoguessrGame.streakEndedState", { n: String(prior) });
+	}
+	return t("plugin.geoguessrGame.streakGuessWrongState", {
+		guess: guessStateLabel(result, locale),
+		correct: truthStateLabel(result, locale),
+	});
+}
