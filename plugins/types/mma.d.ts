@@ -200,8 +200,10 @@ declare const en: {
     readonly "plugins.catalog.map-generator.name": "Map generator";
     readonly "plugins.catalog.geoguessr.description": "Push and pull locations to/from a linked GeoGuessr map";
     readonly "plugins.catalog.geoguessr.name": "GeoGuessr";
-    readonly "plugins.catalog.localguessr.description": "Play GeoGuessr games with your own map locations";
     readonly "plugins.catalog.localguessr.name": "LocalGuessr";
+    readonly "plugins.catalog.localguessr.description": "Play GeoGuessr games with your own map locations";
+    readonly "plugins.catalog.hyperlapse.name": "Road Trip";
+    readonly "plugins.catalog.hyperlapse.description": "Build and play Road Trip sequences from selected Street View locations";
     readonly "plugins.catalog.gradient.description": "Color locations by field value using gradient buckets";
     readonly "plugins.catalog.gradient.name": "Gradient";
     readonly "plugins.catalog.heatmap.description": "Visualize location density as a heatmap overlay";
@@ -1773,7 +1775,7 @@ declare const en: {
     readonly "plugin.geoguessrGame.clickToGuess": "Click the map to place your guess";
     readonly "plugin.geoguessrGame.placePinOnMap": "Place your pin on the map";
     readonly "plugin.geoguessrGame.guessPlaced": "Guess placed — hit Guess to submit";
-    readonly "plugin.geoguessrGame.expandMap": "Expand map";
+    readonly "plugin.geoguessrGame.guessMapBasemap": "Switch guess map basemap";
     readonly "plugin.geoguessrGame.shrinkMap": "Shrink map";
     readonly "plugin.geoguessrGame.checkpoint": "Set checkpoint";
     readonly "plugin.geoguessrGame.returnCheckpoint": "Return to checkpoint";
