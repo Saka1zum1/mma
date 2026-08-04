@@ -1,3 +1,12 @@
+## v0.8.8 - 2026-08-04
+- **Baidu 020/050 hide-car shader** correctly masks the car on rotated camera rigs, with an atomic shader sync that prevents rendering corruption on static panoramas without navigable links
+- **LocalGuessr** game plugin gains **country flags and localized country names** (via i18n-iso-countries), a **best streak** display in the summary, **per-provider analytics** (Google/Yandex/Baidu/Tencent), **replay maps** with interactive round highlighting, and a **score trend chart** that fills its container
+- Guess and truth pins (IconLayer) and result dash lines (PathLayer) are now **batched into few GPU-instanced layers with screen-space PathStyleExtension dashes**, matching the app's "rebuild on data, not zoom" pattern — zoom and pan are fluid with no stutter
+- Cargo.lock updated to match 0.8.7 crate version
+
+## v0.8.7 - 2026-07-31
+- **LocalGuessr** — single-player GeoGuessr-style game inside the app, with country/state streaks, analytics, and locale-aware country names
+
 ## v0.8.6 - 2026-07-31
 - **Tags settings section** for tree view, path truncation, folder colors, and suggestion limit
 - Tag manager **flat/tree toggle**, **create tag**, and always-visible new-folder control (disabled in flat view)
