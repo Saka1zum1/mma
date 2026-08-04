@@ -6,6 +6,7 @@ import { mdiVideoMarker } from "@mdi/js";
 registerPlugin({
 	id: "hyperlapse",
 	name: "Road Trip",
+	experimental: true,
 	description: "Build and play Road Trip sequences from selected Street View locations",
 	icon: mdiVideoMarker,
 	activate() {
