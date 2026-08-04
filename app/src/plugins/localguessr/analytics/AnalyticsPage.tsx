@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { EmptyState } from "@/components/primitives/Sidebar";
-import { useT } from "@/lib/i18n";
+import { useT, type MessageKey, type MessageParams } from "@/lib/i18n";
 import { mdiChartBoxOutline } from "@mdi/js";
 import { computeAnalytics } from "./analyticsStore";
 import { clearSessions, deleteSession } from "../gameSessionStore";
@@ -14,7 +14,7 @@ function ScoreTrendChart({
 	t,
 }: {
 	points: { at: number; score: number; mapName: string }[];
-	t: (...args: any[]) => string;
+	t: (key: MessageKey, params?: MessageParams) => string;
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [size, setSize] = useState({ w: 440, h: 160 });

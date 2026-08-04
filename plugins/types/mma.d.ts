@@ -1800,7 +1800,7 @@ declare const en: {
     readonly "plugin.geoguessrGame.hitSpace": "Hit";
     readonly "plugin.geoguessrGame.toContinue": "to continue";
     readonly "plugin.geoguessrGame.streakShort": "Streak";
-    readonly "plugin.geoguessrGame.gameOver": "Game over";
+    readonly "plugin.geoguessrGame.gameBreakdown": "Game Breakdown";
     readonly "plugin.geoguessrGame.scoreOf": "{score} / {max} ({pct}%)";
     readonly "plugin.geoguessrGame.finalStreak": "Streak: {n}";
     readonly "plugin.geoguessrGame.playAgain": "Play again";
