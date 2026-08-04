@@ -1,5 +1,6 @@
 import { getSessions } from "../gameSessionStore";
 import type { GameSession, MovementMode } from "../GameState";
+import { resolveCountryName } from "../GameState";
 import { computeBestStreak } from "../streakValidator";
 
 export interface AnalyticsOverview {
@@ -47,7 +48,7 @@ export interface AnalyticsData {
 	byMode: ModeStat[];
 	byProvider: ProviderStat[];
 	recent: GameSession[];
-	scoreTrend: { at: number; score: number; mapName: string }[];
+	scoreTrend: { at: number; avgScore: number; totalScore: number; roundCount: number; mapName: string; mapId: string; countryCodes: string[]; providers: string[]; mode: string }[];
 }
 
 function countryHit(r: {
@@ -107,8 +108,9 @@ export function computeAnalytics(filterMapId?: string | null): AnalyticsData {
 		for (const r of s.rounds) {
 			if (r.score >= 5000) overview.perfectRounds++;
 			const code = r.countryCode ?? "??";
+			const resolvedName = resolveCountryName(code, r.countryName) || "Unknown";
 			const c = countryMap.get(code) ?? {
-				name: r.countryName?.trim() || "Unknown",
+				name: resolvedName,
 				rounds: 0,
 				hits: 0,
 				scoreSum: 0,
@@ -164,14 +166,22 @@ export function computeAnalytics(filterMapId?: string | null): AnalyticsData {
 		}))
 		.sort((a, b) => b.rounds - a.rounds);
 
-	const scoreTrend = [...sessions]
-		.reverse()
-		.slice(-30)
-		.map((s) => ({
+	const recentSessions = [...sessions].reverse().slice(-30);
+	const scoreTrend = recentSessions.map((s) => {
+		const countryCodes = [...new Set(s.rounds.map((r) => r.countryCode).filter(Boolean) as string[])];
+		const providers = [...new Set(s.rounds.map((r) => r.location.provider).filter(Boolean) as string[])];
+		return {
 			at: s.finishedAt ?? s.startedAt,
-			score: s.totalScore,
+			avgScore: s.rounds.length > 0 ? Math.round(s.totalScore / s.rounds.length) : 0,
+			totalScore: s.totalScore,
+			roundCount: s.rounds.length,
 			mapName: s.mapName,
-		}));
+			mapId: s.mapId,
+			countryCodes,
+			providers,
+			mode: s.config.movementMode,
+		};
+	});
 
 	return {
 		overview,

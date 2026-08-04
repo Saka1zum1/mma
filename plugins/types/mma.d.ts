@@ -1756,7 +1756,7 @@ declare const en: {
     readonly "plugin.geoguessrGame.stateStreakShort": "S";
     readonly "plugin.geoguessrGame.streakTooltip": "{mode}: {n}";
     readonly "plugin.geoguessrGame.scoreTimeX": "Time";
-    readonly "plugin.geoguessrGame.scoreTimeY": "Score";
+    readonly "plugin.geoguessrGame.scoreTimeY": "Avg Score";
     readonly "plugin.geoguessrGame.geocodeBackend": "Reverse geocode";
     readonly "plugin.geoguessrGame.geocodeLocal": "Local";
     readonly "plugin.geoguessrGame.geocodeNominatim": "Nominatim";
@@ -1817,6 +1817,12 @@ declare const en: {
     readonly "plugin.geoguessrGame.byCountry": "By country";
     readonly "plugin.geoguessrGame.byMap": "By map";
     readonly "plugin.geoguessrGame.byProvider": "By provider";
+    readonly "plugin.geoguessrGame.byMode": "By movement mode";
+    readonly "plugin.geoguessrGame.scoreTrendFilterCountry": "Country";
+    readonly "plugin.geoguessrGame.scoreTrendFilterMap": "Map";
+    readonly "plugin.geoguessrGame.scoreTrendFilterProvider": "Provider";
+    readonly "plugin.geoguessrGame.scoreTrendFilterMode": "Mode";
+    readonly "plugin.geoguessrGame.scoreTrendFilterAll": "All";
     readonly "plugin.geoguessrGame.replay": "Replay";
     readonly "plugin.geoguessrGame.recentGames": "Recently played";
     readonly "plugin.geoguessrGame.ongoingGames": "Ongoing games";

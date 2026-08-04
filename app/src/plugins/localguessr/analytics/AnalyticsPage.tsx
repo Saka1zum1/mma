@@ -3,7 +3,7 @@ import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { EmptyState } from "@/components/primitives/Sidebar";
 import { useT, type MessageKey, type MessageParams } from "@/lib/i18n";
-import { mdiChartBoxOutline } from "@mdi/js";
+import { mdiChartBoxOutline, mdiChevronDown } from "@mdi/js";
 import { computeAnalytics } from "./analyticsStore";
 import { clearSessions, deleteSession } from "../gameSessionStore";
 import { formatDistance } from "../ScoreUtils";
@@ -13,7 +13,7 @@ function ScoreTrendChart({
 	points,
 	t,
 }: {
-	points: { at: number; score: number; mapName: string }[];
+	points: { at: number; score: number; avgScore: number; totalScore: number; mapName: string }[];
 	t: (key: MessageKey, params?: MessageParams) => string;
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -57,15 +57,35 @@ function ScoreTrendChart({
 	const yStep = maxScore <= 2000 ? 500 : maxScore <= 10000 ? 2000 : maxScore <= 25000 ? 5000 : 10000;
 	const yMax = round(maxScore, yStep);
 
-	const spanMs = points[points.length - 1].at - points[0].at;
-	const isHours = spanMs < 7 * 24 * 3600 * 1000;
+	const spanMs = points[points.length - 1].at - points[0].at || 3600000; // fallback 1 hour
 
-	const dataPts = points.map((p, i) => ({
-		x: padL + (i / (points.length - 1)) * pw,
+	// Time formatter based on total span
+	const fmtTime = (ts: number): string => {
+		const d = new Date(ts);
+		if (spanMs < 2 * 3600 * 1000) {
+			// < 2 hours: HH:MM
+			return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+		}
+		if (spanMs < 2 * 24 * 3600 * 1000) {
+			// < 2 days: MM/DD HH:MM
+			return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+		}
+		if (spanMs < 60 * 24 * 3600 * 1000) {
+			// < 2 months: MM/DD
+			return `${d.getMonth() + 1}/${d.getDate()}`;
+		}
+		// >= 2 months: YYYY/MM
+		return `${d.getFullYear()}/${d.getMonth() + 1}`;
+	};
+
+	const dataPts = points.map((p) => ({
+		x: padL + ((p.at - points[0].at) / spanMs) * pw,
 		y: padT + ph - (p.score / yMax) * ph,
 		score: p.score,
+		avgScore: p.avgScore,
 		at: p.at,
 		map: p.mapName,
+		totalScore: p.totalScore,
 	}));
 
 	// ── y‑ticks ───────────────────────────────────────────────────
@@ -77,17 +97,13 @@ function ScoreTrendChart({
 		yTicks.push({ y: padT + ph - (val / yMax) * ph, label: val.toLocaleString() });
 	}
 
-	// ── x‑ticks (max 6) ──────────────────────────────────────────
-	const xTickCount = Math.min(6, points.length);
+	// ── x‑ticks evenly spaced in time ────────────────────────────
+	const xTickCount = Math.min(6, Math.max(2, points.length));
 	const xTicks: { x: number; label: string }[] = [];
 	for (let i = 0; i < xTickCount; i++) {
-		const idx = Math.round((i / (xTickCount - 1)) * (points.length - 1));
-		const ts = points[idx].at * 1000;
-		const d = new Date(ts);
-		const label = isHours
-			? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-			: `${d.getMonth() + 1}/${d.getDate()}`;
-		xTicks.push({ x: dataPts[idx].x, label });
+		const ts = points[0].at + (spanMs * i) / (xTickCount - 1);
+		const x = padL + (i / (xTickCount - 1)) * pw;
+		xTicks.push({ x, label: fmtTime(ts) });
 	}
 
 	// ── smooth catmull‑rom path ──────────────────────────────────
@@ -195,19 +211,76 @@ function ScoreTrendChart({
 				{/* hover tooltip */}
 				{hover && (
 					<g>
-						<rect x={tooltipX - 80} y={tooltipY} width="160" height="42" rx="6"
+						<rect x={tooltipX - 110} y={tooltipY} width="220" height="42" rx="6"
 							fill="var(--gg-panel)" stroke="var(--gg-border)" strokeWidth="0.8" />
 						<text x={tooltipX} y={tooltipY + 16} textAnchor="middle"
 							fontSize="12" fontFamily="var(--gg-font)" fill="var(--gg-accent)" fontWeight={600}>
-							{hover.score.toLocaleString()} pts
+							{hover.score.toLocaleString()} rolling · {hover.avgScore.toLocaleString()}/round
 						</text>
 						<text x={tooltipX} y={tooltipY + 32} textAnchor="middle"
 							fontSize="9" fontFamily="var(--gg-font)" fill="var(--gg-muted)">
-							{hover.map} · {new Date(hover.at * 1000).toLocaleString()}
+							{hover.map} · {new Date(hover.at).toLocaleString()}
 						</text>
 					</g>
 				)}
 			</svg>
+		</div>
+	);
+}
+
+// ── filter dropdown ────────────────────────────────────────────
+function FilterDropdown({
+	label,
+	value,
+	options,
+	onChange,
+}: {
+	label: string;
+	value: string;
+	options: { value: string; label: string }[];
+	onChange: (v: string) => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const ref = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = (e: MouseEvent) => {
+			if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+		};
+		document.addEventListener("mousedown", handler);
+		return () => document.removeEventListener("mousedown", handler);
+	}, [open]);
+
+	const selected = options.find((o) => o.value === value);
+	const display = value === "__all__" ? label : (selected?.label ?? value);
+
+	return (
+		<div className="gg-trend-filter" ref={ref}>
+			<button
+				type="button"
+				className={`gg-trend-filter__btn ${open ? "gg-trend-filter__btn--open" : ""}`}
+				onClick={() => setOpen(!open)}
+			>
+				<span className="gg-trend-filter__display">{display}</span>
+				<svg className="gg-trend-filter__chevron" viewBox="0 0 24 24" width="14" height="14">
+					<path fill="currentColor" d={mdiChevronDown} />
+				</svg>
+			</button>
+			{open && (
+				<div className="gg-trend-filter__menu">
+					{options.map((o) => (
+						<button
+							key={o.value}
+							type="button"
+							className={`gg-trend-filter__opt ${o.value === value ? "gg-trend-filter__opt--active" : ""}`}
+							onClick={() => { onChange(o.value); setOpen(false); }}
+						>
+							{o.label}
+						</button>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }
@@ -259,6 +332,97 @@ export function AnalyticsPage({
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- manual recompute trigger after delete/clear
 		[filterMap, mapId, version],
 	);
+
+	// ── score‑trend filters ──────────────────────────────────────
+	const [trendFilterCountry, setTrendFilterCountry] = useState<string>("__all__");
+	const [trendFilterMap, setTrendFilterMap] = useState<string>("__all__");
+	const [trendFilterProvider, setTrendFilterProvider] = useState<string>("__all__");
+	const [trendFilterMode, setTrendFilterMode] = useState<string>("__all__");
+
+	// Derive filter options from trend points
+	const allCountryCodes = useMemo(() => {
+		const set = new Set<string>();
+		for (const p of data.scoreTrend) {
+			for (const c of p.countryCodes) set.add(c);
+		}
+		return [...set].sort();
+	}, [data.scoreTrend]);
+
+	const uniqueMapIds = useMemo(() => {
+		const seen = new Set<string>();
+		const result: { id: string; name: string }[] = [];
+		for (const p of data.scoreTrend) {
+			if (!seen.has(p.mapId)) {
+				seen.add(p.mapId);
+				result.push({ id: p.mapId, name: p.mapName });
+			}
+		}
+		return result;
+	}, [data.scoreTrend]);
+
+	const allProviders = useMemo(() => {
+		const set = new Set<string>();
+		for (const p of data.scoreTrend) {
+			for (const pr of p.providers) set.add(pr);
+		}
+		return [...set].sort();
+	}, [data.scoreTrend]);
+
+	const uniqueModes = useMemo(() => {
+		const set = new Set<string>();
+		for (const p of data.scoreTrend) set.add(p.mode);
+		return [...set];
+	}, [data.scoreTrend]);
+
+	// Build option lists for filter dropdowns
+	const countryOptions = useMemo(() => [
+		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterCountry")}` },
+		...allCountryCodes.map((code) => ({ value: code, label: code })),
+	], [allCountryCodes, t]);
+
+	const mapOptions = useMemo(() => [
+		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterMap")}` },
+		...uniqueMapIds.map((m) => ({ value: m.id, label: m.name })),
+	], [uniqueMapIds, t]);
+
+	const providerOptions = useMemo(() => [
+		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterProvider")}` },
+		...allProviders.map((p) => ({ value: p, label: p })),
+	], [allProviders, t]);
+
+	const modeOptions = useMemo(() => [
+		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterMode")}` },
+		...uniqueModes.map((m) => ({
+			value: m,
+			label: m === "moving" ? "Moving" : m === "no-move" ? "No Move" : m === "nmpz" ? "NMPZ" : m,
+		})),
+	], [uniqueModes, t]);
+
+	const filteredTrend = useMemo(() => {
+		const filtered = data.scoreTrend.filter((p) => {
+			if (trendFilterCountry !== "__all__") {
+				if (!p.countryCodes.includes(trendFilterCountry)) return false;
+			}
+			if (trendFilterMap !== "__all__" && p.mapId !== trendFilterMap) return false;
+			if (trendFilterProvider !== "__all__" && !p.providers.includes(trendFilterProvider)) return false;
+			if (trendFilterMode !== "__all__" && p.mode !== trendFilterMode) return false;
+			return true;
+		});
+		// Recompute rolling average over the filtered subset
+		let runningScore = 0;
+		let runningRounds = 0;
+		return filtered.map((p) => {
+			runningScore += p.totalScore;
+			runningRounds += p.roundCount;
+			return {
+				at: p.at,
+				score: runningRounds > 0 ? Math.round(runningScore / runningRounds) : 0,
+				avgScore: p.avgScore,
+				totalScore: p.totalScore,
+				mapName: p.mapName,
+			};
+		});
+	}, [data.scoreTrend, trendFilterCountry, trendFilterMap, trendFilterProvider, trendFilterMode]);
 
 	const handleReplay = useCallback((s: GameSession) => {
 		onReplaySession?.(s);
@@ -325,7 +489,36 @@ export function AnalyticsPage({
 
 			<section className="gg-analytics__section">
 				<h3>{t("plugin.geoguessrGame.scoreTrend")}</h3>
-				<ScoreTrendChart points={data.scoreTrend} t={t} />
+
+				{/* Filter bar */}
+				<div className="gg-analytics__trend-filters">
+					<FilterDropdown
+						label={t("plugin.geoguessrGame.scoreTrendFilterCountry")}
+						value={trendFilterCountry}
+						options={countryOptions}
+						onChange={setTrendFilterCountry}
+					/>
+					<FilterDropdown
+						label={t("plugin.geoguessrGame.scoreTrendFilterMap")}
+						value={trendFilterMap}
+						options={mapOptions}
+						onChange={setTrendFilterMap}
+					/>
+					<FilterDropdown
+						label={t("plugin.geoguessrGame.scoreTrendFilterProvider")}
+						value={trendFilterProvider}
+						options={providerOptions}
+						onChange={setTrendFilterProvider}
+					/>
+					<FilterDropdown
+						label={t("plugin.geoguessrGame.scoreTrendFilterMode")}
+						value={trendFilterMode}
+						options={modeOptions}
+						onChange={setTrendFilterMode}
+					/>
+				</div>
+
+				<ScoreTrendChart points={filteredTrend} t={t} />
 			</section>
 
 			<section className="gg-analytics__section">
@@ -349,6 +542,20 @@ export function AnalyticsPage({
 						<div key={p.provider} className="gg-analytics__row">
 							<span className="gg-analytics__name gg-analytics__provider">{p.provider}</span>
 							<span className="gg-analytics__meta">{p.rounds} rounds · avg {p.avgScore.toLocaleString()}</span>
+						</div>
+					))}
+				</div>
+			</section>
+
+			<section className="gg-analytics__section">
+				<h3>{t("plugin.geoguessrGame.byMode")}</h3>
+				<div className="gg-analytics__list">
+					{data.byMode.map((m) => (
+						<div key={m.mode} className="gg-analytics__row">
+							<span className="gg-analytics__name">{m.mode === "moving" ? "Moving" : m.mode === "no-move" ? "No Move" : m.mode === "nmpz" ? "NMPZ" : m.mode}</span>
+							<span className="gg-analytics__meta">
+								{m.games} games · avg {m.avgScore.toLocaleString()}
+							</span>
 						</div>
 					))}
 				</div>

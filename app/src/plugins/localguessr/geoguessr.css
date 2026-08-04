@@ -869,6 +869,7 @@
 .gg-summary__row:last-child { border-bottom: none; }
 .gg-summary__row-n { color: var(--gg-muted); }
 .gg-summary__row-score { font-weight: 700; color: var(--gg-accent); }
+.gg-summary__row-dist { font-size: 0.75rem; font-weight: 500; color: var(--gg-muted); }
 .gg-summary__row-streak.is-hit { color: var(--gg-success); }
 .gg-summary__row-streak.is-miss { color: var(--gg-danger); }
 .gg-summary__actions { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
@@ -896,6 +897,48 @@
 .gg-analytics__chart-wrap { width: 100%; }
 .gg-analytics__chart-wrap svg.gg-analytics__chart { width: 100%; height: 240px; display: block; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--gg-border); }
 .gg-analytics__chart-empty { height: 80px; display: grid; place-items: center; color: var(--gg-muted); border: 1px dashed var(--gg-border); border-radius: 8px; }
+.gg-analytics__trend-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+
+/* ── filter dropdown ── */
+.gg-trend-filter { position: relative; }
+.gg-trend-filter__btn {
+	display: flex; align-items: center; gap: 4px;
+	font-size: 0.8rem; padding: 0.35rem 0.6rem;
+	background: var(--gg-panel); color: var(--gg-muted);
+	border: 1px solid var(--gg-border); border-radius: 6px;
+	cursor: pointer; transition: border-color 150ms, color 150ms;
+	white-space: nowrap; user-select: none;
+}
+.gg-trend-filter__btn:hover,
+.gg-trend-filter__btn--open {
+	border-color: var(--gg-accent); color: var(--gg-text);
+}
+.gg-trend-filter__display {
+	max-width: 120px; overflow: hidden; text-overflow: ellipsis;
+}
+.gg-trend-filter__chevron {
+	flex-shrink: 0; opacity: 0.5; transition: transform 150ms;
+}
+.gg-trend-filter__btn--open .gg-trend-filter__chevron {
+	transform: rotate(180deg); opacity: 0.9;
+}
+.gg-trend-filter__menu {
+	position: absolute; top: 100%; left: 0; z-index: 20;
+	margin-top: 4px; min-width: 140px; max-height: 188px;
+	overflow-y: auto;
+	background: var(--gg-panel); border: 1px solid var(--gg-border);
+	border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+	padding: 4px;
+}
+.gg-trend-filter__opt {
+	display: block; width: 100%; text-align: left;
+	font-size: 0.82rem; padding: 0.38rem 0.65rem;
+	background: transparent; color: var(--gg-text);
+	border: none; border-radius: 4px; cursor: pointer;
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gg-trend-filter__opt:hover { background: var(--gg-accent); color: #fff; }
+.gg-trend-filter__opt--active { background: rgba(var(--gg-accent-rgb, 0,0,0), 0.18); color: var(--gg-accent); font-weight: 600; }
 .gg-analytics__list { background: var(--gg-panel); border: 1px solid var(--gg-border); border-radius: var(--gg-radius); max-height: 320px; overflow: auto; }
 .gg-analytics__row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--gg-border); font-size: 0.9rem; }
 .gg-analytics__row:last-child { border-bottom: none; }

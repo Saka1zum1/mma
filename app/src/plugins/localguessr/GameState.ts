@@ -36,10 +36,7 @@ export function countryCodeToFlag(code: string | null): string {
 	return countryFlagHtml(code);
 }
 
-/** Resolve country name using i18n-iso-countries (primary) with Intl.DisplayNames fallback.
- *  Pass `locale` (AppLocale string, e.g. "en" or "zh-Hans") for localized names.
- *  If `countryName` is just a 2-letter ISO code (e.g. "CN"), treat it as a code
- *  and resolve through the lookup rather than returning the bare code. */
+// Resolve country name using i18n-iso-countries (primary) with Intl.DisplayNames fallback.
 export function resolveCountryName(
 	countryCode: string | null,
 	countryName: string | null,
@@ -47,19 +44,15 @@ export function resolveCountryName(
 ): string | null {
 	if (!countryCode && !countryName) return null;
 	const trimmed = countryName?.trim();
-	// If the "name" is just a 2-letter ISO code, treat it as a code — the Rust
-	// backend stores the country code in both `country` and `country_code` fields.
 	if (trimmed && trimmed.length !== 2) return trimmed;
 	const code = (countryCode ?? trimmed ?? "").toUpperCase();
 	if (code.length !== 2) return trimmed || null;
 	const l = isoLocale(locale);
-	// Primary: i18n-iso-countries (reliable, locale-aware)
 	const name = getCountryName(code, l);
 	if (name) return name;
 	// Fallback: Intl.DisplayNames
 	try {
-		const bcp = l === "zh" ? "zh-CN" : l;
-		return new Intl.DisplayNames(bcp, { type: "region" }).of(code) ?? code;
+		return new Intl.DisplayNames(l, { type: "region" }).of(code) ?? code;
 	} catch {
 		return code;
 	}
