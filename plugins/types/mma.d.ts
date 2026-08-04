@@ -4856,6 +4856,7 @@ export interface MapEmbedPrefs {
     markerStyle: MarkerStyle;
     markerOpacity: number;
     markerSize: number;
+    showSvCoverage: boolean;
     showPerfectScoreCircle: boolean;
     showSearchRadiusCursor: boolean;
     showPreviews: boolean;

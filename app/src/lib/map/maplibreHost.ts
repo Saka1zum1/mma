@@ -195,6 +195,9 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 
 	private addSvLayer() {
 		if (this.skipCoverage) return;
+		// Guard against applyPrefs running before style.load fires; the
+		// style.load listener below will retry when the map is ready.
+		if (!this.map.isStyleLoaded()) return;
 		if (this.map.getSource(SV_SOURCE)) return;
 		this.map.addSource(SV_SOURCE, {
 			type: "raster",
