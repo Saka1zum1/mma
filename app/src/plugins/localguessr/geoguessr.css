@@ -262,22 +262,23 @@
 	z-index: 1;
 }
 .gg-pano__host { width: 100%; height: 100%; }
+.gg-pano__nmpz-shield {
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	cursor: default;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding-bottom: 2rem;
+	pointer-events: auto;
+	background: transparent;
+}
 .gg-pano__error {
 	position: absolute; inset: 0; display: flex;
 	align-items: center; justify-content: center;
 	background: rgba(0, 0, 0, 0.75);
 	color: var(--gg-danger); padding: 1rem; text-align: center;
-}
-
-/* NMPZ overlay */
-.gg-round__nmpz {
-	position: absolute; inset: 0; z-index: 2;
-	display: flex; align-items: center; justify-content: center;
-	background: radial-gradient(circle at center, #152238, #05080f);
-}
-.gg-round__nmpz-msg {
-	font-size: 1.25rem; color: var(--gg-muted);
-	letter-spacing: 0.08em; text-transform: uppercase;
 }
 
 /* ====================== CONTROLS (right side) ====================== */
@@ -405,12 +406,12 @@
 }
 .gg-guess-map--size-4 {
 	--active-width: 72vw;
-	--active-height: 72vh;
+	--active-height: 84vh;
 }
 
 .gg-guess-map__controls {
 	flex: 0 0 auto;
-	width: 5.75rem;
+	width: 7.5rem;
 	height: var(--control-height);
 	margin-top: calc(-1 * var(--control-height));
 	display: none;
@@ -418,9 +419,11 @@
 	border-top-left-radius: 0.25rem;
 	border-top-right-radius: 0.25rem;
 	font-size: 0;
+	white-space: nowrap;
 }
 .gg-guess-map__root.is-active .gg-guess-map__controls {
-	display: inline-block;
+	display: inline-flex;
+	align-items: center;
 }
 
 .gg-guess-map__control {
@@ -512,15 +515,16 @@
 	cursor: default;
 }
 
-.gg-guess-map__canvas,
-.gg-guess-map__canvas > *,
-.gg-guess-map__canvas > * > * {
-	width: 100%;
-	height: 100%;
-}
+/* The canvas fills its wrap via absolute inset — not percentage sizing — so it
+   never depends on an intermediate flex/percentage-height chain resolving
+   correctly. The host-mount div (created in GuessMap.tsx/ReplayMap.tsx) is
+   already `position:absolute;inset:0` inline, so it fills this in turn; each
+   map engine (Google Maps takes over the mount div directly, MapLibre appends
+   its own oversized prefetch layer inside it) manages its own inner sizing. */
 .gg-guess-map__canvas {
-	position: relative;
-	min-height: 0;
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
 }
 .gg-guess-map__canvas-wrap--result {
 	position: absolute;
@@ -551,7 +555,7 @@
 }
 .gg-guess-map__guess-btn--disabled,
 .gg-guess-map__guess-btn:disabled {
-	font-size: 0.75rem;
+	font-size: 1rem;
 	line-height: 1rem;
 	opacity: 0.55;
 	cursor: default;

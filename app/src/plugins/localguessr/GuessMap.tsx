@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiArrowTopLeft, mdiMinus, mdiPin, mdiPlus, mdiArrowBottomRight } from "@mdi/js";
+import { mdiArrowTopLeft, mdiMinus, mdiPin, mdiPlus, mdiArrowBottomRight, mdiLayers } from "@mdi/js";
 import {
 	createMapHost,
 	hostInstance,
@@ -14,8 +14,8 @@ import type maplibregl from "maplibre-gl";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import { cmd } from "@/lib/commands";
-import type { LatLng } from "@/types";
-import { useT } from "@/lib/i18n";
+import type { LatLng, MapTypeKey } from "@/types";
+import { useT, type MessageKey } from "@/lib/i18n";
 import {
 	createGuessPinLayer,
 	createResultLineLayer,
@@ -25,12 +25,19 @@ import {
 const MIN_SIZE = 1;
 const MAX_SIZE = 4;
 const MIN_ZOOM = 1;
-const ACTIVE_LEAVE_DELAY_MS = 280;
+const ACTIVE_LEAVE_DELAY_MS = 300;
+const GUESS_MAP_TYPES: MapTypeKey[] = ["map", "satellite", "osm", "vector"];
+const MAP_TYPE_LABEL_KEYS: Record<MapTypeKey, MessageKey> = {
+	map: "editor.mapTypeMap",
+	satellite: "editor.mapTypeSatellite",
+	osm: "editor.mapTypeOsm",
+	vector: "editor.mapTypeVector",
+};
 
-function pointInElement(el: HTMLElement | null, x: number, y: number): boolean {
-	if (!el) return false;
-	const r = el.getBoundingClientRect();
-	return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+function pointInGuessMapPanel(root: HTMLElement | null, x: number, y: number): boolean {
+	if (!root) return false;
+	const hit = document.elementFromPoint(x, y);
+	return hit != null && root.contains(hit);
 }
 
 function useGuessMapHost(
@@ -39,6 +46,7 @@ function useGuessMapHost(
 	locked: boolean | undefined,
 	showResult: boolean,
 	onGuess: (p: LatLng) => void,
+	onZoom: (zoom: number) => void,
 ) {
 	const hostRef = useRef<MapHost | null>(null);
 	const overlayRef = useRef<DeckOverlayHandle | null>(null);
@@ -46,6 +54,14 @@ function useGuessMapHost(
 	const [ready, setReady] = useState(false);
 	const onGuessRef = useRef(onGuess);
 	onGuessRef.current = onGuess;
+	// Persist camera across engine-kind changes (Google ↔ MapLibre) so the user's
+	// view center and zoom survive a full host destroy / recreate cycle.
+	const savedCameraRef = useRef<{ center: LatLng; zoom: number } | null>(null);
+
+	// Key the host-creation effect by the engine *kind* rather than the concrete
+	// map type. Google Maps hosts (map, satellite, osm) share one instance and
+	// switch styles via applyPrefs instead of destroying / recreating.
+	const hostKind = hostKindForMapType(guessPrefs.mapType);
 
 	useLayoutEffect(() => {
 		const container = containerRef.current;
@@ -53,17 +69,24 @@ function useGuessMapHost(
 		let cancelled = false;
 
 		void (async () => {
-			const kind = hostKindForMapType(guessPrefs.mapType);
+			const kind = hostKind;
 			const div = document.createElement("div");
-			div.style.cssText = "width:100%;height:100%;position:absolute;inset:0";
+			div.className = "gg-guess-map__host-mount";
+			div.style.cssText = "position:absolute;inset:0";
 			container.appendChild(div);
 			divRef.current = div;
 
 			try {
+				// Prefer a camera that was saved from the previous host instance;
+				// fall back to the world default on first mount.
+				const camera = savedCameraRef.current ?? {
+					center: { lat: 20, lng: 0 },
+					zoom: 1.5,
+				};
 				const host = await createMapHost(kind, div, guessPrefs, {
 					useBlobby: false,
 					customStyles: getLocal<CustomStyle[]>(CUSTOM_STYLES_KEY, []),
-					camera: { center: { lat: 20, lng: 0 }, zoom: 1.5 },
+					camera,
 					scaleControl: false,
 					skipCoverage: true,
 				});
@@ -77,15 +100,19 @@ function useGuessMapHost(
 				overlayRef.current = overlay;
 				setReady(true);
 
-				// Fit to the same bounds as the app map (store_bounds reads from
-				// the currently open map, which matches the game's map at startup).
-				// Only for the play view — the result view must fit to guess/truth
-				// pins instead (handled in the layers effect below).
-				if (!showResult) {
+				// Fit to app-map bounds only on first mount (no saved camera).
+				// After a kind-switch we restore the saved camera so the user
+				// sees the same area they were just looking at.
+				if (!showResult && !savedCameraRef.current) {
 					cmd.storeBounds(false).then((bounds) => {
 						if (cancelled || !hostRef.current || !bounds) return;
 						hostRef.current.fitBounds(
-							{ west: bounds[0], south: bounds[1], east: bounds[2], north: bounds[3] },
+							{
+								west: bounds[0],
+								south: bounds[1],
+								east: bounds[2],
+								north: bounds[3],
+							},
 							undefined,
 							{ snap: true },
 						);
@@ -100,6 +127,17 @@ function useGuessMapHost(
 
 		return () => {
 			cancelled = true;
+			// Save camera state so the next host (even a different engine) picks
+			// up where the user left off.
+			if (hostRef.current) {
+				const center = hostRef.current.getCenter();
+				if (center) {
+					savedCameraRef.current = {
+						center,
+						zoom: hostRef.current.getZoom(),
+					};
+				}
+			}
 			overlayRef.current?.finalize();
 			overlayRef.current = null;
 			hostRef.current?.destroy();
@@ -110,8 +148,27 @@ function useGuessMapHost(
 			divRef.current = null;
 			setReady(false);
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [guessPrefs.mapType]);
+	}, [
+		hostKind,
+		guessPrefs.mapStyleName,
+		guessPrefs.vectorStyleName,
+		guessPrefs.showTerrain,
+		guessPrefs.showLabels,
+		showResult,
+	]);
+
+	// When mapType (or other prefs) changes but the engine kind stays the same
+	// (map ↔ satellite ↔ osm all share one Google Maps instance), just apply
+	// prefs in-place instead of destroying / recreating.
+	useEffect(() => {
+		const host = hostRef.current;
+		if (!host || !ready) return;
+		if (hostKindForMapType(guessPrefs.mapType) !== host.kind) return;
+		host.applyPrefs(guessPrefs, {
+			useBlobby: false,
+			customStyles: getLocal<CustomStyle[]>(CUSTOM_STYLES_KEY, []),
+		});
+	}, [guessPrefs.mapType, ready]);
 
 	useEffect(() => {
 		hostRef.current?.setDraggable(!locked);
@@ -147,6 +204,21 @@ function useGuessMapHost(
 			};
 		}
 	}, [ready, locked, showResult]);
+
+	// Zoom sync + camera persistence: whenever zoom changes, push the value
+	// upstream and snapshot the full camera position so it survives host swaps.
+	useEffect(() => {
+		const host = hostRef.current;
+		if (!host || !ready) return;
+		const update = () => {
+			const z = host.getZoom();
+			const c = host.getCenter();
+			onZoom(z);
+			if (c) savedCameraRef.current = { center: c, zoom: z };
+		};
+		update();
+		return host.on("zoom", update);
+	}, [ready, hostRef, onZoom]);
 
 	return { hostRef, overlayRef, ready };
 }
@@ -184,8 +256,10 @@ export function GuessMap({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const [prefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
+	const [guessMapType, setGuessMapType] = useState<MapTypeKey>(() => prefs.mapType);
 	const guessPrefs: MapEmbedPrefs = {
 		...prefs,
+		mapType: guessMapType,
 		svPanoramas: false,
 		svOpacity: 0,
 	};
@@ -220,7 +294,7 @@ export function GuessMap({
 	const syncHoverFromPoint = useCallback(
 		(x: number, y: number) => {
 			lastPointerRef.current = { x, y };
-			const inside = pointInElement(rootRef.current, x, y);
+			const inside = pointInGuessMapPanel(rootRef.current, x, y);
 			const wasInside = pointerInsideRef.current;
 			pointerInsideRef.current = inside;
 			if (inside) {
@@ -260,14 +334,13 @@ export function GuessMap({
 		if (sticky) activatePanel();
 	}, [sticky, activatePanel]);
 
-	// Re-hit-test after size/active layout transitions (cursor may already be over the map).
+	// Re-hit-test after size layout transitions (cursor may already be over the panel).
 	useEffect(() => {
 		const { x, y } = lastPointerRef.current;
-		if (x || y) {
-			const id = window.setTimeout(() => syncHoverFromPoint(x, y), 260);
-			return () => clearTimeout(id);
-		}
-	}, [mapSize, isActive, syncHoverFromPoint]);
+		if (!x && !y) return;
+		const id = window.setTimeout(() => syncHoverFromPoint(x, y), 280);
+		return () => clearTimeout(id);
+	}, [mapSize, syncHoverFromPoint]);
 
 	const { hostRef, overlayRef, ready } = useGuessMapHost(
 		containerRef,
@@ -275,17 +348,48 @@ export function GuessMap({
 		locked,
 		showResult,
 		onGuess,
+		setZoom,
+	);
+
+	// Debounce map resize so MapLibre doesn't blank its WebGL canvas during CSS
+	// width/height transitions (active↔inactive, size changes).  The longest
+	// transition is ~370 ms (0.25s + 0.12s delay); a 420 ms debounce ensures
+	// resize fires exactly once *after* the container has settled.
+	useEffect(() => {
+		if (!ready) return;
+		const el = containerRef.current;
+		if (!el) return;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		const scheduleResize = () => {
+			if (timer != null) clearTimeout(timer);
+			timer = setTimeout(() => {
+				timer = null;
+				hostRef.current?.resize();
+			}, 420);
+		};
+		const ro = new ResizeObserver(() => scheduleResize());
+		ro.observe(el);
+		scheduleResize();
+		return () => {
+			ro.disconnect();
+			if (timer != null) clearTimeout(timer);
+		};
+	}, [ready, mapSize, isActive]);
+
+	const cycleBasemap = useCallback(() => {
+		setGuessMapType((cur) => {
+			const i = GUESS_MAP_TYPES.indexOf(cur);
+			return GUESS_MAP_TYPES[(i + 1) % GUESS_MAP_TYPES.length];
+		});
+	}, []);
+
+	const nextBasemapLabel = t(
+		MAP_TYPE_LABEL_KEYS[
+			GUESS_MAP_TYPES[(GUESS_MAP_TYPES.indexOf(guessMapType) + 1) % GUESS_MAP_TYPES.length]
+		],
 	);
 
 	const mapActive = variant === "result" || sticky || isActive;
-
-	useEffect(() => {
-		const host = hostRef.current;
-		if (!host || !ready) return;
-		const update = () => setZoom(host.getZoom());
-		update();
-		return host.on("zoom", update);
-	}, [ready, hostRef]);
 
 	// Deck layers: rebuild only when pin/line data changes — never on zoom/pan
 	// (PathStyleExtension keeps dash density constant in screen pixels).
@@ -397,6 +501,8 @@ export function GuessMap({
 				data-qa="guess-map"
 				onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
 				onPointerLeave={() => {
+					const { x, y } = lastPointerRef.current;
+					if (pointInGuessMapPanel(rootRef.current, x, y)) return;
 					pointerInsideRef.current = false;
 					scheduleDeactivatePanel();
 				}}
@@ -409,6 +515,7 @@ export function GuessMap({
 			>
 				<div
 					className="gg-guess-map__controls"
+					onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
 					onPointerDown={(e) => e.stopPropagation()}
 					onClick={(e) => e.stopPropagation()}
 				>
@@ -452,6 +559,20 @@ export function GuessMap({
 					>
 						<Icon path={mdiPin} />
 					</button>
+					<button
+						type="button"
+						className="gg-guess-map__control gg-guess-map__control--basemap"
+						onPointerDown={(e) => e.stopPropagation()}
+						onClick={(e) => {
+							e.stopPropagation();
+							cycleBasemap();
+						}}
+						data-qa="guess-map__control--basemap"
+						title={nextBasemapLabel}
+						aria-label={t("plugin.geoguessrGame.guessMapBasemap")}
+					>
+						<Icon path={mdiLayers} />
+					</button>
 				</div>
 
 				<div
@@ -479,7 +600,10 @@ export function GuessMap({
 					<div ref={containerRef} className="gg-guess-map__canvas" data-qa="guess-map-canvas" />
 				</div>
 
-				<div className="gg-guess-map__guess-btn-wrap">
+				<div
+					className="gg-guess-map__guess-btn-wrap"
+					onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
+				>
 					<button
 						type="button"
 						className={`gg-guess-map__guess-btn${guessDisabled ? " gg-guess-map__guess-btn--disabled" : ""}`}

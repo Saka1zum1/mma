@@ -65,7 +65,8 @@ function useReplayMapHost(
 		void (async () => {
 			const kind = hostKindForMapType(guessPrefs.mapType);
 			const div = document.createElement("div");
-			div.style.cssText = "width:100%;height:100%;position:absolute;inset:0";
+			div.className = "gg-guess-map__host-mount";
+			div.style.cssText = "position:absolute;inset:0";
 			container.appendChild(div);
 			divRef.current = div;
 

@@ -4,7 +4,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiClose, mdiHome, mdiFlagCheckered, mdiCar, mdiCarOff, mdiFlagPlusOutline } from "@mdi/js";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { useT } from "@/lib/i18n";
-import { getSettings, setSetting } from "@/store/settings";
+import { getSettings, setSetting, useSettings } from "@/store/settings";
 import { getPanorama } from "@/lib/sv/panoSingleton";
 import { google } from "@/lib/sv/opensv";
 import { tweenPov } from "@/lib/sv/tweenPov";
@@ -280,6 +280,7 @@ export function RoundPlayer({
 				return;
 			}
 			if (e.key === "n" || e.key === "N") {
+				if (active.config.movementMode === "nmpz") return;
 				e.preventDefault();
 				const pano = panoRef.current?.getPanorama() ?? getPanorama();
 				if (!pano) return;
@@ -306,7 +307,9 @@ export function RoundPlayer({
 		};
 	}, [showResult, active, localGuess, submitGuess, onNext, onFinish, toggleHideCar]);
 
-	const hidePano = active.config.movementMode === "nmpz" && !showResult;
+	const movementMode = active.config.movementMode;
+	const canMove = movementMode === "moving";
+	const { showCompass, showCompassTape } = useSettings();
 
 	if (!round) return null;
 
@@ -316,24 +319,19 @@ export function RoundPlayer({
 
 	return (
 		<div className={`gg-round${showResult ? " gg-round--result" : ""}`}>
-			{!hidePano && !showResult && (
+			{!showResult && (
 				<div className="gg-pano-wrap">
 					<GamePanoView
 						ref={panoRef}
 						round={round}
-						movementMode={active.config.movementMode}
+						movementMode={movementMode}
 						onPanorama={setPanorama}
 					/>
-					{panorama && (
+					{panorama && showCompassTape && (
 						<div className="gg-pano-compass">
 							<CompassTape panorama={panorama} />
 						</div>
 					)}
-				</div>
-			)}
-			{hidePano && (
-				<div className="gg-round__nmpz">
-					<div className="gg-round__nmpz-msg">{t("plugin.geoguessrGame.nmpzHint")}</div>
 				</div>
 			)}
 
@@ -392,13 +390,13 @@ export function RoundPlayer({
 
 			{!showResult && (
 				<div className="gg-controls">
-					{panorama && (
+					{panorama && showCompass && (
 						<div className="gg-controls__compass gg-compass-control-host">
 							<CompassControl panorama={panorama} />
 						</div>
 					)}
 					<div className="gg-controls__col">
-						{active.config.movementMode === "moving" && (
+						{canMove && (
 							<>
 								<Tooltip content={t("plugin.geoguessrGame.checkpoint")} side="right">
 									<button
@@ -427,11 +425,13 @@ export function RoundPlayer({
 								)}
 							</>
 						)}
-						<Tooltip content={t("plugin.geoguessrGame.returnToSpawn")} side="right">
-							<button type="button" className="gg-controls__btn" onClick={() => panoRef.current?.returnToSpawn()} aria-label={t("plugin.geoguessrGame.returnToSpawn")}>
-								<Icon path={mdiHome} />
-							</button>
-						</Tooltip>
+						{canMove && (
+							<Tooltip content={t("plugin.geoguessrGame.returnToSpawn")} side="right">
+								<button type="button" className="gg-controls__btn" onClick={() => panoRef.current?.returnToSpawn()} aria-label={t("plugin.geoguessrGame.returnToSpawn")}>
+									<Icon path={mdiHome} />
+								</button>
+							</Tooltip>
+						)}
 						{panorama && hideCarSupported && (
 							<Tooltip
 								content={
