@@ -318,8 +318,8 @@ async function parseYandexLocation(url: URL): Promise<ParsedLocation | null> {
 	};
 }
 
-/** Baidu sdata ids: 26 digits + trailing uppercase letter (commonly start with 09). */
-const BAIDU_RAW_PANO_RE = /^09\d{24}[A-Z]$/;
+/** Baidu sdata ids: 26 digits + letter */
+const BAIDU_RAW_PANO_RE = /^\d{26}[A-Z]$/;
 /** Tencent svid: exactly 23 digits with an embedded capture timestamp. */
 const TENCENT_RAW_PANO_RE = /^\d{23}$/;
 /** Yandex oid: underscore-separated segments ending in a Unix timestamp. */

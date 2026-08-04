@@ -11,7 +11,8 @@ import {
 	googlePovToLookmapRadians,
 } from "@/lib/sv/lookaround/shareLink";
 import { buildBaiduShareUrl, shortenBaiduShareUrl } from "@/lib/sv/baidu/shareLink";
-import { stripBaidu, isBaiduPanoId } from "@/lib/sv/baidu/prefix";
+import { stripBaidu, isBaiduPanoId, isBaiduRotatedCarPano } from "@/lib/sv/baidu/prefix";
+import { getPanorama } from "@/lib/sv/panoSingleton";
 import { buildTencentShareUrl } from "@/lib/sv/tencent/shareLink";
 import { stripTencent, isTencentPanoId } from "@/lib/sv/tencent/prefix";
 import { buildYandexShareUrl } from "@/lib/sv/yandex/shareLink";
@@ -220,9 +221,20 @@ export class CrosshairOverlay {
 // --- Shader car toggle ---
 
 export function sendHideCar(hide: boolean) {
+	// Single source of truth for rotation detection — works for the main app's
+	// preview/hotkeys AND the LocalGuessr plugin (both share the singleton
+	// panorama for Baidu/Google-inject providers), so callers never need to
+	// compute or pass rotation state themselves.
+	// Always send an explicit 0/1 (never omit) — the uniform is program-level
+	// state on the GPU and does not reset itself between rounds/panos.
+	const uniforms: { name: string; type: "float"; value: number[] }[] = [];
+	if (hide) {
+		const rotated = isBaiduRotatedCarPano(getPanorama()?.getPano() ?? null);
+		uniforms.push({ name: "uBaiduCarRotate", type: "float", value: [rotated ? 1 : 0] });
+	}
 	window.postMessage({
 		type: "update-material",
-		shaderMessage: { defines: hide ? ["NO_CAR"] : [], uniforms: [] },
+		shaderMessage: { defines: hide ? ["NO_CAR"] : [], uniforms },
 	});
 }
 

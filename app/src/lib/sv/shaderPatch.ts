@@ -9,6 +9,7 @@ const float h = 3.1415926;
 varying vec3 a;
 #ifdef NO_CAR
 varying vec3 eyeDirection;
+uniform float uBaiduCarRotate;
 #endif
 uniform vec4 b;
 uniform float f;
@@ -21,8 +22,14 @@ void main() {
     vec2 normalizedEyeDirection = eyeDirection.xy / a.z;
     normalizedEyeDirection.x = abs(normalizedEyeDirection.x * 4.0 - 2.0);
     normalizedEyeDirection.x = smoothstep(0.0, 1.0, normalizedEyeDirection.x > 1.0 ? 2.0 - normalizedEyeDirection.x : normalizedEyeDirection.x);
-    float carMask = step(normalizedEyeDirection.y, mix(0.6, 0.7, normalizedEyeDirection.x));
-    color.rgb = mix(vec3(0.6, 0.6, 0.6), color.rgb, carMask);
+    if (uBaiduCarRotate > 0.5) {
+        float phiI = 1.0 - normalizedEyeDirection.x;
+        float grayMask  = step(normalizedEyeDirection.y, mix(0.6, 0.7, phiI));
+        color.rgb = mix(vec3(0.6, 0.6, 0.6), color.rgb, grayMask);
+    } else {
+        float carMask = step(normalizedEyeDirection.y, mix(0.6, 0.7, normalizedEyeDirection.x));
+        color.rgb = mix(vec3(0.6, 0.6, 0.6), color.rgb, carMask);
+    }
 #endif
     gl_FragColor = color;
 }`;
@@ -38,9 +45,9 @@ uniform mat4 e;
 void main() {
     vec4 g = vec4(c, 1);
     gl_Position = e * g;
-    #ifdef NO_CAR
+#ifdef NO_CAR
     eyeDirection = vec3(d.x, d.y, 1.0) * length(c);
-    #endif
+#endif
     a = vec3(d.xy * b.xy + b.zw, 1);
     a *= length(c);
 }`;
@@ -108,22 +115,42 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 	const savedUniforms: Record<string, { func: Function; args: any[] }> = {};
 	let currentProgram: any = null;
 	let activeProgram: any = null;
+	// The real (unmodified) Street View material program, captured the first
+	// time Google binds it. Lets us eagerly re-sync the shader swap the instant
+	// a new define/uniform message arrives, instead of waiting for Google to
+	// happen to call useProgram again — which may never happen soon for a
+	// static scene with no navigation UI (e.g. a Baidu pano with no
+	// links/neighbors has nothing to hover/redraw for).
+	let defaultProgramRef: any = null;
 	let uniforms: any[] = [];
 
 	const origShaderSource = gl.shaderSource.bind(gl);
 	const origGetUniformLocation = gl.getUniformLocation.bind(gl);
 	const origAttachShader = gl.attachShader.bind(gl);
+	const origUseProgram = gl.useProgram.bind(gl);
 	const origUniform1fv = gl.uniform1fv.bind(gl);
 	const origUniform2fv = gl.uniform2fv.bind(gl);
 	const origUniform3fv = gl.uniform3fv.bind(gl);
 
-	const triggerRefresh = () => {
+	// Best-effort nudge to make Google's renderer actually redraw a frame so a
+	// GPU state change becomes visible without waiting for the user to
+	// pan/zoom/hover. Purely cosmetic now — correctness no longer depends on
+	// this firing (see syncNow below), it only affects how soon the change
+	// becomes visible on screen.
+	const nudgeRepaint = () => {
+		window.requestAnimationFrame(() => {
+			const prevDisplay = canvas.style.display;
+			canvas.style.display = "none";
+			void canvas.offsetHeight;
+			canvas.style.display = prevDisplay;
+			canvas.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true }));
+		});
+	};
+
+	const scheduleRefresh = () => {
 		window.requestAnimationFrame(() => {
 			needsRefresh = true;
-			canvas.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true }));
-			window.requestAnimationFrame(() => {
-				canvas.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true }));
-			});
+			nudgeRepaint();
 		});
 	};
 
@@ -152,12 +179,88 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 		uniformLocCache[key] = {};
 	};
 
+	/**
+	 * Re-apply all known uniform state (Google's own default-program uniforms,
+	 * plus our custom shaderMessage.uniforms) onto `replacement`. Shared by the
+	 * lazy path (Google happens to call useProgram again) and the eager path
+	 * (we force the swap ourselves — see syncNow).
+	 */
+	const applyUniformState = (replacement: any) => {
+		uniformLocCache[currentDefineKey] ??= {};
+
+		for (const uName in savedUniforms) {
+			const { func, args: uArgs } = savedUniforms[uName];
+			uniformLocCache[currentDefineKey][uName] ||= origGetUniformLocation(replacement, uName);
+			uArgs[0] = uniformLocCache[currentDefineKey][uName];
+			func.apply(gl, uArgs);
+		}
+
+		const timeLoc =
+			uniformLocCache[currentDefineKey].time || origGetUniformLocation(replacement, "time");
+		if (timeLoc && typeof timeLoc !== "string") {
+			uniformLocCache[currentDefineKey].time = timeLoc;
+			const t = (Date.now() / 1000) % 1000;
+			scheduleRefresh();
+			origUniform1fv(timeLoc, [t]);
+		} else if (!timeLoc) {
+			uniformLocCache[currentDefineKey].time = "fake" as any;
+		}
+
+		if (currentDefineKey !== "default") {
+			for (const u of uniforms) {
+				uniformLocCache[currentDefineKey][u.name] ||= origGetUniformLocation(replacement, u.name);
+				const loc = uniformLocCache[currentDefineKey][u.name];
+				if (u.type === "float") origUniform1fv(loc, u.value);
+				else if (u.type === "vec2") origUniform2fv(loc, u.value);
+				else if (u.type === "vec3") origUniform3fv(loc, u.value);
+			}
+		}
+	};
+
+	/**
+	 * Eagerly perform the shader swap the moment defines/uniforms change,
+	 * instead of waiting for Google to call useProgram again on its own.
+	 *
+	 * Root cause this closes: previously, `compileDefines` flipped
+	 * `currentDefineKey` synchronously on message receipt, but the actual GL
+	 * program swap (and `activeProgram` update) only happened lazily inside the
+	 * patched `useProgram`, whenever Google next called it. Between those two
+	 * moments, the patched uniform* setters below compare
+	 * `compiledPrograms[currentDefineKey] === activeProgram` — which is FALSE
+	 * during that gap — so they silently DROP every uniform Google tries to set
+	 * (see the `else return;` branch). If Google issues per-tile uniform calls
+	 * (e.g. the `b` UV-offset uniform) during that gap, those tiles render with
+	 * stale/missing uniforms — a corrupted frame. Normally the gap is closed
+	 * within a frame or two because hovering over link/arrow UI forces Google
+	 * to redraw repeatedly. Baidu panos with no links/neighbors have no such would-be
+	 * UI to trigger extra redraws, so nothing naturally closes the gap — the
+	 * corrupted frame just sticks, and toggling car visibility from an
+	 * already-loaded, link-less Baidu pano visibly breaks rendering.
+	 *
+	 * Calling this synchronously on every "update-material" message removes
+	 * the gap entirely: `currentDefineKey` and `activeProgram` always change
+	 * together, atomically.
+	 */
+	const syncNow = () => {
+		if (!defaultProgramRef) return; // no pano bound on this canvas yet — the
+		// pre-canvas `activeDefines` global mechanism below handles that case.
+		const replacement =
+			currentDefineKey === "default" ? defaultProgramRef : compiledPrograms[currentDefineKey];
+		if (replacement == null) return;
+		origUseProgram(replacement);
+		currentProgram = defaultProgramRef;
+		activeProgram = replacement;
+		needsRefresh = false;
+		applyUniformState(replacement);
+		nudgeRepaint();
+	};
+
 	window.addEventListener("message", (e) => {
 		const t = e.data;
 		if (t.type === "update-material") {
 			compileDefines(t.shaderMessage.defines || []);
-			uniforms = t.shaderMessage.uniforms;
-			triggerRefresh();
+			uniforms = t.shaderMessage.uniforms || [];
+			syncNow();
 		}
 	});
 
@@ -192,13 +295,15 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 				return loc;
 			},
 
-		useProgram: (origUseProgram) =>
+		useProgram: (origUseProgramWrapped) =>
 			function (this: WebGLRenderingContext, ...args: any[]) {
 				const prog = args[0];
 				currentProgram = prog;
 				activeProgram = prog;
 
 				if (prog != null && prog.defaultProgram) {
+					defaultProgramRef = prog;
+
 					if (activeDefines) {
 						compileDefines(activeDefines);
 						activeDefines = null;
@@ -213,48 +318,14 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 
 					if (needsRefresh) {
 						needsRefresh = false;
-						origUseProgram.apply(this, args);
-						uniformLocCache[currentDefineKey] ??= {};
-
-						for (const uName in savedUniforms) {
-							const { func, args: uArgs } = savedUniforms[uName];
-							uniformLocCache[currentDefineKey][uName] ||= origGetUniformLocation(
-								replacement,
-								uName,
-							);
-							uArgs[0] = uniformLocCache[currentDefineKey][uName];
-							func.apply(this, uArgs);
-						}
-
-						const timeLoc =
-							uniformLocCache[currentDefineKey].time || origGetUniformLocation(replacement, "time");
-						if (timeLoc && typeof timeLoc !== "string") {
-							uniformLocCache[currentDefineKey].time = timeLoc;
-							const t = (Date.now() / 1000) % 1000;
-							triggerRefresh();
-							origUniform1fv(timeLoc, [t]);
-						} else if (!timeLoc) {
-							uniformLocCache[currentDefineKey].time = "fake" as any;
-						}
-
-						if (currentDefineKey !== "default") {
-							for (const u of uniforms) {
-								uniformLocCache[currentDefineKey][u.name] ||= origGetUniformLocation(
-									replacement,
-									u.name,
-								);
-								const loc = uniformLocCache[currentDefineKey][u.name];
-								if (u.type === "float") origUniform1fv(loc, u.value);
-								else if (u.type === "vec2") origUniform2fv(loc, u.value);
-								else if (u.type === "vec3") origUniform3fv(loc, u.value);
-							}
-						}
+						origUseProgramWrapped.apply(this, args);
+						applyUniformState(replacement);
 						return;
 					}
 				}
 
 				activeProgram = args[0];
-				return origUseProgram.apply(this, args);
+				return origUseProgramWrapped.apply(this, args);
 			},
 	});
 
