@@ -8,7 +8,6 @@ import { findPanoProvider, setActivePanoViewport, type PanoProviderSession } fro
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { ensureProviderEnabled } from "@/lib/sv/providers/settings";
 import { installGoogleInjectBridge } from "@/lib/sv/providers/googleInject";
-import { useT } from "@/lib/i18n";
 import type { MovementMode, RoundLocation } from "./GameState";
 
 function toLocation(r: RoundLocation): Location {
@@ -67,7 +66,6 @@ export const GamePanoView = forwardRef<
 		onPanorama?: (pano: google.maps.StreetViewPanorama | null) => void;
 	}
 >(function GamePanoView({ round, movementMode, onReady, onPanorama }, ref) {
-	const { t } = useT();
 	const hostRef = useRef<HTMLDivElement>(null);
 	const [error, setError] = useState<string | null>(null);
 	const sessionRef = useRef<PanoProviderSession | null>(null);
