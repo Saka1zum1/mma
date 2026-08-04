@@ -314,6 +314,21 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 	}
 
 	applyPrefs(prefs: MapEmbedPrefs, opts: BasemapOpts) {
+		// Toggle SV coverage layer: the pref (default true) controls whether the
+		// coverage raster is shown.  Removing it entirely lets the basemap render
+		// through when Google services are unreachable (e.g. mainland China).
+		const wanted = prefs.showSvCoverage !== false && !this.skipCoverage;
+		const hasLayer = this.map.getLayer(SV_SOURCE);
+		const hasSource = this.map.getSource(SV_SOURCE);
+		if (wanted && !hasSource) {
+			this.addSvLayer();
+		} else if (!wanted) {
+			if (hasLayer) this.map.removeLayer(SV_SOURCE);
+			if (hasSource) this.map.removeSource(SV_SOURCE);
+		}
+
+		if (!wanted) return;
+
 		const next = createSvConfigForPrefs(prefs, opts.useBlobby);
 		// Refetch SV tiles only when the coverage config actually changed.
 		if (buildTileUrl(next, 0, 0, 0) !== buildTileUrl(this.svCfg, 0, 0, 0)) {

@@ -96,9 +96,8 @@ function SettingsPopup({ layerConfig: e }: { layerConfig: LayerConfig }) {
 				/>
 				<SwitchRow
 					className="layer-config__item"
-					checked
-					disabled
-					onChange={() => {}}
+					checked={p.showSvCoverage}
+					onChange={(v) => setPref("showSvCoverage")(v)}
 					label={t("editor.streetViewLayer")}
 				/>
 				<SwitchRow

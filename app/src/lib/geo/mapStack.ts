@@ -245,7 +245,7 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 	});
 	const blobbySingleType = opts.useBlobby && !(showOfficial && showUnofficial);
 	svLayer.setOpacity(blobbySingleType ? prefs.svOpacity * 0.6 : prefs.svOpacity);
-	if (!opts.skipCoverage) {
+	if (!opts.skipCoverage && prefs.showSvCoverage !== false) {
 		layers.push(svLayer);
 		// Provider blue-line coverage: same construction + stack band as Google SV.
 		layers.push(...getProviderLineLayers());
