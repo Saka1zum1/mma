@@ -102,10 +102,18 @@ export function computeStreakLength(rounds: RoundResult[]): number {
 
 /** Longest consecutive streakHit run in the rounds list. */
 export function computeBestStreak(rounds: RoundResult[]): number {
+	return computeBestStreakForMode(rounds, "country");
+}
+
+/** Longest consecutive streak run for the active streak mode. */
+export function computeBestStreakForMode(rounds: RoundResult[], mode: StreakMode): number {
+	if (mode === "off") return 0;
+	const useState = mode === "state";
 	let best = 0;
 	let cur = 0;
 	for (const r of rounds) {
-		if (r.streakHit) {
+		const hit = useState ? r.stateStreakHit : r.streakHit;
+		if (hit) {
 			cur++;
 			best = Math.max(best, cur);
 		} else {

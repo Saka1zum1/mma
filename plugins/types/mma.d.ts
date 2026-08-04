@@ -1789,8 +1789,8 @@ declare const en: {
     readonly "plugin.geoguessrGame.streakMiss": "Streak broken";
     readonly "plugin.geoguessrGame.streakEndedCountry": "Your streak ended after correctly guessing {n} countries in a row";
     readonly "plugin.geoguessrGame.streakEndedState": "Your streak ended after correctly guessing {n} states in a row";
-    readonly "plugin.geoguessrGame.streakIndeedCountry": "It was indeed {name}. Streak: {n}";
-    readonly "plugin.geoguessrGame.streakIndeedState": "It was indeed {name}. Streak: {n}";
+    readonly "plugin.geoguessrGame.streakIndeedCountry": "It was indeed {name}. Streaks: {n}";
+    readonly "plugin.geoguessrGame.streakIndeedState": "It was indeed {name}. Streaks: {n}";
     readonly "plugin.geoguessrGame.streakGuessWrongCountry": "You guessed {guess}, the correct answer is {correct}. Streaks: 0";
     readonly "plugin.geoguessrGame.streakGuessWrongState": "You guessed {guess}, the correct answer is {correct}. Streaks: 0";
     readonly "plugin.geoguessrGame.timerShort": "Time";
@@ -1816,6 +1816,8 @@ declare const en: {
     readonly "plugin.geoguessrGame.scoreTrend": "Score trend";
     readonly "plugin.geoguessrGame.byCountry": "By country";
     readonly "plugin.geoguessrGame.byMap": "By map";
+    readonly "plugin.geoguessrGame.byProvider": "By provider";
+    readonly "plugin.geoguessrGame.replay": "Replay";
     readonly "plugin.geoguessrGame.recentGames": "Recently played";
     readonly "plugin.geoguessrGame.ongoingGames": "Ongoing games";
     readonly "plugin.geoguessrGame.resumeGame": "Resume game";

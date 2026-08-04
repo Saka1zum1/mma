@@ -167,14 +167,20 @@ export const GamePanoView = forwardRef<
 			}
 			if (host.contains(singletonDiv)) {
 				host.removeChild(singletonDiv);
+				// Restore auto-sizing (set to explicit px during game mount at line ~260).
+				singletonDiv.style.width = "100%";
+				singletonDiv.style.height = "100%";
 				const previewHost = document.querySelector(".location-preview__pano-host");
 				if (previewHost && !previewHost.contains(singletonDiv)) {
 					previewHost.appendChild(singletonDiv);
-					const p = getPanorama();
-					if (p) {
-						p.setVisible(true);
-						google.maps.event.trigger(p, "resize");
-					}
+					// Defer resize so the DOM has time to lay out in the new container.
+					requestAnimationFrame(() => {
+						const p = getPanorama();
+						if (p) {
+							p.setVisible(true);
+							google.maps.event.trigger(p, "resize");
+						}
+					});
 				}
 			}
 			onPanorama?.(null);

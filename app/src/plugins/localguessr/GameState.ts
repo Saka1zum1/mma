@@ -16,7 +16,7 @@ function isoLocale(appLocale: string | undefined): string {
 	return "en";
 }
 
-export type GamePhase = "config" | "playing" | "result" | "summary" | "analytics";
+export type GamePhase = "config" | "playing" | "result" | "summary" | "analytics" | "replay";
 export type MovementMode = "moving" | "no-move" | "nmpz";
 export type RoundMode = "classic" | "infinite";
 export type TimerMode = "countdown" | "countup" | "off";
@@ -213,6 +213,7 @@ export type GameAction =
 	| { type: "EXTEND_LOCATIONS"; locations: RoundLocation[] }
 	| { type: "FINISH"; session: GameSession }
 	| { type: "SHOW_ANALYTICS" }
+	| { type: "SHOW_REPLAY"; session: GameSession }
 	| { type: "BACK_TO_CONFIG" }
 	| { type: "ABORT" };
 
@@ -387,6 +388,8 @@ function reducer(state: GameUiState, action: GameAction): GameUiState {
 			};
 		case "SHOW_ANALYTICS":
 			return { ...state, phase: "analytics", active: null };
+		case "SHOW_REPLAY":
+			return { ...state, phase: "replay", active: null, lastSession: action.session };
 		case "BACK_TO_CONFIG":
 		case "ABORT":
 			return {

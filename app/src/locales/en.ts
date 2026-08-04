@@ -1838,8 +1838,8 @@ export const en = {
 		"Your streak ended after correctly guessing {n} countries in a row",
 	"plugin.geoguessrGame.streakEndedState":
 		"Your streak ended after correctly guessing {n} states in a row",
-	"plugin.geoguessrGame.streakIndeedCountry": "It was indeed {name}. Streak: {n}",
-	"plugin.geoguessrGame.streakIndeedState": "It was indeed {name}. Streak: {n}",
+	"plugin.geoguessrGame.streakIndeedCountry": "It was indeed {name}. Streaks: {n}",
+	"plugin.geoguessrGame.streakIndeedState": "It was indeed {name}. Streaks: {n}",
 	"plugin.geoguessrGame.streakGuessWrongCountry":
 		"You guessed {guess}, the correct answer is {correct}. Streaks: 0",
 	"plugin.geoguessrGame.streakGuessWrongState":
@@ -1851,7 +1851,7 @@ export const en = {
 	"plugin.geoguessrGame.hitSpace": "Hit",
 	"plugin.geoguessrGame.toContinue": "to continue",
 	"plugin.geoguessrGame.streakShort": "Streak",
-	"plugin.geoguessrGame.gameOver": "Game over",
+	"plugin.geoguessrGame.gameBreakdown": "Game Breakdown",
 	"plugin.geoguessrGame.scoreOf": "{score} / {max} ({pct}%)",
 	"plugin.geoguessrGame.finalStreak": "Streak: {n}",
 	"plugin.geoguessrGame.playAgain": "Play again",
@@ -1867,6 +1867,8 @@ export const en = {
 	"plugin.geoguessrGame.scoreTrend": "Score trend",
 	"plugin.geoguessrGame.byCountry": "By country",
 	"plugin.geoguessrGame.byMap": "By map",
+	"plugin.geoguessrGame.byProvider": "By provider",
+	"plugin.geoguessrGame.replay": "Replay",
 	"plugin.geoguessrGame.recentGames": "Recently played",
 	"plugin.geoguessrGame.ongoingGames": "Ongoing games",
 	"plugin.geoguessrGame.resumeGame": "Resume game",

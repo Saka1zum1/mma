@@ -155,7 +155,7 @@ export function RoundPlayer({
 	const applyHideCar = useCallback((hide: boolean) => {
 		// Google + Baidu/Tencent inject share the Google material pipeline.
 		// PSV (Apple/Yandex) must not receive NO_CAR — it corrupts their WebGL shaders.
-		// Panos with zero links/neighbors are still fine; hide-car does not depend on links.
+		// Baidu rotation (020/050 rigs) is auto-detected inside sendHideCar itself.
 		if (panoRef.current?.supportsHideCar() ?? true) {
 			sendHideCar(hide);
 		} else {

@@ -1,4 +1,5 @@
 import { IconLayer, PathLayer } from "@deck.gl/layers";
+import { PathStyleExtension } from "@deck.gl/extensions";
 import type { LatLng } from "@/types";
 
 function svgDataUrl(svg: string): string {
@@ -24,11 +25,8 @@ export const TRUTH_PIN_URL = svgDataUrl(`<svg xmlns="http://www.w3.org/2000/svg"
 	<circle cx="24" cy="21" r="9" fill="#fff"/>
 	<path d="M20 21l3 3 6-6" stroke="#2E7D32" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`);
-  
-  
-  
 
-/** Stable icon defs — returning the same object avoids icon reload by deck.gl on every render. */
+/** Stable icon defs — same object identity avoids icon reload by deck.gl on every render. */
 const GUESS_ICON = {
 	url: GUESS_PIN_URL,
 	width: PIN_W,
@@ -47,15 +45,25 @@ const TRUTH_ICON = {
 	mask: false,
 };
 
+/** Dash/gap relative to path width. With widthUnits:"pixels" and getWidth:2 this is
+ * ~8px dash / ~6px gap on screen — GPU-evaluated, so density stays constant across
+ * zoom without rebuilding geometry (see PathStyleExtension docs). */
+const DASH_ARRAY: [number, number] = [4, 3];
+const LINE_WIDTH_PX = 2;
+
+/** One shared extension instance — recreating it every setProps forces shader recompiles. */
+const PATH_DASH_EXTENSION = new PathStyleExtension({ dash: true });
+
 function pinIconLayer(
 	id: string,
-	point: LatLng,
+	points: LatLng[],
 	icon: typeof GUESS_ICON,
 	sizePx: number,
 ) {
+	if (points.length === 0) return null;
 	return new IconLayer({
 		id,
-		data: [point],
+		data: points,
 		getPosition: (d: LatLng) => [d.lng, d.lat],
 		getIcon: () => icon,
 		getSize: sizePx,
@@ -73,38 +81,61 @@ function pinIconLayer(
 	});
 }
 
+/** Batched guess pins — one IconLayer for all points (mirrors app: few layers, many instances). */
+export function createGuessPinsLayer(id: string, points: LatLng[], sizePx = 36) {
+	return pinIconLayer(id, points, GUESS_ICON, sizePx);
+}
+
+/** Batched truth pins. */
+export function createTruthPinsLayer(id: string, points: LatLng[], sizePx = 36) {
+	return pinIconLayer(id, points, TRUTH_ICON, sizePx);
+}
+
+/** Convenience for a single pin. */
 export function createGuessPinLayer(id: string, point: LatLng, sizePx = 36) {
-	return pinIconLayer(id, point, GUESS_ICON, sizePx);
+	return createGuessPinsLayer(id, [point], sizePx);
 }
 
 export function createTruthPinLayer(id: string, point: LatLng, sizePx = 36) {
-	return pinIconLayer(id, point, TRUTH_ICON, sizePx);
+	return createTruthPinsLayer(id, [point], sizePx);
 }
 
-/** Black dashed connector; render before pin layers so lines sit under icons. */
-export function createResultLineLayer(guess: LatLng, truth: LatLng) {
-	const segmentCount = 48;
-	const data: { path: [number, number][] }[] = [];
-	for (let i = 0; i < segmentCount; i += 2) {
-		const t0 = i / segmentCount;
-		const t1 = (i + 1) / segmentCount;
-		data.push({
-			path: [
-				[guess.lng + (truth.lng - guess.lng) * t0, guess.lat + (truth.lat - guess.lat) * t0],
-				[guess.lng + (truth.lng - guess.lng) * t1, guess.lat + (truth.lat - guess.lat) * t1],
-			],
-		});
-	}
+export type ResultLinePair = { guess: LatLng; truth: LatLng };
+
+/**
+ * One PathLayer for all guess→truth connectors. Dashes are rendered by
+ * PathStyleExtension in screen space (relative to pixel width), so zoom/pan
+ * never needs to rebuild the layer — matching the app's "rebuild on data, not
+ * zoom" pattern from buildSceneLayers / useMapSurface.
+ */
+export function createResultLinesLayer(id: string, pairs: ResultLinePair[]) {
+	if (pairs.length === 0) return null;
 	return new PathLayer({
-		id: "gg-result-line",
-		data,
-		getPath: (d: { path: [number, number][] }) => d.path,
-		getColor: [0, 0, 0, 255],
-		getWidth: 2,
+		id,
+		data: pairs,
+		getPath: (d: ResultLinePair) => [
+			[d.guess.lng, d.guess.lat],
+			[d.truth.lng, d.truth.lat],
+		],
+		getColor: [0, 0, 0, 220],
+		getWidth: LINE_WIDTH_PX,
 		widthUnits: "pixels",
 		capRounded: true,
 		jointRounded: true,
 		pickable: false,
 		parameters: { depthTest: false },
+		extensions: [PATH_DASH_EXTENSION],
+		getDashArray: DASH_ARRAY,
+		// Stretch dashes so the pattern meets both pin bases cleanly.
+		dashJustified: true,
 	});
+}
+
+/** Convenience for a single connector. */
+export function createResultLineLayer(
+	guess: LatLng,
+	truth: LatLng,
+	opts: { layerId?: string } = {},
+) {
+	return createResultLinesLayer(opts.layerId ?? "gg-result-line", [{ guess, truth }]);
 }

@@ -32,7 +32,7 @@
 .gg-overlay__panel {
 	flex: 1;
 	overflow: auto;
-	padding: 1.5rem;
+	padding: 0.75rem;
 	background: var(--gg-bg);
 }
 .gg-sidebar__map-name { font-weight: 600; color: var(--gg-accent); }
@@ -625,7 +625,7 @@
 
 /* GeoGuessr shadow-text (gameUI_2) */
 .gg-shadow-text {
-	--gg-shadow-font: 2rem;
+	--gg-shadow-font: 2.5rem;
 	user-select: none;
 	color: #fff;
 	font-weight: 800;
@@ -658,7 +658,7 @@
 
 .gg-round-result__label {
 	margin: 0.4rem 0 0;
-	font-size: 0.85rem;
+	font-size: 0.9	rem;
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
 	color: var(--gg-muted);
@@ -678,7 +678,7 @@
 	font-weight: 600;
 	color: var(--gg-text);
 	line-height: 1.35;
-	max-width: 28rem;
+	max-width: 30rem;
 }
 
 .gg-round-result__actions {
@@ -691,7 +691,7 @@
 
 .gg-round-result__space {
 	margin: 0;
-	font-size: 0.9rem;
+	font-size: 0.8rem;
 	color: var(--gg-muted);
 }
 
@@ -793,15 +793,72 @@
 
 /* ====================== SUMMARY / ANALYTICS ====================== */
 .gg-summary {
-	max-width: 720px; margin: 0 auto;
-	display: flex; flex-direction: column; gap: 1.5rem;
-	padding: 2rem 1rem;
+	width: min(1680px, 96vw);
+	max-width: 100%;
+	height: 96vh;
+	margin: 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	padding: 0.5rem;
 }
-.gg-summary__hero { text-align: center; padding: 1rem; }
-.gg-summary__label { text-transform: uppercase; letter-spacing: 0.12em; color: var(--gg-muted); font-size: 0.8rem; }
-.gg-summary__score { font-size: 3.5rem; font-weight: 800; color: var(--gg-accent); line-height: 1.1; }
-.gg-summary__sub, .gg-summary__streak, .gg-summary__map { color: var(--gg-muted); margin-top: 0.35rem; }
-.gg-summary__rounds { background: var(--gg-panel); border: 1px solid var(--gg-border); border-radius: var(--gg-radius); overflow: hidden; }
+.gg-summary__hero {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 1rem 2rem;
+	padding: 0.5rem 0.75rem;
+	background: var(--gg-panel);
+	border: 1px solid var(--gg-border);
+	border-radius: var(--gg-radius);
+}
+.gg-summary__hero-main {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+.gg-summary__hero-meta {
+	text-align: right;
+	min-width: 12rem;
+}
+.gg-summary__label {
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	color: var(--gg-muted);
+	font-size: 1rem;
+	font-weight: 600;
+}
+.gg-summary__score {
+	font-size: clamp(2.5rem, 5vw, 3.75rem);
+	font-weight: 800;
+	color: var(--gg-accent);
+	line-height: 1.05;
+}
+.gg-summary__streak,
+.gg-summary__map {
+	color: var(--gg-text);
+	margin-top: 0.25rem;
+	font-size: 1rem;
+}
+.gg-summary__map {
+	color: var(--gg-muted);
+	font-size: 0.95rem;
+}
+.gg-summary__body {
+	display: grid;
+	grid-template-columns: minmax(0, 1.5fr) minmax(400px, 1fr);
+	gap: 1rem;
+	align-items: stretch;
+	height: 100%;
+}
+.gg-summary__rounds {
+	background: var(--gg-panel);
+	border: 1px solid var(--gg-border);
+	border-radius: var(--gg-radius);
+	overflow: auto;
+	max-height: 100%；
+}
 .gg-summary__row {
 	display: grid;
 	grid-template-columns: 2.5rem 4.5rem 5rem 1fr auto auto;
@@ -837,13 +894,17 @@
 .gg-analytics__card-value { font-size: 1.5rem; font-weight: 700; color: var(--gg-accent); }
 .gg-analytics__section h3 { margin: 0 0 0.75rem; font-size: 1rem; }
 .gg-analytics__chart { width: 100%; height: 160px; background: rgba(0, 0, 0, 0.25); border-radius: 8px; border: 1px solid var(--gg-border); overflow: hidden; }
+.gg-analytics__chart-wrap { width: 100%; min-height: 180px; }
+.gg-analytics__chart-wrap svg.gg-analytics__chart { width: 100%; height: auto; display: block; background: rgba(0, 0, 0, 0.25); border-radius: 8px; border: 1px solid var(--gg-border); }
 .gg-analytics__chart-empty { height: 80px; display: grid; place-items: center; color: var(--gg-muted); border: 1px dashed var(--gg-border); border-radius: 8px; }
 .gg-analytics__list { background: var(--gg-panel); border: 1px solid var(--gg-border); border-radius: var(--gg-radius); max-height: 320px; overflow: auto; }
 .gg-analytics__row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--gg-border); font-size: 0.9rem; }
 .gg-analytics__row:last-child { border-bottom: none; }
+.gg-analytics__row-actions { display: flex; align-items: center; gap: 0.35rem; margin-left: auto; }
 .gg-analytics__flag { width: 1.8rem; text-align: center; }
 .gg-analytics__flag img { display: block; margin: 0 auto; }
 .gg-analytics__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-analytics__provider { text-transform: capitalize; font-weight: 600; }
 .gg-analytics__acc { font-weight: 700; min-width: 2.5rem; text-align: right; }
 .gg-acc--green { color: var(--gg-success); }
 .gg-acc--yellow { color: #ffee58; }
@@ -852,7 +913,32 @@
 .gg-analytics__meta { color: var(--gg-muted); font-size: 0.8rem; }
 .gg-analytics__delete { appearance: none; border: none; background: transparent; color: var(--gg-muted); cursor: pointer; font-size: 1.1rem; line-height: 1; }
 .gg-analytics__delete:hover { color: var(--gg-danger); }
+.gg-analytics__replay {
+	appearance: none; border: 1px solid var(--gg-border); border-radius: var(--gg-radius);
+	background: var(--gg-panel); color: var(--gg-accent); cursor: pointer;
+	font-size: 0.75rem; padding: 0.15rem 0.5rem; line-height: 1;
+}
+.gg-analytics__replay:hover { background: var(--gg-accent); color: #000; }
 .gg-analytics__footer { display: flex; justify-content: flex-end; }
+
+/* ====================== REPLAY MAP ====================== */
+.gg-replay-map {
+	width: 100%;
+	min-height: min(52vh, 520px);
+	height: 100%;
+	background: rgba(0, 0, 0, 0.25);
+	border-radius: var(--gg-radius);
+	border: 1px solid var(--gg-border);
+	overflow: hidden;
+	position: relative;
+}
+.gg-replay-map__canvas { width: 100%; height: 100%; min-height: min(52vh, 520px); }
+.gg-replay-map__empty { height: 80px; display: grid; place-items: center; color: var(--gg-muted); }
+
+/* ====================== SUMMARY ROW CLICK ====================== */
+.gg-summary__row { cursor: pointer; transition: background 0.15s; }
+.gg-summary__row:hover { background: rgba(255, 255, 255, 0.04); }
+.gg-summary__row.is-active { background: rgba(var(--gg-accent-rgb, 0, 200, 255), 0.12); }
 
 /* ====================== RESPONSIVE ====================== */
 @media (max-width: 768px) {
@@ -873,4 +959,15 @@
 		grid-template-columns: 1fr 1fr;
 	}
 	.gg-summary__row { grid-template-columns: 2rem 3.5rem 4rem 1fr; font-size: 0.8rem; }
+	.gg-summary__body {
+		grid-template-columns: 1fr;
+		min-height: 0;
+	}
+	.gg-replay-map,
+	.gg-replay-map__canvas {
+		min-height: 280px;
+	}
+	.gg-summary__rounds {
+		max-height: 240px;
+	}
 }

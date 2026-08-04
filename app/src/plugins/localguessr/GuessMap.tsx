@@ -13,6 +13,7 @@ import { google } from "@/lib/sv/opensv";
 import type maplibregl from "maplibre-gl";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
+import { cmd } from "@/lib/commands";
 import type { LatLng } from "@/types";
 import { useT } from "@/lib/i18n";
 import {
@@ -75,6 +76,23 @@ function useGuessMapHost(
 				const overlay = host.createDeckOverlay();
 				overlayRef.current = overlay;
 				setReady(true);
+
+				// Fit to the same bounds as the app map (store_bounds reads from
+				// the currently open map, which matches the game's map at startup).
+				// Only for the play view — the result view must fit to guess/truth
+				// pins instead (handled in the layers effect below).
+				if (!showResult) {
+					cmd.storeBounds(false).then((bounds) => {
+						if (cancelled || !hostRef.current || !bounds) return;
+						hostRef.current.fitBounds(
+							{ west: bounds[0], south: bounds[1], east: bounds[2], north: bounds[3] },
+							undefined,
+							{ snap: true },
+						);
+					}).catch(() => {
+						/* fell back to default camera */
+					});
+				}
 			} catch {
 				if (!cancelled) setReady(false);
 			}
@@ -262,44 +280,65 @@ export function GuessMap({
 	const mapActive = variant === "result" || sticky || isActive;
 
 	useEffect(() => {
-		if (ready && hostRef.current) setZoom(hostRef.current.getZoom());
+		const host = hostRef.current;
+		if (!host || !ready) return;
+		const update = () => setZoom(host.getZoom());
+		update();
+		return host.on("zoom", update);
 	}, [ready, hostRef]);
 
+	// Deck layers: rebuild only when pin/line data changes — never on zoom/pan
+	// (PathStyleExtension keeps dash density constant in screen pixels).
 	useEffect(() => {
 		const overlay = overlayRef.current;
-		const host = hostRef.current;
-		if (!overlay || !host || !ready) return;
+		if (!overlay || !ready) return;
 
 		const layers = [];
 
 		if (showResult && truth && guess) {
-			layers.push(createResultLineLayer(guess, truth));
+			const line = createResultLineLayer(guess, truth);
+			if (line) layers.push(line);
 		}
 
 		if (guess) {
-			layers.push(createGuessPinLayer("gg-guess-pin", guess));
+			const pin = createGuessPinLayer("gg-guess-pin", guess);
+			if (pin) layers.push(pin);
 		}
 
 		if (showResult && truth) {
-			layers.push(createTruthPinLayer("gg-truth-pin", truth));
-		}
-
-		if (showResult && truth && guess) {
-			host.fitBounds(
-				{
-					south: Math.min(guess.lat, truth.lat),
-					west: Math.min(guess.lng, truth.lng),
-					north: Math.max(guess.lat, truth.lat),
-					east: Math.max(guess.lng, truth.lng),
-				},
-				60,
-			);
-		} else if (showResult && truth) {
-			host.moveCamera({ center: truth, zoom: 4 });
+			const pin = createTruthPinLayer("gg-truth-pin", truth);
+			if (pin) layers.push(pin);
 		}
 
 		overlay.setProps({ layers });
-	}, [guess, truth, showResult, ready, hostRef, overlayRef]);
+	}, [guess, truth, showResult, ready, overlayRef]);
+
+	// Camera fit for the result view — separate so fitBounds doesn't thrash layers.
+	useEffect(() => {
+		const host = hostRef.current;
+		if (!host || !ready) return;
+
+		if (showResult && truth && guess) {
+			// The result view mounts a fresh host — defer until the container has
+			// been laid out, otherwise fitBounds computes against a 0-size map.
+			const raf = requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					host.fitBounds(
+						{
+							south: Math.min(guess.lat, truth.lat),
+							west: Math.min(guess.lng, truth.lng),
+							north: Math.max(guess.lat, truth.lat),
+							east: Math.max(guess.lng, truth.lng),
+						},
+						60,
+					);
+				});
+			});
+			return () => cancelAnimationFrame(raf);
+		} else if (showResult && truth) {
+			host.moveCamera({ center: truth, zoom: 10 });
+		}
+	}, [showResult, truth, guess, ready, hostRef]);
 
 	useEffect(() => {
 		if (!ready) return;

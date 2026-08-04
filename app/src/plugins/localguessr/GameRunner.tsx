@@ -14,7 +14,7 @@ import {
 	type GameConfig,
 	type RoundResult,
 } from "./GameState";
-import { resolveMapMaxError } from "./ScoreUtils";
+import type { GameSession } from "./GameState";import { resolveMapMaxError } from "./ScoreUtils";
 import { saveSession } from "./gameSessionStore";
 import {
 	saveOngoingGame,
@@ -175,6 +175,7 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 		onFinish,
 		abort,
 		showAnalytics: () => dispatch({ type: "SHOW_ANALYTICS" }),
+		showReplay: (s: GameSession) => dispatch({ type: "SHOW_REPLAY", session: s }),
 		backToConfig: () => dispatch({ type: "BACK_TO_CONFIG" }),
 	};
 }
@@ -184,7 +185,7 @@ export function GameOverlay({
 }: {
 	controller: ReturnType<typeof useGameController>;
 }) {
-	const { state, onResult, onNext, onFinish, abort, showAnalytics, backToConfig, startGame } =
+	const { state, onResult, onNext, onFinish, abort, showAnalytics, showReplay, backToConfig, startGame } =
 		controller;
 
 	if (state.phase === "config") return null;
@@ -211,9 +212,18 @@ export function GameOverlay({
 					onAnalytics={showAnalytics}
 				/>
 			</div>
+		) : state.phase === "replay" && state.lastSession ? (
+			<div className="gg-overlay__panel">
+				<SummaryView
+					session={state.lastSession}
+					onPlayAgain={() => void startGame()}
+					onBack={backToConfig}
+					onAnalytics={showAnalytics}
+				/>
+			</div>
 		) : state.phase === "analytics" ? (
 			<div className="gg-overlay__panel">
-				<AnalyticsPage mapId={mapId} onBack={backToConfig} />
+				<AnalyticsPage mapId={mapId} onBack={backToConfig} onReplaySession={showReplay} />
 			</div>
 		) : null;
 

@@ -34,11 +34,18 @@ export interface ModeStat {
 	avgScore: number;
 }
 
+export interface ProviderStat {
+	provider: string;
+	rounds: number;
+	avgScore: number;
+}
+
 export interface AnalyticsData {
 	overview: AnalyticsOverview;
 	byCountry: CountryStat[];
 	byMap: MapStat[];
 	byMode: ModeStat[];
+	byProvider: ProviderStat[];
 	recent: GameSession[];
 	scoreTrend: { at: number; score: number; mapName: string }[];
 }
@@ -72,6 +79,7 @@ export function computeAnalytics(filterMapId?: string | null): AnalyticsData {
 	>();
 	const mapMap = new Map<string, { name: string; games: number; scoreSum: number; best: number }>();
 	const modeMap = new Map<MovementMode, { games: number; scoreSum: number }>();
+	const providerMap = new Map<string, { rounds: number; scoreSum: number }>();
 
 	for (const s of sessions) {
 		overview.totalRounds += s.rounds.length;
@@ -109,6 +117,13 @@ export function computeAnalytics(filterMapId?: string | null): AnalyticsData {
 			c.scoreSum += r.score;
 			if (countryHit(r)) c.hits++;
 			countryMap.set(code, c);
+
+			// Provider stats
+			const prov = r.location.provider || "unknown";
+			const pv = providerMap.get(prov) ?? { rounds: 0, scoreSum: 0 };
+			pv.rounds++;
+			pv.scoreSum += r.score;
+			providerMap.set(prov, pv);
 		}
 	}
 
@@ -141,6 +156,14 @@ export function computeAnalytics(filterMapId?: string | null): AnalyticsData {
 		avgScore: Math.round(v.scoreSum / v.games),
 	}));
 
+	const byProvider: ProviderStat[] = [...providerMap.entries()]
+		.map(([provider, v]) => ({
+			provider,
+			rounds: v.rounds,
+			avgScore: Math.round(v.scoreSum / v.rounds),
+		}))
+		.sort((a, b) => b.rounds - a.rounds);
+
 	const scoreTrend = [...sessions]
 		.reverse()
 		.slice(-30)
@@ -155,6 +178,7 @@ export function computeAnalytics(filterMapId?: string | null): AnalyticsData {
 		byCountry,
 		byMap,
 		byMode,
+		byProvider,
 		recent: sessions.slice(0, 20),
 		scoreTrend,
 	};
