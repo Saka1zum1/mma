@@ -17,46 +17,68 @@ function ScoreTrendChart({
 	t: (key: MessageKey, params?: MessageParams) => string;
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
-	const [size, setSize] = useState({ w: 440, h: 160 });
+	const [size, setSize] = useState({ w: 500, h: 220 });
 
 	useEffect(() => {
 		const el = containerRef.current;
 		if (!el) return;
 		const ro = new ResizeObserver(() => {
-			setSize({ w: el.clientWidth || 440, h: el.clientHeight || 160 });
+			setSize({ w: el.clientWidth || 500, h: el.clientHeight || 220 });
 		});
 		ro.observe(el);
 		return () => ro.disconnect();
+	}, []);
+
+	// ── hover interaction ────────────────────────────────────────
+	const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+	const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const handleMouseEnter = useCallback((i: number) => {
+		if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null; }
+		setHoverIdx(i);
+	}, []);
+	const handleMouseLeave = useCallback(() => {
+		leaveTimer.current = setTimeout(() => setHoverIdx(null), 200);
+	}, []);
+	useEffect(() => () => {
+		if (leaveTimer.current) clearTimeout(leaveTimer.current);
 	}, []);
 
 	if (points.length < 2) {
 		return <div className="gg-analytics__chart-empty">—</div>;
 	}
 
+	// ── geometry ──────────────────────────────────────────────────
 	const { w, h } = size;
-	const padLeft = 50;
-	const padRight = 16;
-	const padTop = 16;
-	const padBottom = 30;
-	const plotW = w - padLeft - padRight;
-	const plotH = h - padTop - padBottom;
-	const maxScore = Math.max(...points.map((p) => p.score), 1);
+	const padL = 54, padR = 24, padT = 18, padB = 32;
+	const pw = w - padL - padR, ph = h - padT - padB;
 
-	const firstAt = points[0].at;
-	const lastAt = points[points.length - 1].at;
-	const spanMs = lastAt - firstAt;
+	const maxScore = Math.max(...points.map((p) => p.score), 1);
+	const round = (v: number, step: number) => Math.ceil(v / step) * step;
+	const yStep = maxScore <= 2000 ? 500 : maxScore <= 10000 ? 2000 : maxScore <= 25000 ? 5000 : 10000;
+	const yMax = round(maxScore, yStep);
+
+	const spanMs = points[points.length - 1].at - points[0].at;
 	const isHours = spanMs < 7 * 24 * 3600 * 1000;
 
-	const yTickCount = 4;
+	const dataPts = points.map((p, i) => ({
+		x: padL + (i / (points.length - 1)) * pw,
+		y: padT + ph - (p.score / yMax) * ph,
+		score: p.score,
+		at: p.at,
+		map: p.mapName,
+	}));
+
+	// ── y‑ticks ───────────────────────────────────────────────────
 	const yTicks: { y: number; label: string }[] = [];
-	for (let i = 0; i <= yTickCount; i++) {
-		const val = Math.round((maxScore / yTickCount) * i);
+	const steps = Math.max(2, Math.min(6, Math.floor(yMax / yStep)));
+	for (let i = 0; i <= steps; i++) {
+		const val = Math.round((yMax / steps) * i);
 		if (val === 0 && i > 0) continue;
-		const y = padTop + plotH - (val / maxScore) * plotH;
-		yTicks.push({ y, label: val.toLocaleString() });
+		yTicks.push({ y: padT + ph - (val / yMax) * ph, label: val.toLocaleString() });
 	}
 
-	const xTickCount = Math.min(5, points.length);
+	// ── x‑ticks (max 6) ──────────────────────────────────────────
+	const xTickCount = Math.min(6, points.length);
 	const xTicks: { x: number; label: string }[] = [];
 	for (let i = 0; i < xTickCount; i++) {
 		const idx = Math.round((i / (xTickCount - 1)) * (points.length - 1));
@@ -65,45 +87,126 @@ function ScoreTrendChart({
 		const label = isHours
 			? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
 			: `${d.getMonth() + 1}/${d.getDate()}`;
-		const x = padLeft + (idx / (points.length - 1)) * plotW;
-		xTicks.push({ x, label });
+		xTicks.push({ x: dataPts[idx].x, label });
 	}
 
-	const coords = points
-		.map((p, i) => {
-			const x = padLeft + (i / (points.length - 1)) * plotW;
-			const y = padTop + plotH - (p.score / maxScore) * plotH;
-			return `${x},${y}`;
-		})
-		.join(" ");
+	// ── smooth catmull‑rom path ──────────────────────────────────
+	const smoothPoints = (pts: typeof dataPts) => {
+		const n = pts.length;
+		if (n < 2) return "";
+		let d = `M${pts[0].x},${pts[0].y}`;
+		for (let i = 0; i < n - 1; i++) {
+			const p0 = i > 0 ? pts[i - 1] : pts[0];
+			const p1 = pts[i];
+			const p2 = pts[i + 1];
+			const p3 = i < n - 2 ? pts[i + 2] : pts[n - 1];
+			const cp1x = p1.x + (p2.x - p0.x) / 6;
+			const cp1y = p1.y + (p2.y - p0.y) / 6;
+			const cp2x = p2.x - (p3.x - p1.x) / 6;
+			const cp2y = p2.y - (p3.y - p1.y) / 6;
+			d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+		}
+		return d;
+	};
+	const pathD = smoothPoints(dataPts);
+	const fillD = `${pathD} L${dataPts[dataPts.length - 1].x},${padT + ph} L${dataPts[0].x},${padT + ph} Z`;
+
+	// ── hover tooltip position ───────────────────────────────────
+	const hover = hoverIdx != null ? dataPts[hoverIdx] : null;
+	const tooltipX = hover ? Math.min(Math.max(hover.x, 90), w - 90) : 0;
+	const tooltipY = hover ? Math.max(4, hover.y - 56) : 0;
 
 	return (
 		<div ref={containerRef} className="gg-analytics__chart-wrap">
 			<svg className="gg-analytics__chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
+				<defs>
+					<linearGradient id="gg-chart-fill" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0%" stopColor="var(--gg-accent)" stopOpacity="0.25" />
+						<stop offset="100%" stopColor="var(--gg-accent)" stopOpacity="0.02" />
+					</linearGradient>
+					<linearGradient id="gg-chart-stroke" x1="0" y1="0" x2="1" y2="0">
+						<stop offset="0%" stopColor="var(--gg-accent)" stopOpacity="0.7" />
+						<stop offset="100%" stopColor="var(--gg-accent-purple)" stopOpacity="1" />
+					</linearGradient>
+				</defs>
+
+				{/* grid lines */}
 				{yTicks.map((tk) => (
-					<line key={`yg-${tk.y}`} x1={padLeft} y1={tk.y} x2={w - padRight} y2={tk.y}
-						stroke="var(--gg-border)" strokeDasharray="3,3" />
+					<line key={`g-${tk.y}`} x1={padL} y1={tk.y} x2={padL + pw} y2={tk.y}
+						stroke="var(--gg-border)" strokeWidth="0.8" strokeDasharray="5,5" />
 				))}
-				<polygon fill="var(--gg-accent)" fillOpacity="0.1"
-					points={`${padLeft},${padTop + plotH} ${coords} ${padLeft + plotW},${padTop + plotH}`} />
-				<polyline fill="none" stroke="var(--gg-accent)" strokeWidth="2" points={coords} />
-				{points.map((p, i) => {
-					const x = padLeft + (i / (points.length - 1)) * plotW;
-					const y = padTop + plotH - (p.score / maxScore) * plotH;
-					return <circle key={`pt-${i}`} cx={x} cy={y} r="3" fill="var(--gg-accent)" />;
+
+				{/* area fill under line */}
+				<path d={fillD} fill="url(#gg-chart-fill)" />
+
+				{/* line */}
+				<path d={pathD} fill="none" stroke="url(#gg-chart-stroke)" strokeWidth="2.2"
+					strokeLinecap="round" strokeLinejoin="round" />
+
+				{/* data dots */}
+				{dataPts.map((p, i) => {
+					const active = i === hoverIdx;
+					return (
+						<circle key={`pt-${i}`} cx={p.x} cy={p.y}
+							r={active ? 5.5 : 3.5}
+							fill={active ? "var(--gg-accent)" : "var(--gg-bg)"}
+							stroke={active ? "var(--gg-accent)" : "var(--gg-accent)"}
+							strokeWidth={active ? 2 : 1.6}
+							style={{ cursor: "pointer", transition: "r 120ms, fill 120ms" }}
+							onMouseEnter={() => handleMouseEnter(i)}
+							onMouseLeave={handleMouseLeave}
+						/>
+					);
 				})}
+
+				{/* hover crosshair */}
+				{hover && (
+					<>
+						<line x1={hover.x} y1={padT} x2={hover.x} y2={padT + ph}
+							stroke="var(--gg-text)" strokeWidth="0.6" strokeDasharray="3,3" opacity="0.3" />
+						<line x1={padL} y1={hover.y} x2={padL + pw} y2={hover.y}
+							stroke="var(--gg-text)" strokeWidth="0.6" strokeDasharray="3,3" opacity="0.3" />
+					</>
+				)}
+
+				{/* y‑axis labels */}
 				{yTicks.map((tk) => (
-					<text key={`yl-${tk.y}`} x={padLeft - 6} y={tk.y + 4} textAnchor="end" fontSize="9" fill="var(--gg-muted)">
-						{tk.label}</text>
+					<text key={`yl-${tk.y}`} x={padL - 8} y={tk.y + 4} textAnchor="end"
+						fontSize="10" fontFamily="var(--gg-font)" fill="var(--gg-muted)">
+						{tk.label}
+					</text>
 				))}
+
+				{/* x‑axis labels */}
 				{xTicks.map((tk, i) => (
-					<text key={`xl-${i}`} x={tk.x} y={h - 4} textAnchor="middle" fontSize="9" fill="var(--gg-muted)">
-						{tk.label}</text>
+					<text key={`xl-${i}`} x={tk.x} y={h - 6} textAnchor="middle"
+						fontSize="10" fontFamily="var(--gg-font)" fill="var(--gg-muted)">
+						{tk.label}
+					</text>
 				))}
-				<text x={w / 2} y={h - 12} textAnchor="middle" fontSize="10" fill="var(--gg-muted)">
-					{t("plugin.geoguessrGame.scoreTimeX")}</text>
-				<text x={12} y={h / 2} textAnchor="middle" fontSize="10" fill="var(--gg-muted)" transform={`rotate(-90, 12, ${h / 2})`}>
-					{t("plugin.geoguessrGame.scoreTimeY")}</text>
+
+				{/* axis titles */}
+				<text x={10} y={padT + ph / 2} textAnchor="middle" fontSize="10"
+					fontFamily="var(--gg-font)" fill="var(--gg-muted)" opacity="0.55"
+					transform={`rotate(-90, 10, ${padT + ph / 2})`}>
+					{t("plugin.geoguessrGame.scoreTimeY")}
+				</text>
+
+				{/* hover tooltip */}
+				{hover && (
+					<g>
+						<rect x={tooltipX - 80} y={tooltipY} width="160" height="42" rx="6"
+							fill="var(--gg-panel)" stroke="var(--gg-border)" strokeWidth="0.8" />
+						<text x={tooltipX} y={tooltipY + 16} textAnchor="middle"
+							fontSize="12" fontFamily="var(--gg-font)" fill="var(--gg-accent)" fontWeight={600}>
+							{hover.score.toLocaleString()} pts
+						</text>
+						<text x={tooltipX} y={tooltipY + 32} textAnchor="middle"
+							fontSize="9" fontFamily="var(--gg-font)" fill="var(--gg-muted)">
+							{hover.map} · {new Date(hover.at * 1000).toLocaleString()}
+						</text>
+					</g>
+				)}
 			</svg>
 		</div>
 	);
@@ -153,6 +256,7 @@ export function AnalyticsPage({
 	const [version, setVersion] = useState(0);
 	const data = useMemo(
 		() => computeAnalytics(filterMap ? mapId : null),
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- manual recompute trigger after delete/clear
 		[filterMap, mapId, version],
 	);
 

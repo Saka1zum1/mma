@@ -893,9 +893,8 @@
 .gg-analytics__card-label { font-size: 0.7rem; color: var(--gg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .gg-analytics__card-value { font-size: 1.5rem; font-weight: 700; color: var(--gg-accent); }
 .gg-analytics__section h3 { margin: 0 0 0.75rem; font-size: 1rem; }
-.gg-analytics__chart { width: 100%; height: 160px; background: rgba(0, 0, 0, 0.25); border-radius: 8px; border: 1px solid var(--gg-border); overflow: hidden; }
-.gg-analytics__chart-wrap { width: 100%; min-height: 180px; }
-.gg-analytics__chart-wrap svg.gg-analytics__chart { width: 100%; height: auto; display: block; background: rgba(0, 0, 0, 0.25); border-radius: 8px; border: 1px solid var(--gg-border); }
+.gg-analytics__chart-wrap { width: 100%; }
+.gg-analytics__chart-wrap svg.gg-analytics__chart { width: 100%; height: 240px; display: block; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--gg-border); }
 .gg-analytics__chart-empty { height: 80px; display: grid; place-items: center; color: var(--gg-muted); border: 1px dashed var(--gg-border); border-radius: 8px; }
 .gg-analytics__list { background: var(--gg-panel); border: 1px solid var(--gg-border); border-radius: var(--gg-radius); max-height: 320px; overflow: auto; }
 .gg-analytics__row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--gg-border); font-size: 0.9rem; }
