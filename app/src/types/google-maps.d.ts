@@ -3,28 +3,12 @@
 /** Shorthand for the full `typeof google` namespace provided by opensv. */
 type Google = typeof google;
 
-/** Street View camera generation, derived from panorama tile worldSize height. */
-type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker" | null;
-/** Built-in Google camera badges (+ unofficial). Provider badges are data-driven. */
-type FullCameraType = CameraType | "unofficial";
-
-/**
- * Imagery provider discriminator for multi-provider Street View.
- * Prefer top-level `location.provider`; Google opensv also exposes `_source` (launch/scout).
- */
-type SvProviderId = "google" | "apple" | "tencent" | "baidu" | "yandex";
-
-/**
- * Undocumented metadata opensv attaches to StreetViewPanoramaData.
- * Shared semantic fields are reused by alternate providers (Apple Look Around, etc.)
- * via location.extra; missing provider-specific fields may be filled by parsing
- * or template placeholders at the provider boundary.
- */
+/** Undocumented metadata opensv attaches to StreetViewPanoramaData. */
 interface SvExtra {
 	altitude: number;
 	panoType: import("@/types").PanoType;
-	/** Google gens or provider-defined labels (e.g. apple bigcam/smallcam). */
-	cameraType: CameraType | string;
+	/** Null when the tile height matches no known generation. */
+	cameraType: import("@/bindings.gen").CameraType | null;
 	countryCode: string | null;
 	uploaderName: string | null;
 	/** Capture-time driving direction in degrees (0–360), per Google. */

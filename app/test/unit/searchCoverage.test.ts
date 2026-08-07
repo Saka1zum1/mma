@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
 	stampDisc,
 	lngLatToPixel,
+	bitmapBounds,
 	beginSession,
 	addProbe,
 	endSession,
@@ -51,10 +52,31 @@ describe("stampDisc", () => {
 
 describe("lngLatToPixel", () => {
 	it("maps NW to the origin and SE to the far corner (y flipped)", () => {
-		const b: [number, number, number, number] = [0, 0, 10, 10];
+		const b = { west: 0, south: 0, east: 10, north: 10 };
 		expect(lngLatToPixel(b, 100, 100, 0, 10)).toEqual([0, 0]); // NW
 		expect(lngLatToPixel(b, 100, 100, 10, 0)).toEqual([100, 100]); // SE
 		expect(lngLatToPixel(b, 100, 100, 5, 5)).toEqual([50, 50]); // center
+	});
+
+	it("keeps counting east across the antimeridian", () => {
+		// Session box runs 170 -> -170 (crossing form), 20 degrees wide.
+		const b = { west: 170, south: 0, east: -170, north: 10 };
+		expect(lngLatToPixel(b, 100, 100, 170, 10)).toEqual([0, 0]);
+		expect(lngLatToPixel(b, 100, 100, 180, 5)).toEqual([50, 50]);
+		expect(lngLatToPixel(b, 100, 100, -175, 5)[0]).toBe(75);
+		expect(lngLatToPixel(b, 100, 100, 160, 5)[0]).toBeGreaterThan(100); // outside, clipped
+	});
+});
+
+describe("bitmapBounds", () => {
+	it("unwraps a seam-crossing box, which deck.gl needs to render anything", () => {
+		// BitmapLayer takes [left, bottom, right, top]; the crossing form would put
+		// `right` west of `left`.
+		expect(bitmapBounds({ west: 170, south: 0, east: -170, north: 10 })).toEqual([170, 0, 190, 10]);
+	});
+
+	it("leaves a plain box alone", () => {
+		expect(bitmapBounds({ west: 10, south: 0, east: 20, north: 5 })).toEqual([10, 0, 20, 5]);
 	});
 });
 
@@ -77,7 +99,7 @@ describe("searchCoverage session lifecycle", () => {
 		probeCenter();
 		expect(hasCoverage()).toBe(false); // no session, disabled
 
-		beginSession([0, 0, 10, 10], 500);
+		beginSession({ west: 0, south: 0, east: 10, north: 10 }, 500);
 		probeCenter();
 		expect(hasCoverage()).toBe(false); // session exists but still disabled
 
@@ -88,7 +110,7 @@ describe("searchCoverage session lifecycle", () => {
 
 	it("clears on stop (endSession)", () => {
 		setEnabled(true);
-		beginSession([0, 0, 10, 10], 500);
+		beginSession({ west: 0, south: 0, east: 10, north: 10 }, 500);
 		probeCenter();
 		expect(hasCoverage()).toBe(true);
 
@@ -99,7 +121,7 @@ describe("searchCoverage session lifecycle", () => {
 
 	it("clears immediately when the toggle is switched off", () => {
 		setEnabled(true);
-		beginSession([0, 0, 10, 10], 500);
+		beginSession({ west: 0, south: 0, east: 10, north: 10 }, 500);
 		probeCenter();
 		expect(hasCoverage()).toBe(true);
 
@@ -109,14 +131,14 @@ describe("searchCoverage session lifecycle", () => {
 
 	it("ignores degenerate bounds (zero area)", () => {
 		setEnabled(true);
-		beginSession([5, 5, 5, 5], 500); // west === east
+		beginSession({ west: 5, south: 5, east: 5, north: 5 }, 500); // west === east
 		probeCenter();
 		expect(hasCoverage()).toBe(false);
 	});
 
 	it("bumps the version and notifies subscribers when probes flush", () => {
 		setEnabled(true);
-		beginSession([0, 0, 10, 10], 500);
+		beginSession({ west: 0, south: 0, east: 10, north: 10 }, 500);
 		const before = getVersion();
 		let hits = 0;
 		const unsub = subscribe(() => hits++);

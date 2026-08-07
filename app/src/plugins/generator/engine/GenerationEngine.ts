@@ -13,11 +13,11 @@ import {
 import { blueLineSample } from "./blueLineSampler";
 import { passesInitialFilters, passesDateFilters, isPanoGood, computeHeading } from "./filters";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { distMeters } from "@/lib/geo/geo";
+import { distMeters, lerpLng, unionBounds } from "@/lib/geo/geo";
 import { searchCoverage } from "../searchCoverage";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import type { LatLng } from "@/types";
+import type { Bounds, LatLng } from "@/types";
 
 function chunk<T>(arr: T[], n: number): T[][] {
 	const result: T[][] = [];
@@ -169,22 +169,23 @@ export class GenerationEngine {
 
 	private beginSearchOverlay(): void {
 		if (this.regions.length === 0) return;
-		let west = Infinity,
-			south = Infinity,
-			east = -Infinity,
-			north = -Infinity;
+		let bounds: Bounds | null = null;
 		for (const region of this.regions) {
-			const [w, s, e, n] = getBoundingBox(region.feature);
-			if (w < west) west = w;
-			if (s < south) south = s;
-			if (e > east) east = e;
-			if (n > north) north = n;
+			const bb = getBoundingBox(region.feature);
+			if (bb) bounds = bounds ? unionBounds(bounds, bb) : bb;
 		}
+		if (!bounds) return;
+		const { west, south, east, north } = bounds;
 		const r = this.settings.radius;
 		const midLat = (south + north) / 2;
 		const mPerDegLng = 111320 * Math.cos((midLat * Math.PI) / 180) || 1;
 		searchCoverage.beginSession(
-			[west - r / mPerDegLng, south - r / 111320, east + r / mPerDegLng, north + r / 111320],
+			{
+				west: west - r / mPerDegLng,
+				south: south - r / 111320,
+				east: east + r / mPerDegLng,
+				north: north + r / 111320,
+			},
 			r,
 		);
 	}
@@ -326,9 +327,11 @@ export class GenerationEngine {
 	}
 
 	private async generateRegionKernels(region: GeneratorRegion): Promise<void> {
-		const [west, south, east, north] = getBoundingBox(region.feature);
+		const bounds = getBoundingBox(region.feature);
+		if (!bounds) return;
+		const { east, north, south } = bounds;
 		const centroidLat = (south + north) / 2;
-		const centroidLng = (west + east) / 2;
+		const centroidLng = lerpLng(bounds, 0.5);
 		const coveringRadius = distMeters(
 			{ lat: centroidLat, lng: centroidLng },
 			{ lat: north, lng: east },
@@ -422,7 +425,8 @@ export class GenerationEngine {
 	}
 
 	private async generateRegionRandom(region: GeneratorRegion): Promise<void> {
-		const [west, south, east, north] = getBoundingBox(region.feature);
+		const bounds = getBoundingBox(region.feature);
+		if (!bounds) return;
 		let coveredRounds = 0;
 
 		while (
@@ -440,7 +444,7 @@ export class GenerationEngine {
 			const maxAttempts = n * 200;
 			while (randomCoords.length < n && attempts < maxAttempts) {
 				attempts++;
-				const pt = randomPointInBounds(south, north, west, east);
+				const pt = randomPointInBounds(bounds);
 				if (pointInGeoJsonGeometry(pt.lng, pt.lat, region.feature.geometry)) {
 					randomCoords.push(pt);
 				}

@@ -6,6 +6,7 @@ import {
 	flushAndWait,
 	addLocs,
 	createLocation,
+	createTag,
 	getAllLocs,
 	getLocCount,
 	withApi,
@@ -135,5 +136,46 @@ describe("Version control - checkout", () => {
 
 		const count = await getLocCount();
 		expect(count).toBe(2);
+	});
+});
+
+// Issue #122: deleting a tag's last location soft-deletes the tag, and restoring
+// a commit from before the delete must revive it - visible, with fresh counts.
+describe("Version control - checkout revives soft-deleted tags", () => {
+	let mapId: string;
+	let tagId: number;
+	let taggedCommitId: string;
+	let locId: number;
+
+	before(async () => {
+		await waitForReady();
+		mapId = await createAndOpenMap("E2E VCS Tag Revival");
+		tagId = (await createTag("Revivable")).id;
+		[locId] = await addLocs([createLocation({ lat: 10, lng: 20, tags: [tagId] })]);
+		taggedCommitId = await withApi(async (api) => api.commitMap("v1: tagged loc"));
+	});
+
+	after(async () => {
+		await closeMap();
+		await deleteMap(mapId);
+	});
+
+	it("deleting the tag's only location soft-deletes it", async () => {
+		await withApi(async (api, id) => api.removeLocations(new Set([id])), locId);
+		await withApi(async (api) => api.commitMap("v2: loc deleted"));
+
+		const tag = await withApi(async (api, tid) => api.getMapState().tags[tid], tagId);
+		expect(tag?.visible).toBe(false);
+	});
+
+	it("restoring the tagged commit revives the tag with its count", async () => {
+		await withApi(async (api, cid) => api.checkoutCommit(cid), taggedCommitId);
+
+		const { visible, count } = await withApi(async (api, tid) => {
+			const s = api.getMapState();
+			return { visible: s.tags[tid]?.visible, count: s.tagCounts[tid] ?? 0 };
+		}, tagId);
+		expect(visible).toBe(true);
+		expect(count).toBe(1);
 	});
 });

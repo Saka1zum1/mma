@@ -2,25 +2,26 @@ import { TileConfig, LayerType, buildSvCoverageConfig, buildTileUrl } from "@/li
 import { getBoundingBox, pointInGeoJsonGeometry } from "./geo";
 import { latLngToWorld, worldToTile, pixelToLatLng } from "@/lib/geo/mercator";
 import { log } from "@/lib/util/log";
-import type { LatLng } from "@/types";
+import type { Bounds, LatLng } from "@/types";
 
 const TILE_SIZE = 256;
 const MAX_TILES_PER_AXIS = 50;
 const FETCH_CONCURRENCY = 10;
 
-function calculateZoom(
-	west: number,
-	south: number,
-	east: number,
-	north: number,
-	maxPerAxis: number,
-) {
-	const nwWorld = latLngToWorld({ lat: north, lng: west });
-	const seWorld = latLngToWorld({ lat: south, lng: east });
+/** Columns run east from the northwest tile, wrapping the world, so a region crossing
+ *  the antimeridian counts forward instead of coming out negative and scanning nothing. */
+function tileCols(nwX: number, seX: number, zoom: number): number {
+	const perAxis = 2 ** zoom;
+	return ((seX - nwX + perAxis) % perAxis) + 1;
+}
+
+function calculateZoom(b: Bounds, maxPerAxis: number) {
+	const nwWorld = latLngToWorld({ lat: b.north, lng: b.west });
+	const seWorld = latLngToWorld({ lat: b.south, lng: b.east });
 	for (let zoom = 16; zoom >= 0; zoom--) {
 		const nw = worldToTile(nwWorld.x, nwWorld.y, zoom);
 		const se = worldToTile(seWorld.x, seWorld.y, zoom);
-		const cols = se.x - nw.x + 1;
+		const cols = tileCols(nw.x, se.x, zoom);
 		const rows = se.y - nw.y + 1;
 		if (cols <= maxPerAxis && rows <= maxPerAxis) {
 			return { zoom, nwTile: nw, seTile: se, cols, rows };
@@ -28,7 +29,7 @@ function calculateZoom(
 	}
 	const nw = worldToTile(nwWorld.x, nwWorld.y, 0);
 	const se = worldToTile(seWorld.x, seWorld.y, 0);
-	return { zoom: 0, nwTile: nw, seTile: se, cols: se.x - nw.x + 1, rows: se.y - nw.y + 1 };
+	return { zoom: 0, nwTile: nw, seTile: se, cols: tileCols(nw.x, se.x, 0), rows: se.y - nw.y + 1 };
 }
 
 function buildSamplerTileConfig(): TileConfig {
@@ -99,14 +100,9 @@ export async function blueLineSample(
 	feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
 	maxTilesPerAxis = MAX_TILES_PER_AXIS,
 ): Promise<LatLng[]> {
-	const [west, south, east, north] = getBoundingBox(feature);
-	const { zoom, nwTile, seTile, cols, rows } = calculateZoom(
-		west,
-		south,
-		east,
-		north,
-		maxTilesPerAxis,
-	);
+	const bounds = getBoundingBox(feature);
+	if (!bounds) return [];
+	const { zoom, nwTile, seTile, cols, rows } = calculateZoom(bounds, maxTilesPerAxis);
 	log.info(`[generator] Blue line: ${cols * rows} tiles (${cols}x${rows}) at zoom ${zoom}`);
 
 	const cfg = buildSamplerTileConfig();
@@ -116,9 +112,10 @@ export async function blueLineSample(
 	const pixelYs: number[] = [];
 
 	const tileJobs: { tx: number; ty: number }[] = [];
+	const perAxis = 2 ** zoom;
 	for (let ty = nwTile.y; ty <= seTile.y; ty++) {
-		for (let tx = nwTile.x; tx <= seTile.x; tx++) {
-			tileJobs.push({ tx, ty });
+		for (let c = 0; c < cols; c++) {
+			tileJobs.push({ tx: (nwTile.x + c) % perAxis, ty });
 		}
 	}
 

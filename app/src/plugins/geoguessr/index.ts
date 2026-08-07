@@ -6,7 +6,7 @@ import { controller } from "./provider";
 registerPlugin({
 	id: "geoguessr",
 	name: "GeoGuessr",
-	description: "Push and pull locations to/from a linked GeoGuessr map",
+	description: "Bidirectional sync with Geoguessr maps",
 	icon: mdiMapMarker,
 	experimental: true,
 	sidebar: GeoGuessrSidebar,

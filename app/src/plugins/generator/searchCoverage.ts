@@ -5,7 +5,12 @@
 // overlap darkening. This module is deck-free (so it stays unit-testable); the buffer
 // is rendered by coverageOverlay.ts into the plugin's own GoogleMapsOverlay.
 
-type Bounds = [number, number, number, number]; // [west, south, east, north]
+import { foldLng, lngSpan } from "@/lib/geo/geo";
+import type { Bounds } from "@/types";
+
+/** deck.gl BitmapLayer bounds, `[left, bottom, right, top]`. Unwrapped, so `right` runs
+ *  past 180 for a region crossing the antimeridian rather than doubling back west. */
+export type BitmapBounds = [number, number, number, number];
 
 const TARGET_DISC_PX = 6; // texels per probe radius at full resolution
 const MIN_DISC_PX = 2.5; // floor so coarse (large-region) textures still draw round dots, not plus-signs
@@ -31,7 +36,7 @@ const listeners = new Set<() => void>();
 
 export interface SearchCoverageImage {
 	image: ImageData;
-	bounds: Bounds;
+	bounds: BitmapBounds;
 }
 
 function notify(): void {
@@ -84,7 +89,13 @@ export function stampDisc(
 	}
 }
 
-/** Map a lng/lat to texel coordinates (origin top-left = NW corner). */
+/** A crossing box must be unwrapped here or BitmapLayer renders nothing. */
+export function bitmapBounds(b: Bounds): BitmapBounds {
+	return [b.west, b.south, b.west + lngSpan(b), b.north];
+}
+
+/** Map a lng/lat to texel coordinates (origin top-left = NW corner). Longitude counts
+ *  degrees east of `west`; points outside land off-texture and get clipped. */
 export function lngLatToPixel(
 	b: Bounds,
 	w: number,
@@ -92,19 +103,18 @@ export function lngLatToPixel(
 	lng: number,
 	lat: number,
 ): [number, number] {
-	const [west, south, east, north] = b;
-	const px = ((lng - west) / (east - west)) * w;
-	const py = ((north - lat) / (north - south)) * h;
+	const px = (foldLng(lng - b.west, 0) / lngSpan(b)) * w;
+	const py = ((b.north - lat) / (b.north - b.south)) * h;
 	return [px, py];
 }
 
 /** Start a fresh session over the given bounds. Sizes the texture so a probe
  *  radius is ~TARGET_DISC_PX texels, capped at MAX_DIM. Allocation is lazy. */
 export function beginSession(b: Bounds, radiusMeters: number): void {
-	const [west, south, east, north] = b;
+	const { south, north } = b;
 	const midLat = (south + north) / 2;
 	const mPerDegLng = 111320 * Math.cos((midLat * Math.PI) / 180);
-	const widthMeters = (east - west) * mPerDegLng;
+	const widthMeters = lngSpan(b) * mPerDegLng;
 	const heightMeters = (north - south) * 111320;
 
 	if (!(widthMeters > 0) || !(heightMeters > 0) || !(radiusMeters > 0)) {
@@ -179,7 +189,7 @@ export function getCoverageImage(): SearchCoverageImage | null {
 	frontImage = 1 - frontImage;
 	const image = images[frontImage];
 	image.data.set(buffer);
-	return { image, bounds };
+	return { image, bounds: bitmapBounds(bounds) };
 }
 
 export function subscribe(listener: () => void): () => void {
