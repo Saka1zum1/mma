@@ -1,3 +1,13 @@
+## v0.8.10 - Unreleased
+- Location actions in the map right-click menu; select country/subdivision under cursor
+- Rebuilt measure tool on every map style; Street View screenshot button
+- Collapsible fullscreen tag bar; movement-mode cycle hotkey; finer fullscreen minimap sizing
+- Layer opacity toggle remembers last non-zero value; unset location zoom opens fully zoomed out
+- Faster selections, duplicate detection, field filters, exact date lookup, and vision search
+- **Trekker** camera type in filters; antimeridian-safe selections and generator regions
+- Fixed overlapping selection paint order, bulk import tag without Enter, pano UI hiding nav arrows
+- Fixed stale tag counts after commit checkout, tag revival on map reopen, date picker hotkey focus
+
 ## v0.8.9 - 2026-08-04
 - **LocalGuessr plugin gains NMPZ mode**
 - Guess map now cycles basemaps (map → satellite → OSM → vector) via a new layers button;

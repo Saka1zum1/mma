@@ -466,6 +466,8 @@ export type AltProviderSettings = {
 	pointSizeScale: number,
 };
 
+export type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
+
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
@@ -1154,8 +1156,8 @@ export type RenderEntry = {
 	lng: number,
 	lat: number,
 	heading: number,
-	/**  `None` = drawn by the base layer, `Some(rgb)` = drawn by the selection overlay. */
-	sel: [number, number, number] | null,
+	/**  `None` = drawn by the base layer, `Some(paint)` = drawn by the selection overlay. */
+	sel: SelPaint | null,
 	/**
 	 *  The slot this row vacated when it crossed cells. Present only for a move, so JS
 	 *  mirrors the swap-remove and carries the overlay entry across instead of inferring
@@ -1175,7 +1177,7 @@ export type RenderPatchEntry = {
 	lng: number | null,
 	lat: number | null,
 	heading: number | null,
-	sel: [number, number, number] | null,
+	sel: SelPaint | null,
 };
 
 /**
@@ -1309,6 +1311,17 @@ export type SeenWriteEntry = {
 	countryCode: string | null,
 	address: string | null,
 	thumbnail: string | null,
+};
+
+/**
+ *  The selection drawing a row: its colour, and its index in `SelectionState::resolved`.
+ *  The index is the draw order — a later selection overdraws an earlier one — so the
+ *  overlay can be ordered by it instead of by whatever order rows happen to arrive in.
+ *  Every marker sits at z=0 in one deck.gl layer, so buffer order is the only z there is.
+ */
+export type SelPaint = {
+	idx: number,
+	color: [number, number, number],
 };
 
 /**

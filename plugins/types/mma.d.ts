@@ -380,12 +380,15 @@ declare const en: {
     readonly "settings.showFullscreenReviewBar": "Show review bar in fullscreen";
     readonly "settings.showFullscreenTagbar": "Show tag bar in fullscreen";
     readonly "settings.showGroundArrow": "Show ground arrow";
+    readonly "settings.hideNavWithUI": "Hide navigation with pano UI";
+    readonly "settings.hideNavWithUIDesc": "When the pano UI is hidden, link arrows, the ground arrow, and the navigation X are hidden too.";
     readonly "settings.showJumpButtons": "Jump forward/backward buttons";
     readonly "settings.showLinksControl": "Show link arrows (ground navigation)";
     readonly "settings.showMapLinks": "Map links (open in maps, copy link)";
     readonly "settings.showNavArrow": "Show navigation X";
     readonly "settings.showPanoMetadata": "Show pano metadata";
     readonly "settings.showReturnToSpawn": "Return to spawn button";
+    readonly "settings.showScreenshotButton": "Screenshot button";
     readonly "settings.showRoadLabels": "Show road labels";
     readonly "settings.showZoom": "Zoom controls";
     readonly "settings.slowModifier": "Alt slow-down";
@@ -808,6 +811,7 @@ declare const en: {
     readonly "editor.replacePlaceholder": "Replace with...";
     readonly "editor.replaceTags.one": "Replace {count} tag";
     readonly "editor.replaceTags.other": "Replace {count} tags";
+    readonly "editor.downloadScreenshot": "Download screenshot";
     readonly "editor.resetZoom": "Reset zoom";
     readonly "editor.returnToSpawn": "Return to spawn (R)";
     readonly "editor.reviewProgress": "Reviewing {pos} / {total} · {reviewed} reviewed";
@@ -2244,6 +2248,7 @@ declare const commands: {
     /**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
     valiSubdivisions: (country: string) => Promise<string>;
 };
+type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
  *  (at most one `enabled: true` at a time); the frontend enforces that on write.
@@ -2983,8 +2988,8 @@ type RenderEntry = {
     lng: number;
     lat: number;
     heading: number;
-    /**  `None` = drawn by the base layer, `Some(rgb)` = drawn by the selection overlay. */
-    sel: [number, number, number] | null;
+    /**  `None` = drawn by the base layer, `Some(paint)` = drawn by the selection overlay. */
+    sel: SelPaint | null;
     /**
      *  The slot this row vacated when it crossed cells. Present only for a move, so JS
      *  mirrors the swap-remove and carries the overlay entry across instead of inferring
@@ -3003,7 +3008,7 @@ type RenderPatchEntry = {
     lng: number | null;
     lat: number | null;
     heading: number | null;
-    sel: [number, number, number] | null;
+    sel: SelPaint | null;
 };
 /**
  *  Parameters for a full render rebuild. `marker_style` ("arrow" or "pin") determines
@@ -3129,6 +3134,16 @@ type SeenWriteEntry = {
     countryCode: string | null;
     address: string | null;
     thumbnail: string | null;
+};
+/**
+ *  The selection drawing a row: its colour, and its index in `SelectionState::resolved`.
+ *  The index is the draw order — a later selection overdraws an earlier one — so the
+ *  overlay can be ordered by it instead of by whatever order rows happen to arrive in.
+ *  Every marker sits at z=0 in one deck.gl layer, so buffer order is the only z there is.
+ */
+type SelPaint = {
+    idx: number;
+    color: [number, number, number];
 };
 /**
  *  A named, colored selection. `key` is deterministic (e.g., `"tag:5"`, `"polygon:abc"`)
@@ -4290,12 +4305,15 @@ declare const DEFAULTS: {
     showMapLinks: boolean;
     showCoordinateDisplay: boolean;
     showFullscreenButton: boolean;
+    showScreenshotButton: boolean;
     showPanoMetadata: boolean;
     exactDateFormat: ExactDateFormat;
     dateTimezone: DateTimezone;
     showNavArrow: boolean;
     showGroundArrow: boolean;
     hidePanoUI: boolean;
+    /** Hiding the pano UI also hides navigation: link arrows, ground arrow, click-to-go X. */
+    hideNavWithUI: boolean;
     fullscreenMap: boolean;
     showFullscreenMapMeta: boolean;
     showFullscreenMiniLocationPreview: boolean;
@@ -5108,12 +5126,14 @@ declare const surface: {
         showMapLinks: boolean;
         showCoordinateDisplay: boolean;
         showFullscreenButton: boolean;
+        showScreenshotButton: boolean;
         showPanoMetadata: boolean;
         exactDateFormat: ExactDateFormat;
         dateTimezone: DateTimezone;
         showNavArrow: boolean;
         showGroundArrow: boolean;
         hidePanoUI: boolean;
+        hideNavWithUI: boolean;
         fullscreenMap: boolean;
         showFullscreenMapMeta: boolean;
         showFullscreenMiniLocationPreview: boolean;
@@ -5210,4 +5230,4 @@ declare global {
 }
 
 export { MMA as MMAApi, PanoType, commands };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CameraType, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };

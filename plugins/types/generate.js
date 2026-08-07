@@ -94,7 +94,7 @@ async function main() {
     // so it ships verbatim next to mma.d.ts; only the path alias needs remapping.
     const augment = fs
       .readFileSync(path.join(appDir, "src", "types", "google-maps.d.ts"), "utf-8")
-      .replace(/import\("@\/types"\)/g, 'import("./mma")');
+      .replace(/import\("@\/[^"]*"\)/g, 'import("./mma")');
     fs.writeFileSync(path.resolve(__dirname, "google-maps.d.ts"), augment);
     console.log("Generated plugins/types/mma.d.ts + google-maps.d.ts");
   } finally {
