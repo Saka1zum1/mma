@@ -14,6 +14,7 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 /// Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
@@ -794,66 +795,55 @@ pub fn resolve(view: &LocView, props: &SelectionProps) -> Vec<u32> {
 
 // --- Geometry (ray-casting point-in-polygon) ---
 
-/// Returns true if the ring involves the antimeridian — either wrapped coordinates
-/// (edge lng jump > 180) or unwrapped (any vertex lng outside [-180, 180]).
-pub(crate) fn ring_crosses_antimeridian(ring: &[[f64; 2]]) -> bool {
-    let n = ring.len();
-    if n < 2 {
-        return false;
+/// Shortest signed longitude delta from `from` to `to`, in [-180, 180].
+#[inline]
+pub(crate) fn lng_delta(from: f64, to: f64) -> f64 {
+    let d = (to - from) % 360.0;
+    if d > 180.0 {
+        d - 360.0
+    } else if d < -180.0 {
+        d + 360.0
+    } else {
+        d
     }
-    let mut j = n - 1;
-    for i in 0..n {
-        if ring[i][0] > 180.0 || ring[i][0] < -180.0 {
-            return true;
-        }
-        if (ring[i][0] - ring[j][0]).abs() > 180.0 {
-            return true;
-        }
-        j = i;
-    }
-    false
 }
 
-#[inline]
-pub(crate) fn normalize_lng(lng: f64) -> f64 {
-    if lng < 0.0 {
-        lng + 360.0
-    } else {
-        lng
+/// Rewrite longitudes so each vertex sits within 180° of its predecessor; the span may
+/// run outside [-180, 180]. Edges of 180° or more fold the short way round - split them
+/// first (JS `densifyRing`). Mirrors JS `unwrapRing`. Borrows when already continuous.
+pub(crate) fn unwrap_ring(ring: &[[f64; 2]]) -> Cow<'_, [[f64; 2]]> {
+    if ring.windows(2).all(|w| (w[1][0] - w[0][0]).abs() <= 180.0) {
+        return Cow::Borrowed(ring);
     }
+    let mut out = Vec::with_capacity(ring.len());
+    out.push(ring[0]);
+    let mut prev = ring[0][0];
+    for &[lng, lat] in &ring[1..] {
+        prev += lng_delta(prev, lng);
+        out.push([prev, lat]);
+    }
+    Cow::Owned(out)
+}
+
+/// Shift `lng` by whole turns into `[min, min + 360)`.
+#[inline]
+pub(crate) fn fold_lng(lng: f64, min: f64) -> f64 {
+    min + (lng - min).rem_euclid(360.0)
 }
 
 /// Ray-casting algorithm: cast a horizontal ray eastward from (lng, lat) and count
 /// edge crossings. Odd count = inside. O(V) where V = vertices.
-/// Handles antimeridian-crossing rings by shifting to [0, 360).
 pub(crate) fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
-    let crosses = ring_crosses_antimeridian(ring);
-    let lng = if crosses { normalize_lng(lng) } else { lng };
-    let mut inside = false;
-    let n = ring.len();
-    let mut j = n.wrapping_sub(1);
-    for i in 0..n {
-        let xi = if crosses {
-            normalize_lng(ring[i][0])
-        } else {
-            ring[i][0]
-        };
-        let yi = ring[i][1];
-        let xj = if crosses {
-            normalize_lng(ring[j][0])
-        } else {
-            ring[j][0]
-        };
-        let yj = ring[j][1];
-        if ((yi > lat) != (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
-            inside = !inside;
-        }
-        j = i;
+    if ring.is_empty() {
+        return false;
     }
-    inside
+    let ring = unwrap_ring(ring);
+    let min = ring.iter().map(|v| v[0]).fold(f64::INFINITY, f64::min);
+    ring_test_raw(fold_lng(lng, min), lat, &ring)
 }
 
-/// Crossing-number loop with no per-edge normalization; callers pre-normalize.
+/// Crossing-number loop with no per-edge folding; callers pre-fold both the ring and
+/// the test longitude into one frame.
 #[inline]
 fn ring_test_raw(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
     let mut inside = false;
@@ -870,40 +860,30 @@ fn ring_test_raw(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
     inside
 }
 
-/// One ring preprocessed for repeated point tests: the antimeridian flag and bbox are
-/// computed once here instead of once per tested point, and a crossing ring stores a
-/// pre-normalized copy so the crossing-number loop runs branch-free.
+/// One ring preprocessed for repeated point tests: the unwrap pass and the bbox are
+/// paid once here instead of once per tested point, so the crossing-number loop runs
+/// branch-free over longitudes already in the ring's own frame.
 pub(crate) struct PreparedRing<'a> {
-    ring: std::borrow::Cow<'a, [[f64; 2]]>,
-    crosses: bool,
-    /// `[min_lng, min_lat, max_lng, max_lat]`, in [0,360) space when `crosses`.
+    ring: Cow<'a, [[f64; 2]]>,
+    /// `[min_lng, min_lat, max_lng, max_lat]` in the unwrapped ring's frame, so
+    /// `min_lng` may sit below -180 and `max_lng` above it.
     bb: [f64; 4],
 }
 
 impl<'a> PreparedRing<'a> {
     pub(crate) fn new(ring: &'a [[f64; 2]]) -> Self {
-        let crosses = ring_crosses_antimeridian(ring);
-        let ring: std::borrow::Cow<'a, [[f64; 2]]> = if crosses {
-            std::borrow::Cow::Owned(
-                ring.iter()
-                    .map(|&[lng, lat]| [normalize_lng(lng), lat])
-                    .collect(),
-            )
-        } else {
-            std::borrow::Cow::Borrowed(ring)
-        };
+        let ring = unwrap_ring(ring);
         let mut bb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
         let mut any = false;
-        extend_bbox_with_ring(&mut bb, &mut any, false, &ring);
-        Self { ring, crosses, bb }
+        extend_bbox_with_ring(&mut bb, &mut any, &ring);
+        Self { ring, bb }
     }
 
     /// Bbox reject, then the raw crossing test. Equivalent to `point_in_ring`.
     #[inline]
     pub(crate) fn contains(&self, lng: f64, lat: f64) -> bool {
-        let lng = if self.crosses { normalize_lng(lng) } else { lng };
-        lng >= self.bb[0]
-            && lng <= self.bb[2]
+        let lng = fold_lng(lng, self.bb[0]);
+        lng <= self.bb[2]
             && lat >= self.bb[1]
             && lat <= self.bb[3]
             && ring_test_raw(lng, lat, &self.ring)
@@ -988,49 +968,49 @@ pub(crate) fn point_in_geometry(lng: f64, lat: f64, geom: &PolygonGeometry) -> b
 /// Axis-aligned bounding box `[min_lng, min_lat, max_lng, max_lat]` over every ring of
 /// a geometry (outer + holes + extra polygons). Used as a cheap broad-phase reject
 /// before the full crossing-number test in polygon selections. `None` if no coords.
-/// When the geometry crosses the antimeridian, longitudes are normalized to [0, 360)
-/// so `max_lng` may exceed 180 — `in_bbox` handles this transparently.
+/// Longitudes are in the unwrapped frame of the first ring, so `min_lng` may sit below
+/// -180 and `max_lng` above it - `in_bbox` handles this transparently.
 pub(crate) fn geometry_bbox(geom: &PolygonGeometry) -> Option<[f64; 4]> {
-    let crosses = geom
-        .coordinates
-        .iter()
-        .chain(
-            geom.extra_polygons
-                .iter()
-                .flat_map(|polys| polys.iter().flatten()),
-        )
-        .any(|ring| ring_crosses_antimeridian(ring));
     let mut bb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
     let mut any = false;
     for ring in &geom.coordinates {
-        extend_bbox_with_ring(&mut bb, &mut any, crosses, ring);
+        extend_bbox_with_ring(&mut bb, &mut any, ring);
     }
     if let Some(extras) = &geom.extra_polygons {
         for poly in extras {
             for ring in poly {
-                extend_bbox_with_ring(&mut bb, &mut any, crosses, ring);
+                extend_bbox_with_ring(&mut bb, &mut any, ring);
             }
         }
     }
     if any {
+        anchor_bbox(&mut bb);
         Some(bb)
     } else {
         None
     }
 }
 
-/// Fold one ring's vertices into a running `[min_lng, min_lat, max_lng, max_lat]`,
-/// normalizing longitudes to [0, 360) when the geometry crosses the antimeridian.
-/// `any` flips true once at least one vertex has been seen. Shared by owned and
-/// archived bbox computation.
-pub(crate) fn extend_bbox_with_ring(
-    bb: &mut [f64; 4],
-    any: &mut bool,
-    crosses: bool,
-    ring: &[[f64; 2]],
-) {
-    for &[lng, lat] in ring {
-        let lng = if crosses { normalize_lng(lng) } else { lng };
+/// Grow a running `[min_lng, min_lat, max_lng, max_lat]` to cover one ring, unwrapped
+/// then shifted by whole turns to sit nearest the box so far. `any` flips true once at
+/// least one vertex has been seen. Shared by owned and archived bbox computation.
+pub(crate) fn extend_bbox_with_ring(bb: &mut [f64; 4], any: &mut bool, ring: &[[f64; 2]]) {
+    let ring = unwrap_ring(ring);
+    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+    for &[lng, _] in ring.iter() {
+        lo = lo.min(lng);
+        hi = hi.max(lng);
+    }
+    if lo > hi {
+        return;
+    }
+    let shift = if *any {
+        (((bb[0] + bb[2]) - (lo + hi)) / 720.0).round() * 360.0
+    } else {
+        0.0
+    };
+    for &[lng, lat] in ring.iter() {
+        let lng = lng + shift;
         if lng < bb[0] {
             bb[0] = lng;
         }
@@ -1047,17 +1027,27 @@ pub(crate) fn extend_bbox_with_ring(
     }
 }
 
-/// `bb` is `[min_lng, min_lat, max_lng, max_lat]`.
-/// When `max_lng > 180` the bbox is in normalized [0,360) space (antimeridian crossing);
-/// negative test longitudes are shifted by +360 automatically.
+/// Slide a finished box so its western edge sits in [-180, 180), letting the hot
+/// `in_bbox` fold a test longitude with one conditional add instead of a modulo.
+#[inline]
+pub(crate) fn anchor_bbox(bb: &mut [f64; 4]) {
+    let shift = -((bb[0] + 180.0) / 360.0).floor() * 360.0;
+    bb[0] += shift;
+    bb[2] += shift;
+}
+
+/// `bb` is `[min_lng, min_lat, max_lng, max_lat]` with `min_lng` anchored in [-180, 180)
+/// by `anchor_bbox`; `max_lng` may run past 180 when the box crosses the antimeridian.
+/// Requires a test longitude in [-180, 180]. Nothing normalizes longitude on ingest, so
+/// an import carrying lng 200 would miss here; fix that at the ingest boundary, not with
+/// a modulo on this hot path.
 #[inline]
 pub(crate) fn in_bbox(lng: f64, lat: f64, bb: &[f64; 4]) -> bool {
-    let lng = if bb[2] > 180.0 && lng < 0.0 {
-        lng + 360.0
-    } else {
-        lng
-    };
-    lng >= bb[0] && lng <= bb[2] && lat >= bb[1] && lat <= bb[3]
+    if lat < bb[1] || lat > bb[3] {
+        return false;
+    }
+    let lng = if lng < bb[0] { lng + 360.0 } else { lng };
+    lng <= bb[2]
 }
 
 // --- Duplicates (bitmask version) ---
@@ -1124,6 +1114,103 @@ impl SpatialHash {
     }
 }
 
+/// Index groups keyed by exact coordinate, the degenerate-radius fallback shared by
+/// every duplicate path: "within 0 m" means exact-coordinate equality. The grid would
+/// divide by zero, saturate every point to one cell, and collapse to O(n^2). Hashing
+/// on exact coords instead is O(n); non-finite coordinates never match anything. (#69)
+fn exact_coord_groups(pts: &[(f64, f64)]) -> HashMap<(u64, u64), Vec<usize>> {
+    let mut groups: HashMap<(u64, u64), Vec<usize>> = HashMap::new();
+    for (i, &(lat, lng)) in pts.iter().enumerate() {
+        if !lat.is_finite() || !lng.is_finite() {
+            continue;
+        }
+        // `+ 0.0` folds -0.0 into +0.0 so the two compare equal.
+        groups
+            .entry(((lat + 0.0).to_bits(), (lng + 0.0).to_bits()))
+            .or_default()
+            .push(i);
+    }
+    groups
+}
+
+/// The grid broad-phase every duplicate path runs on: cell sizing, coordinate
+/// quantization, and the 3x3 neighborhood walk live here once, so the pair sweep and
+/// the parallel per-point scan cannot drift apart. Read-only after build, so callers
+/// may probe it from parallel iterators.
+struct DupGrid {
+    /// (lat, lng) per point, the coordinates the cells were quantized from.
+    pts: Vec<(f64, f64)>,
+    cells: Vec<(i32, i32)>,
+    grid: SpatialHash,
+    thresh_m2: f64,
+}
+
+impl DupGrid {
+    /// `None` for a degenerate radius (distance == 0, or a non-finite cell size) —
+    /// callers fall back to `exact_coord_groups`.
+    fn build(pts: &[(f64, f64)], distance_m: f64) -> Option<DupGrid> {
+        let cell_deg = distance_m / 111_000.0 * 1.5;
+        if !(cell_deg > 0.0) {
+            return None;
+        }
+        let pts = pts.to_vec();
+        let cells: Vec<(i32, i32)> = pts
+            .iter()
+            .map(|&(lat, lng)| {
+                (
+                    (lng / cell_deg).floor() as i32,
+                    (lat / cell_deg).floor() as i32,
+                )
+            })
+            .collect();
+        let grid = SpatialHash::build(&cells);
+        Some(DupGrid {
+            pts,
+            cells,
+            grid,
+            thresh_m2: distance_m * distance_m,
+        })
+    }
+
+    /// Visit every point within the distance threshold of `pi`, skipping indices below
+    /// `min_pj` before the distance test (`pi + 1` gives the ordered pair sweep, `0`
+    /// gives all neighbours). Stops early when `visit` returns true; returns whether it
+    /// stopped.
+    fn for_each_neighbor(
+        &self,
+        pi: usize,
+        min_pj: usize,
+        mut visit: impl FnMut(usize) -> bool,
+    ) -> bool {
+        let (lat, lng) = self.pts[pi];
+        let (cx, cy) = self.cells[pi];
+        let cos_lat = lat.to_radians().cos();
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                // saturating: a stray non-finite coord can floor to i32::MAX/MIN; a plain
+                // add would overflow (panic in debug, wrap in release).
+                let (nx, ny) = (cx.saturating_add(dx), cy.saturating_add(dy));
+                for &pj in self.grid.bucket(nx, ny) {
+                    let pj = pj as usize;
+                    if pj == pi || pj < min_pj {
+                        continue;
+                    }
+                    // Bucket may hold points from collided cells; the cell-coord check
+                    // keeps us to the true 3x3 neighborhood. Then the distance test.
+                    if self.cells[pj] != (nx, ny) {
+                        continue;
+                    }
+                    let (plat, plng) = self.pts[pj];
+                    if equirect_m2(lat, lng, plat, plng, cos_lat) <= self.thresh_m2 && visit(pj) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
 /// Grid broad-phase pair sweep shared by the duplicate groups/prune paths.
 /// Calls `pair(state, pi, pj)` (pi < pj) for every index pair within `distance_m`
 /// metres. O(N) average with uniform distribution, O(N^2) worst case if all points
@@ -1138,24 +1225,9 @@ fn for_pairs_within<S>(
     if n < 2 {
         return;
     }
-    let cell_deg = distance_m / 111_000.0 * 1.5;
-    // Degenerate radius (distance == 0, or a non-finite cell size): "within 0 m" means
-    // exact-coordinate equality. The grid would divide by zero, saturate every point to
-    // one cell, and collapse to O(n^2). Hash on exact coords instead — O(n). (#69)
-    if !(cell_deg > 0.0) {
-        let mut groups: HashMap<(u64, u64), Vec<usize>> = HashMap::new();
-        for i in 0..n {
-            let (lat, lng) = pos(i);
-            if !lat.is_finite() || !lng.is_finite() {
-                continue;
-            }
-            // `+ 0.0` folds -0.0 into +0.0 so the two compare equal.
-            groups
-                .entry(((lat + 0.0).to_bits(), (lng + 0.0).to_bits()))
-                .or_default()
-                .push(i);
-        }
-        for idxs in groups.values() {
+    let pts: Vec<(f64, f64)> = (0..n).map(pos).collect();
+    let Some(grid) = DupGrid::build(&pts, distance_m) else {
+        for idxs in exact_coord_groups(&pts).values() {
             for (a, &pi) in idxs.iter().enumerate() {
                 for &pj in &idxs[a + 1..] {
                     pair(state, pi, pj);
@@ -1163,44 +1235,12 @@ fn for_pairs_within<S>(
             }
         }
         return;
-    }
-    let cells: Vec<(i32, i32)> = (0..n)
-        .map(|i| {
-            let (lat, lng) = pos(i);
-            (
-                (lng / cell_deg).floor() as i32,
-                (lat / cell_deg).floor() as i32,
-            )
-        })
-        .collect();
-    let grid = SpatialHash::build(&cells);
-    let thresh_m2 = distance_m * distance_m;
+    };
     for pi in 0..n {
-        let (lat, lng) = pos(pi);
-        let (cx, cy) = cells[pi];
-        let cos_lat = lat.to_radians().cos();
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                // saturating: a stray non-finite coord can floor to i32::MAX/MIN; a plain
-                // add would overflow (panic in debug, wrap in release).
-                let (nx, ny) = (cx.saturating_add(dx), cy.saturating_add(dy));
-                for &pj in grid.bucket(nx, ny) {
-                    let pj = pj as usize;
-                    if pj <= pi {
-                        continue;
-                    }
-                    // Bucket may hold points from collided cells; the cell-coord check
-                    // keeps us to the true 3x3 neighborhood. Then the distance test.
-                    if cells[pj] != (nx, ny) {
-                        continue;
-                    }
-                    let (plat, plng) = pos(pj);
-                    if equirect_m2(lat, lng, plat, plng, cos_lat) <= thresh_m2 {
-                        pair(state, pi, pj);
-                    }
-                }
-            }
-        }
+        grid.for_each_neighbor(pi, pi + 1, |pj| {
+            pair(state, pi, pj);
+            false
+        });
     }
 }
 
@@ -1249,67 +1289,23 @@ fn find_duplicates_bitmask(view: &LocView, distance_m: f64, mask: &mut [bool]) {
         return;
     }
 
-    let cell_deg = distance_m / 111_000.0 * 1.5;
-    // Degenerate radius: "within 0 m" means exact-coordinate equality — count
-    // occupancy per exact coordinate; every member of a bucket of >= 2 is a dup. (#69)
-    if !(cell_deg > 0.0) {
-        let key = |p: &Pt| -> Option<(u64, u64)> {
-            if !p.lat.is_finite() || !p.lng.is_finite() {
-                return None;
-            }
-            // `+ 0.0` folds -0.0 into +0.0 so the two compare equal.
-            Some(((p.lat + 0.0).to_bits(), (p.lng + 0.0).to_bits()))
-        };
-        let mut counts: HashMap<(u64, u64), u32> = HashMap::new();
-        for p in &points {
-            if let Some(k) = key(p) {
-                *counts.entry(k).or_insert(0) += 1;
-            }
-        }
-        for p in &points {
-            if key(p).is_some_and(|k| counts[&k] >= 2) {
-                mask[p.global_idx] = true;
-            }
-        }
-        return;
-    }
-
-    let cells: Vec<(i32, i32)> = points
-        .iter()
-        .map(|p| {
-            (
-                (p.lng / cell_deg).floor() as i32,
-                (p.lat / cell_deg).floor() as i32,
-            )
-        })
-        .collect();
-    let grid = SpatialHash::build(&cells);
-    let thresh_m2 = distance_m * distance_m;
-
-    let has_neighbor = |pi: usize| -> bool {
-        let (lat, lng) = (points[pi].lat, points[pi].lng);
-        let (cx, cy) = cells[pi];
-        let cos_lat = lat.to_radians().cos();
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                let (nx, ny) = (cx.saturating_add(dx), cy.saturating_add(dy));
-                for &pj in grid.bucket(nx, ny) {
-                    let pj = pj as usize;
-                    if pj == pi || cells[pj] != (nx, ny) {
-                        continue;
-                    }
-                    if equirect_m2(lat, lng, points[pj].lat, points[pj].lng, cos_lat) <= thresh_m2 {
-                        return true;
-                    }
+    let pts: Vec<(f64, f64)> = points.iter().map(|p| (p.lat, p.lng)).collect();
+    // Degenerate radius: every member of an exact-coordinate group of >= 2 is a dup.
+    let Some(grid) = DupGrid::build(&pts, distance_m) else {
+        for idxs in exact_coord_groups(&pts).values() {
+            if idxs.len() >= 2 {
+                for &i in idxs {
+                    mask[points[i].global_idx] = true;
                 }
             }
         }
-        false
+        return;
     };
+
     let marks: Vec<bool> = (0..n)
         .into_par_iter()
         .with_min_len(4096)
-        .map(has_neighbor)
+        .map(|pi| grid.for_each_neighbor(pi, 0, |_| true))
         .collect();
     for (i, p) in points.iter().enumerate() {
         if marks[i] {
@@ -1363,7 +1359,11 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
             let ra = find(&mut uf.0, pi);
             let rb = find(&mut uf.0, pj);
             if ra != rb {
-                let (small, big) = if uf.1[ra] < uf.1[rb] { (ra, rb) } else { (rb, ra) };
+                let (small, big) = if uf.1[ra] < uf.1[rb] {
+                    (ra, rb)
+                } else {
+                    (rb, ra)
+                };
                 uf.0[small] = big;
                 uf.1[big] += uf.1[small];
             }

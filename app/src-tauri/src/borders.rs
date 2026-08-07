@@ -501,13 +501,13 @@ fn arch_point_in_feature(lng: f64, lat: f64, f: &ArchivedArchFeature) -> bool {
 
 fn arch_feature_bbox(f: &ArchivedArchFeature) -> Option<[f64; 4]> {
     let all_rings = || f.rings.iter().chain(f.extra.iter().flat_map(|p| p.iter()));
-    let crosses = all_rings().any(|r| selections::ring_crosses_antimeridian(r.as_slice()));
     let mut bb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
     let mut any = false;
     for r in all_rings() {
-        selections::extend_bbox_with_ring(&mut bb, &mut any, crosses, r.as_slice());
+        selections::extend_bbox_with_ring(&mut bb, &mut any, r.as_slice());
     }
     if any {
+        selections::anchor_bbox(&mut bb);
         Some(bb)
     } else {
         None

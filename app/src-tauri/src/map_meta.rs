@@ -347,105 +347,123 @@ impl Default for ScoreBounds {
 // Known field defs + auto-registration
 // ---------------------------------------------------------------------------
 
+struct KnownField {
+    key: &'static str,
+    type_tag: &'static str,
+    label: &'static str,
+    values: &'static [&'static str],
+    labels: &'static [(&'static str, &'static str)],
+    circular_period: Option<f64>,
+}
+
+impl KnownField {
+    const fn simple(key: &'static str, type_tag: &'static str, label: &'static str) -> Self {
+        Self {
+            key,
+            type_tag,
+            label,
+            values: &[],
+            labels: &[],
+            circular_period: None,
+        }
+    }
+}
+
+macro_rules! camera_types {
+    ($($variant:ident => $value:literal, $label:literal;)*) => {
+        #[derive(Clone, Copy, serde::Serialize, serde::Deserialize, specta::Type)]
+        pub enum CameraType {
+            $(#[serde(rename = $value)] $variant),*
+        }
+
+        const CAMERA_TYPE_VALUES: &[&str] = &[$($value),*];
+        const CAMERA_TYPE_LABELS: &[(&str, &str)] = &[$(($value, $label)),*];
+    };
+}
+
+camera_types! {
+    Gen1 => "gen1", "Gen 1";
+    Gen2 => "gen2", "Gen 2/3";
+    Gen4 => "gen4", "Gen 4";
+    Badcam => "badcam", "Bad cam";
+    Tripod => "tripod", "Tripod";
+    Trekker => "trekker", "Trekker";
+}
+
+static KNOWN_FIELDS: &[KnownField] = &[
+    KnownField::simple("altitude", "number", "Altitude"),
+    KnownField::simple("countryCode", "string", "Country code"),
+    KnownField {
+        key: "cameraType",
+        type_tag: "enum",
+        label: "Camera type",
+        values: CAMERA_TYPE_VALUES,
+        labels: CAMERA_TYPE_LABELS,
+        circular_period: None,
+    },
+    KnownField {
+        key: "panoType",
+        type_tag: "enum",
+        label: "Pano type",
+        values: &["2", "3", "10"],
+        labels: &[("2", "Official"), ("3", "Unknown"), ("10", "User uploaded")],
+        circular_period: None,
+    },
+    KnownField::simple("imageDate", "month", "Image date"),
+    KnownField::simple("datetime", "date", "Exact date"),
+    KnownField::simple("timezone", "enum", "Timezone"),
+    KnownField {
+        key: "drivingDirection",
+        type_tag: "number",
+        label: "Driving direction",
+        values: &[],
+        labels: &[],
+        circular_period: Some(360.0),
+    },
+    KnownField::simple("uploaderName", "string", "Uploader"),
+    KnownField::simple("coverageDates", "array", "Coverage dates"),
+];
+
+fn type_from_tag(tag: &str) -> ExtraFieldType {
+    match tag {
+        "number" => ExtraFieldType::Number,
+        "date" => ExtraFieldType::Date,
+        "month" => ExtraFieldType::Month,
+        "enum" => ExtraFieldType::Enum,
+        "array" => ExtraFieldType::Array,
+        _ => ExtraFieldType::String,
+    }
+}
+
 /// Returns a curated field definition for well-known SV metadata keys
 /// (altitude, countryCode, cameraType, etc.). Falls back to `None` for
 /// user-defined fields, which get type-inferred instead.
 pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
-    match key {
-        "altitude" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Number,
-            label: Some("Altitude".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "countryCode" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::String,
-            label: Some("Country code".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "cameraType" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Enum,
-            label: Some("Camera type".into()),
-            values: Some(vec![
-                "gen1".into(),
-                "gen2".into(),
-                "gen4".into(),
-                "badcam".into(),
-                "tripod".into(),
-            ]),
-            labels: Some(
-                [
-                    ("gen1", "Gen 1"),
-                    ("gen2", "Gen 2/3"),
-                    ("gen4", "Gen 4"),
-                    ("badcam", "Bad cam"),
-                    ("tripod", "Tripod"),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect(),
-            ),
-            comparison: None,
-        }),
-        "panoType" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Enum,
-            label: Some("Pano type".into()),
-            values: Some(vec!["2".into(), "3".into(), "10".into()]),
-            labels: Some(
-                [("2", "Official"), ("3", "Unknown"), ("10", "User uploaded")]
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect(),
-            ),
-            comparison: None,
-        }),
-        "imageDate" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Month,
-            label: Some("Image date".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "datetime" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Date,
-            label: Some("Exact date".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "timezone" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Enum,
-            label: Some("Timezone".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "drivingDirection" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Number,
-            label: Some("Driving direction".into()),
-            values: None,
-            labels: None,
-            comparison: Some(ComparisonType::Circular { period: 360.0 }),
-        }),
-        "uploaderName" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::String,
-            label: Some("Uploader".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        "coverageDates" => Some(ExtraFieldDef {
-            field_type: ExtraFieldType::Array,
-            label: Some("Coverage dates".into()),
-            values: None,
-            labels: None,
-            comparison: None,
-        }),
-        _ => None,
-    }
+    KNOWN_FIELDS
+        .iter()
+        .find(|f| f.key == key)
+        .map(|f| ExtraFieldDef {
+            field_type: type_from_tag(f.type_tag),
+            label: Some(f.label.into()),
+            values: if f.values.is_empty() {
+                None
+            } else {
+                Some(f.values.iter().map(|s| (*s).into()).collect())
+            },
+            labels: if f.labels.is_empty() {
+                None
+            } else {
+                Some(
+                    f.labels
+                        .iter()
+                        .map(|(k, v)| ((*k).into(), (*v).into()))
+                        .collect(),
+                )
+            },
+            comparison: f
+                .circular_period
+                .map(|p| ComparisonType::Circular { period: p }),
+        })
 }
 
 /// Infer an `ExtraFieldType` from a sample JSON value. Numbers become `Number`,
@@ -1200,12 +1218,14 @@ mod tests {
     #[test]
     fn camera_type_has_enum_values() {
         let def = known_field_def("cameraType").unwrap();
-        assert!(def.values.is_some());
         let values = def.values.unwrap();
         assert!(values.contains(&"gen1".to_string()));
         assert!(values.contains(&"tripod".to_string()));
-        assert!(def.labels.is_some());
-        assert_eq!(def.labels.as_ref().unwrap().get("gen1").unwrap(), "Gen 1");
+        assert!(values.contains(&"trekker".to_string()));
+        let labels = def.labels.unwrap();
+        assert_eq!(labels.get("gen1").unwrap(), "Gen 1");
+        // every offered value is labelled
+        assert_eq!(labels.len(), values.len());
     }
 
     #[test]

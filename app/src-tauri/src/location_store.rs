@@ -285,25 +285,34 @@ pub(crate) struct SelectionState {
 }
 
 impl SelectionState {
-    /// Color of a selected id = color of the last selection containing it. None if unselected.
-    fn color_for(&self, id: u32) -> Option<[u8; 3]> {
+    /// Paint of a selected id = the last selection containing it. None if unselected.
+    fn paint_for(&self, id: u32) -> Option<SelPaint> {
         if !self.ids.contains(id) {
             return None;
         }
-        let mut color = None;
-        for r in &self.resolved {
+        let mut paint = None;
+        for (i, r) in self.resolved.iter().enumerate() {
             if r.set.contains(id) {
-                color = Some(r.sel.color);
+                paint = Some(SelPaint {
+                    idx: i as u32,
+                    color: r.sel.color,
+                });
             }
         }
-        color
+        paint
     }
 
-    fn color_map(&self) -> HashMap<u32, [u8; 3]> {
+    /// Bulk form of `paint_for`. Later selections overwrite earlier ones, so each id ends
+    /// up with the same paint the per-id lookup would return.
+    fn paint_map(&self) -> HashMap<u32, SelPaint> {
         let mut map = HashMap::with_capacity(self.ids.len() as usize);
-        for r in &self.resolved {
+        for (i, r) in self.resolved.iter().enumerate() {
+            let paint = SelPaint {
+                idx: i as u32,
+                color: r.sel.color,
+            };
             for id in &r.set {
-                map.insert(id, r.sel.color);
+                map.insert(id, paint);
             }
         }
         map
@@ -368,8 +377,9 @@ pub(crate) struct EditEntry {
     pub removed: Vec<Location>,
 }
 
-/// Ids whose selection membership changed in a mutation. Carries no colour:
-/// `SelectionState::color_for` is the one place a selection colour is decided.
+/// Ids whose selection paint changed in a mutation — including moves between overlapping
+/// selections, where union membership never flips but the winning colour does. Carries no
+/// paint: `SelectionState::paint_for` is the one place colour and draw order is decided.
 struct MembershipDelta {
     changed: HashSet<u32>,
 }
@@ -677,7 +687,7 @@ impl Store {
                 lng: loc.lng as f32,
                 lat: loc.lat as f32,
                 heading: self.render_angle(loc.heading),
-                sel: self.selections.color_for(loc.id),
+                sel: self.selections.paint_for(loc.id),
                 moved_from: None,
             });
         }
@@ -704,7 +714,7 @@ impl Store {
                     lng: new.lng as f32,
                     lat: new.lat as f32,
                     heading: self.render_angle(new.heading),
-                    sel: self.selections.color_for(new.id),
+                    sel: self.selections.paint_for(new.id),
                     moved_from,
                 });
                 continue;
@@ -718,7 +728,7 @@ impl Store {
                         lng: pos_changed.then_some(new.lng as f32),
                         lat: pos_changed.then_some(new.lat as f32),
                         heading: heading_changed.then(|| self.render_angle(new.heading)),
-                        sel: self.selections.color_for(new.id),
+                        sel: self.selections.paint_for(new.id),
                     });
                 }
             }
@@ -728,22 +738,22 @@ impl Store {
     }
 
     /// Update selection membership sets for incremental changes (adds/removes/updates).
-    /// Returns which ids crossed in or out of a selection, so the render delta can state
-    /// their new selection state.
+    /// Returns which ids changed paint, so the render delta can state their new
+    /// selection state.
     fn update_selection_membership(&mut self, changes: &ChangeSet) -> MembershipDelta {
-        let mut was_selected: HashSet<u32> = HashSet::new();
-
         let drop_ids: HashSet<u32> = changes
             .removed
             .iter()
             .copied()
             .chain(changes.updated.iter().map(|(_, n)| n.id))
             .collect();
+        // Paint before the mutation, snapshotted while the sets still reflect it. Paint is
+        // the compared fact — not union membership — because a row that moves between
+        // overlapping selections changes colour without ever leaving the union.
+        let mut prev_paint: HashMap<u32, Option<SelPaint>> = HashMap::new();
         if !drop_ids.is_empty() {
             for id in &drop_ids {
-                if self.selections.ids.contains(*id) {
-                    was_selected.insert(*id);
-                }
+                prev_paint.insert(*id, self.selections.paint_for(*id));
             }
             for r in &mut self.selections.resolved {
                 for id in &drop_ids {
@@ -785,7 +795,10 @@ impl Store {
             .iter()
             .chain(changes.updated.iter().map(|(_, n)| n))
         {
-            if self.selections.ids.contains(loc.id) != was_selected.contains(&loc.id) {
+            // Added rows have no snapshot: their previous paint is None, and they compare
+            // against whatever they resolve to now.
+            let before = prev_paint.get(&loc.id).copied().flatten();
+            if self.selections.paint_for(loc.id) != before {
                 changed.insert(loc.id);
             }
         }
@@ -1842,6 +1855,17 @@ impl ChangeSet {
     }
 }
 
+/// The selection drawing a row: its colour, and its index in `SelectionState::resolved`.
+/// The index is the draw order — a later selection overdraws an earlier one — so the
+/// overlay can be ordered by it instead of by whatever order rows happen to arrive in.
+/// Every marker sits at z=0 in one deck.gl layer, so buffer order is the only z there is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SelPaint {
+    pub idx: u32,
+    pub color: [u8; 3],
+}
+
 /// A marker appended to a render cell: position, heading, and selection state.
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -1851,8 +1875,8 @@ pub struct RenderEntry {
     pub lng: f32,
     pub lat: f32,
     pub heading: f32,
-    /// `None` = drawn by the base layer, `Some(rgb)` = drawn by the selection overlay.
-    pub sel: Option<[u8; 3]>,
+    /// `None` = drawn by the base layer, `Some(paint)` = drawn by the selection overlay.
+    pub sel: Option<SelPaint>,
     /// The slot this row vacated when it crossed cells. Present only for a move, so JS
     /// mirrors the swap-remove and carries the overlay entry across instead of inferring
     /// a move from an unrelated removed/added pair.
@@ -1870,7 +1894,7 @@ pub struct RenderPatchEntry {
     pub lng: Option<f32>,
     pub lat: Option<f32>,
     pub heading: Option<f32>,
-    pub sel: Option<[u8; 3]>,
+    pub sel: Option<SelPaint>,
 }
 
 /// A swap-removal from a render cell. JS must move the last element into `cell_index`
@@ -2088,34 +2112,9 @@ pub async fn store_open_map(
             rusqlite::params![alive, map_id],
         )?;
         let mut tags = read_tags_json(&conn, &map_id);
-        for tag in tags.values_mut() {
-            tag.count = 0;
-        }
-        let mut max_tag_id: u32 = tags.keys().max().copied().unwrap_or(0);
-        for (&tid, &count) in &tag_counts {
-            if tid > max_tag_id {
-                max_tag_id = tid;
-            }
-            match tags.get_mut(&tid) {
-                Some(tag) => tag.count = count,
-                None => {
-                    tags.insert(
-                        tid,
-                        Tag {
-                            id: tid,
-                            name: format!("Tag {}", tid),
-                            color: util::color_for_name(&format!("Tag {}", tid)),
-                            visible: true,
-                            order: None,
-                            count,
-                            doclinks: Vec::new(),
-                        },
-                    );
-                }
-            }
-        }
+        let (max_tag_id, healed) = reconcile_tag_registry(&mut tags, &tag_counts);
         store.tags.all = tags;
-        store.tags.dirty = false;
+        store.tags.dirty = healed;
         store.tags.next_id = max_tag_id + 1;
         store.rebuild_tag_sets();
         let extra_str: String = conn
@@ -3254,7 +3253,7 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     let has_patches = !store.overlay.patches.is_empty();
 
     let selected_set: &RoaringBitmap = &store.selections.ids;
-    let color_map = store.selections.color_map();
+    let paint_map = store.selections.paint_map();
     let active_id = store.selections.active_id;
     let arrow_style = req.marker_style == "arrow";
 
@@ -3270,18 +3269,22 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     const NONE: Option<CellOut> = None;
     let mut cells: [Option<CellOut>; 32] = [NONE; 32];
 
-    // Selection overlay: selected entries rendered as a separate colored layer
+    // Selection overlay: selected entries rendered as a separate colored layer. `sel_idx`
+    // is the drawing selection's index, both to order the entries below and so JS can keep
+    // them ordered as later edits add and drop entries.
     struct SelOverlay {
         ids: Vec<u32>,
         positions: Vec<f32>,
         colors: Vec<u8>,
         angles: Vec<f32>,
+        sel_idx: Vec<u32>,
     }
     let mut sel_ov = SelOverlay {
         ids: Vec::new(),
         positions: Vec::new(),
         colors: Vec::new(),
         angles: Vec::new(),
+        sel_idx: Vec::new(),
     };
 
     {
@@ -3301,12 +3304,17 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
             out.visible.push(if hidden { 0 } else { 255 });
             out.angles.push(angle);
             out.ids.push(id);
-            if let Some(&[r, g, b]) = color_map.get(&id) {
+            if let Some(&SelPaint {
+                idx,
+                color: [r, g, b],
+            }) = paint_map.get(&id)
+            {
                 sel_ov.positions.push(lng as f32);
                 sel_ov.positions.push(lat as f32);
                 sel_ov.colors.extend_from_slice(&[r, g, b, 255]);
                 sel_ov.angles.push(angle);
                 sel_ov.ids.push(id);
+                sel_ov.sel_idx.push(idx);
             }
         };
 
@@ -3329,6 +3337,42 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         for loc in &store.overlay.adds {
             emit(loc.id, loc.lat, loc.lng, loc.heading);
         }
+    }
+
+    // Order the overlay by selection index, so a later selection's markers overdraw an
+    // earlier one's. Emitting in batch-row order instead would let two overlapping markers
+    // settle their z by whichever row came first in the batch. Counting sort — the key is a
+    // small dense integer, and it is stable, so rows within one selection keep batch order.
+    let num_sels = store.selections.resolved.len();
+    if num_sels > 1 && sel_ov.ids.len() > 1 {
+        let n = sel_ov.ids.len();
+        let mut at = vec![0u32; num_sels + 1];
+        for &si in &sel_ov.sel_idx {
+            at[si as usize + 1] += 1;
+        }
+        for i in 1..at.len() {
+            at[i] += at[i - 1];
+        }
+        let mut sorted = SelOverlay {
+            ids: vec![0; n],
+            positions: vec![0.0; n * 2],
+            colors: vec![0; n * 4],
+            angles: vec![0.0; n],
+            sel_idx: vec![0; n],
+        };
+        for src in 0..n {
+            let si = sel_ov.sel_idx[src] as usize;
+            let dst = at[si] as usize;
+            at[si] += 1;
+            sorted.positions[dst * 2] = sel_ov.positions[src * 2];
+            sorted.positions[dst * 2 + 1] = sel_ov.positions[src * 2 + 1];
+            sorted.colors[dst * 4..dst * 4 + 4]
+                .copy_from_slice(&sel_ov.colors[src * 4..src * 4 + 4]);
+            sorted.angles[dst] = sel_ov.angles[src];
+            sorted.ids[dst] = sel_ov.ids[src];
+            sorted.sel_idx[dst] = si as u32;
+        }
+        sel_ov = sorted;
     }
 
     // Rebuild per-cell render tracking
@@ -3372,6 +3416,7 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
             + sel_ov.colors.len()
             + sel_ov.angles.len() * 4
             + sel_ov.ids.len() * 4
+            + sel_ov.sel_idx.len() * 4
     };
     let mut buf = Vec::with_capacity(4 + body_cap + 4 + sel_cap);
     buf.extend_from_slice(&non_empty.to_le_bytes());
@@ -3392,7 +3437,8 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         buf.extend_from_slice(bytemuck::cast_slice(&out.angles));
     }
 
-    // Selection overlay: [u32 count][f32[] positions][u8[] colors][f32[] angles][u32[] ids]
+    // Selection overlay, already ordered by selection index:
+    // [u32 count][f32[] positions][u8[] colors][f32[] angles][u32[] ids][u32[] selIdx]
     let sel_count = sel_ov.ids.len() as u32;
     buf.extend_from_slice(&sel_count.to_le_bytes());
     if sel_count > 0 {
@@ -3400,6 +3446,7 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         buf.extend_from_slice(&sel_ov.colors);
         buf.extend_from_slice(bytemuck::cast_slice(&sel_ov.angles));
         buf.extend_from_slice(bytemuck::cast_slice(&sel_ov.ids));
+        buf.extend_from_slice(bytemuck::cast_slice(&sel_ov.sel_idx));
     }
 
     log::debug!(
@@ -3608,6 +3655,37 @@ pub(crate) fn read_tags_json(conn: &rusqlite::Connection, map_id: &str) -> HashM
     raw.into_iter()
         .filter_map(|(k, v)| k.parse::<u32>().ok().map(|id| (id, v)))
         .collect()
+}
+
+/// Rebuild registry counts from a location scan (map open). Counted tags are
+/// forced visible: commit checkout restores locations without reviving their
+/// soft-deleted tags, so a count>0/visible=false pair is always a desync.
+/// Returns (max tag id, whether any tag was revived and needs persisting).
+fn reconcile_tag_registry(
+    tags: &mut HashMap<u32, Tag>,
+    tag_counts: &HashMap<u32, usize>,
+) -> (u32, bool) {
+    for tag in tags.values_mut() {
+        tag.count = 0;
+    }
+    let mut max_tag_id: u32 = tags.keys().max().copied().unwrap_or(0);
+    let mut healed = false;
+    for (&tid, &count) in tag_counts {
+        max_tag_id = max_tag_id.max(tid);
+        let tag = tags.entry(tid).or_insert_with(|| Tag {
+            id: tid,
+            name: format!("Tag {}", tid),
+            color: util::color_for_name(&format!("Tag {}", tid)),
+            visible: true,
+            order: None,
+            count: 0,
+            doclinks: Vec::new(),
+        });
+        tag.count = count;
+        healed |= !tag.visible;
+        tag.visible = true;
+    }
+    (max_tag_id, healed)
 }
 
 /// Serialize tags to JSON with string keys (SQLite stores them this way).

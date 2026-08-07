@@ -279,9 +279,8 @@ fn geometry_bbox_antimeridian() {
 fn prepared_geometry_matches_point_in_geometry() {
     // PreparedGeometry (per-ring bbox + cached antimeridian flag) must agree with the
     // per-point path everywhere, or polygon selections change under the optimization.
-    let square = |x0: f64, y0: f64, x1: f64, y1: f64| {
-        vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]
-    };
+    let square =
+        |x0: f64, y0: f64, x1: f64, y1: f64| vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
     let geoms = vec![
         // plain polygon
         PolygonGeometry {
@@ -423,6 +422,113 @@ fn polygon_resolve_unwrapped_antimeridian() {
     assert!(ids.contains(&1));
     assert!(ids.contains(&2));
     assert!(!ids.contains(&3));
+}
+
+/// A box `west` -> `east` with the mid-edge vertices the drawing tools densify in, so
+/// no edge reaches 180° and the span survives `unwrap_ring`.
+fn wide_box(west: f64, east: f64) -> Vec<[f64; 2]> {
+    let mid = (west + east) / 2.0;
+    vec![
+        [west, 10.0],
+        [mid, 10.0],
+        [east, 10.0],
+        [east, -10.0],
+        [mid, -10.0],
+        [west, -10.0],
+        [west, 10.0],
+    ]
+}
+
+#[test]
+fn unwrap_ring_keeps_a_span_wider_than_180() {
+    // 190° box drawn westward from 20. Normalized vertices alone can't tell it from the
+    // 170° box on the other side of the seam, so the span has to survive untouched.
+    let ring = wide_box(-170.0, 20.0);
+    let unwrapped = unwrap_ring(&ring);
+    assert_eq!(&*unwrapped, &ring[..]);
+}
+
+#[test]
+fn point_in_ring_wide_box_selects_the_drawn_side() {
+    let ring = wide_box(-170.0, 20.0);
+    assert!(point_in_ring(0.0, 0.0, &ring));
+    assert!(point_in_ring(-100.0, 0.0, &ring));
+    assert!(point_in_ring(-169.0, 0.0, &ring));
+    assert!(!point_in_ring(100.0, 0.0, &ring));
+    assert!(!point_in_ring(-175.0, 0.0, &ring));
+    assert!(!point_in_ring(170.0, 0.0, &ring));
+}
+
+#[test]
+fn point_in_ring_across_both_meridians() {
+    // 195° box running east from 170: over the antimeridian and on past Greenwich.
+    // Shifting to [0, 360) used to only move the seam, tearing this one at lng 0.
+    let ring = wide_box(170.0, 365.0);
+    assert!(point_in_ring(180.0, 0.0, &ring));
+    assert!(point_in_ring(-90.0, 0.0, &ring));
+    assert!(point_in_ring(0.0, 0.0, &ring));
+    assert!(point_in_ring(3.0, 0.0, &ring));
+    assert!(!point_in_ring(30.0, 0.0, &ring));
+    assert!(!point_in_ring(100.0, 0.0, &ring));
+}
+
+#[test]
+fn polygon_resolve_wide_box() {
+    // End-to-end through geometry_bbox + in_bbox + PreparedGeometry, which is where a
+    // broad-phase in the wrong frame would silently reject the whole selection.
+    let geom = PolygonGeometry {
+        coordinates: vec![wide_box(-170.0, 20.0)],
+        extra_polygons: None,
+        properties: None,
+    };
+    let dead = HashSet::new();
+    let patches = HashMap::new();
+    let adds = vec![
+        loc(1, 5.0, 0.0),    // inside
+        loc(2, 5.0, -100.0), // inside
+        loc(3, 5.0, 100.0),  // outside, the short way round
+        loc(4, 5.0, -175.0), // outside, just past the western edge
+    ];
+    let view = make_view(None, &dead, &patches, &adds);
+    let ids = resolve(
+        &view,
+        &SelectionProps::Polygon {
+            polygon: geom,
+            include_informational: true,
+        },
+    );
+    assert!(ids.contains(&1));
+    assert!(ids.contains(&2));
+    assert!(!ids.contains(&3));
+    assert!(!ids.contains(&4));
+}
+
+#[test]
+fn geometry_bbox_merges_straddling_parts_into_one_frame() {
+    // One part unwrapped past 180, the other still negative. Read in their own frames
+    // the box would span the globe and reject nothing.
+    let geom = PolygonGeometry {
+        coordinates: vec![vec![
+            [170.0, -10.0],
+            [190.0, -10.0],
+            [190.0, 10.0],
+            [170.0, 10.0],
+            [170.0, -10.0],
+        ]],
+        extra_polygons: Some(vec![vec![vec![
+            [-175.0, -5.0],
+            [-172.0, -5.0],
+            [-172.0, 5.0],
+            [-175.0, 5.0],
+            [-175.0, -5.0],
+        ]]]),
+        properties: None,
+    };
+    let bb = geometry_bbox(&geom).unwrap();
+    assert_eq!([bb[0], bb[2]], [170.0, 190.0]);
+    assert!(in_bbox(-174.0, 0.0, &bb));
+    assert!(!in_bbox(0.0, 0.0, &bb));
+    assert!(!in_bbox(160.0, 0.0, &bb));
 }
 
 // -----------------------------------------------------------------------
@@ -1356,7 +1462,10 @@ fn duplicates_bitmask_matches_flattened_groups() {
     let view = make_view(None, &dead, &patches, &adds);
     for d in [0.5, 2.0, 25.0] {
         let selected = resolve(&view, &SelectionProps::Duplicates { distance: d });
-        let mut grouped: Vec<u32> = find_duplicate_groups(&view, d).into_iter().flatten().collect();
+        let mut grouped: Vec<u32> = find_duplicate_groups(&view, d)
+            .into_iter()
+            .flatten()
+            .collect();
         grouped.sort_unstable();
         assert_eq!(selected, grouped, "bitmask != groups at d={d}");
     }
@@ -1596,7 +1705,8 @@ fn extra_filter_scans_base_batch_top_level_only() {
     let dead = HashSet::new();
     let patches = HashMap::new();
     let mut l1 = loc(1, 0.0, 0.0);
-    l1.extra = Some(serde_json::from_str(r#"{"alt":100,"note":"a\"b}","wrap":{"alt":999}}"#).unwrap());
+    l1.extra =
+        Some(serde_json::from_str(r#"{"alt":100,"note":"a\"b}","wrap":{"alt":999}}"#).unwrap());
     let mut l2 = loc(2, 0.0, 0.0);
     l2.extra = Some(serde_json::from_str(r#"{"wrap":{"alt":100}}"#).unwrap());
     let batch = locations_to_batch(&[l1, l2]);
@@ -1616,12 +1726,18 @@ fn extra_filter_scans_base_batch_top_level_only() {
         vec![1]
     );
     assert_eq!(
-        resolve(&view, &filter("alt", FilterOp::Has, serde_json::Value::Null)),
+        resolve(
+            &view,
+            &filter("alt", FilterOp::Has, serde_json::Value::Null)
+        ),
         vec![1]
     );
     // Escaped quote and brace inside a string value must not derail the scan.
     assert_eq!(
-        resolve(&view, &filter("note", FilterOp::Eq, serde_json::json!("a\"b}"))),
+        resolve(
+            &view,
+            &filter("note", FilterOp::Eq, serde_json::json!("a\"b}"))
+        ),
         vec![1]
     );
 }

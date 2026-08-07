@@ -518,6 +518,11 @@ const MIGRATIONS: &[(u32, &str)] = &[
           );
           CREATE INDEX IF NOT EXISTS idx_remote_mapping_remote ON remote_mapping(provider, map_id, remote_id);",
     ),
+    (
+        20,
+        "CREATE INDEX IF NOT EXISTS idx_seen_country ON seen(country_code);
+          CREATE INDEX IF NOT EXISTS idx_seen_map ON seen(map_id);",
+    ),
 ];
 
 // ---------------------------------------------------------------------------

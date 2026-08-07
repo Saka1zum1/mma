@@ -787,6 +787,37 @@ fn fresh_full_chain_succeeds() {
 }
 
 #[test]
+fn seen_dropdown_queries_use_covering_indexes() {
+    let conn = Connection::open_in_memory().unwrap();
+    configure_connection(&conn).unwrap();
+    run_migrations_on(&conn).unwrap();
+
+    for (query, index) in [
+        (
+            "SELECT DISTINCT country_code FROM seen WHERE country_code IS NOT NULL ORDER BY country_code",
+            "idx_seen_country",
+        ),
+        (
+            "SELECT DISTINCT s.map_id AS id, m.name FROM seen s JOIN maps m ON m.id = s.map_id WHERE s.map_id IS NOT NULL ORDER BY m.name",
+            "idx_seen_map",
+        ),
+    ] {
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {query}"))
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            plan.iter()
+                .any(|d| d.contains("COVERING INDEX") && d.contains(index)),
+            "seen dropdown query must scan {index}, got plan: {plan:?}"
+        );
+    }
+}
+
+#[test]
 fn every_prefix_upgrades_to_head() {
     let reference = Connection::open_in_memory().unwrap();
     configure_connection(&reference).unwrap();

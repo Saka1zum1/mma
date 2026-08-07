@@ -2034,7 +2034,53 @@ fn render_buffer_with_selection_overlay() {
 }
 
 #[test]
-fn color_for_uses_last_matching_selection() {
+fn render_buffer_orders_the_overlay_by_selection() {
+    // Ids alternate between the two selections, so batch order and selection order
+    // disagree. The overlay draws in buffer order with every marker at z=0, so the
+    // second selection's markers have to come out last or they stack at random.
+    let locs: Vec<_> = (1..=4).map(|id| loc(id, 10.0, 20.0)).collect();
+    let mut store = setup_store_with(&locs);
+    store.bake_overlay();
+    push_resolved(&mut store, "a", [255, 0, 0], &[1, 3]);
+    push_resolved(&mut store, "b", [0, 0, 255], &[2, 4]);
+    for id in 1..=4 {
+        store.selections.ids.insert(id);
+    }
+
+    let req = RenderRequest {
+        west: -180.0,
+        south: -90.0,
+        east: 180.0,
+        north: 90.0,
+        selected_ids: None,
+        marker_style: "pin".into(),
+        marker_color: None,
+    };
+    let buf = build_cell_render_buffers(&mut store, &req);
+
+    let cell_count = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+    let mut offset = 4usize;
+    for _ in 0..cell_count {
+        let count = u32::from_le_bytes(buf[offset + 1..offset + 5].try_into().unwrap()) as usize;
+        offset += 8 + count * 4 + count * 2 * 4 + count + (4 - count % 4) % 4 + count * 4;
+    }
+    let n = u32::from_le_bytes(buf[offset..offset + 4].try_into().unwrap()) as usize;
+    assert_eq!(n, 4, "every location is selected");
+    offset += 4;
+    // positions, colors, angles, then ids and the selection indices.
+    let ids_at = offset + n * 8 + n * 4 + n * 4;
+    let sel_at = ids_at + n * 4;
+    let read = |at: usize, i: usize| {
+        u32::from_le_bytes(buf[at + i * 4..at + i * 4 + 4].try_into().unwrap())
+    };
+    let sel: Vec<u32> = (0..n).map(|i| read(sel_at, i)).collect();
+    let ids: Vec<u32> = (0..n).map(|i| read(ids_at, i)).collect();
+    assert_eq!(sel, vec![0, 0, 1, 1], "entries grouped by selection index");
+    assert_eq!(ids, vec![1, 3, 2, 4], "stable within a selection");
+}
+
+#[test]
+fn paint_for_uses_last_matching_selection() {
     let mut store = setup_store_with(&[loc(1, 0.0, 0.0)]);
     // id 1 belongs to two selections with different colors.
     for (key, color) in [("a", [255, 0, 0]), ("b", [0, 0, 255])] {
@@ -2042,16 +2088,15 @@ fn color_for_uses_last_matching_selection() {
     }
     store.selections.ids.insert(1);
 
-    assert_eq!(
-        store.selections.color_for(1),
-        Some([0, 0, 255]),
-        "last selection wins"
-    );
-    assert_eq!(store.selections.color_for(2), None, "unselected id");
+    let paint = store.selections.paint_for(1).expect("id 1 is selected");
+    assert_eq!(paint.color, [0, 0, 255], "last selection wins");
+    // The index is what the overlay orders by, so it must name the winning selection.
+    assert_eq!(paint.idx, 1, "index of the winning selection");
+    assert!(store.selections.paint_for(2).is_none(), "unselected id");
 }
 
 #[test]
-fn color_map_matches_color_for() {
+fn paint_map_matches_paint_for() {
     let mut store = setup_store_with(&[loc(1, 0.0, 0.0), loc(2, 0.0, 0.0), loc(3, 0.0, 0.0)]);
     for (key, color, members) in [
         ("a", [255, 0, 0], vec![1u32, 2]),
@@ -2063,14 +2108,11 @@ fn color_map_matches_color_for() {
         }
     }
 
-    let map = store.selections.color_map();
+    let map = store.selections.paint_map();
     for id in 1..=4 {
-        assert_eq!(
-            map.get(&id).copied(),
-            store.selections.color_for(id),
-            "id {}",
-            id
-        );
+        let bulk = map.get(&id).map(|p| (p.idx, p.color));
+        let single = store.selections.paint_for(id).map(|p| (p.idx, p.color));
+        assert_eq!(bulk, single, "id {}", id);
     }
 }
 
@@ -2592,6 +2634,65 @@ fn tag_patch_applies_set_fields_only() {
     assert_eq!(tag.name, "A");
 }
 
+fn registry_tag(id: u32, count: usize, visible: bool) -> Tag {
+    Tag {
+        id,
+        name: format!("tag{id}"),
+        color: "#ff0000".into(),
+        visible,
+        order: None,
+        count,
+        doclinks: Vec::new(),
+    }
+}
+
+// Issue #122: commit checkout rewrites the base Arrow file but not the SQLite tag
+// registry, so a tag soft-deleted after the target commit stays visible=false even
+// though the restored locations reference it. Open-time reconciliation revives it.
+#[test]
+fn reconcile_revives_soft_deleted_tag_with_members() {
+    let mut tags = HashMap::from([
+        (1, registry_tag(1, 0, false)), // ghost, but locations reference it again
+        (2, registry_tag(2, 9, true)),  // live, stale count
+        (3, registry_tag(3, 0, false)), // ghost with no members
+    ]);
+    let counts = HashMap::from([(1, 2usize), (2, 5)]);
+
+    let (max_tag_id, healed) = reconcile_tag_registry(&mut tags, &counts);
+
+    assert!(healed, "revived tag must be flagged for persistence");
+    assert_eq!(max_tag_id, 3);
+    assert!(tags[&1].visible);
+    assert_eq!(tags[&1].count, 2);
+    assert!(tags[&2].visible);
+    assert_eq!(tags[&2].count, 5);
+    assert!(
+        !tags[&3].visible,
+        "memberless ghost stays soft-deleted for undo revival"
+    );
+    assert_eq!(tags[&3].count, 0);
+}
+
+#[test]
+fn reconcile_clean_registry_needs_no_persist() {
+    let mut tags = HashMap::from([
+        (1, registry_tag(1, 3, true)),
+        (2, registry_tag(2, 0, true)), // created but unassigned; stays visible
+    ]);
+    let counts = HashMap::from([(1, 3usize), (5, 1)]);
+
+    let (max_tag_id, healed) = reconcile_tag_registry(&mut tags, &counts);
+
+    assert!(!healed, "no desync, so open must not dirty the registry");
+    assert_eq!(max_tag_id, 5);
+    assert!(tags[&2].visible);
+    assert_eq!(tags[&2].count, 0);
+    let placeholder = &tags[&5];
+    assert!(placeholder.visible);
+    assert_eq!(placeholder.count, 1);
+    assert_eq!(placeholder.name, "Tag 5");
+}
+
 /// Insert tag `id` with `count` members so selection resolution can see it.
 fn insert_tag(store: &mut Store, id: u32, count: usize) {
     store.tags.all.insert(
@@ -2631,7 +2732,13 @@ fn incremental_membership_change_ships_no_bitmask() {
         1,
         "membership rides on a patch for the row that changed"
     );
-    assert_eq!(result.delta.updated[0].sel, Some([255, 0, 0]));
+    assert_eq!(
+        result.delta.updated[0].sel,
+        Some(SelPaint {
+            idx: 0,
+            color: [255, 0, 0]
+        })
+    );
 }
 
 #[test]
@@ -2698,7 +2805,14 @@ fn membership_delta_reports_gained_on_tag_add() {
         .iter()
         .find(|p| p.sel.is_some())
         .expect("a row that joins a selection must state it");
-    assert_eq!(p.sel, Some([255, 0, 0]), "the selection colour");
+    assert_eq!(
+        p.sel,
+        Some(SelPaint {
+            idx: 0,
+            color: [255, 0, 0]
+        }),
+        "the selection colour"
+    );
     assert_eq!(
         (p.lng, p.lat, p.heading),
         (None, None, None),
@@ -2761,6 +2875,55 @@ fn removed_selected_location_leaves_no_patch() {
 }
 
 #[test]
+fn leaving_winning_selection_restates_survivors_paint() {
+    // A row in two overlapping selections is painted by the later one. Editing it out of
+    // the winner — without moving it — must ship a patch stating the survivor's paint:
+    // union membership never flips here, so this is exactly the case a union-flip test
+    // misses and the overlay would keep the dead winner's colour until a full resolve.
+    let both = loc_with_tags(1, 10.0, 20.0, vec![1, 2]);
+    let mut store = setup_store_with(&[both.clone()]);
+    insert_tag(&mut store, 1, 1);
+    insert_tag(&mut store, 2, 1);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    add_tag_selection(&mut store, 2, [0, 0, 255]);
+    store.resolve_selection_membership();
+    assert_eq!(
+        store.selections.paint_for(1),
+        Some(SelPaint {
+            idx: 1,
+            color: [0, 0, 255]
+        }),
+        "the later selection wins while the row is in both"
+    );
+
+    let only_first = loc_with_tags(1, 10.0, 20.0, vec![1]);
+    let result = store.finish_mutation(ChangeSet {
+        updated: vec![(both, only_first)],
+        ..Default::default()
+    });
+
+    assert_eq!(
+        result.delta.updated.len(),
+        1,
+        "leaving the winner while staying selected must still ship a patch"
+    );
+    let p = &result.delta.updated[0];
+    assert_eq!(
+        p.sel,
+        Some(SelPaint {
+            idx: 0,
+            color: [255, 0, 0]
+        }),
+        "the surviving selection's paint"
+    );
+    assert_eq!(
+        (p.lng, p.lat, p.heading),
+        (None, None, None),
+        "nothing moved, so only the selection state is stated"
+    );
+}
+
+#[test]
 fn membership_delta_no_patch_when_nothing_changed() {
     let l1 = loc_with_tags(1, 10.0, 20.0, vec![1]);
     let mut store = setup_store_with(&[l1.clone()]);
@@ -2794,7 +2957,10 @@ fn membership_delta_no_patch_when_nothing_changed() {
     assert_eq!(result.delta.updated.len(), 1);
     assert_eq!(
         result.delta.updated[0].sel,
-        Some([255, 0, 0]),
+        Some(SelPaint {
+            idx: 0,
+            color: [255, 0, 0]
+        }),
         "a patch always states the row's current selection state"
     );
 }
@@ -2835,7 +3001,14 @@ fn selected_row_moving_across_cells_ships_as_one_move() {
         .iter()
         .find(|e| e.id == 1)
         .expect("re-added in the new cell");
-    assert_eq!(added.sel, Some([255, 0, 0]), "still selected");
+    assert_eq!(
+        added.sel,
+        Some(SelPaint {
+            idx: 0,
+            color: [255, 0, 0]
+        }),
+        "still selected"
+    );
     let from = added.moved_from.as_ref().expect("carries the vacated slot");
     assert_eq!(from.id, 1);
 }

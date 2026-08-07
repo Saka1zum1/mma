@@ -666,6 +666,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .semantic_types(
             specta_typescript::semantic::Configuration::default().enable_lossless_floats(),
         )
+        // Exported for TS but not carried by any command signature.
+        .typ::<map_meta::CameraType>()
         .commands(tauri_specta::collect_commands![
             write_temp_file,
             read_file,
