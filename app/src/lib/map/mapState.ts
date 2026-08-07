@@ -80,8 +80,11 @@ export async function tryInterceptClick(
 	lng: number,
 	shiftKey = false,
 ): Promise<boolean> {
-	for (const fn of clickInterceptors) {
-		const result = fn(lat, lng, shiftKey);
+	// Latest registered wins: a transient tool (measure, polygon draw) outranks the
+	// always-armed held-hotkey gestures registered at editor mount.
+	const fns = [...clickInterceptors];
+	for (let i = fns.length - 1; i >= 0; i--) {
+		const result = fns[i](lat, lng, shiftKey);
 		const consumed = result instanceof Promise ? await result : result;
 		if (consumed) return true;
 	}

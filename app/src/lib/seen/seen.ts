@@ -1,4 +1,5 @@
 import { cmd } from "@/lib/commands";
+import { captureLivePano } from "@/lib/sv/panoCapture";
 import { getSettings } from "@/store/settings";
 import { getMapState } from "@/store/useMapStore";
 import { log } from "@/lib/util/log";
@@ -18,13 +19,8 @@ type PendingEntry = PendingEntryLocation &
 	};
 
 let staged: PendingEntry | null = null;
-let canvasGetter: (() => HTMLCanvasElement | null) | null = null;
 let skipNextPanoId: string | null = null;
 let latestGeo: GeoDisplay | null = null;
-
-export function seenSetCanvas(getter: (() => HTMLCanvasElement | null) | null) {
-	canvasGetter = getter;
-}
 
 export function seenSkipNext(panoId: string) {
 	skipNextPanoId = panoId;
@@ -69,14 +65,7 @@ function flushStaged(getPov: () => LocationPOV) {
 	const entry = staged;
 	staged = null;
 
-	let thumbnail: string | null = null;
-	if (getSettings().enableSeenThumbnails && canvasGetter) {
-		const canvas = canvasGetter();
-		if (canvas && canvas.width > 0 && canvas.height > 0) {
-			thumbnail = captureThumbnail(canvas);
-		}
-	}
-
+	const thumbnail = getSettings().enableSeenThumbnails ? captureThumbnail() : null;
 	writeEntry(entry, getPov(), thumbnail);
 }
 
@@ -86,19 +75,12 @@ export function seenFlush(getPov: () => LocationPOV) {
 
 const RESOLUTIONS = { low: [160, 90], medium: [320, 180], high: [640, 360] } as const;
 
-function captureThumbnail(canvas: HTMLCanvasElement): string | null {
+function captureThumbnail(): string | null {
 	try {
 		const [w, h] = RESOLUTIONS[getSettings().seenResolution] ?? RESOLUTIONS.medium;
-		const offscreen = document.createElement("canvas");
-		offscreen.width = w;
-		offscreen.height = h;
-		const ctx = offscreen.getContext("2d");
-		if (!ctx) return null;
-		ctx.drawImage(canvas, 0, 0, w, h);
-		const dataUrl = offscreen.toDataURL("image/jpeg", 0.6);
-		const base64 = dataUrl.split(",")[1];
-		if (!base64 || base64.length < 100) return null;
-		return base64;
+		const dataUrl = captureLivePano(w, h)?.toDataURL("image/jpeg", 0.6);
+		const base64 = dataUrl?.split(",")[1];
+		return base64 && base64.length >= 100 ? base64 : null;
 	} catch {
 		return null;
 	}
