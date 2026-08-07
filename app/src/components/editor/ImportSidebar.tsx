@@ -8,7 +8,8 @@ import { trace } from "@/lib/util/debug";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
-import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
+import { TagPill } from "@/components/primitives/TagPill";
+import { tagColorFor } from "@/lib/util/util";
 import { useT } from "@/lib/i18n";
 
 const FIELD_PREFS_KEY = "import-field-prefs";
@@ -28,20 +29,12 @@ function loadDroppedFields(): Set<string> {
 	return new Set();
 }
 
-/** Placeholder pill color for a not-yet-created tag; Rust assigns the real one on commit. */
-function previewColor(name: string): string {
-	let h = 0;
-	for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-	return `hsl(${h % 360} 60% 55%)`;
-}
-
 /** Import staging sidebar: field picker, file tags, bulk tag, and warnings. */
 export function ImportSidebar() {
 	const { t, tp } = useT();
 	const staging = useEventValue("import-markers:changed", getImportStaging);
 	const visibleTags = useMapState(getVisibleTags);
 	const [droppedFields, setDroppedFields] = useState(loadDroppedFields);
-	const [bulkTag, setBulkTag] = useState<string | null>(null);
 	const [tagInput, setTagInput] = useState("");
 	const [importing, setImporting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -50,6 +43,7 @@ export function ImportSidebar() {
 
 	if (!staging) return null;
 	const { preview } = staging;
+	const bulkTag = tagInput.trim();
 
 	const toggleField = (key: string) => {
 		setDroppedFields((prev) => {
@@ -61,14 +55,7 @@ export function ImportSidebar() {
 		});
 	};
 
-	const commitBulkTag = (e: React.FormEvent) => {
-		e.preventDefault();
-		const name = tagInput.trim();
-		if (!name) return;
-		setBulkTag(name);
-		setTagInput("");
-	};
-
+	// Large imports autocommit (not undoable) -- warn first unless the user opted out.
 	const requestImport = () => {
 		if (preview.willAutoCommit && !autoCommitAcked()) {
 			setConfirmAutoCommit(true);
@@ -88,7 +75,7 @@ export function ImportSidebar() {
 		setError(null);
 		const traceId = trace("import");
 		try {
-			const r = await confirmImport([...droppedFields], bulkTag ?? undefined);
+			const r = await confirmImport([...droppedFields], bulkTag || undefined);
 			traceId.end({ imported: r?.importedCount ?? 0 });
 		} catch (e: unknown) {
 			log.error("[import] failed:", e);
@@ -98,11 +85,6 @@ export function ImportSidebar() {
 	};
 
 	const sortedFields = [...preview.fields].sort((a, b) => a.key.localeCompare(b.key));
-
-	const existing = bulkTag
-		? visibleTags.find((tag) => tag.name.toLowerCase() === bulkTag.toLowerCase())
-		: undefined;
-	const bulkColor = existing?.color ?? (bulkTag ? previewColor(bulkTag) : "");
 
 	return (
 		<section className="importer import-sidebar">
@@ -146,26 +128,19 @@ export function ImportSidebar() {
 			<div className="import-sidebar__section">
 				<span className="import-sidebar__label">{t("import.tagAllImported")}</span>
 				<ul className="tag-list">
-					{bulkTag ? (
-						<TagPill
-							as="li"
-							small
-							color={bulkColor}
-							label={bulkTag}
-							button={<TagPillButton variant="delete" onClick={() => setBulkTag(null)} />}
-						/>
-					) : (
-						<li>
-							<form className="form-add-tag" onSubmit={commitBulkTag}>
-								<input
-									className="form-add-tag__input"
-									type="text"
-									placeholder={t("import.addTagPlaceholder")}
-									value={tagInput}
-									onChange={(e) => setTagInput(e.target.value)}
-								/>
-							</form>
-						</li>
+					<li>
+						<div className="form-add-tag">
+							<input
+								className="form-add-tag__input"
+								type="text"
+								placeholder={t("import.addTagPlaceholder")}
+								value={tagInput}
+								onChange={(e) => setTagInput(e.target.value)}
+							/>
+						</div>
+					</li>
+					{bulkTag && (
+						<TagPill as="li" small color={tagColorFor(bulkTag, visibleTags)} label={bulkTag} />
 					)}
 				</ul>
 			</div>

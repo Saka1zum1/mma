@@ -20,7 +20,7 @@ import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { mdiChevronLeft, mdiChevronRight } from "@mdi/js";
-import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
+import { SV_SEARCH_RADIUS, storedZoom } from "@/lib/sv/constants";
 import type { Tag } from "@/bindings.gen";
 import {
 	useMapState,
@@ -48,7 +48,13 @@ import {
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 
-import { useSettings, useSetting, getSettings, GEOCODE_PROVIDER_LABELS } from "@/store/settings";
+import {
+	useSettings,
+	useSetting,
+	getSettings,
+	panoDisplayOptions,
+	GEOCODE_PROVIDER_LABELS,
+} from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
 import { type PanoReference, resolvePano, fetchPanoData, showToast } from "@/lib/sv/lookup";
@@ -58,7 +64,7 @@ import { FullscreenMiniMap } from "@/components/editor/location/FullscreenMiniMa
 import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
 import { FullscreenTagBar } from "@/components/editor/location/FullscreenTagBar";
 import { PanoControls, CrosshairOverlay, sendHideCar } from "./PanoControls";
-import { seenPanoChanged, seenFlush, seenSetCanvas, seenUpdateGeo } from "@/lib/seen/seen";
+import { seenPanoChanged, seenFlush, seenUpdateGeo } from "@/lib/seen/seen";
 import { useReverseGeocode, type GeoDisplay } from "@/components/editor/location/useReverseGeocode";
 import { usePanoViewer, setPanoAltitude } from "./PanoViewerContext";
 import {
@@ -326,18 +332,14 @@ export function LocationPreview() {
 
 	useEffect(() => {
 		if (!singletonPano) return;
-		const noMove = appSettings.defaultMovementMode !== "moving";
-		singletonPano.setOptions({
-			linksControl: noMove ? false : appSettings.showLinksControl,
-			clickToGo: noMove ? false : appSettings.clickToGo,
-			showRoadLabels: appSettings.showRoadLabels,
-			scrollwheel: appSettings.defaultMovementMode !== "nmpz",
-		});
+		singletonPano.setOptions(panoDisplayOptions(getSettings()));
 	}, [
 		appSettings.showLinksControl,
 		appSettings.clickToGo,
 		appSettings.showRoadLabels,
 		appSettings.defaultMovementMode,
+		appSettings.hidePanoUI,
+		appSettings.hideNavWithUI,
 	]);
 
 	useEffect(() => {
@@ -625,7 +627,6 @@ export function LocationPreview() {
 				setCurrentPano(result.pano);
 			}
 			setPanoReady(true);
-			seenSetCanvas(() => singletonDiv.querySelector("canvas"));
 		});
 
 		return () => {
@@ -890,7 +891,7 @@ export function LocationPreview() {
 		// Staged (virtual) location: updateLocation no-ops, cursorId can't match a
 		// negative id, so this falls through to setActiveLocation(null) = close.
 		const pov = effectivePano.getPov();
-		const zoom = effectivePano.getZoom();
+		const zoom = storedZoom(effectivePano.getZoom());
 		const pano = effectivePano.getPano();
 		const pos = effectivePano.getPosition();
 

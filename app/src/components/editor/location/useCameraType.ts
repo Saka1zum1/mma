@@ -8,8 +8,12 @@ import { TENCENT_CAMERA_BADGE, tencentSpawnPanoId } from "@/lib/sv/tencent/sessi
 import { isTencentPanoId } from "@/lib/sv/tencent/prefix";
 import { PanoType } from "@/types";
 import { useAsync } from "@/lib/hooks/useAsync";
+import type { CameraType } from "@/bindings.gen";
 import { useMapState } from "@/store/useMapStore";
 import { usePanoViewer } from "./PanoViewerContext";
+
+/** Camera type plus "unofficial", a display-only state that is never stored. */
+export type FullCameraType = CameraType | "unofficial";
 
 /** Google SV camera generations (+ unofficial). Provider badges are separate. */
 export type BuiltinCameraType =

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { PanoType } from "@/types";
+import type { CameraType } from "@/bindings.gen";
 import { PbfReader, PbfWriter } from "pbf";
 import {
 	readGetMetadataResponse,
@@ -50,7 +51,7 @@ const BADCAM_THRESHOLDS = new Map<string, (d: Date, lat: number) => boolean>([
 ]);
 
 /** Map panorama tile worldSize height to camera generation. */
-export function cameraTypeFromHeight(height: number): CameraType {
+export function cameraTypeFromHeight(height: number): CameraType | null {
 	switch (height) {
 		case 1664:
 			return "gen1";
@@ -72,7 +73,9 @@ export function cameraTypeFromHeight(height: number): CameraType {
  * - scout only refines plain gen2/gen4 results; badcam/tripod/gen1 take precedence
  *   (indoor tripods are also scout).
  */
-export function detectCameraType(data: google.maps.StreetViewResolvedPanoramaData): CameraType {
+export function detectCameraType(
+	data: google.maps.StreetViewResolvedPanoramaData,
+): CameraType | null {
 	const scout = data.extra?._source === "scout";
 	const base = cameraTypeFromHeight(data.tiles.worldSize.height);
 	if (base !== "gen2") return base === "gen4" && scout ? "trekker" : base;
@@ -214,7 +217,7 @@ export function parseResult(
 		extra: {
 			altitude,
 			panoType: m.pano?.frontend || PanoType.Official,
-			cameraType: null as CameraType,
+			cameraType: null,
 			countryCode,
 			uploaderName,
 			drivingDirection,

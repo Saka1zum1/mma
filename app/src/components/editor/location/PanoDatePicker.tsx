@@ -180,7 +180,11 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 			className="pano-date-select"
 			data-side="top"
 			value={selectedPanoId ?? "default"}
-			onChange={(e) => handleValueChange(e.target.value)}
+			onChange={(e) => {
+				const select = e.currentTarget;
+				handleValueChange(e.target.value);
+				requestAnimationFrame(() => select.blur());
+			}}
 		>
 			<button type="button" className="pano-date-select__trigger">
 				<span className="pano-value">

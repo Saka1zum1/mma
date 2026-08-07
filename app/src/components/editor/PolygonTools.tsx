@@ -4,6 +4,7 @@ import { mdiPencil } from "@mdi/js";
 import type { MapHost } from "@/lib/map/host";
 import { addClickInterceptor } from "@/lib/map/mapState";
 import { latLngToWorld } from "@/lib/geo/mercator";
+import { densifyRing, unwrapLng } from "@/lib/geo/geo";
 import { POLYGON_CLOSE_VERTEX_PX } from "@/lib/render/buildSceneLayers";
 import { useT } from "@/lib/i18n";
 
@@ -37,12 +38,14 @@ function simplify(pts: number[][], eps: number): number[][] {
 	return [pts[0], pts[pts.length - 1]];
 }
 
-function closeRing(ring: number[][]): number[][] {
+/** Close the ring and split any edge of 180 degrees or more so `unwrapRing` can't fold it. */
+function finishRing(ring: number[][]): number[][] {
 	if (ring.length === 0) return ring;
 	const first = ring[0];
 	const last = ring[ring.length - 1];
-	if (first[0] !== last[0] || first[1] !== last[1]) return [...ring, [first[0], first[1]]];
-	return ring;
+	const closed =
+		first[0] === last[0] && first[1] === last[1] ? ring : [...ring, [first[0], first[1]]];
+	return densifyRing(closed);
 }
 
 export function PolygonTools({
@@ -81,7 +84,8 @@ export function PolygonTools({
 
 		const offMove = host.on("mousemove", (ll) => {
 			if (!isDrawingRef.current) return;
-			points.push([ll.lng, ll.lat]);
+			// Host longitudes are normalized; unwrap so a seam crossing isn't a jump.
+			points.push([unwrapLng(ll.lng, points[points.length - 1][0]), ll.lat]);
 			emitUpdate();
 		});
 
@@ -95,7 +99,7 @@ export function PolygonTools({
 
 			const simplified = simplify(points, 0.0001);
 			setMode(null);
-			emitDraw([closeRing(simplified)]);
+			emitDraw([finishRing(simplified)]);
 		});
 
 		return () => {
@@ -129,14 +133,20 @@ export function PolygonTools({
 			polygonVerticesRef.current = null;
 			emitUpdate();
 			setMode(null);
-			if (commit && ring.length >= 3) emitDraw([closeRing(ring)]);
+			if (commit && ring.length >= 3) emitDraw([finishRing(ring)]);
+		};
+
+		const nextVertex = (lng: number, lat: number): number[] => {
+			const prev = points[points.length - 1];
+			return [prev ? unwrapLng(lng, prev[0]) : lng, lat];
 		};
 
 		const offClick = addClickInterceptor((lat, lng) => {
+			const v = nextVertex(lng, lat);
 			if (points.length >= 3) {
 				const start = points[0];
 				const scale = 2 ** host.getZoom();
-				const a = latLngToWorld({ lat, lng });
+				const a = latLngToWorld({ lat, lng: unwrapLng(lng, start[0]) });
 				const b = latLngToWorld({ lat: start[1], lng: start[0] });
 				if (Math.hypot((a.x - b.x) * scale, (a.y - b.y) * scale) <= POLYGON_CLOSE_VERTEX_PX) {
 					finish(true);
@@ -144,12 +154,12 @@ export function PolygonTools({
 				}
 			}
 			const prev = points[points.length - 1];
-			if (!prev || prev[0] !== lng || prev[1] !== lat) points.push([lng, lat]);
+			if (!prev || prev[0] !== v[0] || prev[1] !== v[1]) points.push(v);
 			preview();
 			return true;
 		});
 		const offMove = host.on("mousemove", (ll) => {
-			cursor = [ll.lng, ll.lat];
+			cursor = nextVertex(ll.lng, ll.lat);
 			if (points.length > 0) preview();
 		});
 		const onDblClick = (e: MouseEvent) => {
@@ -181,31 +191,37 @@ export function PolygonTools({
 
 		host.setDraggable(false);
 		let anchor: number[] | null = null;
+		// Accumulated across mousemove so the drag's width and direction survive the seam.
+		let cursorLng = 0;
 
-		const rectRing = (a: number[], b: number[]) => [
-			[a[0], a[1]],
-			[b[0], a[1]],
-			[b[0], b[1]],
-			[a[0], b[1]],
-			[a[0], a[1]],
-		];
+		const rectRing = (a: number[], b: number[]) =>
+			finishRing([
+				[a[0], a[1]],
+				[b[0], a[1]],
+				[b[0], b[1]],
+				[a[0], b[1]],
+			]);
 
 		const offDown = host.on("mousedown", (ll) => {
 			anchor = [ll.lng, ll.lat];
+			cursorLng = ll.lng;
 		});
 		const offMove = host.on("mousemove", (ll) => {
 			if (!anchor) return;
-			freehandPathRef.current = rectRing(anchor, [ll.lng, ll.lat]);
+			cursorLng = unwrapLng(ll.lng, cursorLng);
+			freehandPathRef.current = rectRing(anchor, [cursorLng, ll.lat]);
 			emitUpdate();
 		});
 		const offUp = host.on("mouseup", (ll) => {
 			if (!anchor) return;
-			const ring = rectRing(anchor, [ll.lng, ll.lat]);
+			cursorLng = unwrapLng(ll.lng, cursorLng);
+			const ring = rectRing(anchor, [cursorLng, ll.lat]);
+			const degenerate = cursorLng === anchor[0] || ll.lat === anchor[1];
 			anchor = null;
 			freehandPathRef.current = null;
 			emitUpdate();
 			setMode(null);
-			if (ring[0][0] !== ring[1][0] && ring[0][1] !== ring[2][1]) emitDraw([ring]);
+			if (!degenerate) emitDraw([ring]);
 		});
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {

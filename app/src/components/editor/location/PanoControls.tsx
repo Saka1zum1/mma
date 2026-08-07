@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { hasLoadAsPanoId, LocationFlag } from "@/types";
-import { PANO_ZOOM, SV_JUMP_RADIUS } from "@/lib/sv/constants";
+import { PANO_ZOOM, SV_JUMP_RADIUS, displayZoom, zoomInStep, zoomOutStep } from "@/lib/sv/constants";
 import { google } from "@/lib/sv/opensv";
 import { lookupStreetView } from "@/lib/sv/lookup";
 import { shortenMapsUrl, mapsPanoUrl, fovForZoom, appendLinkTags } from "@/lib/sv/mapsLink";
@@ -23,11 +23,17 @@ import { getMapState, useMapState } from "@/store/useMapStore";
 import { getPanoAltitude, subscribePanoAltitude } from "./PanoViewerContext";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useHotkeyRef } from "@/lib/hooks/useHotkey";
+import { usePanoEvent } from "@/lib/hooks/usePanoEvent";
 import { open } from "@tauri-apps/plugin-shell";
 import { tweenPov } from "@/lib/sv/tweenPov";
+import { snapshotPanoView, renderPanoView, canvasToBlob } from "@/lib/sv/panoCapture";
+import { downloadBlob } from "@/lib/util/util";
+import { toast } from "@/lib/util/toast";
+import { log } from "@/lib/util/log";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
 import {
+	mdiCameraOutline,
 	mdiFullscreenExit,
 	mdiFullscreen,
 	mdiChevronUp,
@@ -358,26 +364,16 @@ export function CompassControl({ panorama }: { panorama: google.maps.StreetViewP
 function ZoomControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
 	const { t } = useT();
 	const [atMin, setAtMin] = useState(() => (panorama.getZoom() ?? 0) <= PANO_ZOOM.min);
-	const [atZero, setAtZero] = useState(() => (panorama.getZoom() ?? 0) <= 0);
-	useEffect(() => {
-		const update = () => {
-			const z = panorama.getZoom() ?? 0;
-			setAtMin(z <= PANO_ZOOM.min);
-			setAtZero(z <= 0);
-		};
-		const listener = panorama.addListener("zoom_changed", update);
-		update();
-		return () => {
-			google?.maps?.event?.removeListener(listener);
-		};
-	}, [panorama]);
+	usePanoEvent(panorama, "zoom_changed", () => {
+		setAtMin((panorama.getZoom() ?? 0) <= PANO_ZOOM.min);
+	});
 
 	const zoomIn = useCallback(() => {
-		panorama.setZoom(Math.min(PANO_ZOOM.max, Math.max(0, panorama.getZoom()) + 1));
+		panorama.setZoom(zoomInStep(panorama.getZoom()));
 	}, [panorama]);
 
 	const zoomOut = useCallback(() => {
-		panorama.setZoom(Math.max(0, panorama.getZoom() - 1));
+		panorama.setZoom(zoomOutStep(panorama.getZoom()));
 	}, [panorama]);
 
 	const resetZoom = useCallback(() => {
@@ -402,7 +398,7 @@ function ZoomControl({ panorama }: { panorama: google.maps.StreetViewPanorama })
 					</button>
 				</Tooltip>
 				<Tooltip content={t("common.zoomOut")} side="right">
-					<button disabled={atZero} onClick={zoomOut} aria-label={t("common.zoomOut")}>
+					<button disabled={atMin} onClick={zoomOut} aria-label={t("common.zoomOut")}>
 						<Icon path={mdiMinus} />
 					</button>
 				</Tooltip>
@@ -421,24 +417,17 @@ function ReturnToSpawnControl({
 	const { t } = useT();
 	const location = useMapState((s) => s.activeLocation);
 	const [hasChanged, setHasChanged] = useState(false);
-	useEffect(() => {
+	const checkChanged = useCallback(() => {
 		if (!location) return;
-		const update = () => {
-			const pov = panorama.getPov();
-			setHasChanged(
-				pov.heading !== location.heading ||
-					pov.pitch !== location.pitch ||
-					panorama.getZoom() !== location.zoom,
-			);
-		};
-		const povListener = panorama.addListener("pov_changed", update);
-		const zoomListener = panorama.addListener("zoom_changed", update);
-		update();
-		return () => {
-			google?.maps?.event?.removeListener(povListener);
-			google?.maps?.event?.removeListener(zoomListener);
-		};
+		const pov = panorama.getPov();
+		setHasChanged(
+			pov.heading !== location.heading ||
+				pov.pitch !== location.pitch ||
+				panorama.getZoom() !== displayZoom(location.zoom),
+		);
 	}, [panorama, location]);
+	usePanoEvent(panorama, "pov_changed", checkChanged, [location]);
+	usePanoEvent(panorama, "zoom_changed", checkChanged, [location]);
 
 	return (
 		<div
@@ -553,6 +542,7 @@ export const PanoControls = memo(function PanoControls({
 	const jumpForwardKey = useBinding("jumpForward");
 	const jumpBackwardKey = useBinding("jumpBackward");
 	const [copyState, setCopyState] = useState<"idle" | "loading" | "done">("idle");
+	const [screenshotState, setScreenshotState] = useState<"idle" | "loading" | "done">("idle");
 
 	// Built from the LIVE pano, not the saved location: the link shares what you're looking at.
 	const location = useMapState((s) => s.activeLocation);
@@ -819,28 +809,66 @@ export const PanoControls = memo(function PanoControls({
 		jumpPending.current = jump(180);
 	}, [jump]);
 
+	const takeScreenshot = useCallback(async () => {
+		setScreenshotState("loading");
+		try {
+			const view = snapshotPanoView(panorama);
+			const blob = await canvasToBlob(await renderPanoView(view, 1920, 1080));
+			const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+			downloadBlob(blob, `${view.panoId}_${stamp}.png`);
+			setScreenshotState("done");
+			setTimeout(() => setScreenshotState("idle"), 500);
+		} catch (error) {
+			log.warn("[pano-screenshot] capture failed", error);
+			setScreenshotState("idle");
+			toast("Screenshot failed");
+		}
+	}, [panorama]);
+
 	return (
 		<div className="embed-controls pano-embed-controls">
-			{vis.showFullscreenButton && (
+			{(vis.showScreenshotButton || vis.showFullscreenButton) && (
 				<div
 					className="embed-controls__control"
 					data-position="top-right"
-					style={{ inset: "0px 0px auto auto" }}
+					style={{ inset: "0px 0px auto auto", display: "flex" }}
 				>
-					<div className="map-control map-control--button">
-						<Tooltip
-							content={t("editor.toggleFullscreen", { key: fullscreenKey.toUpperCase() })}
-							side="bottom"
-							align="end"
-						>
-							<button
-								onClick={onFullscreen}
-								aria-label={t("editor.toggleFullscreen", { key: fullscreenKey.toUpperCase() })}
+					{vis.showScreenshotButton && (
+						<div className="map-control map-control--button">
+							<Tooltip content={t("editor.downloadScreenshot")} side="bottom" align="end">
+								<button
+									onClick={takeScreenshot}
+									disabled={screenshotState !== "idle"}
+									aria-label={t("editor.downloadScreenshot")}
+									data-qa="pano-screenshot"
+								>
+									{screenshotState === "loading" ? (
+										<Icon path={mdiLoading} className="spin" />
+									) : screenshotState === "done" ? (
+										<Icon path={mdiCheck} />
+									) : (
+										<Icon path={mdiCameraOutline} />
+									)}
+								</button>
+							</Tooltip>
+						</div>
+					)}
+					{vis.showFullscreenButton && (
+						<div className="map-control map-control--button">
+							<Tooltip
+								content={t("editor.toggleFullscreen", { key: fullscreenKey.toUpperCase() })}
+								side="bottom"
+								align="end"
 							>
-								{isFullscreen ? <Icon path={mdiFullscreenExit} /> : <Icon path={mdiFullscreen} />}
-							</button>
-						</Tooltip>
-					</div>
+								<button
+									onClick={onFullscreen}
+									aria-label={t("editor.toggleFullscreen", { key: fullscreenKey.toUpperCase() })}
+								>
+									{isFullscreen ? <Icon path={mdiFullscreenExit} /> : <Icon path={mdiFullscreen} />}
+								</button>
+							</Tooltip>
+						</div>
+					)}
 				</div>
 			)}
 

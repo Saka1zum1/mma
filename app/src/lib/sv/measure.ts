@@ -154,6 +154,9 @@ export function useMeasureInteraction(host: MapHost | null) {
 		};
 
 		const onDown = (e: PointerEvent) => {
+			// A drag's click doesn't always fire (the engine drops it after real movement);
+			// a new gesture starting means the stale flag must not eat this one's click.
+			suppressClick = false;
 			if (e.button !== 0) return;
 			const ll = at(e);
 			dragIndex = ll ? hitNode(host, ll) : null;
@@ -175,22 +178,26 @@ export function useMeasureInteraction(host: MapHost | null) {
 			suppressClick = true;
 		};
 
+		// Bubble phase: an Escape aimed at something above us (dialogs preventDefault in
+		// capture, open inputs stopPropagation) must not also discard the measurement.
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") endMeasure();
+			if (e.key !== "Escape" || e.defaultPrevented) return;
+			e.preventDefault();
+			endMeasure();
 		};
 
 		div.addEventListener("pointerdown", onDown);
 		// On window, so a drag that runs past the map edge keeps tracking.
 		window.addEventListener("pointermove", onMove);
 		window.addEventListener("pointerup", onUp);
-		document.addEventListener("keydown", onKey, true);
+		document.addEventListener("keydown", onKey);
 
 		return () => {
 			offClick();
 			div.removeEventListener("pointerdown", onDown);
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", onUp);
-			document.removeEventListener("keydown", onKey, true);
+			document.removeEventListener("keydown", onKey);
 			dragIndex = null;
 			host.setDraggable(true);
 			host.setCursor(null);

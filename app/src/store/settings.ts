@@ -114,12 +114,15 @@ const DEFAULTS = {
 	showMapLinks: true,
 	showCoordinateDisplay: true,
 	showFullscreenButton: true,
+	showScreenshotButton: true,
 	showPanoMetadata: false,
 	exactDateFormat: "date" as ExactDateFormat,
 	dateTimezone: "location" as DateTimezone,
 	showNavArrow: true,
 	showGroundArrow: true,
 	hidePanoUI: false,
+	/** Hiding the pano UI also hides navigation: link arrows, ground arrow, click-to-go X. */
+	hideNavWithUI: true,
 	fullscreenMap: false,
 	showFullscreenMapMeta: false,
 	showFullscreenMiniLocationPreview: true,
@@ -231,6 +234,23 @@ try {
 
 export function getSettings(): AppSettings {
 	return settings;
+}
+
+/** True while the pano-UI toggle covers the navigation visuals too. */
+export function navHiddenWithUI(s: AppSettings): boolean {
+	return s.hidePanoUI && s.hideNavWithUI;
+}
+
+/** Effective StreetViewPanorama options: how the movement mode, per-control toggles,
+ *  and the hide-UI toggle compose. Sole authority for both pano creation and updates. */
+export function panoDisplayOptions(s: AppSettings) {
+	const noMove = s.defaultMovementMode !== "moving";
+	return {
+		linksControl: !noMove && !navHiddenWithUI(s) && s.showLinksControl,
+		clickToGo: !noMove && s.clickToGo,
+		showRoadLabels: s.showRoadLabels,
+		scrollwheel: s.defaultMovementMode !== "nmpz",
+	};
 }
 
 export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {

@@ -408,6 +408,7 @@ function StreetViewBody() {
 	const s = useSettings();
 	const controls: { key: keyof typeof s; label: string }[] = [
 		{ key: "showFullscreenButton", label: t("settings.showFullscreenButton") },
+		{ key: "showScreenshotButton", label: t("settings.showScreenshotButton") },
 		{ key: "showJumpButtons", label: t("settings.showJumpButtons") },
 		{ key: "showCompass", label: t("settings.showCompass") },
 		{ key: "showCompassTape", label: t("settings.showCompassTape") },
@@ -441,6 +442,11 @@ function StreetViewBody() {
 					<SettingRow sub setting="showGroundArrow" label={t("settings.showGroundArrow")} />
 				</>
 			)}
+			<SettingRow
+				setting="hideNavWithUI"
+				label={t("settings.hideNavWithUI")}
+				description={t("settings.hideNavWithUIDesc")}
+			/>
 			<SettingRow setting="showRoadLabels" label={t("settings.showRoadLabels")} />
 			<SettingRow setting="showCar" label={t("settings.showCar")} />
 			<SettingRow setting="showCrosshair" label={t("settings.showCrosshair")} />

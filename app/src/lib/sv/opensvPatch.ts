@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getSettings } from "@/store/settings";
+import { getSettings, navHiddenWithUI } from "@/store/settings";
 
 /**
  * Runtime patches for opensv (patched Google Maps JS API v3.63).
@@ -93,7 +93,8 @@ function patchVisual(visual: CursorVisual, settingKey: "showNavArrow" | "showGro
 	const origShow = visual.show.bind(visual);
 	const origHide = visual.hide.bind(visual);
 	visual.show = () => {
-		if (!panoHovered || !getSettings()[settingKey]) origHide();
+		const s = getSettings();
+		if (!panoHovered || !s[settingKey] || navHiddenWithUI(s)) origHide();
 		else origShow();
 	};
 	origHide();

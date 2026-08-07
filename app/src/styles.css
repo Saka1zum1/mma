@@ -5048,8 +5048,8 @@ body {
 	position: absolute;
 	bottom: calc(var(--fs-tray-h, 0px) + 8px);
 	right: 8px;
-	width: 250px;
-	height: 200px;
+	width: max(250px, 23.15vmin);
+	height: max(200px, 18.52vmin);
 	border: 2px solid rgba(255, 255, 255, 0.4);
 	border-radius: 4px;
 	z-index: 12;

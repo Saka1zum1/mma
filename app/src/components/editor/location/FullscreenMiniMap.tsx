@@ -26,6 +26,7 @@ const MINIMAP_SCALE = range([0.5, 2]);
 const MINIMAP_SCALE_STEP = 0.25;
 const MINIMAP_BASE_W = 800;
 const MINIMAP_BASE_H = 600;
+const BASELINE_SHORT_EDGE = 1080;
 
 // Singleton host + overlay reused across mounts (opening/closing the pano viewer),
 // rebuilt only when the basemap kind changes.
@@ -138,9 +139,12 @@ export function FullscreenMiniMap() {
 		setSetting("fullscreenMinimapScale", Math.round(clamped * 100) / 100);
 	};
 
+	const sizeVar = (base: number) =>
+		`max(${Math.round(base * scale)}px, ${((base / BASELINE_SHORT_EDGE) * scale * 100).toFixed(2)}vmin)`;
+
 	const sizeVars = {
-		"--fs-minimap-w": `${Math.round(MINIMAP_BASE_W * scale)}px`,
-		"--fs-minimap-h": `${Math.round(MINIMAP_BASE_H * scale)}px`,
+		"--fs-minimap-w": sizeVar(MINIMAP_BASE_W),
+		"--fs-minimap-h": sizeVar(MINIMAP_BASE_H),
 	} as React.CSSProperties;
 
 	return (

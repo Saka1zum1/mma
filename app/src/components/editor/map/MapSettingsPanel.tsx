@@ -294,7 +294,7 @@ function BasemapSelector({
 	previewUrls: Record<MapTypeKey, string>;
 	selected: MapTypeKey;
 	onSelect: (type: MapTypeKey) => void;
-	onMouseEnter?: () => void;
+	onMouseEnter?: (e: React.MouseEvent) => void;
 }) {
 	const { t } = useT();
 	return (
@@ -482,7 +482,8 @@ export function MapTypeDropdown({ layerConfig }: { layerConfig: LayerConfig }) {
 									setIsOpen(false);
 								}
 							}}
-							onMouseEnter={() => {
+							onMouseEnter={(e) => {
+								if (e.buttons !== 0) return;
 								setIsOpen(true);
 							}}
 						/>
