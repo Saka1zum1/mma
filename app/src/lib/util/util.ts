@@ -63,13 +63,20 @@ async function downloadInBrowser(srcPath: string, fileName: string): Promise<boo
 }
 
 /** Trigger a browser download from an in-memory Blob. */
-export function downloadBlob(blob: Blob, fileName: string) {
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement("a");
-	a.href = url;
-	a.download = fileName;
-	a.click();
-	URL.revokeObjectURL(url);
+export function downloadBlob(blob: Blob | string, fileName: string) {
+  let url: string;
+  if (typeof blob === "string") {
+    url = blob;
+  } else {
+    url = URL.createObjectURL(blob);
+  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  if (typeof blob !== "string") {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** Prompt for a destination and move a temp export file there (native dialog in

@@ -422,8 +422,8 @@ function ReturnToSpawnControl({
 		const pov = panorama.getPov();
 		setHasChanged(
 			pov.heading !== location.heading ||
-				pov.pitch !== location.pitch ||
-				panorama.getZoom() !== displayZoom(location.zoom),
+			pov.pitch !== location.pitch ||
+			panorama.getZoom() !== displayZoom(location.zoom),
 		);
 	}, [panorama, location]);
 	usePanoEvent(panorama, "pov_changed", checkChanged, [location]);
@@ -452,9 +452,9 @@ function CoordinateControl({ panorama }: { panorama: google.maps.StreetViewPanor
 	useEffect(() => {
 		const update = () => {
 			const zoom = (panorama.getZoom() ?? 0).toFixed(2);
-		let altitude = getPanoAltitude();
-		if (altitude == null) {
-			const alt = getMapState().activeLocation?.extra?.altitude;
+			let altitude = getPanoAltitude();
+			if (altitude == null) {
+				const alt = getMapState().activeLocation?.extra?.altitude;
 				if (typeof alt === "number" && Number.isFinite(alt)) altitude = alt;
 			}
 			if (textRef.current) {
@@ -811,9 +811,19 @@ export const PanoControls = memo(function PanoControls({
 
 	const takeScreenshot = useCallback(async () => {
 		setScreenshotState("loading");
+		const panoId = panorama.getPano();
+		const view = snapshotPanoView(panorama);
 		try {
-			const view = snapshotPanoView(panorama);
-			const blob = await canvasToBlob(await renderPanoView(view, 1920, 1080));
+			var blob: Blob | string = '';
+			if (isYandexPanoId(panoId) || isYandexLocation || isAppleLocation) {
+				const el = document.querySelector(".psv-canvas");
+				if (el instanceof HTMLCanvasElement) {
+					blob = el.toDataURL("image/jpeg", 1.0);
+				}
+			}
+			else {
+				blob = await canvasToBlob(await renderPanoView(view, 1920, 1080));
+			}
 			const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
 			downloadBlob(blob, `${view.panoId}_${stamp}.png`);
 			setScreenshotState("done");
