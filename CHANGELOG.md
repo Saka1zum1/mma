@@ -1,4 +1,4 @@
-## v0.8.10 - Unreleased
+## v0.9.1 - 2026-08-08
 - Location actions in the map right-click menu; select country/subdivision under cursor
 - Rebuilt measure tool on every map style; Street View screenshot button
 - Collapsible fullscreen tag bar; movement-mode cycle hotkey; finer fullscreen minimap sizing
@@ -7,6 +7,14 @@
 - **Trekker** camera type in filters; antimeridian-safe selections and generator regions
 - Fixed overlapping selection paint order, bulk import tag without Enter, pano UI hiding nav arrows
 - Fixed stale tag counts after commit checkout, tag revival on map reopen, date picker hotkey focus
+- **LocalGuessr**: undo moves; tag answer locations from the result screen or summary; country/state streaks continue across games
+- Infinite LocalGuessr games ask whether to **End** (save a summary) or **Exit** (keep under Ongoing and resume later)
+- LocalGuessr score trend chart can filter by time range (all time, year, month, week, today)
+- After each round you can pan and zoom the result map; the guess map resets for the next round
+- Fixed LocalGuessr blanking the app between rounds; fixed some unofficial Street View panoramas not loading
+- Copy tag counts to the clipboard; map exports include tag counts
+- Tag path truncation also applies in flat view; drag an alias out of the tree to remove it; deleting a folder keeps its tags as plain leaves
+- Street View screenshots work for Yandex and Apple panoramas
 
 ## v0.8.9 - 2026-08-04
 - **LocalGuessr plugin gains NMPZ mode**
