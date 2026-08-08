@@ -81,11 +81,14 @@ fn register_web_schemes() {
         }
     });
     register_scheme("svtile", |req: SchemeRequest| {
-        let url = format!(
-            "https://lh3.ggpht.com/jsapi2/a/b/c/{}{}",
-            req.path,
-            qs(&req.query)
-        );
+        let path = req.path.trim_start_matches('/');
+        // Unofficial photosphere tiles use /gps-csg/{id}=x-y-z at the ggpht root.
+        // Official tiles stay under /jsapi2/a/b/c/.
+        let url = if path.starts_with("gps-csg/") {
+            format!("https://lh3.ggpht.com/{path}{}", qs(&req.query))
+        } else {
+            format!("https://lh3.ggpht.com/jsapi2/a/b/c/{path}{}", qs(&req.query))
+        };
         relay(crate::fetch_svtile(&url))
     });
     register_scheme("gmaps", |req: SchemeRequest| {

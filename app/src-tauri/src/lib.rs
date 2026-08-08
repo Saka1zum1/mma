@@ -526,6 +526,8 @@ pub(crate) fn write_upload(path: &str, body: &[u8]) -> tauri::http::Response<Vec
 }
 
 /// svtile: StreetView photosphere tiles via lh3.ggpht.com.
+/// Paths under `gps-csg/` are unofficial tiles and must hit the ggpht root
+/// (not `/jsapi2/a/b/c/…`), otherwise Google returns 400.
 pub(crate) fn fetch_svtile(url: &str) -> tauri::http::Response<Vec<u8>> {
     match proxy_client().get(url).send() {
         Ok(resp) => {
@@ -901,7 +903,13 @@ pub fn run() {
                 .query()
                 .map(|q| format!("?{q}"))
                 .unwrap_or_default();
-            let url = format!("https://lh3.ggpht.com/jsapi2/a/b/c/{path}{query}");
+            // Unofficial photosphere tiles use /gps-csg/{id}=x-y-z at the ggpht root.
+            // Official tiles stay under /jsapi2/a/b/c/.
+            let url = if path.starts_with("gps-csg/") {
+                format!("https://lh3.ggpht.com/{path}{query}")
+            } else {
+                format!("https://lh3.ggpht.com/jsapi2/a/b/c/{path}{query}")
+            };
             std::thread::spawn(move || responder.respond(fetch_svtile(&url)));
         })
         .register_asynchronous_uri_scheme_protocol("gmaps", |_ctx, req, responder| {
