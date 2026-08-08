@@ -814,7 +814,7 @@ export const PanoControls = memo(function PanoControls({
 		const panoId = panorama.getPano();
 		const view = snapshotPanoView(panorama);
 		try {
-			var blob: Blob | string = '';
+			let blob: Blob | string = '';
 			if (isYandexPanoId(panoId) || isYandexLocation || isAppleLocation) {
 				const el = document.querySelector(".psv-canvas");
 				if (el instanceof HTMLCanvasElement) {

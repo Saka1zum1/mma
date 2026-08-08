@@ -23,8 +23,8 @@ export function AddTagButton({
 
 	const defaultLabel =
 		variant === "summary-bulk"
-			? t("plugin.geoguessrGame.addTagAllRounds")
-			: t("plugin.geoguessrGame.addTag");
+			? t("plugin.localguessr.addTagAllRounds")
+			: t("plugin.localguessr.addTag");
 
 	const triggerLabel = label ?? defaultLabel;
 
@@ -78,8 +78,8 @@ export function AddTagButton({
 				locationIds={locationIds}
 				title={
 					variant === "summary-bulk"
-						? t("plugin.geoguessrGame.addTagAllRounds")
-						: t("plugin.geoguessrGame.addTag")
+						? t("plugin.localguessr.addTagAllRounds")
+						: t("plugin.localguessr.addTag")
 				}
 			/>
 		</>

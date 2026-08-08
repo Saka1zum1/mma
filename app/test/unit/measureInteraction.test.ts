@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 vi.mock("@/lib/events", () => ({
 	emit: () => {},
+	subscribe: () => () => {},
 	useEventValue: (_: string, get: () => unknown) => get(),
 	subscribeMany: () => () => {},
 	LOCATION_DATA_EVENTS: [],
@@ -26,7 +27,7 @@ import type { MapHost } from "@/lib/map/host";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("click interceptor priority", () => {
-	it("calls the most recently registered interceptor first", () => {
+	it("calls the most recently registered interceptor first", async () => {
 		const calls: string[] = [];
 		const off1 = addClickInterceptor(() => {
 			calls.push("first");
@@ -36,10 +37,10 @@ describe("click interceptor priority", () => {
 			calls.push("second");
 			return true;
 		});
-		expect(tryInterceptClick(0, 0)).toBe(true);
+		expect(await tryInterceptClick(0, 0)).toBe(true);
 		expect(calls).toEqual(["second"]);
 		off2();
-		expect(tryInterceptClick(0, 0)).toBe(true);
+		expect(await tryInterceptClick(0, 0)).toBe(true);
 		expect(calls).toEqual(["second", "first"]);
 		off1();
 	});
@@ -82,7 +83,7 @@ afterEach(() => {
 });
 
 describe("measure drag then click", () => {
-	it("a drag whose click never fires does not swallow the next click", () => {
+	it("a drag whose click never fires does not swallow the next click", async () => {
 		mountMeasuring({ lat: 0.01, lng: 0.01 });
 
 		// Drag node 0 from (10,10) to (200,10); the engine drops the click after movement.
@@ -94,20 +95,20 @@ describe("measure drag then click", () => {
 		// Next gesture on empty map: its click must place a point, not be eaten.
 		down(300, 10);
 		up();
-		expect(tryInterceptClick(0.01, 0.3)).toBe(true);
+		expect(await tryInterceptClick(0.01, 0.3)).toBe(true);
 		expect(getMeasurePoints()).toEqual([
 			[0.2, 0.01],
 			[0.3, 0.01],
 		]);
 	});
 
-	it("still suppresses the click of a stationary press on a node", () => {
+	it("still suppresses the click of a stationary press on a node", async () => {
 		mountMeasuring({ lat: 0.01, lng: 0.01 });
 
 		down(10, 10);
 		up();
 		// The engine does fire a click for a stationary press; it must not add a point.
-		expect(tryInterceptClick(0.01, 0.01)).toBe(true);
+		expect(await tryInterceptClick(0.01, 0.01)).toBe(true);
 		expect(getMeasurePoints()).toEqual([[0.01, 0.01]]);
 	});
 });

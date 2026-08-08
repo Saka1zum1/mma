@@ -446,6 +446,9 @@ export function cascadeRename(
 	return { tagRenames, virtualTags: nextVirtual, aliases: nextAliases };
 }
 
+/** Delete folder `prefix`: peel one path level from tags / settings under it
+ *  (`A/x` → `x`, `A/B/y` → `B/y`), drop the folder's own virtualTags key, and
+ *  remap deeper virtualTags / alias keys up one level. Nested structure is kept. */
 export function stripFolderPrefix(
 	prefix: string,
 	tags: Tag[],

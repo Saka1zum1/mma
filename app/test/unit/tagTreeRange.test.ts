@@ -171,7 +171,7 @@ describe("removeLeavesFromFolder", () => {
 describe("stripFolderPrefix", () => {
 	const mkTag = (id: number, name: string): Tag => ({ id, name, color: "#888888", order: id });
 
-	it("collapses tags inside the deleted folder+subfolders to their leaf names", () => {
+	it("peels one folder level, keeping nested structure under the parent", () => {
 		const tags = [
 			mkTag(1, "A/x"),
 			mkTag(2, "A/B/y"),
@@ -179,7 +179,7 @@ describe("stripFolderPrefix", () => {
 		];
 		const { tagRenames } = stripFolderPrefix("A", tags, {});
 		const byId = Object.fromEntries(tagRenames.map((r) => [r.id, r.name]));
-		expect(byId).toEqual({ 1: "x", 2: "y" });
+		expect(byId).toEqual({ 1: "x", 2: "B/y" });
 	});
 
 	it("leaves a tag named exactly the folder alone", () => {
@@ -188,16 +188,16 @@ describe("stripFolderPrefix", () => {
 		expect(tagRenames).toEqual([{ id: 2, name: "x" }]);
 	});
 
-	it("drops the folder's and subfolders' virtualTags color keys, keeping unrelated ones", () => {
+	it("drops the folder's virtualTags key and remaps deeper keys up one level", () => {
 		const vt = { A: { color: "#111" }, "A/B": { color: "#222" }, X: { color: "#333" } };
 		const { virtualTags } = stripFolderPrefix("A", [], vt);
-		expect(virtualTags).toEqual({ X: { color: "#333" } });
+		expect(virtualTags).toEqual({ B: { color: "#222" }, X: { color: "#333" } });
 	});
 
-	it("drops alias keys sitting under the deleted folder", () => {
+	it("remaps alias keys under the deleted folder up one level", () => {
 		const aliases = { "A/x": 5, "A/B/y": 6, "Other/z": 7 };
 		const { aliases: next } = stripFolderPrefix("A", [], {}, aliases);
-		expect(next).toEqual({ "Other/z": 7 });
+		expect(next).toEqual({ x: 5, "B/y": 6, "Other/z": 7 });
 	});
 
 	it("no-ops when nothing lives under the prefix", () => {
@@ -718,9 +718,10 @@ describe("canDropInto / moveIntoFolder", () => {
 	];
 	const tree = (tags = baseTags, aliases = {}) => buildTagTree(tags, "default", {}, {}, aliases);
 
-	it("allows a pill into a folder, rejects its own parent and block members", () => {
+	it("allows a pill into a folder, including its own parent (alias drop); rejects self/descendants", () => {
 		expect(canDropInto(tree(), ["Red"], "Cars")).toBe(true);
-		expect(canDropInto(tree(), ["Cars/a"], "Cars")).toBe(false); // no-op: already there
+		// Already under Cars: still allowed — leaf drops create/move an alias, not a rename.
+		expect(canDropInto(tree(), ["Cars/a"], "Cars")).toBe(true);
 		expect(canDropInto(tree(), ["Cars"], "Cars")).toBe(false); // itself
 		expect(canDropInto(tree(), ["Cars"], "Cars/Old")).toBe(false); // own descendant
 	});

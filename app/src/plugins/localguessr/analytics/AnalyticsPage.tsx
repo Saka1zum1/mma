@@ -254,7 +254,7 @@ function ScoreTrendChart({
 				<text x={10} y={padT + ph / 2} textAnchor="middle" fontSize="10"
 					fontFamily="var(--gg-font)" fill="var(--gg-muted)" opacity="0.55"
 					transform={`rotate(-90, 10, ${padT + ph / 2})`}>
-					{t("plugin.geoguessrGame.scoreTimeY")}
+					{t("plugin.localguessr.scoreTimeY")}
 				</text>
 
 				{/* hover tooltip */}
@@ -357,7 +357,7 @@ function ReplayEntry({ session, onReplay, onDelete }: {
 			</span>
 			<div className="gg-analytics__row-actions">
 				<button type="button" className="gg-analytics__replay" onClick={onReplay}>
-					{t("plugin.geoguessrGame.replay")}</button>
+					{t("plugin.localguessr.replay")}</button>
 				<button type="button" className="gg-analytics__delete" onClick={onDelete}>×</button>
 			</div>
 		</div>
@@ -426,33 +426,33 @@ export function AnalyticsPage({
 
 	const rangeOptions = useMemo(
 		() => [
-			{ value: "all", label: t("plugin.geoguessrGame.scoreTrendFilterRangeAll") },
-			{ value: "year", label: t("plugin.geoguessrGame.scoreTrendFilterRangeYear") },
-			{ value: "month", label: t("plugin.geoguessrGame.scoreTrendFilterRangeMonth") },
-			{ value: "week", label: t("plugin.geoguessrGame.scoreTrendFilterRangeWeek") },
-			{ value: "today", label: t("plugin.geoguessrGame.scoreTrendFilterRangeToday") },
+			{ value: "all", label: t("plugin.localguessr.scoreTrendFilterRangeAll") },
+			{ value: "year", label: t("plugin.localguessr.scoreTrendFilterRangeYear") },
+			{ value: "month", label: t("plugin.localguessr.scoreTrendFilterRangeMonth") },
+			{ value: "week", label: t("plugin.localguessr.scoreTrendFilterRangeWeek") },
+			{ value: "today", label: t("plugin.localguessr.scoreTrendFilterRangeToday") },
 		],
 		[t],
 	);
 
 	// Build option lists for filter dropdowns
 	const countryOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterCountry")}` },
+		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterCountry")}` },
 		...allCountryCodes.map((code) => ({ value: code, label: code })),
 	], [allCountryCodes, t]);
 
 	const mapOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterMap")}` },
+		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterMap")}` },
 		...uniqueMapIds.map((m) => ({ value: m.id, label: m.name })),
 	], [uniqueMapIds, t]);
 
 	const providerOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterProvider")}` },
+		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterProvider")}` },
 		...allProviders.map((p) => ({ value: p, label: p })),
 	], [allProviders, t]);
 
 	const modeOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterMode")}` },
+		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterMode")}` },
 		...uniqueModes.map((m) => ({
 			value: m,
 			label: m === "moving" ? "Moving" : m === "no-move" ? "No Move" : m === "nmpz" ? "NMPZ" : m,
@@ -502,10 +502,10 @@ export function AnalyticsPage({
 		return (
 			<div className="gg-analytics">
 				<header className="gg-analytics__header">
-					<h2>{t("plugin.geoguessrGame.analytics")}</h2>
+					<h2>{t("plugin.localguessr.analytics")}</h2>
 					<Button variant="ghost" onClick={onBack}>{t("common.back")}</Button>
 				</header>
-				<EmptyState icon={mdiChartBoxOutline}>{t("plugin.geoguessrGame.noGamesYet")}</EmptyState>
+				<EmptyState icon={mdiChartBoxOutline}>{t("plugin.localguessr.noGamesYet")}</EmptyState>
 			</div>
 		);
 	}
@@ -516,14 +516,14 @@ export function AnalyticsPage({
 		<div className="gg-analytics">
 			<header className="gg-analytics__header">
 				<div>
-					<h2>{t("plugin.geoguessrGame.analytics")}</h2>
-					<p className="gg-analytics__sub">{t("plugin.geoguessrGame.analyticsSub")}</p>
+					<h2>{t("plugin.localguessr.analytics")}</h2>
+					<p className="gg-analytics__sub">{t("plugin.localguessr.analyticsSub")}</p>
 				</div>
 				<div className="gg-analytics__header-actions">
 					{mapId && (
 						<label className="gg-analytics__filter">
 							<Checkbox checked={filterMap} onChange={(e) => setFilterMap(e.target.checked)} />
-							{t("plugin.geoguessrGame.filterCurrentMap")}
+							{t("plugin.localguessr.filterCurrentMap")}
 						</label>
 					)}
 					<Button variant="ghost" onClick={onBack}>{t("common.back")}</Button>
@@ -532,62 +532,62 @@ export function AnalyticsPage({
 
 			<div className="gg-analytics__cards">
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.geoguessrGame.gamesPlayed")}</span>
+					<span className="gg-analytics__card-label">{t("plugin.localguessr.gamesPlayed")}</span>
 					<span className="gg-analytics__card-value">{o.gamesPlayed}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.geoguessrGame.avgScore")}</span>
+					<span className="gg-analytics__card-label">{t("plugin.localguessr.avgScore")}</span>
 					<span className="gg-analytics__card-value">{o.averageScore.toLocaleString()}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.geoguessrGame.bestScore")}</span>
+					<span className="gg-analytics__card-label">{t("plugin.localguessr.bestScore")}</span>
 					<span className="gg-analytics__card-value">{o.bestScore.toLocaleString()}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.geoguessrGame.bestStreak")}</span>
+					<span className="gg-analytics__card-label">{t("plugin.localguessr.bestStreak")}</span>
 					<span className="gg-analytics__card-value">{o.bestStreak}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.geoguessrGame.perfectRounds")}</span>
+					<span className="gg-analytics__card-label">{t("plugin.localguessr.perfectRounds")}</span>
 					<span className="gg-analytics__card-value">{o.perfectRounds}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.geoguessrGame.totalRounds")}</span>
+					<span className="gg-analytics__card-label">{t("plugin.localguessr.totalRounds")}</span>
 					<span className="gg-analytics__card-value">{o.totalRounds}</span>
 				</div>
 			</div>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.geoguessrGame.scoreTrend")}</h3>
+				<h3>{t("plugin.localguessr.scoreTrend")}</h3>
 
 				{/* Filter bar */}
 				<div className="gg-analytics__trend-filters">
 					<FilterDropdown
-						label={t("plugin.geoguessrGame.scoreTrendFilterRange")}
+						label={t("plugin.localguessr.scoreTrendFilterRange")}
 						value={trendFilterRange}
 						options={rangeOptions}
 						onChange={(v) => setTrendFilterRange(v as TrendRange)}
 					/>
 					<FilterDropdown
-						label={t("plugin.geoguessrGame.scoreTrendFilterCountry")}
+						label={t("plugin.localguessr.scoreTrendFilterCountry")}
 						value={trendFilterCountry}
 						options={countryOptions}
 						onChange={setTrendFilterCountry}
 					/>
 					<FilterDropdown
-						label={t("plugin.geoguessrGame.scoreTrendFilterMap")}
+						label={t("plugin.localguessr.scoreTrendFilterMap")}
 						value={trendFilterMap}
 						options={mapOptions}
 						onChange={setTrendFilterMap}
 					/>
 					<FilterDropdown
-						label={t("plugin.geoguessrGame.scoreTrendFilterProvider")}
+						label={t("plugin.localguessr.scoreTrendFilterProvider")}
 						value={trendFilterProvider}
 						options={providerOptions}
 						onChange={setTrendFilterProvider}
 					/>
 					<FilterDropdown
-						label={t("plugin.geoguessrGame.scoreTrendFilterMode")}
+						label={t("plugin.localguessr.scoreTrendFilterMode")}
 						value={trendFilterMode}
 						options={modeOptions}
 						onChange={setTrendFilterMode}
@@ -598,7 +598,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.geoguessrGame.byCountry")}</h3>
+				<h3>{t("plugin.localguessr.byCountry")}</h3>
 				<div className="gg-analytics__list">
 					{data.byCountry.slice(0, 40).map((c) => (
 						<div key={c.countryCode} className="gg-analytics__row">
@@ -612,7 +612,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.geoguessrGame.byProvider")}</h3>
+				<h3>{t("plugin.localguessr.byProvider")}</h3>
 				<div className="gg-analytics__list">
 					{data.byProvider.map((p) => (
 						<div key={p.provider} className="gg-analytics__row">
@@ -624,7 +624,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.geoguessrGame.byMode")}</h3>
+				<h3>{t("plugin.localguessr.byMode")}</h3>
 				<div className="gg-analytics__list">
 					{data.byMode.map((m) => (
 						<div key={m.mode} className="gg-analytics__row">
@@ -638,7 +638,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.geoguessrGame.byMap")}</h3>
+				<h3>{t("plugin.localguessr.byMap")}</h3>
 				<div className="gg-analytics__list">
 					{data.byMap.map((m) => (
 						<div key={m.mapId} className="gg-analytics__row">
@@ -652,7 +652,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.geoguessrGame.recentGames")}</h3>
+				<h3>{t("plugin.localguessr.recentGames")}</h3>
 				<div className="gg-analytics__list">
 					{data.recent.map((s) => (
 						<ReplayEntry
@@ -667,7 +667,7 @@ export function AnalyticsPage({
 
 			<div className="gg-analytics__footer">
 				<Button variant="destructive" onClick={() => { clearSessions(); setVersion((n) => n + 1); }}>
-					{t("plugin.geoguessrGame.clearHistory")}
+					{t("plugin.localguessr.clearHistory")}
 				</Button>
 			</div>
 		</div>

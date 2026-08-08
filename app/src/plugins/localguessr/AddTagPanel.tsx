@@ -52,8 +52,8 @@ export function AddTagPanel({
 			setRecent(rememberRecentTag(tagName));
 			toast(
 				locationIds.length === 1
-					? t("plugin.geoguessrGame.tagAdded", { tag: tagName })
-					: t("plugin.geoguessrGame.tagAddedBulk", {
+					? t("plugin.localguessr.tagAdded", { tag: tagName })
+					: t("plugin.localguessr.tagAddedBulk", {
 							tag: tagName,
 							count: String(locationIds.length),
 						}),
@@ -61,7 +61,7 @@ export function AddTagPanel({
 			setName("");
 			onOpenChange(false);
 		} catch (err) {
-			toast(err instanceof Error ? err.message : t("plugin.geoguessrGame.tagAddFailed"));
+			toast(err instanceof Error ? err.message : t("plugin.localguessr.tagAddFailed"));
 		} finally {
 			setBusy(false);
 		}
@@ -76,7 +76,7 @@ export function AddTagPanel({
 			}}
 		>
 			<DialogContent
-				title={title ?? t("plugin.geoguessrGame.addTag")}
+				title={title ?? t("plugin.localguessr.addTag")}
 				className="gg-add-tag-dialog"
 			>
 				<form
@@ -90,7 +90,7 @@ export function AddTagPanel({
 						type="text"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						placeholder={t("plugin.geoguessrGame.addTagPlaceholder")}
+						placeholder={t("plugin.localguessr.addTagPlaceholder")}
 						autoFocus
 						disabled={busy}
 					/>
@@ -98,7 +98,7 @@ export function AddTagPanel({
 					{filteredRecent.length > 0 && (
 						<div className="gg-add-tag-dialog__section">
 							<div className="gg-add-tag-dialog__label">
-								{t("plugin.geoguessrGame.recentTags")}
+								{t("plugin.localguessr.recentTags")}
 							</div>
 							<div className="gg-add-tag-dialog__chips">
 								{filteredRecent.map((tag) => (
@@ -119,7 +119,7 @@ export function AddTagPanel({
 					{filteredAppTags.length > 0 && (
 						<div className="gg-add-tag-dialog__section">
 							<div className="gg-add-tag-dialog__label">
-								{t("plugin.geoguessrGame.mapTags")}
+								{t("plugin.localguessr.mapTags")}
 							</div>
 							<div className="gg-add-tag-dialog__chips">
 								{filteredAppTags.map((tag) => (
@@ -143,7 +143,7 @@ export function AddTagPanel({
 							{t("common.cancel")}
 						</Button>
 						<Button variant="primary" type="submit" disabled={!trimmed || busy}>
-							{t("plugin.geoguessrGame.addTag")}
+							{t("plugin.localguessr.addTag")}
 						</Button>
 					</div>
 				</form>

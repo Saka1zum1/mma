@@ -200,10 +200,9 @@ export function TagManager() {
 		},
 		[setAliases],
 	);
-	// Deletes the folder and its whole subtree: strips the folder prefix from any real
-	// tags inside (so `A/x` → `x` and `A/B/y` → `y`) and drops the folder's + subfolders'
-	// virtualTags color keys, so the folder hierarchy itself disappears while the tags
-	// survive as plain leaves.
+	// Deletes the folder: peels one path level from tags inside (`A/x` → `x`,
+	// `A/B/y` → `B/y`), drops the folder's virtualTags key, and remaps deeper
+	// virtualTags / aliases up one level so nested structure survives.
 	const deleteFolder = useCallback(
 		(path: string) => {
 			const vt = getMapState().map?.meta.settings.virtualTags ?? {};

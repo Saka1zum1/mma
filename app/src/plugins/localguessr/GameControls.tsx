@@ -42,32 +42,32 @@ export function GameControls({
 			<div className="gg-controls__actions">
 				{canMove && (
 					<>
-						<Tooltip content={t("plugin.geoguessrGame.checkpoint")} side="right">
+						<Tooltip content={t("plugin.localguessr.checkpoint")} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => panoRef.current?.setCheckpoint()}
-								aria-label={t("plugin.geoguessrGame.checkpoint")}
+								aria-label={t("plugin.localguessr.checkpoint")}
 							>
 								<Icon path={mdiFlagOutline} />
 							</button>
 						</Tooltip>
-						<Tooltip content={t("plugin.geoguessrGame.returnCheckpoint")} side="right">
+						<Tooltip content={t("plugin.localguessr.returnCheckpoint")} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => panoRef.current?.returnToCheckpoint()}
-								aria-label={t("plugin.geoguessrGame.returnCheckpoint")}
+								aria-label={t("plugin.localguessr.returnCheckpoint")}
 							>
 								<Icon path={mdiFlagCheckered} />
 							</button>
 						</Tooltip>
-						<Tooltip content={t("plugin.geoguessrGame.returnToSpawn")} side="right">
+						<Tooltip content={t("plugin.localguessr.returnToSpawn")} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => panoRef.current?.returnToSpawn()}
-								aria-label={t("plugin.geoguessrGame.returnToSpawn")}
+								aria-label={t("plugin.localguessr.returnToSpawn")}
 							>
 								<Icon path={mdiHome} />
 							</button>

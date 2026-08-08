@@ -106,7 +106,7 @@ describe("import bulk tag", () => {
 		type("   ");
 		expect(pills()).toEqual([]);
 		clickImport();
-		expect(confirmImport).toHaveBeenCalledWith([], "");
+		expect(confirmImport).toHaveBeenCalledWith([], undefined);
 		unmount();
 	});
 

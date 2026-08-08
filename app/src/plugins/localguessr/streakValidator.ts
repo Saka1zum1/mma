@@ -27,7 +27,7 @@ async function geocodeNominatim(lat: number, lng: number, locale?: string): Prom
 	url.searchParams.set("zoom", "10");
 	url.searchParams.set("addressdetails", "1");
 	const res = await fetch(url.toString(), {
-		headers: { "Accept-Language": "en", "User-Agent": "MMA-GeoGuessrGame/1.0" },
+		headers: { "Accept-Language": "en", "User-Agent": "MMA-localguessr/1.0" },
 	});
 	if (!res.ok) return null;
 	const data = await res.json();

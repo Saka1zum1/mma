@@ -38,7 +38,7 @@ export function ResultOverlay({
 		<div className="gg-result">
 			<div className="gg-result__card">
 				<div className="gg-result__round">
-					{t("plugin.geoguessrGame.roundOf", {
+					{t("plugin.localguessr.roundOf", {
 						n: String(roundIndex + 1),
 						total: totalRounds,
 					})}
@@ -46,21 +46,21 @@ export function ResultOverlay({
 				<div className="gg-result__score">{result.score.toLocaleString()}</div>
 				<div className="gg-result__meta">
 					{result.distanceMeters != null
-						? t("plugin.geoguessrGame.distanceAway", {
+						? t("plugin.localguessr.distanceAway", {
 								distance: formatDistance(result.distanceMeters),
 							})
-						: t("plugin.geoguessrGame.noGuess")}
+						: t("plugin.localguessr.noGuess")}
 				</div>
 				{streakMsg && <div className="gg-result__streak">{streakMsg}</div>}
 				<div className="gg-result__actions">
 					<AddTagButton locationIds={[result.location.id]} variant="result" />
 					{isLast ? (
 						<Button variant="primary" onClick={onFinish}>
-							{t("plugin.geoguessrGame.viewSummary")}
+							{t("plugin.localguessr.viewSummary")}
 						</Button>
 					) : (
 						<Button variant="primary" onClick={onNext}>
-							{t("plugin.geoguessrGame.nextRound")} <span className="gg-kbd">␣</span>
+							{t("plugin.localguessr.nextRound")} <span className="gg-kbd">␣</span>
 						</Button>
 					)}
 				</div>

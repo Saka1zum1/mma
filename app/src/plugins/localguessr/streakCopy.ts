@@ -41,16 +41,16 @@ export function streakResultMessage(
 	if (streakMode === "country") {
 		if (result.streakHit === null) return null;
 		if (result.streakHit) {
-			return t("plugin.geoguessrGame.streakIndeedCountry", {
+			return t("plugin.localguessr.streakIndeedCountry", {
 				name: truthCountryLabel(result, locale),
 				n: String(streak),
 			});
 		}
 		const prior = streakRunBeforeLastRound(rounds, "country");
 		if (prior > 0) {
-			return t("plugin.geoguessrGame.streakEndedCountry", { n: String(prior) });
+			return t("plugin.localguessr.streakEndedCountry", { n: String(prior) });
 		}
-		return t("plugin.geoguessrGame.streakGuessWrongCountry", {
+		return t("plugin.localguessr.streakGuessWrongCountry", {
 			guess: guessCountryLabel(result, locale),
 			correct: truthCountryLabel(result, locale),
 		});
@@ -58,16 +58,16 @@ export function streakResultMessage(
 
 	if (result.stateStreakHit === null) return null;
 	if (result.stateStreakHit) {
-		return t("plugin.geoguessrGame.streakIndeedState", {
+		return t("plugin.localguessr.streakIndeedState", {
 			name: truthStateLabel(result, locale),
 			n: String(stateStreak),
 		});
 	}
 	const prior = streakRunBeforeLastRound(rounds, "state");
 	if (prior > 0) {
-		return t("plugin.geoguessrGame.streakEndedState", { n: String(prior) });
+		return t("plugin.localguessr.streakEndedState", { n: String(prior) });
 	}
-	return t("plugin.geoguessrGame.streakGuessWrongState", {
+	return t("plugin.localguessr.streakGuessWrongState", {
 		guess: guessStateLabel(result, locale),
 		correct: truthStateLabel(result, locale),
 	});

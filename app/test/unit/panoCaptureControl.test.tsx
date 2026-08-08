@@ -33,6 +33,10 @@ vi.mock("@/lib/util/util", () => ({ downloadBlob: mocks.download, schemeBase: ()
 vi.mock("@/lib/util/toast", () => ({ toast: mocks.toast }));
 vi.mock("@/lib/util/log", () => ({ log: { warn: vi.fn() } }));
 vi.mock("@/store/settings", () => ({ useSettings: () => mocks.settings }));
+vi.mock("@/store/useMapStore", () => ({
+	useMapState: (sel: (s: { activeLocation: null }) => unknown) => sel({ activeLocation: null }),
+	getMapState: () => ({ activeLocation: null }),
+}));
 vi.mock("@/lib/util/hotkeys", () => ({ useBinding: () => "f" }));
 vi.mock("@/lib/hooks/useHotkey", () => ({ useHotkeyRef: () => ({ current: null }) }));
 vi.mock("@/lib/hooks/usePanoEvent", () => ({ usePanoEvent: vi.fn() }));
@@ -45,7 +49,9 @@ import { PanoControls } from "@/components/editor/location/PanoControls";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const panorama = {} as google.maps.StreetViewPanorama;
+const panorama = {
+	getPano: () => "pano-id",
+} as unknown as google.maps.StreetViewPanorama;
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 

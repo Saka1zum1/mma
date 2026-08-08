@@ -520,10 +520,10 @@ export function GuessMap({
 
 	const guessDisabled = !hasGuess || submitting;
 	const guessLabel = submitting
-		? t("plugin.geoguessrGame.scoring")
+		? t("plugin.localguessr.scoring")
 		: hasGuess
-			? t("plugin.geoguessrGame.guess")
-			: t("plugin.geoguessrGame.placePinOnMap");
+			? t("plugin.localguessr.guess")
+			: t("plugin.localguessr.placePinOnMap");
 
 	// Keep a stable canvas DOM node across play↔result so the MapHost / DeckGL
 	// WebGL contexts are not destroyed every phase change.
@@ -611,7 +611,7 @@ export function GuessMap({
 							}}
 							data-qa="guess-map__control--basemap"
 							title={nextBasemapLabel}
-							aria-label={t("plugin.geoguessrGame.guessMapBasemap")}
+							aria-label={t("plugin.localguessr.guessMapBasemap")}
 						>
 							<Icon path={mdiLayers} />
 						</button>
