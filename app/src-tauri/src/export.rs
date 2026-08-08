@@ -76,6 +76,9 @@ fn tag_color_meta(
             if let Some(order) = v.get("order").and_then(|o| o.as_u64()) {
                 entry.insert("order".into(), serde_json::json!(order));
             }
+            if let Some(count) = v.get("count").and_then(|c| c.as_u64()) {
+                entry.insert("count".into(), serde_json::json!(count));
+            }
             if let Some(links) = v.get("doclinks").and_then(|d| d.as_array()) {
                 if !links.is_empty() {
                     entry.insert("doclinks".into(), serde_json::Value::Array(links.clone()));

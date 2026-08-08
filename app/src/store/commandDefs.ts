@@ -47,6 +47,7 @@ import {
 	mdiDownloadBoxOutline,
 	mdiFileDocumentOutline,
 	mdiGraphOutline,
+	mdiClipboardTextOutline,
 } from "@mdi/js";
 import { registerCommand, type CommandDef } from "./commands";
 import {
@@ -63,6 +64,7 @@ import {
 	getActiveSelections,
 	removeLocations,
 	toggleGhostAllSelections,
+	getVisibleTags,
 } from "./useMapStore";
 import { hasCommitDiff } from "./commitDiff";
 import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
@@ -71,6 +73,8 @@ import { toggleSeenOverlay } from "@/lib/seen/seenOverlay";
 import { selectReviewedHistory } from "@/lib/review/review";
 import { openDialog } from "./dialogBus";
 import { isExpandingSvLinks, stopExpandSvLinks } from "@/lib/sv/expandLinks";
+import { toast } from "@/lib/util/toast";
+import { t } from "@/lib/i18n";
 
 const requiresMap = () => getMapState().map !== null;
 const hasActiveLocation = () => getMapState().activeLocation != null;
@@ -432,6 +436,27 @@ const COMMANDS = {
 				"name,count\n" + rows.map((r) => `"${r.name.replace(/"/g, '""')}",${r.count}`).join("\n");
 			downloadBlob(new Blob([csv], { type: "text/csv" }), `${map.meta.name} tags.csv`);
 		},
+	},
+	"copy-tags-count": {
+		label: "Copy tags count",
+		icon: mdiClipboardTextOutline,
+		group: "Tags",
+		aliases: ["copy tag counts", "clipboard tag counts"],
+		execute: async () => {
+			const counts = getMapState().tagCounts;
+			const text = getVisibleTags()
+				.map((tag) => ({ name: tag.name, count: counts[tag.id] ?? 0 }))
+				.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+				.map((r) => `${r.name}: ${r.count}`)
+				.join(", ");
+			try {
+				await navigator.clipboard.writeText(text);
+				toast(t("toast.copiedTagsCount"));
+			} catch {
+				toast(t("toast.copyFailed"));
+			}
+		},
+		enabled: requiresMap,
 	},
 	"tag-find-replace": {
 		label: "Find and replace in tag names",

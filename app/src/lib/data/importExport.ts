@@ -1,7 +1,7 @@
 import { fetchSvMetadata, imageKeyToPanoId } from "@/lib/sv/svMeta";
 import { fovToZoom, schemeBase } from "@/lib/util/util";
 import { LocationFlag } from "@/types";
-import type { Location } from "@/bindings.gen";
+import type { Location, Tag } from "@/bindings.gen";
 import type { SvProvider } from "@/lib/sv/providers/types";
 import { providerToWireSource } from "@/lib/sv/providers/types";
 import { fetchBaiduMeta } from "@/lib/sv/baidu/api";
@@ -547,6 +547,18 @@ export function parsedLocationsToImportJson(locs: ParsedLocation[], name: string
 		};
 	});
 	return JSON.stringify({ name, customCoordinates });
+}
+
+/** `{id: Tag & { count }}` payload for `storeExportJson` / GeoJSON export tag metadata. */
+export function serializeTagsForExport(
+	tags: Tag[],
+	tagCounts: Record<number, number>,
+): string {
+	return JSON.stringify(
+		Object.fromEntries(
+			tags.map((t) => [t.id, { ...t, count: tagCounts[t.id] ?? 0 }]),
+		),
+	);
 }
 
 export async function parseMapsUrl(input: string): Promise<ParsedLocation | null> {

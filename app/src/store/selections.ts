@@ -581,14 +581,14 @@ export function invalidateTagDisplayCache(): void {
 	suffixCache = null;
 }
 
-/** Display label for a tag NAME. In tree view with `truncateTagPaths` on, collapses the
- *  `/`-path to its shortest unique suffix; otherwise returns the name verbatim. Uniqueness
- *  is computed over visible tags only — soft-deleted ghosts must not widen suffixes.
+/** Display label for a tag NAME. With `truncateTagPaths` on, collapses the `/`-path to
+ *  its shortest unique suffix; otherwise returns the name verbatim. Uniqueness is
+ *  computed over visible tags only — soft-deleted ghosts must not widen suffixes.
  *  Memoized on the visible-tags array (stable identity between tag mutations) so list
  *  rendering stays O(n). */
 export function displayTagName(name: string): string {
 	const s = getSettings();
-	if (s.tagViewMode !== "tree" || !s.truncateTagPaths) return name;
+	if (!s.truncateTagPaths) return name;
 	const tags = getVisibleTags();
 	if (!suffixCache || suffixCache.tags !== tags) {
 		suffixCache = { tags, suffixes: shortestUniqueSuffixes(tags.map((t) => t.name)) };

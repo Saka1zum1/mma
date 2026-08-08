@@ -171,7 +171,7 @@ const DEFAULTS = {
 	polygonColor: { r: 0, g: 140, b: 255 } as RGB,
 	panoDotScaled: false,
 	tagViewMode: "flat" as TagViewMode,
-	/** Tree view only: render each tag as the shortest path suffix that's still unique. */
+	/** Render each tag as the shortest path suffix that's still unique among visible tags. */
 	truncateTagPaths: true,
 	/** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
 	 *  `firstChild` inherits the first own-colored descendant in display order,
@@ -257,6 +257,11 @@ export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettin
 	settings = { ...settings, [key]: value };
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 	emitEvent("settings:changed");
+	// Tag display labels are memoized on the visible-tags array; bust that cache when
+	// truncation / view mode changes so selection chips and collapsed previews update.
+	if (key === "truncateTagPaths" || key === "tagViewMode") {
+		void import("@/store/selections").then((m) => m.invalidateTagDisplayCache());
+	}
 }
 
 export function useSettings(): AppSettings {
