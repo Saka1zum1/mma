@@ -48,6 +48,8 @@ export interface GamePanoHandle {
 	setCheckpoint: () => void;
 	returnToCheckpoint: () => void;
 	hasCheckpoint: () => boolean;
+	undoMove: () => void;
+	canUndoMove: () => boolean;
 	getPanorama: () => google.maps.StreetViewPanorama | null;
 	/**
 	 * True when the active viewport uses the Google SV WebGL material pipeline
@@ -64,8 +66,9 @@ export const GamePanoView = forwardRef<
 		movementMode: MovementMode;
 		onReady?: (ready: boolean) => void;
 		onPanorama?: (pano: google.maps.StreetViewPanorama | null) => void;
+		onCanUndoChange?: (canUndo: boolean) => void;
 	}
->(function GamePanoView({ round, movementMode, onReady, onPanorama }, ref) {
+>(function GamePanoView({ round, movementMode, onReady, onPanorama, onCanUndoChange }, ref) {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const [error, setError] = useState<string | null>(null);
 	const sessionRef = useRef<PanoProviderSession | null>(null);
@@ -78,34 +81,102 @@ export const GamePanoView = forwardRef<
 		lng: round.lng,
 	});
 	const checkpointRef = useRef<typeof spawnRef.current | null>(null);
+	const currentPanoIdRef = useRef<string | null>(null);
+	const panoHistoryRef = useRef<string[]>([]);
+	const isRestoringRef = useRef(false);
+	/** Suppress history while the round's spawn pano is still loading onto the singleton. */
+	const isInitializingRef = useRef(false);
+	const onCanUndoChangeRef = useRef(onCanUndoChange);
+	onCanUndoChangeRef.current = onCanUndoChange;
 
 	const getActivePano = useCallback(
 		() => sessionRef.current?.panorama ?? getPanorama(),
 		[],
 	);
 
+	const emitCanUndo = useCallback(() => {
+		onCanUndoChangeRef.current?.(panoHistoryRef.current.length > 0);
+	}, []);
+
+	const clearUndoHistory = useCallback(() => {
+		panoHistoryRef.current = [];
+		emitCanUndo();
+	}, [emitCanUndo]);
+
+	const initializeSpawnPano = useCallback((pano: google.maps.StreetViewPanorama) => {
+		const panoId = pano.getPano() ?? null;
+		// status_changed also fires after every move; only seed undo baseline on first load.
+		if (!isInitializingRef.current) {
+			if (!spawnRef.current.panoId && panoId) spawnRef.current.panoId = panoId;
+			return;
+		}
+		// Adopt the live pano as spawn. If the round's stored panoId was invalid,
+		// resolvePano falls back to a nearby location — that fallback becomes spawn.
+		if (panoId) spawnRef.current.panoId = panoId;
+		currentPanoIdRef.current = panoId;
+		clearUndoHistory();
+		isInitializingRef.current = false;
+	}, [clearUndoHistory]);
+
+	const recordPanoChange = useCallback(() => {
+		if (isRestoringRef.current || isInitializingRef.current) return;
+		const pano = getActivePano();
+		if (!pano) return;
+		const nextPanoId = pano.getPano() ?? null;
+		const previousPanoId = currentPanoIdRef.current;
+		if (!previousPanoId || previousPanoId === nextPanoId) {
+			currentPanoIdRef.current = nextPanoId;
+			return;
+		}
+		panoHistoryRef.current.push(previousPanoId);
+		if (panoHistoryRef.current.length > 50) panoHistoryRef.current.shift();
+		currentPanoIdRef.current = nextPanoId;
+		emitCanUndo();
+	}, [getActivePano, emitCanUndo]);
+
 	const restoreView = useCallback((target: typeof spawnRef.current) => {
 		const pano = getActivePano();
 		if (!pano) return;
-		if (target.panoId) {
-			try {
-				pano.setPano(target.panoId);
-			} catch {
+		isRestoringRef.current = true;
+		try {
+			if (target.panoId) {
+				try {
+					pano.setPano(target.panoId);
+				} catch {
+					try {
+						pano.setPosition({ lat: target.lat, lng: target.lng });
+					} catch {
+						/* ignore */
+					}
+				}
+			} else {
 				try {
 					pano.setPosition({ lat: target.lat, lng: target.lng });
 				} catch {
 					/* ignore */
 				}
 			}
-		} else {
-			try {
-				pano.setPosition({ lat: target.lat, lng: target.lng });
-			} catch {
-				/* ignore */
+			pano.setPov({ heading: target.heading, pitch: target.pitch });
+			pano.setZoom(target.zoom);
+		} finally {
+			isRestoringRef.current = false;
+			if (target.panoId) {
+				currentPanoIdRef.current = target.panoId;
 			}
 		}
-		pano.setPov({ heading: target.heading, pitch: target.pitch });
-		pano.setZoom(target.zoom);
+	}, [getActivePano]);
+
+	const restorePano = useCallback((panoId: string | null) => {
+		if (!panoId) return;
+		const pano = getActivePano();
+		if (!pano) return;
+		isRestoringRef.current = true;
+		try {
+			pano.setPano(panoId);
+		} finally {
+			isRestoringRef.current = false;
+			currentPanoIdRef.current = panoId;
+		}
 	}, [getActivePano]);
 
 	useImperativeHandle(
@@ -128,26 +199,86 @@ export const GamePanoView = forwardRef<
 			returnToCheckpoint: () => {
 				if (checkpointRef.current) restoreView(checkpointRef.current);
 			},
+			undoMove: () => {
+				const previous = panoHistoryRef.current.pop() ?? null;
+				if (previous) {
+					restorePano(previous);
+					emitCanUndo();
+				}
+			},
+			canUndoMove: () => panoHistoryRef.current.length > 0,
 			hasCheckpoint: () => checkpointRef.current != null,
 			getPanorama: getActivePano,
 			// Google + Baidu/Tencent inject: no PSV viewport → Google material pipeline.
 			// Apple/Yandex PSV: own WebGL context; NO_CAR shader must not be applied.
 			supportsHideCar: () => !sessionRef.current?.viewport,
 		}),
-		[getActivePano, restoreView],
+		[getActivePano, restoreView, restorePano, emitCanUndo],
 	);
 
+	// Unmount-only: return the shared Street View singleton to the editor preview.
+	// Round changes must NOT reparent it — that thrash loses the WebGL context and
+	// can white-screen the app map / editor pano as well.
+	useLayoutEffect(() => {
+		return () => {
+			setActivePanoViewport(null);
+			if (sessionRef.current) {
+				try {
+					sessionRef.current.destroy();
+				} catch {
+					/* ignore */
+				}
+				sessionRef.current = null;
+			}
+			singletonDiv.style.width = "100%";
+			singletonDiv.style.height = "100%";
+			const previewHost = document.querySelector(".location-preview__pano-host");
+			// Singleton may be in the game host, parked off-DOM (after a PSV round),
+			// or already back in the preview — always restore it for the editor.
+			if (previewHost) {
+				if (singletonDiv.parentElement && singletonDiv.parentElement !== previewHost) {
+					singletonDiv.remove();
+				}
+				if (!previewHost.contains(singletonDiv)) {
+					previewHost.appendChild(singletonDiv);
+				}
+				requestAnimationFrame(() => {
+					const p = getPanorama();
+					if (p) {
+						p.setVisible(true);
+						google.maps.event.trigger(p, "resize");
+					}
+				});
+			}
+			onPanorama?.(null);
+			onReady?.(false);
+			onCanUndoChangeRef.current?.(false);
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
+	}, []);
+
+	// Per-round load: swap panorama content in-place without reparenting the canvas
+	// back to the editor (except when this component fully unmounts).
 	useLayoutEffect(() => {
 		const host = hostRef.current;
 		if (!host) return;
 		let cancelled = false;
 		let statusListener: google.maps.MapsEventListener | null = null;
 		let resizeObs: ResizeObserver | null = null;
+		const viewListeners: google.maps.MapsEventListener[] = [];
 
-		const cleanup = () => {
+		const cleanupRound = () => {
 			cancelled = true;
 			resizeObs?.disconnect();
 			resizeObs = null;
+			for (const listener of viewListeners) {
+				try {
+					listener.remove();
+				} catch {
+					/* ignore */
+				}
+			}
+			viewListeners.length = 0;
 			if (statusListener) {
 				try {
 					statusListener.remove();
@@ -165,26 +296,6 @@ export const GamePanoView = forwardRef<
 				}
 				sessionRef.current = null;
 			}
-			if (host.contains(singletonDiv)) {
-				host.removeChild(singletonDiv);
-				// Restore auto-sizing (set to explicit px during game mount at line ~260).
-				singletonDiv.style.width = "100%";
-				singletonDiv.style.height = "100%";
-				const previewHost = document.querySelector(".location-preview__pano-host");
-				if (previewHost && !previewHost.contains(singletonDiv)) {
-					previewHost.appendChild(singletonDiv);
-					// Defer resize so the DOM has time to lay out in the new container.
-					requestAnimationFrame(() => {
-						const p = getPanorama();
-						if (p) {
-							p.setVisible(true);
-							google.maps.event.trigger(p, "resize");
-						}
-					});
-				}
-			}
-			onPanorama?.(null);
-			onReady?.(false);
 		};
 
 		const loc = toLocation(round);
@@ -197,6 +308,9 @@ export const GamePanoView = forwardRef<
 			lng: round.lng,
 		};
 		checkpointRef.current = null;
+		currentPanoIdRef.current = null;
+		isInitializingRef.current = true;
+		clearUndoHistory();
 		setError(null);
 		onReady?.(false);
 
@@ -211,6 +325,9 @@ export const GamePanoView = forwardRef<
 		const provider = findPanoProvider(loc);
 		if (provider) {
 			ensureProviderEnabled(getLocationProvider(loc));
+			setActivePanoViewport(null);
+			// Detach shared Google canvas without returning it to the editor preview.
+			if (host.contains(singletonDiv)) singletonDiv.remove();
 			host.replaceChildren();
 			void provider
 				.open(host, loc)
@@ -230,6 +347,9 @@ export const GamePanoView = forwardRef<
 						...spawnRef.current,
 						panoId: pano.getPano() ?? round.panoId,
 					};
+					isInitializingRef.current = false;
+					clearUndoHistory();
+					currentPanoIdRef.current = spawnRef.current.panoId;
 					scheduleResize(session);
 					resizeObs = new ResizeObserver(() => scheduleResize(sessionRef.current));
 					resizeObs.observe(host);
@@ -239,11 +359,21 @@ export const GamePanoView = forwardRef<
 					setError(err instanceof Error ? err.message : "Failed to open panorama");
 					onReady?.(false);
 				});
-			return cleanup;
+			return cleanupRound;
 		}
 
 		ensureProviderEnabled(getLocationProvider(loc));
-		host.replaceChildren();
+		// Keep the singleton canvas in this host; only clear foreign provider nodes.
+		if (!host.contains(singletonDiv)) {
+			host.replaceChildren();
+			singletonDiv.style.width = `${host.clientWidth || 1}px`;
+			singletonDiv.style.height = `${host.clientHeight || 1}px`;
+			host.appendChild(singletonDiv);
+		} else {
+			for (const child of [...host.children]) {
+				if (child !== singletonDiv) child.remove();
+			}
+		}
 
 		void loadOpenSV().then(async () => {
 			if (cancelled || !google?.maps) return;
@@ -253,21 +383,12 @@ export const GamePanoView = forwardRef<
 				await installGoogleInjectBridge();
 			}
 
-			// Ensure singletonDiv is ready — reset any stale size/graphics state
-			// from a previous PSV provider before appending.
-			singletonDiv.style.width = `${host.clientWidth}px`;
-			singletonDiv.style.height = `${host.clientHeight}px`;
-			host.appendChild(singletonDiv);
-
-			// Brief delay lets the DOM layout settle after reparenting.
-			await new Promise((r) => setTimeout(r, 50));
-			if (cancelled) return;
-
 			const pano = getPanorama();
 			if (!pano) {
 				setError("Street View unavailable");
 				return;
 			}
+			viewListeners.push(pano.addListener("pano_changed", recordPanoChange));
 			pano.setVisible(true);
 			applyGoogleMovementOptions(pano, movementMode);
 			google.maps.event.trigger(pano, "resize");
@@ -284,22 +405,20 @@ export const GamePanoView = forwardRef<
 				applyResolved(pano, result, loc);
 				applyGoogleMovementOptions(pano, movementMode);
 				google.maps.event.trigger(pano, "resize");
-				statusListener = pano.addListener("status_changed", () => {
-					if (cancelled || pano.getStatus() !== "OK") return;
-					onReady?.(true);
-					spawnRef.current = {
-						...spawnRef.current,
-						panoId: pano.getPano() ?? round.panoId,
-					};
-					applyGoogleMovementOptions(pano, movementMode);
-				});
-				if (pano.getStatus() === "OK") {
-					onReady?.(true);
-					spawnRef.current = {
-						...spawnRef.current,
-						panoId: pano.getPano() ?? round.panoId,
-					};
+				const targetPanoId = result.pano.location?.pano ?? null;
+				if (result.isFallback && targetPanoId) {
+					spawnRef.current.panoId = targetPanoId;
 				}
+				const tryFinishInit = () => {
+					if (cancelled || pano.getStatus() !== "OK") return;
+					const live = pano.getPano();
+					if (targetPanoId && live && live !== targetPanoId) return;
+					onReady?.(true);
+					initializeSpawnPano(pano);
+					applyGoogleMovementOptions(pano, movementMode);
+				};
+				statusListener = pano.addListener("status_changed", tryFinishInit);
+				tryFinishInit();
 				resizeObs = new ResizeObserver(() => {
 					google.maps.event.trigger(pano, "resize");
 					sessionRef.current?.resize?.();
@@ -312,7 +431,7 @@ export const GamePanoView = forwardRef<
 			}
 		});
 
-		return cleanup;
+		return cleanupRound;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [round.id, movementMode]);
 

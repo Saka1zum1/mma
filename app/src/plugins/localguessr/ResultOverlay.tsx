@@ -2,6 +2,7 @@ import { Button } from "@/components/primitives/Button";
 import { useT } from "@/lib/i18n";
 import { formatDistance } from "./ScoreUtils";
 import { streakResultMessage } from "./streakCopy";
+import { AddTagButton } from "./AddTagButton";
 import type { RoundResult, StreakMode } from "./GameState";
 
 export function ResultOverlay({
@@ -52,6 +53,7 @@ export function ResultOverlay({
 				</div>
 				{streakMsg && <div className="gg-result__streak">{streakMsg}</div>}
 				<div className="gg-result__actions">
+					<AddTagButton locationIds={[result.location.id]} variant="result" />
 					{isLast ? (
 						<Button variant="primary" onClick={onFinish}>
 							{t("plugin.geoguessrGame.viewSummary")}

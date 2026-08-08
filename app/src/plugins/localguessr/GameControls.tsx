@@ -1,6 +1,6 @@
 import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
-import { mdiHome, mdiFlagOutline, mdiFlagCheckered, mdiCompass, mdiCar, mdiCarOff } from "@mdi/js";
+import { mdiHome, mdiFlagOutline, mdiFlagCheckered, mdiCar, mdiCarOff } from "@mdi/js";
 import { useT } from "@/lib/i18n";
 import { useSettings } from "@/store/settings";
 import { CompassControl, CompassTape } from "@/components/editor/location/PanoControls";
@@ -85,11 +85,6 @@ export function GameControls({
 							<Icon path={hideCar ? mdiCarOff : mdiCar} />
 						</button>
 					</Tooltip>
-				)}
-				{!panorama && (
-					<span className="gg-controls__btn gg-controls__btn--ghost" aria-hidden>
-						<Icon path={mdiCompass} />
-					</span>
 				)}
 			</div>
 		</div>

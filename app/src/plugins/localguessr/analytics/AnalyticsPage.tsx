@@ -9,6 +9,21 @@ import { clearSessions, deleteSession } from "../gameSessionStore";
 import { formatDistance } from "../ScoreUtils";
 import { countryFlagHtml, type GameSession } from "../GameState";
 
+type TrendRange = "all" | "year" | "month" | "week" | "today";
+
+function trendRangeCutoff(range: TrendRange, now = Date.now()): number | null {
+	if (range === "all") return null;
+	if (range === "today") {
+		const d = new Date(now);
+		d.setHours(0, 0, 0, 0);
+		return d.getTime();
+	}
+	const dayMs = 24 * 60 * 60 * 1000;
+	if (range === "week") return now - 7 * dayMs;
+	if (range === "month") return now - 30 * dayMs;
+	return now - 365 * dayMs;
+}
+
 function ScoreTrendChart({
 	points,
 	t,
@@ -106,25 +121,54 @@ function ScoreTrendChart({
 		xTicks.push({ x, label: fmtTime(ts) });
 	}
 
-	// ── smooth catmull‑rom path ──────────────────────────────────
-	const smoothPoints = (pts: typeof dataPts) => {
+	// ── smooth path (monotone cubic — no overshoot past data extrema) ──
+	const monotonePath = (pts: { x: number; y: number }[]) => {
 		const n = pts.length;
 		if (n < 2) return "";
+		if (n === 2) return `M${pts[0].x},${pts[0].y} L${pts[1].x},${pts[1].y}`;
+
+		const dx: number[] = [];
+		const dy: number[] = [];
+		const secant: number[] = [];
+		for (let i = 0; i < n - 1; i++) {
+			dx[i] = pts[i + 1].x - pts[i].x;
+			dy[i] = pts[i + 1].y - pts[i].y;
+			secant[i] = dx[i] !== 0 ? dy[i] / dx[i] : 0;
+		}
+
+		const slope = new Array<number>(n);
+		slope[0] = secant[0];
+		slope[n - 1] = secant[n - 2];
+		for (let i = 1; i < n - 1; i++) {
+			slope[i] = secant[i - 1] * secant[i] <= 0 ? 0 : (secant[i - 1] + secant[i]) / 2;
+		}
+		// Fritsch–Carlson limiter — keeps the spline monotone in y between samples.
+		for (let i = 0; i < n - 1; i++) {
+			if (Math.abs(secant[i]) < 1e-12) {
+				slope[i] = 0;
+				slope[i + 1] = 0;
+				continue;
+			}
+			const a = slope[i] / secant[i];
+			const b = slope[i + 1] / secant[i];
+			const s = a * a + b * b;
+			if (s > 9) {
+				const t = 3 / Math.sqrt(s);
+				slope[i] = t * a * secant[i];
+				slope[i + 1] = t * b * secant[i];
+			}
+		}
+
 		let d = `M${pts[0].x},${pts[0].y}`;
 		for (let i = 0; i < n - 1; i++) {
-			const p0 = i > 0 ? pts[i - 1] : pts[0];
-			const p1 = pts[i];
-			const p2 = pts[i + 1];
-			const p3 = i < n - 2 ? pts[i + 2] : pts[n - 1];
-			const cp1x = p1.x + (p2.x - p0.x) / 6;
-			const cp1y = p1.y + (p2.y - p0.y) / 6;
-			const cp2x = p2.x - (p3.x - p1.x) / 6;
-			const cp2y = p2.y - (p3.y - p1.y) / 6;
-			d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+			const p0 = pts[i];
+			const p1 = pts[i + 1];
+			const h = dx[i];
+			d += ` C${p0.x + h / 3},${p0.y + (slope[i] * h) / 3} ${p1.x - h / 3},${p1.y - (slope[i + 1] * h) / 3} ${p1.x},${p1.y}`;
 		}
 		return d;
 	};
-	const pathD = smoothPoints(dataPts);
+	const pathD = monotonePath(dataPts);
 	const fillD = `${pathD} L${dataPts[dataPts.length - 1].x},${padT + ph} L${dataPts[0].x},${padT + ph} Z`;
 
 	// ── hover tooltip position ───────────────────────────────────
@@ -144,6 +188,9 @@ function ScoreTrendChart({
 						<stop offset="0%" stopColor="var(--gg-accent)" stopOpacity="0.7" />
 						<stop offset="100%" stopColor="var(--gg-accent-purple)" stopOpacity="1" />
 					</linearGradient>
+					<clipPath id="gg-chart-plot-clip">
+						<rect x={padL} y={padT} width={pw} height={ph} />
+					</clipPath>
 				</defs>
 
 				{/* grid lines */}
@@ -152,12 +199,14 @@ function ScoreTrendChart({
 						stroke="var(--gg-border)" strokeWidth="0.8" strokeDasharray="5,5" />
 				))}
 
-				{/* area fill under line */}
-				<path d={fillD} fill="url(#gg-chart-fill)" />
+				<g clipPath="url(#gg-chart-plot-clip)">
+					{/* area fill under line */}
+					<path d={fillD} fill="url(#gg-chart-fill)" />
 
-				{/* line */}
-				<path d={pathD} fill="none" stroke="url(#gg-chart-stroke)" strokeWidth="2.2"
-					strokeLinecap="round" strokeLinejoin="round" />
+					{/* line */}
+					<path d={pathD} fill="none" stroke="url(#gg-chart-stroke)" strokeWidth="2.2"
+						strokeLinecap="round" strokeLinejoin="round" />
+				</g>
 
 				{/* data dots */}
 				{dataPts.map((p, i) => {
@@ -334,6 +383,7 @@ export function AnalyticsPage({
 	);
 
 	// ── score‑trend filters ──────────────────────────────────────
+	const [trendFilterRange, setTrendFilterRange] = useState<TrendRange>("all");
 	const [trendFilterCountry, setTrendFilterCountry] = useState<string>("__all__");
 	const [trendFilterMap, setTrendFilterMap] = useState<string>("__all__");
 	const [trendFilterProvider, setTrendFilterProvider] = useState<string>("__all__");
@@ -374,6 +424,17 @@ export function AnalyticsPage({
 		return [...set];
 	}, [data.scoreTrend]);
 
+	const rangeOptions = useMemo(
+		() => [
+			{ value: "all", label: t("plugin.geoguessrGame.scoreTrendFilterRangeAll") },
+			{ value: "year", label: t("plugin.geoguessrGame.scoreTrendFilterRangeYear") },
+			{ value: "month", label: t("plugin.geoguessrGame.scoreTrendFilterRangeMonth") },
+			{ value: "week", label: t("plugin.geoguessrGame.scoreTrendFilterRangeWeek") },
+			{ value: "today", label: t("plugin.geoguessrGame.scoreTrendFilterRangeToday") },
+		],
+		[t],
+	);
+
 	// Build option lists for filter dropdowns
 	const countryOptions = useMemo(() => [
 		{ value: "__all__", label: `${t("plugin.geoguessrGame.scoreTrendFilterAll")} ${t("plugin.geoguessrGame.scoreTrendFilterCountry")}` },
@@ -399,7 +460,9 @@ export function AnalyticsPage({
 	], [uniqueModes, t]);
 
 	const filteredTrend = useMemo(() => {
+		const cutoff = trendRangeCutoff(trendFilterRange);
 		const filtered = data.scoreTrend.filter((p) => {
+			if (cutoff != null && p.at < cutoff) return false;
 			if (trendFilterCountry !== "__all__") {
 				if (!p.countryCodes.includes(trendFilterCountry)) return false;
 			}
@@ -422,7 +485,14 @@ export function AnalyticsPage({
 				mapName: p.mapName,
 			};
 		});
-	}, [data.scoreTrend, trendFilterCountry, trendFilterMap, trendFilterProvider, trendFilterMode]);
+	}, [
+		data.scoreTrend,
+		trendFilterRange,
+		trendFilterCountry,
+		trendFilterMap,
+		trendFilterProvider,
+		trendFilterMode,
+	]);
 
 	const handleReplay = useCallback((s: GameSession) => {
 		onReplaySession?.(s);
@@ -492,6 +562,12 @@ export function AnalyticsPage({
 
 				{/* Filter bar */}
 				<div className="gg-analytics__trend-filters">
+					<FilterDropdown
+						label={t("plugin.geoguessrGame.scoreTrendFilterRange")}
+						value={trendFilterRange}
+						options={rangeOptions}
+						onChange={(v) => setTrendFilterRange(v as TrendRange)}
+					/>
 					<FilterDropdown
 						label={t("plugin.geoguessrGame.scoreTrendFilterCountry")}
 						value={trendFilterCountry}

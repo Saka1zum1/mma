@@ -4,6 +4,7 @@ import type { LatLng } from "@/types";
 import { getName as getCountryName, registerLocale } from "i18n-iso-countries";
 import enLocale from "i18n-iso-countries/langs/en.json";
 import zhLocale from "i18n-iso-countries/langs/zh.json";
+import { applyGlobalStreakHit, getGlobalStreak } from "./streakStore";
 
 // Register all needed locales at module load.
 registerLocale(enLocale);
@@ -244,6 +245,7 @@ export function createActiveGame(opts: {
 	maxErrorDistance: number;
 	locations: RoundLocation[];
 }): ActiveGame {
+	const global = getGlobalStreak();
 	return {
 		sessionId: newSessionId(),
 		mapId: opts.mapId,
@@ -253,8 +255,8 @@ export function createActiveGame(opts: {
 		locations: opts.locations,
 		currentRoundIndex: 0,
 		rounds: [],
-		streak: 0,
-		stateStreak: 0,
+		streak: global.country,
+		stateStreak: global.state,
 		roundStartedAt: Date.now(),
 		gameStartedAt: Date.now(),
 		guess: null,
@@ -264,15 +266,6 @@ export function createActiveGame(opts: {
 
 export function toFinishedSession(active: ActiveGame, finalRounds: RoundResult[]): GameSession {
 	const totalScore = finalRounds.reduce((s, r) => s + r.score, 0);
-	let streak = 0;
-	if (active.config.streakMode !== "off") {
-		const useCountry = active.config.streakMode === "country";
-		for (const r of finalRounds) {
-			const hit = useCountry ? r.streakHit : r.stateStreakHit;
-			if (hit) streak++;
-			else break;
-		}
-	}
 	return {
 		id: active.sessionId,
 		mapId: active.mapId,
@@ -283,8 +276,9 @@ export function toFinishedSession(active: ActiveGame, finalRounds: RoundResult[]
 		finishedAt: Date.now(),
 		rounds: finalRounds,
 		totalScore,
-		streak: active.config.streakMode === "country" ? streak : 0,
-		stateStreak: active.config.streakMode === "state" ? streak : 0,
+		// Persist the running (plugin-global) streak values at finish time.
+		streak: active.config.streakMode === "country" ? active.streak : 0,
+		stateStreak: active.config.streakMode === "state" ? active.stateStreak : 0,
 	};
 }
 
@@ -306,13 +300,19 @@ function reducer(state: GameUiState, action: GameAction): GameUiState {
 				active: action.active,
 				lastSession: null,
 			};
-		case "RESUME":
+		case "RESUME": {
+			const global = getGlobalStreak();
 			return {
 				...state,
 				phase: action.active.phase,
-				active: action.active,
+				active: {
+					...action.active,
+					streak: global.country,
+					stateStreak: global.state,
+				},
 				lastSession: null,
 			};
+		}
 		case "SET_GUESS":
 			if (!state.active) return state;
 			return { ...state, active: { ...state.active, guess: action.guess } };
@@ -320,31 +320,21 @@ function reducer(state: GameUiState, action: GameAction): GameUiState {
 			if (!state.active) return state;
 			const rounds = [...state.active.rounds, action.result];
 			const mode = state.active.config.streakMode;
-			let streak = state.active.streak;
-			let stateStreak = state.active.stateStreak;
-			if (mode === "country") {
-				streak =
-					action.result.streakHit === true
-						? state.active.streak + 1
-						: action.result.streakHit === false
-							? 0
-							: state.active.streak;
-			} else if (mode === "state") {
-				stateStreak =
-					action.result.stateStreakHit === true
-						? state.active.stateStreak + 1
-						: action.result.stateStreakHit === false
-							? 0
-							: state.active.stateStreak;
-			}
+			const hit =
+				mode === "country"
+					? action.result.streakHit
+					: mode === "state"
+						? action.result.stateStreakHit
+						: null;
+			const global = applyGlobalStreakHit(mode, hit);
 			return {
 				...state,
 				phase: "result",
 				active: {
 					...state.active,
 					rounds,
-					streak,
-					stateStreak,
+					streak: global.country,
+					stateStreak: global.state,
 					phase: "result",
 					guess: action.result.guess,
 				},

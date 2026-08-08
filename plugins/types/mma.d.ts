@@ -499,6 +499,7 @@ declare const en: {
     readonly "toast.borderDownloading": "Border data missing — downloading...";
     readonly "toast.copiedCsv": "Copied CSV to clipboard";
     readonly "toast.copiedJson": "Copied JSON to clipboard";
+    readonly "toast.copiedTagsCount": "Copied tag counts to clipboard";
     readonly "toast.copiedTo": "Copied to {name}";
     readonly "toast.linkCopied": "Link copied";
     readonly "toast.copyFailed": "Copy failed";
@@ -1292,6 +1293,7 @@ declare const en: {
     readonly "command.selectUnpanned": "Select unpanned locations";
     readonly "command.selectUntagged": "Select untagged locations";
     readonly "command.tagDownloadCsv": "Download tag counts as CSV";
+    readonly "command.copyTagsCount": "Copy tags count";
     readonly "command.tagFindReplace": "Find and replace in tag names";
     readonly "command.toggleSeenOverlay": "Toggle seen locations overlay";
     readonly "command.topK": "Select top/bottom K...";
@@ -1784,8 +1786,22 @@ declare const en: {
     readonly "plugin.geoguessrGame.checkpoint": "Set checkpoint";
     readonly "plugin.geoguessrGame.returnCheckpoint": "Return to checkpoint";
     readonly "plugin.geoguessrGame.returnToSpawn": "Return to spawn";
-    readonly "plugin.geoguessrGame.hideCar": "Hide car (Ctrl+H)";
-    readonly "plugin.geoguessrGame.showCar": "Show car (Ctrl+H)";
+    readonly "plugin.geoguessrGame.hideCar": "Hide car";
+    readonly "plugin.geoguessrGame.showCar": "Show car";
+    readonly "plugin.geoguessrGame.confirmAbortInfinite": "Stop this infinite game?";
+    readonly "plugin.geoguessrGame.confirmAbortInfiniteBody": "End the game to save a finished summary, or exit to keep it in Ongoing and resume later.";
+    readonly "plugin.geoguessrGame.endGame": "End game";
+    readonly "plugin.geoguessrGame.exitGame": "Exit";
+    readonly "plugin.geoguessrGame.openSettings": "Open settings";
+    readonly "plugin.geoguessrGame.undoMove": "Undo move";
+    readonly "plugin.geoguessrGame.addTag": "Add tag";
+    readonly "plugin.geoguessrGame.addTagAllRounds": "Tag all rounds";
+    readonly "plugin.geoguessrGame.addTagPlaceholder": "Tag name…";
+    readonly "plugin.geoguessrGame.recentTags": "Recent tags";
+    readonly "plugin.geoguessrGame.mapTags": "Map tags";
+    readonly "plugin.geoguessrGame.tagAdded": "Tagged with “{tag}”";
+    readonly "plugin.geoguessrGame.tagAddedBulk": "Tagged {count} locations with “{tag}”";
+    readonly "plugin.geoguessrGame.tagAddFailed": "Failed to add tag";
     readonly "plugin.geoguessrGame.nmpzHint": "NMPZ — place your guess on the map";
     readonly "plugin.geoguessrGame.distanceAway": "{distance} away";
     readonly "plugin.geoguessrGame.fromLocation": "From location";
@@ -1829,6 +1845,12 @@ declare const en: {
     readonly "plugin.geoguessrGame.scoreTrendFilterProvider": "Provider";
     readonly "plugin.geoguessrGame.scoreTrendFilterMode": "Mode";
     readonly "plugin.geoguessrGame.scoreTrendFilterAll": "All";
+    readonly "plugin.geoguessrGame.scoreTrendFilterRange": "Time";
+    readonly "plugin.geoguessrGame.scoreTrendFilterRangeAll": "All time";
+    readonly "plugin.geoguessrGame.scoreTrendFilterRangeYear": "Past year";
+    readonly "plugin.geoguessrGame.scoreTrendFilterRangeMonth": "Past month";
+    readonly "plugin.geoguessrGame.scoreTrendFilterRangeWeek": "Past week";
+    readonly "plugin.geoguessrGame.scoreTrendFilterRangeToday": "Today";
     readonly "plugin.geoguessrGame.replay": "Replay";
     readonly "plugin.geoguessrGame.recentGames": "Recently played";
     readonly "plugin.geoguessrGame.ongoingGames": "Ongoing games";
@@ -2248,7 +2270,6 @@ declare const commands: {
     /**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
     valiSubdivisions: (country: string) => Promise<string>;
 };
-type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
  *  (at most one `enabled: true` at a time); the frontend enforces that on write.
@@ -2309,6 +2330,7 @@ type AltProviderSettings = {
     lineWidthScale: number;
     pointSizeScale: number;
 };
+type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
@@ -4112,6 +4134,14 @@ declare const COMMANDS: {
         group: "Tags";
         execute: () => void;
     };
+    "copy-tags-count": {
+        label: string;
+        icon: string;
+        group: "Tags";
+        aliases: string[];
+        execute: () => Promise<void>;
+        enabled: typeof requiresMap;
+    };
     "tag-find-replace": {
         label: string;
         icon: string;
@@ -4362,7 +4392,7 @@ declare const DEFAULTS: {
     polygonColor: RGB;
     panoDotScaled: boolean;
     tagViewMode: TagViewMode;
-    /** Tree view only: render each tag as the shortest path suffix that's still unique. */
+    /** Render each tag as the shortest path suffix that's still unique among visible tags. */
     truncateTagPaths: boolean;
     /** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
      *  `firstChild` inherits the first own-colored descendant in display order,
@@ -4775,6 +4805,7 @@ declare const EVENT_DEFS: {
     "render:selection": SelectionBitmaskPayload;
     "map-list:changed": void;
     "settings:changed": void;
+    "settings:open": void;
     "locale:changed": void;
     "fullscreen:changed": void;
     "plugins:changed": void;

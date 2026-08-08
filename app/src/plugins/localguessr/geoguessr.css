@@ -35,6 +35,21 @@
 	padding: 0.75rem;
 	background: var(--gg-bg);
 }
+
+.gg-end-dialog {
+	width: min(28rem, calc(100vw - 2rem));
+}
+.gg-end-dialog__body {
+	margin: 0 0 1rem;
+	color: var(--text-2);
+	line-height: 1.45;
+}
+.gg-end-dialog__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.5rem;
+}
 .gg-sidebar__map-name { font-weight: 600; color: var(--gg-accent); }
 .gg-sidebar__actions { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem 0; }
 .gg-sidebar__ongoing-row {
@@ -349,11 +364,16 @@
 	transition: background 0.15s, border-color 0.15s, transform 0.1s;
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
-.gg-controls__btn:hover {
+.gg-controls__btn:hover:not(:disabled) {
 	background: rgba(0, 0, 0, 0.75);
 	transform: scale(1.05);
 }
-.gg-controls__btn:active { transform: scale(0.95); }
+.gg-controls__btn:active:not(:disabled) { transform: scale(0.95); }
+.gg-controls__btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+	pointer-events: none;
+}
 .gg-controls__btn--active {
 	border-color: var(--gg-accent);
 	background: rgba(0, 188, 212, 0.2);
@@ -567,9 +587,58 @@
 }
 
 /* ====================== ROUND RESULT (full-screen map + bottom bar, gameUI_2) ====================== */
-.gg-round--result .gg-controls,
-.gg-round--result .gg-game-guess-map {
+.gg-pano-wrap--hidden {
+	visibility: hidden;
+	pointer-events: none;
+}
+
+.gg-round--result .gg-controls {
 	display: none;
+}
+
+/* Play: transparent slot so GuessMap keeps its floating corner positioning. */
+.gg-guess-map-slot {
+	display: contents;
+}
+
+/* Result: map fills the top; result bar sits as a real flex footer (not an overlay). */
+.gg-round--result .gg-round-result {
+	position: absolute;
+	inset: 0;
+	z-index: 8;
+	display: flex;
+	flex-direction: column;
+	pointer-events: auto;
+	animation: gg-result-in 0.35s ease;
+}
+.gg-round--result .gg-round-result__map {
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	background: #1a1d24;
+}
+.gg-round--result .gg-game-guess-map--result {
+	position: absolute;
+	inset: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	z-index: 0;
+	pointer-events: auto;
+	padding: 0;
+}
+.gg-round--result .gg-game-guess-map--result .gg-guess-map__root {
+	width: 100%;
+	height: 100%;
+	opacity: 1;
+	transition: none;
+}
+.gg-round--result .gg-game-guess-map--result .gg-guess-map__canvas-wrap {
+	flex: 1;
+	min-height: 0;
+	height: 100%;
+	border-radius: 0;
+	border: none;
 }
 
 .gg-round-result {
@@ -682,14 +751,14 @@
 	font-weight: 600;
 	color: var(--gg-text);
 	line-height: 1.35;
-	max-width: 30rem;
+	max-width: 40rem;
 }
 
 .gg-round-result__actions {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 0.5rem;
+	gap: 0.55rem;
 	margin-top: 0.35rem;
 }
 
@@ -861,11 +930,11 @@
 	border: 1px solid var(--gg-border);
 	border-radius: var(--gg-radius);
 	overflow: auto;
-	max-height: 100%；
+	max-height: 100%;
 }
 .gg-summary__row {
 	display: grid;
-	grid-template-columns: 2.5rem 4.5rem 5rem 1fr auto auto;
+	grid-template-columns: 2.5rem 4.5rem 5rem 1fr auto auto auto;
 	gap: 0.75rem; padding: 0.65rem 1rem;
 	border-bottom: 1px solid var(--gg-border);
 	align-items: center; font-size: 0.9rem;
@@ -876,7 +945,136 @@
 .gg-summary__row-dist { font-size: 0.75rem; font-weight: 500; color: var(--gg-muted); }
 .gg-summary__row-streak.is-hit { color: var(--gg-success); }
 .gg-summary__row-streak.is-miss { color: var(--gg-danger); }
-.gg-summary__actions { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+.gg-summary__row-tag {
+	display: flex;
+	justify-content: flex-end;
+}
+.gg-summary__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	justify-content: center;
+	align-items: center;
+}
+
+/* ====================== ADD TAG ====================== */
+.gg-add-tag-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	background: rgba(0, 0, 0, 0.45);
+	color: var(--gg-text);
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.gg-add-tag-btn:hover:not(:disabled) {
+	background: rgba(0, 0, 0, 0.7);
+	border-color: rgba(255, 255, 255, 0.22);
+}
+.gg-add-tag-btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.gg-add-tag-btn--result {
+	padding: 0.4rem 0.85rem;
+	border-radius: var(--gg-radius-sm);
+	font-size: 0.85rem;
+	font-weight: 600;
+	backdrop-filter: blur(8px);
+}
+.gg-add-tag-btn--result svg {
+	width: 1rem;
+	height: 1rem;
+}
+.gg-add-tag-btn--summary-row {
+	width: 1.85rem;
+	height: 1.85rem;
+	border-radius: var(--gg-radius-sm);
+	padding: 0;
+	flex-shrink: 0;
+}
+.gg-add-tag-btn--summary-row svg {
+	width: 1rem;
+	height: 1rem;
+}
+.gg-add-tag-btn--summary-bulk {
+	padding: 0.55rem 0.95rem;
+	border-radius: var(--gg-radius-sm);
+	font-size: 0.9rem;
+	font-weight: 600;
+	background: rgba(0, 188, 212, 0.12);
+	border-color: rgba(0, 188, 212, 0.35);
+	color: var(--gg-accent);
+}
+.gg-add-tag-btn--summary-bulk:hover:not(:disabled) {
+	background: rgba(0, 188, 212, 0.22);
+	border-color: var(--gg-accent);
+}
+.gg-add-tag-btn--summary-bulk svg {
+	width: 1.05rem;
+	height: 1.05rem;
+}
+
+.gg-add-tag-dialog {
+	width: min(26rem, calc(100vw - 2rem));
+}
+.gg-add-tag-dialog__form {
+	display: flex;
+	flex-direction: column;
+	gap: 0.85rem;
+	padding-top: 0.35rem;
+}
+.gg-add-tag-dialog__section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+.gg-add-tag-dialog__label {
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-3, var(--gg-muted));
+}
+.gg-add-tag-dialog__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	max-height: 9rem;
+	overflow: auto;
+}
+.gg-add-tag-dialog__chip {
+	border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+	background: var(--surface-3, rgba(255, 255, 255, 0.06));
+	color: var(--text-1, var(--gg-text));
+	border-radius: 999px;
+	padding: 0.25rem 0.65rem;
+	font-size: 0.8rem;
+	cursor: pointer;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.gg-add-tag-dialog__chip:hover:not(:disabled) {
+	background: var(--surface-4, rgba(255, 255, 255, 0.1));
+}
+.gg-add-tag-dialog__chip:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.gg-add-tag-dialog__chip--recent {
+	border-color: rgba(0, 188, 212, 0.45);
+	background: rgba(0, 188, 212, 0.1);
+}
+.gg-add-tag-dialog__actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-top: 0.25rem;
+}
 
 /* ====================== ANALYTICS ====================== */
 .gg-analytics {
@@ -1004,7 +1202,7 @@
 	.gg-round-result__bar-inner {
 		grid-template-columns: 1fr 1fr;
 	}
-	.gg-summary__row { grid-template-columns: 2rem 3.5rem 4rem 1fr; font-size: 0.8rem; }
+	.gg-summary__row { grid-template-columns: 2rem 3.5rem 4rem 1fr auto; font-size: 0.8rem; }
 	.gg-summary__body {
 		grid-template-columns: 1fr;
 		min-height: 0;

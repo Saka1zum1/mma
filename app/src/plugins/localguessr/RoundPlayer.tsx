@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/Button";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiClose, mdiHome, mdiFlagCheckered, mdiCar, mdiCarOff, mdiFlagPlusOutline } from "@mdi/js";
+import { mdiClose, mdiHome, mdiFlagCheckered, mdiCar, mdiCarOff, mdiFlagPlusOutline, mdiCog, mdiUndo } from "@mdi/js";
 import { Tooltip } from "@/components/primitives/Tooltip";
+import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { useT } from "@/lib/i18n";
 import { getSettings, setSetting, useSettings } from "@/store/settings";
 import { getPanorama } from "@/lib/sv/panoSingleton";
 import { google } from "@/lib/sv/opensv";
 import { tweenPov } from "@/lib/sv/tweenPov";
 import { sendHideCar, CompassControl, CompassTape } from "@/components/editor/location/PanoControls";
+import { emit } from "@/lib/events";
 import type { LatLng } from "@/types";
 import {
 	currentRoundLocation,
@@ -26,6 +28,7 @@ import { GameTimer } from "./GameTimer";
 import { GuessMap } from "./GuessMap";
 
 import { streakResultMessage } from "./streakCopy";
+import { AddTagButton } from "./AddTagButton";
 
 function splitDistanceDisplay(meters: number | null): { value: string; unit: string } {
 	if (meters == null) return { value: "—", unit: "" };
@@ -92,6 +95,7 @@ function RoundResultBar({
 				<div className="gg-round-result__center">
 					{streakMsg && <div className="gg-round-result__streak">{streakMsg}</div>}
 					<div className="gg-round-result__actions">
+						<AddTagButton locationIds={[result.location.id]} variant="result" />
 						{isLast ? (
 							<Button variant="primary" onClick={onFinish}>
 								{t("plugin.geoguessrGame.viewSummary")}
@@ -141,6 +145,8 @@ export function RoundPlayer({
 	const [hideCar, setHideCar] = useState(!getSettings().showCar);
 	const [hideCarSupported, setHideCarSupported] = useState(true);
 	const [hasCheckpoint, setHasCheckpoint] = useState(false);
+	const [canUndo, setCanUndo] = useState(false);
+	const [confirmEndOpen, setConfirmEndOpen] = useState(false);
 	const [mapSize, setMapSize] = useState(2);
 	const [sticky, setSticky] = useState(false);
 	const showResult = active.phase === "result";
@@ -148,9 +154,11 @@ export function RoundPlayer({
 	const streakMode = active.config.streakMode;
 	const streakOn = streakMode !== "off";
 	const hudStreak = streakMode === "state" ? active.stateStreak : active.streak;
+	const isInfinite = active.config.roundMode === "infinite";
 
 	const cancelTweenRef = useRef<(() => void) | null>(null);
-	const sectionChange = String(active.currentRoundIndex) + (showResult ? "r" : "p");
+	// Reset local round UI (guess, undo, checkpoint) on session/round/phase change.
+	const sectionChange = `${active.sessionId}:${active.currentRoundIndex}:${showResult ? "r" : "p"}`;
 
 	const applyHideCar = useCallback((hide: boolean) => {
 		// Google + Baidu/Tencent inject share the Google material pipeline.
@@ -204,7 +212,31 @@ export function RoundPlayer({
 		setSubmitting(false);
 		setSticky(false);
 		setHasCheckpoint(false);
+		setCanUndo(false);
+		setConfirmEndOpen(false);
 	}, [sectionChange]);
+
+	const abortWithGuess = useCallback(() => {
+		onAbort({ guess: localGuess ?? active.guess });
+	}, [onAbort, localGuess, active.guess]);
+
+	const requestClose = useCallback(() => {
+		if (isInfinite) {
+			setConfirmEndOpen(true);
+			return;
+		}
+		abortWithGuess();
+	}, [isInfinite, abortWithGuess]);
+
+	const confirmEndGame = useCallback(() => {
+		setConfirmEndOpen(false);
+		onFinish();
+	}, [onFinish]);
+
+	const confirmExitGame = useCallback(() => {
+		setConfirmEndOpen(false);
+		abortWithGuess();
+	}, [abortWithGuess]);
 
 	const submitGuess = useCallback(
 		async (guess: LatLng | null) => {
@@ -257,17 +289,131 @@ export function RoundPlayer({
 		[round, submitting, showResult, active, onResult, streakMode],
 	);
 
-	/* ---- Keyboard shortcuts ---- */
+	// ── LocalGuessr fixed hotkeys (not configurable in app settings) ──
+	const LG = {
+		checkpoint: "c",
+		returnCheckpoint: "b",
+		undoMove: "z",
+		closeGame: "Escape",
+		openSettings: "Tab",
+		hideCar: "h",
+		pointNorth: "n",
+		returnToSpawn: "r",
+	} as const;
+
+	const hotkeyLabel = useCallback((label: string, key: string) => (key ? `${label} (${key})` : label), []);
+
+	const movementMode = active.config.movementMode;
+	const canMove = movementMode === "moving";
+
+	// Single keydown handler for all LocalGuessr hotkeys — blocks propagation
+	// to app-level listeners (useCommandHotkeys, etc.) via stopImmediatePropagation.
+	useEffect(() => {
+		const isInput = (el: EventTarget | null) => {
+			if (!(el instanceof HTMLElement)) return false;
+			const tag = el.tagName;
+			return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+		};
+
+		const handler = (e: KeyboardEvent) => {
+			if (e.repeat) return;
+			if (isInput(e.target)) return;
+
+			const key = e.key;
+			const ctrl = e.ctrlKey || e.metaKey;
+			const shift = e.shiftKey;
+			const alt = e.altKey;
+
+			// Only match bare keys (no modifiers except Shift for Tab).
+			if (ctrl || alt) return;
+
+			if (key === LG.checkpoint && !shift) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				if (!canMove) return;
+				panoRef.current?.setCheckpoint();
+				setHasCheckpoint(true);
+				return;
+			}
+			if (key === LG.returnCheckpoint && !shift) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				if (!canMove) return;
+				panoRef.current?.returnToCheckpoint();
+				return;
+			}
+			if (key === LG.undoMove && !shift) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				if (!canMove || !panoRef.current?.canUndoMove()) return;
+				panoRef.current.undoMove();
+				return;
+			}
+			if (key === LG.closeGame) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				if (confirmEndOpen) {
+					setConfirmEndOpen(false);
+					return;
+				}
+				requestClose();
+				return;
+			}
+			if (key === LG.openSettings) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				emit("settings:open");
+				return;
+			}
+			if (key === LG.hideCar && !shift) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				toggleHideCar();
+				return;
+			}
+			if (key === LG.pointNorth && !shift) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				if (active.config.movementMode === "nmpz") return;
+				const pano = panoRef.current?.getPanorama() ?? getPanorama();
+				if (!pano) return;
+				cancelTweenRef.current?.();
+				const h = pano.getPov().heading;
+				if (Math.abs(h) < 1 && Math.abs(pano.getPov().pitch) < 1) {
+					cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: -90 });
+				} else {
+					cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: 0 });
+				}
+				return;
+			}
+			if (key === LG.returnToSpawn && !shift) {
+				e.preventDefault();
+				e.stopImmediatePropagation();
+				panoRef.current?.returnToSpawn();
+				return;
+			}
+		};
+
+		document.addEventListener("keydown", handler, true);
+		return () => document.removeEventListener("keydown", handler, true);
+	}, [canMove, active, localGuess, toggleHideCar, requestClose, confirmEndOpen, t]);
+
+	// Space bar for guess/next (separate from the main handler because it needs
+	// different behavior in result phase).
 	useEffect(() => {
 		let isRepeated = false;
 		function handleKeyDown(e: KeyboardEvent) {
-			if (isRepeated) { isRepeated = false; return; }
+			if (isRepeated) {
+				isRepeated = false;
+				return;
+			}
 			if (e.repeat) return;
 			const target = e.target as HTMLElement;
 			if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
 
 			if (e.code === "Space") {
 				e.preventDefault();
+				e.stopImmediatePropagation();
 				if (showResult) {
 					if (isLastRound(active) && active.config.roundMode === "classic") {
 						onFinish();
@@ -279,36 +425,21 @@ export function RoundPlayer({
 				}
 				return;
 			}
-			if (e.key === "n" || e.key === "N") {
-				if (active.config.movementMode === "nmpz") return;
-				e.preventDefault();
-				const pano = panoRef.current?.getPanorama() ?? getPanorama();
-				if (!pano) return;
-				cancelTweenRef.current?.();
-				const h = pano.getPov().heading;
-				if (Math.abs(h) < 1 && Math.abs(pano.getPov().pitch) < 1) {
-					cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: -90 });
-				} else {
-					cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: 0 });
-				}
-			}
-			if (e.key === "h" && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
-				toggleHideCar();
-			}
 		}
-		function onKeyDown(e: KeyboardEvent) { handleKeyDown(e); }
-		function onKeyUp() { isRepeated = false; }
-		document.addEventListener("keydown", onKeyDown);
+		function onKeyDown(e: KeyboardEvent) {
+			handleKeyDown(e);
+		}
+		function onKeyUp() {
+			isRepeated = false;
+		}
+		document.addEventListener("keydown", onKeyDown, true);
 		document.addEventListener("keyup", onKeyUp);
 		return () => {
-			document.removeEventListener("keydown", onKeyDown);
+			document.removeEventListener("keydown", onKeyDown, true);
 			document.removeEventListener("keyup", onKeyUp);
 		};
-	}, [showResult, active, localGuess, submitGuess, onNext, onFinish, toggleHideCar]);
+	}, [showResult, active, localGuess, submitGuess, onNext, onFinish]);
 
-	const movementMode = active.config.movementMode;
-	const canMove = movementMode === "moving";
 	const { showCompass, showCompassTape } = useSettings();
 
 	if (!round) return null;
@@ -319,21 +450,22 @@ export function RoundPlayer({
 
 	return (
 		<div className={`gg-round${showResult ? " gg-round--result" : ""}`}>
-			{!showResult && (
-				<div className="gg-pano-wrap">
-					<GamePanoView
-						ref={panoRef}
-						round={round}
-						movementMode={movementMode}
-						onPanorama={setPanorama}
-					/>
-					{panorama && showCompassTape && (
-						<div className="gg-pano-compass">
-							<CompassTape panorama={panorama} />
-						</div>
-					)}
-				</div>
-			)}
+			{/* Keep Street View mounted across play↔result to avoid reparenting the
+			    shared WebGL canvas (context loss → app-wide white screen). */}
+			<div className={`gg-pano-wrap${showResult ? " gg-pano-wrap--hidden" : ""}`} aria-hidden={showResult}>
+				<GamePanoView
+					ref={panoRef}
+					round={round}
+					movementMode={movementMode}
+					onPanorama={setPanorama}
+					onCanUndoChange={setCanUndo}
+				/>
+				{panorama && showCompassTape && !showResult && (
+					<div className="gg-pano-compass">
+						<CompassTape panorama={panorama} />
+					</div>
+				)}
+			</div>
 
 			<header className="gg-round__top">
 				<div className="gg-status">
@@ -382,11 +514,24 @@ export function RoundPlayer({
 			<button
 				type="button"
 				className="gg-round__close"
-				onClick={() => onAbort({ guess: localGuess ?? active.guess })}
+				onClick={requestClose}
 				aria-label={t("common.close")}
 			>
 				<Icon path={mdiClose} />
 			</button>
+
+			<Dialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
+				<DialogContent title={t("plugin.geoguessrGame.confirmAbortInfinite")} className="gg-end-dialog">
+					<p className="gg-end-dialog__body">{t("plugin.geoguessrGame.confirmAbortInfiniteBody")}</p>
+					<div className="gg-end-dialog__actions">
+						<Button variant="primary" onClick={confirmEndGame}>
+							{t("plugin.geoguessrGame.endGame")}
+						</Button>
+						<Button onClick={confirmExitGame}>{t("plugin.geoguessrGame.exitGame")}</Button>
+						<Button onClick={() => setConfirmEndOpen(false)}>{t("common.cancel")}</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
 
 			{!showResult && (
 				<div className="gg-controls">
@@ -398,7 +543,7 @@ export function RoundPlayer({
 					<div className="gg-controls__col">
 						{canMove && (
 							<>
-								<Tooltip content={t("plugin.geoguessrGame.checkpoint")} side="right">
+								<Tooltip content={hotkeyLabel(t("plugin.geoguessrGame.checkpoint"), LG.checkpoint)} side="right">
 									<button
 										type="button"
 										className="gg-controls__btn"
@@ -412,7 +557,7 @@ export function RoundPlayer({
 									</button>
 								</Tooltip>
 								{hasCheckpoint && (
-									<Tooltip content={t("plugin.geoguessrGame.returnCheckpoint")} side="right">
+									<Tooltip content={hotkeyLabel(t("plugin.geoguessrGame.returnCheckpoint"), LG.returnCheckpoint)} side="right">
 										<button
 											type="button"
 											className="gg-controls__btn"
@@ -423,10 +568,21 @@ export function RoundPlayer({
 										</button>
 									</Tooltip>
 								)}
+								<Tooltip content={hotkeyLabel(t("plugin.geoguessrGame.undoMove"), LG.undoMove)} side="right">
+									<button
+										type="button"
+										className="gg-controls__btn"
+										onClick={() => panoRef.current?.undoMove()}
+										disabled={!canUndo}
+										aria-label={t("plugin.geoguessrGame.undoMove")}
+									>
+										<Icon path={mdiUndo} />
+									</button>
+								</Tooltip>
 							</>
 						)}
 						{canMove && (
-							<Tooltip content={t("plugin.geoguessrGame.returnToSpawn")} side="right">
+							<Tooltip content={hotkeyLabel(t("plugin.geoguessrGame.returnToSpawn"), LG.returnToSpawn)} side="right">
 								<button type="button" className="gg-controls__btn" onClick={() => panoRef.current?.returnToSpawn()} aria-label={t("plugin.geoguessrGame.returnToSpawn")}>
 									<Icon path={mdiHome} />
 								</button>
@@ -434,11 +590,12 @@ export function RoundPlayer({
 						)}
 						{panorama && hideCarSupported && (
 							<Tooltip
-								content={
+								content={hotkeyLabel(
 									hideCar
 										? t("plugin.geoguessrGame.showCar")
-										: t("plugin.geoguessrGame.hideCar")
-								}
+										: t("plugin.geoguessrGame.hideCar"),
+									LG.hideCar,
+								)}
 								side="right"
 							>
 								<button
@@ -447,52 +604,57 @@ export function RoundPlayer({
 									onClick={toggleHideCar}
 									aria-label={
 										hideCar
-											? t("plugin.geoguessrGame.showCar")
-											: t("plugin.geoguessrGame.hideCar")
+										? t("plugin.geoguessrGame.showCar")
+										: t("plugin.geoguessrGame.hideCar")
 									}
 								>
 									<Icon path={hideCar ? mdiCarOff : mdiCar} />
 								</button>
 							</Tooltip>
 						)}
+						<Tooltip content={hotkeyLabel(t("plugin.geoguessrGame.openSettings"), LG.openSettings)} side="right">
+							<button
+								type="button"
+								className="gg-controls__btn"
+								onClick={() => emit("settings:open")}
+								aria-label={t("plugin.geoguessrGame.openSettings")}
+							>
+								<Icon path={mdiCog} />
+							</button>
+						</Tooltip>
 					</div>
 				</div>
 			)}
 
-			{!showResult && (
-				<GuessMap
-					variant="play"
-					guess={displayGuess}
-					truth={null}
-					showResult={false}
-					locked={false}
-					mapSize={mapSize}
-					sticky={sticky}
-					onSizeChange={setMapSize}
-					onToggleSticky={() => setSticky((v) => !v)}
-					onGuess={(p) => setLocalGuess(p)}
-					onSubmit={() => void submitGuess(localGuess)}
-					submitting={submitting}
-					hasGuess={!!localGuess}
-				/>
-			)}
-
-			{showResult && lastResult && (
-				<div className="gg-round-result" data-qa="result-layout">
-					<div className="gg-round-result__map" data-qa="result-view-top">
-						<GuessMap
-							variant="result"
-							guess={displayGuess}
-							truth={truth}
-							showResult={true}
-							locked={true}
-							mapSize={2}
-							sticky={false}
-							onSizeChange={() => {}}
-							onToggleSticky={() => {}}
-							onGuess={() => {}}
-						/>
-					</div>
+			{/* Single persistent GuessMap — play↔result only toggles props/CSS.
+			    Remounting created a new MapHost+DeckGL every phase and exhausted
+			    the browser WebGL context budget. */}
+			<div
+				className={showResult ? "gg-round-result" : "gg-guess-map-slot"}
+				data-qa={showResult ? "result-layout" : undefined}
+			>
+				<div className={showResult ? "gg-round-result__map" : undefined} data-qa={showResult ? "result-view-top" : undefined}>
+					<GuessMap
+						variant={showResult ? "result" : "play"}
+						guess={displayGuess}
+						truth={truth}
+						showResult={showResult}
+						/* Keep pan/zoom during result; guess placement is gated by showResult. */
+						locked={false}
+						mapSize={showResult ? 2 : mapSize}
+						sticky={showResult ? false : sticky}
+						roundKey={`${active.sessionId}:${active.currentRoundIndex}`}
+						onSizeChange={setMapSize}
+						onToggleSticky={() => setSticky((v) => !v)}
+						onGuess={(p) => {
+							if (!showResult) setLocalGuess(p);
+						}}
+						onSubmit={() => void submitGuess(localGuess)}
+						submitting={submitting}
+						hasGuess={!!localGuess}
+					/>
+				</div>
+				{showResult && lastResult && (
 					<RoundResultBar
 						result={lastResult}
 						rounds={active.rounds}
@@ -505,8 +667,8 @@ export function RoundPlayer({
 						t={t}
 						locale={locale}
 					/>
-				</div>
-			)}
+				)}
+			</div>
 		</div>
 	);
 }

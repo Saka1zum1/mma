@@ -45,6 +45,7 @@ function useGuessMapHost(
 	guessPrefs: MapEmbedPrefs,
 	locked: boolean | undefined,
 	showResult: boolean,
+	roundKey: string | undefined,
 	onGuess: (p: LatLng) => void,
 	onZoom: (zoom: number) => void,
 ) {
@@ -154,7 +155,8 @@ function useGuessMapHost(
 		guessPrefs.vectorStyleName,
 		guessPrefs.showTerrain,
 		guessPrefs.showLabels,
-		showResult,
+		// Intentionally omit showResult — toggling play↔result must not recreate
+		// the MapHost / DeckGL WebGL contexts (browser limit → white screens).
 	]);
 
 	// When mapType (or other prefs) changes but the engine kind stays the same
@@ -220,6 +222,41 @@ function useGuessMapHost(
 		return host.on("zoom", update);
 	}, [ready, hostRef, onZoom]);
 
+	// New round: drop the previous result/play camera and refit the play map.
+	useEffect(() => {
+		if (!roundKey || showResult) return;
+		savedCameraRef.current = null;
+		const host = hostRef.current;
+		if (!host || !ready) return;
+		let cancelled = false;
+		cmd
+			.storeBounds(false)
+			.then((bounds) => {
+				if (cancelled || !hostRef.current) return;
+				if (bounds) {
+					hostRef.current.fitBounds(
+						{
+							west: bounds[0],
+							south: bounds[1],
+							east: bounds[2],
+							north: bounds[3],
+						},
+						undefined,
+						{ snap: true },
+					);
+				} else {
+					hostRef.current.moveCamera({ center: { lat: 20, lng: 0 }, zoom: 1.5 });
+				}
+			})
+			.catch(() => {
+				if (cancelled || !hostRef.current) return;
+				hostRef.current.moveCamera({ center: { lat: 20, lng: 0 }, zoom: 1.5 });
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [roundKey, showResult, ready]);
+
 	return { hostRef, overlayRef, ready };
 }
 
@@ -231,6 +268,7 @@ export function GuessMap({
 	locked,
 	mapSize,
 	sticky,
+	roundKey,
 	onSizeChange,
 	onToggleSticky,
 	onGuess,
@@ -245,6 +283,8 @@ export function GuessMap({
 	locked?: boolean;
 	mapSize: number;
 	sticky: boolean;
+	/** Changes when a new round starts — resets camera away from the previous result view. */
+	roundKey?: string;
 	onSizeChange: (size: number) => void;
 	onToggleSticky: () => void;
 	onGuess: (p: LatLng) => void;
@@ -347,6 +387,7 @@ export function GuessMap({
 		guessPrefs,
 		locked,
 		showResult,
+		roundKey,
 		onGuess,
 		setZoom,
 	);
@@ -423,8 +464,7 @@ export function GuessMap({
 		if (!host || !ready) return;
 
 		if (showResult && truth && guess) {
-			// The result view mounts a fresh host — defer until the container has
-			// been laid out, otherwise fitBounds computes against a 0-size map.
+			// Defer until the container has been laid out after expanding to result size.
 			const raf = requestAnimationFrame(() => {
 				requestAnimationFrame(() => {
 					host.fitBounds(
@@ -448,7 +488,7 @@ export function GuessMap({
 		if (!ready) return;
 		const id = requestAnimationFrame(() => hostRef.current?.resize());
 		return () => cancelAnimationFrame(id);
-	}, [mapSize, ready, hostRef]);
+	}, [mapSize, ready, hostRef, showResult]);
 
 	const zoomIn = useCallback(() => {
 		const host = hostRef.current;
@@ -478,14 +518,6 @@ export function GuessMap({
 		requestAnimationFrame(() => host.resize());
 	}, [hostRef]);
 
-	if (variant === "result") {
-		return (
-			<div className="gg-guess-map__canvas-wrap gg-guess-map__canvas-wrap--result">
-				<div ref={containerRef} className="gg-guess-map__canvas" data-qa="guess-map-canvas" />
-			</div>
-		);
-	}
-
 	const guessDisabled = !hasGuess || submitting;
 	const guessLabel = submitting
 		? t("plugin.geoguessrGame.scoring")
@@ -493,127 +525,142 @@ export function GuessMap({
 			? t("plugin.geoguessrGame.guess")
 			: t("plugin.geoguessrGame.placePinOnMap");
 
+	// Keep a stable canvas DOM node across play↔result so the MapHost / DeckGL
+	// WebGL contexts are not destroyed every phase change.
 	return (
-		<div className="gg-game-guess-map">
+		<div className={`gg-game-guess-map${showResult ? " gg-game-guess-map--result" : ""}`}>
 			<div
 				ref={rootRef}
-				className={`gg-guess-map__root gg-guess-map--size-${mapSize}${mapActive ? " is-active" : ""}`}
+				className={`gg-guess-map__root gg-guess-map--size-${mapSize}${mapActive || showResult ? " is-active" : ""}`}
 				data-qa="guess-map"
-				onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
+				onPointerEnter={(e) => {
+					if (showResult) return;
+					syncHoverFromPoint(e.clientX, e.clientY);
+				}}
 				onPointerLeave={() => {
+					if (showResult) return;
 					const { x, y } = lastPointerRef.current;
 					if (pointInGuessMapPanel(rootRef.current, x, y)) return;
 					pointerInsideRef.current = false;
 					scheduleDeactivatePanel();
 				}}
-				onFocusCapture={activatePanel}
+				onFocusCapture={() => {
+					if (!showResult) activatePanel();
+				}}
 				onBlurCapture={(e) => {
+					if (showResult) return;
 					if (!rootRef.current?.contains(e.relatedTarget as Node)) {
 						scheduleDeactivatePanel();
 					}
 				}}
 			>
-				<div
-					className="gg-guess-map__controls"
-					onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
-					onPointerDown={(e) => e.stopPropagation()}
-					onClick={(e) => e.stopPropagation()}
-				>
-					<button
-						type="button"
-						className="gg-guess-map__control gg-guess-map__control--increase"
-						disabled={mapSize >= MAX_SIZE}
+				{!showResult && (
+					<div
+						className="gg-guess-map__controls"
+						onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
 						onPointerDown={(e) => e.stopPropagation()}
-						onClick={(e) => {
-							e.stopPropagation();
-							bumpSize(1);
-						}}
-						data-qa="guess-map__control--increase-size"
-						aria-label="Increase size"
+						onClick={(e) => e.stopPropagation()}
 					>
-						<Icon path={mdiArrowTopLeft} />
-					</button>
-					<button
-						type="button"
-						className="gg-guess-map__control gg-guess-map__control--decrease"
-						disabled={mapSize <= MIN_SIZE}
-						onPointerDown={(e) => e.stopPropagation()}
-						onClick={(e) => {
-							e.stopPropagation();
-							bumpSize(-1);
-						}}
-						data-qa="guess-map__control--decrease-size"
-						aria-label="Decrease size"
-					>
-						<Icon path={mdiArrowBottomRight} />
-					</button>
-					<button
-						type="button"
-						className={`gg-guess-map__control gg-guess-map__control--sticky${sticky ? " is-active" : ""}`}
-						onClick={(e) => {
-							e.stopPropagation();
-							onToggleSticky();
-						}}
-						data-qa={sticky ? "guess-map__control--sticky-active" : "guess-map__control--sticky"}
-						aria-label="Sticky map"
-					>
-						<Icon path={mdiPin} />
-					</button>
-					<button
-						type="button"
-						className="gg-guess-map__control gg-guess-map__control--basemap"
-						onPointerDown={(e) => e.stopPropagation()}
-						onClick={(e) => {
-							e.stopPropagation();
-							cycleBasemap();
-						}}
-						data-qa="guess-map__control--basemap"
-						title={nextBasemapLabel}
-						aria-label={t("plugin.geoguessrGame.guessMapBasemap")}
-					>
-						<Icon path={mdiLayers} />
-					</button>
-				</div>
+						<button
+							type="button"
+							className="gg-guess-map__control gg-guess-map__control--increase"
+							disabled={mapSize >= MAX_SIZE}
+							onPointerDown={(e) => e.stopPropagation()}
+							onClick={(e) => {
+								e.stopPropagation();
+								bumpSize(1);
+							}}
+							data-qa="guess-map__control--increase-size"
+							aria-label="Increase size"
+						>
+							<Icon path={mdiArrowTopLeft} />
+						</button>
+						<button
+							type="button"
+							className="gg-guess-map__control gg-guess-map__control--decrease"
+							disabled={mapSize <= MIN_SIZE}
+							onPointerDown={(e) => e.stopPropagation()}
+							onClick={(e) => {
+								e.stopPropagation();
+								bumpSize(-1);
+							}}
+							data-qa="guess-map__control--decrease-size"
+							aria-label="Decrease size"
+						>
+							<Icon path={mdiArrowBottomRight} />
+						</button>
+						<button
+							type="button"
+							className={`gg-guess-map__control gg-guess-map__control--sticky${sticky ? " is-active" : ""}`}
+							onClick={(e) => {
+								e.stopPropagation();
+								onToggleSticky();
+							}}
+							data-qa={sticky ? "guess-map__control--sticky-active" : "guess-map__control--sticky"}
+							aria-label="Sticky map"
+						>
+							<Icon path={mdiPin} />
+						</button>
+						<button
+							type="button"
+							className="gg-guess-map__control gg-guess-map__control--basemap"
+							onPointerDown={(e) => e.stopPropagation()}
+							onClick={(e) => {
+								e.stopPropagation();
+								cycleBasemap();
+							}}
+							data-qa="guess-map__control--basemap"
+							title={nextBasemapLabel}
+							aria-label={t("plugin.geoguessrGame.guessMapBasemap")}
+						>
+							<Icon path={mdiLayers} />
+						</button>
+					</div>
+				)}
 
 				<div
-					className={`gg-guess-map__canvas-wrap${mapActive ? " gg-guess-map__canvas-wrap--active-bar" : ""}`}
+					className={`gg-guess-map__canvas-wrap${mapActive || showResult ? " gg-guess-map__canvas-wrap--active-bar" : ""}${showResult ? " gg-guess-map__canvas-wrap--result" : ""}`}
 					onPointerDown={(e) => {
-						if (e.button !== 0) return;
+						if (showResult || e.button !== 0) return;
 						mapEngagedRef.current = true;
 						activatePanel();
 					}}
 				>
-					<div className="gg-guess-map__zoom">
-						<button type="button" className="gg-guess-map__zoom-btn" onClick={zoomIn} aria-label="Zoom in">
-							<Icon path={mdiPlus} />
-						</button>
-						<button
-							type="button"
-							className={`gg-guess-map__zoom-btn${zoom <= MIN_ZOOM ? " gg-guess-map__zoom-btn--disabled" : ""}`}
-							onClick={zoomOut}
-							disabled={zoom <= MIN_ZOOM}
-							aria-label="Zoom out"
-						>
-							<Icon path={mdiMinus} />
-						</button>
-					</div>
+					{!showResult && (
+						<div className="gg-guess-map__zoom">
+							<button type="button" className="gg-guess-map__zoom-btn" onClick={zoomIn} aria-label="Zoom in">
+								<Icon path={mdiPlus} />
+							</button>
+							<button
+								type="button"
+								className={`gg-guess-map__zoom-btn${zoom <= MIN_ZOOM ? " gg-guess-map__zoom-btn--disabled" : ""}`}
+								onClick={zoomOut}
+								disabled={zoom <= MIN_ZOOM}
+								aria-label="Zoom out"
+							>
+								<Icon path={mdiMinus} />
+							</button>
+						</div>
+					)}
 					<div ref={containerRef} className="gg-guess-map__canvas" data-qa="guess-map-canvas" />
 				</div>
 
-				<div
-					className="gg-guess-map__guess-btn-wrap"
-					onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
-				>
-					<button
-						type="button"
-						className={`gg-guess-map__guess-btn${guessDisabled ? " gg-guess-map__guess-btn--disabled" : ""}`}
-						disabled={guessDisabled}
-						onClick={onSubmit}
-						data-qa="perform-guess"
+				{!showResult && (
+					<div
+						className="gg-guess-map__guess-btn-wrap"
+						onPointerEnter={(e) => syncHoverFromPoint(e.clientX, e.clientY)}
 					>
-						<span className="gg-guess-map__guess-btn-label">{guessLabel}</span>
-					</button>
-				</div>
+						<button
+							type="button"
+							className={`gg-guess-map__guess-btn${guessDisabled ? " gg-guess-map__guess-btn--disabled" : ""}`}
+							disabled={guessDisabled}
+							onClick={onSubmit}
+							data-qa="perform-guess"
+						>
+							<span className="gg-guess-map__guess-btn-label">{guessLabel}</span>
+						</button>
+					</div>
+				)}
 			</div>
 		</div>
 	);
