@@ -46,6 +46,8 @@ import {
 	collectOccupiedPaths,
 	syncAliasSegments,
 	defaultVirtualFolderEntry,
+	aliasedTagIds,
+	stripFolderPrefix,
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
@@ -128,21 +130,25 @@ export function TagManager() {
 	);
 	const commitMoveInto = useCallback(
 		(move: TagMoveResult) => {
-			startTransition(async () => {
-				// One merged patch per id -- the optimistic reducer applies the first match only.
-				const patchById = new Map<number, OptimisticTagPatch>();
-				move.orderedIds.forEach((id, i) => patchById.set(id, { order: i }));
-				for (const r of move.tagRenames)
-					patchById.set(r.id, { ...patchById.get(r.id), name: r.name });
-				addOptimisticTags([...patchById].map(([id, patch]) => ({ id, patch })));
-				if (move.tagRenames.length)
-					await updateTags(move.tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
-				await reorderTags(move.orderedIds);
-			});
-			setVirtualTags(move.virtualTags);
+			// Leaf→folder drops only rewrite aliases (no renames / order changes).
+			const aliasOnly = move.tagRenames.length === 0 && move.pathRemaps.length === 0;
+			if (!aliasOnly) {
+				startTransition(async () => {
+					// One merged patch per id -- the optimistic reducer applies the first match only.
+					const patchById = new Map<number, OptimisticTagPatch>();
+					move.orderedIds.forEach((id, i) => patchById.set(id, { order: i }));
+					for (const r of move.tagRenames)
+						patchById.set(r.id, { ...patchById.get(r.id), name: r.name });
+					addOptimisticTags([...patchById].map(([id, patch]) => ({ id, patch })));
+					if (move.tagRenames.length)
+						await updateTags(move.tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
+					await reorderTags(move.orderedIds);
+				});
+				setVirtualTags(move.virtualTags);
+				for (const [oldPath, newPath] of move.pathRemaps)
+					treeRef.current?.remapExpanded(oldPath, newPath);
+			}
 			setAliases(move.aliases);
-			for (const [oldPath, newPath] of move.pathRemaps)
-				treeRef.current?.remapExpanded(oldPath, newPath);
 		},
 		[addOptimisticTags, setVirtualTags, setAliases],
 	);
@@ -180,28 +186,57 @@ export function TagManager() {
 		},
 		[setAliases],
 	);
-	// Deletes the declared subtree (only reachable when no tags live under `path`).
+	const removeAliases = useCallback(
+		(aliasPaths: string[]) => {
+			const next = { ...(getMapState().map?.meta.settings.aliases ?? {}) };
+			let changed = false;
+			for (const p of aliasPaths) {
+				if (p in next) {
+					delete next[p];
+					changed = true;
+				}
+			}
+			if (changed) setAliases(next);
+		},
+		[setAliases],
+	);
+	// Deletes the folder and its whole subtree: strips the folder prefix from any real
+	// tags inside (so `A/x` → `x` and `A/B/y` → `y`) and drops the folder's + subfolders'
+	// virtualTags color keys, so the folder hierarchy itself disappears while the tags
+	// survive as plain leaves.
 	const deleteFolder = useCallback(
 		(path: string) => {
 			const vt = getMapState().map?.meta.settings.virtualTags ?? {};
-			const next: Record<string, VirtualTag> = {};
-			for (const [k, v] of Object.entries(vt)) {
-				if (k !== path && !k.startsWith(`${path}/`)) next[k] = v;
-			}
-			setVirtualTags(next);
+			const aliases = getMapState().map?.meta.settings.aliases ?? {};
+			const { tagRenames, virtualTags: nextVT, aliases: nextAliases } = stripFolderPrefix(
+				path,
+				tags,
+				vt,
+				aliases,
+			);
+			if (tagRenames.length)
+				commitTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
+			setVirtualTags(nextVT);
+			if (nextAliases !== aliases) setAliases(nextAliases);
 		},
-		[setVirtualTags],
+		[tags, commitTags, setVirtualTags, setAliases],
+	);
+	// Drop real leaves dragged out of their folder: strips their folder prefix.
+	const removeLeaves = useCallback(
+		(move: TagMoveResult) => commitMoveInto(move),
+		[commitMoveInto],
 	);
 
 	// Collapsed-state pill preview only; the open list is rendered by TagTreeView.
 	const sortedTags = useMemo(() => {
-		let filtered = tags;
+		const hidden = aliasedTagIds(aliases);
+		let filtered = tags.filter((t) => !hidden.has(t.id));
 		if (filterText) {
 			const lower = filterText.toLowerCase();
-			filtered = tags.filter((t) => t.name.toLowerCase().includes(lower));
+			filtered = filtered.filter((t) => t.name.toLowerCase().includes(lower));
 		}
 		return sortTagsByMode(filtered, sortMode, tagCounts);
-	}, [tags, filterText, sortMode, tagCounts]);
+	}, [tags, filterText, sortMode, tagCounts, aliases]);
 
 	if (!map) return null;
 
@@ -291,6 +326,8 @@ export function TagManager() {
 					onRemoveAlias={removeAlias}
 					onReorder={commitReorder}
 					onMoveInto={commitMoveInto}
+					onRemoveLeaves={removeLeaves}
+					onRemoveAliases={removeAliases}
 					onNewFolder={tagViewMode === "tree" ? setNewFolderParent : undefined}
 					onDeleteFolder={deleteFolder}
 					filterText={filterText}

@@ -5,12 +5,17 @@ import {
 	collectDragBlock,
 	canDropInto,
 	moveIntoFolder,
+	removeLeavesFromFolder,
 	buildTagTree,
 	cascadeRename,
+	stripFolderPrefix,
 	syncAliasSegments,
 	isLeafTag,
 	sumCounts,
 	shortestUniqueSuffixes,
+	buildTreePathLabels,
+	treeNodeDisplayLabel,
+	removeAliasesAtPaths,
 	type TagTreeNode,
 	type FolderColorOpts,
 } from "@/components/editor/tags/tagTreeRange";
@@ -57,6 +62,148 @@ describe("shortestUniqueSuffixes", () => {
 	it("leaves single-segment names untouched", () => {
 		const m = shortestUniqueSuffixes(["red", "blue"]);
 		expect(m.get("red")).toBe("red");
+	});
+});
+
+describe("buildTreePathLabels / treeNodeDisplayLabel", () => {
+	it("returns null when truncation is disabled", () => {
+		expect(buildTreePathLabels(["a/b"], [], false)).toBeNull();
+	});
+
+	it("includes ancestor prefixes of tag names and folders in the uniqueness set", () => {
+		const labels = buildTreePathLabels(
+			["europe/france/paris", "usa/texas/paris"],
+			[],
+			true,
+		)!;
+		expect(labels.get("europe/france/paris")).toBe("france/paris");
+		expect(labels.get("usa/texas/paris")).toBe("texas/paris");
+	});
+
+	it("labels an alias leaf from the canonical tag name when truncating", () => {
+		const labels = buildTreePathLabels(["red"], ["cars"], true)!;
+		expect(
+			treeNodeDisplayLabel(
+				{
+					tag: { id: 1, name: "red", color: "#000", order: 0 },
+					fullPath: "cars/red",
+					segment: "red",
+					isAlias: true,
+				},
+				labels,
+			),
+		).toBe("red");
+		expect(
+			treeNodeDisplayLabel(
+				{
+					tag: { id: 1, name: "red", color: "#000", order: 0 },
+					fullPath: "red",
+					segment: "red",
+					isAlias: false,
+				},
+				labels,
+			),
+		).toBe("red");
+	});
+});
+
+describe("removeAliasesAtPaths", () => {
+	it("strips the given keys and returns null when nothing changed", () => {
+		expect(removeAliasesAtPaths({ "a/x": 1, "b/y": 2 }, ["a/x"])).toEqual({ "b/y": 2 });
+		expect(removeAliasesAtPaths({ "a/x": 1 }, ["missing"])).toBeNull();
+	});
+});
+
+describe("removeLeavesFromFolder", () => {
+	const mkTag = (id: number, name: string, order = id): Tag => ({
+		id,
+		name,
+		color: "#888888",
+		order,
+	});
+	const tree = (tags: Tag[], aliases = {}) => buildTagTree(tags, "default", {}, {}, aliases);
+
+	it("strips the folder prefix from a real leaf renamed into a folder", () => {
+		const tags = [mkTag(1, "Cars/a"), mkTag(2, "Cars/b"), mkTag(3, "Red")];
+		const move = removeLeavesFromFolder(tree(tags), ["Cars/a"], {}, {});
+		expect(move).not.toBeNull();
+		expect(move!.tagRenames).toEqual([{ id: 1, name: "a" }]);
+		// The leaf's own id moves to the end; the rest keep DFS order (Red root pill, then b).
+		expect(move!.orderedIds).toEqual([3, 2, 1]);
+		expect(move!.pathRemaps).toEqual([]);
+	});
+
+	it("strips one structural level, keeping deeper subfolders", () => {
+		const tags = [mkTag(1, "Cars/Old/c"), mkTag(2, "Cars/d"), mkTag(3, "Red")];
+		const move = removeLeavesFromFolder(tree(tags), ["Cars/Old/c"], {}, {});
+		expect(move!.tagRenames).toEqual([{ id: 1, name: "c" }]);
+		expect(move!.orderedIds).toEqual([3, 2, 1]);
+	});
+
+	it("strips a block of selected sibling leaves to the end", () => {
+		const tags = [mkTag(1, "Cars/a"), mkTag(2, "Cars/b"), mkTag(3, "Red")];
+		const move = removeLeavesFromFolder(tree(tags), ["Cars/a", "Cars/b"], {}, {});
+		expect(move!.tagRenames).toEqual([
+			{ id: 1, name: "a" },
+			{ id: 2, name: "b" },
+		]);
+		expect(move!.orderedIds).toEqual([3, 1, 2]);
+	});
+
+	it("returns null for a root leaf (no prefix to strip)", () => {
+		const tags = [mkTag(1, "Red")];
+		expect(removeLeavesFromFolder(tree(tags), ["Red"], {}, {})).toBeNull();
+	});
+
+	it("ignores alias paths (they are removed via removeAliasesAtPaths)", () => {
+		const tags = [mkTag(1, "Red"), mkTag(2, "Blue")];
+		const aliases = { "Fav/Red": 1 };
+		expect(removeLeavesFromFolder(tree(tags, aliases), ["Fav/Red"], {}, aliases)).toBeNull();
+	});
+
+	it("leaves virtualTags and aliases untouched", () => {
+		const tags = [mkTag(1, "Cars/a")];
+		const move = removeLeavesFromFolder(tree(tags), ["Cars/a"], { Cars: { color: "#111" } }, {});
+		expect(move!.virtualTags).toEqual({ Cars: { color: "#111" } });
+	});
+});
+
+describe("stripFolderPrefix", () => {
+	const mkTag = (id: number, name: string): Tag => ({ id, name, color: "#888888", order: id });
+
+	it("collapses tags inside the deleted folder+subfolders to their leaf names", () => {
+		const tags = [
+			mkTag(1, "A/x"),
+			mkTag(2, "A/B/y"),
+			mkTag(3, "Out"),
+		];
+		const { tagRenames } = stripFolderPrefix("A", tags, {});
+		const byId = Object.fromEntries(tagRenames.map((r) => [r.id, r.name]));
+		expect(byId).toEqual({ 1: "x", 2: "y" });
+	});
+
+	it("leaves a tag named exactly the folder alone", () => {
+		const tags = [mkTag(1, "A"), mkTag(2, "A/x")];
+		const { tagRenames } = stripFolderPrefix("A", tags, {});
+		expect(tagRenames).toEqual([{ id: 2, name: "x" }]);
+	});
+
+	it("drops the folder's and subfolders' virtualTags color keys, keeping unrelated ones", () => {
+		const vt = { A: { color: "#111" }, "A/B": { color: "#222" }, X: { color: "#333" } };
+		const { virtualTags } = stripFolderPrefix("A", [], vt);
+		expect(virtualTags).toEqual({ X: { color: "#333" } });
+	});
+
+	it("drops alias keys sitting under the deleted folder", () => {
+		const aliases = { "A/x": 5, "A/B/y": 6, "Other/z": 7 };
+		const { aliases: next } = stripFolderPrefix("A", [], {}, aliases);
+		expect(next).toEqual({ "Other/z": 7 });
+	});
+
+	it("no-ops when nothing lives under the prefix", () => {
+		const tags = [mkTag(1, "X")];
+		const { tagRenames } = stripFolderPrefix("A", tags, {});
+		expect(tagRenames).toEqual([]);
 	});
 });
 
@@ -129,14 +276,15 @@ describe("reorderSiblingsFlatOrder", () => {
 		expect(reorderSiblingsFlatOrder(tree, ["a"], "a", "after", "")).toBeNull();
 	});
 
-	it("does not emit an alias leaf's id (the real leaf owns it)", () => {
+	it("emits the alias id when the canonical slot is suppressed", () => {
 		const withAlias: N[] = [
-			leaf("a", 1),
+			{ fullPath: "a", tag: null, children: [] },
 			{ fullPath: "b", tag: { id: 1 }, children: [], isAlias: true },
 			leaf("c", 3),
 		];
-		// Reordering real siblings must not duplicate/emit the alias's id 1.
-		expect(reorderSiblingsFlatOrder(withAlias, ["a"], "c", "after", "")).toEqual([3, 1]);
+		expect(reorderSiblingsFlatOrder(withAlias, ["b"], "c", "after", "", new Set([1]))).toEqual([
+			3, 1,
+		]);
 	});
 
 	it("treats a root leaf whose name contains '/' as a root sibling (no-split flat view)", () => {
@@ -225,9 +373,9 @@ describe("collectDragBlock", () => {
 
 	it("excludes alias leaves and non-siblings", () => {
 		const tags = [mkTag(1, "a"), mkTag(2, "b"), mkTag(3, "F/u")];
-		// Alias "c" points at tag 2 (selected) but never joins; F/u is not a root sibling.
+		// Alias "c" points at tag 2 (selected); canonical "b" is hidden so it never joins.
 		const tree = buildTagTree(tags, "default", {}, {}, { c: 2 });
-		expect(collectDragBlock(tree, findNode(tree, "a")!, new Set([2, 3]))).toEqual(["a", "b"]);
+		expect(collectDragBlock(tree, findNode(tree, "a")!, new Set([2, 3]))).toEqual(["a"]);
 	});
 });
 
@@ -311,9 +459,8 @@ describe("buildTagTree", () => {
 		expect(c.segment).toBe("c");
 		expect(c.tag?.id).toBe(1);
 		expect(c.isAlias).toBe(true);
-		// The real leaf is not an alias.
-		const realC = tree.find((n) => n.segment === "a")!.children[0].children[0];
-		expect(realC.isAlias).toBe(false);
+		// Canonical path is omitted entirely once an alias exists (no empty leftover folders).
+		expect(tree.find((n) => n.segment === "a")).toBeUndefined();
 	});
 
 	it("drops a dangling alias whose tag no longer exists", () => {
@@ -340,19 +487,29 @@ describe("buildTagTree", () => {
 		expect(tree.find((n) => n.segment === "d")!.parentPath).toBe("");
 	});
 
-	it("split=false keeps '/' names as single root leaves and ignores aliases", () => {
+	it("keeps shared parent folders when only one sibling is aliased away", () => {
+		const tags = [mkTag(1, "a/b/c"), mkTag(2, "a/b/d")];
+		const tree = buildTagTree(tags, "default", {}, {}, { "Fav/c": 1 });
+		expect(tree.find((n) => n.segment === "a")).toBeDefined();
+		const b = tree.find((n) => n.segment === "a")!.children[0];
+		expect(b.children.map((n) => n.segment)).toEqual(["d"]);
+		expect(tree.find((n) => n.segment === "Fav")!.children[0].tag?.id).toBe(1);
+	});
+
+	it("does not leave an empty folder named after a root tag that was aliased", () => {
+		const tags = [mkTag(1, "Red"), mkTag(2, "Blue")];
+		const tree = buildTagTree(tags, "default", {}, {}, { "Cars/Red": 1 });
+		expect(tree.find((n) => n.segment === "Red" && !n.isAlias)).toBeUndefined();
+		expect(tree.map((n) => n.segment).sort()).toEqual(["Blue", "Cars"]);
+	});
+
+	it("split=false hides aliased canonical tags and shows alias paths as flat pills", () => {
 		const tags = [mkTag(1, "Europe/France"), mkTag(2, "Red")];
 		const tree = buildTagTree(tags, "default", {}, {}, { "Fav/France": 1 }, false);
 		expect(tree).toHaveLength(2);
-		for (const n of tree) {
-			expect(n.children).toHaveLength(0);
-			expect(n.parentPath).toBe("");
-			expect(n.isAlias).toBe(false);
-		}
-		const france = tree.find((n) => n.tag?.id === 1)!;
-		expect(france.segment).toBe("Europe/France");
-		expect(france.fullPath).toBe("Europe/France");
-		expect(france.descendantTagIds).toEqual([1]);
+		expect(tree.find((n) => n.tag?.id === 1)?.isAlias).toBe(true);
+		expect(tree.find((n) => n.tag?.id === 1)?.fullPath).toBe("Fav/France");
+		expect(tree.find((n) => n.tag?.id === 2)?.fullPath).toBe("Red");
 	});
 
 	it("split=false matches flat default sort (order, then name)", () => {
@@ -577,21 +734,27 @@ describe("canDropInto / moveIntoFolder", () => {
 		expect(canDropInto(tree(), ["Red"], "Blue")).toBe(false);
 	});
 
-	it("moves a pill into a folder: rename + order appended at the end of the folder", () => {
+	it("drops a pill into a folder by creating an alias (tag name unchanged)", () => {
 		const move = moveIntoFolder(tree(), ["Red"], "Cars", baseTags, {}, {});
 		expect(move).not.toBeNull();
-		expect(move!.tagRenames).toEqual([{ id: 1, name: "Cars/Red" }]);
-		expect(move!.orderedIds).toEqual([2, 3, 4, 5, 1]);
+		expect(move!.tagRenames).toEqual([]);
+		expect(move!.aliases).toEqual({ "Cars/Red": 1 });
+		expect(move!.orderedIds).toEqual([2, 1, 3, 4, 5]);
 		expect(move!.pathRemaps).toEqual([]);
 	});
 
-	it("moves a block of pills keeping relative order", () => {
+	it("drops a block of pills as aliases keeping relative source order irrelevant", () => {
 		const move = moveIntoFolder(tree(), ["Red", "Blue"], "Cars", baseTags, {}, {});
-		expect(move!.tagRenames).toEqual([
-			{ id: 1, name: "Cars/Red" },
-			{ id: 2, name: "Cars/Blue" },
-		]);
-		expect(move!.orderedIds).toEqual([3, 4, 5, 1, 2]);
+		expect(move!.tagRenames).toEqual([]);
+		expect(move!.aliases).toEqual({ "Cars/Red": 1, "Cars/Blue": 2 });
+		expect(move!.orderedIds).toEqual([1, 2, 3, 4, 5]);
+	});
+
+	it("moves an existing alias into another folder by rewriting the alias key", () => {
+		const aliases = { "Misc/Red": 1 };
+		const move = moveIntoFolder(tree(baseTags, aliases), ["Misc/Red"], "Cars", baseTags, {}, aliases);
+		expect(move!.tagRenames).toEqual([]);
+		expect(move!.aliases).toEqual({ "Cars/Red": 1 });
 	});
 
 	it("moves a folder: cascades descendants, remaps the path, rewrites settings keys", () => {
@@ -611,7 +774,7 @@ describe("canDropInto / moveIntoFolder", () => {
 		expect(move!.aliases).toEqual({ "Cars/Misc/redAlias": 1 });
 		// Alias leaf never contributes its id: Red's id appears exactly once.
 		expect(move!.orderedIds.filter((id) => id === 1)).toEqual([1]);
-		expect(move!.orderedIds).toEqual([1, 2, 3, 4, 5, 6]);
+		expect(move!.orderedIds).toEqual([2, 3, 4, 5, 1, 6]);
 	});
 
 	it("returns null on an invalid drop", () => {
@@ -686,11 +849,12 @@ describe("declared empty folders (virtualTags)", () => {
 		expect(canDropInto(tree, ["x"], "y")).toBe(false);
 	});
 
-	it("moveIntoFolder into an empty folder renames the tag under it", () => {
+	it("moveIntoFolder into an empty folder aliases the tag under it", () => {
 		const tags = [mkTag(1, "x")];
 		const tree = buildTagTree(tags, "default", {}, { E: {} });
 		const move = moveIntoFolder(tree, ["x"], "E", tags, { E: {} }, {});
-		expect(move!.tagRenames).toEqual([{ id: 1, name: "E/x" }]);
+		expect(move!.tagRenames).toEqual([]);
+		expect(move!.aliases).toEqual({ "E/x": 1 });
 		expect(move!.virtualTags).toEqual({ E: {} });
 	});
 

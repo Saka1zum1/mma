@@ -117,15 +117,14 @@ export function buildTagTree(
 	folderColor: FolderColorOpts = DEFAULT_FOLDER_COLOR,
 ): TagTreeNode[] {
 	const root: TagTreeNode[] = [];
+	const aliased = aliasedTagIds(aliases);
 
 	for (const tag of tags) {
+		if (aliased.has(tag.id)) continue;
 		const leaf = ensurePath(root, split ? tag.name.split("/") : [tag.name]);
 		if (!leaf.tag) leaf.tag = tag;
 	}
 
-	// Insert alias leaves: a real tag placed at a second path. Skip a dangling alias
-	// (tag deleted) or one whose path is already occupied by any real node - an alias only
-	// fills a free leaf slot, never clobbers (and never leaves a stray empty folder).
 	if (split) {
 		const tagById = new Map(tags.map((t) => [t.id, t]));
 		const resolve = (path: string): TagTreeNode | null => {
@@ -146,10 +145,19 @@ export function buildTagTree(
 			leaf.isAlias = true;
 		}
 
-		// Seed declared folders: every virtualTags key gets a folder node even when no
-		// tag path passes through it, so empty folders exist without scaffolding tags.
 		for (const path of Object.keys(virtualTags)) {
 			ensurePath(root, path.split("/"));
+		}
+	} else if (Object.keys(aliases).length > 0) {
+		const tagById = new Map(tags.map((t) => [t.id, t]));
+		for (const [aliasPath, tagId] of Object.entries(aliases)) {
+			const tag = tagById.get(tagId);
+			if (!tag) continue;
+			const leaf = ensurePath(root, [aliasPath]);
+			if (!leaf.tag) {
+				leaf.tag = tag;
+				leaf.isAlias = true;
+			}
 		}
 	}
 
@@ -235,7 +243,7 @@ export function buildTagTree(
 	function collectMeta(node: TagTreeNode): { ids: number[]; minOrder: number } {
 		const ids: number[] = [];
 		let minOrder = node.tag?.order ?? Number.POSITIVE_INFINITY;
-		if (node.tag) ids.push(node.tag.id);
+		if (node.tag && tagIdInDfsOrder(node, aliased)) ids.push(node.tag.id);
 		for (const child of node.children) {
 			const c = collectMeta(child);
 			ids.push(...c.ids);
@@ -246,10 +254,6 @@ export function buildTagTree(
 		return { ids, minOrder: node.sortOrder };
 	}
 
-	// Mirror flat-mode ordering (name / amount / default), recursively per level.
-	// `segment` is the name tiebreaker so output is deterministic in every mode.
-	// Then float leaf tags above sub-branches at each level: leaves render as a flat
-	// pill group and branches as folder rows below them (the userscript's structure).
 	function sortNodes(nodes: TagTreeNode[]) {
 		nodes.sort((a, b) => {
 			if (sortMode === "amount") {
@@ -276,10 +280,6 @@ export function buildTagTree(
 	return root;
 }
 
-/** Tag ids to toggle for a shift-click range over the tree's visible rows. Unions the
- *  descendant ids of every row in the [anchor, target] span, de-duped, but excludes the
- *  anchor's own descendants — those were selected by the anchor click, and (when the anchor
- *  is an expanded parent) its child rows sit inside the span, so toggling them would undo it. */
 export function rangeToggleTagIds(
 	rows: { descendantTagIds: number[] }[],
 	anchorIdx: number,
@@ -297,27 +297,43 @@ export function rangeToggleTagIds(
 	return [...ids];
 }
 
-/** Map each `/`-delimited name to the shortest trailing path-segment run that uniquely
- *  identifies it within `names`. A name with no collision collapses to its last segment;
- *  one whose suffix is shared widens until distinct, falling back to the full path. */
-/** Labels for tree rows when `truncateTagPaths` is on (tags + declared folder paths). */
 export function buildTreePathLabels(
 	tagNames: string[],
 	folderPaths: string[],
 	enabled: boolean,
+	_aliasPaths: string[] = [],
 ): Map<string, string> | null {
 	if (!enabled) return null;
-	const all = [...new Set([...tagNames, ...folderPaths])];
-	return shortestUniqueSuffixes(all);
+	const all = new Set<string>();
+	const addWithPrefixes = (path: string) => {
+		if (!path) return;
+		let p = "";
+		for (const s of path.split("/")) {
+			p = p ? `${p}/${s}` : s;
+			all.add(p);
+		}
+	};
+	for (const n of tagNames) addWithPrefixes(n);
+	for (const n of folderPaths) addWithPrefixes(n);
+	return shortestUniqueSuffixes([...all]);
 }
 
 export function treeNodeDisplayLabel(
-	node: Pick<TagTreeNode, "tag" | "fullPath" | "segment">,
+	node: Pick<TagTreeNode, "tag" | "fullPath" | "segment" | "isAlias">,
 	labels: Map<string, string> | null,
 ): string {
+	// Aliased placements always label from the tag's canonical name, never the alias path.
+	if (node.isAlias && node.tag) {
+		if (!labels) return leafOf(node.tag.name);
+		return labels.get(node.tag.name) ?? leafOf(node.tag.name);
+	}
+	// Truncation off: hierarchical tree already nests under folders, so the leaf
+	// segment is enough. Truncation on: prefer the tree-path key (covers nested tags).
 	if (!labels) return node.segment;
-	if (node.tag) return labels.get(node.tag.name) ?? node.tag.name;
-	return labels.get(node.fullPath) ?? node.segment;
+	return (
+		labels.get(node.fullPath) ??
+		(node.tag ? (labels.get(node.tag.name) ?? node.tag.name) : node.segment)
+	);
 }
 
 export function shortestUniqueSuffixes(names: string[]): Map<string, string> {
@@ -346,10 +362,17 @@ export interface TagNameChange {
 
 const leafOf = (name: string) => name.split("/").pop() ?? name;
 
-/** An alias leaf displays its path's last segment, fixed at creation from the tag's leaf
- *  name. When a tag's leaf name changes, rewrite the last segment of every alias key
- *  pointing at it so the alias keeps showing the tag's name. Returns null when no alias
- *  changed. Collisions merge last-write-wins, same as cascadeRename. */
+/** Tag ids that appear under at least one folder alias — canonical tree slots are hidden. */
+export function aliasedTagIds(aliases: Record<string, number>): Set<number> {
+	return new Set(Object.values(aliases));
+}
+
+function tagIdInDfsOrder(node: TagTreeNode, aliased: ReadonlySet<number>): boolean {
+	if (!node.tag) return false;
+	if (node.isAlias) return true;
+	return !aliased.has(node.tag.id);
+}
+
 export function syncAliasSegments(
 	aliases: Record<string, number>,
 	renames: { id: number; oldName: string; newName: string }[],
@@ -374,11 +397,6 @@ export function syncAliasSegments(
 	return changed ? next : null;
 }
 
-/** Rewrite the path prefix `oldPrefix` -> `newPrefix` across every tag and virtual-tag
- *  key whose path is `oldPrefix` itself or sits under it (`oldPrefix/...`). Used to rename
- *  a tag-tree folder and cascade to its descendants. Returns the tag renames plus the
- *  rewritten virtualTags map. Collisions (target path already exists) just merge -- last
- *  write wins -- which is the intended folder-merge behavior. */
 export function cascadeRename(
 	oldPrefix: string,
 	newPrefix: string,
@@ -428,6 +446,53 @@ export function cascadeRename(
 	return { tagRenames, virtualTags: nextVirtual, aliases: nextAliases };
 }
 
+export function stripFolderPrefix(
+	prefix: string,
+	tags: Tag[],
+	virtualTags: Record<string, VirtualTag>,
+	aliases: Record<string, number> = {},
+): {
+	tagRenames: TagNameChange[];
+	virtualTags: Record<string, VirtualTag>;
+	aliases: Record<string, number>;
+} {
+	const under = (s: string): boolean => s === prefix || s.startsWith(`${prefix}/`);
+	const parentPrefix = prefix.includes("/") ? prefix.slice(0, prefix.lastIndexOf("/")) : "";
+
+	const tagRenames: TagNameChange[] = [];
+	for (const t of tags) {
+		if (t.name.startsWith(`${prefix}/`)) {
+			const suffix = t.name.slice(prefix.length + 1);
+			const nextName = parentPrefix ? `${parentPrefix}/${suffix}` : suffix;
+			if (nextName !== t.name) tagRenames.push({ id: t.id, name: nextName });
+		}
+	}
+
+	const nextVirtual: Record<string, VirtualTag> = {};
+	for (const [path, cfg] of Object.entries(virtualTags)) {
+		if (!under(path)) {
+			nextVirtual[path] = cfg;
+		} else if (path !== prefix) {
+			const suffix = path.slice(prefix.length + 1);
+			const nextPath = parentPrefix ? `${parentPrefix}/${suffix}` : suffix;
+			nextVirtual[nextPath] = cfg;
+		}
+	}
+
+	const nextAliases: Record<string, number> = {};
+	for (const [path, id] of Object.entries(aliases)) {
+		if (!under(path)) {
+			nextAliases[path] = id;
+		} else if (path !== prefix) {
+			const suffix = path.slice(prefix.length + 1);
+			const nextPath = parentPrefix ? `${parentPrefix}/${suffix}` : suffix;
+			nextAliases[nextPath] = id;
+		}
+	}
+
+	return { tagRenames, virtualTags: nextVirtual, aliases: nextAliases };
+}
+
 /** Resolve a split-mode tree node by full path (paths are `/`-joined segments). */
 function findByPath(tree: TagTreeNode[], path: string): TagTreeNode | null {
 	for (const n of tree) {
@@ -437,19 +502,23 @@ function findByPath(tree: TagTreeNode[], path: string): TagTreeNode | null {
 	return null;
 }
 
-/** Whether the sibling block `dragPaths` may drop INTO folder `targetPath`: the target is
- *  a folder (branch or declared empty folder) outside the block and its subtrees, isn't
- *  the block's current parent (no-op), and none of its children collide with a dragged
- *  node's segment. */
+function aliasLeafSegment(node: TagTreeNode): string {
+	return node.tag ? leafOf(node.tag.name) : node.segment;
+}
+
 export function canDropInto(tree: TagTreeNode[], dragPaths: string[], targetPath: string): boolean {
 	const target = findByPath(tree, targetPath);
 	if (!target || isLeafTag(target) || target.isAlias) return false;
 	const nodes = dragPaths.map((p) => findByPath(tree, p));
-	if (nodes.length === 0 || nodes.some((n) => !n || n.isAlias)) return false;
+	if (nodes.length === 0 || nodes.some((n) => !n)) return false;
+	const hasAlias = nodes.some((n) => n!.isAlias);
+	const hasReal = nodes.some((n) => !n!.isAlias);
+	if (hasAlias && hasReal) return false;
 	if (dragPaths.some((p) => targetPath === p || targetPath.startsWith(`${p}/`))) return false;
-	if (nodes[0]!.parentPath === targetPath) return false;
 	const childSegments = new Set(target.children.map((c) => c.segment));
-	return !nodes.some((n) => childSegments.has(n!.segment));
+	return !nodes.some(
+		(n) => n!.parentPath !== targetPath && childSegments.has(aliasLeafSegment(n!)),
+	);
 }
 
 export interface TagMoveResult {
@@ -462,10 +531,47 @@ export interface TagMoveResult {
 	pathRemaps: [string, string][];
 }
 
-/** Move the sibling block `dragPaths` into folder `targetPath`: cascadeRename each block
- *  member to `targetPath/<segment>` (tags, virtualTags, and alias keys all follow), and
- *  rebase the global order so the block lands contiguously at the end of the target's
- *  children, keeping its relative order. Returns null when the drop isn't allowed. */
+/** Current DFS tag-id order. Alias leaves own ids when the canonical slot is suppressed. */
+function dfsTagOrder(tree: TagTreeNode[], aliased: ReadonlySet<number>): number[] {
+	const out: number[] = [];
+	const walk = (level: TagTreeNode[]) => {
+		for (const n of level) {
+			if (tagIdInDfsOrder(n, aliased)) out.push(n.tag!.id);
+			walk(n.children);
+		}
+	};
+	walk(tree);
+	return out;
+}
+
+/** Place each leaf under `targetPath` as an alias (Add Alias semantics). Real tags keep
+ *  their names; existing aliases are rewritten to the new folder. */
+function aliasLeavesIntoFolder(
+	tags: Tag[],
+	nodes: TagTreeNode[],
+	targetPath: string,
+	virtualTags: Record<string, VirtualTag>,
+	aliases: Record<string, number>,
+): TagMoveResult {
+	const nextAliases = { ...aliases };
+	for (const node of nodes) {
+		const tag = node.tag!;
+		const newPath = `${targetPath}/${aliasLeafSegment(node)}`;
+		if (newPath === node.fullPath) continue;
+		if (node.isAlias) delete nextAliases[node.fullPath];
+		nextAliases[newPath] = tag.id;
+	}
+	const aliased = aliasedTagIds(nextAliases);
+	const nextTree = buildTagTree(tags, "default", {}, virtualTags, nextAliases);
+	return {
+		tagRenames: [],
+		virtualTags,
+		aliases: nextAliases,
+		orderedIds: dfsTagOrder(nextTree, aliased),
+		pathRemaps: [],
+	};
+}
+
 export function moveIntoFolder(
 	tree: TagTreeNode[],
 	dragPaths: string[],
@@ -476,6 +582,11 @@ export function moveIntoFolder(
 ): TagMoveResult | null {
 	if (!canDropInto(tree, dragPaths, targetPath)) return null;
 	const nodes = dragPaths.map((p) => findByPath(tree, p)!);
+
+	// Leaf drops use alias semantics (including moving an existing alias to another folder).
+	if (nodes.every(isLeafTag)) {
+		return aliasLeavesIntoFolder(tags, nodes, targetPath, virtualTags, aliases);
+	}
 
 	// Block members are siblings (disjoint prefixes), so the cascades never overlap.
 	let workingTags = tags;
@@ -498,14 +609,15 @@ export function moveIntoFolder(
 
 	const dragSet = new Set(dragPaths);
 	const orderedIds: number[] = [];
+	const aliased = aliasedTagIds(workingAliases);
 	const emitSubtree = (n: TagTreeNode) => {
-		if (n.tag && !n.isAlias) orderedIds.push(n.tag.id);
+		if (tagIdInDfsOrder(n, aliased)) orderedIds.push(n.tag!.id);
 		for (const c of n.children) emitSubtree(c);
 	};
 	const walk = (level: TagTreeNode[]) => {
 		for (const n of level) {
 			if (dragSet.has(n.fullPath)) continue;
-			if (n.tag && !n.isAlias) orderedIds.push(n.tag.id);
+			if (tagIdInDfsOrder(n, aliased)) orderedIds.push(n.tag!.id);
 			walk(n.children);
 			if (n.fullPath === targetPath) for (const b of nodes) emitSubtree(b);
 		}
@@ -519,6 +631,69 @@ export function moveIntoFolder(
 		orderedIds,
 		pathRemaps,
 	};
+}
+
+export function removeLeavesFromFolder(
+	tree: TagTreeNode[],
+	leafPaths: string[],
+	virtualTags: Record<string, VirtualTag>,
+	aliases: Record<string, number> = {},
+): TagMoveResult | null {
+	const nodes = leafPaths
+		.map((p) => findByPath(tree, p))
+		.filter((n): n is TagTreeNode => !!n);
+	const leaves = nodes.filter(
+		(n) => isLeafTag(n) && !n.isAlias && n.parentPath !== "",
+	);
+	if (leaves.length === 0) return null;
+
+	// Strip one structural folder level: `<parent>/<segment>` -> `<segment>`. The leaf
+	// segment is unchanged (leafOf stays the same), so alias segments don't need syncing.
+	const renameById = new Map<number, string>();
+	for (const n of leaves) renameById.set(n.tag!.id, n.segment);
+
+	const dragSet = new Set(leaves.map((n) => n.fullPath));
+	const orderedIds: number[] = [];
+	const aliased = aliasedTagIds(aliases);
+	const emitBlock = (n: TagTreeNode) => {
+		if (tagIdInDfsOrder(n, aliased)) orderedIds.push(n.tag!.id);
+		for (const c of n.children) emitBlock(c);
+	};
+	// Emit every non-dragged id in tree order, then append the pulled-out leaves at the
+	// end (they land as the last root pills under the persisted order).
+	const walk = (level: TagTreeNode[]) => {
+		for (const n of level) {
+			if (dragSet.has(n.fullPath)) continue;
+			if (tagIdInDfsOrder(n, aliased)) orderedIds.push(n.tag!.id);
+			walk(n.children);
+		}
+	};
+	walk(tree);
+	for (const n of leaves) emitBlock(n);
+
+	return {
+		tagRenames: [...renameById].map(([id, name]) => ({ id, name })),
+		virtualTags,
+		aliases,
+		orderedIds,
+		pathRemaps: [],
+	};
+}
+
+/** Drop an alias block onto a non-folder area: strip those alias keys. */
+export function removeAliasesAtPaths(
+	aliases: Record<string, number>,
+	paths: string[],
+): Record<string, number> | null {
+	let changed = false;
+	const next = { ...aliases };
+	for (const p of paths) {
+		if (p in next) {
+			delete next[p];
+			changed = true;
+		}
+	}
+	return changed ? next : null;
 }
 
 interface OrderNode {
@@ -551,9 +726,6 @@ const isEffectivelySelected = (n: TagTreeNode, sel: ReadonlySet<number>): boolea
 	(n.tag != null && sel.has(n.tag.id)) ||
 	(n.descendantTagIds.length > 0 && n.descendantTagIds.every((id) => sel.has(id)));
 
-/** The sibling paths a ctrl+drag carries as one block: the grabbed node plus every
- *  effectively-selected sibling of the same kind (pill vs folder row), in sibling order.
- *  Alias leaves never join (the real leaf owns the id). */
 export function collectDragBlock(
 	tree: TagTreeNode[],
 	grabbed: TagTreeNode,
@@ -569,19 +741,13 @@ export function collectDragBlock(
 		.map((n) => n.fullPath);
 }
 
-/** Full DFS tag-id order reflecting an in-level move of the `dragPaths` block to
- *  before/after `dropPath`. The block keeps its relative sibling order and lands as one
- *  contiguous run. `parent` is the block's structural parentPath ("" at root) -- it can't
- *  be derived from the path string, which may contain literal "/" in no-split mode.
- *  Returns null if the target isn't a sibling under `parent`, is part of the block, or
- *  no block member is found. Every other node keeps its relative order; moved nodes
- *  carry their whole subtrees. */
 export function reorderSiblingsFlatOrder<T extends OrderNode>(
 	tree: T[],
 	dragPaths: string[],
 	dropPath: string,
 	position: "before" | "after",
 	parent: string,
+	aliased: ReadonlySet<number> = new Set(),
 ): number[] | null {
 	const dragSet = new Set(dragPaths);
 	if (dragSet.has(dropPath)) return null;
@@ -600,7 +766,7 @@ export function reorderSiblingsFlatOrder<T extends OrderNode>(
 	const dfs = (nodes: OrderNode[], cur: string) => {
 		const ordered = cur === parent ? without : nodes;
 		for (const n of ordered) {
-			if (n.tag && !n.isAlias) out.push(n.tag.id); // alias leaves don't own the id
+			if (n.tag && tagIdInDfsOrder(n as TagTreeNode, aliased)) out.push(n.tag.id);
 			dfs(n.children, n.fullPath);
 		}
 	};
