@@ -125,6 +125,11 @@ function AppChrome() {
 		if (map) goToList();
 	});
 
+	useEffect(() => {
+		const unsub = subscribe("settings:open", () => setShowSettings(true));
+		return unsub;
+	}, []);
+
 	const hasSeenWelcome = useSetting("hasSeenWelcome");
 	const fullscreenMap = useSetting("fullscreenMap");
 
