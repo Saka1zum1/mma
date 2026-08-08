@@ -38,8 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - name: Init git submodules
+        run: bash scripts/ci-submodules.sh
       # apt-get (not cache-apt-pkgs-action): the cache action can restore .so files
       # without pkg-config .pc metadata, so glib-sys fails with "glib-2.0 not found".
       - name: Install Linux dependencies
@@ -62,8 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - name: Init git submodules
+        run: bash scripts/ci-submodules.sh
       - name: Install Linux dependencies
         run: |
           sudo apt-get update

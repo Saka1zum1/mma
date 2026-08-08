@@ -15,8 +15,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - name: Init git submodules
+        run: bash scripts/ci-submodules.sh
 
       - name: Build e2e image
         run: bash scripts/e2e-build.sh

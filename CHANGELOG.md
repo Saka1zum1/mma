@@ -18,7 +18,7 @@
 
 ## v0.8.9 - 2026-08-04
 - **LocalGuessr plugin gains NMPZ mode**
-- Guess map now cycles basemaps (map → satellite → OSM → vector) via a new layers button;
+- Guess map now cycles basemaps (map → satellite → OSM → vector) via a new layers button
 - In-game compass controls now reuse the app's built-in control and respect Street View viewer-control settings
 - Show Street View coverage toggle in Layer Settings — allows users to off street view coverage layer
 
