@@ -41,6 +41,7 @@ export interface MapHostEvents {
 }
 
 export interface BasemapOpts {
+	useBlobby?: boolean;
 	customStyles: CustomStyle[];
 }
 
@@ -74,6 +75,7 @@ export interface MapHostContract<K extends MapHostKind = MapHostKind> {
 	triggerClickAt(latLng: LatLng): void;
 
 	applyPrefs(prefs: MapEmbedPrefs, opts: BasemapOpts): void;
+	setSvOpacity(v: number): void;
 	resize(): void;
 	destroy(): void;
 }

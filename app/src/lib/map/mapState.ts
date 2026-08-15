@@ -2,17 +2,13 @@ import type { Bounds } from "@/types";
 import { hostInstance, type MapHost } from "@/lib/map/host";
 
 let mapHost: MapHost | null = null;
-let hostReadyResolve: ((host: MapHost) => void) | null = null;
-let hostReadyPromise: Promise<MapHost> | null = null;
+let hostReady: PromiseWithResolvers<MapHost> | null = null;
 
 export function setMapHost(host: MapHost | null) {
 	mapHost = host;
-	if (host && hostReadyResolve) {
-		hostReadyResolve(host);
-		hostReadyResolve = null;
-	}
-	if (!host) {
-		hostReadyPromise = null;
+	if (host) {
+		hostReady?.resolve(host);
+		hostReady = null;
 	}
 }
 
@@ -25,15 +21,13 @@ export function getMapHost(): MapHost | null {
 
 /**
  * Wait for the main editor map to be ready.
+ * Every waiter shares one resolver so a map close mid-wait does not leave
+ * older promises hanging on a discarded host.
  */
 export function waitForMapHost(): Promise<MapHost> {
 	if (mapHost) return Promise.resolve(mapHost);
-	if (!hostReadyPromise) {
-		hostReadyPromise = new Promise((resolve) => {
-			hostReadyResolve = resolve;
-		});
-	}
-	return hostReadyPromise;
+	hostReady ??= Promise.withResolvers<MapHost>();
+	return hostReady.promise;
 }
 
 /** Raw Google map of the editor surface; null on non-Google hosts (plugin API compat). */

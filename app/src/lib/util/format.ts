@@ -20,6 +20,11 @@ export const fmt = localeFormat<number>((l) => new Intl.NumberFormat(l));
 export const dateFmt = localeFormat<Date | number>(
 	(l) => new Intl.DateTimeFormat(l, { year: "numeric", month: "short" }),
 );
+/** Day-level pano date labels (en uses en-GB day/month ordering). */
+export const panoDayFmt = localeFormat<Date | number>((l) => {
+	const tag = l === "en" ? "en-GB" : l;
+	return new Intl.DateTimeFormat(tag, { year: "numeric", month: "short", day: "numeric" });
+});
 export const shortDateFmt = localeFormat<Date | number>(
 	(l) => new Intl.DateTimeFormat(l, { month: "short", day: "numeric", year: "numeric" }),
 );

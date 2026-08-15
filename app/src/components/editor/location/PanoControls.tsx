@@ -27,7 +27,7 @@ import { usePanoEvent } from "@/lib/hooks/usePanoEvent";
 import { open } from "@tauri-apps/plugin-shell";
 import { tweenPov } from "@/lib/sv/tweenPov";
 import { snapshotPanoView, renderPanoView, canvasToBlob } from "@/lib/sv/panoCapture";
-import { downloadBlob } from "@/lib/util/util";
+import { downloadBlob, copyImageToClipboard } from "@/lib/util/util";
 import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
 import { Tooltip } from "@/components/primitives/Tooltip";
@@ -809,31 +809,47 @@ export const PanoControls = memo(function PanoControls({
 		jumpPending.current = jump(180);
 	}, [jump]);
 
-	const takeScreenshot = useCallback(async () => {
-		setScreenshotState("loading");
-		const panoId = panorama.getPano();
-		const view = snapshotPanoView(panorama);
-		try {
-			let blob: Blob | string = '';
-			if (isYandexPanoId(panoId) || isYandexLocation || isAppleLocation) {
-				const el = document.querySelector(".psv-canvas");
-				if (el instanceof HTMLCanvasElement) {
-					blob = el.toDataURL("image/jpeg", 1.0);
+	const takeScreenshot = useCallback(
+		async (download: boolean) => {
+			setScreenshotState("loading");
+			const panoId = panorama.getPano();
+			const view = snapshotPanoView(panorama);
+			try {
+				let blob: Blob | string = "";
+				if (isYandexPanoId(panoId) || isYandexLocation || isAppleLocation) {
+					const el = document.querySelector(".psv-canvas");
+					if (el instanceof HTMLCanvasElement) {
+						blob = el.toDataURL("image/jpeg", 1.0);
+					}
+				} else {
+					blob = await canvasToBlob(await renderPanoView(view, 1920, 1080));
 				}
+				const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+				const asBlob =
+					typeof blob === "string"
+						? await (await fetch(blob)).blob()
+						: blob;
+				const copied = download || !(asBlob instanceof Blob) ? false : await copyImageToClipboard(asBlob);
+				if (copied) {
+					toast(t("Screenshot copied"));
+				} else {
+					downloadBlob(blob, `${view.panoId}_${stamp}.png`);
+					toast(
+						download
+							? t("Screenshot downloaded")
+							: t("Clipboard unavailable, downloaded instead"),
+					);
+				}
+				setScreenshotState("done");
+				setTimeout(() => setScreenshotState("idle"), 500);
+			} catch (error) {
+				log.warn("[pano-screenshot] capture failed", error);
+				setScreenshotState("idle");
+				toast(t("Screenshot failed"));
 			}
-			else {
-				blob = await canvasToBlob(await renderPanoView(view, 1920, 1080));
-			}
-			const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
-			downloadBlob(blob, `${view.panoId}_${stamp}.png`);
-			setScreenshotState("done");
-			setTimeout(() => setScreenshotState("idle"), 500);
-		} catch (error) {
-			log.warn("[pano-screenshot] capture failed", error);
-			setScreenshotState("idle");
-			toast("Screenshot failed");
-		}
-	}, [panorama]);
+		},
+		[panorama, isYandexLocation, isAppleLocation, t],
+	);
 
 	return (
 		<div className="embed-controls pano-embed-controls">
@@ -845,11 +861,11 @@ export const PanoControls = memo(function PanoControls({
 				>
 					{vis.showScreenshotButton && (
 						<div className="map-control map-control--button">
-							<Tooltip content={t("editor.downloadScreenshot")} side="bottom" align="end">
+							<Tooltip content={t("Copy screenshot (Shift: download)")} side="bottom" align="end">
 								<button
-									onClick={takeScreenshot}
+									onClick={(e) => takeScreenshot(e.shiftKey)}
 									disabled={screenshotState !== "idle"}
-									aria-label={t("editor.downloadScreenshot")}
+									aria-label={t("Copy screenshot to clipboard")}
 									data-qa="pano-screenshot"
 								>
 									{screenshotState === "loading" ? (

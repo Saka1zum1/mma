@@ -16,6 +16,7 @@ import {
 	type MapStyle,
 } from "@/lib/geo/tiles";
 import { BUILTIN_STYLE_MAP } from "@/lib/geo/mapStyles";
+import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
 import { createCompositeMapType } from "@/lib/geo/stackedMapType";
 import { createpetalBasemapLayer, type petalBasemapLanguage } from "@/lib/geo/petalTiles";
 import { createYandexBasemapLayer } from "@/lib/sv/yandex/basemap";
@@ -38,7 +39,7 @@ export interface CustomStyle {
 export const CUSTOM_STYLES_KEY = "mma_custom_styles";
 
 interface BuildOpts {
-	useBlobby: boolean;
+	useBlobby?: boolean;
 	customStyles?: MapStyle[];
 	/** Omit SV + provider coverage raster layers (e.g. GeoGuessr guess map). */
 	skipCoverage?: boolean;
@@ -62,6 +63,39 @@ export function createSvConfigForPrefs(prefs: MapEmbedPrefs, useBlobby: boolean)
 				color: prefs.svColor,
 				thickness: prefs.svThickness,
 			});
+}
+
+export interface SvTileSource {
+	url(x: number, y: number, z: number): string;
+	/** Effective opacity of a tile at z. */
+	opacity(z: number): number;
+	/** Change-detection identity. */
+	key: string;
+}
+
+/** SV coverage as a per-tile source (MapLibre + upstream tests). */
+export function createSvTileSource(prefs: MapEmbedPrefs): SvTileSource {
+	const showOfficial = prefs.svCoverageType === "official" || prefs.svCoverageType === "default";
+	const showUnofficial =
+		prefs.svCoverageType === "unofficial" || prefs.svCoverageType === "default";
+	const line = createSvTileConfig({
+		showOfficial,
+		showUnofficial,
+		color: prefs.svColor,
+		thickness: prefs.svThickness,
+	});
+	const blobby = prefs.svBlobby
+		? createSvBlobbyTileConfig({ showOfficial, showUnofficial, color: prefs.svColor })
+		: null;
+	const blobbyAt = (z: number) => blobby !== null && z <= BLOBBY_ZOOM_THRESHOLD;
+	const url = (x: number, y: number, z: number) =>
+		buildTileUrl(blobbyAt(z) ? blobby! : line, x, y, z);
+	const dimmed = prefs.svCoverageType !== "default" ? prefs.svOpacity * 0.6 : prefs.svOpacity;
+	return {
+		url,
+		opacity: (z) => (blobbyAt(z) ? dimmed : prefs.svOpacity),
+		key: url(0, 0, 0) + url(0, 0, BLOBBY_ZOOM_THRESHOLD + 1),
+	};
 }
 
 /** Resolve Petal basemap from shared altBasemapSettings. */
@@ -233,18 +267,19 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 		}
 	}
 
-	const showOfficial = prefs.svCoverageType === "official" || prefs.svCoverageType === "default";
-	const showUnofficial =
-		prefs.svCoverageType === "unofficial" || prefs.svCoverageType === "default";
-	const svCfg = createSvConfigForPrefs(prefs, opts.useBlobby);
+	const sv = createSvTileSource(prefs);
 	const svLayer = new google.maps.ImageMapType({
-		getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(svCfg, coord.x, coord.y, zoom),
+		getTileUrl: (coord: TileCoord, zoom: number) => sv.url(coord.x, coord.y, zoom),
 		tileSize,
 		minZoom: 0,
 		maxZoom: 20,
 	});
-	const blobbySingleType = opts.useBlobby && !(showOfficial && showUnofficial);
-	svLayer.setOpacity(blobbySingleType ? prefs.svOpacity * 0.6 : prefs.svOpacity);
+	const getTile = svLayer.getTile.bind(svLayer);
+	svLayer.getTile = (coord, zoom, doc) => {
+		const el = getTile(coord, zoom, doc);
+		if (el instanceof HTMLElement) el.style.opacity = String(sv.opacity(zoom));
+		return el;
+	};
 	if (!opts.skipCoverage) {
 		if (prefs.showSvCoverage !== false) layers.push(svLayer);
 		layers.push(...getProviderLineLayers());

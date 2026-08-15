@@ -1,1877 +1,16 @@
 /// <reference types="google.maps" />
 /// <reference path="./google-maps.d.ts" />
 
+import * as _tauri_apps_api_window from '@tauri-apps/api/window';
+import * as _tauri_apps_api_webview from '@tauri-apps/api/webview';
+import * as __TAURI_EVENT from '@tauri-apps/api/event';
+import * as react from 'react';
 import { ComponentType, SetStateAction, ReactNode } from 'react';
-import * as react_jsx_runtime from 'react/jsx-runtime';
 import { invoke } from '@tauri-apps/api/core';
 import { Command } from '@tauri-apps/plugin-shell';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { Layer, PickingInfo } from '@deck.gl/core';
-import maplibregl from 'maplibre-gl';
-
-export interface PluginSettingDef {
-    key: string;
-    label: string;
-    type: "boolean" | "string" | "number";
-    default: unknown;
-}
-export interface Plugin {
-    id: string;
-    name: string;
-    description?: string;
-    icon: string;
-    comingSoon?: boolean;
-    core?: boolean;
-    experimental?: boolean;
-    settings?: PluginSettingDef[];
-    /** Keep the sidebar mounted (hidden) when the user leaves plugin mode.
-     *  Only for plugins whose state can't be serialized (e.g. an iframe). */
-    keepAlive?: boolean;
-    activate(): void | (() => void);
-    modal?: ComponentType<{
-        onClose: () => void;
-    }>;
-    sidebar?: ComponentType<{
-        onClose: () => void;
-    }>;
-    locationPanel?: ComponentType;
-}
-export type PluginBehavior = Partial<Plugin> & {
-    activate(): void | (() => void);
-};
-/** Register a plugin. `activate` runs when a map opens; its returned cleanup runs on map close. */
-declare function registerPlugin(plugin: Plugin | PluginBehavior): void;
-export interface PluginStorage {
-    get<T = unknown>(key: string, fallback?: T): T;
-    set(key: string, value: unknown): void;
-    remove(key: string): void;
-    keys(): string[];
-}
-/** Persistent key-value storage namespaced to a plugin. Survives restarts. */
-declare function createPluginStorage(id: string): PluginStorage;
-/** useState persisted through the plugin's namespaced store. UI state saved this
- *  way survives sidebar unmount and app restart. Values are global, not per-map —
- *  callers must fall back gracefully when a stored value doesn't resolve against
- *  the current map (e.g. a field key or saved-selection id). */
-declare function usePluginState<T>(pluginId: string, key: string, initial: T | (() => T)): readonly [T, (action: SetStateAction<T>) => void];
-
-/**
- * Built-in UI locales. Add a new entry here, drop a matching catalog under
- * `src/locales/`, and register it in `catalogs.ts` to ship another language.
- */
-declare const LOCALES: {
-    readonly en: "English";
-    readonly "zh-Hans": "简体中文";
-};
-export type AppLocale = keyof typeof LOCALES;
-export type MessageParams = Record<string, string | number | boolean>;
-
-/**
- * English UI strings — source of truth for message keys.
- * Keep keys stable; other locale files only override values.
- *
- * Placeholders use `{name}` (e.g. "Selected {count} locations").
- * Plural forms use `key.one` / `key.other` with `tp()`.
- */
-declare const en: {
-    readonly "common.add": "Add";
-    readonly "common.all": "All";
-    readonly "common.apply": "Apply";
-    readonly "common.areYouSure": "Are you sure?";
-    readonly "common.back": "Back";
-    readonly "common.cancel": "Cancel";
-    readonly "common.changes": "Changes";
-    readonly "common.clear": "Clear";
-    readonly "common.close": "Close";
-    readonly "common.confirm": "Confirm";
-    readonly "common.continue": "Continue";
-    readonly "common.copy": "Copy";
-    readonly "common.create": "Create";
-    readonly "common.delete": "Delete";
-    readonly "common.deselect": "Deselect";
-    readonly "common.disable": "Disable";
-    readonly "common.done": "Done";
-    readonly "common.download": "Download";
-    readonly "common.edit": "Edit";
-    readonly "common.enable": "Enable";
-    readonly "common.error": "Error";
-    readonly "common.export": "Export";
-    readonly "common.filter": "Filter";
-    readonly "common.find": "Find";
-    readonly "common.history": "History";
-    readonly "common.import": "Import";
-    readonly "common.info": "Info";
-    readonly "common.install": "Install";
-    readonly "common.language": "Language";
-    readonly "common.loading": "Loading...";
-    readonly "common.manual": "Manual";
-    readonly "common.merge": "Merge";
-    readonly "common.new": "New";
-    readonly "common.next": "Next";
-    readonly "common.no": "No";
-    readonly "common.none": "None";
-    readonly "common.noResults": "No results.";
-    readonly "common.ok": "OK";
-    readonly "common.open": "Open";
-    readonly "common.paste": "Paste";
-    readonly "common.pick": "Pick";
-    readonly "common.previous": "Previous";
-    readonly "common.redo": "Redo";
-    readonly "common.refresh": "Refresh";
-    readonly "common.regenerate": "Regenerate";
-    readonly "common.remove": "Remove";
-    readonly "common.rename": "Rename";
-    readonly "common.replace": "Replace";
-    readonly "common.reset": "Reset";
-    readonly "common.resetAllDefaults": "Reset all to defaults";
-    readonly "common.resetToDefault": "Reset to default";
-    readonly "common.save": "Save";
-    readonly "common.saved": "Saved";
-    readonly "common.search": "Search";
-    readonly "common.select": "Select";
-    readonly "common.undo": "Undo";
-    readonly "common.uninstall": "Uninstall";
-    readonly "common.update": "Update";
-    readonly "common.upload": "Upload";
-    readonly "common.zoomIn": "Zoom in";
-    readonly "common.zoomOut": "Zoom out";
-    readonly "common.warning": "Warning";
-    readonly "common.yes": "Yes";
-    readonly "locale.en": "English";
-    readonly "locale.zh-Hans": "简体中文";
-    readonly "app.dismiss": "Dismiss";
-    readonly "app.downloadingPercent": "Downloading {percent}%";
-    readonly "app.downloadUpdate": "v{version} — download update";
-    readonly "app.joinDiscord": "Join the Discord";
-    readonly "app.manual": "Manual";
-    readonly "app.restartToUpdate": "Restart to update";
-    readonly "app.updateFailedRetry": "Update failed — retry";
-    readonly "welcome.discord": "Join the Discord";
-    readonly "welcome.discordPrompt": "Got questions or feedback?";
-    readonly "welcome.gotIt": "Got it";
-    readonly "welcome.intro": "If you're new, the {manualLink} covers every feature. It's a recommended read and reference point!";
-    readonly "welcome.manualLink": "manual";
-    readonly "welcome.title": "Welcome to {appName}";
-    readonly "dialog.applyMetadataAsTags": "Apply metadata as tags";
-    readonly "dialog.applySavedSelection": "Apply saved selection";
-    readonly "dialog.assignDocLinks": "Assign document links";
-    readonly "dialog.changeDataFolder": "Change data folder";
-    readonly "dialog.circularPeriod": "Circular period";
-    readonly "dialog.copyLocationToMap": "Copy location to map";
-    readonly "dialog.copyLocationToMapHotkeys": "Copy location to map (hotkeys)";
-    readonly "dialog.deleteField": "Delete field";
-    readonly "dialog.mergeField": "Merge field";
-    readonly "dialog.renameField": "Rename field";
-    readonly "dialog.editMap": "Edit map";
-    readonly "dialog.editTag": "Edit tag";
-    readonly "dialog.enrichment": "Enrichment";
-    readonly "dialog.export": "Export";
-    readonly "dialog.findReplaceTags": "Find and replace in tag names";
-    readonly "dialog.importMaps": "Import Maps";
-    readonly "dialog.largeImport": "Large import";
-    readonly "dialog.manageMapStyles": "Manage map styles";
-    readonly "dialog.mapSettings": "Map settings";
-    readonly "dialog.mergeDuplicates": "Merge duplicates";
-    readonly "dialog.plugins": "Plugins";
-    readonly "dialog.renameTagInSelection": "Rename tag in selection";
-    readonly "dialog.reviewSessions": "Review sessions";
-    readonly "dialog.saveCurrentSelections": "Save current selections";
-    readonly "dialog.saveSelectionAsTag": "Save selection as tag";
-    readonly "dialog.selections": "Selections";
-    readonly "dialog.settings": "Settings";
-    readonly "dialog.streetViewProviders": "Street View providers";
-    readonly "dialog.tags": "Tags";
-    readonly "dialog.versionHistory": "Version history";
-    readonly "plugins.additional": "Additional";
-    readonly "plugins.core": "Core";
-    readonly "plugins.emptyAdditional": "No additional plugins available.";
-    readonly "plugins.enrichmentOnly": "Enrichment only: adds data fields, no panel of its own";
-    readonly "plugins.experimental": "Experimental";
-    readonly "plugins.requiresApp": "Requires app v{version} or newer";
-    readonly "plugins.updateRequiresApp": "Update requires app v{version} or newer";
-    readonly "plugins.updateTo": "Update to v{version}";
-    readonly "plugins.catalog.copyright.description": "Detect the Google copyright year baked into Street View pano tiles";
-    readonly "plugins.catalog.copyright.name": "Copyright Year";
-    readonly "plugins.catalog.disambiguate.description": "Rank metadata fields by how strongly they separate selections";
-    readonly "plugins.catalog.disambiguate.name": "Disambiguate";
-    readonly "plugins.catalog.distribution.description": "View how locations are distributed across countries";
-    readonly "plugins.catalog.distribution.name": "Distribution";
-    readonly "plugins.catalog.map-generator.description": "Generate locations from Street View coverage";
-    readonly "plugins.catalog.map-generator.name": "Map generator";
-    readonly "plugins.catalog.geoguessr.description": "Push and pull locations to/from a linked GeoGuessr map";
-    readonly "plugins.catalog.geoguessr.name": "GeoGuessr";
-    readonly "plugins.catalog.localguessr.name": "LocalGuessr";
-    readonly "plugins.catalog.localguessr.description": "Play GeoGuessr games with your own map locations";
-    readonly "plugins.catalog.hyperlapse.name": "Road Trip";
-    readonly "plugins.catalog.hyperlapse.description": "Build and play Road Trip sequences from selected Street View locations";
-    readonly "plugins.catalog.gradient.description": "Color locations by field value using gradient buckets";
-    readonly "plugins.catalog.gradient.name": "Gradient";
-    readonly "plugins.catalog.heatmap.description": "Visualize location density as a heatmap overlay";
-    readonly "plugins.catalog.heatmap.name": "Heatmap";
-    readonly "plugins.catalog.inaturalist.description": "Search and visualize species observations from iNaturalist on the map";
-    readonly "plugins.catalog.inaturalist.name": "iNaturalist";
-    readonly "plugins.catalog.json-editor.description": "View and edit location data as JSON";
-    readonly "plugins.catalog.json-editor.name": "JSON editor";
-    readonly "plugins.catalog.map-making-sync.description": "Bidirectional sync with map-making.app maps";
-    readonly "plugins.catalog.map-making-sync.name": "map-making.app sync";
-    readonly "plugins.catalog.pivot.description": "Cross-tabulate selections against location metadata";
-    readonly "plugins.catalog.pivot.name": "Pivot Table";
-    readonly "plugins.catalog.sunPosition.description": "Calculate sun azimuth and altitude from exact capture date";
-    readonly "plugins.catalog.sunPosition.name": "Sun Position";
-    readonly "plugins.catalog.vali.description": "Generate locations from pre-built coverage data using Vali";
-    readonly "plugins.catalog.vali.name": "Vali";
-    readonly "plugins.catalog.vision.description": "Search your locations by describing what they look like, or find ones that look alike";
-    readonly "plugins.catalog.vision.name": "Vision";
-    readonly "plugins.catalog.weather.description": "Enrich locations with historical weather at their capture time via the Open-Meteo archive (requires exact date)";
-    readonly "plugins.catalog.weather.name": "Weather";
-    readonly "settings.action": "Action";
-    readonly "settings.activeLocationColor": "Active marker color";
-    readonly "settings.adm1WillDownload": " (~45MB, will download)";
-    readonly "settings.altSlowDesc": "Hold Alt to slow down map panning and pano look.";
-    readonly "settings.animateTagReorder": "Animate tags during drag reorder";
-    readonly "settings.aspectRatio.16-10": "16:10";
-    readonly "settings.aspectRatio.16-9": "16:9";
-    readonly "settings.aspectRatio.21-9": "21:9";
-    readonly "settings.aspectRatio.32-9": "32:9";
-    readonly "settings.aspectRatio.4-3": "4:3";
-    readonly "settings.aspectRatio.free": "Free";
-    readonly "settings.binding": "Binding";
-    readonly "settings.border.heavy": "Ultra (~46MB)";
-    readonly "settings.border.light": "Standard (bundled)";
-    readonly "settings.border.medium": "High (~10MB)";
-    readonly "settings.borderDetail": "Country data";
-    readonly "settings.borderDownloadFailed": "Download failed: {message}";
-    readonly "settings.changeFolder": "Change folder...";
-    readonly "settings.checkForUpdates": "Check for updates";
-    readonly "settings.chooseDataFolder": "Choose data folder";
-    readonly "settings.clickToGo": "Show click-to-go navigation";
-    readonly "settings.clickToRebind": "Click to rebind";
-    readonly "settings.customCssPlaceholder": "/* Your custom CSS here */\n.location-preview__panorama { border: 2px solid red; }";
-    readonly "settings.dataFolderPrompt": "Map data will be stored in:";
-    readonly "settings.dataFolderWarning": "Existing maps are not moved automatically. Copy them manually if needed.";
-    readonly "settings.dateTimezone": "Exact date timezone";
-    readonly "settings.dateTimezone.location": "Location timezone";
-    readonly "settings.dateTimezone.utc": "UTC";
-    readonly "settings.defaultMovementMode": "Default movement mode";
-    readonly "settings.discord.full": "Full (map name + count)";
-    readonly "settings.discord.generic": "Generic (no map name)";
-    readonly "settings.discord.off": "Off";
-    readonly "settings.discordPresence": "Rich Presence";
-    readonly "settings.downloadAndInstall": "Download and install";
-    readonly "settings.downloading": " (downloading...)";
-    readonly "settings.downloadingBorders": "Downloading border data...";
-    readonly "settings.enableSeen": "Log viewed panos";
-    readonly "settings.enableSeenThumbnails": "Save thumbnails";
-    readonly "settings.exactDate.date": "Date only";
-    readonly "settings.exactDate.datetime": "Date + time";
-    readonly "settings.exactDateFormat": "Exact date format";
-    readonly "settings.filterShortcuts": "Filter shortcuts...";
-    readonly "settings.followActiveInReview": "Center map on active location during review";
-    readonly "settings.fullscreenMinimapCloseDelay": "Minimap close delay";
-    readonly "settings.geocode.google": "Google (from panorama)";
-    readonly "settings.geocode.local": "Local (offline)";
-    readonly "settings.geocode.nominatim": "Nominatim";
-    readonly "settings.geocodeLabel.google": "Google Street View";
-    readonly "settings.geocodeLabel.local": "Local reverse geocode";
-    readonly "settings.geocodeLabel.nominatim": "OpenStreetMap (Nominatim)";
-    readonly "settings.geocodeProvider": "Reverse geocode provider";
-    readonly "settings.geocodeProviderDesc": "Used for place names shown under the panorama";
-    readonly "settings.group.borders": "Borders";
-    readonly "settings.group.commands": "Commands";
-    readonly "settings.group.customCss": "Custom CSS";
-    readonly "settings.group.data": "Data";
-    readonly "settings.group.datePicker": "Date picker";
-    readonly "settings.group.debug": "Debug";
-    readonly "settings.group.discord": "Discord";
-    readonly "settings.group.fullscreen": "Fullscreen";
-    readonly "settings.group.geocoding": "Geocoding";
-    readonly "settings.group.global": "Global";
-    readonly "settings.group.language": "Language";
-    readonly "settings.group.locationEditor": "Location Editor";
-    readonly "settings.group.mapList": "Map list";
-    readonly "settings.group.mapNavigation": "Map Navigation";
-    readonly "settings.group.markers": "Markers";
-    readonly "settings.group.navigation": "Navigation";
-    readonly "settings.group.panoramaDots": "Panorama dots";
-    readonly "settings.group.quicktag": "Quicktag";
-    readonly "settings.group.remoteApi": "Remote API";
-    readonly "settings.group.review": "Review";
-    readonly "settings.group.seen": "Seen";
-    readonly "settings.group.selections": "Selections";
-    readonly "settings.group.startup": "Startup";
-    readonly "settings.group.tags": "Tags";
-    readonly "settings.group.updates": "Updates";
-    readonly "settings.group.viewerControls": "Viewer controls";
-    readonly "settings.hotkey.alsoBoundTo": "Also bound to \"{label}\" — click to jump there";
-    readonly "settings.hotkey.altSlowConflict": "{combo} conflicts with \"{label}\" (Alt is the slow modifier — pick a different key)";
-    readonly "settings.hotkey.blockedByWindow": "Intercepted by the app window before shortcuts can reach it";
-    readonly "settings.hotkey.commands": "Commands";
-    readonly "settings.hotkey.global": "Global";
-    readonly "settings.hotkey.locationEditor": "Location Editor";
-    readonly "settings.hotkey.mapNavigation": "Map Navigation";
-    readonly "settings.hotkey.pressKey": "Press a key...";
-    readonly "settings.hotkey.quicktag": "Quicktag";
-    readonly "settings.hotkey.reassign": "Reassign";
-    readonly "settings.hotkey.reassignPrompt": "{combo} is bound to {actions}";
-    readonly "settings.hotkey.review": "Review";
-    readonly "settings.hotkey.tryAnotherKey": "Try another key...";
-    readonly "settings.importPreviewColor": "Staged marker color";
-    readonly "settings.language": "Interface language";
-    readonly "settings.languageDesc": "Applies across the app. More languages can be added later.";
-    readonly "settings.mapList.created": "Date created";
-    readonly "settings.mapList.lastOpened": "Last opened";
-    readonly "settings.mapList.locationCount": "Location count";
-    readonly "settings.mapListFieldsHint": "Fields shown on each map row (labels are always shown)";
-    readonly "settings.mapPanSpeed": "Pan speed";
-    readonly "settings.markerColor": "Default marker color";
-    readonly "settings.minimapCloseDelayDesc": "How long the minimap stays expanded after the pointer leaves it.";
-    readonly "settings.movement.moving": "Moving";
-    readonly "settings.movement.nmpz": "NMPZ";
-    readonly "settings.movement.no-move": "No Move";
-    readonly "settings.nominatimApiKey": "API key (optional)";
-    readonly "settings.nominatimWarning": "Without an API key, requests may be rate-limited by Nominatim's usage policy.";
-    readonly "settings.opacityToggle.full": "Full opacity";
-    readonly "settings.opacityToggle.previous": "Last used opacity";
-    readonly "settings.opacityToggleDesc": "What the Street View and marker opacity hotkeys restore a hidden layer to.";
-    readonly "settings.opacityToggleMode": "Layer opacity toggle";
-    readonly "settings.openDataFolder": "Open data folder";
-    readonly "settings.openLogFile": "Open log file";
-    readonly "settings.panoDot.constant": "Constant on screen";
-    readonly "settings.panoDot.scaled": "Grow when zoomed in";
-    readonly "settings.panoDotColor": "Dot color";
-    readonly "settings.panoDotScaled": "Dot size";
-    readonly "settings.panoLookSpeed": "Pano look speed";
-    readonly "settings.panToImported": "Pan to imported locations";
-    readonly "settings.pastePadding": "Paste zoom padding";
-    readonly "settings.polygonColor": "Polygon color";
-    readonly "settings.polygonColor.fixed": "Fixed color";
-    readonly "settings.polygonColor.random": "Random";
-    readonly "settings.previewAspectRatio": "Preview aspect ratio";
-    readonly "settings.relaunchNow": "Relaunch now";
-    readonly "settings.remoteApi": "Enable local REST API";
-    readonly "settings.restartNow": "Restart now";
-    readonly "settings.restoreSession": "Restore open maps on startup";
-    readonly "settings.searchPlaceholder": "Search settings...";
-    readonly "settings.section.advanced": "Advanced";
-    readonly "settings.section.application": "Application";
-    readonly "settings.section.editing": "Editing";
-    readonly "settings.section.integrations": "Integrations";
-    readonly "settings.section.keyboard": "Keyboard";
-    readonly "settings.section.map": "Map";
-    readonly "settings.section.streetView": "Street View";
-    readonly "settings.section.tags": "Tags";
-    readonly "settings.seen.high": "High (640x360)";
-    readonly "settings.seen.low": "Low (160x90)";
-    readonly "settings.seen.medium": "Medium (320x180)";
-    readonly "settings.seenResolution": "Thumbnail resolution";
-    readonly "settings.showCameraBadges": "Show camera type badges (Gen1, Gen2, etc.)";
-    readonly "settings.showCar": "Show car";
-    readonly "settings.showCompass": "Compass (wind rose)";
-    readonly "settings.showCompassTape": "Compass (heading tape)";
-    readonly "settings.showCoordinateDisplay": "Coordinate / zoom display";
-    readonly "settings.showCrosshair": "Show crosshair";
-    readonly "settings.showFps": "Show FPS counter";
-    readonly "settings.showFullscreenButton": "Fullscreen button";
-    readonly "settings.showFullscreenDatePicker": "Show date picker in fullscreen";
-    readonly "settings.showFullscreenGeocode": "Show geocoding info in fullscreen";
-    readonly "settings.showFullscreenMapMeta": "Show map meta bar in fullscreen";
-    readonly "settings.showFullscreenMiniLocationPreview": "Show mini location preview in fullscreen";
-    readonly "settings.showFullscreenMinimap": "Show minimap in fullscreen";
-    readonly "settings.showFullscreenReviewBar": "Show review bar in fullscreen";
-    readonly "settings.showFullscreenTagbar": "Show tag bar in fullscreen";
-    readonly "settings.showGroundArrow": "Show ground arrow";
-    readonly "settings.hideNavWithUI": "Hide navigation with pano UI";
-    readonly "settings.hideNavWithUIDesc": "When the pano UI is hidden, link arrows, the ground arrow, and the navigation X are hidden too.";
-    readonly "settings.showJumpButtons": "Jump forward/backward buttons";
-    readonly "settings.showLinksControl": "Show link arrows (ground navigation)";
-    readonly "settings.showMapLinks": "Map links (open in maps, copy link)";
-    readonly "settings.showNavArrow": "Show navigation X";
-    readonly "settings.showPanoMetadata": "Show pano metadata";
-    readonly "settings.showReturnToSpawn": "Return to spawn button";
-    readonly "settings.showScreenshotButton": "Screenshot button";
-    readonly "settings.showRoadLabels": "Show road labels";
-    readonly "settings.showZoom": "Zoom controls";
-    readonly "settings.slowModifier": "Alt slow-down";
-    readonly "settings.subdivision.adm1": "States / provinces";
-    readonly "settings.subdivision.off": "Off";
-    readonly "settings.subdivisionDetail": "Subdivision data";
-    readonly "settings.tagFolderColor": "Folder color";
-    readonly "settings.tagFolderColor.direct": "Fixed color";
-    readonly "settings.tagFolderColor.firstChild": "Inherit first child";
-    readonly "settings.tagFolderColor.random": "Random";
-    readonly "settings.tagFolderColor.childGradient": "Child tag gradient";
-    readonly "settings.tagGap": "Tag gap";
-    readonly "settings.tagSuggestionLimit": "Suggestions shown";
-    readonly "settings.tagView.flat": "Flat";
-    readonly "settings.tagView.tree": "Tree";
-    readonly "settings.tagViewMode": "View mode";
-    readonly "settings.truncateTagPaths": "Truncate tag names to shortest unique path";
-    readonly "settings.update.checkFailed": "Update check failed.";
-    readonly "settings.update.checking": "Checking for updates...";
-    readonly "settings.update.downloading": "Downloading update...";
-    readonly "settings.update.idle": "Updates haven't been checked yet.";
-    readonly "settings.update.upToDate": "You're on the latest version.";
-    readonly "settings.updateInstalled": "Update installed. Restart to apply.";
-    readonly "settings.versionAvailable": "Version {version} is available.";
-    readonly "settings.willDownload": " (will download)";
-    readonly "mapList.addLabel": "Add label...";
-    readonly "mapList.clearSearch": "Clear search";
-    readonly "mapList.colorFor": "Color for {label}";
-    readonly "mapList.deleteConfirm": "Delete map \"{name}\"? This cannot be undone.";
-    readonly "mapList.deleteFolder": "Delete folder";
-    readonly "mapList.deleteFolderButton": "Delete folder";
-    readonly "mapList.deleteFolderConfirm": "Delete folder \"{name}\" and move its {count} maps to the root list?";
-    readonly "mapList.deleteMap": "Delete map";
-    readonly "mapList.dropHere": "Drop map here to move out of folder";
-    readonly "mapList.dropToImport": "Drop file to import";
-    readonly "mapList.editMap": "Edit map";
-    readonly "mapList.exportAll": "Export all maps";
-    readonly "mapList.exporting": "Exporting...";
-    readonly "mapList.exportSaved": "Export saved";
-    readonly "mapList.filterByLabel": "Filter by this label";
-    readonly "mapList.folderAssigned.one": "{count} map assigned to folders";
-    readonly "mapList.folderAssigned.other": "{count} maps assigned to folders";
-    readonly "mapList.folderSummary": "· {maps} maps · {locations} locations";
-    readonly "mapList.here": "here";
-    readonly "mapList.importAll": "All";
-    readonly "mapList.importComplete": "Import complete";
-    readonly "mapList.importCount.one": "Import {count} map";
-    readonly "mapList.importCount.other": "Import {count} maps";
-    readonly "mapList.importDuplicate": "duplicate";
-    readonly "mapList.importing": "Importing...";
-    readonly "mapList.importMaps": "Import maps";
-    readonly "mapList.importNewOnly": "New only";
-    readonly "mapList.importNone": "None";
-    readonly "mapList.importPartial": "Imported {ok}, {failed} failed";
-    readonly "mapList.importWarnings.one": "{count} warning";
-    readonly "mapList.importWarnings.other": "{count} warnings";
-    readonly "mapList.labels": "Labels";
-    readonly "mapList.locAbbr": "loc";
-    readonly "mapList.locations": "locations";
-    readonly "mapList.mapDataFilter": "Map data";
-    readonly "mapList.maps": "maps";
-    readonly "mapList.mapsAndLocations": "({maps} maps, {locations} locations)";
-    readonly "mapList.newFolder": "New folder";
-    readonly "mapList.newMap": "New map";
-    readonly "mapList.notFoundLocally": "{count} not found locally";
-    readonly "mapList.openCloseFolder": "Open or close folder";
-    readonly "mapList.opened": "opened {time}";
-    readonly "mapList.renameFolder": "Rename folder";
-    readonly "mapList.renameFolderTitle": "Rename folder";
-    readonly "mapList.scanningFile": "Scanning file...";
-    readonly "mapList.scanningFiles": "Scanning files...";
-    readonly "mapList.searchPlaceholder": "Search maps...";
-    readonly "mapList.searchTitle": "Filter by name, or by label with label:name / label:\"two words\"";
-    readonly "mapList.selectedOf": "{selected} of {total} selected ({locations} locations)";
-    readonly "mapList.sort.amount": "Location count";
-    readonly "mapList.sort.created": "Date created";
-    readonly "mapList.sort.name": "Name";
-    readonly "mapList.sort.opened": "Last opened";
-    readonly "mapList.tagsAbbr": "tags";
-    readonly "mapList.tagsCount": "{count} tags";
-    readonly "mapList.typeNameForFolder": "Type a name to create a folder";
-    readonly "mapList.typeNameForMap": "Type a name to create a map";
-    readonly "mapList.unnamed": "(unnamed)";
-    readonly "mapList.whatsNew": "What's new";
-    readonly "mapList.wipBody": "This app is a work in progress. Expect bugs and breaking changes. Report issues";
-    readonly "mapList.wipWarning": "Warning";
-    readonly "mapList.yourMaps": "Your Maps";
-    readonly "context.clearAnchors": "Clear latitude/longitude anchors";
-    readonly "context.copyCoordinates": "Copy coordinates";
-    readonly "context.copyPanoId": "Copy pano ID";
-    readonly "context.copyStreetViewLink": "Copy Street View link";
-    readonly "context.copyToMap": "Copy to map...";
-    readonly "context.deleteLocation": "Delete location";
-    readonly "context.deleteNPolygons.one": "Delete {count} polygon here";
-    readonly "context.deleteNPolygons.other": "Delete {count} polygons here";
-    readonly "context.deleteThisPolygon": "Delete this polygon";
-    readonly "context.downloadPanorama": "Download panorama";
-    readonly "context.duplicateLocation": "Duplicate location";
-    readonly "context.endMeasurement": "End measurement";
-    readonly "context.selectThisCountry": "Select this country";
-    readonly "context.selectThisSubdivision": "Select this subdivision";
-    readonly "context.setAnchors": "Set latitude/longitude anchors";
-    readonly "context.startMeasurement": "Start measurement";
-    readonly "toast.addedLocations.one": "Added {count} location";
-    readonly "toast.addedLocations.other": "Added {count} locations";
-    readonly "toast.alreadyIn": "Already in {name}";
-    readonly "toast.borderDownloadFailed": "Couldn't download border data — check your connection";
-    readonly "toast.borderDownloading": "Border data missing — downloading...";
-    readonly "toast.copiedCsv": "Copied CSV to clipboard";
-    readonly "toast.copiedJson": "Copied JSON to clipboard";
-    readonly "toast.copiedTagsCount": "Copied tag counts to clipboard";
-    readonly "toast.copiedTo": "Copied to {name}";
-    readonly "toast.linkCopied": "Link copied";
-    readonly "toast.copyFailed": "Copy failed";
-    readonly "toast.downloadedFile": "Downloaded {name}";
-    readonly "toast.exportFailed": "Export failed";
-    readonly "toast.followingRoad": "Following road...";
-    readonly "toast.followRoadFailed": "Follow road failed";
-    readonly "toast.mergedDuplicates": "Merged {mergedAway} duplicates in {groups} groups";
-    readonly "toast.noCoverage": "No coverage found at this location.";
-    readonly "toast.panoIdFallback": "Configured pano ID could not be found. Falling back to lat/lng.";
-    readonly "toast.panoProviderFailed": "Failed to open panorama provider";
-    readonly "toast.panoramaDownloaded": "Panorama downloaded";
-    readonly "toast.panoramaDownloadFailed": "Panorama download failed";
-    readonly "toast.panoramaSaved": "Panorama saved";
-    readonly "toast.prunedDuplicates.one": "Pruned {count} duplicate";
-    readonly "toast.prunedDuplicates.other": "Pruned {count} duplicates";
-    readonly "toast.relaunchFailed": "Couldn't relaunch automatically — restart the app to apply.";
-    readonly "toast.selectedFailedLocations": "Selected {count} failed locations";
-    readonly "toast.selectedLocations.one": "Selected {count} location";
-    readonly "toast.selectedLocations.other": "Selected {count} locations";
-    readonly "toast.selectedRandomLocations.one": "Selected {count} random location";
-    readonly "toast.selectedRandomLocations.other": "Selected {count} random locations";
-    readonly "toast.selectedWithSpacing": ", at least {distanceM}m apart";
-    readonly "toast.selectOnlyMode": "Select-only mode is on.";
-    readonly "toast.subdivisionDownloadFailed": "Couldn't download subdivision borders — check your connection";
-    readonly "toast.subdivisionDownloading": "Subdivision borders missing — downloading...";
-    readonly "toast.subdivisionOff": "Subdivision borders are off — enable them in Settings";
-    readonly "time.daysAgo": "{count}d ago";
-    readonly "time.hoursAgo": "{count}h ago";
-    readonly "time.justNow": "just now";
-    readonly "time.minutesAgo": "{count}m ago";
-    readonly "editor.addAlias": "Add alias...";
-    readonly "editor.addFilter": "Add filter";
-    readonly "editor.addSeparatorAfter": "Add separator after";
-    readonly "editor.addSeparatorBefore": "Add separator before";
-    readonly "editor.addTagPlaceholder": "Add a tag…";
-    readonly "editor.addToMap": "Add to map";
-    readonly "editor.adjustingMarkerOpacity": "Adjusting marker opacity";
-    readonly "editor.adjustingSvOpacity": "Adjusting Street View opacity";
-    readonly "editor.aliasTitle": "Alias \"{name}\"";
-    readonly "editor.allLocations": "All locations ({count})";
-    readonly "editor.appearsAs": "Appears as {path}";
-    readonly "editor.applyColorInside.one": "Apply to {count} tag inside";
-    readonly "editor.applyColorInside.other": "Apply to {count} tags inside";
-    readonly "editor.assignedToTag": "Assigned to {name} (click heading with this tag armed to remove)";
-    readonly "editor.backToMap": "Back to map";
-    readonly "editor.backToMapList": "Back to map list";
-    readonly "editor.badgeBadcam": "Badcam";
-    readonly "editor.badgeGen1": "Gen1";
-    readonly "editor.badgeGen2": "Gen2/3";
-    readonly "editor.badgeGen4": "Gen4";
-    readonly "editor.badgeTrekker": "Trekker";
-    readonly "editor.badgeTripod": "Tripod";
-    readonly "editor.badgeUnofficial": "unofficial";
-    readonly "editor.basemap": "Basemap";
-    readonly "editor.behavior": "Behavior";
-    readonly "editor.blobbyLayer": "Use blobby layer while zoomed out";
-    readonly "editor.bottom": "Bottom";
-    readonly "editor.bucketWidthPlaceholder": "Bucket width...";
-    readonly "editor.bulkAddTag": "Bulk-add tag...";
-    readonly "editor.carLine": "Car line";
-    readonly "editor.carPoint": "Car point";
-    readonly "editor.changeColor": "Change color";
-    readonly "editor.circularPeriodHelp": "Value at which this field wraps around (e.g. 360 for degrees, 24 for hours, 12 for months).";
-    readonly "editor.clearDocLinks": "Clear doc links";
-    readonly "editor.clearDocLinksTitle": "Remove this document's links from every tag";
-    readonly "editor.clickHeadingAssign": " — click a heading to assign \"{name}\"";
-    readonly "editor.closeDoclinkPanel": "Close doclink panel";
-    readonly "editor.closeStreetViewProviders": "Close Street View providers";
-    readonly "editor.collapseTagBar": "Collapse tag bar";
-    readonly "editor.colorLabel": "Color:";
-    readonly "editor.colors": "Colors";
-    readonly "editor.comingSoon": "{label} (coming soon)";
-    readonly "editor.commandGroupBulk": "Bulk Operations";
-    readonly "editor.commandGroupMap": "Map";
-    readonly "editor.commandGroupSelections": "Selections";
-    readonly "editor.commandGroupTags": "Tags";
-    readonly "editor.commandPalette": "Command Palette";
-    readonly "editor.commands": "Commands...";
-    readonly "editor.commit": "Commit";
-    readonly "editor.compareAsColumn": "Compare as";
-    readonly "editor.compAuto": "Auto";
-    readonly "editor.compCategorical": "Categorical";
-    readonly "editor.compCircular": "Circular";
-    readonly "editor.compCircularPeriod": "Circular · {period}";
-    readonly "editor.compNumeric": "Numeric";
-    readonly "editor.contextMenu": "Context menu";
-    readonly "editor.copyJson": "Copy JSON";
-    readonly "editor.copyLink": "Copy link";
-    readonly "editor.copyLinkHint": "Copy link - Shift: without tags, Alt: long URL";
-    readonly "editor.copyToMax": "Copy to max";
-    readonly "editor.copyToMin": "Copy to min";
-    readonly "editor.count": "Count";
-    readonly "editor.coverageLayers": "Coverage layers";
-    readonly "editor.coverageLineColor": "Coverage line color";
-    readonly "editor.coverageLineFilterColor": "Coverage line filter color";
-    readonly "editor.coveragePercent": "{pct}% of locations";
-    readonly "editor.created": "Created {time}";
-    readonly "editor.createTag": "Create virtual tag";
-    readonly "editor.currentSelection": "Current selection ({count})";
-    readonly "editor.defaultAutoUpdating": "Default / auto-updating";
-    readonly "editor.defaultLabel": "Default";
-    readonly "editor.defaultWithDate": "Default ({date})";
-    readonly "editor.deletedSelection": "(deleted selection)";
-    readonly "editor.deleteFieldConfirm": "Delete {name} and clear its values from every location? This cannot be undone.";
-    readonly "editor.deleteStyle": "Delete style";
-    readonly "editor.deselect": "Deselect";
-    readonly "editor.diffAdded": "Added";
-    readonly "editor.diffModified": "Modified";
-    readonly "editor.diffRemoved": "Removed";
-    readonly "editor.direction": "Direction:";
-    readonly "editor.directionBackwards": "Backwards";
-    readonly "editor.directionEast": "Most Eastern";
-    readonly "editor.directionForwards": "Forwards";
-    readonly "editor.directionNone": "None";
-    readonly "editor.directionNorth": "Most Northern";
-    readonly "editor.directionRandom": "Random";
-    readonly "editor.directionSouth": "Most Southern";
-    readonly "editor.directionWest": "Most Western";
-    readonly "editor.disallowUnofficial": "Disallow unofficial coverage";
-    readonly "editor.display": "Display";
-    readonly "editor.display5kRadius": "Display 5K radius";
-    readonly "editor.distanceM": "Distance (m):";
-    readonly "editor.doclinkDefaultTitle": "Doclink";
-    readonly "editor.doclinkLoadFailed": "Couldn't load the document. {message}";
-    readonly "editor.doclinks": "Doclinks";
-    readonly "editor.doclinkSectionMissing": "The linked section no longer exists in this document.";
-    readonly "editor.document": "Document";
-    readonly "editor.done": "Done";
-    readonly "editor.downloadGeoJSON": "Download GeoJSON";
-    readonly "editor.drawPolygon": "Draw a polygon selection";
-    readonly "editor.drawRectangle": "Draw a rectangle selection";
-    readonly "editor.dropHintAnd": "AND";
-    readonly "editor.dropHintOr": "OR";
-    readonly "editor.editFilter": "Edit filter";
-    readonly "editor.editFolder": "Edit folder \"{name}\"";
-    readonly "editor.editMap": "Edit map";
-    readonly "editor.emphasiseCountryBorders": "Emphasise country borders";
-    readonly "editor.emphasiseSubdivisionBorders": "Emphasise subdivision borders";
-    readonly "editor.enableAllProviders": "Enable all providers";
-    readonly "editor.enrichAutoSave": "Automatically save metadata to locations";
-    readonly "editor.enrichColumn": "Enrich";
-    readonly "editor.enrichLocations": "Enrich locations";
-    readonly "editor.exitReview": "Exit review";
-    readonly "editor.expandTagBar": "Expand tag bar";
-    readonly "editor.exportEverything": "Export everything ({count} locations)";
-    readonly "editor.exportSelection": "Export selection ({count} locations)";
-    readonly "editor.fallbackToGoogle": "Fallback to Google Street View";
-    readonly "editor.fieldColumn": "Field";
-    readonly "editor.fieldType.array": "Array";
-    readonly "editor.fieldType.date": "Date/time";
-    readonly "editor.fieldType.enum": "Enum";
-    readonly "editor.fieldType.month": "Month (YYYY-MM)";
-    readonly "editor.fieldType.number": "Number";
-    readonly "editor.fieldType.string": "Text";
-    readonly "editor.filterByMetadata": "Filter by metadata:";
-    readonly "editor.filterLength": "Length";
-    readonly "editor.filterMax": "Max";
-    readonly "editor.filterOp.between": "between";
-    readonly "editor.filterOp.betweenAnytime": "between (any date)";
-    readonly "editor.filterOp.betweenAnyYear": "between (any year)";
-    readonly "editor.filterOp.contains": "contains";
-    readonly "editor.filterOp.eq": "=";
-    readonly "editor.filterOp.gt": ">";
-    readonly "editor.filterOp.gte": ">=";
-    readonly "editor.filterOp.has": "has";
-    readonly "editor.filterOp.lengthBetween": "length between";
-    readonly "editor.filterOp.lengthEq": "length =";
-    readonly "editor.filterOp.lengthGt": "length >";
-    readonly "editor.filterOp.lengthGte": "length >=";
-    readonly "editor.filterOp.lengthLt": "length <";
-    readonly "editor.filterOp.lengthLte": "length <=";
-    readonly "editor.filterOp.lengthNeq": "length !=";
-    readonly "editor.filterOp.lt": "<";
-    readonly "editor.filterOp.lte": "<=";
-    readonly "editor.filterOp.neq": "!=";
-    readonly "editor.filterOp.notcontains": "does not contain";
-    readonly "editor.filterOp.nothas": "does not have";
-    readonly "editor.filterTags": "Filter tags...";
-    readonly "editor.filterValue": "Value";
-    readonly "editor.findPlaceholder": "Text to find...";
-    readonly "editor.folderExists": "\"{path}\" already exists in the tree";
-    readonly "editor.folderName": "Folder name";
-    readonly "editor.freehandPolygon": "Freehand polygon selection";
-    readonly "editor.fromValues": "{name}'s values";
-    readonly "editor.ghostSelection": "Ghost selection";
-    readonly "editor.ghostSelectionHint": "Ghost selection (Alt-click to isolate)";
-    readonly "editor.hideHighways": "Hide highways";
-    readonly "editor.hidePoi": "Hide points of interest";
-    readonly "editor.hideRoadLabels": "Hide road labels";
-    readonly "editor.hideTransit": "Hide transit";
-    readonly "editor.hotkeyLabel": "Hotkey:";
-    readonly "editor.importBlocked": "This location is still being imported and cannot be modified. Complete the import before making changes.";
-    readonly "editor.importFile": "Import file";
-    readonly "editor.importFilterName": "Map data";
-    readonly "editor.invertSelection": "Invert selection";
-    readonly "editor.jumpBackward": "Jump backward 100 metres ({key})";
-    readonly "editor.jumpForward": "Jump forward 100 metres ({key})";
-    readonly "editor.labelColumn": "Label";
-    readonly "editor.labels": "Labels";
-    readonly "editor.largerMinimap": "Larger minimap";
-    readonly "editor.largerPreview": "Larger location preview";
-    readonly "editor.layers": "Layers";
-    readonly "editor.linesOpacity": "Lines opacity";
-    readonly "editor.linesPmtiles": "Lines (PMTiles)";
-    readonly "editor.linesRaster": "Lines (raster)";
-    readonly "editor.linesRasterMvt": "Lines (raster + MVT)";
-    readonly "editor.lineWidth": "Line width";
-    readonly "editor.loadFailed": "Couldn't load: {message}";
-    readonly "editor.loadingDocument": "Loading document...";
-    readonly "editor.locationsCount": "{count} locations";
-    readonly "editor.locationTimezone": "Location timezone";
-    readonly "editor.mapBehaviour": "Map behaviour";
-    readonly "editor.mapStyleSection": "Map style";
-    readonly "editor.mapTypeMap": "Map";
-    readonly "editor.mapTypeOsm": "OSM";
-    readonly "editor.mapTypeSatellite": "Satellite";
-    readonly "editor.mapTypeVector": "Vector";
-    readonly "editor.markerArrow": "Camera direction arrow";
-    readonly "editor.markerCircle": "Circle";
-    readonly "editor.markerLayerOpacity": "Marker layer opacity";
-    readonly "editor.markerPin": "Pin";
-    readonly "editor.markerSize": "Marker size:";
-    readonly "editor.markerStyle": "Marker style:";
-    readonly "editor.mergeFieldHelp": "Merge {from} into existing field {to} across {count} location(s). This cannot be undone.";
-    readonly "editor.meters": "Meters";
-    readonly "editor.minDistanceM": "Min distance (m)";
-    readonly "editor.minSearchRadius": "Min search radius:";
-    readonly "editor.modified": "Modified {time}";
-    readonly "editor.moveLeft": "Move left";
-    readonly "editor.moveRight": "Move right";
-    readonly "editor.nameSelectionPlaceholder": "Name this selection...";
-    readonly "editor.newFolder": "New folder";
-    readonly "editor.newFolderIn": "New folder in \"{parent}\"";
-    readonly "editor.newStyle": "New style";
-    readonly "editor.newSubfolder": "New subfolder...";
-    readonly "editor.deleteFolder": "Delete folder";
-    readonly "editor.nextLocation": "Go to next location (Control+Right)";
-    readonly "editor.nextPeriod": "Next period";
-    readonly "editor.noDates": "No dates";
-    readonly "editor.noDoclinkSelected": "No document link selected.";
-    readonly "editor.noDoclinkTags": "No tags in this map carry document links.";
-    readonly "editor.noLinkableHeadings": "No linkable headings found in this doc.";
-    readonly "editor.noMetadataYet": "No metadata yet";
-    readonly "editor.noOtherMaps": "No other maps.";
-    readonly "editor.noSaveableSelections": "No saveable selections active.";
-    readonly "editor.noSavedSelections": "No saved selections.";
-    readonly "editor.noTagsInMap": "This map has no tags.";
-    readonly "editor.notEnrichmentField": "Not an enrichment field";
-    readonly "editor.noTimezoneData": "No locations have timezone data";
-    readonly "editor.ofTotal": "of {total}";
-    readonly "editor.onConflictKeep": "On conflict, keep:";
-    readonly "editor.openInBrowser": "Open in browser";
-    readonly "editor.openInMaps": "Open in maps";
-    readonly "editor.openManualChapter": "Open manual chapter";
-    readonly "editor.openMap": "Open map...";
-    readonly "editor.overridesWhileOpen": "Overrides \"{label}\" while this map is open.";
-    readonly "editor.panoIdNotFound": "Configured pano ID could not be found. Falling back to lat/lng.";
-    readonly "editor.panoOpenFailed": "Failed to open panorama provider";
-    readonly "editor.panoramaPoints": "Panorama points (z≥16)";
-    readonly "editor.panoramasCloseZoom": "Panoramas (requires close zoom)";
-    readonly "editor.pasteDocHint": "Paste a link to a Google Doc to load its headings.";
-    readonly "editor.pasteGoogleDoc": "Paste a Google Docs link...";
-    readonly "editor.pasteStyleJson": "Paste a Google Maps style JSON array below.";
-    readonly "editor.petalMaps": "Petal Maps";
-    readonly "editor.pick": "Pick";
-    readonly "editor.pinnedPanoNo": "Pinned pano: no";
-    readonly "editor.pinnedPanoYes": "Pinned pano: yes";
-    readonly "editor.pinSection": "Pin current section";
-    readonly "editor.pinToToolbar": "Pin to toolbar";
-    readonly "editor.pointAlongRoad": "Point view along the road by default";
-    readonly "editor.pointNorth": "Click to point north (N). Ctrl+click to cycle through linked panoramas.";
-    readonly "editor.pointNorthLabel": "Point north";
-    readonly "editor.pointSize": "Point size";
-    readonly "editor.pointsOpacity": "Points opacity";
-    readonly "editor.polygonNamePrompt": "Polygon name";
-    readonly "editor.preferHigherQuality": "Prefer higher quality over newer images";
-    readonly "editor.preferOfficial": "Prefer official coverage over unofficial";
-    readonly "editor.preferOnMapClick": "Prefer on map click";
-    readonly "editor.previousPeriod": "Previous period";
-    readonly "editor.prevLocation": "Go to previous location (Control+Left)";
-    readonly "editor.providerFallbackApple": "When enabled, clicking a spot without Look Around coverage opens Google Street View instead.";
-    readonly "editor.providerFallbackBaiduTencent": "When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.";
-    readonly "editor.providerFallbackYandex": "When enabled, clicking a spot without Yandex coverage opens Google Street View instead.";
-    readonly "editor.providerPreferApple": "When preferred and enabled, blank map clicks create Look Around locations first (Google is the fallback). Only one provider can be preferred at a time. Existing pins always open by their own provider field.";
-    readonly "editor.providerPreferBaiduTencent": "When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.";
-    readonly "editor.providerPreferYandex": "When preferred, blank clicks try enabled inject providers (Baidu / Tencent / Yandex) in parallel — first response becomes the default pano, siblings appear in the date picker. Existing pins always open by their own provider field.";
-    readonly "editor.providersTablist": "Providers";
-    readonly "editor.pruneDuplicates": "Prune duplicates";
-    readonly "editor.scoringTitle": "Scoring";
-    readonly "editor.scoreBoundsAuto": "Automatic based on locations";
-    readonly "editor.scoreBoundsFixed": "Fixed bounds";
-    readonly "editor.scoreBoundsWorld": "World map (ACW, {distance})";
-    readonly "editor.compassEast": "E";
-    readonly "editor.compassNorth": "N";
-    readonly "editor.compassSouth": "S";
-    readonly "editor.compassWest": "W";
-    readonly "editor.refetchDocument": "Re-fetch document (bypass cache)";
-    readonly "editor.refreshDocument": "Refresh document";
-    readonly "editor.removeAlias": "Remove alias";
-    readonly "editor.removeFromAll": "Remove from all ({count} locations)";
-    readonly "editor.removeFromSelection": "Remove from selection ({count} locations)";
-    readonly "editor.removeFromToolbar": "Remove from toolbar";
-    readonly "editor.removeSeparator": "Remove separator";
-    readonly "editor.renameFieldHelp": "Rename {from} to {to} across {count} location(s). This cannot be undone.";
-    readonly "editor.renameInSelection": "Rename in selection ({count} locations)";
-    readonly "editor.renameTagLabel": "Rename:";
-    readonly "editor.renameTagsInside.one": "Rename {count} tag inside";
-    readonly "editor.renameTagsInside.other": "Rename {count} tags inside";
-    readonly "editor.replacePlaceholder": "Replace with...";
-    readonly "editor.replaceTags.one": "Replace {count} tag";
-    readonly "editor.replaceTags.other": "Replace {count} tags";
-    readonly "editor.downloadScreenshot": "Download screenshot";
-    readonly "editor.resetZoom": "Reset zoom";
-    readonly "editor.returnToSpawn": "Return to spawn (R)";
-    readonly "editor.reviewProgress": "Reviewing {pos} / {total} · {reviewed} reviewed";
-    readonly "editor.reviewSelection": "Review selection";
-    readonly "editor.saveAsTag": "Save as tag";
-    readonly "editor.scopeSaved": "Saved selection";
-    readonly "editor.seen": "Seen";
-    readonly "editor.selectDoclinkTag": "Select a tag with document links to view its section.";
-    readonly "editor.selected": "selected";
-    readonly "editor.selectField": "Select a field...";
-    readonly "editor.selectingNewLocations": "Selecting new locations";
-    readonly "editor.selectionOptions": "Selection options";
-    readonly "editor.selectOnlyMode": "Select-only mode";
-    readonly "editor.set": "Set";
-    readonly "editor.showLines": "Show lines:";
-    readonly "editor.showLinkedSection": "Show linked section only";
-    readonly "editor.showLocationPreviews": "Show location previews when hovering the map";
-    readonly "editor.showSearchRadiusCursor": "Show click search radius at cursor";
-    readonly "editor.showWholeDocument": "Show whole document";
-    readonly "editor.smallerMinimap": "Smaller minimap";
-    readonly "editor.smallerPreview": "Smaller location preview";
-    readonly "editor.spacedApartSuffix": ", at least {distance}m apart";
-    readonly "editor.specificPanorama": "Specific Panorama";
-    readonly "editor.streetViewLayer": "Street View";
-    readonly "editor.streetViewProviders": "Street View providers";
-    readonly "editor.styleLabel": "Style:";
-    readonly "editor.styleName": "Style name";
-    readonly "editor.styleJsonPlaceholder": '[{"featureType":"water","stylers":[{"color":"#ff0000"}]}]';
-    readonly "editor.svAll": "All";
-    readonly "editor.svLayerOpacity": "Street View layer opacity";
-    readonly "editor.svOfficial": "Official";
-    readonly "editor.svUnofficial": "Unofficial";
-    readonly "editor.switchMap": "Switch map";
-    readonly "editor.tagNamePlaceholder": "Tag name...";
-    readonly "editor.tagRenamesIrreversible": "Tag renames cannot be undone.";
-    readonly "editor.tagsAffected.one": "{count} tag affected";
-    readonly "editor.tagsAffected.other": "{count} tags affected";
-    readonly "editor.tagsLabel": "Tags";
-    readonly "editor.tagSortAmount": "amount";
-    readonly "editor.tagSortDefault": "default";
-    readonly "editor.tagSortName": "name";
-    readonly "editor.tagsPickOne": "Tags (pick one to arm)";
-    readonly "editor.takesKeyFrom": "Takes the key from \"{name}\".";
-    readonly "editor.targetFolder": "Target folder";
-    readonly "editor.targetFolderPlaceholder": "e.g. Europe/France (blank = top level)";
-    readonly "editor.terrain": "Terrain";
-    readonly "editor.thinnerLines": "Make the lines thinner";
-    readonly "editor.toggleDoclinkPanel": "Toggle doclink panel";
-    readonly "editor.toggleFullscreen": "Toggle fullscreen ({key})";
-    readonly "editor.toggleWholeDocument": "Toggle whole document";
-    readonly "editor.top": "Top";
-    readonly "editor.trekkerLine": "Trekker line";
-    readonly "editor.trekkerPoint": "Trekker point";
-    readonly "editor.typeColumn": "Type";
-    readonly "editor.typeCommand": "Type command";
-    readonly "editor.unGhostSelection": "Un-ghost selection";
-    readonly "editor.unpinFollowTags": "Unpin (follow selected tags)";
-    readonly "editor.unpinFromToolbar": "Unpin from toolbar";
-    readonly "editor.unsupportedDoclink": "Unsupported document link: {url}";
-    readonly "editor.updateFilter": "Update filter";
-    readonly "editor.usePanoIdDefault": "Use Pano ID locations by default";
-    readonly "editor.viewportLock": "VIEWPORT LOCK h {heading} p {pitch} z {zoom}";
-    readonly "editor.yandexMaps": "Yandex Maps";
-    readonly "editor.zoomReadout": "zoom {zoom}";
-    readonly "editor.altitudeZoom": "{altitude}m · zoom {zoom}";
-    readonly "editor.addAliasSubmit": "Add alias";
-    readonly "import.addTagPlaceholder": "Add tag...";
-    readonly "import.discard": "Discard";
-    readonly "import.dontWarnAgain": "Don't warn again for large imports";
-    readonly "import.error": "Import failed: {message}";
-    readonly "import.fields": "Fields";
-    readonly "import.importAndCommit": "Import and commit";
-    readonly "import.importing": "Importing...";
-    readonly "import.largeImportBody": "This import adds {count} locations and will commit immediately. Continue?";
-    readonly "import.locationCount.one": "{count} location";
-    readonly "import.locationCount.other": "{count} locations";
-    readonly "import.tagAllImported": "Tag all imported locations";
-    readonly "import.tagsInFile": "Tags in file";
-    readonly "import.title": "Import";
-    readonly "import.warnings.one": "{count} warning";
-    readonly "import.warnings.other": "{count} warnings";
-    readonly "export.asCsv": "As CSV";
-    readonly "export.asGeoJson": "As GeoJSON";
-    readonly "export.asJson": "As JSON";
-    readonly "export.bypassUnpanned": "Bypass unpanned check";
-    readonly "export.bypassUnpannedHelp": "Export locations even if they haven't been panned yet.";
-    readonly "export.csvNote": "CSV exports core fields only; extra metadata is omitted.";
-    readonly "export.fileName": "File name";
-    readonly "export.geoJsonNote": "Point features with tags and selected metadata fields.";
-    readonly "export.saveAppData": "Save app data";
-    readonly "export.saveAppDataHelp": "Includes tags, selections, and other app-specific metadata.";
-    readonly "export.saveZoomLevels": "Save zoom levels";
-    readonly "bulk.backwards": "Backwards";
-    readonly "bulk.cancelledAt": "Cancelled at {done} / {total}";
-    readonly "bulk.clearedFields": "Cleared fields on {count} locations";
-    readonly "bulk.clearFields.one": "Clear {count} field";
-    readonly "bulk.clearFields.other": "Clear {count} fields";
-    readonly "bulk.clearMetadataFields": "Clear metadata fields";
-    readonly "bulk.doneDownloaded": "Downloaded {ok} panorama(s)";
-    readonly "bulk.doneDownloadedFailed": ", {failed} failed";
-    readonly "bulk.donePinned": "Pinned {count} locations";
-    readonly "bulk.doneProcessed": "Processed {count} locations";
-    readonly "bulk.doneProcessedIn": " in {seconds}s";
-    readonly "bulk.doneValidated": "Validated {count} locations";
-    readonly "bulk.downloadPanoramas": "Download panoramas";
-    readonly "bulk.enrichMetadata": "Enrich metadata";
-    readonly "bulk.equirectangular": "Equirectangular";
-    readonly "bulk.equirectHint": "Equirectangular / perspective: all providers enabled.";
-    readonly "bulk.expressionHint": "Constant or expression over fields (e.g. sunAzimuth, drivingDirection, lat).";
-    readonly "bulk.failed": "failed";
-    readonly "bulk.field": "Field";
-    readonly "bulk.fieldNamePlaceholder": "Field name";
-    readonly "bulk.forwards": "Forwards";
-    readonly "bulk.invalidExpression": "Invalid expression: {error}";
-    readonly "bulk.invalidExpressionShort": "Invalid expression";
-    readonly "bulk.locationsNotPinned": "{count} locations not pinned to pano ID";
-    readonly "bulk.mode": "Mode";
-    readonly "bulk.newField": "New field...";
-    readonly "bulk.newFieldName": "New field name";
-    readonly "bulk.noData": "No data";
-    readonly "bulk.noEnrichmentFields": "No enrichment fields enabled.";
-    readonly "bulk.noMetadataFields": "No metadata fields on these locations.";
-    readonly "bulk.nothingToProcess": "Nothing to process.";
-    readonly "bulk.numberPlaceholder": "Number or expression";
-    readonly "bulk.operationFailed": "Operation failed";
-    readonly "bulk.panHeadingsAlongRoad": "Pan headings along road";
-    readonly "bulk.pannedHeadings": "Panned headings on {count} locations";
-    readonly "bulk.panoramaSaved": "Panorama saved";
-    readonly "bulk.perspective": "Perspective";
-    readonly "bulk.pinToPanoId": "Pin to Pano ID";
-    readonly "bulk.progress": "{done} / {total}";
-    readonly "bulk.reEnrich": "Re-enrich even if fields already exist";
-    readonly "bulk.rePin": "Re-pin even if already pinned";
-    readonly "bulk.savedPanoramasZip": "Saved {count} panoramas as ZIP";
-    readonly "bulk.saveFailed": "Save failed";
-    readonly "bulk.saveImage": "Save image";
-    readonly "bulk.saveZip": "Save ZIP";
-    readonly "bulk.selectFailed": "Select failed";
-    readonly "bulk.selectField": "Select field";
-    readonly "bulk.setFieldButton": "Set field";
-    readonly "bulk.setFieldOn": "Set field on {count} locations";
-    readonly "bulk.setMetadataField": "Set metadata field";
-    readonly "bulk.skippedMissingFields": "({count} skipped — missing fields)";
-    readonly "bulk.start": "Start";
-    readonly "bulk.thumbnail": "Thumbnail";
-    readonly "bulk.thumbnailHint": "Thumbnail: Google, Baidu, Tencent (Apple and Yandex are skipped).";
-    readonly "bulk.tile": "Tile";
-    readonly "bulk.tileHint": "Tile: Google, Baidu, Tencent, Yandex. Yandex zoom is reversed.";
-    readonly "bulk.tileX": "Tile X";
-    readonly "bulk.tileY": "Tile Y";
-    readonly "bulk.updated": "updated";
-    readonly "bulk.useLatestTimeline": "Use latest timeline date when pinning";
-    readonly "bulk.validateLocations": "Validate locations";
-    readonly "bulk.value": "Value";
-    readonly "bulk.values": "{count} values";
-    readonly "bulk.withoutPanoId": "{count} locations without a pinned pano ID";
-    readonly "bulk.withoutPanoIdProvider": "{count} locations without pano ID or unsupported provider";
-    readonly "bulk.zoomLevel": "Zoom level";
-    readonly "seen.allCountries": "All countries";
-    readonly "seen.allMaps": "All maps";
-    readonly "seen.noPanosFound": "No panoramas found.";
-    readonly "seen.searchAddress": "Search address...";
-    readonly "seen.title": "Seen locations ({count})";
-    readonly "review.clickToRename": "Click to rename";
-    readonly "review.completed": "Completed";
-    readonly "review.defaultName": "Review session";
-    readonly "review.deleteSession": "Delete session";
-    readonly "review.inProgress": "In progress";
-    readonly "review.noActive": "No active review sessions.";
-    readonly "review.noCompleted": "No completed review sessions.";
-    readonly "review.resume": "Resume";
-    readonly "review.reviewedProgress": "{reviewed} / {total} reviewed";
-    readonly "review.selectReviewed": "Select reviewed locations";
-    readonly "review.selectUnreviewed": "Select unreviewed locations";
-    readonly "review.started": "Started {date}";
-    readonly "review.updated": "Updated {time}";
-    readonly "versionHistory.areYouSure": "Are you sure?";
-    readonly "versionHistory.date": "Date";
-    readonly "versionHistory.hash": "Hash";
-    readonly "versionHistory.latest": "Latest";
-    readonly "versionHistory.locations": "Locations";
-    readonly "versionHistory.noChanges": "No changes";
-    readonly "versionHistory.noCommits": "No commits yet.";
-    readonly "versionHistory.restore": "Restore";
-    readonly "versionHistory.restoring": "Restoring...";
-    readonly "versionHistory.revert": "Revert";
-    readonly "versionHistory.viewChanges": "View changes";
-    readonly "merge.merging": "Merging...";
-    readonly "merge.noGroups": "No duplicate groups within {distance}m.";
-    readonly "merge.preview": "Found {groups} groups — {mergedAway} locations would merge away (largest group: {largest}).";
-    readonly "copyToMap.addMapPlaceholder": "Add map...";
-    readonly "copyToMap.hint": "Press a number key (1–9) while viewing a location to copy it to these maps.";
-    readonly "copyToMap.missingMap": "(missing map)";
-    readonly "copyToMap.searchPlaceholder": "Search maps...";
-    readonly "copyToMap.unnamed": "(unnamed)";
-    readonly "selection.and": "AND";
-    readonly "selection.bottom": "Bottom";
-    readonly "selection.bottomK": "Bottom {k} by {field}";
-    readonly "selection.commands": "Commands...";
-    readonly "selection.coordinateLocations": "Coordinate locations";
-    readonly "selection.defaultName": "Selection";
-    readonly "selection.deselect": "Deselect";
-    readonly "selection.distanceM": "Distance (m):";
-    readonly "selection.downloadGeoJson": "Download GeoJSON";
-    readonly "selection.duplicates": "Duplicates ({distance}m)";
-    readonly "selection.editFilter": "Edit filter";
-    readonly "selection.everything": "Everything";
-    readonly "selection.ghost": "Ghost selection";
-    readonly "selection.ghostHint": "Ghost selection (Alt-click to isolate)";
-    readonly "selection.hasField": "has {field}";
-    readonly "selection.intersection": "Intersection";
-    readonly "selection.invert": "Invert selection";
-    readonly "selection.invertNamed": "Invert: {name}";
-    readonly "selection.locationTime": " (location time)";
-    readonly "selection.manual": "Manual selection";
-    readonly "selection.meters": "Meters";
-    readonly "selection.minDistance": "Min distance (m)";
-    readonly "selection.missingField": "missing {field}";
-    readonly "selection.nextPeriod": "Next period";
-    readonly "selection.ofTotal": "of {total}";
-    readonly "selection.options": "Selection options";
-    readonly "selection.or": "OR";
-    readonly "selection.panoIds": "Pano ID locations";
-    readonly "selection.pickCount": "Count";
-    readonly "selection.polygon": "Polygon";
-    readonly "selection.polygonNamed": "Polygon: {name}";
-    readonly "selection.polygonNamePrompt": "Polygon name";
-    readonly "selection.previousPeriod": "Previous period";
-    readonly "selection.pruneDuplicates": "Prune duplicates";
-    readonly "selection.recolor": "Recolor";
-    readonly "selection.review": "Review selection";
-    readonly "selection.reviewed": "Reviewed";
-    readonly "selection.saveAsTag": "Save as tag";
-    readonly "selection.selectedCount": "{count} selected";
-    readonly "selection.tag": "Tag: {name}";
-    readonly "selection.top": "Top";
-    readonly "selection.topK": "Top {k} by {field}";
-    readonly "selection.uncommitted": "Uncommitted";
-    readonly "selection.unghost": "Un-ghost selection";
-    readonly "selection.union": "Union";
-    readonly "selection.unpanned": "Unpanned";
-    readonly "selection.unreviewed": "Unreviewed";
-    readonly "selection.untagged": "Untagged";
-    readonly "filter.addFilter": "Add filter";
-    readonly "filter.copyToMax": "Copy to max";
-    readonly "filter.copyToMin": "Copy to min";
-    readonly "filter.lengthPlaceholder": "Length";
-    readonly "filter.maxPlaceholder": "Max";
-    readonly "filter.op.between": "between";
-    readonly "filter.op.between_anytime": "between (any date)";
-    readonly "filter.op.between_anyyear": "between (any year)";
-    readonly "filter.op.contains": "contains";
-    readonly "filter.op.eq": "=";
-    readonly "filter.op.gt": ">";
-    readonly "filter.op.gte": ">=";
-    readonly "filter.op.has": "has";
-    readonly "filter.op.length.between": "length between";
-    readonly "filter.op.length.eq": "length =";
-    readonly "filter.op.length.gt": "length >";
-    readonly "filter.op.length.gte": "length >=";
-    readonly "filter.op.length.lt": "length <";
-    readonly "filter.op.length.lte": "length <=";
-    readonly "filter.op.length.neq": "length !=";
-    readonly "filter.op.lt": "<";
-    readonly "filter.op.lte": "<=";
-    readonly "filter.op.neq": "!=";
-    readonly "filter.op.notcontains": "does not contain";
-    readonly "filter.op.nothas": "does not have";
-    readonly "filter.updateFilter": "Update filter";
-    readonly "filter.valuePlaceholder": "Value";
-    readonly "validation.goodcamAvailable": "Badcam, but good coverage available";
-    readonly "validation.notFound": "Not found";
-    readonly "validation.ok": "Valid location";
-    readonly "validation.panoIdBroke": "Pano ID broke";
-    readonly "validation.unofficial": "Unofficial";
-    readonly "validation.updateApplied": "Coverage updated since last view";
-    readonly "validation.updateAvailable": "Newer coverage available";
-    readonly "mapLayer.adjustingMarkerOpacity": "Adjusting marker opacity";
-    readonly "mapLayer.adjustingSvOpacity": "Adjusting Street View opacity";
-    readonly "mapLayer.all": "All";
-    readonly "mapLayer.blobbyLayer": "Use blobby layer while zoomed out";
-    readonly "mapLayer.coverageLineColor": "Coverage line color";
-    readonly "mapLayer.emphasiseCountryBorders": "Emphasise country borders";
-    readonly "mapLayer.emphasiseSubdivisionBorders": "Emphasise subdivision borders";
-    readonly "mapLayer.hideHighways": "Hide highways";
-    readonly "mapLayer.hidePoi": "Hide points of interest";
-    readonly "mapLayer.hideRoadLabels": "Hide road labels";
-    readonly "mapLayer.hideTransit": "Hide transit";
-    readonly "mapLayer.hybrid": "Hybrid";
-    readonly "mapLayer.labels": "Labels";
-    readonly "mapLayer.layers": "Layers";
-    readonly "mapLayer.markerOpacity": "Marker layer opacity";
-    readonly "mapLayer.official": "Official";
-    readonly "mapLayer.panoramas": "Panoramas (requires close zoom)";
-    readonly "mapLayer.pointAlongRoad": "Point view along the road by default";
-    readonly "mapLayer.preferOfficial": "Prefer official coverage over unofficial";
-    readonly "mapLayer.preferQuality": "Prefer higher quality over newer images";
-    readonly "mapLayer.roadmap": "Roadmap";
-    readonly "mapLayer.satellite": "Satellite";
-    readonly "mapLayer.showLines": "Show lines:";
-    readonly "mapLayer.streetView": "Street View";
-    readonly "mapLayer.svOpacity": "Street View layer opacity";
-    readonly "mapLayer.terrain": "Terrain";
-    readonly "mapLayer.thinnerLines": "Make the lines thinner";
-    readonly "mapLayer.unofficial": "Unofficial";
-    readonly "mapLayer.vector": "Vector";
-    readonly "mapStyles.copyJson": "Copy JSON";
-    readonly "mapStyles.deleteStyle": "Delete style";
-    readonly "mapStyles.manage": "Manage map styles";
-    readonly "mapStyles.styleName": "Style name";
-    readonly "map.contextMenu": "Context menu";
-    readonly "map.zoomIn": "Zoom in";
-    readonly "map.zoomOut": "Zoom out";
-    readonly "commandPalette.group.Bulk Operations": "Bulk Operations";
-    readonly "commandPalette.group.Map": "Map";
-    readonly "commandPalette.group.Selections": "Selections";
-    readonly "commandPalette.group.Tags": "Tags";
-    readonly "commandPalette.noOtherMaps": "No other maps.";
-    readonly "commandPalette.openMap": "Open map...";
-    readonly "commandPalette.pin": "Pin to toolbar";
-    readonly "commandPalette.placeholder": "Type command";
-    readonly "commandPalette.switchMap": "Switch map";
-    readonly "commandPalette.title": "Command Palette";
-    readonly "commandPalette.unpin": "Unpin from toolbar";
-    readonly "pinnedToolbar.remove": "Remove from toolbar";
-    readonly "savedSelection.namePlaceholder": "Name this selection...";
-    readonly "savedSelection.noneSaveable": "No saveable selections active.";
-    readonly "savedSelection.noneSaved": "No saved selections.";
-    readonly "enrichment.comparison.auto": "Auto";
-    readonly "enrichment.comparison.categorical": "Categorical";
-    readonly "enrichment.comparison.circular": "Circular";
-    readonly "enrichment.comparison.linear": "Numeric";
-    readonly "enrichment.coveragePercent": "{pct}% of locations";
-    readonly "enrichment.deleteField": "Delete field";
-    readonly "enrichment.enrichLocations": "Enrich locations";
-    readonly "enrichment.fieldType.array": "Array";
-    readonly "enrichment.fieldType.boolean": "Boolean";
-    readonly "enrichment.fieldType.date": "Date/time";
-    readonly "enrichment.fieldType.enum": "Enum";
-    readonly "enrichment.fieldType.number": "Number";
-    readonly "enrichment.fieldType.string": "Text";
-    readonly "enrichment.mergeField": "Merge field";
-    readonly "enrichment.notEnrichmentField": "Not an enrichment field";
-    readonly "enrichment.openManualChapter": "Open manual chapter";
-    readonly "enrichment.renameField": "Rename field";
-    readonly "tag.addAlias": "Add alias...";
-    readonly "tag.addPlaceholder": "Add a tag…";
-    readonly "tag.bulkAddPlaceholder": "Bulk-add tag...";
-    readonly "tag.filterPlaceholder": "Filter tags...";
-    readonly "tag.folderName": "Folder name";
-    readonly "tag.folderPathPlaceholder": "path/to/folder";
-    readonly "tag.hotkeyNote": "Hotkeys apply when the tag bar is focused.";
-    readonly "tag.namePlaceholder": "Tag name...";
-    readonly "tag.newFolder": "New folder";
-    readonly "tag.newFolderIn": "New folder in \"{path}\"";
-    readonly "tag.newSubfolder": "New subfolder...";
-    readonly "tag.removeAlias": "Remove alias";
-    readonly "tag.sort.amount": "Amount";
-    readonly "tag.sort.default": "Default";
-    readonly "tag.sort.name": "Name";
-    readonly "applyFieldAsTags.bucketWidth": "Bucket width";
-    readonly "applyFieldAsTags.noTimezoneData": "No timezone data on locations.";
-    readonly "provider.apple": "Apple Look Around";
-    readonly "provider.baidu": "Baidu";
-    readonly "provider.carLine": "Car line";
-    readonly "provider.enable": "Enable";
-    readonly "provider.enableAll": "Enable all providers";
-    readonly "provider.hint.apple.fallback": "When enabled, clicking a spot without Look Around coverage opens Google Street View instead.";
-    readonly "provider.hint.apple.prefer": "When preferred and enabled, blank map clicks create Look Around locations first (Google is the fallback). Only one provider can be preferred at a time. Existing pins always open by their own provider field.";
-    readonly "provider.hint.baidu.fallback": "When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.";
-    readonly "provider.hint.baidu.prefer": "When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.";
-    readonly "provider.hint.tencent.fallback": "When enabled, clicking a spot without Baidu/Tencent coverage opens Google Street View instead.";
-    readonly "provider.hint.tencent.prefer": "When preferred, blank clicks try Baidu/Tencent before other alts (e.g. Apple). If both Baidu and Tencent are enabled they are fetched in parallel — first response becomes the default pano, the other appears in the date picker. Existing pins always open by their own provider field.";
-    readonly "provider.hint.yandex.fallback": "When enabled, clicking a spot without Yandex coverage opens Google Street View instead.";
-    readonly "provider.hint.yandex.prefer": "When preferred, blank clicks try enabled inject providers (Baidu / Tencent / Yandex) in parallel — first response becomes the default pano, siblings appear in the date picker. Existing pins always open by their own provider field.";
-    readonly "provider.lines": "Lines";
-    readonly "provider.linesOpacity": "Lines opacity";
-    readonly "provider.linesPmtiles": "Lines (PMTiles)";
-    readonly "provider.linesRaster": "Lines (raster)";
-    readonly "provider.linesRasterMvt": "Lines (raster + MVT)";
-    readonly "provider.lineWidth": "Line width";
-    readonly "provider.points": "Panorama points (z≥16)";
-    readonly "provider.pointSize": "Point size";
-    readonly "provider.pointsOpacity": "Points opacity";
-    readonly "provider.preferOnClick": "Prefer on map click";
-    readonly "provider.resetDefaults": "Reset to defaults";
-    readonly "provider.section.behavior": "Behavior";
-    readonly "provider.section.colors": "Colors";
-    readonly "provider.section.coverage": "Coverage layers";
-    readonly "provider.sidebarTitle": "Street View providers";
-    readonly "provider.tencent": "Tencent";
-    readonly "provider.trekkerLine": "Trekker line";
-    readonly "provider.yandex": "Yandex";
-    readonly "doclink.openBrowser": "Open in browser";
-    readonly "doclink.pasteLinkPlaceholder": "Paste document link...";
-    readonly "doclink.pin": "Pin panel";
-    readonly "doclink.refresh": "Refresh";
-    readonly "doclink.removeAllLinks": "Remove all links";
-    readonly "doclink.showSection": "Show section only";
-    readonly "doclink.showWholeDoc": "Show whole document";
-    readonly "doclink.title": "Doclink";
-    readonly "pano.badge.apple": "apple";
-    readonly "pano.badge.backpack": "Backpack";
-    readonly "pano.badge.badcam": "Badcam";
-    readonly "pano.badge.baidu": "Baidu";
-    readonly "pano.badge.bigCam": "Big Cam";
-    readonly "pano.badge.gen1": "Gen1";
-    readonly "pano.badge.gen2": "Gen2/3";
-    readonly "pano.badge.gen4": "Gen4";
-    readonly "pano.badge.lowCam": "Low Cam";
-    readonly "pano.badge.smallCam": "Small Cam";
-    readonly "pano.badge.tencent": "Tencent";
-    readonly "pano.badge.trekker": "Trekker";
-    readonly "pano.badge.tripod": "Tripod";
-    readonly "pano.badge.unofficial": "unofficial";
-    readonly "pano.badge.yandex": "Yandex";
-    readonly "pano.compassTooltip": "Click to point north (N). Ctrl+click to cycle through linked panoramas.";
-    readonly "pano.copyLinkHint": "Copy link — Shift: without tags, Alt: long URL";
-    readonly "pano.default": "Default";
-    readonly "pano.direction.E": "E";
-    readonly "pano.direction.N": "N";
-    readonly "pano.direction.S": "S";
-    readonly "pano.direction.W": "W";
-    readonly "pano.group.default": "Default / auto-updating";
-    readonly "pano.group.specific": "Specific Panorama";
-    readonly "pano.jumpBackward": "Jump backward 100m";
-    readonly "pano.jumpForward": "Jump forward 100m";
-    readonly "pano.nextLocation": "Go to next location (Control+Right)";
-    readonly "pano.noDates": "No dates";
-    readonly "pano.openInMaps": "Open in maps";
-    readonly "pano.pinnedNo": "Pinned pano: no";
-    readonly "pano.pinnedYes": "Pinned pano: yes";
-    readonly "pano.pointNorth": "Point north";
-    readonly "pano.prevLocation": "Go to previous location (Control+Left)";
-    readonly "pano.resetZoom": "Reset zoom";
-    readonly "pano.returnToSpawn": "Return to spawn (R)";
-    readonly "pano.zoomIn": "Zoom in";
-    readonly "pano.zoomOut": "Zoom out";
-    readonly "command.applyFieldAsTags": "Apply metadata as tags";
-    readonly "command.applySavedSelection": "Apply saved selection...";
-    readonly "command.assignDoclinks": "Assign document links...";
-    readonly "command.bulkClearFields": "Clear metadata fields";
-    readonly "command.bulkDownloadPanoramas": "Download panoramas";
-    readonly "command.bulkEnrich": "Enrich metadata fields";
-    readonly "command.bulkHeadingRoad": "Pan headings along road";
-    readonly "command.bulkPinPano": "Pin locations to pano ID";
-    readonly "command.bulkSetField": "Set metadata field value";
-    readonly "command.bulkValidate": "Validate locations";
-    readonly "command.copyToMap": "Copy location to map via hotkeys...";
-    readonly "command.deleteSelectedTags": "Delete selected tags";
-    readonly "command.deselectAll": "Deselect everything";
-    readonly "command.downloadPolygonGeojson": "Download polygon selections as GeoJSON";
-    readonly "command.export": "Export";
-    readonly "command.filterByMetadata": "Filter by metadata...";
-    readonly "command.findDuplicates": "Find duplicates...";
-    readonly "command.ghostSelections": "Ghost selections";
-    readonly "command.import": "Import file";
-    readonly "command.intersectSelections": "Intersect (AND) selections";
-    readonly "command.invertSelection": "Invert selection";
-    readonly "command.loadGeojson": "Load shapes from GeoJSON as selection";
-    readonly "command.mergeDuplicates": "Merge duplicates...";
-    readonly "command.openHistory": "Open version history";
-    readonly "command.openSeen": "Open seen locations";
-    readonly "command.quickCopyToMap": "Copy location to map...";
-    readonly "command.redo": "Redo";
-    readonly "command.reviewSelected": "Review selected locations";
-    readonly "command.reviewSessions": "Review sessions";
-    readonly "command.save": "Commit map";
-    readonly "command.saveSelections": "Save current selections...";
-    readonly "command.selectAll": "Select everything";
-    readonly "command.selectionDeleteLocations": "Delete selected locations";
-    readonly "command.selectNoPanoid": "Select non-Pano ID locations";
-    readonly "command.selectPanoid": "Select Pano ID locations";
-    readonly "command.selectRandom": "Pick random locations from selection";
-    readonly "command.selectReviewed": "Select reviewed locations";
-    readonly "command.selectSpaced": "Pick evenly spaced locations from selection";
-    readonly "command.selectUncommitted": "Select uncommitted locations";
-    readonly "command.selectUnpanned": "Select unpanned locations";
-    readonly "command.selectUntagged": "Select untagged locations";
-    readonly "command.tagDownloadCsv": "Download tag counts as CSV";
-    readonly "command.copyTagsCount": "Copy tags count";
-    readonly "command.tagFindReplace": "Find and replace in tag names";
-    readonly "command.toggleSeenOverlay": "Toggle seen locations overlay";
-    readonly "command.topK": "Select top/bottom K...";
-    readonly "command.undo": "Undo";
-    readonly "command.unionSelections": "Union (OR) selections";
-    readonly "hotkey.centerRoad": "Center toward nearest road direction";
-    readonly "hotkey.closeMap": "Close map";
-    readonly "hotkey.copyLink": "Copy Street View link";
-    readonly "hotkey.countrySelect": "Hold + click for country (+Shift for subdivision)";
-    readonly "hotkey.cycleMovementMode": "Cycle movement mode";
-    readonly "hotkey.deletePolygon": "Hold + click to delete polygon";
-    readonly "hotkey.downloadPanoTile": "Download panorama";
-    readonly "hotkey.duplicateLocation": "Duplicate location";
-    readonly "hotkey.followRoad": "Follow linked panos along road";
-    readonly "hotkey.jumpBackward": "Jump backward 100m";
-    readonly "hotkey.jumpForward": "Jump forward 100m";
-    readonly "hotkey.locationClose": "Close location";
-    readonly "hotkey.locationDelete": "Delete location";
-    readonly "hotkey.locationSave": "Save location";
-    readonly "hotkey.mapZoomBounds": "Zoom to bounds";
-    readonly "hotkey.mapZoomIn": "Zoom in";
-    readonly "hotkey.mapZoomOut": "Zoom out";
-    readonly "hotkey.mapZoomReset": "Zoom all the way out";
-    readonly "hotkey.mapZoomSelection": "Zoom to selection bounds";
-    readonly "hotkey.nextPanoDate": "Next date cycle";
-    readonly "hotkey.openCommandPalette": "Open command palette";
-    readonly "hotkey.openManualSearch": "Search the manual";
-    readonly "hotkey.panDown": "Pan down";
-    readonly "hotkey.panLeft": "Pan left";
-    readonly "hotkey.panoLookDown": "Look down";
-    readonly "hotkey.panoLookLeft": "Look left";
-    readonly "hotkey.panoLookRight": "Look right";
-    readonly "hotkey.panoLookUp": "Look up";
-    readonly "hotkey.panoMoveBackward": "Move backward";
-    readonly "hotkey.panoMoveForward": "Move forward";
-    readonly "hotkey.panoZoomReset": "Zoom all the way out";
-    readonly "hotkey.panRight": "Pan right";
-    readonly "hotkey.panToLocation": "Pan map to location";
-    readonly "hotkey.panUp": "Pan up";
-    readonly "hotkey.pointNorth": "Point north";
-    readonly "hotkey.prevPanoDate": "Previous date cycle";
-    readonly "hotkey.quicktagSlot": "Quick-tag slot {n}";
-    readonly "hotkey.refreshPano": "Refresh panorama";
-    readonly "hotkey.returnToSpawn": "Return to spawn";
-    readonly "hotkey.reviewNext": "Next location";
-    readonly "hotkey.reviewPrev": "Previous location";
-    readonly "hotkey.spin180": "Spin 180°";
-    readonly "hotkey.toggleCrosshair": "Toggle crosshair";
-    readonly "hotkey.toggleFullscreen": "Toggle fullscreen";
-    readonly "hotkey.toggleFullscreenMap": "Toggle fullscreen map";
-    readonly "hotkey.toggleHideCar": "Toggle hide car";
-    readonly "hotkey.toggleMarkerOpacity": "Toggle marker layer opacity";
-    readonly "hotkey.togglePanoUI": "Toggle pano UI";
-    readonly "hotkey.toggleSelectOnly": "Toggle select-only mode";
-    readonly "hotkey.toggleStats": "Toggle stats for nerds";
-    readonly "hotkey.toggleSvOpacity": "Toggle Street View layer opacity";
-    readonly "hotkey.viewportLock": "Lock viewport direction";
-    readonly "hotkey.zoomIn": "Zoom in";
-    readonly "hotkey.zoomOut": "Zoom out";
-    readonly "plugin.pivot.activeSelections": "Active selections";
-    readonly "plugin.pivot.allLocations": "All locations";
-    readonly "plugin.pivot.bucketNumeric": "Bucket numeric values";
-    readonly "plugin.pivot.bucketOff": "Off";
-    readonly "plugin.pivot.bucketOffTooMany": "Off (too many values)";
-    readonly "plugin.pivot.bucketsN": "{n} buckets";
-    readonly "plugin.pivot.colPct": "Col %";
-    readonly "plugin.pivot.columnField": "Column field";
-    readonly "plugin.pivot.columnSortHint": "Click to sort. Ctrl+Click to select matching locations.";
-    readonly "plugin.pivot.computing": "Computing...";
-    readonly "plugin.pivot.count": "Count";
-    readonly "plugin.pivot.emptyNoFields": "No extra fields on this map. Enrich locations first.";
-    readonly "plugin.pivot.emptyNoLocations": "No locations on this map.";
-    readonly "plugin.pivot.emptyNoSelections": "No active selections. Add selections to see pivot data.";
-    readonly "plugin.pivot.emptySavedUnresolved": "Saved selection could not be resolved.";
-    readonly "plugin.pivot.includeNa": "Include N/A";
-    readonly "plugin.pivot.na": "N/A";
-    readonly "plugin.pivot.rowPct": "Row %";
-    readonly "plugin.pivot.rows": "Rows";
-    readonly "plugin.pivot.selection": "Selection";
-    readonly "plugin.pivot.tagLabel": "Tag {id}";
-    readonly "plugin.pivot.tags": "Tags";
-    readonly "plugin.pivot.title": "Pivot Table";
-    readonly "plugin.pivot.total": "Total";
-    readonly "plugin.pivot.values": "Values";
-    readonly "plugin.gradient.apply": "Apply";
-    readonly "plugin.gradient.applyTo": "Apply to";
-    readonly "plugin.gradient.bucketRangeOnly": "Only applies to Range grouping";
-    readonly "plugin.gradient.buckets": "Buckets";
-    readonly "plugin.gradient.emptyNoFields": "No extra fields on this map. Enrich locations first.";
-    readonly "plugin.gradient.field": "Field";
-    readonly "plugin.gradient.gradient": "Gradient";
-    readonly "plugin.gradient.groupBy": "Group by";
-    readonly "plugin.gradient.high": "High";
-    readonly "plugin.gradient.low": "Low";
-    readonly "plugin.gradient.preset.blueRed": "Blue-Red";
-    readonly "plugin.gradient.preset.coolWarm": "Cool-Warm";
-    readonly "plugin.gradient.preset.greenYellowRed": "Green-Yellow-Red";
-    readonly "plugin.gradient.preset.purpleOrange": "Purple-Orange";
-    readonly "plugin.gradient.preset.viridis": "Viridis";
-    readonly "plugin.gradient.projection.day": "Exact day";
-    readonly "plugin.gradient.projection.hourOfDay": "Hour of day";
-    readonly "plugin.gradient.projection.monthOfYear": "Month of year";
-    readonly "plugin.gradient.projection.range": "Range";
-    readonly "plugin.gradient.projection.value": "Value";
-    readonly "plugin.gradient.projection.year": "Year";
-    readonly "plugin.gradient.projection.yearMonth": "Year-month";
-    readonly "plugin.gradient.resultApplied.one": "{count} group applied";
-    readonly "plugin.gradient.resultApplied.other": "{count} groups applied";
-    readonly "plugin.gradient.resultNoGroups": "No groups found";
-    readonly "plugin.gradient.resultTooMany": "{groups} groups. Too many to color (max {max}).";
-    readonly "plugin.gradient.reverse": "Reverse";
-    readonly "plugin.gradient.title": "Gradient";
-    readonly "plugin.generator.advancedFilters": "Advanced filters";
-    readonly "plugin.generator.alongRoad": "Along road";
-    readonly "plugin.generator.betweenYears": "Between years";
-    readonly "plugin.generator.betweenYearsAnd": "and";
-    readonly "plugin.generator.changeAllCaps": "Change all caps";
-    readonly "plugin.generator.checkAllDates": "Check all dates";
-    readonly "plugin.generator.checkLinkedPanos": "Check linked panos";
-    readonly "plugin.generator.chooseRandomDate": "Choose random date in time range";
-    readonly "plugin.generator.commaSeparatedTerms": "Comma-separated terms";
-    readonly "plugin.generator.coverageSettings": "Coverage settings";
-    readonly "plugin.generator.depth": "Depth";
-    readonly "plugin.generator.deviation": "Deviation";
-    readonly "plugin.generator.filterByDistance": "Filter by minimum distance from locations";
-    readonly "plugin.generator.filterByLinks": "Filter by number of links";
-    readonly "plugin.generator.filterByMonth": "Filter by month";
-    readonly "plugin.generator.findCurveLocations": "Find curve locations";
-    readonly "plugin.generator.findGeneration": "Find generation";
-    readonly "plugin.generator.findIntersectionLocations": "Find intersection locations";
-    readonly "plugin.generator.findTrekkerCoverage": "Find trekker coverage";
-    readonly "plugin.generator.findUnofficialCoverage": "Find unofficial coverage";
-    readonly "plugin.generator.from": "From";
-    readonly "plugin.generator.fromMonth": "From month";
-    readonly "plugin.generator.generalSettings": "General settings";
-    readonly "plugin.generator.generators": "Generators";
-    readonly "plugin.generator.gen1": "Gen 1";
-    readonly "plugin.generator.gen23": "Gen 2/3";
-    readonly "plugin.generator.gen4": "Gen 4";
-    readonly "plugin.generator.km": "km";
-    readonly "plugin.generator.locationSettings": "Location settings";
-    readonly "plugin.generator.locationsCapAll": "Locations cap for all regions:";
-    readonly "plugin.generator.locationsPerRegion": "Locations per region:";
-    readonly "plugin.generator.mapMakingSettings": "Map making settings";
-    readonly "plugin.generator.max": "Max";
-    readonly "plugin.generator.min": "Min";
-    readonly "plugin.generator.m": "m";
-    readonly "plugin.generator.oneRegionAtATime": "Only check one country/polygon at a time";
-    readonly "plugin.generator.onlyOnePano": "Only one panorama on location";
-    readonly "plugin.generator.onlyOnePanoHint": "Only allow locations that don't have other nearby coverage in timeframe.";
-    readonly "plugin.generator.output": "Output";
-    readonly "plugin.generator.pause": "Pause";
-    readonly "plugin.generator.pinpointableAngle": "Pinpointable angle";
-    readonly "plugin.generator.pitchDeviation": "Pitch deviation";
-    readonly "plugin.generator.adjustHeading": "Adjust heading";
-    readonly "plugin.generator.adjustPitch": "Adjust pitch";
-    readonly "plugin.generator.adjustZoom": "Adjust zoom";
-    readonly "plugin.generator.radius": "Radius";
-    readonly "plugin.generator.regions": "Regions ({count})";
-    readonly "plugin.generator.rejectDateless": "Reject locations without date";
-    readonly "plugin.generator.rejectGen1": "Reject gen 1";
-    readonly "plugin.generator.rejectNoDescription": "Reject locations without description";
-    readonly "plugin.generator.rejectUnofficial": "Reject unofficial";
-    readonly "plugin.generator.resume": "Resume";
-    readonly "plugin.generator.sampling": "Sampling";
-    readonly "plugin.generator.sampling.blueline": "Coverage";
-    readonly "plugin.generator.sampling.kernels": "Grow";
-    readonly "plugin.generator.sampling.poisson": "Uniform";
-    readonly "plugin.generator.sampling.random": "Random";
-    readonly "plugin.generator.search.contains": "Contains";
-    readonly "plugin.generator.search.endsWith": "Ends with";
-    readonly "plugin.generator.search.exclude": "Exclude";
-    readonly "plugin.generator.search.fullWord": "Full word";
-    readonly "plugin.generator.search.include": "Include";
-    readonly "plugin.generator.search.sectionMatch": "Section match";
-    readonly "plugin.generator.search.startsWith": "Starts with";
-    readonly "plugin.generator.searchInDescription": "Search in panorama description";
-    readonly "plugin.generator.selectRegionHintPrefix": "Draw a polygon on the map or hold ";
-    readonly "plugin.generator.selectRegionHintSuffix": " + click to select a country outline.";
-    readonly "plugin.generator.showSearchCoverage": "Show search coverage";
-    readonly "plugin.generator.showSearchCoverageHint": "Draw where the generator has searched, as a growing overlay. Clears when you stop.";
-    readonly "plugin.generator.skipNearExisting": "Skip near existing map locations";
-    readonly "plugin.generator.speed": "Speed";
-    readonly "plugin.generator.start": "Start";
-    readonly "plugin.generator.stop": "Stop";
-    readonly "plugin.generator.summary.allowingDateless": "allowing dateless";
-    readonly "plugin.generator.summary.allowingNoDescription": "allowing no-description";
-    readonly "plugin.generator.summary.anyCoverage": "any coverage";
-    readonly "plugin.generator.summary.betweenDates": "between {from} and {to}";
-    readonly "plugin.generator.summary.checkingAllDates": "checking all dates";
-    readonly "plugin.generator.summary.checkingLinks": "checking {depth} link hops";
-    readonly "plugin.generator.summary.coverageSuffix": " coverage";
-    readonly "plugin.generator.summary.curvesOver": "curves >{angle}°";
-    readonly "plugin.generator.summary.excludingTerms": "excluding \"{terms}\"";
-    readonly "plugin.generator.summary.facingHeading": "facing {ref}{dev}";
-    readonly "plugin.generator.summary.inMonthRange": "in {fromMonth}–{toMonth}, {fromYear}–{toYear}";
-    readonly "plugin.generator.summary.intersections": "intersections";
-    readonly "plugin.generator.summary.kmFromExisting": "{radius}km from existing";
-    readonly "plugin.generator.summary.kmRadius": "{radius}km radius";
-    readonly "plugin.generator.summary.linksRange": "{min}–{max} links";
-    readonly "plugin.generator.summary.matchingTerms": "matching \"{terms}\"";
-    readonly "plugin.generator.summary.mRadius": "{radius}m radius";
-    readonly "plugin.generator.summary.noGen1": " (no Gen 1)";
-    readonly "plugin.generator.summary.officialCoverage": "official coverage";
-    readonly "plugin.generator.summary.oneRegionAtATime": "one region at a time";
-    readonly "plugin.generator.summary.pitchDev": "pitch ±{dev}°";
-    readonly "plugin.generator.summary.randomDateInTimeline": "random date in timeline";
-    readonly "plugin.generator.summary.ref.alongRoad": "along road";
-    readonly "plugin.generator.summary.ref.backward": "To back of car";
-    readonly "plugin.generator.summary.ref.forward": "To front of car";
-    readonly "plugin.generator.summary.samplingMode": "{mode} sampling";
-    readonly "plugin.generator.summary.skippingExisting": "skipping existing ({radius}m)";
-    readonly "plugin.generator.summary.trekker": " trekker";
-    readonly "plugin.generator.summary.uniqueInTimeframe": "unique in timeframe";
-    readonly "plugin.generator.summary.unofficialCoverage": "unofficial coverage";
-    readonly "plugin.generator.summary.workers": "{count} workers";
-    readonly "plugin.generator.summary.zoomLevel": "zoom {level}";
-    readonly "plugin.generator.tagAs": "Tag as:";
-    readonly "plugin.generator.title": "Map Generator";
-    readonly "plugin.generator.to": "To";
-    readonly "plugin.generator.toBackOfCar": "To back of car";
-    readonly "plugin.generator.toFrontOfCar": "To front of car";
-    readonly "plugin.generator.toMonth": "to";
-    readonly "plugin.generator.unnamedPolygon": "Unnamed polygon";
-    readonly "plugin.generator.visualization": "Visualization";
-    readonly "plugin.generator.zoomLevel": "Zoom level";
-    readonly "plugin.distribution.coordinates": "Coordinates";
-    readonly "plugin.distribution.countryCount.one": "country";
-    readonly "plugin.distribution.countryCount.other": "countries";
-    readonly "plugin.distribution.locationCount.one": "location";
-    readonly "plugin.distribution.locationCount.other": "locations";
-    readonly "plugin.distribution.metadata": "Metadata";
-    readonly "plugin.distribution.metadataDisabledHint": "Enrich metadata fields to enable";
-    readonly "plugin.distribution.summary": "{total} {locations} across {countries}";
-    readonly "plugin.distribution.title": "Distribution";
-    readonly "plugin.distribution.withoutCountryData": " ({count} without country data)";
-    readonly "plugin.disambiguate.analyzing": "Analyzing…";
-    readonly "plugin.disambiguate.badge.categorical": "Categorical";
-    readonly "plugin.disambiguate.badge.circular": "Circular {period}";
-    readonly "plugin.disambiguate.badge.date": "Date";
-    readonly "plugin.disambiguate.badge.lowData": "low data";
-    readonly "plugin.disambiguate.badge.month": "Month";
-    readonly "plugin.disambiguate.badge.numeric": "Numeric";
-    readonly "plugin.disambiguate.concentration": "conc";
-    readonly "plugin.disambiguate.emptyHint": "Select at least two groups to compare - tags, polygons, or filters.";
-    readonly "plugin.disambiguate.errorMinGroups": "Select at least 2 groups to disambiguate.";
-    readonly "plugin.disambiguate.errorNoMap": "No map open";
-    readonly "plugin.disambiguate.excludedOverlap": "{count} excluded (in multiple groups)";
-    readonly "plugin.disambiguate.noData": "no data";
-    readonly "plugin.disambiguate.presenceDiffers": "presence differs across groups (coverage {score})";
-    readonly "plugin.disambiguate.title": "Disambiguate selections";
-    readonly "plugin.sync.bothAdded": "Both sides added";
-    readonly "plugin.sync.bothEdited": "Both sides edited";
-    readonly "plugin.sync.changeKey": "Change key";
-    readonly "plugin.sync.checkingConnection": "Checking connection";
-    readonly "plugin.sync.connection": "Connection";
-    readonly "plugin.sync.deletedHere": "Deleted here";
-    readonly "plugin.sync.deletedOneEditedOther": "Deleted on one side, edited on the other";
-    readonly "plugin.sync.deletedRemote": "Deleted on the remote";
-    readonly "plugin.sync.fieldDiff": "{field}: local {local} · remote {remote}";
-    readonly "plugin.sync.findRemoteMap": "Find a remote map";
-    readonly "plugin.sync.firstSync": "First sync";
-    readonly "plugin.sync.firstSyncPrompt": "This map ({localCount}) and \"{remoteName}\" ({remoteCount}) may both already have locations. How should the first sync go?";
-    readonly "plugin.sync.keepLocal": "Keep local";
-    readonly "plugin.sync.keepLocalAll": "Keep local for all";
-    readonly "plugin.sync.keepRemote": "Keep remote";
-    readonly "plugin.sync.keepRemoteAll": "Keep remote for all";
-    readonly "plugin.sync.lastSynced": "Last synced";
-    readonly "plugin.sync.linkedTo": "Linked to";
-    readonly "plugin.sync.linkThisMap": "Link this map";
-    readonly "plugin.sync.live": "Live";
-    readonly "plugin.sync.liveHint": "Sync continuously while this map is open";
-    readonly "plugin.sync.liveOff": "Off";
-    readonly "plugin.sync.liveOn": "On";
-    readonly "plugin.sync.loadingMaps": "Loading maps";
-    readonly "plugin.sync.mergeKeepBoth": "Merge · keep everything on both sides";
-    readonly "plugin.sync.never": "never";
-    readonly "plugin.sync.off": "Off";
-    readonly "plugin.sync.on": "On";
-    readonly "plugin.sync.openInProvider": "Open in {provider}";
-    readonly "plugin.sync.openMapToLink": "Open a map to link it.";
-    readonly "plugin.sync.outcome": "Pushed +{pushedCreate} ~{pushedUpdate} -{pushedDelete} · Pulled +{pulledCreate} ~{pulledUpdate} -{pulledDelete}{adopted}{conflicts}";
-    readonly "plugin.sync.outcomeAdopted": " · Adopted {count}";
-    readonly "plugin.sync.outcomeConflicts": " · {count} conflict(s) held for review";
-    readonly "plugin.sync.retryLoadingMaps": "Retry loading maps";
-    readonly "plugin.sync.searchMaps.one": "Search {count} map";
-    readonly "plugin.sync.searchMaps.other": "Search {count} maps";
-    readonly "plugin.sync.sync": "Sync";
-    readonly "plugin.sync.syncing": "Syncing...";
-    readonly "plugin.sync.syncNow": "Sync now";
-    readonly "plugin.sync.apiKey": "API key";
-    readonly "plugin.sync.apiKeyHint": "Get one at map-making.app/keys";
-    readonly "plugin.sync.apiKeyPlaceholder": "paste API key";
-    readonly "plugin.sync.unlink": "Unlink";
-    readonly "plugin.sync.useLocal": "Use local · delete remote-only pins";
-    readonly "plugin.sync.useRemote": "Use remote · delete local-only pins";
-    readonly "plugin.sync.validating": "Validating...";
-    readonly "plugin.sync.validate": "Validate";
-    readonly "plugin.sync.countUnknown": "count unknown";
-    readonly "plugin.sync.unnamed": "(unnamed)";
-    readonly "plugin.sync.noneValue": "none";
-    readonly "datePicker.clearTime": "Clear time (whole day)";
-    readonly "datePicker.time": "Time:";
-    readonly "manual.close": "Close manual";
-    readonly "manual.noResults": "No results.";
-    readonly "manual.searchPlaceholder": "Search the manual...";
-    readonly "manual.searchTitle": "Search the manual";
-    readonly "manual.title": "Manual";
-    readonly "map.searchPlaces": "Search for places…";
-    readonly "editor.deleteMapConfirm": "Delete \"{name}\"? This permanently removes the map and its history.";
-    readonly "editor.deleteSelected": "Delete selected";
-    readonly "editor.deleteSelectedTooltip": "Delete selected locations";
-    readonly "editor.keepSelected": "Keep selected";
-    readonly "editor.keepSelectedTooltip": "Delete all duplicate locations, except the selected ones";
-    readonly "editor.mapNameLabel": "Map name:";
-    readonly "editor.noTags": "No tags";
-    readonly "editor.sameLocationHeading.one": "{count} location";
-    readonly "editor.sameLocationHeading.other": "{count} locations";
-    readonly "editor.sameLocationIntro": "Multiple locations were selected around this coordinate. Click one of the thumbnails below to view that location.";
-    readonly "editor.unnamed": "(unnamed)";
-    readonly "stats.build": "Build";
-    readonly "stats.commits": "Commits";
-    readonly "stats.cpuPerFrame": "CPU / frame";
-    readonly "stats.cpuPerFrameValue": "{ms} ms";
-    readonly "stats.dbSize": "DB size";
-    readonly "stats.deckLayersDrawn": "Deck layers drawn";
-    readonly "stats.deckLayersDrawnValue": "{drawn} of {total}";
-    readonly "stats.dpr": "DPR";
-    readonly "stats.estFragments": "Est fragments";
-    readonly "stats.estFragmentsValue": "{count}M / frame";
-    readonly "stats.foreignKeys": "Foreign keys";
-    readonly "stats.fps": "FPS";
-    readonly "stats.fpsValue": "{fps} (p95 {p95} ms, worst {worst} ms)";
-    readonly "stats.gpuMemory": "GPU memory";
-    readonly "stats.gpuMemoryValue": "{total} (buf {buffer}, tex {texture})";
-    readonly "stats.gpuPerFrame": "GPU / frame";
-    readonly "stats.gpuPerFrameValue": "{ms} ms";
-    readonly "stats.jsHeap": "JS heap";
-    readonly "stats.journalMode": "Journal mode";
-    readonly "stats.layers": "Layers";
-    readonly "stats.locations": "Locations";
-    readonly "stats.longTasks": "Long tasks";
-    readonly "stats.longTasksValue": "{count} ({ms} ms)";
-    readonly "stats.maps": "Maps";
-    readonly "stats.markerQuad": "Marker quad";
-    readonly "stats.markerQuadValue": "{size}px {style} x{markerSize} @ {dpr}dpr";
-    readonly "stats.markers": "Markers";
-    readonly "stats.markersNoMap": "no map open";
-    readonly "stats.markersValue": "{total} ({onScreen} on screen)";
-    readonly "stats.na": "n/a";
-    readonly "stats.opensv": "opensv";
-    readonly "stats.overdraw": "Overdraw";
-    readonly "stats.overdrawValue": "{ratio}x viewport";
-    readonly "stats.pendingSaves": "Pending saves";
-    readonly "stats.renderingLive": "Rendering (live)";
-    readonly "stats.selectionOverlay": "Selection overlay";
-    readonly "stats.startup": "Startup";
-    readonly "stats.tags": "Tags";
-    readonly "stats.title": "Stats for nerds";
-    readonly "stats.uptime": "Uptime";
-    readonly "stats.userAgent": "User agent";
-    readonly "stats.version": "Version";
-    readonly "stats.viewport": "Viewport";
-    readonly "stats.webgl": "WebGL";
-    readonly "plugin.geoguessr.signIn": "Sign in to GeoGuessr";
-    readonly "plugin.geoguessr.signOut": "Sign out";
-    readonly "plugin.geoguessr.waitingSignIn": "Waiting for sign-in...";
-    readonly "plugin.jsonEditor.created": "created:";
-    readonly "plugin.jsonEditor.id": "id:";
-    readonly "plugin.jsonEditor.modified": "modified:";
-    readonly "plugin.vali.title": "Vali";
-    readonly "plugin.hyperlapse.title": "Road Trip";
-    readonly "plugin.hyperlapse.source": "Source";
-    readonly "plugin.hyperlapse.locationsHint": "{count} locations selected (need ≥ 2). Order follows each panorama’s driving direction.";
-    readonly "plugin.hyperlapse.parameters": "Parameters";
-    readonly "plugin.hyperlapse.fov": "FOV ({n}°)";
-    readonly "plugin.hyperlapse.fps": "Play FPS ({n})";
-    readonly "plugin.hyperlapse.playbackMode": "Playback mode";
-    readonly "plugin.hyperlapse.modeOnce": "Once";
-    readonly "plugin.hyperlapse.modeLoop": "Loop";
-    readonly "plugin.hyperlapse.modePingpong": "Ping-pong";
-    readonly "plugin.hyperlapse.smooth": "Smooth camera transition";
-    readonly "plugin.hyperlapse.panoZoom": "Pano zoom (1–3)";
-    readonly "plugin.hyperlapse.look": "Look";
-    readonly "plugin.hyperlapse.lookMode": "Look mode";
-    readonly "plugin.hyperlapse.lookModeDrive": "Follow driving direction";
-    readonly "plugin.hyperlapse.lookModeLookAt": "Look-at point";
-    readonly "plugin.hyperlapse.lookModeFixed": "Fixed heading";
-    readonly "plugin.hyperlapse.lookModeFree": "Free (texture forward)";
-    readonly "plugin.hyperlapse.viewFilter": "Filter";
-    readonly "plugin.hyperlapse.viewFilterNone": "None";
-    readonly "plugin.hyperlapse.viewFilterVivid": "Vivid";
-    readonly "plugin.hyperlapse.viewFilterVintage": "Vintage";
-    readonly "plugin.hyperlapse.viewFilterMono": "Mono";
-    readonly "plugin.hyperlapse.lookAt": "Look-at point";
-    readonly "plugin.hyperlapse.lookAtHint": "In look-at mode the viewer locks heading; drag adjusts pitch and roll only.";
-    readonly "plugin.hyperlapse.lookAtActive": "Aiming at {lat}, {lng}";
-    readonly "plugin.hyperlapse.lookAtMissing": "No look-at point set — pick one in the sidebar.";
-    readonly "plugin.hyperlapse.useMapCenter": "Map center";
-    readonly "plugin.hyperlapse.pickLookAt": "Pick on map";
-    readonly "plugin.hyperlapse.pickLookAtHint": "Click the map to set the look-at point";
-    readonly "plugin.hyperlapse.needMap": "Map is not ready";
-    readonly "plugin.hyperlapse.fixedPitch": "Fixed pitch";
-    readonly "plugin.hyperlapse.headingDeg": "Heading (°)";
-    readonly "plugin.hyperlapse.pitchDeg": "Pitch (°)";
-    readonly "plugin.hyperlapse.generate": "Generate";
-    readonly "plugin.hyperlapse.openViewer": "Open Road Trip viewer";
-    readonly "plugin.hyperlapse.needLocations": "Select at least two locations with panoramas";
-    readonly "plugin.hyperlapse.ready": "Ready — {count} frames (textures load on demand)";
-    readonly "plugin.hyperlapse.progress": "{phase}: {percent}% ({resolved}/{total})";
-    readonly "plugin.hyperlapse.sequences": "Sequences";
-    readonly "plugin.hyperlapse.sequenceMeta": "{count} frames · edited {time}";
-    readonly "plugin.hyperlapse.load": "Load";
-    readonly "plugin.hyperlapse.renamed": "Sequence renamed";
-    readonly "plugin.hyperlapse.deleteConfirm": "Delete this sequence?";
-    readonly "plugin.hyperlapse.empty": "Select locations, then generate a Road Trip sequence.";
-    readonly "plugin.hyperlapse.viewerTitle": "Road Trip viewer";
-    readonly "plugin.hyperlapse.play": "Play";
-    readonly "plugin.hyperlapse.pause": "Pause";
-    readonly "plugin.hyperlapse.next": "Next frame";
-    readonly "plugin.hyperlapse.prev": "Previous frame";
-    readonly "plugin.hyperlapse.fullscreen": "Fullscreen canvas";
-    readonly "plugin.hyperlapse.exitFullscreen": "Exit fullscreen";
-    readonly "plugin.hyperlapse.resetRoll": "Reset roll";
-    readonly "plugin.hyperlapse.resetView": "Reset view offsets";
-    readonly "plugin.hyperlapse.viewerHint": "Drag to look · Alt/Shift/right-drag to roll";
-    readonly "plugin.hyperlapse.viewerHintLookAt": "Drag for pitch · Alt/Shift/right-drag to roll";
-    readonly "command.expandSvLinks": "Expand Street View links";
-    readonly "command.expandSvLinksStop": "Stop expanding links";
-    readonly "command.expandSvLinksStart": "Start";
-    readonly "command.expandSvLinksStarted": "Expanding Street View links…";
-    readonly "command.expandSvLinksStopped": "Link expansion stopped";
-    readonly "command.expandSvLinksDone": "Added {count} linked panoramas";
-    readonly "command.expandSvLinksProgress": "Added {count} linked panoramas…";
-    readonly "command.expandSvLinksProgressDetail": "{added} / {max} added · {queued} queued";
-    readonly "command.expandSvLinksHint": "Crawl linked panoramas from the selection (Google, Baidu, Tencent, Yandex) and add them as new locations.";
-    readonly "command.expandSvLinksMax": "Maximum locations to add";
-    readonly "command.expandSvLinksNeedSelection": "Select at least one Google / Baidu / Tencent / Yandex location";
-    readonly "command.expandSvLinksNeedProvider": "Selection has no Google / Baidu / Tencent / Yandex panoramas";
-    readonly "plugin.localguessr.title": "LocalGuessr";
-    readonly "plugin.localguessr.mapSection": "Map pool";
-    readonly "plugin.localguessr.currentMap": "Current map";
-    readonly "plugin.localguessr.poolSize": "Locations in pool";
-    readonly "plugin.localguessr.modeSection": "Game mode";
-    readonly "plugin.localguessr.movementMode": "Movement";
-    readonly "plugin.localguessr.roundMode": "Rounds";
-    readonly "plugin.localguessr.classic": "Classic";
-    readonly "plugin.localguessr.infinite": "Infinite";
-    readonly "plugin.localguessr.rounds": "Rounds ({n})";
-    readonly "plugin.localguessr.timerSection": "Timer";
-    readonly "plugin.localguessr.timerMode": "Timer mode";
-    readonly "plugin.localguessr.timerOff": "Off";
-    readonly "plugin.localguessr.timerCountdown": "Countdown";
-    readonly "plugin.localguessr.timerCountup": "Count up";
-    readonly "plugin.localguessr.timeLimit": "Time limit ({n}s)";
-    readonly "plugin.localguessr.statusMap": "MAP";
-    readonly "plugin.localguessr.stausScore": "SCORE";
-    readonly "plugin.localguessr.statusRound": "ROUND";
-    readonly "plugin.localguessr.streakSection": "Streak";
-    readonly "plugin.localguessr.streakMode": "Streak mode";
-    readonly "plugin.localguessr.streakOff": "Off";
-    readonly "plugin.localguessr.streakCountry": "Country";
-    readonly "plugin.localguessr.streakState": "State / Province";
-    readonly "plugin.localguessr.streakOn": "Country + State";
-    readonly "plugin.localguessr.countryStreak": "Country Streak";
-    readonly "plugin.localguessr.stateStreak": "State Streak";
-    readonly "plugin.localguessr.countryStreakShort": "C";
-    readonly "plugin.localguessr.stateStreakShort": "S";
-    readonly "plugin.localguessr.streakTooltip": "{mode}: {n}";
-    readonly "plugin.localguessr.scoreTimeX": "Time";
-    readonly "plugin.localguessr.scoreTimeY": "Avg Score";
-    readonly "plugin.localguessr.geocodeBackend": "Reverse geocode";
-    readonly "plugin.localguessr.geocodeLocal": "Local";
-    readonly "plugin.localguessr.geocodeNominatim": "Nominatim";
-    readonly "plugin.localguessr.nominatimKey": "Nominatim API key";
-    readonly "plugin.localguessr.start": "Start game";
-    readonly "plugin.localguessr.analytics": "Analytics";
-    readonly "plugin.localguessr.analyticsSub": "Your local game history and accuracy";
-    readonly "plugin.localguessr.noMapOpen": "Open a map to play";
-    readonly "plugin.localguessr.noLocations": "This map has no locations";
-    readonly "plugin.localguessr.roundOf": "Round {n} / {total}";
-    readonly "plugin.localguessr.streak": "Streak {n}";
-    readonly "plugin.localguessr.guess": "Guess";
-    readonly "plugin.localguessr.scoring": "Scoring…";
-    readonly "plugin.localguessr.clickToGuess": "Click the map to place your guess";
-    readonly "plugin.localguessr.placePinOnMap": "Place your pin on the map";
-    readonly "plugin.localguessr.guessPlaced": "Guess placed — hit Guess to submit";
-    readonly "plugin.localguessr.guessMapBasemap": "Switch guess map basemap";
-    readonly "plugin.localguessr.shrinkMap": "Shrink map";
-    readonly "plugin.localguessr.checkpoint": "Set checkpoint";
-    readonly "plugin.localguessr.returnCheckpoint": "Return to checkpoint";
-    readonly "plugin.localguessr.returnToSpawn": "Return to spawn";
-    readonly "plugin.localguessr.hideCar": "Hide car";
-    readonly "plugin.localguessr.showCar": "Show car";
-    readonly "plugin.localguessr.confirmAbortInfinite": "Stop this infinite game?";
-    readonly "plugin.localguessr.confirmAbortInfiniteBody": "End the game to save a finished summary, or exit to keep it in Ongoing and resume later.";
-    readonly "plugin.localguessr.endGame": "End game";
-    readonly "plugin.localguessr.exitGame": "Exit";
-    readonly "plugin.localguessr.openSettings": "Open settings";
-    readonly "plugin.localguessr.undoMove": "Undo move";
-    readonly "plugin.localguessr.addTag": "Add tag";
-    readonly "plugin.localguessr.addTagAllRounds": "Tag all rounds";
-    readonly "plugin.localguessr.addTagPlaceholder": "Tag name…";
-    readonly "plugin.localguessr.recentTags": "Recent tags";
-    readonly "plugin.localguessr.mapTags": "Map tags";
-    readonly "plugin.localguessr.tagAdded": "Tagged with “{tag}”";
-    readonly "plugin.localguessr.tagAddedBulk": "Tagged {count} locations with “{tag}”";
-    readonly "plugin.localguessr.tagAddFailed": "Failed to add tag";
-    readonly "plugin.localguessr.nmpzHint": "NMPZ — place your guess on the map";
-    readonly "plugin.localguessr.distanceAway": "{distance} away";
-    readonly "plugin.localguessr.fromLocation": "From location";
-    readonly "plugin.localguessr.ofMaxPoints": "Of {max} points";
-    readonly "plugin.localguessr.noGuess": "No guess placed";
-    readonly "plugin.localguessr.streakHit": "Streak continues! ({n})";
-    readonly "plugin.localguessr.streakMiss": "Streak broken";
-    readonly "plugin.localguessr.streakEndedCountry": "Your streak ended after correctly guessing {n} countries in a row.";
-    readonly "plugin.localguessr.streakEndedState": "Your streak ended after correctly guessing {n} states in a row.";
-    readonly "plugin.localguessr.streakIndeedCountry": "It was indeed {name}. Streaks: {n}";
-    readonly "plugin.localguessr.streakIndeedState": "It was indeed {name}. Streaks: {n}";
-    readonly "plugin.localguessr.streakGuessWrongCountry": "You guessed {guess}, the correct answer is {correct}. Streaks: 0";
-    readonly "plugin.localguessr.streakGuessWrongState": "You guessed {guess}, the correct answer is {correct}. Streaks: 0";
-    readonly "plugin.localguessr.timerShort": "Time";
-    readonly "plugin.localguessr.ongoingGamesEmpty": "No unfinished games yet.";
-    readonly "plugin.localguessr.nextRound": "Next round";
-    readonly "plugin.localguessr.viewSummary": "View summary";
-    readonly "plugin.localguessr.hitSpace": "Hit";
-    readonly "plugin.localguessr.toContinue": "to continue";
-    readonly "plugin.localguessr.streakShort": "Streak";
-    readonly "plugin.localguessr.gameBreakdown": "Game Breakdown";
-    readonly "plugin.localguessr.scoreOf": "{score} / {max} ({pct}%)";
-    readonly "plugin.localguessr.finalStreak": "Streak: {n}";
-    readonly "plugin.localguessr.playAgain": "Play again";
-    readonly "plugin.localguessr.backToConfig": "Back";
-    readonly "plugin.localguessr.noGamesYet": "No games played yet. Start a round to build analytics.";
-    readonly "plugin.localguessr.filterCurrentMap": "Current map only";
-    readonly "plugin.localguessr.gamesPlayed": "Games";
-    readonly "plugin.localguessr.avgScore": "Avg score";
-    readonly "plugin.localguessr.bestScore": "Best score";
-    readonly "plugin.localguessr.bestStreak": "Best streak";
-    readonly "plugin.localguessr.perfectRounds": "5K rounds";
-    readonly "plugin.localguessr.totalRounds": "Total rounds";
-    readonly "plugin.localguessr.scoreTrend": "Score trend";
-    readonly "plugin.localguessr.byCountry": "By country";
-    readonly "plugin.localguessr.byMap": "By map";
-    readonly "plugin.localguessr.byProvider": "By provider";
-    readonly "plugin.localguessr.byMode": "By movement mode";
-    readonly "plugin.localguessr.scoreTrendFilterCountry": "Country";
-    readonly "plugin.localguessr.scoreTrendFilterMap": "Map";
-    readonly "plugin.localguessr.scoreTrendFilterProvider": "Provider";
-    readonly "plugin.localguessr.scoreTrendFilterMode": "Mode";
-    readonly "plugin.localguessr.scoreTrendFilterAll": "All";
-    readonly "plugin.localguessr.scoreTrendFilterRange": "Time";
-    readonly "plugin.localguessr.scoreTrendFilterRangeAll": "All time";
-    readonly "plugin.localguessr.scoreTrendFilterRangeYear": "Past year";
-    readonly "plugin.localguessr.scoreTrendFilterRangeMonth": "Past month";
-    readonly "plugin.localguessr.scoreTrendFilterRangeWeek": "Past week";
-    readonly "plugin.localguessr.scoreTrendFilterRangeToday": "Today";
-    readonly "plugin.localguessr.replay": "Replay";
-    readonly "plugin.localguessr.recentGames": "Recently played";
-    readonly "plugin.localguessr.ongoingGames": "Ongoing games";
-    readonly "plugin.localguessr.resumeGame": "Resume game";
-    readonly "plugin.localguessr.roundsShort": "rounds";
-    readonly "plugin.localguessr.clearHistory": "Clear history";
-};
-export type MessageKey = keyof typeof en;
-
-declare function getLocale(): AppLocale;
-/** Translate a message key with optional `{param}` interpolation. */
-declare function t(key: MessageKey, params?: MessageParams): string;
-/** Bases that have `.one` / `.other` variants in the English catalog. */
-export type PluralBase = {
-    [K in MessageKey]: K extends `${infer B}.one` ? B : never;
-}[MessageKey];
-/**
- * Plural-aware translate. Looks up `key.one` / `key.other` (etc.) via
- * `Intl.PluralRules`, then falls back to `key.other`.
- */
-declare function tp(key: PluralBase, count: number, params?: MessageParams): string;
+import * as maplibregl from 'maplibre-gl';
 
 /** Commands */
 declare const commands: {
@@ -1913,13 +52,28 @@ declare const commands: {
     /**  Installed sidecar version for a plugin (from `sidecar/version.txt`), or `None`. */
     sidecarInstalledVersion: (pluginId: string) => Promise<string | null>;
     /**
-     *  Spawn a plugin's installed sidecar binary. Streams stdout/stderr lines as
-     *  `sidecar-stdout` / `sidecar-stderr` events and the exit as `sidecar-exit`,
-     *  keyed by the returned run id. Runs in the sidecar dir so co-located dlls resolve.
+     *  Run one unit of work on a plugin's sidecar. Commands the manifest lists under
+     *  `serve` go to the plugin's resident process; the rest get a one-shot child.
+     *  Streams `sidecar-line` (one JSON object per unit) and `sidecar-log` (stderr),
+     *  then exactly one `sidecar-done`, all keyed by the returned request id.
      */
-    sidecarSpawn: (pluginId: string, name: string, args: string[]) => Promise<number>;
-    /**  Kill a running sidecar process by run id (no-op if already exited). */
-    sidecarKill: (runId: number) => Promise<null>;
+    sidecarRequest: (pluginId: string, command: string, payload: string | null) => Promise<number>;
+    /**
+     *  Stop everything a plugin has running. Called when the plugin is disabled or
+     *  uninstalled, so a resident process never outlives the plugin that wanted it.
+     */
+    sidecarStop: (pluginId: string) => Promise<null>;
+    /**
+     *  Stop every plugin's sidecar processes. Used when the editor tears all plugins
+     *  down at once (map close), where nothing should still be running afterwards.
+     */
+    sidecarStopAll: () => Promise<void>;
+    /**
+     *  Kill the process behind a one-shot request (no-op if it already finished).
+     *  Resident-served requests have no process of their own, so this does not
+     *  interrupt them -- the caller simply stops listening.
+     */
+    sidecarCancel: (reqId: number) => Promise<null>;
     checkBorderFile: (level: string) => Promise<boolean>;
     downloadBorderFile: (level: string) => Promise<null>;
     borderLookup: (lat: number, lng: number, level: string) => Promise<PolygonGeometry | null>;
@@ -2087,11 +241,11 @@ declare const commands: {
     /**  Return the union of all currently selected location IDs. */
     storeGetSelectedIdsList: () => Promise<number[]>;
     /**
-     *  Pick an evenly spaced subset of the current selection. Exactly one of `target_count`
-     *  (thin to N, maximizing spacing) or `min_distance_m` (keep as many as fit at that spacing)
-     *  must be provided.
+     *  Pick an evenly spaced subset of `scope`, or of the current selection when `scope` is
+     *  null. Exactly one of `target_count` (thin to N, maximizing spacing) or `min_distance_m`
+     *  (keep as many as fit at that spacing) must be provided.
      */
-    storePickSpaced: (targetCount: number | null, minDistanceM: number | null) => Promise<SpacedPickResult>;
+    storePickSpaced: (scope: SelectionProps | null, targetCount: number | null, minDistanceM: number | null) => Promise<SpacedPickResult>;
     /**
      *  Resolve a single selection to its matching location IDs without persisting it.
      *  Used by plugins and one-off queries (e.g., tag merge, export filtered).
@@ -2270,6 +424,229 @@ declare const commands: {
     /**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
     valiSubdivisions: (country: string) => Promise<string>;
 };
+/** Events */
+declare const events: {
+    bulkExportProgress: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<ExportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ExportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ExportProgress) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<ExportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ExportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ExportProgress) => Promise<void>;
+    };
+    bulkImportProgress: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<ImportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ImportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ImportProgress) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<ImportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ImportProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ImportProgress) => Promise<void>;
+    };
+    sidecarDone: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarDone>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarDone>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarDone) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarDone>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarDone>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarDone) => Promise<void>;
+    };
+    sidecarInstallProgress: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarProgress) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarProgress) => Promise<void>;
+    };
+    sidecarLine: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarLine>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarLine>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarLine) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarLine>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarLine>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarLine) => Promise<void>;
+    };
+    sidecarLog: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarLog>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarLog>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarLog) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<SidecarLog>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<SidecarLog>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: SidecarLog) => Promise<void>;
+    };
+    storeExternalMutation: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<ExternalMutation>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ExternalMutation>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ExternalMutation) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<ExternalMutation>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ExternalMutation>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ExternalMutation) => Promise<void>;
+    };
+    valiProgress: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<ValiProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ValiProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ValiProgress) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<ValiProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<ValiProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: ValiProgress) => Promise<void>;
+    };
+};
+declare const BUILTIN_FIELDS: readonly [{
+    readonly key: "lat";
+    readonly label: "Latitude";
+    readonly type: "number";
+    readonly kind: "identity";
+    readonly comparison: null;
+}, {
+    readonly key: "lng";
+    readonly label: "Longitude";
+    readonly type: "number";
+    readonly kind: "identity";
+    readonly comparison: null;
+}, {
+    readonly key: "heading";
+    readonly label: "Heading";
+    readonly type: "number";
+    readonly kind: "writable";
+    readonly comparison: {
+        readonly type: "circular";
+        readonly period: 360;
+    };
+}, {
+    readonly key: "pitch";
+    readonly label: "Pitch";
+    readonly type: "number";
+    readonly kind: "writable";
+    readonly comparison: null;
+}, {
+    readonly key: "zoom";
+    readonly label: "Zoom";
+    readonly type: "number";
+    readonly kind: "writable";
+    readonly comparison: null;
+}, {
+    readonly key: "id";
+    readonly label: "ID";
+    readonly type: "number";
+    readonly kind: "identity";
+    readonly comparison: null;
+}, {
+    readonly key: "createdAt";
+    readonly label: "Created";
+    readonly type: "date";
+    readonly kind: null;
+    readonly comparison: null;
+}, {
+    readonly key: "modifiedAt";
+    readonly label: "Modified";
+    readonly type: "date";
+    readonly kind: null;
+    readonly comparison: null;
+}, {
+    readonly key: "tagCount";
+    readonly label: "Tag count";
+    readonly type: "number";
+    readonly kind: "virtual";
+    readonly comparison: null;
+}];
+declare const KNOWN_FIELDS: readonly [{
+    readonly key: "altitude";
+    readonly type: "number";
+    readonly label: "Altitude";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: false;
+}, {
+    readonly key: "countryCode";
+    readonly type: "string";
+    readonly label: "Country code";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: false;
+}, {
+    readonly key: "cameraType";
+    readonly type: "enum";
+    readonly label: "Camera type";
+    readonly values: readonly ["gen1", "gen2", "gen4", "badcam", "tripod", "trekker"];
+    readonly labels: readonly [readonly ["gen1", "Gen 1"], readonly ["gen2", "Gen 2/3"], readonly ["gen4", "Gen 4"], readonly ["badcam", "Bad cam"], readonly ["tripod", "Tripod"], readonly ["trekker", "Trekker"]];
+    readonly circularPeriod: null;
+    readonly defaultOff: false;
+}, {
+    readonly key: "panoType";
+    readonly type: "enum";
+    readonly label: "Pano type";
+    readonly values: readonly ["2", "3", "10"];
+    readonly labels: readonly [readonly ["2", "Official"], readonly ["3", "Unknown"], readonly ["10", "User uploaded"]];
+    readonly circularPeriod: null;
+    readonly defaultOff: false;
+}, {
+    readonly key: "imageDate";
+    readonly type: "month";
+    readonly label: "Image date";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: false;
+}, {
+    readonly key: "datetime";
+    readonly type: "date";
+    readonly label: "Exact date";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: true;
+}, {
+    readonly key: "timezone";
+    readonly type: "enum";
+    readonly label: "Timezone";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: true;
+}, {
+    readonly key: "drivingDirection";
+    readonly type: "number";
+    readonly label: "Driving direction";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: 360;
+    readonly defaultOff: true;
+}, {
+    readonly key: "uploaderName";
+    readonly type: "string";
+    readonly label: "Uploader";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: true;
+}, {
+    readonly key: "coverageDates";
+    readonly type: "array";
+    readonly label: "Coverage dates";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: true;
+}, {
+    readonly key: "subdivision";
+    readonly type: "string";
+    readonly label: "Subdivision";
+    readonly values: readonly [];
+    readonly labels: readonly [];
+    readonly circularPeriod: null;
+    readonly defaultOff: true;
+}];
+type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
  *  (at most one `enabled: true` at a time); the frontend enforces that on write.
@@ -2330,7 +707,6 @@ type AltProviderSettings = {
     lineWidthScale: number;
     pointSizeScale: number;
 };
-type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
@@ -2475,6 +851,19 @@ type ExportOpts = {
     extraFieldsJson: string | null;
 };
 /**
+ *  Progress event emitted per-map during bulk export, consumed by the frontend
+ *  to drive a progress indicator.
+ */
+type ExportProgress = {
+    current: number;
+    total: number;
+    mapName: string;
+};
+/**  A mutation another window made to a map this window may have open, routed by `map_id`. */
+type ExternalMutation = {
+    mapId: string;
+} & MutationResult;
+/**
  *  Schema definition for a single `Location.extra` field. Stored in the map's
  *  `extra.fields` JSON. For enum types, `values` lists valid options and `labels`
  *  provides display names.
@@ -2541,6 +930,15 @@ type ImportPreviewEntry = {
     locationCount: number;
     tagCount: number;
     warnings: string[];
+};
+/**
+ *  Progress event emitted per-map during bulk import, consumed by the frontend
+ *  to drive a progress indicator.
+ */
+type ImportProgress = {
+    current: number;
+    total: number;
+    mapName: string;
 };
 /**  Result returned per map after a successful bulk import. */
 type ImportedMapInfo = {
@@ -2885,14 +1283,16 @@ type PartitionBucket = {
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 type PluginManifest_Deserialize = {
-    id: string;
-    name: string;
-    description: string;
-    icon: string;
-    main: string;
-    version: string;
-    experimental: boolean;
-    sidecar: PluginSidecar_Deserialize | null;
+    id?: string;
+    name?: string;
+    description?: string;
+    icon?: string;
+    main?: string;
+    version?: string;
+    experimental?: boolean;
+    comingSoon?: boolean;
+    minAppVersion?: string | null;
+    sidecar?: PluginSidecar_Deserialize | null;
 };
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 type PluginManifest = {
@@ -2903,6 +1303,8 @@ type PluginManifest = {
     main: string;
     version: string;
     experimental?: boolean;
+    comingSoon?: boolean;
+    minAppVersion?: string | null;
     sidecar?: PluginSidecar | null;
 };
 /**  A plugin's declared sidecar binary (downloaded from GitHub Releases on install). */
@@ -3269,6 +1671,24 @@ type SideCounts = {
     update: number;
     delete: number;
 };
+type SidecarDone = {
+    reqId: number;
+    error: string | null;
+};
+type SidecarLine = {
+    reqId: number;
+    line: string;
+};
+/**  Same shape as [`SidecarLine`]; distinct so the two event channels can't be cross-wired. */
+type SidecarLog = {
+    reqId: number;
+    line: string;
+};
+type SidecarProgress = {
+    pluginId: string;
+    downloaded: number;
+    total: number;
+};
 type SpacedPickResult = {
     ids: number[];
     distanceM: number;
@@ -3396,6 +1816,27 @@ type ValiLocation = {
     pitch?: number | null;
     panoId?: string | null;
     tags: string[];
+};
+type ValiProgress = {
+    kind: "workItems";
+    total: number;
+} | {
+    kind: "workItemDone";
+    countryCode: string;
+    subdivisionCode: string | null;
+    done: number;
+    total: number;
+} | {
+    kind: "countryDownloadStarted";
+    countryCode: string;
+    files: number;
+    bytes: number;
+    updates: boolean;
+} | {
+    kind: "fileDownloaded";
+    countryCode: string;
+    name: string;
+    bytes: number;
 };
 /**
  *  Per-map config for a virtual tag-tree node — a folder node with no underlying
@@ -3627,15 +2068,17 @@ declare function selectInverse(keys?: string[] | null): Promise<void>;
 declare function toggleManualSelection(locationId: number): Promise<void>;
 /** Replace the current selection with a single Manual selection holding `count` ids picked
  *  at random from whatever is currently selected. `count` is clamped to the selection size.
- *  No-op when nothing is selected. Returns the number of ids actually picked. */
-declare function selectRandomFromSelection(count: number): number;
+ *  With `perSelection` it is a per-bucket cap: up to `count` ids from each active selection,
+ *  unioned. No-op when nothing is selected. Returns the number of ids actually picked. */
+declare function selectRandomFromSelection(count: number, perSelection?: boolean): Promise<number>;
 /** Replace the current selection with a single Manual selection of ids picked from the
  *  current selection, spaced apart in Rust: either `count` ids maximizing spacing, or as
- *  many as fit at `minDistanceM`. No-op when the pick returns nothing. */
+ *  many as fit at `minDistanceM`. With `perSelection` each active selection is picked from
+ *  separately and the results unioned. No-op when the pick returns nothing. */
 declare function selectSpacedFromSelection(opts: {
     count?: number;
     minDistanceM?: number;
-}): Promise<{
+}, perSelection?: boolean): Promise<{
     picked: number;
     distanceM: number;
 }>;
@@ -3692,12 +2135,13 @@ declare function closeDuplicates(): void;
 /** Transition the editor pane, enforcing state invariants:
  *  leaving "location" clears the active location, leaving "plugin" clears the plugin id. */
 declare function setWorkArea(area: WorkArea): void;
-declare function toggleProvidersMode(): void;
-declare function exitProvidersMode(): void;
 /** Open a plugin's sidebar (switches the editor pane to "plugin"). */
 declare function setPluginMode(pluginId: string): void;
 /** Close the plugin sidebar and return to the overview. */
 declare function exitPluginMode(): void;
+/** Toggle the alt-providers work area (Apple/Baidu/Tencent/Yandex settings). */
+declare function toggleProvidersMode(): void;
+declare function exitProvidersMode(): void;
 /** Get-or-create tags by name. Returns the tag objects for use
  *  in subsequent location updates. Idempotent — existing tags are returned
  *  as-is, new names get auto-generated colors.
@@ -3822,37 +2266,37 @@ declare const hasAnySelections: () => boolean;
 /** Every editor command (palette entries; all are hotkey-bindable in Settings). */
 declare const COMMANDS: {
     save: {
-        label: string;
+        label: "Commit map";
         icon: string;
         group: "Map";
         defaultBinding: string;
         aliases: string[];
-        execute: () => Promise<string>;
+        execute: () => void;
         enabled: () => boolean;
     };
     import: {
-        label: string;
+        label: "Import file";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof requiresMap;
     };
     copyToMap: {
-        label: string;
+        label: "Copy location to map via hotkeys...";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof requiresMap;
     };
     quickCopyToMap: {
-        label: string;
+        label: "Copy location to map...";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof hasActiveLocation;
     };
     undo: {
-        label: string;
+        label: "Undo";
         icon: string;
         group: "Map";
         defaultBinding: string;
@@ -3860,7 +2304,7 @@ declare const COMMANDS: {
         enabled: () => boolean;
     };
     redo: {
-        label: string;
+        label: "Redo";
         icon: string;
         group: "Map";
         defaultBinding: string;
@@ -3868,112 +2312,112 @@ declare const COMMANDS: {
         enabled: () => boolean;
     };
     export: {
-        label: string;
+        label: "Export";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof requiresMap;
     };
     "open-history": {
-        label: string;
+        label: "Open version history";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof requiresMap;
     };
     "open-seen": {
-        label: string;
+        label: "Open seen locations";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof requiresMap;
     };
     "toggle-seen-overlay": {
-        label: string;
+        label: "Toggle seen locations overlay";
         icon: string;
         group: "Map";
         execute: () => void;
         enabled: typeof requiresMap;
     };
     selectAll: {
-        label: string;
+        label: "Select everything";
         icon: string;
         group: "Selections";
         defaultBinding: string;
         execute: () => Promise<void>;
     };
     "select-untagged": {
-        label: string;
+        label: "Select untagged locations";
         icon: string;
         group: "Selections";
         aliases: string[];
         execute: () => Promise<void>;
     };
     "select-unpanned": {
-        label: string;
+        label: "Select unpanned locations";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "select-panoid": {
-        label: string;
+        label: "Select Pano ID locations";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "select-no-panoid": {
-        label: string;
+        label: "Select non-Pano ID locations";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "select-uncommitted": {
-        label: string;
+        label: "Select uncommitted locations";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "select-reviewed": {
-        label: string;
+        label: "Select reviewed locations";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
         enabled: typeof requiresMap;
     };
     "invert-selection": {
-        label: string;
+        label: "Invert selection";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "intersect-selections": {
-        label: string;
+        label: "Intersect (AND) selections";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "union-selections": {
-        label: string;
+        label: "Union (OR) selections";
         icon: string;
         group: "Selections";
         execute: () => Promise<void>;
     };
     "load-geojson": {
-        label: string;
+        label: "Load shapes from GeoJSON as selection";
         icon: string;
         group: "Selections";
         aliases: string[];
         execute: typeof loadGeoJSON;
     };
     "download-polygon-geojson": {
-        label: string;
+        label: "Download polygon selections as GeoJSON";
         icon: string;
         group: "Selections";
         enabled: () => boolean;
         execute: () => void;
     };
     deselectAll: {
-        label: string;
+        label: "Deselect everything";
         icon: string;
         group: "Selections";
         defaultBinding: string;
@@ -3981,7 +2425,7 @@ declare const COMMANDS: {
         enabled: typeof hasAnySelections;
     };
     "expand-sv-links": {
-        label: string;
+        label: "Expand Street View links";
         icon: string;
         group: "Selections";
         aliases: string[];
@@ -3989,47 +2433,47 @@ declare const COMMANDS: {
         enabled: () => boolean;
     };
     "find-duplicates": {
-        label: string;
+        label: "Find duplicates...";
         icon: string;
         group: "Selections";
         aliases: string[];
         execute: () => void;
     };
     "merge-duplicates": {
-        label: string;
+        label: "Merge duplicates...";
         icon: string;
         group: "Selections";
         aliases: string[];
         execute: () => void;
     };
     "filter-by-metadata": {
-        label: string;
+        label: "Filter by metadata...";
         icon: string;
         group: "Selections";
         aliases: string[];
         execute: () => void;
     };
     "top-k": {
-        label: string;
+        label: "Select top/bottom K...";
         icon: string;
         group: "Selections";
         execute: () => void;
     };
     "review-selected": {
-        label: string;
+        label: "Review selected locations";
         icon: string;
         group: "Selections";
         enabled: typeof hasSelection;
         execute: () => void;
     };
     "review-sessions": {
-        label: string;
+        label: "Review sessions";
         icon: string;
         group: "Selections";
         execute: () => void;
     };
     "select-random": {
-        label: string;
+        label: "Pick random locations from selection";
         icon: string;
         group: "Selections";
         aliases: string[];
@@ -4037,7 +2481,7 @@ declare const COMMANDS: {
         enabled: typeof hasSelection;
     };
     "select-spaced": {
-        label: string;
+        label: "Pick evenly spaced locations from selection";
         icon: string;
         group: "Selections";
         aliases: string[];
@@ -4045,7 +2489,7 @@ declare const COMMANDS: {
         enabled: typeof hasSelection;
     };
     "ghost-selections": {
-        label: string;
+        label: "Ghost selections";
         icon: string;
         group: "Selections";
         aliases: string[];
@@ -4053,97 +2497,89 @@ declare const COMMANDS: {
         enabled: typeof hasAnySelections;
     };
     "save-selections": {
-        label: string;
+        label: "Save current selections...";
         icon: string;
         group: "Selections";
         execute: () => void;
         enabled: typeof hasAnySelections;
     };
     "apply-saved-selection": {
-        label: string;
+        label: "Apply saved selection...";
         icon: string;
         group: "Selections";
         execute: () => void;
     };
     "selection-delete-locations": {
-        label: string;
+        label: "Delete selected locations";
         icon: string;
         group: "Selections";
         enabled: typeof hasSelection;
         execute: () => void;
     };
     "bulk-validate": {
-        label: string;
+        label: "Validate locations";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "bulk-enrich": {
-        label: string;
+        label: "Enrich metadata fields";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "bulk-set-field": {
-        label: string;
+        label: "Set metadata field value";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "bulk-clear-fields": {
-        label: string;
+        label: "Clear metadata fields";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "bulk-pin-pano": {
-        label: string;
+        label: "Pin locations to pano ID";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "bulk-heading-road": {
-        label: string;
+        label: "Pan headings along road";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "bulk-download-panoramas": {
-        label: string;
+        label: "Download panoramas";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
         execute: () => void;
     };
     "delete-selected-tags": {
-        label: string;
+        label: "Delete selected tags";
         icon: string;
         group: "Tags";
         execute: () => Promise<void>;
         enabled: () => boolean;
     };
     "tag-download-csv": {
-        label: string;
+        label: "Download tag counts as CSV";
         icon: string;
         group: "Tags";
         execute: () => void;
     };
-    "copy-tags-count": {
-        label: string;
-        icon: string;
-        group: "Tags";
-        aliases: string[];
-        execute: () => Promise<void>;
-        enabled: typeof requiresMap;
-    };
     "tag-find-replace": {
-        label: string;
+        label: "Find and replace in tag names";
         icon: string;
         group: "Tags";
         aliases: string[];
@@ -4151,7 +2587,7 @@ declare const COMMANDS: {
         enabled: typeof requiresMap;
     };
     "apply-field-as-tags": {
-        label: string;
+        label: "Apply metadata as tags";
         icon: string;
         group: "Tags";
         aliases: string[];
@@ -4159,7 +2595,7 @@ declare const COMMANDS: {
         enabled: typeof requiresMap;
     };
     "assign-doclinks": {
-        label: string;
+        label: "Assign document links...";
         icon: string;
         group: "Tags";
         aliases: string[];
@@ -4180,39 +2616,20 @@ export interface SavedSelection {
     items: SavedSelectionItem[];
     createdAt: number;
 }
-export type SavedSelectionProps = {
-    type: "Everything";
-} | {
-    type: "Polygon";
-    polygon: PolygonGeometry;
-    includeInformational: boolean;
-} | {
+/** Selection types bound to the open map (raw location ids, review sessions): a rule
+ *  built from them would be a frozen snapshot, so they are never saved. Everything else
+ *  is saveable as-is. */
+declare const MAP_LOCAL_TYPES: readonly ["Locations", "Manual", "ValidationState", "Reviewed"];
+export type MapLocalType = (typeof MAP_LOCAL_TYPES)[number];
+export type MapLocalProps = Extract<SelectionProps, {
+    type: MapLocalType;
+}>;
+export type PortableProps = Exclude<SelectionProps, MapLocalProps>;
+export type SavedSelectionProps = Exclude<PortableProps, {
+    type: "Tag" | "Intersection" | "Union" | "Invert";
+}> | {
     type: "TagName";
     tagName: string;
-} | {
-    type: "Untagged";
-} | {
-    type: "Unpanned";
-} | {
-    type: "PanoIds";
-} | {
-    type: "NotPanoIds";
-} | {
-    type: "Uncommitted";
-} | {
-    type: "Duplicates";
-    distance: number;
-} | {
-    type: "Filter";
-    field: string;
-    op: FilterOp;
-    value: unknown;
-    value2?: unknown;
-} | {
-    type: "TopK";
-    field: string;
-    k: number;
-    ascending: boolean;
 } | {
     type: "Intersection";
     selections: SavedSelectionProps[];
@@ -4237,6 +2654,21 @@ export type RGB = {
     b: number;
 };
 
+/** Language names stay in their own language, the way every language picker does it -- a reader
+ *  looking for their own has to recognise it without already reading English.
+ *  `en-XA` is the generated pseudolocale: accented and ~40% longer, so unextracted strings and
+ *  layout overflow are visible without a translator. Offered in dev builds only. */
+declare const LANGUAGES: {
+    readonly en: "English";
+    readonly de: "Deutsch";
+    readonly es: "Español";
+    readonly fr: "Français";
+    readonly ja: "日本語";
+    readonly pl: "Polski";
+    readonly ru: "Русский";
+    readonly "zh-Hans": "简体中文";
+    readonly "en-XA": "Pseudolocale";
+};
 declare const MOVEMENT_MODES: {
     readonly moving: "Moving";
     readonly "no-move": "No Move";
@@ -4305,6 +2737,7 @@ declare const PREVIEW_ASPECT_RATIOS: {
     readonly "32 / 9": "32:9";
     readonly free: "Free";
 };
+export type Language = keyof typeof LANGUAGES;
 export type MovementMode = keyof typeof MOVEMENT_MODES;
 export type ExactDateFormat = keyof typeof EXACT_DATE_FORMATS;
 export type DateTimezone = keyof typeof DATE_TIMEZONES;
@@ -4367,6 +2800,8 @@ declare const DEFAULTS: {
     slowModifier: number;
     showFps: boolean;
     mapListFields: MapListField[];
+    /** Read once at boot; changing it relaunches the app rather than re-rendering. */
+    language: Language;
     /** Reopen the maps that were open when the session last ended (main window closed). */
     restoreSession: boolean;
     /** Discord Rich Presence: off, generic (no map name), or full (map name + count). */
@@ -4392,13 +2827,11 @@ declare const DEFAULTS: {
     polygonColor: RGB;
     panoDotScaled: boolean;
     tagViewMode: TagViewMode;
-    /** Render each tag as the shortest path suffix that's still unique among visible tags. */
+    /** Tree view only: render each tag as the shortest path suffix that's still unique. */
     truncateTagPaths: boolean;
     /** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
      *  `firstChild` inherits the first own-colored descendant in display order,
-     *  with tagFolderColor as the fallback for colorless subtrees.
-     *  `random` uses a deterministic color from the folder path; `childGradient` paints
-     *  a gradient from descendant tag colors (fallback: tagFolderColor). */
+     *  with tagFolderColor as the fallback for colorless subtrees. */
     tagFolderColorMode: TagFolderColorMode;
     tagFolderColor: RGB;
     tagSortMode: TagSortMode;
@@ -4415,8 +2848,6 @@ declare const DEFAULTS: {
     remoteApiKey: string;
     pinnedCommands: PinnedEntry[];
     hasSeenWelcome: boolean;
-    /** UI language (`en`, `zh-Hans`, …). Catalogs live under `src/locales/`. */
-    language: AppLocale;
 };
 export type AppSettings = typeof DEFAULTS;
 declare function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void;
@@ -4683,6 +3114,52 @@ declare namespace review {
 
 export type Cmd = typeof commands;
 
+export interface PluginSettingDef {
+    key: string;
+    label: string;
+    type: "boolean" | "string" | "number";
+    default: unknown;
+}
+export interface Plugin {
+    id: string;
+    name: string;
+    description?: string;
+    icon: string;
+    comingSoon?: boolean;
+    core?: boolean;
+    experimental?: boolean;
+    settings?: PluginSettingDef[];
+    /** Keep the sidebar mounted (hidden) when the user leaves plugin mode.
+     *  Only for plugins whose state can't be serialized (e.g. an iframe). */
+    keepAlive?: boolean;
+    activate(): void | (() => void);
+    modal?: ComponentType<{
+        onClose: () => void;
+    }>;
+    sidebar?: ComponentType<{
+        onClose: () => void;
+    }>;
+    locationPanel?: ComponentType;
+}
+export type PluginBehavior = Partial<Plugin> & {
+    activate(): void | (() => void);
+};
+/** Register a plugin. `activate` runs when a map opens; its returned cleanup runs on map close. */
+declare function registerPlugin(plugin: Plugin | PluginBehavior): void;
+export interface PluginStorage {
+    get<T = unknown>(key: string, fallback?: T): T;
+    set(key: string, value: unknown): void;
+    remove(key: string): void;
+    keys(): string[];
+}
+/** Persistent key-value storage namespaced to a plugin. Survives restarts. */
+declare function createPluginStorage(id: string): PluginStorage;
+/** useState persisted through the plugin's namespaced store. UI state saved this
+ *  way survives sidebar unmount and app restart. Values are global, not per-map —
+ *  callers must fall back gracefully when a stored value doesn't resolve against
+ *  the current map (e.g. a field key or saved-selection id). */
+declare function usePluginState<T>(pluginId: string, key: string, initial: T | (() => T)): readonly [T, (action: SetStateAction<T>) => void];
+
 /** Standard right-hand sidebar chrome (title, back button, scrollable body). Use for plugin sidebars. */
 declare function Sidebar({ title, onBack, actions, className, flush, children, }: {
     title: ReactNode;
@@ -4691,7 +3168,7 @@ declare function Sidebar({ title, onBack, actions, className, flush, children, }
     className?: string;
     flush?: boolean;
     children: ReactNode;
-}): react_jsx_runtime.JSX.Element;
+}): react.JSX.Element;
 /** Collapsible titled section inside a Sidebar. */
 declare function Section({ title, defaultOpen, collapsible, addons, children, }: {
     title: ReactNode;
@@ -4699,19 +3176,19 @@ declare function Section({ title, defaultOpen, collapsible, addons, children, }:
     collapsible?: boolean;
     addons?: ReactNode;
     children: ReactNode;
-}): react_jsx_runtime.JSX.Element;
+}): react.JSX.Element;
 /** Labelled form row (label left, control right) for sidebar sections. */
 declare function Field({ label, hint, row, children, }: {
     label: ReactNode;
     hint?: ReactNode;
     row?: boolean;
     children: ReactNode;
-}): react_jsx_runtime.JSX.Element;
+}): react.JSX.Element;
 /** Centered icon + message for empty panels. */
 declare function EmptyState({ icon, children }: {
     icon?: string;
     children: ReactNode;
-}): react_jsx_runtime.JSX.Element;
+}): react.JSX.Element;
 export interface SegmentedOption<T extends string | number> {
     value: T;
     label: ReactNode;
@@ -4724,12 +3201,12 @@ declare function SegmentedControl<T extends string | number>({ options, value, o
     value: T;
     onChange: (value: T) => void;
     className?: string;
-}): react_jsx_runtime.JSX.Element;
+}): react.JSX.Element;
 
 declare function ScopeSelector({ ctl, className, }: {
     ctl: ScopeController<SourceScope>;
     className?: string;
-}): react_jsx_runtime.JSX.Element;
+}): react.JSX.Element;
 
 declare function toast(message: string, duration?: number, container?: HTMLElement): void;
 
@@ -4830,6 +3307,19 @@ export type EditorEventMap = typeof EVENT_DEFS;
 export type EditorEvent = keyof EditorEventMap;
 export type EventHandler<E extends EditorEvent> = (payload: EditorEventMap[E]) => void;
 
+/** Plural forms written at the call site. Authors supply English's `one`/`other`; other locales
+ *  supply whatever categories `Intl.PluralRules` demands for them (Russian needs `few`/`many`). */
+export interface PluralForms {
+    one: string;
+    other: string;
+}
+export type MessageSource = string | PluralForms;
+export type MessageParams = Record<string, string | number>;
+declare function getLocale(): string;
+declare function t(src: MessageSource, params?: MessageParams): string;
+/** Structured-catalog plural helper (`key.one` / `key.other`) used by fork toast copy. */
+declare function tp(key: string, count: number, params?: MessageParams): string;
+
 /** Fetch a page of the seen (visited-panorama) history. */
 declare function getSeenEntries(limit?: number, offset?: number, filter?: SeenFilter, thumbnails?: boolean): Promise<SeenEntry[]>;
 /** Number of seen entries matching the filter (all when omitted). */
@@ -4879,7 +3369,7 @@ declare function validateLocations(locations: Location[], opts?: {
 }): Promise<Map<ValidationState, Location[]>>;
 
 /** Fetch full pano metadata directly from Google's internal RPC (bypasses StreetViewService). */
-declare function fetchSvMetadata(panoIds: string[]): Promise<(google.maps.StreetViewResolvedPanoramaData | null)[]>;
+declare function fetchSvMetadata(panoIds: string[], signal?: AbortSignal): Promise<(google.maps.StreetViewResolvedPanoramaData | null)[]>;
 
 /** URL that serves a local file over the `mma-buf://` protocol (binary Rust-to-JS transfers). */
 declare function mmaBufUrl(path: string): string;
@@ -4948,7 +3438,7 @@ export interface MapHostEvents {
     tilesloaded: void;
 }
 export interface BasemapOpts {
-    useBlobby: boolean;
+    useBlobby?: boolean;
     customStyles: CustomStyle[];
 }
 export interface MapHostContract<K extends MapHostKind = MapHostKind> {
@@ -4991,6 +3481,8 @@ export type MapHost = {
 declare function getMapHost(): MapHost | null;
 /**
  * Wait for the main editor map to be ready.
+ * Every waiter shares one resolver so a map close mid-wait does not leave
+ * older promises hanging on a discarded host.
  */
 declare function waitForMapHost(): Promise<MapHost>;
 
@@ -5091,17 +3583,19 @@ export interface LocationStore {
 /** A live id-to-Location map of the whole map, kept in sync via store events.
  *  Call `destroy()` when done. */
 declare function createLocationStore(): Promise<LocationStore>;
-/** A running sidecar process. Callbacks fire per line; listeners self-remove on exit. */
-export interface SidecarRun {
-    runId: number;
-    onLine(cb: (line: string) => void): void;
-    onStderr(cb: (line: string) => void): void;
-    onExit(cb: (code: number | null) => void): void;
-    kill(): void;
+export interface SidecarOptions<T> {
+    /** Fires once per JSON object the sidecar emits, in order. */
+    onLine?(item: T): void;
+    /** Sidecar diagnostics (stderr), one-shot runs only. Resident-served commands
+     *  write theirs to the app log instead. */
+    onLog?(line: string): void;
+    signal?: AbortSignal;
 }
-/** Run an installed plugin's sidecar binary. Register onLine/onExit right after this
- *  resolves -- listeners attach before the process starts, so no output is missed. */
-declare function spawnSidecar(pluginId: string, name: string, args: string[]): Promise<SidecarRun>;
+/** Run one unit of work on a plugin's sidecar and resolve with its last emitted
+ *  object (null if it emitted none). The app owns the process: commands the manifest
+ *  lists under `serve` are answered by the plugin's resident sidecar, the rest by a
+ *  one-shot run. `payload` is handed to the sidecar as JSON. */
+declare function sidecarRequest<T>(pluginId: string, command: string, payload?: unknown, opts?: SidecarOptions<T>): Promise<T | null>;
 /** Explicitly exposed functions not in other APIs. */
 declare const surface: {
     ready: boolean;
@@ -5116,7 +3610,7 @@ declare const surface: {
     };
     sidecar: {
         installedVersion: (pluginId: string) => Promise<string | null>;
-        spawn: typeof spawnSidecar;
+        request: typeof sidecarRequest;
     };
     registerPlugin: typeof registerPlugin;
     registerEnrichFields: typeof registerEnrichFields;
@@ -5186,6 +3680,7 @@ declare const surface: {
         slowModifier: number;
         showFps: boolean;
         mapListFields: MapListField[];
+        language: Language;
         restoreSession: boolean;
         discordPresence: DiscordPresenceMode;
         labelColors: Record<string, string>;
@@ -5218,14 +3713,20 @@ declare const surface: {
         remoteApiKey: string;
         pinnedCommands: PinnedEntry[];
         hasSeenWelcome: boolean;
-        language: AppLocale;
     };
     t: typeof t;
     tp: typeof tp;
     getLocale: typeof getLocale;
     LOCALES: {
         readonly en: "English";
+        readonly de: "Deutsch";
+        readonly es: "Español";
+        readonly fr: "Français";
+        readonly ja: "日本語";
+        readonly pl: "Polski";
+        readonly ru: "Русский";
         readonly "zh-Hans": "简体中文";
+        readonly "en-XA": "Pseudolocale";
     };
     getSavedSelections: typeof getSavedSelections;
     savedToSelectionProps: typeof savedToSelectionProps;
@@ -5260,5 +3761,5 @@ declare global {
     const MMA: MMA;
 }
 
-export { MMA as MMAApi, PanoType, commands };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CameraType, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, VirtualTag };
+export { BUILTIN_FIELDS, KNOWN_FIELDS, MMA as MMAApi, PanoType, commands, events };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CameraType, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };

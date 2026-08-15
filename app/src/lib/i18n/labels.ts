@@ -1,6 +1,6 @@
 import { en } from "@/locales/en";
 import type { MessageKey } from "@/locales";
-import { t } from "./index";
+import { t } from "@/lib/i18n";
 
 /** Convert registry ids like `bulk-download-panoramas` to `bulkDownloadPanoramas`. */
 export function idToCamelCase(id: string): string {

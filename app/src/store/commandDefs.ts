@@ -46,6 +46,7 @@ import {
 	mdiBookOpenOutline,
 	mdiDownloadBoxOutline,
 	mdiFileDocumentOutline,
+	mdiGraphOutline,
 } from "@mdi/js";
 import { registerCommand, type CommandDef } from "./commands";
 import {
@@ -69,6 +70,7 @@ import { toggleSeenOverlay } from "@/lib/seen/seenOverlay";
 import { selectReviewedHistory } from "@/lib/review/review";
 import { openDialog } from "./dialogBus";
 import { msg } from "@/lib/i18n";
+import { isExpandingSvLinks, stopExpandSvLinks } from "@/lib/sv/expandLinks";
 
 const requiresMap = () => getMapState().map !== null;
 const hasActiveLocation = () => getMapState().activeLocation != null;
@@ -254,6 +256,17 @@ const COMMANDS = {
 		defaultBinding: "Mod+d",
 		execute: resetSelections,
 		enabled: hasAnySelections,
+	},
+	"expand-sv-links": {
+		label: msg("Expand Street View links"),
+		icon: mdiGraphOutline,
+		group: msg("Selections"),
+		aliases: ["crawl links", "hyperlapse links", "baidu links", "google links"],
+		execute: () => {
+			if (isExpandingSvLinks()) stopExpandSvLinks();
+			else openDialog("expand-sv-links");
+		},
+		enabled: () => isExpandingSvLinks() || hasSelection(),
 	},
 	"find-duplicates": {
 		label: msg("Find duplicates..."),

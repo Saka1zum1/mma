@@ -9,7 +9,7 @@
 // source uses a fake `mma-sv://{z}/{x}/{y}` template and `transformRequest`
 // rewrites each request through buildTileUrl with the current coverage config.
 
-import maplibregl from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { PickingInfo } from "@deck.gl/core";
@@ -129,7 +129,7 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 	constructor(container: HTMLElement, prefs: MapEmbedPrefs, opts: CreateHostOpts) {
 		this.svOpacity = prefs.svOpacity;
 		this.skipCoverage = opts.skipCoverage ?? false;
-		this.svCfg = createSvConfigForPrefs(prefs, opts.useBlobby);
+		this.svCfg = createSvConfigForPrefs(prefs, opts.useBlobby ?? false);
 		this.styleName = prefs.vectorStyleName;
 		// Oversized, clipped inner container = tile prefetch margin (see PREFETCH_MARGIN).
 		this.outer = container;
@@ -263,10 +263,11 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 
 	on<K extends keyof MapHostEvents>(event: K, fn: (arg: MapHostEvents[K]) => void): () => void {
 		const name = EVENT_NAMES[event];
-		const handler = (e?: maplibregl.MapMouseEvent) => {
+		const handler = (e?: unknown) => {
 			if (LATLNG_EVENTS.has(event)) {
-				if (!e?.lngLat) return;
-				(fn as (arg: LatLng) => void)({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+				const lngLat = (e as maplibregl.MapMouseEvent | undefined)?.lngLat;
+				if (!lngLat) return;
+				(fn as (arg: LatLng) => void)({ lat: lngLat.lat, lng: lngLat.lng });
 			} else {
 				(fn as () => void)();
 			}
@@ -332,7 +333,7 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 
 		if (!wanted) return;
 
-		const next = createSvConfigForPrefs(prefs, opts.useBlobby);
+		const next = createSvConfigForPrefs(prefs, opts.useBlobby ?? false);
 		// Refetch SV tiles only when the coverage config actually changed.
 		if (buildTileUrl(next, 0, 0, 0) !== buildTileUrl(this.svCfg, 0, 0, 0)) {
 			this.svCfg = next;

@@ -10,7 +10,7 @@ import {
 } from "@/lib/map/host";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { google } from "@/lib/sv/opensv";
-import type maplibregl from "maplibre-gl";
+import type { MapMouseEvent } from "maplibre-gl";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import { cmd } from "@/lib/commands";
@@ -196,7 +196,7 @@ function useGuessMapHost(
 
 		const ml = hostInstance(host, "maplibre");
 		if (ml) {
-			const onClick = (e: maplibregl.MapMouseEvent) => {
+			const onClick = (e: MapMouseEvent) => {
 				if (locked || showResult) return;
 				onGuessRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
 			};

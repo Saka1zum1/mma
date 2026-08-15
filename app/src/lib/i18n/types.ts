@@ -1,10 +1,17 @@
 /**
- * Built-in UI locales. Add a new entry here, drop a matching catalog under
- * `src/locales/`, and register it in `catalogs.ts` to ship another language.
+ * Built-in UI locales. JSON catalogs live under `src/locales/`.
+ * Structured fork catalogs (`en.ts` / `zh-Hans.ts`) merge in at init for plugin keys.
  */
 export const LOCALES = {
 	en: "English",
+	de: "Deutsch",
+	es: "Español",
+	fr: "Français",
+	ja: "日本語",
+	pl: "Polski",
+	ru: "Русский",
 	"zh-Hans": "简体中文",
+	"en-XA": "Pseudolocale",
 } as const;
 
 export type AppLocale = keyof typeof LOCALES;
@@ -16,8 +23,10 @@ export function isAppLocale(value: string): value is AppLocale {
 }
 
 /** BCP 47 tag for Intl formatters. */
-export function toBcp47(locale: AppLocale): string {
-	return locale === "zh-Hans" ? "zh-CN" : locale;
+export function toBcp47(locale: AppLocale | string): string {
+	if (locale === "zh-Hans") return "zh-CN";
+	if (locale === "en-XA") return "en";
+	return locale;
 }
 
 export type MessageParams = Record<string, string | number | boolean>;

@@ -7,6 +7,8 @@ export interface PluralForms {
 
 export type MessageSource = string | PluralForms;
 export type MessageParams = Record<string, string | number>;
+/** Structured fork keys (`plugin.localguessr.*`) and English-as-key upstream strings both work. */
+export type MessageKey = string;
 type CatalogEntry = string | Record<string, string>;
 
 const catalogs = import.meta.glob<{ default: Record<string, CatalogEntry> }>("../locales/*.json");
@@ -16,11 +18,27 @@ let locale = "en";
 let pluralRules = new Intl.PluralRules("en");
 let countFormat = new Intl.NumberFormat("en");
 
+/** Fork catalogs use stable structured keys; merge under the upstream JSON catalog. */
+async function structuredCatalog(code: string): Promise<Record<string, string>> {
+	if (code === "zh-Hans") {
+		const { zhHans } = await import("@/locales/zh-Hans");
+		return zhHans as Record<string, string>;
+	}
+	if (code === "en" || code === "en-XA") {
+		const { en } = await import("@/locales/en");
+		return en as Record<string, string>;
+	}
+	return {};
+}
+
 /** Load a locale's catalog. Call once before the first render -- language changes relaunch the
  *  app rather than re-rendering, so nothing observes `locale` changing mid-flight. */
 export async function initLocale(code: string): Promise<void> {
 	const load = catalogs[`../locales/${code}.json`];
-	catalog = load ? (await load()).default : {};
+	const json = load ? (await load()).default : {};
+	const structured = await structuredCatalog(code);
+	// Structured keys first; upstream English-as-key JSON wins on collisions.
+	catalog = { ...structured, ...json };
 	locale = code;
 	pluralRules = new Intl.PluralRules(code);
 	countFormat = new Intl.NumberFormat(code);
@@ -30,6 +48,11 @@ export async function initLocale(code: string): Promise<void> {
 
 export function getLocale(): string {
 	return locale;
+}
+
+/** React helper kept for LocalGuessr / fork UI that still calls `useT()`. Locale swaps relaunch. */
+export function useT() {
+	return { t, tp, locale: getLocale() } as const;
 }
 
 /** Marks a display string that lives in a data table so the extractor sees it. Identity at
@@ -71,6 +94,18 @@ export function t(src: MessageSource, params?: MessageParams): string {
 	);
 }
 
+/** Structured-catalog plural helper (`key.one` / `key.other`) used by fork toast copy. */
+export function tp(key: string, count: number, params?: MessageParams): string {
+	const form = pluralRules.select(count);
+	for (const candidate of [`${key}.${form}`, `${key}.other`, key]) {
+		const entry = catalog[candidate];
+		if (typeof entry === "string") {
+			return t(entry, { count, n: count, ...params });
+		}
+	}
+	return t(key, { count, n: count, ...params });
+}
+
 /** The resolved message split into literal runs and `{param}` slots, with string and number
  *  params already interpolated. Backs `<Trans>`, whose params can be React nodes. */
 export function splitMessage(
@@ -85,3 +120,13 @@ export function splitMessage(
 			return part in params ? interpolated(params[part], part) : { param: part };
 		});
 }
+
+export {
+	commandLabel,
+	hotkeyLabel,
+	idToCamelCase,
+	pluginCatalogName,
+	pluginCatalogDescription,
+} from "./i18n/labels";
+export type { AppLocale } from "./i18n/types";
+export { LOCALES, DEFAULT_LOCALE, isAppLocale, toBcp47 } from "./i18n/types";

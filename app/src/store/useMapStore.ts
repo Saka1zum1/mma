@@ -7,7 +7,7 @@ import {
 	locId,
 	applyLocationPatch,
 } from "@/types";
-import type { Location, MapData, MapMeta, Tag, ExtraFieldDef, StoreStatus } from "@/bindings.gen";
+import type { Location, MapData, MapMeta, MapSettings, Tag, ExtraFieldDef, StoreStatus } from "@/bindings.gen";
 import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
@@ -369,7 +369,17 @@ async function patchMapMeta(id: string, patch: MapMetaPatch) {
 		if (patch.name != null) meta.name = patch.name;
 		if (patch.description != null) meta.description = patch.description;
 		if (patch.folder !== undefined) meta.folder = patch.folder;
-		if (patch.settings != null) meta.settings = patch.settings;
+		if (patch.settings != null) {
+			// MapMetaPatch_Deserialize carries partial settings; merge onto the live map.
+			meta.settings = {
+				...meta.settings,
+				...patch.settings,
+				providers: {
+					...meta.settings.providers,
+					...patch.settings.providers,
+				},
+			} as MapSettings;
+		}
 		if (patch.scoreBounds != null) meta.scoreBounds = patch.scoreBounds;
 		if (patch.extra != null) meta.extra = patch.extra;
 		if (patch.labels != null) meta.labels = patch.labels;
@@ -1032,6 +1042,23 @@ export function setPluginMode(pluginId: string) {
 /** Close the plugin sidebar and return to the overview. */
 export function exitPluginMode() {
 	setWorkArea("overview");
+}
+
+/** Toggle the alt-providers work area (Apple/Baidu/Tencent/Yandex settings). */
+export function toggleProvidersMode() {
+	if (state.workArea === "providers") {
+		setState({ workArea: "overview" });
+	} else {
+		setState({ workArea: "providers", activePluginId: null, activeLocationId: null });
+	}
+	emitEvent("store:changed");
+}
+
+export function exitProvidersMode() {
+	if (state.workArea === "providers") {
+		setState({ workArea: "overview" });
+		emitEvent("store:changed");
+	}
 }
 
 // --- Tag CRUD ---

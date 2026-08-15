@@ -42,6 +42,19 @@ vi.mock("@/lib/util/hotkeys", () => ({ useBinding: () => "f" }));
 vi.mock("@/lib/hooks/useHotkey", () => ({ useHotkeyRef: () => ({ current: null }) }));
 vi.mock("@/lib/hooks/usePanoEvent", () => ({ usePanoEvent: vi.fn() }));
 vi.mock("@/lib/sv/opensv", () => ({ google: { maps: {} } }));
+vi.mock("@/lib/i18n", () => ({
+	t: (s: string) => s,
+	msg: (s: string) => s,
+	useT: () => ({ t: (s: string) => s, locale: "en" }),
+}));
+vi.mock("@/store/useMapStore", () => ({
+	useMapState: (sel: (s: { activeLocation: null; tags: never[] }) => unknown) =>
+		sel({ activeLocation: null, tags: [] }),
+	getMapState: () => ({ activeLocation: null, tags: [] }),
+}));
+vi.mock("@/lib/sv/providers/types", () => ({
+	getLocationProvider: () => "google",
+}));
 vi.mock("@/components/primitives/Tooltip", () => ({
 	Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -50,7 +63,12 @@ import { PanoControls } from "@/components/editor/location/PanoControls";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const panorama = {} as google.maps.StreetViewPanorama;
+const panorama = {
+	getPano: () => "pano-id",
+	getPov: () => ({ heading: 0, pitch: 0 }),
+	getZoom: () => 1,
+	getPosition: () => ({ lat: () => 0, lng: () => 0 }),
+} as unknown as google.maps.StreetViewPanorama;
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 

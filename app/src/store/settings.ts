@@ -67,6 +67,8 @@ export const TAG_VIEW_MODES = {
 export const TAG_FOLDER_COLOR_MODES = {
 	direct: msg("Fixed color"),
 	firstChild: msg("Inherit first child"),
+	random: msg("Random"),
+	childGradient: msg("Child tag gradient"),
 } as const;
 export const OPACITY_TOGGLE_MODES = {
 	previous: msg("Last used opacity"),
