@@ -11,7 +11,7 @@ export function BaiduIcon({
 	label?: string;
 }) {
 	const { t } = useT();
-	const ariaLabel = label ?? t("provider.baidu");
+	const ariaLabel = label ?? t("Baidu");
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"

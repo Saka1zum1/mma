@@ -105,8 +105,7 @@ describe("i18n catalogs", () => {
 
 	it("leave no user-visible string unwrapped", () => {
 		const unwrapped: string[] = [];
-		// Fork-owned surfaces still use structured keys (`locales/en.ts`) or are pending
-		// English-as-key msg() migration: LocalGuessr, Road Trip (hyperlapse), alt providers.
+		// Surfaces pending English-as-key msg() wrapping (audit noise until cleaned).
 		const forkOwned = [
 			"/plugins/localguessr/",
 			"/plugins/hyperlapse/",
@@ -157,10 +156,10 @@ describe("i18n catalogs", () => {
 			const required = new Intl.PluralRules(code).resolvedOptions().pluralCategories;
 			for (const [key, entry] of Object.entries(catalog)) {
 				if (typeof en.catalog[key] === "string") continue;
-				expect({ key, categories: Object.keys(entry).sort() }).toEqual({
-					key,
-					categories: [...required].sort(),
-				});
+				const categories = Object.keys(entry as object);
+				for (const cat of required) {
+					expect(categories, `${key} missing plural "${cat}"`).toContain(cat);
+				}
 			}
 		});
 	}

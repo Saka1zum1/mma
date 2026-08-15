@@ -52,8 +52,8 @@ export function AddTagPanel({
 			setRecent(rememberRecentTag(tagName));
 			toast(
 				locationIds.length === 1
-					? t("plugin.localguessr.tagAdded", { tag: tagName })
-					: t("plugin.localguessr.tagAddedBulk", {
+					? t("Tagged with “{tag}”", { tag: tagName })
+					: t("Tagged {count} locations with “{tag}”", {
 							tag: tagName,
 							count: String(locationIds.length),
 						}),
@@ -61,7 +61,7 @@ export function AddTagPanel({
 			setName("");
 			onOpenChange(false);
 		} catch (err) {
-			toast(err instanceof Error ? err.message : t("plugin.localguessr.tagAddFailed"));
+			toast(err instanceof Error ? err.message : t("Failed to add tag"));
 		} finally {
 			setBusy(false);
 		}
@@ -76,7 +76,7 @@ export function AddTagPanel({
 			}}
 		>
 			<DialogContent
-				title={title ?? t("plugin.localguessr.addTag")}
+				title={title ?? t("Add tag")}
 				className="gg-add-tag-dialog"
 			>
 				<form
@@ -90,7 +90,7 @@ export function AddTagPanel({
 						type="text"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						placeholder={t("plugin.localguessr.addTagPlaceholder")}
+						placeholder={t("Tag name…")}
 						autoFocus
 						disabled={busy}
 					/>
@@ -98,7 +98,7 @@ export function AddTagPanel({
 					{filteredRecent.length > 0 && (
 						<div className="gg-add-tag-dialog__section">
 							<div className="gg-add-tag-dialog__label">
-								{t("plugin.localguessr.recentTags")}
+								{t("Recent tags")}
 							</div>
 							<div className="gg-add-tag-dialog__chips">
 								{filteredRecent.map((tag) => (
@@ -119,7 +119,7 @@ export function AddTagPanel({
 					{filteredAppTags.length > 0 && (
 						<div className="gg-add-tag-dialog__section">
 							<div className="gg-add-tag-dialog__label">
-								{t("plugin.localguessr.mapTags")}
+								{t("Map tags")}
 							</div>
 							<div className="gg-add-tag-dialog__chips">
 								{filteredAppTags.map((tag) => (
@@ -140,10 +140,10 @@ export function AddTagPanel({
 
 					<div className="gg-add-tag-dialog__actions">
 						<Button type="button" onClick={() => onOpenChange(false)} disabled={busy}>
-							{t("common.cancel")}
+							{t("Cancel")}
 						</Button>
 						<Button variant="primary" type="submit" disabled={!trimmed || busy}>
-							{t("plugin.localguessr.addTag")}
+							{t("Add tag")}
 						</Button>
 					</div>
 				</form>

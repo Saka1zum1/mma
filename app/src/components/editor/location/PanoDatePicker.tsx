@@ -9,18 +9,17 @@ import { usePanoViewer } from "./PanoViewerContext";
 import { NSelect } from "@/components/primitives/NSelect";
 import { useMapState } from "@/store/useMapStore";
 import { useT } from "@/lib/i18n";
-import type { MessageKey } from "@/locales/en";
 
 function BuiltinBadge({ type }: { type: BuiltinCameraType }) {
 	const { t } = useT();
-	const badgeKeys: Record<BuiltinCameraType, MessageKey | null> = {
-		unofficial: "editor.badgeUnofficial",
-		gen1: "editor.badgeGen1",
-		gen2: "editor.badgeGen2",
-		gen4: "editor.badgeGen4",
-		badcam: "editor.badgeBadcam",
-		tripod: "editor.badgeTripod",
-		trekker: "editor.badgeTrekker",
+	const badgeKeys: Record<BuiltinCameraType, string | null> = {
+		unofficial: "unofficial",
+		gen1: "Gen1",
+		gen2: "Gen2/3",
+		gen4: "Gen4",
+		badcam: "Badcam",
+		tripod: "Tripod",
+		trekker: "Trekker",
 	};
 	const key = badgeKeys[type];
 	if (!key) return null;
@@ -103,7 +102,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 	const fmt = dayLevel ? panoDayFmt : dateFmt;
 	const displayLabel = displayDate
 		? isDefault
-			? t("editor.defaultWithDate", { date: fmt.format(displayDate) })
+			? t("Default ({date})", { date: fmt.format(displayDate) })
 			: fmt.format(displayDate)
 		: prevLabelRef.current;
 	if (displayLabel) prevLabelRef.current = displayLabel;
@@ -147,7 +146,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 		return (
 			<NSelect className="pano-date-select" disabled>
 				<button type="button" className="pano-date-select__trigger">
-					<span className="pano-value">{t("editor.noDates")}</span>
+					<span className="pano-value">{t("No dates")}</span>
 				</button>
 			</NSelect>
 		);
@@ -159,7 +158,7 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 			<NSelect className="pano-date-select" disabled value="default">
 				<button type="button" className="pano-date-select__trigger">
 					<span className="pano-value">
-						{triggerLabel ?? t("editor.defaultLabel")}
+						{triggerLabel ?? t("Default")}
 						<span style={{ display: "flex", gap: 4, alignItems: "center" }}>
 							{shouldShowBadge(triggerCamera, showBadges) && (
 								<PanoBadge camera={triggerCamera} />
@@ -198,15 +197,15 @@ export const PanoDatePicker = memo(function PanoDatePicker({
 					<span className="badge badge--number">{sorted.length}</span>
 				</span>
 			</button>
-			<optgroup label={t("editor.specificPanorama")}>
+			<optgroup label={t("Specific Panorama")}>
 				{sorted.map((d) => (
 					<PanoOption key={d.pano} pano={d} dayLevel={dayLevel} />
 				))}
 			</optgroup>
-			<optgroup label={t("editor.defaultAutoUpdating")}>
+			<optgroup label={t("Default / auto-updating")}>
 				<option value="default" className="pano-option">
 					<span className="pano-option__name">
-						{t("editor.defaultLabel")}
+						{t("Default")}
 						{defaultDate ? ` (${fmt.format(defaultDate)})` : ""}
 					</span>
 				</option>

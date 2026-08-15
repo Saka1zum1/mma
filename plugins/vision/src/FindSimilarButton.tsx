@@ -30,14 +30,14 @@ export function FindSimilarButton() {
 				await MMA.addSelections([{
 					type: "Locations",
 					locations: matchedIds,
-					name: `Similar to ${active.panoId!.slice(0, 8)}...`,
+					name: MMA.t("Similar to {id}...", { id: active.panoId!.slice(0, 8) }),
 				}]);
-				setResult(`${matchedIds.length} similar`);
+				setResult(MMA.t("{n} similar", { n: matchedIds.length }));
 			} else {
-				setResult("No similar panos found");
+				setResult(MMA.t("No similar panos found"));
 			}
 		} catch (e) {
-			setResult(`Error: ${e}`);
+			setResult(MMA.t("Error: {error}", { error: String(e) }));
 		} finally {
 			setRunning(false);
 		}
@@ -50,7 +50,7 @@ export function FindSimilarButton() {
 			disabled={running}
 			onClick={run}
 		>
-			{running ? "Searching..." : "Find similar panos"}
+			{running ? MMA.t("Searching...") : MMA.t("Find similar panos")}
 		</button>
 	);
 }

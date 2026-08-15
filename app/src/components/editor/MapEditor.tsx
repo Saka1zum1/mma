@@ -359,11 +359,11 @@ export function MapEditor() {
 					>
 						{!appSettings.fullscreenMap && <SplitHandle onSplitChange={setSplit} />}
 						<header>
-						<Tooltip content={t("editor.backToMapList")} side="bottom" align="start">
+						<Tooltip content={t("Back to map list")} side="bottom" align="start">
 							<a
 								href="#"
 								style={{ textDecoration: "none" }}
-								aria-label={t("editor.backToMapList")}
+								aria-label={t("Back to map list")}
 								onClick={(e) => {
 									e.preventDefault();
 									goToList();
@@ -374,14 +374,14 @@ export function MapEditor() {
 						</Tooltip>
 						<h1>{map.meta.name}</h1>
 						<Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-							<Tooltip content={t("editor.editMap")} side="bottom">
+							<Tooltip content={t("Edit map")} side="bottom">
 								<DialogTrigger asChild>
-									<button className="icon-button" type="button" aria-label={t("editor.editMap")}>
+									<button className="icon-button" type="button" aria-label={t("Edit map")}>
 										<Icon path={mdiPencil} />
 									</button>
 								</DialogTrigger>
 							</Tooltip>
-							<DialogContent title={t("dialog.mapSettings")} className="edit-map-modal">
+							<DialogContent title={t("Map settings")} className="edit-map-modal">
 								<MapRenameForm mapId={map.meta.id} currentName={map.meta.name} />
 							</DialogContent>
 						</Dialog>
@@ -389,8 +389,8 @@ export function MapEditor() {
 						<Tooltip
 							content={
 								workArea === "providers"
-									? t("editor.closeStreetViewProviders")
-									: t("editor.streetViewProviders")
+									? t("Close Street View providers")
+									: t("Street View providers")
 							}
 							side="bottom"
 							align="end"
@@ -398,7 +398,7 @@ export function MapEditor() {
 							<button
 								className="icon-button"
 								type="button"
-								aria-label={t("editor.streetViewProviders")}
+								aria-label={t("Street View providers")}
 								aria-pressed={workArea === "providers"}
 								onClick={() => toggleProvidersMode()}
 							>
@@ -412,11 +412,11 @@ export function MapEditor() {
 					</header>
 					<div className="side-header">
 						{hasDoclinks && (
-							<Tooltip content={t("editor.doclinks")} side="bottom">
+							<Tooltip content={t("Doclinks")} side="bottom">
 								<button
 									className="icon-button"
 									type="button"
-									aria-label={t("editor.toggleDoclinkPanel")}
+									aria-label={t("Toggle doclink panel")}
 									onClick={() => setDocPanelOpen(!docPanelOpen)}
 								>
 									<Icon path={mdiFileDocumentOutline} />
@@ -447,7 +447,7 @@ export function MapEditor() {
 					<CommandPalette />
 					{fileDragging && (
 						<div className="file-drop-overlay">
-							<div className="file-drop-overlay__content">{t("mapList.dropToImport")}</div>
+							<div className="file-drop-overlay__content">{t("Drop file to import")}</div>
 						</div>
 					)}
 				</div>

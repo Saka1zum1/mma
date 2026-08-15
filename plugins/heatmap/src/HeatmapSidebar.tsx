@@ -189,10 +189,10 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 				<button className="icon-button" onClick={onClose}>
 					<Icon path={ARROW_LEFT} />
 				</button>
-				<h2 className="heatmap-sidebar__title">Heatmap</h2>
+				<h2 className="heatmap-sidebar__title">{MMA.t("Heatmap")}</h2>
 				<span style={{ flex: 1 }} />
 				<button className="heatmap-sidebar__reset" onClick={resetLayers}>
-					Reset
+					{MMA.t("Reset")}
 				</button>
 			</header>
 
@@ -208,7 +208,7 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 				))}
 
 				<button className="heatmap-sidebar__add" onClick={addLayer}>
-					Add heatmap
+					{MMA.t("Add heatmap")}
 				</button>
 			</div>
 		</section>
@@ -236,9 +236,9 @@ function LayerControls({
 					checked={l.visible}
 					onChange={(e) => set({ visible: e.target.checked })}
 				/>
-				<span className="heatmap-sidebar__layer-title">Heatmap {index + 1}</span>
+				<span className="heatmap-sidebar__layer-title">{MMA.t("Heatmap {n}", { n: index + 1 })}</span>
 				<button className="heatmap-sidebar__reset" onClick={() => removeLayer(l.id)}>
-					Remove
+					{MMA.t("Remove")}
 				</button>
 			</div>
 
@@ -252,13 +252,13 @@ function LayerControls({
 				}}
 			/>
 
-			<Slider label="Intensity" value={l.intensity} min={0.1} max={10} step={0.1}
+			<Slider label={MMA.t("Intensity")} value={l.intensity} min={0.1} max={10} step={0.1}
 				onChange={(v) => set({ intensity: v })} />
-			<Slider label="Radius" value={l.radiusPixels} min={1} max={100} step={1}
+			<Slider label={MMA.t("Radius")} value={l.radiusPixels} min={1} max={100} step={1}
 				onChange={(v) => set({ radiusPixels: v })} format={(v) => `${v}px`} />
-			<Slider label="Opacity" value={l.opacity} min={0} max={1} step={0.05}
+			<Slider label={MMA.t("Opacity")} value={l.opacity} min={0} max={1} step={0.05}
 				onChange={(v) => set({ opacity: v })} />
-			<Slider label="Threshold" value={l.threshold} min={0} max={1} step={0.01}
+			<Slider label={MMA.t("Threshold")} value={l.threshold} min={0} max={1} step={0.01}
 				onChange={(v) => set({ threshold: v })} />
 
 			<GradientPicker layerId={l.id} gradientId={l.gradientId} onSelect={(id) => set({ gradientId: id })} />
@@ -282,7 +282,7 @@ function GradientPicker({
 
 	return (
 		<>
-			<p className="heatmap-sidebar__section-title" style={{ marginTop: 8 }}>Gradient</p>
+			<p className="heatmap-sidebar__section-title" style={{ marginTop: 8 }}>{MMA.t("Gradient")}</p>
 			<div className="heatmap-sidebar__gradients">
 				{[...BUILTIN_GRADIENTS, ...customs].map((g) => (
 					<button
@@ -300,9 +300,9 @@ function GradientPicker({
 				<button
 					className="heatmap-sidebar__gradient-new"
 					onClick={() => setEditingId(addCustomGradient(layerId, current).id)}
-					title="Create an editable copy of the selected gradient"
+					title={MMA.t("Create an editable copy of the selected gradient")}
 				>
-					+ New
+					{MMA.t("+ New")}
 				</button>
 			</div>
 
@@ -312,13 +312,13 @@ function GradientPicker({
 						className="heatmap-sidebar__reset"
 						onClick={() => setEditingId(editing?.id === current.id ? null : current.id)}
 					>
-						{editing?.id === current.id ? "Done" : "Edit gradient"}
+						{editing?.id === current.id ? MMA.t("Done") : MMA.t("Edit gradient")}
 					</button>
 					<button
 						className="heatmap-sidebar__reset"
 						onClick={() => removeCustomGradient(current.id)}
 					>
-						Delete
+						{MMA.t("Delete")}
 					</button>
 				</div>
 			)}
@@ -389,14 +389,14 @@ function GradientEditor({ gradient: g }: { gradient: HeatmapGradient }) {
 				className="heatmap-sidebar__editor-name"
 				value={g.name}
 				onChange={(e) => updateCustomGradient(g.id, { name: e.target.value })}
-				aria-label="Gradient name"
+				aria-label={MMA.t("Gradient name")}
 			/>
 
 			<div className="heatmap-sidebar__track" ref={trackRef}>
 				<div
 					className="heatmap-sidebar__track-bar"
 					style={{ background: gradientCss(g.stops) }}
-					title="Click to add a stop"
+					title={MMA.t("Click to add a stop")}
 					onClick={(e) => {
 						const next = addStopAt(g.stops, posFromClientX(e.clientX));
 						setSelected(next.index);
@@ -428,7 +428,7 @@ function GradientEditor({ gradient: g }: { gradient: HeatmapGradient }) {
 						type="color"
 						value={rgbToHex(stop.color)}
 						onChange={(e) => setStops(setStopColor(g.stops, selected, hexToRgb(e.target.value)))}
-						aria-label="Stop colour"
+						aria-label={MMA.t("Stop colour")}
 					/>
 					<input
 						type="number"
@@ -440,20 +440,20 @@ function GradientEditor({ gradient: g }: { gradient: HeatmapGradient }) {
 							setSelected(next.index);
 							setStops(next.stops);
 						}}
-						aria-label="Stop position"
+						aria-label={MMA.t("Stop position")}
 					/>
 					<span>%</span>
 					<span style={{ flex: 1 }} />
 					<button className="heatmap-sidebar__reset" onClick={() => setStops(reverseStops(g.stops))}>
-						Reverse
+						{MMA.t("Reverse")}
 					</button>
 				</div>
 			)}
 
 			<p className="heatmap-sidebar__hint">
 				{g.stops.length <= MIN_STOPS
-					? `Click the bar to add a stop (${MIN_STOPS} minimum).`
-					: "Click the bar to add a stop, right-click a handle to remove it."}
+					? MMA.t("Click the bar to add a stop ({n} minimum).", { n: MIN_STOPS })
+					: MMA.t("Click the bar to add a stop, right-click a handle to remove it.")}
 			</p>
 		</div>
 	);

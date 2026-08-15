@@ -1,7 +1,7 @@
 {
 	"name": "map-making-app",
 	"private": true,
-"version": "0.9.1",
+	"version": "0.9.1",
 	"type": "module",
 	"engines": {
 		"node": "^24.15.0"
@@ -46,13 +46,13 @@
 		"@radix-ui/react-visually-hidden": "^1.2.4",
 		"@tauri-apps/api": "^2.11.0",
 		"@tauri-apps/plugin-dialog": "^2.7.1",
-		"@tauri-apps/plugin-log": "^2.8.0",
+		"@tauri-apps/plugin-log": "2.9.0",
 		"@tauri-apps/plugin-process": "^2.3.1",
 		"@tauri-apps/plugin-shell": "^2.3.5",
 		"@tauri-apps/plugin-updater": "^2.10.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
-"i18n-iso-countries": "^7.14.0",
+		"i18n-iso-countries": "^7.14.0",
 		"maplibre-gl": "^6.3.0",
 		"pbf": "^5.1.0",
 		"pmtiles": "^4.4.1",
@@ -60,7 +60,7 @@
 		"react-colorful": "^5.6.1",
 		"react-day-picker": "^10.0.1",
 		"react-dom": "^19.2.5",
-		"three": "^0.177.0",
+		"three": "^0.185.1",
 		"ts-pattern": "^5.9.0"
 	},
 	"lint-staged": {

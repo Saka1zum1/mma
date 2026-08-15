@@ -18,6 +18,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl, downloadBlob } from "@/lib/util/util";
 import * as Collapsible from "@radix-ui/react-collapsible";
+import bundledChangelog from "../../../../CHANGELOG.md?raw";
 import { Dialog, DialogContent, useCloseDialog } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
 import {
@@ -144,18 +145,36 @@ function renderMarkdown(md: string): React.ReactNode[] {
 
 let changelogPromise: Promise<ChangelogSection[] | null> | null = null;
 
+/** Fork changelog URL; bundled local file wins when it has a newer tip (unpushed / tauri dev). */
+const FORK_CHANGELOG_URL =
+	"https://raw.githubusercontent.com/Saka1zum1/mma/master/CHANGELOG.md";
+
+function sectionsFromMd(md: string | null | undefined): ChangelogSection[] | null {
+	if (!md) return null;
+	const sections = parseChangelog(md);
+	return sections.length ? sections : null;
+}
+
+function tipVersion(sections: ChangelogSection[]): string {
+	return sections[0]?.tag.replace(/^v/, "") ?? "0";
+}
+
 function fetchChangelog(): Promise<ChangelogSection[] | null> {
 	if (!changelogPromise) {
-		changelogPromise = fetch("https://raw.githubusercontent.com/ccmdi/mma/master/CHANGELOG.md")
+		const local = sectionsFromMd(bundledChangelog);
+		changelogPromise = fetch(FORK_CHANGELOG_URL)
 			.then((r) => (r.ok ? r.text() : null))
 			.then((md) => {
-				if (!md) return null;
-				const sections = parseChangelog(md);
-				return sections.length ? sections : null;
+				const remote = sectionsFromMd(md);
+				// Prefer whichever tip is newer so unpushed local entries still show in dev.
+				if (local && remote) {
+					return cmpVersion(tipVersion(local), tipVersion(remote)) >= 0 ? local : remote;
+				}
+				return local ?? remote;
 			})
 			.catch((e) => {
 				log.warn("Failed to fetch changelog", e);
-				return null;
+				return local;
 			});
 	}
 	return changelogPromise;
@@ -1309,7 +1328,7 @@ export function MapList() {
 							<Trans
 								msg="This is a work in progress. Report bugs {here}"
 								here={
-									<a target="_blank" href="https://github.com/ccmdi/mma/issues">
+									<a target="_blank" href="https://github.com/Saka1zum1/mma/issues">
 										{t("here")}
 									</a>
 								}

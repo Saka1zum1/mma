@@ -36,6 +36,7 @@ import { useDiscordPresence } from "@/lib/discord/presence";
 import { initRemoteHost } from "@/lib/remote/host";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
+import { subscribe } from "@/lib/events";
 import "@/plugins";
 import { t } from "@/lib/i18n";
 
@@ -119,6 +120,11 @@ function AppChrome() {
 	useHotkey(useBinding("closeMap"), () => {
 		if (map) goToList();
 	});
+
+	useEffect(() => {
+		const unsub = subscribe("settings:open", () => setShowSettings(true));
+		return unsub;
+	}, []);
 
 	const hasSeenWelcome = useSetting("hasSeenWelcome");
 	const fullscreenMap = useSetting("fullscreenMap");

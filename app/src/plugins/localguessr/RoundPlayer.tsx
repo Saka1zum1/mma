@@ -87,8 +87,8 @@ function RoundResultBar({
 					</div>
 					<p className="gg-round-result__label">
 						{result.distanceMeters != null
-							? t("plugin.localguessr.fromLocation")
-							: t("plugin.localguessr.noGuess")}
+							? t("From location")
+							: t("No guess placed")}
 					</p>
 				</div>
 
@@ -98,16 +98,16 @@ function RoundResultBar({
 						<AddTagButton locationIds={[result.location.id]} variant="result" />
 						{isLast ? (
 							<Button variant="primary" onClick={onFinish}>
-								{t("plugin.localguessr.viewSummary")}
+								{t("View summary")}
 							</Button>
 						) : (
 							<Button variant="primary" onClick={onNext}>
-								{t("plugin.localguessr.nextRound")}
+								{t("Next round")}
 							</Button>
 						)}
 						<p className="gg-round-result__space">
-							{t("plugin.localguessr.hitSpace")}{" "}
-							<span className="gg-kbd">Space</span> {t("plugin.localguessr.toContinue")}
+							{t("Hit")}{" "}
+							<span className="gg-kbd">Space</span> {t("to continue")}
 						</p>
 					</div>
 				</div>
@@ -116,7 +116,7 @@ function RoundResultBar({
 					<div className="gg-shadow-text gg-shadow-text--negative gg-shadow-text--md">
 						{result.score.toLocaleString()}
 					</div>
-					<p className="gg-round-result__label">{t("plugin.localguessr.ofMaxPoints", { max: "5,000" })}</p>
+					<p className="gg-round-result__label">{t("Of {max} points", { max: "5,000" })}</p>
 				</div>
 			</div>
 		</div>
@@ -471,11 +471,11 @@ export function RoundPlayer({
 				<div className="gg-status">
 					<div className="gg-status__inner">
 						<div className="gg-status__item">
-							<div className="gg-status__label">{t("plugin.localguessr.statusMap")}</div>
+							<div className="gg-status__label">{t("MAP")}</div>
 							<div className="gg-status__value">{active.mapName}</div>
 						</div>
 						<div className="gg-status__item">
-							<div className="gg-status__label">{t("plugin.localguessr.statusRound")}</div>
+							<div className="gg-status__label">{t("ROUND")}</div>
 							<div className="gg-status__value">
 								{active.currentRoundIndex + 1}
 								<span className="gg-status__slash">/</span>
@@ -483,18 +483,18 @@ export function RoundPlayer({
 							</div>
 						</div>
 						<div className="gg-status__item">
-							<div className="gg-status__label">{t("plugin.localguessr.stausScore")}</div>
+							<div className="gg-status__label">{t("SCORE")}</div>
 							<div className="gg-status__value">{cumScore.toLocaleString()}</div>
 						</div>
 						{streakOn && (
 							<div className="gg-status__item">
-								<div className="gg-status__label">{t("plugin.localguessr.streakShort")}</div>
+								<div className="gg-status__label">{t("Streak")}</div>
 								<div className="gg-status__value">{hudStreak}</div>
 							</div>
 						)}
 						{active.config.timerMode !== "off" && !showResult && (
 							<div className="gg-status__item gg-status__item--timer">
-								<div className="gg-status__label">{t("plugin.localguessr.timerShort")}</div>
+								<div className="gg-status__label">{t("Time")}</div>
 								<div className="gg-status__value">
 									<GameTimer
 										embedded
@@ -515,20 +515,20 @@ export function RoundPlayer({
 				type="button"
 				className="gg-round__close"
 				onClick={requestClose}
-				aria-label={t("common.close")}
+				aria-label={t("Close")}
 			>
 				<Icon path={mdiClose} />
 			</button>
 
 			<Dialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
-				<DialogContent title={t("plugin.localguessr.confirmAbortInfinite")} className="gg-end-dialog">
-					<p className="gg-end-dialog__body">{t("plugin.localguessr.confirmAbortInfiniteBody")}</p>
+				<DialogContent title={t("Stop this infinite game?")} className="gg-end-dialog">
+					<p className="gg-end-dialog__body">{t("End the game to save a finished summary, or exit to keep it in Ongoing and resume later.")}</p>
 					<div className="gg-end-dialog__actions">
 						<Button variant="primary" onClick={confirmEndGame}>
-							{t("plugin.localguessr.endGame")}
+							{t("End game")}
 						</Button>
-						<Button onClick={confirmExitGame}>{t("plugin.localguessr.exitGame")}</Button>
-						<Button onClick={() => setConfirmEndOpen(false)}>{t("common.cancel")}</Button>
+						<Button onClick={confirmExitGame}>{t("Exit")}</Button>
+						<Button onClick={() => setConfirmEndOpen(false)}>{t("Cancel")}</Button>
 					</div>
 				</DialogContent>
 			</Dialog>
@@ -543,7 +543,7 @@ export function RoundPlayer({
 					<div className="gg-controls__col">
 						{canMove && (
 							<>
-								<Tooltip content={hotkeyLabel(t("plugin.localguessr.checkpoint"), LG.checkpoint)} side="right">
+								<Tooltip content={hotkeyLabel(t("Set checkpoint"), LG.checkpoint)} side="right">
 									<button
 										type="button"
 										className="gg-controls__btn"
@@ -551,30 +551,30 @@ export function RoundPlayer({
 											panoRef.current?.setCheckpoint();
 											setHasCheckpoint(true);
 										}}
-										aria-label={t("plugin.localguessr.checkpoint")}
+										aria-label={t("Set checkpoint")}
 									>
 										<Icon path={mdiFlagPlusOutline} />
 									</button>
 								</Tooltip>
 								{hasCheckpoint && (
-									<Tooltip content={hotkeyLabel(t("plugin.localguessr.returnCheckpoint"), LG.returnCheckpoint)} side="right">
+									<Tooltip content={hotkeyLabel(t("Return to checkpoint"), LG.returnCheckpoint)} side="right">
 										<button
 											type="button"
 											className="gg-controls__btn"
 											onClick={() => panoRef.current?.returnToCheckpoint()}
-											aria-label={t("plugin.localguessr.returnCheckpoint")}
+											aria-label={t("Return to checkpoint")}
 										>
 											<Icon path={mdiFlagCheckered} />
 										</button>
 									</Tooltip>
 								)}
-								<Tooltip content={hotkeyLabel(t("plugin.localguessr.undoMove"), LG.undoMove)} side="right">
+								<Tooltip content={hotkeyLabel(t("Undo move"), LG.undoMove)} side="right">
 									<button
 										type="button"
 										className="gg-controls__btn"
 										onClick={() => panoRef.current?.undoMove()}
 										disabled={!canUndo}
-										aria-label={t("plugin.localguessr.undoMove")}
+										aria-label={t("Undo move")}
 									>
 										<Icon path={mdiUndo} />
 									</button>
@@ -582,8 +582,8 @@ export function RoundPlayer({
 							</>
 						)}
 						{canMove && (
-							<Tooltip content={hotkeyLabel(t("plugin.localguessr.returnToSpawn"), LG.returnToSpawn)} side="right">
-								<button type="button" className="gg-controls__btn" onClick={() => panoRef.current?.returnToSpawn()} aria-label={t("plugin.localguessr.returnToSpawn")}>
+							<Tooltip content={hotkeyLabel(t("Return to spawn"), LG.returnToSpawn)} side="right">
+								<button type="button" className="gg-controls__btn" onClick={() => panoRef.current?.returnToSpawn()} aria-label={t("Return to spawn")}>
 									<Icon path={mdiHome} />
 								</button>
 							</Tooltip>
@@ -592,8 +592,8 @@ export function RoundPlayer({
 							<Tooltip
 								content={hotkeyLabel(
 									hideCar
-										? t("plugin.localguessr.showCar")
-										: t("plugin.localguessr.hideCar"),
+										? t("Show car")
+										: t("Hide car"),
 									LG.hideCar,
 								)}
 								side="right"
@@ -604,20 +604,20 @@ export function RoundPlayer({
 									onClick={toggleHideCar}
 									aria-label={
 										hideCar
-										? t("plugin.localguessr.showCar")
-										: t("plugin.localguessr.hideCar")
+										? t("Show car")
+										: t("Hide car")
 									}
 								>
 									<Icon path={hideCar ? mdiCarOff : mdiCar} />
 								</button>
 							</Tooltip>
 						)}
-						<Tooltip content={hotkeyLabel(t("plugin.localguessr.openSettings"), LG.openSettings)} side="right">
+						<Tooltip content={hotkeyLabel(t("Open settings"), LG.openSettings)} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => emit("settings:open")}
-								aria-label={t("plugin.localguessr.openSettings")}
+								aria-label={t("Open settings")}
 							>
 								<Icon path={mdiCog} />
 							</button>

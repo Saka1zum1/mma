@@ -747,11 +747,11 @@
 }
 
 .gg-round-result__streak {
-	font-size: 1rem;
+	font-size: 0.9rem;
 	font-weight: 600;
 	color: var(--gg-text);
 	line-height: 1.35;
-	max-width: 40rem;
+	max-width: 50rem;
 }
 
 .gg-round-result__actions {

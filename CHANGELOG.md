@@ -1,8 +1,3 @@
-## v0.9.2 - 2026-08-15
-- Synced with upstream [ccmdi/mma](https://github.com/ccmdi/mma) through `aa269d27` (i18n catalogs, Vali 3.2.1, Vite 8 / Vitest 4 / MapLibre 6, store/render/SV refactors, settings/editor UX)
-- Kept fork features: alt-providers, LocalGuessr, Road Trip (hyperlapse), expand SV links, gps-csg tiles, skipCoverage hosts
-- Bridged upstream English-as-key i18n with structured LocalGuessr catalogs via `useT()` + merged locale load
-
 ## v0.9.1 - 2026-08-08
 - Location actions in the map right-click menu; select country/subdivision under cursor
 - Rebuilt measure tool on every map style; Street View screenshot button

@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, Fragment, type ReactNode } from "react";
 import clsx from "clsx";
 import { useEventValue } from "@/lib/events";
 import { useSetting } from "@/store/settings";
@@ -22,10 +22,15 @@ export interface PanelDef {
 }
 
 export function PinnedToolbar({
+	left,
 	right,
+	insertAfter,
 	panels,
 }: {
+	left?: ReactNode;
 	right?: ReactNode;
+	/** Render a node immediately after a pinned command id (e.g. bulk-enrich). */
+	insertAfter?: { commandId: string; node: ReactNode };
 	panels: Record<string, PanelDef>;
 }) {
 	const pinned = useSetting("pinnedCommands");
@@ -55,7 +60,7 @@ export function PinnedToolbar({
 		if (changed) setOpenPanels(next);
 	});
 
-	if (pinned.length === 0 && !right) return null;
+	if (pinned.length === 0 && !right && !left && !insertAfter) return null;
 	const togglePanel = (id: string) => setOpenPanels((prev) => toggleInSet(prev, id));
 
 	const handleDragStart = (i: number, e: React.MouseEvent) => {
@@ -94,6 +99,7 @@ export function PinnedToolbar({
 	return (
 		<div className="selection-manager__toolbar">
 			<div className="selection-manager__bar">
+				{left}
 				{pinned.map((id, i) => {
 					if (id === "---") {
 						return (
@@ -166,55 +172,59 @@ export function PinnedToolbar({
 					);
 
 					return (
-						<ContextMenu.Root key={id}>
-							<Tooltip content={t(command.label)} side="bottom">
-								<ContextMenu.Trigger render={btn} />
-							</Tooltip>
-							<ContextMenu.Portal>
-								<ContextMenu.Positioner className="menu-positioner">
-									<ContextMenu.Popup className="context-menu">
-										{!isFirst && (
+						<Fragment key={id}>
+							<ContextMenu.Root>
+								<Tooltip content={t(command.label)} side="bottom">
+									<ContextMenu.Trigger render={btn} />
+								</Tooltip>
+								<ContextMenu.Portal>
+									<ContextMenu.Positioner className="menu-positioner">
+										<ContextMenu.Popup className="context-menu">
+											{!isFirst && (
+												<ContextMenu.Item
+													className="context-menu__item"
+													onClick={() => movePinnedCommand(i, -1)}
+												>
+													{t("Move left")}
+												</ContextMenu.Item>
+											)}
+											{!isLast && (
+												<ContextMenu.Item
+													className="context-menu__item"
+													onClick={() => movePinnedCommand(i, 1)}
+												>
+													{t("Move right")}
+												</ContextMenu.Item>
+											)}
+											<ContextMenu.Separator className="context-menu__separator" />
 											<ContextMenu.Item
 												className="context-menu__item"
-												onClick={() => movePinnedCommand(i, -1)}
+												onClick={() => insertSeparator(i, "before")}
 											>
-												{t("Move left")}
+												{t("Add separator before")}
 											</ContextMenu.Item>
-										)}
-										{!isLast && (
 											<ContextMenu.Item
 												className="context-menu__item"
-												onClick={() => movePinnedCommand(i, 1)}
+												onClick={() => insertSeparator(i, "after")}
 											>
-												{t("Move right")}
+												{t("Add separator after")}
 											</ContextMenu.Item>
-										)}
-										<ContextMenu.Separator className="context-menu__separator" />
-										<ContextMenu.Item
-											className="context-menu__item"
-											onClick={() => insertSeparator(i, "before")}
-										>
-											{t("Add separator before")}
-										</ContextMenu.Item>
-										<ContextMenu.Item
-											className="context-menu__item"
-											onClick={() => insertSeparator(i, "after")}
-										>
-											{t("Add separator after")}
-										</ContextMenu.Item>
-										<ContextMenu.Separator className="context-menu__separator" />
-										<ContextMenu.Item
-											className="context-menu__item"
-											onClick={() => removePinnedAt(i)}
-										>
-											{t("Remove from toolbar")}
-										</ContextMenu.Item>
-									</ContextMenu.Popup>
-								</ContextMenu.Positioner>
-							</ContextMenu.Portal>
-						</ContextMenu.Root>
+											<ContextMenu.Separator className="context-menu__separator" />
+											<ContextMenu.Item
+												className="context-menu__item"
+												onClick={() => removePinnedAt(i)}
+											>
+												{t("Remove from toolbar")}
+											</ContextMenu.Item>
+										</ContextMenu.Popup>
+									</ContextMenu.Positioner>
+								</ContextMenu.Portal>
+							</ContextMenu.Root>
+							{insertAfter?.commandId === id ? insertAfter.node : null}
+						</Fragment>
 					);
 				})}
+				{insertAfter && !pinned.includes(insertAfter.commandId) ? insertAfter.node : null}
 				{right}
 			</div>
 			{Object.entries(panels)

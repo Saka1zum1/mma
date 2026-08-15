@@ -52,12 +52,12 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 	const startGame = useCallback(async () => {
 		const map = getMapState().map;
 		if (!map) {
-			toast(t("plugin.localguessr.noMapOpen"));
+			toast(t("Open a map to play"));
 			return;
 		}
 		const all = await fetchAllLocations();
 		if (all.length === 0) {
-			toast(t("plugin.localguessr.noLocations"));
+			toast(t("This map has no locations"));
 			return;
 		}
 

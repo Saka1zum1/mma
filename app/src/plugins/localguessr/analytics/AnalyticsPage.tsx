@@ -254,7 +254,7 @@ function ScoreTrendChart({
 				<text x={10} y={padT + ph / 2} textAnchor="middle" fontSize="10"
 					fontFamily="var(--gg-font)" fill="var(--gg-muted)" opacity="0.55"
 					transform={`rotate(-90, 10, ${padT + ph / 2})`}>
-					{t("plugin.localguessr.scoreTimeY")}
+					{t("Avg Score")}
 				</text>
 
 				{/* hover tooltip */}
@@ -357,7 +357,7 @@ function ReplayEntry({ session, onReplay, onDelete }: {
 			</span>
 			<div className="gg-analytics__row-actions">
 				<button type="button" className="gg-analytics__replay" onClick={onReplay}>
-					{t("plugin.localguessr.replay")}</button>
+					{t("Replay")}</button>
 				<button type="button" className="gg-analytics__delete" onClick={onDelete}>×</button>
 			</div>
 		</div>
@@ -426,33 +426,33 @@ export function AnalyticsPage({
 
 	const rangeOptions = useMemo(
 		() => [
-			{ value: "all", label: t("plugin.localguessr.scoreTrendFilterRangeAll") },
-			{ value: "year", label: t("plugin.localguessr.scoreTrendFilterRangeYear") },
-			{ value: "month", label: t("plugin.localguessr.scoreTrendFilterRangeMonth") },
-			{ value: "week", label: t("plugin.localguessr.scoreTrendFilterRangeWeek") },
-			{ value: "today", label: t("plugin.localguessr.scoreTrendFilterRangeToday") },
+			{ value: "all", label: t("All time") },
+			{ value: "year", label: t("Past year") },
+			{ value: "month", label: t("Past month") },
+			{ value: "week", label: t("Past week") },
+			{ value: "today", label: t("Today") },
 		],
 		[t],
 	);
 
 	// Build option lists for filter dropdowns
 	const countryOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterCountry")}` },
+		{ value: "__all__", label: `${t("All")} ${t("Country")}` },
 		...allCountryCodes.map((code) => ({ value: code, label: code })),
 	], [allCountryCodes, t]);
 
 	const mapOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterMap")}` },
+		{ value: "__all__", label: `${t("All")} ${t("Map")}` },
 		...uniqueMapIds.map((m) => ({ value: m.id, label: m.name })),
 	], [uniqueMapIds, t]);
 
 	const providerOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterProvider")}` },
+		{ value: "__all__", label: `${t("All")} ${t("Provider")}` },
 		...allProviders.map((p) => ({ value: p, label: p })),
 	], [allProviders, t]);
 
 	const modeOptions = useMemo(() => [
-		{ value: "__all__", label: `${t("plugin.localguessr.scoreTrendFilterAll")} ${t("plugin.localguessr.scoreTrendFilterMode")}` },
+		{ value: "__all__", label: `${t("All")} ${t("Mode")}` },
 		...uniqueModes.map((m) => ({
 			value: m,
 			label: m === "moving" ? "Moving" : m === "no-move" ? "No Move" : m === "nmpz" ? "NMPZ" : m,
@@ -502,10 +502,10 @@ export function AnalyticsPage({
 		return (
 			<div className="gg-analytics">
 				<header className="gg-analytics__header">
-					<h2>{t("plugin.localguessr.analytics")}</h2>
-					<Button variant="ghost" onClick={onBack}>{t("common.back")}</Button>
+					<h2>{t("Analytics")}</h2>
+					<Button variant="ghost" onClick={onBack}>{t("Back")}</Button>
 				</header>
-				<EmptyState icon={mdiChartBoxOutline}>{t("plugin.localguessr.noGamesYet")}</EmptyState>
+				<EmptyState icon={mdiChartBoxOutline}>{t("No games played yet. Start a round to build analytics.")}</EmptyState>
 			</div>
 		);
 	}
@@ -516,78 +516,78 @@ export function AnalyticsPage({
 		<div className="gg-analytics">
 			<header className="gg-analytics__header">
 				<div>
-					<h2>{t("plugin.localguessr.analytics")}</h2>
-					<p className="gg-analytics__sub">{t("plugin.localguessr.analyticsSub")}</p>
+					<h2>{t("Analytics")}</h2>
+					<p className="gg-analytics__sub">{t("Your local game history and accuracy")}</p>
 				</div>
 				<div className="gg-analytics__header-actions">
 					{mapId && (
 						<label className="gg-analytics__filter">
 							<Checkbox checked={filterMap} onChange={(e) => setFilterMap(e.target.checked)} />
-							{t("plugin.localguessr.filterCurrentMap")}
+							{t("Current map only")}
 						</label>
 					)}
-					<Button variant="ghost" onClick={onBack}>{t("common.back")}</Button>
+					<Button variant="ghost" onClick={onBack}>{t("Back")}</Button>
 				</div>
 			</header>
 
 			<div className="gg-analytics__cards">
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.localguessr.gamesPlayed")}</span>
+					<span className="gg-analytics__card-label">{t("Games")}</span>
 					<span className="gg-analytics__card-value">{o.gamesPlayed}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.localguessr.avgScore")}</span>
+					<span className="gg-analytics__card-label">{t("Avg score")}</span>
 					<span className="gg-analytics__card-value">{o.averageScore.toLocaleString()}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.localguessr.bestScore")}</span>
+					<span className="gg-analytics__card-label">{t("Best score")}</span>
 					<span className="gg-analytics__card-value">{o.bestScore.toLocaleString()}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.localguessr.bestStreak")}</span>
+					<span className="gg-analytics__card-label">{t("Best streak")}</span>
 					<span className="gg-analytics__card-value">{o.bestStreak}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.localguessr.perfectRounds")}</span>
+					<span className="gg-analytics__card-label">{t("5K rounds")}</span>
 					<span className="gg-analytics__card-value">{o.perfectRounds}</span>
 				</div>
 				<div className="gg-analytics__card">
-					<span className="gg-analytics__card-label">{t("plugin.localguessr.totalRounds")}</span>
+					<span className="gg-analytics__card-label">{t("Total rounds")}</span>
 					<span className="gg-analytics__card-value">{o.totalRounds}</span>
 				</div>
 			</div>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.localguessr.scoreTrend")}</h3>
+				<h3>{t("Score trend")}</h3>
 
 				{/* Filter bar */}
 				<div className="gg-analytics__trend-filters">
 					<FilterDropdown
-						label={t("plugin.localguessr.scoreTrendFilterRange")}
+						label={t("Time")}
 						value={trendFilterRange}
 						options={rangeOptions}
 						onChange={(v) => setTrendFilterRange(v as TrendRange)}
 					/>
 					<FilterDropdown
-						label={t("plugin.localguessr.scoreTrendFilterCountry")}
+						label={t("Country")}
 						value={trendFilterCountry}
 						options={countryOptions}
 						onChange={setTrendFilterCountry}
 					/>
 					<FilterDropdown
-						label={t("plugin.localguessr.scoreTrendFilterMap")}
+						label={t("Map")}
 						value={trendFilterMap}
 						options={mapOptions}
 						onChange={setTrendFilterMap}
 					/>
 					<FilterDropdown
-						label={t("plugin.localguessr.scoreTrendFilterProvider")}
+						label={t("Provider")}
 						value={trendFilterProvider}
 						options={providerOptions}
 						onChange={setTrendFilterProvider}
 					/>
 					<FilterDropdown
-						label={t("plugin.localguessr.scoreTrendFilterMode")}
+						label={t("Mode")}
 						value={trendFilterMode}
 						options={modeOptions}
 						onChange={setTrendFilterMode}
@@ -598,7 +598,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.localguessr.byCountry")}</h3>
+				<h3>{t("By country")}</h3>
 				<div className="gg-analytics__list">
 					{data.byCountry.slice(0, 40).map((c) => (
 						<div key={c.countryCode} className="gg-analytics__row">
@@ -612,7 +612,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.localguessr.byProvider")}</h3>
+				<h3>{t("By provider")}</h3>
 				<div className="gg-analytics__list">
 					{data.byProvider.map((p) => (
 						<div key={p.provider} className="gg-analytics__row">
@@ -624,7 +624,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.localguessr.byMode")}</h3>
+				<h3>{t("By movement mode")}</h3>
 				<div className="gg-analytics__list">
 					{data.byMode.map((m) => (
 						<div key={m.mode} className="gg-analytics__row">
@@ -638,7 +638,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.localguessr.byMap")}</h3>
+				<h3>{t("By map")}</h3>
 				<div className="gg-analytics__list">
 					{data.byMap.map((m) => (
 						<div key={m.mapId} className="gg-analytics__row">
@@ -652,7 +652,7 @@ export function AnalyticsPage({
 			</section>
 
 			<section className="gg-analytics__section">
-				<h3>{t("plugin.localguessr.recentGames")}</h3>
+				<h3>{t("Recently played")}</h3>
 				<div className="gg-analytics__list">
 					{data.recent.map((s) => (
 						<ReplayEntry
@@ -667,7 +667,7 @@ export function AnalyticsPage({
 
 			<div className="gg-analytics__footer">
 				<Button variant="destructive" onClick={() => { clearSessions(); setVersion((n) => n + 1); }}>
-					{t("plugin.localguessr.clearHistory")}
+					{t("Clear history")}
 				</Button>
 			</div>
 		</div>

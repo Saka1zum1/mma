@@ -5220,12 +5220,13 @@ body {
 	position: relative;
 }
 .split-handle {
-	grid-area: map-embed;
-	justify-self: end;
-	position: relative;
+	/* Absolute + left sync in MapEditor SplitHandle (v0.9.1). Do not use
+	   grid-area/justify-self here — that fights the ResizeObserver left placement. */
+	position: absolute;
+	top: 0;
+	bottom: 0;
 	width: 8px;
-	/* half the grid column gap, less half the handle, to sit centred in the gutter */
-	margin-right: calc(-0.5rem - 4px);
+	margin-left: -4px;
 	cursor: col-resize;
 	z-index: 10;
 	touch-action: none;

@@ -214,7 +214,7 @@ export function ReplayMap({
 	}, [ready, hostRef]);
 
 	if (rounds.length === 0) {
-		return <div className="gg-replay-map__empty">{t("plugin.localguessr.noGamesYet")}</div>;
+		return <div className="gg-replay-map__empty">{t("No games played yet. Start a round to build analytics.")}</div>;
 	}
 
 	return (

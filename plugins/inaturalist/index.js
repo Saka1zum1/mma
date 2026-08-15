@@ -534,15 +534,18 @@ function TaxonomySorter() {
       const r = await sortTagsByTaxonomy(opts, setProgress, ctl.signal);
       setResult(r);
       if (r.sorted > 0) {
-        MMA.toast(`Sorted ${r.sorted} tag${r.sorted === 1 ? "" : "s"} into taxonomy folders`);
+        MMA.toast(MMA.t(
+          { one: "Sorted {n} tag into taxonomy folders", other: "Sorted {n} tags into taxonomy folders" },
+          { n: r.sorted }
+        ));
       } else {
-        MMA.toast("No tags needed sorting");
+        MMA.toast(MMA.t("No tags needed sorting"));
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
-        MMA.toast("Taxonomy sort cancelled");
+        MMA.toast(MMA.t("Taxonomy sort cancelled"));
       } else {
-        MMA.toast("Taxonomy sort failed");
+        MMA.toast(MMA.t("Taxonomy sort failed"));
       }
     }
     setRunning(false);
@@ -554,10 +557,10 @@ function TaxonomySorter() {
   }, [abortCtl]);
   const handleClearCache = (0, import_react.useCallback)(() => {
     clearTaxonomyCache();
-    MMA.toast("Taxonomy cache cleared");
+    MMA.toast(MMA.t("Taxonomy cache cleared"));
   }, []);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Section, { title: "Taxonomy Sorter", defaultOpen: false, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "Language", row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Section, { title: MMA.t("Taxonomy Sorter"), defaultOpen: false, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Language"), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       SegmentedControl,
       {
         options: LANGUAGES.map((l) => ({ value: l.code, label: l.label })),
@@ -565,35 +568,49 @@ function TaxonomySorter() {
         onChange: handleLangChange
       }
     ) }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Label, { info: "Deep = all taxonomic ranks. Flat = order + family only.", children: "Depth" }), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-      SegmentedControl,
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Field,
       {
-        options: [
-          { value: "deep", label: "\xA0Deep\xA0" },
-          { value: "flat", label: "\xA0Flat\xA0" }
-        ],
-        value: deep ? "deep" : "flat",
-        onChange: (v) => setDeep(v === "deep")
+        label: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Label, { info: MMA.t("Deep = all taxonomic ranks. Flat = order + family only."), children: MMA.t("Depth") }),
+        row: true,
+        children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          SegmentedControl,
+          {
+            options: [
+              { value: "deep", label: `\xA0${MMA.t("Deep")}\xA0` },
+              { value: "flat", label: `\xA0${MMA.t("Flat")}\xA0` }
+            ],
+            value: deep ? "deep" : "flat",
+            onChange: (v) => setDeep(v === "deep")
+          }
+        )
       }
-    ) }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Label, { info: "Include translated common names from iNaturalist", children: "Common names" }), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-      "input",
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Field,
       {
-        type: "checkbox",
-        checked: commonNames,
-        onChange: (e) => setCommonNames(e.target.checked)
+        label: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Label, { info: MMA.t("Include translated common names from iNaturalist"), children: MMA.t("Common names") }),
+        row: true,
+        children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "input",
+          {
+            type: "checkbox",
+            checked: commonNames,
+            onChange: (e) => setCommonNames(e.target.checked)
+          }
+        )
       }
-    ) }),
+    ),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6, marginTop: 4 }, children: [
-      running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--danger", onClick: handleCancel, style: { flex: 1 }, children: "Cancel" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--primary", onClick: handleSort, style: { flex: 1 }, children: "Sort Tags" }),
+      running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--danger", onClick: handleCancel, style: { flex: 1 }, children: MMA.t("Cancel") }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--primary", onClick: handleSort, style: { flex: 1 }, children: MMA.t("Sort Tags") }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "button",
         {
           className: "button",
           onClick: handleClearCache,
           disabled: running,
-          title: "Clear cached API results",
-          children: "Clear Cache"
+          title: MMA.t("Clear cached API results"),
+          children: MMA.t("Clear Cache")
         }
       )
     ] }),
@@ -606,12 +623,10 @@ function TaxonomySorter() {
       ")",
       progress.detail && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.7 }, children: progress.detail })
     ] }),
-    result && !running && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }, children: [
-      result.sorted,
-      " sorted, ",
-      result.skipped,
-      " skipped"
-    ] })
+    result && !running && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }, children: MMA.t("{sorted} sorted, {skipped} skipped", {
+      sorted: result.sorted,
+      skipped: result.skipped
+    }) })
   ] });
 }
 
@@ -685,7 +700,7 @@ function INatSidebar({ onClose }) {
     try {
       setResults(await searchTaxa(q));
     } catch {
-      MMA.toast("Failed to search iNaturalist");
+      MMA.toast(MMA.t("Failed to search iNaturalist"));
     }
     setSearching(false);
   };
@@ -696,20 +711,20 @@ function INatSidebar({ onClose }) {
   };
   const handleImport = () => {
     const n = importToMap();
-    if (n > 0) MMA.toast(`Imported ${n} observations as locations`);
-    else MMA.toast("No observations to import");
+    if (n > 0) MMA.toast(MMA.t("Imported {n} observations as locations", { n }));
+    else MMA.toast(MMA.t("No observations to import"));
   };
   const taxon = getCurrentTaxon();
   const count = getObservations().length;
   const vis = isVisible();
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Sidebar, { title: "iNaturalist", onBack: onClose, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Section2, { title: "Observations", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Sidebar, { title: MMA.t("iNaturalist"), onBack: onClose, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Section2, { title: MMA.t("Observations"), children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__search", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
           "input",
           {
             className: "input",
-            placeholder: "Search species...",
+            placeholder: MMA.t("Search species..."),
             value: query,
             onChange: (e) => setQuery(e.target.value),
             onKeyDown: (e) => {
@@ -719,7 +734,7 @@ function INatSidebar({ onClose }) {
             style: { flex: 1 }
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button", onClick: doSearch, disabled: searching || !query.trim(), children: searching ? "..." : "Search" })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button", onClick: doSearch, disabled: searching || !query.trim(), children: searching ? "..." : MMA.t("Search") })
       ] }),
       results.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__results", children: results.map((t) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__taxon", onClick: () => handleSelect(t), children: [
         t.photoUrl && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("img", { className: "inat-sidebar__taxon-photo", src: t.photoUrl }),
@@ -729,27 +744,20 @@ function INatSidebar({ onClose }) {
             t.commonName && `${t.commonName} \xB7 `,
             t.rank,
             " \xB7 ",
-            t.count.toLocaleString(),
-            " obs"
+            MMA.t("{n} obs", { n: t.count.toLocaleString() })
           ] })
         ] })
       ] }, t.id)) }),
       taxon && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__active", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__active-name", children: taxon.name }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__active-count", children: [
-          count.toLocaleString(),
-          " observations loaded"
-        ] })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__active-count", children: MMA.t("{n} observations loaded", { n: count.toLocaleString() }) })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__actions", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button", onClick: toggleVisibility, disabled: !taxon, children: vis ? "Hide" : "Show" }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { className: "button button--primary", onClick: handleImport, disabled: count === 0, children: [
-          "Import",
-          count > 0 ? ` (${count})` : ""
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button button--danger", onClick: clearData, disabled: !taxon, children: "Clear" })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button", onClick: toggleVisibility, disabled: !taxon, children: vis ? MMA.t("Hide") : MMA.t("Show") }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button button--primary", onClick: handleImport, disabled: count === 0, children: count > 0 ? MMA.t("Import ({n})", { n: count }) : MMA.t("Import") }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button button--danger", onClick: clearData, disabled: !taxon, children: MMA.t("Clear") })
       ] }),
-      !taxon && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__hint", children: "Search for a species to visualize observations on the map." })
+      !taxon && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__hint", children: MMA.t("Search for a species to visualize observations on the map.") })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(TaxonomySorter, {})
   ] });

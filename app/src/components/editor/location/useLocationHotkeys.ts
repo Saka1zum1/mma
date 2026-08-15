@@ -16,7 +16,7 @@ import { PANO_ZOOM, zoomInStep, zoomOutStep } from "@/lib/sv/constants";
 import { tweenPov } from "@/lib/sv/tweenPov";
 import { type PanoReference, nearestLinkHeading, followLinkedPanos } from "@/lib/sv/lookup";
 import { toast } from "@/lib/util/toast";
-import { t, tp } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { downloadPano } from "@/lib/sv/panoDownload";
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { isVirtualLocation } from "@/types";
@@ -206,14 +206,14 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		const heading = pano.getPov().heading;
 		if (!panoId) return;
 		const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
-		if (container) toast(t("toast.followingRoad"), 1500, container);
+		if (container) toast(t("Following road..."), 1500, container);
 		followLinkedPanos(panoId, heading)
 			.then((locs) => {
 				if (locs.length > 0) addLocations(locs);
-				if (container) toast(tp("toast.addedLocations", locs.length, { count: locs.length }), 1500, container);
+				if (container) toast(t({ one: "Added {count} location", other: "Added {count} locations" }, { n: locs.length, ...{ count: locs.length } }), 1500, container);
 			})
 			.catch(() => {
-				if (container) toast(t("toast.followRoadFailed"), 1500, container);
+				if (container) toast(t("Follow road failed"), 1500, container);
 			});
 	});
 
@@ -281,15 +281,15 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 					if (!container) return;
 					toast(
 						res.copied > 0
-							? t("toast.copiedTo", { name: res.targetName })
-							: t("toast.alreadyIn", { name: res.targetName }),
+							? t("Copied to {name}", { name: res.targetName })
+							: t("Already in {name}", { name: res.targetName }),
 						1500,
 						container,
 					);
 				})
 				.catch((e) => {
 					log.error("[copyToMap] failed:", e);
-					if (container) toast(t("toast.copyFailed"), 1500, container);
+					if (container) toast(t("Copy failed"), 1500, container);
 				});
 		});
 		return () => {

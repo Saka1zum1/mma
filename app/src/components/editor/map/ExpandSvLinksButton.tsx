@@ -32,7 +32,7 @@ export function ExpandSvLinksButton() {
 
 	const openDialogUi = () => {
 		if (!hasSelection) {
-			toast(t("command.expandSvLinksNeedSelection"));
+			toast(t("Select at least one Google / Baidu / Tencent / Yandex location"));
 			return;
 		}
 		setProgress(null);
@@ -66,19 +66,19 @@ export function ExpandSvLinksButton() {
 				maxCount: max,
 				onProgress: setProgress,
 			});
-			toast(t("command.expandSvLinksDone", { count: added }));
+			toast(t("Added {count} linked panoramas", { count: added }));
 			setOpen(false);
 			setProgress(null);
 		} catch (e) {
 			const err = e as Error;
 			if (err?.name === "AbortError") {
-				toast(t("command.expandSvLinksStopped"));
+				toast(t("Link expansion stopped"));
 			} else if (err?.message === "no-selection") {
-				toast(t("command.expandSvLinksNeedSelection"));
+				toast(t("Select at least one Google / Baidu / Tencent / Yandex location"));
 			} else if (err?.message === "no-provider") {
-				toast(t("command.expandSvLinksNeedProvider"));
+				toast(t("Selection has no Google / Baidu / Tencent / Yandex panoramas"));
 			} else if (err?.message === "already-running") {
-				toast(t("command.expandSvLinksStarted"));
+				toast(t("Expanding Street View links…"));
 			} else {
 				toast(String(err?.message ?? e));
 			}
@@ -100,7 +100,7 @@ export function ExpandSvLinksButton() {
 	return (
 		<>
 			<Tooltip
-				content={running ? t("command.expandSvLinksStop") : t("command.expandSvLinks")}
+				content={running ? t("Stop expanding links") : t("Expand Street View links")}
 				side="bottom"
 			>
 				<button
@@ -110,7 +110,7 @@ export function ExpandSvLinksButton() {
 						"is-disabled": !running && !hasSelection,
 					})}
 					aria-label={
-						running ? t("command.expandSvLinksStop") : t("command.expandSvLinks")
+						running ? t("Stop expanding links") : t("Expand Street View links")
 					}
 					aria-pressed={running}
 					onClick={onToolbarClick}
@@ -125,10 +125,10 @@ export function ExpandSvLinksButton() {
 					if (!v) closeDialog();
 				}}
 			>
-				<DialogContent title={t("command.expandSvLinks")} className="expand-sv-links-dialog">
-					<p className="expand-sv-links-dialog__hint">{t("command.expandSvLinksHint")}</p>
+				<DialogContent title={t("Expand Street View links")} className="expand-sv-links-dialog">
+					<p className="expand-sv-links-dialog__hint">{t("Crawl linked panoramas from the selection (Google, Baidu, Tencent, Yandex) and add them as new locations.")}</p>
 					<label className="expand-sv-links-dialog__field">
-						<span>{t("command.expandSvLinksMax")}</span>
+						<span>{t("Maximum locations to add")}</span>
 						<TextInput
 							type="number"
 							min={1}
@@ -142,7 +142,7 @@ export function ExpandSvLinksButton() {
 						<div className="expand-sv-links-dialog__progress">
 							<progress className="bulk-operation__bar" value={pct} max={1} />
 							<span>
-								{t("command.expandSvLinksProgressDetail", {
+								{t("{added} / {max} added · {queued} queued", {
 									added: progress.added,
 									max: progress.max,
 									queued: progress.queued,
@@ -153,14 +153,14 @@ export function ExpandSvLinksButton() {
 					<div className="expand-sv-links-dialog__actions">
 						{running ? (
 							<Button variant="destructive" onClick={() => stopExpandSvLinks()}>
-								{t("command.expandSvLinksStop")}
+								{t("Stop expanding links")}
 							</Button>
 						) : (
 							<Button variant="primary" onClick={() => void start()}>
-								{t("command.expandSvLinksStart")}
+								{t("Start")}
 							</Button>
 						)}
-						<Button onClick={closeDialog}>{t("common.close")}</Button>
+						<Button onClick={closeDialog}>{t("Close")}</Button>
 					</div>
 				</DialogContent>
 			</Dialog>

@@ -8,6 +8,7 @@ import { findPanoProvider, setActivePanoViewport, type PanoProviderSession } fro
 import { getLocationProvider } from "@/lib/sv/providers/types";
 import { ensureProviderEnabled } from "@/lib/sv/providers/settings";
 import { installGoogleInjectBridge } from "@/lib/sv/providers/googleInject";
+import { t } from "@/lib/i18n";
 import type { MovementMode, RoundLocation } from "./GameState";
 
 function toLocation(r: RoundLocation): Location {
@@ -356,7 +357,7 @@ export const GamePanoView = forwardRef<
 				})
 				.catch((err) => {
 					if (cancelled) return;
-					setError(err instanceof Error ? err.message : "Failed to open panorama");
+					setError(err instanceof Error ? err.message : t("Failed to open panorama"));
 					onReady?.(false);
 				});
 			return cleanupRound;
@@ -385,7 +386,7 @@ export const GamePanoView = forwardRef<
 
 			const pano = getPanorama();
 			if (!pano) {
-				setError("Street View unavailable");
+				setError(t("Street View unavailable"));
 				return;
 			}
 			viewListeners.push(pano.addListener("pano_changed", recordPanoChange));
@@ -398,7 +399,7 @@ export const GamePanoView = forwardRef<
 				const result = await resolvePano(loc);
 				if (cancelled) return;
 				if (!result.pano) {
-					setError("No panorama found");
+					setError(t("No panorama found"));
 					onReady?.(false);
 					return;
 				}
@@ -426,7 +427,7 @@ export const GamePanoView = forwardRef<
 				resizeObs.observe(host);
 			} catch (err) {
 				if (cancelled) return;
-				setError(err instanceof Error ? err.message : "Failed to load panorama");
+				setError(err instanceof Error ? err.message : t("Failed to load panorama"));
 				onReady?.(false);
 			}
 		});

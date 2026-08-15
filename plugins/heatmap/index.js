@@ -1326,9 +1326,9 @@ function HeatmapSidebar({ onClose }) {
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { className: "map-sidebar heatmap-sidebar", children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", { className: "heatmap-sidebar__header", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "icon-button", onClick: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { path: ARROW_LEFT }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "heatmap-sidebar__title", children: "Heatmap" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "heatmap-sidebar__title", children: MMA.t("Heatmap") }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: resetLayers, children: "Reset" })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: resetLayers, children: MMA.t("Reset") })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__body", children: [
       layers2.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -1341,7 +1341,7 @@ function HeatmapSidebar({ onClose }) {
         },
         l.id
       )),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__add", onClick: addLayer, children: "Add heatmap" })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__add", onClick: addLayer, children: MMA.t("Add heatmap") })
     ] })
   ] });
 }
@@ -1362,11 +1362,8 @@ function LayerControls({
           onChange: (e) => set({ visible: e.target.checked })
         }
       ),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "heatmap-sidebar__layer-title", children: [
-        "Heatmap ",
-        index + 1
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => removeLayer(l.id), children: "Remove" })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "heatmap-sidebar__layer-title", children: MMA.t("Heatmap {n}", { n: index + 1 }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => removeLayer(l.id), children: MMA.t("Remove") })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       MMA.ui.ScopeSelector,
@@ -1383,7 +1380,7 @@ function LayerControls({
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       Slider,
       {
-        label: "Intensity",
+        label: MMA.t("Intensity"),
         value: l.intensity,
         min: 0.1,
         max: 10,
@@ -1394,7 +1391,7 @@ function LayerControls({
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       Slider,
       {
-        label: "Radius",
+        label: MMA.t("Radius"),
         value: l.radiusPixels,
         min: 1,
         max: 100,
@@ -1406,7 +1403,7 @@ function LayerControls({
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       Slider,
       {
-        label: "Opacity",
+        label: MMA.t("Opacity"),
         value: l.opacity,
         min: 0,
         max: 1,
@@ -1417,7 +1414,7 @@ function LayerControls({
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
       Slider,
       {
-        label: "Threshold",
+        label: MMA.t("Threshold"),
         value: l.threshold,
         min: 0,
         max: 1,
@@ -1438,7 +1435,7 @@ function GradientPicker({
   const current = resolveGradient(gradientId, customs);
   const editing = customs.find((g) => g.id === editingId) ?? null;
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", style: { marginTop: 8 }, children: "Gradient" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", style: { marginTop: 8 }, children: MMA.t("Gradient") }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__gradients", children: [
       [...BUILTIN_GRADIENTS, ...customs].map((g) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "button",
@@ -1461,8 +1458,8 @@ function GradientPicker({
         {
           className: "heatmap-sidebar__gradient-new",
           onClick: () => setEditingId(addCustomGradient(layerId, current).id),
-          title: "Create an editable copy of the selected gradient",
-          children: "+ New"
+          title: MMA.t("Create an editable copy of the selected gradient"),
+          children: MMA.t("+ New")
         }
       )
     ] }),
@@ -1472,7 +1469,7 @@ function GradientPicker({
         {
           className: "heatmap-sidebar__reset",
           onClick: () => setEditingId(editing?.id === current.id ? null : current.id),
-          children: editing?.id === current.id ? "Done" : "Edit gradient"
+          children: editing?.id === current.id ? MMA.t("Done") : MMA.t("Edit gradient")
         }
       ),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -1480,7 +1477,7 @@ function GradientPicker({
         {
           className: "heatmap-sidebar__reset",
           onClick: () => removeCustomGradient(current.id),
-          children: "Delete"
+          children: MMA.t("Delete")
         }
       )
     ] }),
@@ -1541,7 +1538,7 @@ function GradientEditor({ gradient: g }) {
         className: "heatmap-sidebar__editor-name",
         value: g.name,
         onChange: (e) => updateCustomGradient(g.id, { name: e.target.value }),
-        "aria-label": "Gradient name"
+        "aria-label": MMA.t("Gradient name")
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__track", ref: trackRef, children: [
@@ -1550,7 +1547,7 @@ function GradientEditor({ gradient: g }) {
         {
           className: "heatmap-sidebar__track-bar",
           style: { background: gradientCss(g.stops) },
-          title: "Click to add a stop",
+          title: MMA.t("Click to add a stop"),
           onClick: (e) => {
             const next = addStopAt(g.stops, posFromClientX(e.clientX));
             setSelected(next.index);
@@ -1584,7 +1581,7 @@ function GradientEditor({ gradient: g }) {
           type: "color",
           value: rgbToHex(stop.color),
           onChange: (e) => setStops(setStopColor(g.stops, selected, hexToRgb(e.target.value))),
-          "aria-label": "Stop colour"
+          "aria-label": MMA.t("Stop colour")
         }
       ),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -1599,14 +1596,14 @@ function GradientEditor({ gradient: g }) {
             setSelected(next.index);
             setStops(next.stops);
           },
-          "aria-label": "Stop position"
+          "aria-label": MMA.t("Stop position")
         }
       ),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "%" }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => setStops(reverseStops(g.stops)), children: "Reverse" })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => setStops(reverseStops(g.stops)), children: MMA.t("Reverse") })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__hint", children: g.stops.length <= MIN_STOPS ? `Click the bar to add a stop (${MIN_STOPS} minimum).` : "Click the bar to add a stop, right-click a handle to remove it." })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__hint", children: g.stops.length <= MIN_STOPS ? MMA.t("Click the bar to add a stop ({n} minimum).", { n: MIN_STOPS }) : MMA.t("Click the bar to add a stop, right-click a handle to remove it.") })
   ] });
 }
 function Slider({

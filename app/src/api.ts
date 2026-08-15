@@ -152,6 +152,15 @@ export interface SidecarOptions<T> {
 	signal?: AbortSignal;
 }
 
+/** Legacy handle returned by {@link spawnSidecarCompat}. Prefer {@link sidecarRequest}. */
+export interface SidecarRun {
+	runId: number;
+	onLine(cb: (line: string) => void): void;
+	onStderr(cb: (line: string) => void): void;
+	onExit(cb: (code: number | null) => void): void;
+	kill(): void;
+}
+
 /** Run one unit of work on a plugin's sidecar and resolve with its last emitted
  *  object (null if it emitted none). The app owns the process: commands the manifest
  *  lists under `serve` are answered by the plugin's resident sidecar, the rest by a
@@ -208,6 +217,79 @@ async function sidecarRequest<T>(
 	});
 }
 
+/**
+ * Compatibility shim for plugins still calling `MMA.sidecar.spawn` (pre app-owned
+ * sidecar API). Translates CLI-style args (`detect --input path.json`) into
+ * {@link sidecarRequest}. New plugins should use `request` directly.
+ */
+async function spawnSidecarCompat(
+	pluginId: string,
+	_binaryName: string,
+	args: string[],
+): Promise<SidecarRun> {
+	const command = args[0];
+	if (!command) throw new Error("MMA.sidecar.spawn: missing command");
+	if (command === "serve") {
+		throw new Error(
+			"MMA.sidecar.spawn('serve') is no longer supported — update the plugin; the app manages resident sidecars",
+		);
+	}
+
+	let inputPath: string | undefined;
+	for (let i = 1; i < args.length; i++) {
+		if (args[i] === "--input" && args[i + 1]) {
+			inputPath = args[++i];
+			break;
+		}
+	}
+
+	let payload: unknown;
+	if (inputPath) {
+		payload = JSON.parse(await commands.readFile(inputPath));
+	}
+
+	const lineCbs: ((line: string) => void)[] = [];
+	const errCbs: ((line: string) => void)[] = [];
+	const exitCbs: ((code: number | null) => void)[] = [];
+	const ac = new AbortController();
+	let exited = false;
+	const finish = (code: number | null) => {
+		if (exited) return;
+		exited = true;
+		for (const cb of exitCbs) cb(code);
+	};
+
+	const run: SidecarRun = {
+		runId: -1,
+		onLine: (cb) => lineCbs.push(cb),
+		onStderr: (cb) => errCbs.push(cb),
+		onExit: (cb) => exitCbs.push(cb),
+		kill: () => ac.abort(),
+	};
+
+	// Defer so callers can register onLine/onExit synchronously after `await spawn()`.
+	queueMicrotask(() => {
+		void sidecarRequest(pluginId, command, payload, {
+			signal: ac.signal,
+			onLine: (item) => {
+				const line = typeof item === "string" ? item : JSON.stringify(item);
+				for (const cb of lineCbs) cb(line);
+			},
+			onLog: (line) => {
+				for (const cb of errCbs) cb(line);
+			},
+		}).then(
+			() => finish(0),
+			(err: unknown) => {
+				if (err instanceof DOMException && err.name === "AbortError") finish(null);
+				else finish(1);
+			},
+		);
+	});
+
+	return run;
+}
+
 /** Explicitly exposed functions not in other APIs. */
 const surface = {
 	ready: false,
@@ -224,6 +306,8 @@ const surface = {
 	sidecar: {
 		installedVersion: (pluginId: string) => commands.sidecarInstalledVersion(pluginId),
 		request: sidecarRequest,
+		/** @deprecated Use `request`. Kept for installed plugins built against the old spawn API. */
+		spawn: spawnSidecarCompat,
 	},
 
 	// --- Bootstrap (for plugins) ---

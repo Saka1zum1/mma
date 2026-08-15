@@ -1,13 +1,13 @@
 // weather/src/index.ts
 var WEATHER_FIELDS = [
-  { key: "weatherCode", param: "weather_code", label: "Weather code (WMO)" },
-  { key: "cloudCover", param: "cloud_cover", label: "Cloud cover (%)" },
-  { key: "precipitation", param: "precipitation", label: "Precipitation (mm)" },
-  { key: "snowDepth", param: "snow_depth", label: "Snow depth (m)" },
-  { key: "snowfall", param: "snowfall", label: "Snowfall (cm)" },
-  { key: "temperature2m", param: "temperature_2m", label: "Temperature (\xB0C)" },
-  { key: "sunshineDuration", param: "sunshine_duration", label: "Sunshine duration (s)" },
-  { key: "windSpeed10m", param: "wind_speed_10m", label: "Wind speed (km/h)" }
+  { key: "weatherCode", param: "weather_code", label: MMA.t("Weather code (WMO)") },
+  { key: "cloudCover", param: "cloud_cover", label: MMA.t("Cloud cover (%)") },
+  { key: "precipitation", param: "precipitation", label: MMA.t("Precipitation (mm)") },
+  { key: "snowDepth", param: "snow_depth", label: MMA.t("Snow depth (m)") },
+  { key: "snowfall", param: "snowfall", label: MMA.t("Snowfall (cm)") },
+  { key: "temperature2m", param: "temperature_2m", label: MMA.t("Temperature (\xB0C)") },
+  { key: "sunshineDuration", param: "sunshine_duration", label: MMA.t("Sunshine duration (s)") },
+  { key: "windSpeed10m", param: "wind_speed_10m", label: MMA.t("Wind speed (km/h)") }
 ];
 var ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 var COORDS_PER_REQUEST = 100;
@@ -130,7 +130,7 @@ MMA.registerPlugin({
     MMA.registerEnrichFields(ENRICH_OPTIONS);
     MMA.registerEnrichmentProvider({
       id: "weather",
-      label: "Weather",
+      label: MMA.t("Weather"),
       enrich,
       fieldDefs: FIELD_DEFS,
       requires: ["datetime"],

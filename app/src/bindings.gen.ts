@@ -434,8 +434,6 @@ export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","
 export const KNOWN_FIELDS = [{"key":"altitude","type":"number","label":"Altitude","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"countryCode","type":"string","label":"Country code","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"cameraType","type":"enum","label":"Camera type","values":["gen1","gen2","gen4","badcam","tripod","trekker"],"labels":[["gen1","Gen 1"],["gen2","Gen 2/3"],["gen4","Gen 4"],["badcam","Bad cam"],["tripod","Tripod"],["trekker","Trekker"]],"circularPeriod":null,"defaultOff":false},{"key":"panoType","type":"enum","label":"Pano type","values":["2","3","10"],"labels":[["2","Official"],["3","Unknown"],["10","User uploaded"]],"circularPeriod":null,"defaultOff":false},{"key":"imageDate","type":"month","label":"Image date","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"datetime","type":"date","label":"Exact date","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"timezone","type":"enum","label":"Timezone","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"drivingDirection","type":"number","label":"Driving direction","values":[],"labels":[],"circularPeriod":360.0,"defaultOff":true},{"key":"uploaderName","type":"string","label":"Uploader","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"coverageDates","type":"array","label":"Coverage dates","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"subdivision","type":"string","label":"Subdivision","values":[],"labels":[],"circularPeriod":null,"defaultOff":true}] as const;
 
 /* Types */
-export type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
-
 /**
  *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
  *  (at most one `enabled: true` at a time); the frontend enforces that on write.
@@ -500,6 +498,8 @@ export type AltProviderSettings = {
 	lineWidthScale: number,
 	pointSizeScale: number,
 };
+
+export type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`

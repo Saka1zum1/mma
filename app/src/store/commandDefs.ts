@@ -10,6 +10,7 @@ import {
 	mdiSelectInverse,
 	mdiCodeJson,
 	mdiFileDelimitedOutline,
+	mdiClipboardTextOutline,
 	mdiCheckDecagram,
 	mdiDatabaseArrowUp,
 	mdiMapMarkerCheck,
@@ -58,6 +59,7 @@ import {
 	selectUnion,
 	resetSelections,
 	getMapState,
+	getVisibleTags,
 	deleteTags,
 	getActiveSelections,
 	removeLocations,
@@ -66,10 +68,11 @@ import {
 import { hasCommitDiff } from "./commitDiff";
 import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
 import { downloadBlob } from "@/lib/util/util";
+import { toast } from "@/lib/util/toast";
 import { toggleSeenOverlay } from "@/lib/seen/seenOverlay";
 import { selectReviewedHistory } from "@/lib/review/review";
 import { openDialog } from "./dialogBus";
-import { msg } from "@/lib/i18n";
+import { msg, t } from "@/lib/i18n";
 import { isExpandingSvLinks, stopExpandSvLinks } from "@/lib/sv/expandLinks";
 
 const requiresMap = () => getMapState().map !== null;
@@ -432,6 +435,27 @@ const COMMANDS = {
 				"name,count\n" + rows.map((r) => `"${r.name.replace(/"/g, '""')}",${r.count}`).join("\n");
 			downloadBlob(new Blob([csv], { type: "text/csv" }), `${map.meta.name} tags.csv`);
 		},
+	},
+	"copy-tags-count": {
+		label: msg("Copy tags count"),
+		icon: mdiClipboardTextOutline,
+		group: msg("Tags"),
+		aliases: ["copy tag counts", "clipboard tag counts"],
+		execute: async () => {
+			const counts = getMapState().tagCounts;
+			const text = getVisibleTags()
+				.map((tag) => ({ name: tag.name, count: counts[tag.id] ?? 0 }))
+				.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+				.map((r) => `${r.name}: ${r.count}`)
+				.join(", ");
+			try {
+				await navigator.clipboard.writeText(text);
+				toast(t("Copied tag counts to clipboard"));
+			} catch {
+				toast(t("Copy failed"));
+			}
+		},
+		enabled: requiresMap,
 	},
 	"tag-find-replace": {
 		label: msg("Find and replace in tag names"),

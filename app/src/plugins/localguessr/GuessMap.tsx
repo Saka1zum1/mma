@@ -15,7 +15,7 @@ import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
 import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import { cmd } from "@/lib/commands";
 import type { LatLng, MapTypeKey } from "@/types";
-import { useT, type MessageKey } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import {
 	createGuessPinLayer,
 	createResultLineLayer,
@@ -27,11 +27,11 @@ const MAX_SIZE = 4;
 const MIN_ZOOM = 1;
 const ACTIVE_LEAVE_DELAY_MS = 300;
 const GUESS_MAP_TYPES: MapTypeKey[] = ["map", "satellite", "osm", "vector"];
-const MAP_TYPE_LABEL_KEYS: Record<MapTypeKey, MessageKey> = {
-	map: "editor.mapTypeMap",
-	satellite: "editor.mapTypeSatellite",
-	osm: "editor.mapTypeOsm",
-	vector: "editor.mapTypeVector",
+const MAP_TYPE_LABEL_KEYS: Record<MapTypeKey, string> = {
+	map: "Map",
+	satellite: "Satellite",
+	osm: "OSM",
+	vector: "Vector",
 };
 
 function pointInGuessMapPanel(root: HTMLElement | null, x: number, y: number): boolean {
@@ -520,10 +520,10 @@ export function GuessMap({
 
 	const guessDisabled = !hasGuess || submitting;
 	const guessLabel = submitting
-		? t("plugin.localguessr.scoring")
+		? t("Scoring…")
 		: hasGuess
-			? t("plugin.localguessr.guess")
-			: t("plugin.localguessr.placePinOnMap");
+			? t("Guess")
+			: t("Place your pin on the map");
 
 	// Keep a stable canvas DOM node across play↔result so the MapHost / DeckGL
 	// WebGL contexts are not destroyed every phase change.
@@ -571,7 +571,7 @@ export function GuessMap({
 								bumpSize(1);
 							}}
 							data-qa="guess-map__control--increase-size"
-							aria-label="Increase size"
+							aria-label={t("Increase size")}
 						>
 							<Icon path={mdiArrowTopLeft} />
 						</button>
@@ -585,7 +585,7 @@ export function GuessMap({
 								bumpSize(-1);
 							}}
 							data-qa="guess-map__control--decrease-size"
-							aria-label="Decrease size"
+							aria-label={t("Decrease size")}
 						>
 							<Icon path={mdiArrowBottomRight} />
 						</button>
@@ -597,7 +597,7 @@ export function GuessMap({
 								onToggleSticky();
 							}}
 							data-qa={sticky ? "guess-map__control--sticky-active" : "guess-map__control--sticky"}
-							aria-label="Sticky map"
+							aria-label={t("Sticky map")}
 						>
 							<Icon path={mdiPin} />
 						</button>
@@ -611,7 +611,7 @@ export function GuessMap({
 							}}
 							data-qa="guess-map__control--basemap"
 							title={nextBasemapLabel}
-							aria-label={t("plugin.localguessr.guessMapBasemap")}
+							aria-label={t("Switch guess map basemap")}
 						>
 							<Icon path={mdiLayers} />
 						</button>
@@ -628,7 +628,7 @@ export function GuessMap({
 				>
 					{!showResult && (
 						<div className="gg-guess-map__zoom">
-							<button type="button" className="gg-guess-map__zoom-btn" onClick={zoomIn} aria-label="Zoom in">
+							<button type="button" className="gg-guess-map__zoom-btn" onClick={zoomIn} aria-label={t("Zoom in")}>
 								<Icon path={mdiPlus} />
 							</button>
 							<button
@@ -636,7 +636,7 @@ export function GuessMap({
 								className={`gg-guess-map__zoom-btn${zoom <= MIN_ZOOM ? " gg-guess-map__zoom-btn--disabled" : ""}`}
 								onClick={zoomOut}
 								disabled={zoom <= MIN_ZOOM}
-								aria-label="Zoom out"
+								aria-label={t("Zoom out")}
 							>
 								<Icon path={mdiMinus} />
 							</button>

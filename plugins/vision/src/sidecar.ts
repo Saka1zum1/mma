@@ -59,17 +59,17 @@ export interface EmbedOptions {
 
 /** Embed every pano not already cached, so a search can cover `panoIds`. */
 export async function embed(panoIds: string[], opts: EmbedOptions = {}): Promise<void> {
-	opts.onStatus?.("Checking cache...");
+	opts.onStatus?.(MMA.t("Checking cache..."));
 	const cached = await listCached();
 	const uncached = panoIds.filter((id) => !cached.has(id));
 	if (uncached.length === 0) {
-		opts.onStatus?.(`All ${panoIds.length} panos cached`);
+		opts.onStatus?.(MMA.t("All {n} panos cached", { n: panoIds.length }));
 		return;
 	}
 
-	opts.onStatus?.(`Fetching metadata for ${uncached.length} uncached panos...`);
+	opts.onStatus?.(MMA.t("Fetching metadata for {n} uncached panos...", { n: uncached.length }));
 	const panos = await resolveWorldSizes(uncached, (done, total) => {
-		opts.onStatus?.(`Metadata: ${done}/${total}`);
+		opts.onStatus?.(MMA.t("Metadata: {done}/{total}", { done, total }));
 	});
 
 	await MMA.sidecar.request<EmbedStatus>("vision", "embed", { panos }, {

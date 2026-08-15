@@ -42,32 +42,32 @@ export function GameControls({
 			<div className="gg-controls__actions">
 				{canMove && (
 					<>
-						<Tooltip content={t("plugin.localguessr.checkpoint")} side="right">
+						<Tooltip content={t("Set checkpoint")} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => panoRef.current?.setCheckpoint()}
-								aria-label={t("plugin.localguessr.checkpoint")}
+								aria-label={t("Set checkpoint")}
 							>
 								<Icon path={mdiFlagOutline} />
 							</button>
 						</Tooltip>
-						<Tooltip content={t("plugin.localguessr.returnCheckpoint")} side="right">
+						<Tooltip content={t("Return to checkpoint")} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => panoRef.current?.returnToCheckpoint()}
-								aria-label={t("plugin.localguessr.returnCheckpoint")}
+								aria-label={t("Return to checkpoint")}
 							>
 								<Icon path={mdiFlagCheckered} />
 							</button>
 						</Tooltip>
-						<Tooltip content={t("plugin.localguessr.returnToSpawn")} side="right">
+						<Tooltip content={t("Return to spawn")} side="right">
 							<button
 								type="button"
 								className="gg-controls__btn"
 								onClick={() => panoRef.current?.returnToSpawn()}
-								aria-label={t("plugin.localguessr.returnToSpawn")}
+								aria-label={t("Return to spawn")}
 							>
 								<Icon path={mdiHome} />
 							</button>

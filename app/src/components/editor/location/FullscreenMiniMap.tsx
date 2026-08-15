@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSyncStore } from "@/lib/events";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
@@ -13,6 +14,10 @@ import {
 	type MapHost,
 	type DeckOverlayHandle,
 } from "@/lib/map/host";
+import {
+	getProviderCoverageLayersEpoch,
+	subscribeProviderCoverageLayers,
+} from "@/lib/sv/providers/coverageLayers";
 import { usePanoViewer } from "./PanoViewerContext";
 import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
 import { t } from "@/lib/i18n";
@@ -117,12 +122,18 @@ export function FullscreenMiniMap() {
 		if (!inside) host.panTo({ lat, lng });
 	}, [lat, lng, surface]);
 
+	const coverageEpoch = useSyncStore(
+		subscribeProviderCoverageLayers,
+		getProviderCoverageLayersEpoch,
+	);
+
 	useEffect(() => {
 		if (!surface) return;
 		surface.host.applyPrefs(prefs, {
+			useBlobby: prefs.svBlobby,
 			customStyles: getLocal<CustomStyle[]>(CUSTOM_STYLES_KEY, []),
 		});
-	}, [prefs, surface]);
+	}, [prefs, surface, coverageEpoch]);
 
 	const setScale = (next: number) => {
 		const clamped = clamp(next, MINIMAP_SCALE);

@@ -267,19 +267,20 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 		}
 	}
 
-	const sv = createSvTileSource(prefs);
+	// Google stack: one ImageMapType + setOpacity (MapEmbed drives blobby via useBlobby).
+	// Per-tile createSvTileSource stays for MapLibre/tests — do not mix with setOpacity.
+	const showOfficial = prefs.svCoverageType === "official" || prefs.svCoverageType === "default";
+	const showUnofficial =
+		prefs.svCoverageType === "unofficial" || prefs.svCoverageType === "default";
+	const svCfg = createSvConfigForPrefs(prefs, opts.useBlobby ?? false);
 	const svLayer = new google.maps.ImageMapType({
-		getTileUrl: (coord: TileCoord, zoom: number) => sv.url(coord.x, coord.y, zoom),
+		getTileUrl: (coord: TileCoord, zoom: number) => buildTileUrl(svCfg, coord.x, coord.y, zoom),
 		tileSize,
 		minZoom: 0,
 		maxZoom: 20,
 	});
-	const getTile = svLayer.getTile.bind(svLayer);
-	svLayer.getTile = (coord, zoom, doc) => {
-		const el = getTile(coord, zoom, doc);
-		if (el instanceof HTMLElement) el.style.opacity = String(sv.opacity(zoom));
-		return el;
-	};
+	const blobbySingleType = (opts.useBlobby ?? false) && !(showOfficial && showUnofficial);
+	svLayer.setOpacity(blobbySingleType ? prefs.svOpacity * 0.6 : prefs.svOpacity);
 	if (!opts.skipCoverage) {
 		if (prefs.showSvCoverage !== false) layers.push(svLayer);
 		layers.push(...getProviderLineLayers());

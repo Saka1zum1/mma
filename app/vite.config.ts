@@ -8,12 +8,15 @@ export default defineConfig({
 		alias: {
 			"@": path.resolve(import.meta.dirname, "src"),
 		},
+		// PSV and lookaround must share one three — nested copies break Matrix4 APIs
+		// (e.g. determinantAffine missing when versions diverge).
+		dedupe: ["three"],
 	},
 	define: {
 		__APP_VERSION__: JSON.stringify(process.env.npm_package_version),
 	},
 	clearScreen: false,
-	plugins: [{ ...mdx(), enforce: "pre" }, react({ include: /\.(jsx|js|mdx|tsx|ts)$/ })],
+	plugins: [{ ...mdx({ include: /\.mdx$/ }), enforce: "pre" }, react({ include: /\.(jsx|js|mdx|tsx|ts)$/ })],
 	server: {
 		strictPort: true,
 		watch: {

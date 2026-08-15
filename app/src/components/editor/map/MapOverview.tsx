@@ -33,6 +33,7 @@ import { fmt } from "@/lib/util/format";
 import { useDialog, useDialogState, openDialog } from "@/store/dialogBus";
 import { SelectionRow } from "./SelectionRow";
 import { PinnedToolbar } from "./PinnedToolbar";
+import { ExpandSvLinksButton } from "./ExpandSvLinksButton";
 import { SaveSelectionsDialog, ApplySavedSelectionDialog } from "./SavedSelectionDialogs";
 import { t } from "@/lib/i18n";
 import { Trans } from "@/components/primitives/Trans";
@@ -344,6 +345,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				<SelectionList />
 
 				<PinnedToolbar
+					insertAfter={{ commandId: "bulk-enrich", node: <ExpandSvLinksButton /> }}
 					right={<BulkTagForm />}
 					panels={{
 						"select-random": {

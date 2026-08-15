@@ -250,7 +250,7 @@ class GoogleMapHost implements MapHostContract<"google"> {
 			skipCoverage: this.skipCoverage,
 		});
 		this.svLayer = svLayer;
-		this.svLayer?.setOpacity?.(this.svOpacity);
+		this.svLayer?.setOpacity(this.svOpacity);
 		this.map.mapTypes.set("stack", stack);
 		this.map.setMapTypeId("stack");
 		const bg = getStyleBackgroundColor(prefs.mapStyleName);
@@ -263,7 +263,7 @@ class GoogleMapHost implements MapHostContract<"google"> {
 
 	setSvOpacity(v: number) {
 		this.svOpacity = v;
-		this.svLayer?.setOpacity?.(v);
+		this.svLayer?.setOpacity(v);
 	}
 
 	resize() {

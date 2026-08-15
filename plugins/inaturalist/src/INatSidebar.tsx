@@ -89,7 +89,7 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 		try {
 			setResults(await searchTaxa(q));
 		} catch {
-			MMA.toast("Failed to search iNaturalist");
+			MMA.toast(MMA.t("Failed to search iNaturalist"));
 		}
 		setSearching(false);
 	};
@@ -102,8 +102,8 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 
 	const handleImport = () => {
 		const n = importToMap();
-		if (n > 0) MMA.toast(`Imported ${n} observations as locations`);
-		else MMA.toast("No observations to import");
+		if (n > 0) MMA.toast(MMA.t("Imported {n} observations as locations", { n }));
+		else MMA.toast(MMA.t("No observations to import"));
 	};
 
 	const taxon = getCurrentTaxon();
@@ -111,12 +111,12 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 	const vis = isVisible();
 
 	return (
-		<Sidebar title="iNaturalist" onBack={onClose}>
-			<Section title="Observations">
+		<Sidebar title={MMA.t("iNaturalist")} onBack={onClose}>
+			<Section title={MMA.t("Observations")}>
 				<div className="inat-sidebar__search">
 					<input
 						className="input"
-						placeholder="Search species..."
+						placeholder={MMA.t("Search species...")}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						onKeyDown={(e) => {
@@ -126,7 +126,7 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 						style={{ flex: 1 }}
 					/>
 					<button className="button" onClick={doSearch} disabled={searching || !query.trim()}>
-						{searching ? "..." : "Search"}
+						{searching ? "..." : MMA.t("Search")}
 					</button>
 				</div>
 
@@ -139,7 +139,7 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 									<div className="inat-sidebar__taxon-name">{t.name}</div>
 									<div className="inat-sidebar__taxon-meta">
 										{t.commonName && `${t.commonName} · `}
-										{t.rank} · {t.count.toLocaleString()} obs
+										{t.rank} · {MMA.t("{n} obs", { n: t.count.toLocaleString() })}
 									</div>
 								</div>
 							</div>
@@ -150,23 +150,29 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 				{taxon && (
 					<div className="inat-sidebar__active">
 						<div className="inat-sidebar__active-name">{taxon.name}</div>
-						<div className="inat-sidebar__active-count">{count.toLocaleString()} observations loaded</div>
+						<div className="inat-sidebar__active-count">
+							{MMA.t("{n} observations loaded", { n: count.toLocaleString() })}
+						</div>
 					</div>
 				)}
 
 				<div className="inat-sidebar__actions">
 					<button className="button" onClick={toggleVisibility} disabled={!taxon}>
-						{vis ? "Hide" : "Show"}
+						{vis ? MMA.t("Hide") : MMA.t("Show")}
 					</button>
 					<button className="button button--primary" onClick={handleImport} disabled={count === 0}>
-						Import{count > 0 ? ` (${count})` : ""}
+						{count > 0 ? MMA.t("Import ({n})", { n: count }) : MMA.t("Import")}
 					</button>
 					<button className="button button--danger" onClick={clearData} disabled={!taxon}>
-						Clear
+						{MMA.t("Clear")}
 					</button>
 				</div>
 
-				{!taxon && <div className="inat-sidebar__hint">Search for a species to visualize observations on the map.</div>}
+				{!taxon && (
+					<div className="inat-sidebar__hint">
+						{MMA.t("Search for a species to visualize observations on the map.")}
+					</div>
+				)}
 			</Section>
 
 			<TaxonomySorter />

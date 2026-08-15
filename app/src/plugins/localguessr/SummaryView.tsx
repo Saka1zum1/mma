@@ -36,13 +36,13 @@ export function SummaryView({
 		<div className="gg-summary">
 			<div className="gg-summary__hero">
 				<div className="gg-summary__hero-main">
-					<div className="gg-summary__label">{t("plugin.localguessr.gameBreakdown")}</div>
+					<div className="gg-summary__label">{t("Game Breakdown")}</div>
 					<div className="gg-summary__score">{session.totalScore.toLocaleString()}</div>
 				</div>
 				<div className="gg-summary__hero-meta">
 					{streakOn && (
 						<div className="gg-summary__streak">
-							{t("plugin.localguessr.bestStreak")}: {bestStreak}
+							{t("Best streak")}: {bestStreak}
 						</div>
 					)}
 					<div className="gg-summary__map">{session.mapName}</div>
@@ -72,14 +72,14 @@ export function SummaryView({
 							/>
 							{streakOn && streakMode === "country" && (
 								<span className={`gg-summary__row-streak${r.streakHit ? " is-hit" : " is-miss"}`}>
-									{t("plugin.localguessr.streakSection")} {r.streakHit ? "✓" : "✗"}
+									{t("Streak")} {r.streakHit ? "✓" : "✗"}
 								</span>
 							)}
 							{streakOn && streakMode === "state" && (
 								<span
 									className={`gg-summary__row-streak${r.stateStreakHit ? " is-hit" : " is-miss"}`}
 								>
-									{t("plugin.localguessr.streakSection")} {r.stateStreakHit ? "✓" : "✗"}
+									{t("Streak")} {r.stateStreakHit ? "✓" : "✗"}
 								</span>
 							)}
 							<span className="gg-summary__row-tag">
@@ -93,10 +93,10 @@ export function SummaryView({
 			<div className="gg-summary__actions">
 				<AddTagButton locationIds={allLocationIds} variant="summary-bulk" />
 				<Button variant="primary" onClick={onPlayAgain}>
-					{t("plugin.localguessr.playAgain")}
+					{t("Play again")}
 				</Button>
-				<Button onClick={onAnalytics}>{t("plugin.localguessr.analytics")}</Button>
-				<Button onClick={onBack}>{t("plugin.localguessr.backToConfig")}</Button>
+				<Button onClick={onAnalytics}>{t("Analytics")}</Button>
+				<Button onClick={onBack}>{t("Back")}</Button>
 			</div>
 		</div>
 	);

@@ -174,9 +174,9 @@ export async function downloadPano(
 		a.download = `${fileStem || panoId}.jpg`;
 		a.click();
 		URL.revokeObjectURL(a.href);
-		toast(t("toast.panoramaDownloaded"));
+		toast(t("Panorama downloaded"));
 	} catch {
-		toast(t("toast.panoramaDownloadFailed"));
+		toast(t("Panorama download failed"));
 	}
 }
 

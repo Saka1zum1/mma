@@ -65,16 +65,16 @@ async function listCached() {
   return new Set(ids ?? []);
 }
 async function embed(panoIds, opts = {}) {
-  opts.onStatus?.("Checking cache...");
+  opts.onStatus?.(MMA.t("Checking cache..."));
   const cached = await listCached();
   const uncached = panoIds.filter((id) => !cached.has(id));
   if (uncached.length === 0) {
-    opts.onStatus?.(`All ${panoIds.length} panos cached`);
+    opts.onStatus?.(MMA.t("All {n} panos cached", { n: panoIds.length }));
     return;
   }
-  opts.onStatus?.(`Fetching metadata for ${uncached.length} uncached panos...`);
+  opts.onStatus?.(MMA.t("Fetching metadata for {n} uncached panos...", { n: uncached.length }));
   const panos = await resolveWorldSizes(uncached, (done, total) => {
-    opts.onStatus?.(`Metadata: ${done}/${total}`);
+    opts.onStatus?.(MMA.t("Metadata: {done}/{total}", { done, total }));
   });
   await MMA.sidecar.request("vision", "embed", { panos }, {
     signal: opts.signal,
@@ -138,10 +138,10 @@ function VisionSidebar({ onClose }) {
       if (abort.signal.aborted) return;
       const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId);
       if (panoIds.length === 0) {
-        setError("No locations with pano IDs");
+        setError(MMA.t("No locations with pano IDs"));
         return;
       }
-      setProgress(`Embedding ${panoIds.length} panos (cached skip)...`);
+      setProgress(MMA.t("Embedding {n} panos (cached skip)...", { n: panoIds.length }));
       let embedDone = 0;
       const embedStart = Date.now();
       await embed(panoIds, {
@@ -151,16 +151,26 @@ function VisionSidebar({ onClose }) {
           embedDone += count;
           const elapsed = (Date.now() - embedStart) / 1e3;
           const rate = elapsed > 0.5 ? (embedDone / elapsed).toFixed(1) : "--";
-          setProgress(`Embedding: ${embedDone}/${panoIds.length} (${rate} panos/s)`);
+          setProgress(
+            MMA.t("Embedding: {done}/{total} ({rate} panos/s)", {
+              done: embedDone,
+              total: panoIds.length,
+              rate
+            })
+          );
         }
       });
       if (abort.signal.aborted) return;
-      setProgress(`Searching for "${q}"...`);
+      setProgress(MMA.t('Searching for "{q}"...', { q }));
       const results = await searchText(q, null, threshold, abort.signal);
       if (abort.signal.aborted) return;
       const matchedIds = results.map((r) => panoIdToLocId(locs, r.panoId)).filter((id) => id != null);
       if (matchedIds.length > 0) {
-        await MMA.addSelections([{ type: "Locations", locations: matchedIds, name: `Vision: "${q}"` }]);
+        await MMA.addSelections([{
+          type: "Locations",
+          locations: matchedIds,
+          name: MMA.t('Vision: "{q}"', { q })
+        }]);
       }
       setResultCount(matchedIds.length);
       setProgress("");
@@ -178,14 +188,14 @@ function VisionSidebar({ onClose }) {
     setProgress("");
   }, []);
   (0, import_react.useEffect)(() => () => abortRef.current?.abort(), []);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sidebar, { title: "Vision", onBack: onClose, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sidebar, { title: MMA.t("Vision"), onBack: onClose, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)("style", { children: CSS }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "vision-sidebar__body", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: "Search for", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Search for"), children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "input",
         {
           className: "input",
-          placeholder: "cars, snow, indoor...",
+          placeholder: MMA.t("cars, snow, indoor..."),
           value: query,
           onChange: (e) => setQuery(e.target.value),
           onKeyDown: (e) => {
@@ -193,7 +203,7 @@ function VisionSidebar({ onClose }) {
           }
         }
       ) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: `Min confidence: ${threshold.toFixed(3)}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Min confidence: {n}", { n: threshold.toFixed(3) }), children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "input",
         {
           type: "range",
@@ -205,13 +215,10 @@ function VisionSidebar({ onClose }) {
           style: { width: "100%" }
         }
       ) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "vision-sidebar__actions", children: !running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--primary", disabled: !query.trim(), onClick: run, children: "Search" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button", onClick: cancel, children: "Cancel" }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "vision-sidebar__actions", children: !running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--primary", disabled: !query.trim(), onClick: run, children: MMA.t("Search") }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button", onClick: cancel, children: MMA.t("Cancel") }) }),
       progress && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "vision-sidebar__progress", children: progress }),
       error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "vision-sidebar__error", children: error }),
-      resultCount !== null && !running && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "vision-sidebar__results", children: [
-        resultCount,
-        " locations selected"
-      ] })
+      resultCount !== null && !running && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "vision-sidebar__results", children: MMA.t("{n} locations selected", { n: resultCount }) })
     ] })
   ] });
 }
@@ -238,14 +245,14 @@ function FindSimilarButton() {
         await MMA.addSelections([{
           type: "Locations",
           locations: matchedIds,
-          name: `Similar to ${active.panoId.slice(0, 8)}...`
+          name: MMA.t("Similar to {id}...", { id: active.panoId.slice(0, 8) })
         }]);
-        setResult(`${matchedIds.length} similar`);
+        setResult(MMA.t("{n} similar", { n: matchedIds.length }));
       } else {
-        setResult("No similar panos found");
+        setResult(MMA.t("No similar panos found"));
       }
     } catch (e) {
-      setResult(`Error: ${e}`);
+      setResult(MMA.t("Error: {error}", { error: String(e) }));
     } finally {
       setRunning(false);
     }
@@ -257,7 +264,7 @@ function FindSimilarButton() {
       style: { width: "100%" },
       disabled: running,
       onClick: run,
-      children: running ? "Searching..." : "Find similar panos"
+      children: running ? MMA.t("Searching...") : MMA.t("Find similar panos")
     }
   );
 }

@@ -113,7 +113,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 	const useMapCenterAsLookAt = () => {
 		const center = getMapHost()?.getCenter();
 		if (!center) {
-			toast(t("plugin.hyperlapse.needMap"));
+			toast(t("Map is not ready"));
 			return;
 		}
 		patchSettings({ lookMode: "lookAt", lookAt: { lat: center.lat, lng: center.lng } });
@@ -122,13 +122,13 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 	const pickLookAtFromMap = () => {
 		const host = getMapHost();
 		if (!host) {
-			toast(t("plugin.hyperlapse.needMap"));
+			toast(t("Map is not ready"));
 			return;
 		}
 		pickOffRef.current?.();
 		host.setCursor("crosshair");
 		setPickingLookAt(true);
-		toast(t("plugin.hyperlapse.pickLookAtHint"));
+		toast(t("Click the map to set the look-at point"));
 		pickOffRef.current = host.once("mousedown", (ll) => {
 			pickOffRef.current = null;
 			host.setCursor(null);
@@ -141,7 +141,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 		if (busy) return;
 		const ids = [...getMapState().selectedLocationIds];
 		if (ids.length < 2) {
-			toast(t("plugin.hyperlapse.needLocations"));
+			toast(t("Select at least two locations with panoramas"));
 			return;
 		}
 		const ac = new AbortController();
@@ -178,7 +178,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 				resolved: result.frames.length,
 				total: result.frames.length,
 			});
-			toast(t("plugin.hyperlapse.ready", { count: result.frames.length }));
+			toast(t("Ready — {count} frames (textures load on demand)", { count: result.frames.length }));
 		} catch (e) {
 			if ((e as Error)?.name === "AbortError") return;
 			toast(String((e as Error)?.message ?? e));
@@ -201,7 +201,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 			total: seq.frames.length,
 		});
 		if (openViewer) setViewerOpen(true);
-		else toast(t("plugin.hyperlapse.ready", { count: seq.frames.length }));
+		else toast(t("Ready — {count} frames (textures load on demand)", { count: seq.frames.length }));
 	};
 
 	const beginRename = (seq: SavedSequence) => {
@@ -212,7 +212,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 	const commitRename = (id: string) => {
 		if (renameSavedSequence(id, renameValue)) {
 			refreshSaved();
-			toast(t("plugin.hyperlapse.renamed"));
+			toast(t("Sequence renamed"));
 		}
 		setRenamingId(null);
 		setRenameValue("");
@@ -236,12 +236,12 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 	return (
 		<>
 			<Sidebar
-				title={t("plugin.hyperlapse.title")}
+				title={t("Road Trip")}
 				onBack={handleClose}
 				className="hyperlapse-sidebar"
 			>
-				<Section title={t("plugin.hyperlapse.parameters")}>
-					<Field label={t("plugin.hyperlapse.fov", { n: settings.fov })}>
+				<Section title={t("Parameters")}>
+					<Field label={t("FOV ({n}°)", { n: settings.fov })}>
 						<Slider
 							min={40}
 							max={110}
@@ -249,7 +249,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							onChange={(e) => patchSettings({ fov: Number(e.target.value) })}
 						/>
 					</Field>
-					<Field label={t("plugin.hyperlapse.fps", { n: settings.fps })}>
+					<Field label={t("Play FPS ({n})", { n: settings.fps })}>
 						<Slider
 							min={5}
 							max={60}
@@ -257,39 +257,39 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							onChange={(e) => patchSettings({ fps: Number(e.target.value) })}
 						/>
 					</Field>
-					<Field label={t("plugin.hyperlapse.playbackMode")}>
+					<Field label={t("Playback mode")}>
 						<NSelect
 							value={settings.playbackMode}
 							onChange={(e) =>
 								patchSettings({ playbackMode: e.target.value as PlaybackMode })
 							}
 						>
-							<option value="once">{t("plugin.hyperlapse.modeOnce")}</option>
-							<option value="loop">{t("plugin.hyperlapse.modeLoop")}</option>
-							<option value="pingpong">{t("plugin.hyperlapse.modePingpong")}</option>
+							<option value="once">{t("Once")}</option>
+							<option value="loop">{t("Loop")}</option>
+							<option value="pingpong">{t("Ping-pong")}</option>
 						</NSelect>
 					</Field>
-					<Field label={t("plugin.hyperlapse.viewFilter")}>
+					<Field label={t("Filter")}>
 						<NSelect
 							value={settings.viewFilter}
 							onChange={(e) =>
 								patchSettings({ viewFilter: e.target.value as ViewFilter })
 							}
 						>
-							<option value="none">{t("plugin.hyperlapse.viewFilterNone")}</option>
-							<option value="vivid">{t("plugin.hyperlapse.viewFilterVivid")}</option>
-							<option value="vintage">{t("plugin.hyperlapse.viewFilterVintage")}</option>
-							<option value="mono">{t("plugin.hyperlapse.viewFilterMono")}</option>
+							<option value="none">{t("None")}</option>
+							<option value="vivid">{t("Vivid")}</option>
+							<option value="vintage">{t("Vintage")}</option>
+							<option value="mono">{t("Mono")}</option>
 						</NSelect>
 					</Field>
-					<Field label={t("plugin.hyperlapse.smooth")} row>
+					<Field label={t("Smooth camera transition")} row>
 						<Switch
 							checked={settings.smoothTransition}
 							onChange={(v) => patchSettings({ smoothTransition: v })}
-							label={t("plugin.hyperlapse.smooth")}
+							label={t("Smooth camera transition")}
 						/>
 					</Field>
-					<Field label={t("plugin.hyperlapse.panoZoom")}>
+					<Field label={t("Pano zoom (1–3)")}>
 						<TextInput
 							type="number"
 							min={1}
@@ -305,16 +305,16 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 					</Field>
 				</Section>
 
-				<Section title={t("plugin.hyperlapse.look")} defaultOpen={false}>
-					<Field label={t("plugin.hyperlapse.lookMode")}>
+				<Section title={t("Look")} defaultOpen={false}>
+					<Field label={t("Look mode")}>
 						<NSelect
 							value={settings.lookMode}
 							onChange={(e) => setLookMode(e.target.value as LookMode)}
 						>
-							<option value="drive">{t("plugin.hyperlapse.lookModeDrive")}</option>
-							<option value="lookAt">{t("plugin.hyperlapse.lookModeLookAt")}</option>
-							<option value="fixed">{t("plugin.hyperlapse.lookModeFixed")}</option>
-							<option value="free">{t("plugin.hyperlapse.lookModeFree")}</option>
+							<option value="drive">{t("Follow driving direction")}</option>
+							<option value="lookAt">{t("Look-at point")}</option>
+							<option value="fixed">{t("Fixed heading")}</option>
+							<option value="free">{t("Free (texture forward)")}</option>
 						</NSelect>
 					</Field>
 					{settings.lookMode === "lookAt" && (
@@ -354,7 +354,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							<div className="hyperlapse-sidebar__row">
 								<Button small onClick={useMapCenterAsLookAt}>
 									<Icon path={mdiCrosshairsGps} size={16} />
-									{t("plugin.hyperlapse.useMapCenter")}
+									{t("Map center")}
 								</Button>
 								<Button
 									small
@@ -362,14 +362,14 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 									onClick={pickLookAtFromMap}
 								>
 									<Icon path={mdiMapMarkerRadius} size={16} />
-									{t("plugin.hyperlapse.pickLookAt")}
+									{t("Pick on map")}
 								</Button>
 							</div>
-							<p className="hyperlapse-sidebar__hint">{t("plugin.hyperlapse.lookAtHint")}</p>
+							<p className="hyperlapse-sidebar__hint">{t("In look-at mode the viewer locks heading; drag adjusts pitch and roll only.")}</p>
 						</>
 					)}
 					{settings.lookMode === "fixed" && (
-						<Field label={t("plugin.hyperlapse.headingDeg")}>
+						<Field label={t("Heading (°)")}>
 							<TextInput
 								type="number"
 								min={0}
@@ -384,15 +384,15 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							/>
 						</Field>
 					)}
-					<Field label={t("plugin.hyperlapse.fixedPitch")} row>
+					<Field label={t("Fixed pitch")} row>
 						<Switch
 							checked={settings.useFixedPitch}
 							onChange={(v) => patchSettings({ useFixedPitch: v })}
-							label={t("plugin.hyperlapse.fixedPitch")}
+							label={t("Fixed pitch")}
 						/>
 					</Field>
 					{settings.useFixedPitch && (
-						<Field label={t("plugin.hyperlapse.pitchDeg")}>
+						<Field label={t("Pitch (°)")}>
 							<TextInput
 								type="number"
 								min={-85}
@@ -412,7 +412,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 				<div className="hyperlapse-sidebar__actions">
 					{busy ? (
 						<Button variant="destructive" onClick={cancel}>
-							{t("common.cancel")}
+							{t("Cancel")}
 						</Button>
 					) : (
 						<Button
@@ -420,29 +420,40 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							disabled={selectedCount < 2}
 							onClick={() => void generate()}
 						>
-							{t("plugin.hyperlapse.generate")}
+							{t("Generate")}
 						</Button>
 					)}
 					<Button disabled={!metas.length} onClick={() => setViewerOpen(true)}>
-						{t("plugin.hyperlapse.openViewer")}
+						{t("Open Road Trip viewer")}
 					</Button>
 				</div>
 
 				{progress && (
 					<p className="hyperlapse-sidebar__progress">
-						{progress.message ??
-							t("plugin.hyperlapse.progress", {
-								phase: progress.phase,
-								percent: Math.round(progress.progress * 100),
-								resolved: progress.resolved ?? 0,
-								total: progress.total ?? 0,
-							})}
+						{progress.message
+							? t(progress.message)
+							: t("{phase}: {percent}% ({resolved}/{total})", {
+									phase: t(
+										(
+											{
+												ordering: "Ordering",
+												loading: "Loading",
+												done: "Done",
+												cancelled: "Cancelled",
+												error: "Error",
+											} as const
+										)[progress.phase],
+									),
+									percent: Math.round(progress.progress * 100),
+									resolved: progress.resolved ?? 0,
+									total: progress.total ?? 0,
+								})}
 					</p>
 				)}
 
-				<Section title={t("plugin.hyperlapse.sequences")}>
+				<Section title={t("Sequences")}>
 					{saved.length === 0 ? (
-						<EmptyState>{t("plugin.hyperlapse.empty")}</EmptyState>
+						<EmptyState>{t("Select locations, then generate a Road Trip sequence.")}</EmptyState>
 					) : (
 						<ul className="hyperlapse-sidebar__saved">
 							{saved.map((s) => (
@@ -473,40 +484,40 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 											<span className="hyperlapse-sidebar__saved-name">{s.name}</span>
 										)}
 										<small>
-											{t("plugin.hyperlapse.sequenceMeta", {
+											{t("{count} frames · edited {time}", {
 												count: s.frames.length,
 												time: relativeTime(new Date(s.modifiedAt).toISOString()),
 											})}
 										</small>
 									</div>
 									<div className="hyperlapse-sidebar__saved-actions">
-										<Tooltip content={t("plugin.hyperlapse.play")} side="bottom">
+										<Tooltip content={t("Play")} side="bottom">
 											<button
 												type="button"
 												className="icon-button"
-												aria-label={t("plugin.hyperlapse.play")}
+												aria-label={t("Play")}
 												disabled={busy}
 												onClick={() => restore(s, true)}
 											>
 												<Icon path={mdiPlay} size={18} />
 											</button>
 										</Tooltip>
-										<Tooltip content={t("common.rename")} side="bottom">
+										<Tooltip content={t("Rename")} side="bottom">
 											<button
 												type="button"
 												className="icon-button"
-												aria-label={t("common.rename")}
+												aria-label={t("Rename")}
 												disabled={busy}
 												onClick={() => beginRename(s)}
 											>
 												<Icon path={mdiPencil} size={18} />
 											</button>
 										</Tooltip>
-										<Tooltip content={t("common.delete")} side="bottom">
+										<Tooltip content={t("Delete")} side="bottom">
 											<button
 												type="button"
 												className="icon-button"
-												aria-label={t("common.delete")}
+												aria-label={t("Delete")}
 												disabled={busy}
 												onClick={() => requestDelete(s.id)}
 											>
@@ -522,18 +533,18 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 			</Sidebar>
 
 			<Dialog open={deleteConfirmId != null} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
-				<DialogContent title={t("common.delete")}>
-					<p>{t("plugin.hyperlapse.deleteConfirm")}</p>
+				<DialogContent title={t("Delete")}>
+					<p>{t("Delete this sequence?")}</p>
 					<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
 						<Button small onClick={() => setDeleteConfirmId(null)}>
-							{t("common.cancel")}
+							{t("Cancel")}
 						</Button>
 						<Button
 							small
 							variant="destructive"
 							onClick={() => deleteConfirmId && confirmDelete(deleteConfirmId)}
 						>
-							{t("common.delete")}
+							{t("Delete")}
 						</Button>
 					</div>
 				</DialogContent>

@@ -61,15 +61,18 @@ export function TaxonomySorter() {
 			const r = await sortTagsByTaxonomy(opts, setProgress, ctl.signal);
 			setResult(r);
 			if (r.sorted > 0) {
-				MMA.toast(`Sorted ${r.sorted} tag${r.sorted === 1 ? "" : "s"} into taxonomy folders`);
+				MMA.toast(MMA.t(
+					{ one: "Sorted {n} tag into taxonomy folders", other: "Sorted {n} tags into taxonomy folders" },
+					{ n: r.sorted },
+				));
 			} else {
-				MMA.toast("No tags needed sorting");
+				MMA.toast(MMA.t("No tags needed sorting"));
 			}
 		} catch (e) {
 			if (e instanceof DOMException && e.name === "AbortError") {
-				MMA.toast("Taxonomy sort cancelled");
+				MMA.toast(MMA.t("Taxonomy sort cancelled"));
 			} else {
-				MMA.toast("Taxonomy sort failed");
+				MMA.toast(MMA.t("Taxonomy sort failed"));
 			}
 		}
 		setRunning(false);
@@ -83,12 +86,12 @@ export function TaxonomySorter() {
 
 	const handleClearCache = useCallback(() => {
 		clearTaxonomyCache();
-		MMA.toast("Taxonomy cache cleared");
+		MMA.toast(MMA.t("Taxonomy cache cleared"));
 	}, []);
 
 	return (
-		<Section title="Taxonomy Sorter" defaultOpen={false}>
-			<Field label="Language" row>
+		<Section title={MMA.t("Taxonomy Sorter")} defaultOpen={false}>
+			<Field label={MMA.t("Language")} row>
 				<SegmentedControl
 					options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
 					value={lang}
@@ -96,18 +99,32 @@ export function TaxonomySorter() {
 				/>
 			</Field>
 
-			<Field label={<Label info="Deep = all taxonomic ranks. Flat = order + family only.">Depth</Label>} row>
+			<Field
+				label={
+					<Label info={MMA.t("Deep = all taxonomic ranks. Flat = order + family only.")}>
+						{MMA.t("Depth")}
+					</Label>
+				}
+				row
+			>
 				<SegmentedControl
 					options={[
-						{ value: "deep", label: " Deep " },
-						{ value: "flat", label: " Flat " },
+						{ value: "deep", label: `\u00a0${MMA.t("Deep")}\u00a0` },
+						{ value: "flat", label: `\u00a0${MMA.t("Flat")}\u00a0` },
 					]}
 					value={deep ? "deep" : "flat"}
 					onChange={(v) => setDeep(v === "deep")}
 				/>
 			</Field>
 
-			<Field label={<Label info="Include translated common names from iNaturalist">Common names</Label>} row>
+			<Field
+				label={
+					<Label info={MMA.t("Include translated common names from iNaturalist")}>
+						{MMA.t("Common names")}
+					</Label>
+				}
+				row
+			>
 				<input
 					type="checkbox"
 					checked={commonNames}
@@ -118,20 +135,20 @@ export function TaxonomySorter() {
 			<div style={{ display: "flex", gap: 6, marginTop: 4 }}>
 				{running ? (
 					<button className="button button--danger" onClick={handleCancel} style={{ flex: 1 }}>
-						Cancel
+						{MMA.t("Cancel")}
 					</button>
 				) : (
 					<button className="button button--primary" onClick={handleSort} style={{ flex: 1 }}>
-						Sort Tags
+						{MMA.t("Sort Tags")}
 					</button>
 				)}
 				<button
 					className="button"
 					onClick={handleClearCache}
 					disabled={running}
-					title="Clear cached API results"
+					title={MMA.t("Clear cached API results")}
 				>
-					Clear Cache
+					{MMA.t("Clear Cache")}
 				</button>
 			</div>
 
@@ -144,7 +161,10 @@ export function TaxonomySorter() {
 
 			{result && !running && (
 				<div style={{ fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }}>
-					{result.sorted} sorted, {result.skipped} skipped
+					{MMA.t("{sorted} sorted, {skipped} skipped", {
+						sorted: result.sorted,
+						skipped: result.skipped,
+					})}
 				</div>
 			)}
 		</Section>

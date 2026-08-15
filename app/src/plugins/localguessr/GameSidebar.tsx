@@ -87,24 +87,24 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 
 	return (
 		<>
-			<Sidebar title={t("plugin.localguessr.title")} onBack={onClose} className="gg-plugin-sidebar">
+			<Sidebar title={t("LocalGuessr")} onBack={onClose} className="gg-plugin-sidebar">
 				{!map ? (
-					<EmptyState icon={mdiEarth}>{t("plugin.localguessr.noMapOpen")}</EmptyState>
+					<EmptyState icon={mdiEarth}>{t("Open a map to play")}</EmptyState>
 				) : (
 					<>
-						<Section title={t("plugin.localguessr.mapSection")}>
-							<Field label={t("plugin.localguessr.currentMap")}>
+						<Section title={t("Map pool")}>
+							<Field label={t("Current map")}>
 								<div className="gg-sidebar__map-name">{map.meta.name}</div>
 							</Field>
-							<Field label={t("plugin.localguessr.poolSize")}>
+							<Field label={t("Locations in pool")}>
 								<div>{locationCount.toLocaleString()}</div>
 							</Field>
 						</Section>
 
-						<Section title={t("plugin.localguessr.ongoingGames")}>
+						<Section title={t("Ongoing games")}>
 							{ongoingGames.length === 0 ? (
 								<p className="gg-sidebar__ongoing-empty">
-									{t("plugin.localguessr.ongoingGamesEmpty")}
+									{t("No unfinished games yet.")}
 								</p>
 							) : (
 								ongoingGames.map((g) => {
@@ -150,7 +150,7 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 														};
 														controller.resumeGame(active);
 													}}
-													aria-label={t("plugin.localguessr.resumeGame")}
+													aria-label={t("Resume game")}
 												>
 													<Icon path={mdiPlayCircleOutline} size={18} />
 												</button>
@@ -161,7 +161,7 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 														deleteOngoingGame(g.sessionId);
 														refreshOngoing();
 													}}
-													aria-label={t("common.delete")}
+													aria-label={t("Delete")}
 												>
 													<Icon path={mdiDeleteOutline} size={18} />
 												</button>
@@ -172,33 +172,33 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 							)}
 						</Section>
 
-						<Section title={t("plugin.localguessr.modeSection")}>
-							<Field label={t("plugin.localguessr.movementMode")}>
+						<Section title={t("Game mode")}>
+							<Field label={t("Movement")}>
 								<SegmentedControl<MovementMode>
 									value={config.movementMode}
 									onChange={(movementMode) => patch({ movementMode })}
 									options={[
-										{ value: "moving", label: "Moving" },
-										{ value: "no-move", label: "No Move" },
-										{ value: "nmpz", label: "NMPZ" },
+										{ value: "moving", label: t("Moving") },
+										{ value: "no-move", label: t("No Move") },
+										{ value: "nmpz", label: t("NMPZ") },
 									]}
 								/>
 							</Field>
 
-							<Field label={t("plugin.localguessr.roundMode")}>
+							<Field label={t("Rounds")}>
 								<SegmentedControl<RoundMode>
 									value={config.roundMode}
 									onChange={(roundMode) => patch({ roundMode })}
 									options={[
-										{ value: "classic", label: t("plugin.localguessr.classic") },
-										{ value: "infinite", label: t("plugin.localguessr.infinite") },
+										{ value: "classic", label: t("Classic") },
+										{ value: "infinite", label: t("Infinite") },
 									]}
 								/>
 							</Field>
 
 							{config.roundMode === "classic" && (
 								<Field
-									label={t("plugin.localguessr.rounds", {
+									label={t("Rounds ({n})", {
 										n: String(config.classicRounds),
 									})}
 								>
@@ -215,26 +215,26 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 							)}
 						</Section>
 
-						<Section title={t("plugin.localguessr.timerSection")} collapsible>
-							<Field label={t("plugin.localguessr.timerMode")}>
+						<Section title={t("Timer")} collapsible>
+							<Field label={t("Timer mode")}>
 								<NSelect
 									value={config.timerMode}
 									onChange={(e) =>
 										patch({ timerMode: e.target.value as TimerMode })
 									}
 								>
-									<option value="off">{t("plugin.localguessr.timerOff")}</option>
+									<option value="off">{t("Off")}</option>
 									<option value="countdown">
-										{t("plugin.localguessr.timerCountdown")}
+										{t("Countdown")}
 									</option>
 									<option value="countup">
-										{t("plugin.localguessr.timerCountup")}
+										{t("Count up")}
 									</option>
 								</NSelect>
 							</Field>
 							{config.timerMode === "countdown" && (
 								<Field
-									label={t("plugin.localguessr.timeLimit", {
+									label={t("Time limit ({n}s)", {
 										n: String(config.timeLimit),
 									})}
 								>
@@ -251,33 +251,33 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 							)}
 						</Section>
 
-						<Section title={t("plugin.localguessr.streakSection")} collapsible>
-							<Field label={t("plugin.localguessr.streakMode")}>
+						<Section title={t("Streak")} collapsible>
+							<Field label={t("Streak mode")}>
 								<NSelect
 									value={config.streakMode}
 									onChange={(e) =>
 										patch({ streakMode: e.target.value as StreakMode })
 									}
 								>
-									<option value="off">{t("plugin.localguessr.streakOff")}</option>
-									<option value="country">{t("plugin.localguessr.streakCountry")}</option>
-									<option value="state">{t("plugin.localguessr.streakState")}</option>
+									<option value="off">{t("Off")}</option>
+									<option value="country">{t("Country")}</option>
+									<option value="state">{t("State / Province")}</option>
 								</NSelect>
 							</Field>
 							{config.streakMode !== "off" && (
 								<>
-									<Field label={t("plugin.localguessr.geocodeBackend")}>
+									<Field label={t("Reverse geocode")}>
 										<SegmentedControl<GeocodeBackend>
 											value={config.geocodeBackend}
 											onChange={(geocodeBackend) => patch({ geocodeBackend })}
 											options={[
 												{
 													value: "local",
-													label: t("plugin.localguessr.geocodeLocal"),
+													label: t("Local"),
 												},
 												{
 													value: "nominatim",
-													label: t("plugin.localguessr.geocodeNominatim"),
+													label: t("Nominatim"),
 												},
 											]}
 										/>
@@ -292,13 +292,13 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 								disabled={locationCount === 0 || inGame}
 								onClick={() => void controller.startGame()}
 							>
-								{t("plugin.localguessr.start")}
+								{t("Start game")}
 							</Button>
 							<Button
 								variant="ghost"
 								onClick={() => controller.showAnalytics()}
 							>
-								{t("plugin.localguessr.analytics")}
+								{t("Analytics")}
 								{pastGames > 0 ? ` (${pastGames})` : ""}
 							</Button>
 						</div>

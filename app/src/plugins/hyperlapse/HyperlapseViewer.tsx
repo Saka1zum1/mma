@@ -22,13 +22,12 @@ import { AnimationController } from "./render/AnimationController";
 import { FrameTexturePool } from "./render/FrameTexturePool";
 import { PovController } from "./pov";
 import type { HyperlapseFrameMeta, HyperlapseSettings, LookMode, ViewFilter } from "./types";
-import type { MessageKey } from "@/locales/en";
 
-const VIEW_FILTER_LABEL: Record<ViewFilter, MessageKey> = {
-	none: "plugin.hyperlapse.viewFilterNone",
-	vivid: "plugin.hyperlapse.viewFilterVivid",
-	vintage: "plugin.hyperlapse.viewFilterVintage",
-	mono: "plugin.hyperlapse.viewFilterMono",
+const VIEW_FILTER_LABEL: Record<ViewFilter, string> = {
+	none: "None",
+	vivid: "Vivid",
+	vintage: "Vintage",
+	mono: "Mono",
 };
 
 export function HyperlapseViewer({
@@ -336,7 +335,7 @@ export function HyperlapseViewer({
 
 	return (
 		<Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-			<DialogContent title={t("plugin.hyperlapse.viewerTitle")} className="hyperlapse-viewer-dialog">
+			<DialogContent title={t("Road Trip viewer")} className="hyperlapse-viewer-dialog">
 				<div className="hyperlapse-viewer">
 					<div
 						ref={containerRef}
@@ -356,13 +355,13 @@ export function HyperlapseViewer({
 							className="icon-button hyperlapse-viewer__fs-btn"
 							aria-label={
 								canvasFs
-									? t("plugin.hyperlapse.exitFullscreen")
-									: t("plugin.hyperlapse.fullscreen")
+									? t("Exit fullscreen")
+									: t("Fullscreen canvas")
 							}
 							title={
 								canvasFs
-									? t("plugin.hyperlapse.exitFullscreen")
-									: t("plugin.hyperlapse.fullscreen")
+									? t("Exit fullscreen")
+									: t("Fullscreen canvas")
 							}
 							onClick={(e) => {
 								e.stopPropagation();
@@ -375,21 +374,21 @@ export function HyperlapseViewer({
 
 					<div className="hyperlapse-viewer__pov">
 						<label className="hyperlapse-viewer__pov-field">
-							<span>{t("plugin.hyperlapse.lookMode")}</span>
+							<span>{t("Look mode")}</span>
 							<NSelect
 								value={lookMode}
 								disabled={!ready}
 								className="nselect--limited"
 								onChange={(e) => changeLookMode(e.target.value as LookMode)}
 							>
-								<option value="drive">{t("plugin.hyperlapse.lookModeDrive")}</option>
-								<option value="lookAt">{t("plugin.hyperlapse.lookModeLookAt")}</option>
-								<option value="fixed">{t("plugin.hyperlapse.lookModeFixed")}</option>
-								<option value="free">{t("plugin.hyperlapse.lookModeFree")}</option>
+								<option value="drive">{t("Follow driving direction")}</option>
+								<option value="lookAt">{t("Look-at point")}</option>
+								<option value="fixed">{t("Fixed heading")}</option>
+								<option value="free">{t("Free (texture forward)")}</option>
 							</NSelect>
 						</label>
 						<label className="hyperlapse-viewer__pov-field">
-							<span>{t("plugin.hyperlapse.viewFilter")}</span>
+							<span>{t("Filter")}</span>
 							<NSelect
 								value={viewFilter}
 								disabled={!ready}
@@ -405,7 +404,7 @@ export function HyperlapseViewer({
 						</label>
 						{lookMode === "fixed" && (
 							<label className="hyperlapse-viewer__pov-field">
-								<span>{t("plugin.hyperlapse.headingDeg")}</span>
+								<span>{t("Heading (°)")}</span>
 								<TextInput
 									type="number"
 									min={0}
@@ -424,17 +423,17 @@ export function HyperlapseViewer({
 						{lookMode === "lookAt" && (
 							<span className="hyperlapse-viewer__pov-hint">
 								{settings.lookAt
-									? t("plugin.hyperlapse.lookAtActive", {
+									? t("Aiming at {lat}, {lng}", {
 											lat: settings.lookAt.lat.toFixed(5),
 											lng: settings.lookAt.lng.toFixed(5),
 										})
-									: t("plugin.hyperlapse.lookAtMissing")}
+									: t("No look-at point set — pick one in the sidebar.")}
 							</span>
 						)}
 						<span className="hyperlapse-viewer__pov-hint">
 							{lookMode === "lookAt"
-								? t("plugin.hyperlapse.viewerHintLookAt")
-								: t("plugin.hyperlapse.viewerHint")}
+								? t("Drag for pitch · Alt/Shift/right-drag to roll")
+								: t("Drag to look · Alt/Shift/right-drag to roll")}
 						</span>
 					</div>
 
@@ -442,7 +441,7 @@ export function HyperlapseViewer({
 						<Button
 							small
 							disabled={!ready}
-							aria-label={t("plugin.hyperlapse.prev")}
+							aria-label={t("Previous frame")}
 							onClick={() => animRef.current?.prev()}
 						>
 							<Icon path={mdiSkipPrevious} size={18} />
@@ -451,7 +450,7 @@ export function HyperlapseViewer({
 							small
 							variant="primary"
 							disabled={!ready || !metas.length}
-							aria-label={playing ? t("plugin.hyperlapse.pause") : t("plugin.hyperlapse.play")}
+							aria-label={playing ? t("Pause") : t("Play")}
 							onClick={() => animRef.current?.toggle()}
 						>
 							<Icon path={playing ? mdiPause : mdiPlay} size={18} />
@@ -459,7 +458,7 @@ export function HyperlapseViewer({
 						<Button
 							small
 							disabled={!ready}
-							aria-label={t("plugin.hyperlapse.next")}
+							aria-label={t("Next frame")}
 							onClick={() => animRef.current?.next()}
 						>
 							<Icon path={mdiSkipNext} size={18} />
@@ -479,8 +478,8 @@ export function HyperlapseViewer({
 						<Button
 							small
 							disabled={!ready}
-							aria-label={t("plugin.hyperlapse.resetView")}
-							title={t("plugin.hyperlapse.resetView")}
+							aria-label={t("Reset view offsets")}
+							title={t("Reset view offsets")}
 							onClick={resetView}
 						>
 							<Icon path={mdiRestore} size={18} />
@@ -488,8 +487,8 @@ export function HyperlapseViewer({
 						<Button
 							small
 							disabled={!ready}
-							aria-label={t("plugin.hyperlapse.resetRoll")}
-							title={t("plugin.hyperlapse.resetRoll")}
+							aria-label={t("Reset roll")}
+							title={t("Reset roll")}
 							onClick={resetRoll}
 						>
 							<Icon path={mdiAxisZRotateClockwise} size={18} />

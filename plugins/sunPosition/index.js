@@ -209,8 +209,12 @@ var require_suncalc = __commonJS({
 var import_suncalc = __toESM(require_suncalc());
 var DEG = 180 / Math.PI;
 var FIELDS = {
-  sunAzimuth: { type: "number", label: "Sun azimuth", comparison: { type: "circular", period: 360 } },
-  sunAltitude: { type: "number", label: "Sun altitude" }
+  sunAzimuth: {
+    type: "number",
+    label: MMA.t("Sun azimuth"),
+    comparison: { type: "circular", period: 360 }
+  },
+  sunAltitude: { type: "number", label: MMA.t("Sun altitude") }
 };
 function computeSun(lat, lng, unixSeconds) {
   const pos = import_suncalc.default.getPosition(new Date(unixSeconds * 1e3), lat, lng);
@@ -238,8 +242,8 @@ async function enrich(locations, enrichFields) {
 MMA.registerPlugin({
   activate() {
     MMA.registerEnrichFields([
-      { key: "sunAzimuth", label: "Sun azimuth" },
-      { key: "sunAltitude", label: "Sun altitude" }
+      { key: "sunAzimuth", label: MMA.t("Sun azimuth") },
+      { key: "sunAltitude", label: MMA.t("Sun altitude") }
     ]);
     MMA.registerEnrichmentProvider({
       id: "sunPosition",

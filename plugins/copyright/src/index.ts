@@ -12,7 +12,11 @@ interface DetectResult {
 const FIELD_DEFS: Record<string, ExtraFieldDef> = {
 	// Year labels are identification categories, not distances: comparison stays
 	// categorical (disambiguate) while type=number keeps numeric bucketing/ranges.
-	copyrightYear: { type: "number", label: "Copyright year", comparison: { type: "categorical" } },
+	copyrightYear: {
+		type: "number",
+		label: MMA.t("Copyright year"),
+		comparison: { type: "categorical" },
+	},
 };
 
 function fieldRequested(enrichFields: string[] | null): boolean {
@@ -77,11 +81,11 @@ async function enrich(
 MMA.registerPlugin({
 	activate() {
 		MMA.registerEnrichFields([
-			{ key: "copyrightYear", label: "Copyright year" },
+			{ key: "copyrightYear", label: MMA.t("Copyright year") },
 		]);
 		MMA.registerEnrichmentProvider({
 			id: "copyright",
-			label: "Copyright year",
+			label: MMA.t("Copyright year"),
 			enrich,
 			fieldDefs: FIELD_DEFS,
 			units: (locations, enrichFields, force) => usableLocations(locations, enrichFields, force).length,

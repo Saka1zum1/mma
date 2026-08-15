@@ -45,9 +45,9 @@ export function ProviderIcon({
 	className?: string;
 }) {
 	const { t } = useT();
-	if (id === "baidu") return <BaiduIcon size={size} className={className} label={t("provider.baidu")} />;
+	if (id === "baidu") return <BaiduIcon size={size} className={className} label={t("Baidu")} />;
 	if (id === "tencent") return <Icon path={mdiQqchat} size={size} className={className} />;
-	if (id === "yandex") return <YandexIcon size={size} className={className} label={t("provider.yandex")} />;
+	if (id === "yandex") return <YandexIcon size={size} className={className} label={t("Yandex")} />;
 	const path = PROVIDER_CATALOG.find((p) => p.id === id)?.icon;
 	if (!path) return null;
 	return <Icon path={path} size={size} className={className} />;

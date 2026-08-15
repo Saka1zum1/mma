@@ -67,3 +67,5 @@ plugins/copyright/sidecar/verify_parity.py
 
 app/test/e2e/opensv-smoke.test.ts
 .tauri-keys/
+
+target-local/

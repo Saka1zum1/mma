@@ -179,7 +179,7 @@ const TagEditor = memo(function TagEditor({
 	};
 
 	if (isImport) {
-		return <p>{t("editor.importBlocked")}</p>;
+		return <p>{t("This location is still being imported and cannot be modified. Complete the import before making changes.")}</p>;
 	}
 
 	return (
@@ -203,7 +203,7 @@ const TagEditor = memo(function TagEditor({
 						<input
 							className="form-add-tag__input"
 							type="text"
-							placeholder={t("editor.addTagPlaceholder")}
+							placeholder={t("Add a tag…")}
 							value={tagInput}
 							onChange={(e) => setTagInput(e.target.value)}
 						/>
@@ -1134,7 +1134,7 @@ export function LocationPreview() {
 					)}
 					{lockInfo && (
 						<div className="viewport-lock-badge">
-							{t("editor.viewportLock", {
+							{t("VIEWPORT LOCK h {heading} p {pitch} z {zoom}", {
 								heading: lockInfo.relHeading.toFixed(1),
 								pitch: lockInfo.relPitch.toFixed(1),
 								zoom: lockInfo.lockedZoom.toFixed(1),
@@ -1175,11 +1175,11 @@ export function LocationPreview() {
 							</>
 						)}
 						<span className="location-preview__timestamps">
-							{t("editor.created", { time: relativeTime(location.createdAt) })}
+							{t("Created {time}", { time: relativeTime(location.createdAt) })}
 							{location.modifiedAt != null && (
 								<>
 									{" · "}
-									{t("editor.modified", { time: relativeTime(location.modifiedAt) })}
+									{t("Modified {time}", { time: relativeTime(location.modifiedAt) })}
 								</>
 							)}
 						</span>
@@ -1189,24 +1189,24 @@ export function LocationPreview() {
 					</div>
 					<div className="location-preview__actions">
 						<Button variant="primary" onClick={handleSave} data-qa="location-save">
-							{isSeenPreview(location) ? t("editor.addToMap") : t("common.save")}
+							{isSeenPreview(location) ? t("Add to map") : t("Save")}
 						</Button>
 						{isReviewMode ? (
 							<div style={{ display: "flex", justifyContent: "space-around" }}>
-								<Tooltip content={t("editor.prevLocation")}>
+								<Tooltip content={t("Go to previous location (Control+Left)")}>
 									<Button
 										onClick={() => reviewPrev()}
 										disabled={reviewSession ? isAtStart(reviewSession) : true}
-										aria-label={t("editor.prevLocation")}
+										aria-label={t("Go to previous location (Control+Left)")}
 										data-qa="review-prev"
 									>
 										<Icon path={mdiChevronLeft} />
 									</Button>
 								</Tooltip>
-								<Tooltip content={t("editor.nextLocation")}>
+								<Tooltip content={t("Go to next location (Control+Right)")}>
 									<Button
 										onClick={handleClose}
-										aria-label={t("editor.nextLocation")}
+										aria-label={t("Go to next location (Control+Right)")}
 										data-qa="review-next"
 									>
 										<Icon path={mdiChevronRight} />
@@ -1215,11 +1215,11 @@ export function LocationPreview() {
 							</div>
 						) : (
 							<Button onClick={handleClose} data-qa="location-close">
-								{t("common.close")}
+								{t("Close")}
 							</Button>
 						)}
 						<Button variant="destructive" onClick={handleDelete} data-qa="location-delete">
-							{t("common.delete")}
+							{t("Delete")}
 						</Button>
 					</div>
 					<div className="location-preview__tags">

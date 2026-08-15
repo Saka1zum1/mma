@@ -160,7 +160,7 @@ export async function createLocationAtLatLng(
 	const tryGoogle = alts.length === 0 || fallbackToGoogle;
 	if (!tryGoogle) {
 		t.end();
-		if (opts?.container) toast(tr("toast.noCoverage"), 1500, opts.container);
+		if (opts?.container) toast(tr("No coverage found at this location."), 1500, opts.container);
 		return null;
 	}
 
@@ -176,7 +176,7 @@ export async function createLocationAtLatLng(
 	t.step("google");
 	if (!loc) {
 		t.end();
-		if (opts?.container) toast(tr("toast.noCoverage"), 1500, opts.container);
+		if (opts?.container) toast(tr("No coverage found at this location."), 1500, opts.container);
 		return null;
 	}
 	loc.provider = loc.provider ?? "google";
@@ -266,7 +266,7 @@ export async function handleMapClick(
 	if (info.coordinate) {
 		const container = ctx.host?.container ?? null;
 		if (ctx.selectOnly) {
-			if (container) toast(tr("toast.selectOnlyMode"), 1500, container);
+			if (container) toast(tr("Select-only mode is on."), 1500, container);
 			return;
 		}
 		await createLocationAtLatLng(info.coordinate[1], info.coordinate[0], ctx.host?.getZoom() ?? 2, {

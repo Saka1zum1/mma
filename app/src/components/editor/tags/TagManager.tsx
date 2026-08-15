@@ -20,6 +20,7 @@ import {
 	removeTagFromAllLocations,
 	getVisibleTags,
 	removeTagFromLocations,
+	createTags,
 } from "@/store/useMapStore";
 import type { TagSortMode } from "@/types";
 import type { Tag, TagPatch, Update, VirtualTag } from "@/bindings.gen";
@@ -33,6 +34,7 @@ import { fmt } from "@/lib/util/format";
 import { hexToHsl, hslToHex } from "@/lib/util/color";
 import { TagPill } from "@/components/primitives/TagPill";
 import { useSetting, setSetting } from "@/store/settings";
+import { displayTagName } from "@/store/selections";
 import { sortTagsByMode } from "@/lib/util/util";
 import { useMapSetting } from "@/store/useMapSetting";
 import { HotkeyInput } from "@/components/primitives/HotkeyInput";
@@ -43,10 +45,13 @@ import {
 	cascadeRename,
 	collectOccupiedPaths,
 	syncAliasSegments,
+	defaultVirtualFolderEntry,
+	aliasedTagIds,
+	stripFolderPrefix,
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
-import { t } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 
 /** `order` rides the optimistic overlay only; persisted order goes through `reorderTags`. */
 type OptimisticTagPatch = TagPatch & { order?: number };
@@ -57,10 +62,13 @@ const NO_VIRTUAL_TAGS = {};
 const NO_ALIASES = {};
 
 export function TagManager() {
+	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const selectedTagIds = useMapState(getSelectedTagIds);
 	const tagCounts = useMapState((s) => s.tagCounts);
 	const tagViewMode = useSetting("tagViewMode");
+	const tagFolderColorMode = useSetting("tagFolderColorMode");
+	const truncateTagPaths = useSetting("truncateTagPaths");
 	const [filterText, setFilterText] = useState("");
 	const sortMode = useSetting("tagSortMode");
 	const [virtualTags, setVirtualTags] = useMapSetting("virtualTags", NO_VIRTUAL_TAGS);
@@ -75,6 +83,7 @@ export function TagManager() {
 	const [editingVirtualPath, setEditingVirtualPath] = useState<string | null>(null);
 	// Parent path for a pending new declared folder ("" = root, null = dialog closed).
 	const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+	const [creatingTag, setCreatingTag] = useState(false);
 	const treeRef = useRef<TagTreeHandle>(null);
 	const [renamingTag, setRenamingTag] = useState<{ id: number; name: string } | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
@@ -121,21 +130,25 @@ export function TagManager() {
 	);
 	const commitMoveInto = useCallback(
 		(move: TagMoveResult) => {
-			startTransition(async () => {
-				// One merged patch per id -- the optimistic reducer applies the first match only.
-				const patchById = new Map<number, OptimisticTagPatch>();
-				move.orderedIds.forEach((id, i) => patchById.set(id, { order: i }));
-				for (const r of move.tagRenames)
-					patchById.set(r.id, { ...patchById.get(r.id), name: r.name });
-				addOptimisticTags([...patchById].map(([id, patch]) => ({ id, patch })));
-				if (move.tagRenames.length)
-					await updateTags(move.tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
-				await reorderTags(move.orderedIds);
-			});
-			setVirtualTags(move.virtualTags);
+			// Leaf→folder drops only rewrite aliases (no renames / order changes).
+			const aliasOnly = move.tagRenames.length === 0 && move.pathRemaps.length === 0;
+			if (!aliasOnly) {
+				startTransition(async () => {
+					// One merged patch per id -- the optimistic reducer applies the first match only.
+					const patchById = new Map<number, OptimisticTagPatch>();
+					move.orderedIds.forEach((id, i) => patchById.set(id, { order: i }));
+					for (const r of move.tagRenames)
+						patchById.set(r.id, { ...patchById.get(r.id), name: r.name });
+					addOptimisticTags([...patchById].map(([id, patch]) => ({ id, patch })));
+					if (move.tagRenames.length)
+						await updateTags(move.tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
+					await reorderTags(move.orderedIds);
+				});
+				setVirtualTags(move.virtualTags);
+				for (const [oldPath, newPath] of move.pathRemaps)
+					treeRef.current?.remapExpanded(oldPath, newPath);
+			}
 			setAliases(move.aliases);
-			for (const [oldPath, newPath] of move.pathRemaps)
-				treeRef.current?.remapExpanded(oldPath, newPath);
 		},
 		[addOptimisticTags, setVirtualTags, setAliases],
 	);
@@ -173,28 +186,56 @@ export function TagManager() {
 		},
 		[setAliases],
 	);
-	// Deletes the declared subtree (only reachable when no tags live under `path`).
+	const removeAliases = useCallback(
+		(aliasPaths: string[]) => {
+			const next = { ...(getMapState().map?.meta.settings.aliases ?? {}) };
+			let changed = false;
+			for (const p of aliasPaths) {
+				if (p in next) {
+					delete next[p];
+					changed = true;
+				}
+			}
+			if (changed) setAliases(next);
+		},
+		[setAliases],
+	);
+	// Deletes the folder: peels one path level from tags inside (`A/x` → `x`,
+	// `A/B/y` → `B/y`), drops the folder's virtualTags key, and remaps deeper
+	// virtualTags / aliases up one level so nested structure survives.
 	const deleteFolder = useCallback(
 		(path: string) => {
 			const vt = getMapState().map?.meta.settings.virtualTags ?? {};
-			const next: Record<string, VirtualTag> = {};
-			for (const [k, v] of Object.entries(vt)) {
-				if (k !== path && !k.startsWith(`${path}/`)) next[k] = v;
-			}
-			setVirtualTags(next);
+			const aliases = getMapState().map?.meta.settings.aliases ?? {};
+			const { tagRenames, virtualTags: nextVT, aliases: nextAliases } = stripFolderPrefix(
+				path,
+				tags,
+				vt,
+				aliases,
+			);
+			if (tagRenames.length)
+				commitTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
+			setVirtualTags(nextVT);
+			if (nextAliases !== aliases) setAliases(nextAliases);
 		},
-		[setVirtualTags],
+		[tags, commitTags, setVirtualTags, setAliases],
+	);
+	// Drop real leaves dragged out of their folder: strips their folder prefix.
+	const removeLeaves = useCallback(
+		(move: TagMoveResult) => commitMoveInto(move),
+		[commitMoveInto],
 	);
 
 	// Collapsed-state pill preview only; the open list is rendered by TagTreeView.
 	const sortedTags = useMemo(() => {
-		let filtered = tags;
+		const hidden = aliasedTagIds(aliases);
+		let filtered = tags.filter((t) => !hidden.has(t.id));
 		if (filterText) {
 			const lower = filterText.toLowerCase();
-			filtered = tags.filter((t) => t.name.toLowerCase().includes(lower));
+			filtered = filtered.filter((t) => t.name.toLowerCase().includes(lower));
 		}
 		return sortTagsByMode(filtered, sortMode, tagCounts);
-	}, [tags, filterText, sortMode, tagCounts]);
+	}, [tags, filterText, sortMode, tagCounts, aliases]);
 
 	if (!map) return null;
 
@@ -210,25 +251,43 @@ export function TagManager() {
 						{sortedTags.slice(0, 20).map((tag) => (
 							<TagPill
 								as="li"
-								key={tag.id}
+								key={`${tag.id}-${tagViewMode}-${truncateTagPaths}`}
 								small
 								color={tag.color}
-								label={`${tag.name} (${fmt.format(tagCounts[tag.id] ?? 0)})`}
+								label={`${displayTagName(tag.name)} (${fmt.format(tagCounts[tag.id] ?? 0)})`}
 							/>
 						))}
 					</ul>
 				}
 				addons={
-					<>
+					<div className="tag-manager__toolbar">
 						<TextInput
+							className="tag-manager__filter"
 							placeholder={t("Filter tags...")}
 							value={filterText}
 							onChange={(e) => setFilterText(e.target.value)}
 						/>
-						<span className="tag-manager__spacer"></span>
-						{tagViewMode === "tree" && (
-							<Button onClick={() => setNewFolderParent("")}>{t("New folder")}</Button>
-						)}
+						<span className="tag-manager__spacer" aria-hidden />
+						<span className="tag-manager__view button-group">
+							{(["flat", "tree"] as const).map((mode) => (
+								<Button
+									key={mode}
+									className="button-group__button"
+									aria-checked={tagViewMode === mode}
+									onClick={() => setSetting("tagViewMode", mode)}
+								>
+									{t(mode === "flat" ? "Flat" : "Tree")}
+								</Button>
+							))}
+						</span>
+						<Button onClick={() => setCreatingTag(true)}>{t("Create virtual tag")}</Button>
+						<Button
+							disabled={tagViewMode !== "tree"}
+							title={tagViewMode !== "tree" ? t("Tree") : undefined}
+							onClick={() => setNewFolderParent("")}
+						>
+							{t("New folder")}
+						</Button>
 						<span className="tag-manager__sort button-group">
 							{(["default", "name", "amount"] as TagSortMode[]).map((mode) => (
 								<Button
@@ -237,11 +296,17 @@ export function TagManager() {
 									aria-checked={sortMode === mode}
 									onClick={() => setSetting("tagSortMode", mode)}
 								>
-									{mode}
+									{t(
+										mode === "default"
+											? "default"
+											: mode === "name"
+												? "name"
+												: "amount",
+									)}
 								</Button>
 							))}
 						</span>
-					</>
+					</div>
 				}
 			>
 				<TagTreeView
@@ -256,15 +321,28 @@ export function TagManager() {
 					onEditTag={handleEditTreeTag}
 					onEditVirtual={setEditingVirtualPath}
 					onRenameTag={setRenamingTag}
-					onAddAlias={addAlias}
+					onAddAlias={tagViewMode === "tree" ? addAlias : undefined}
 					onRemoveAlias={removeAlias}
 					onReorder={commitReorder}
 					onMoveInto={commitMoveInto}
-					onNewFolder={setNewFolderParent}
+					onRemoveLeaves={removeLeaves}
+					onRemoveAliases={removeAliases}
+					onNewFolder={tagViewMode === "tree" ? setNewFolderParent : undefined}
 					onDeleteFolder={deleteFolder}
 					filterText={filterText}
 				/>
 			</ToolBlock>
+
+			{creatingTag && (
+				<NewTagDialog
+					tags={tags}
+					onClose={() => setCreatingTag(false)}
+					onSave={async (name) => {
+						await createTags([name]);
+						setCreatingTag(false);
+					}}
+				/>
+			)}
 
 			{editingTreeTag && (
 				<EditTagDialog
@@ -346,7 +424,10 @@ export function TagManager() {
 					aliases={aliases}
 					onClose={() => setNewFolderParent(null)}
 					onSave={(path) => {
-						setVirtualTags({ ...virtualTags, [path]: {} });
+						setVirtualTags({
+							...virtualTags,
+							[path]: defaultVirtualFolderEntry(path, tagFolderColorMode),
+						});
 						setNewFolderParent(null);
 					}}
 				/>
@@ -387,6 +468,7 @@ export function TagContextMenuContent({
 	/** Tree mode only: present on folder rows to create a declared subfolder. */
 	onNewSubfolder?: () => void;
 }) {
+	const { t } = useT();
 	const [selCount, setSelCount] = useState<number | null>(null);
 
 	useEffect(() => {
@@ -405,38 +487,23 @@ export function TagContextMenuContent({
 	const inSel = selCount ?? 0;
 
 	return (
-		<ContextMenu.Positioner className="menu-positioner">
+		<ContextMenu.Positioner>
 			<ContextMenu.Popup className="context-menu">
 				<ContextMenu.Item
 					className="context-menu__item"
 					onClick={() => removeTagFromAllLocations(tagId)}
 				>
-					{t(
-						{ one: "Remove from all ({n} location)", other: "Remove from all ({n} locations)" },
-						{ n: totalCount },
-					)}
+					{t("Remove from all ({count} locations)", { count: fmt.format(totalCount) })}
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					className="context-menu__item"
 					disabled={inSel === 0}
 					onClick={() => removeTagFromLocations(tagId, [...getMapState().selectedLocationIds])}
 				>
-					{t(
-						{
-							one: "Remove from selection ({n} location)",
-							other: "Remove from selection ({n} locations)",
-						},
-						{ n: inSel },
-					)}
+					{t("Remove from selection ({count} locations)", { count: fmt.format(inSel) })}
 				</ContextMenu.Item>
 				<ContextMenu.Item className="context-menu__item" disabled={inSel === 0} onClick={onRename}>
-					{t(
-						{
-							one: "Rename in selection ({n} location)",
-							other: "Rename in selection ({n} locations)",
-						},
-						{ n: inSel },
-					)}
+					{t("Rename in selection ({count} locations)", { count: fmt.format(inSel) })}
 				</ContextMenu.Item>
 				{onAddAlias && (
 					<ContextMenu.Item className="context-menu__item" onClick={onAddAlias}>
@@ -471,6 +538,7 @@ function RenameInSelectionDialog({
 	aliases: Record<string, number>;
 	setAliases: (v: Record<string, number>) => void;
 }) {
+	const { t } = useT();
 	const [name, setName] = useState(tag.name);
 
 	const handleSubmit = () => {
@@ -532,6 +600,7 @@ function EditTagDialog({
 		onApplyColor: (color: string) => void;
 	};
 }) {
+	const { t } = useT();
 	const [name, setName] = useState(tag.name);
 	const [cascadeOn, setCascadeOn] = useState(false);
 	const [hsl, setHsl] = useState(() => hexToHsl(tag.color));
@@ -610,10 +679,9 @@ function EditTagDialog({
 						{cascade && (
 							<label className="edit-tag-modal__cascade">
 								<Checkbox checked={cascadeOn} onChange={(e) => setCascadeOn(e.target.checked)} />
-								{t(
-									{ one: "Rename {n} tag inside", other: "Rename {n} tags inside" },
-									{ n: cascade.descendantCount },
-								)}
+								{t({ one: "Rename {count} tag inside", other: "Rename {count} tags inside" }, { n: cascade.descendantCount, ...{
+									count: fmt.format(cascade.descendantCount),
+								} })}
 							</label>
 						)}
 					</div>
@@ -644,10 +712,9 @@ function EditTagDialog({
 									onClose();
 								}}
 							>
-								{t(
-									{ one: "Apply to {n} tag inside", other: "Apply to {n} tags inside" },
-									{ n: cascade.descendantCount },
-								)}
+								{t({ one: "Apply to {count} tag inside", other: "Apply to {count} tags inside" }, { n: cascade.descendantCount, ...{
+									count: fmt.format(cascade.descendantCount),
+								} })}
 							</Button>
 						)}
 					</div>
@@ -659,13 +726,9 @@ function EditTagDialog({
 						</Button>
 						{(holderTag || globalConflicts.length > 0) && (
 							<p className="edit-tag-modal__hotkey-note">
-								{holderTag && <>{t('Takes the key from "{name}". ', { name: holderTag.name })}</>}
+								{holderTag && <>{t("Takes the key from \"{name}\".", { name: holderTag.name })} </>}
 								{globalConflicts.length > 0 && (
-									<>
-										{t('Overrides "{label}" while this map is open.', {
-											label: t(globalConflicts[0].label),
-										})}
-									</>
+									<>{t("Overrides \"{label}\" while this map is open.", { label: globalConflicts[0].label })}</>
 								)}
 							</p>
 						)}
@@ -703,6 +766,7 @@ function VirtualTagDialog({
 	onApplyColor: (color: string) => void;
 	onReset: () => void;
 }) {
+	const { t } = useT();
 	const [hsl, setHsl] = useState(() => hexToHsl(color ?? "#888888"));
 	const hexValue = hslToHex(hsl.h, hsl.s, hsl.l);
 	const segment = path.split("/").pop() || path;
@@ -710,7 +774,7 @@ function VirtualTagDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={t('Edit folder "{name}"', { name: segment })}>
+			<DialogContent title={t("Edit folder \"{name}\"", { name: segment })}>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -749,10 +813,9 @@ function VirtualTagDialog({
 								className="edit-tag-modal__apply-color"
 								onClick={() => onApplyColor(hexValue)}
 							>
-								{t(
-									{ one: "Apply to {n} tag inside", other: "Apply to {n} tags inside" },
-									{ n: descendantCount },
-								)}
+								{t({ one: "Apply to {count} tag inside", other: "Apply to {count} tags inside" }, { n: descendantCount, ...{
+									count: fmt.format(descendantCount),
+								} })}
 							</Button>
 						)}
 					</div>
@@ -762,6 +825,71 @@ function VirtualTagDialog({
 						</Button>
 						<Button variant="primary" type="submit">
 							{t("Save")}
+						</Button>
+					</div>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** Create a tag from the Tags section (name only; color is auto-assigned). */
+function NewTagDialog({
+	tags,
+	onClose,
+	onSave,
+}: {
+	tags: Tag[];
+	onClose: () => void;
+	onSave: (name: string) => void | Promise<void>;
+}) {
+	const { t } = useT();
+	const [name, setName] = useState("");
+	const [busy, setBusy] = useState(false);
+
+	const trimmed = name.trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+	const collision =
+		!!trimmed && tags.some((x) => x.name.toLowerCase() === trimmed.toLowerCase());
+
+	return (
+		<Dialog open onOpenChange={(open) => !open && onClose()}>
+			<DialogContent title={t("Create virtual tag")}>
+				<form
+					onSubmit={async (e) => {
+						e.preventDefault();
+						if (!trimmed || collision || busy) return;
+						setBusy(true);
+						try {
+							await onSave(trimmed);
+						} finally {
+							setBusy(false);
+						}
+					}}
+					style={{ display: "flex", flexDirection: "column", gap: "0.75rem", paddingTop: "0.5rem" }}
+				>
+					<div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+						<TextInput
+							type="text"
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							placeholder={t("Tag name...")}
+							autoFocus
+						/>
+						<span
+							style={{
+								fontSize: "0.85em",
+								minHeight: "1.25em",
+								lineHeight: "1.25em",
+								color: "var(--destructive)",
+							}}
+						>
+							{collision ? t("\"{path}\" already exists in the tree", { path: trimmed }) : ""}
+						</span>
+					</div>
+					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+						<Button onClick={onClose}>{t("Cancel")}</Button>
+						<Button variant="primary" type="submit" disabled={!trimmed || collision || busy}>
+							{t("Create")}
 						</Button>
 					</div>
 				</form>
@@ -788,6 +916,7 @@ function NewFolderDialog({
 	onClose: () => void;
 	onSave: (path: string) => void;
 }) {
+	const { t } = useT();
 	const [name, setName] = useState("");
 
 	// A new folder must claim a free slot.
@@ -806,7 +935,7 @@ function NewFolderDialog({
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
-				title={parentPath ? t('New folder in "{parent}"', { parent: parentPath }) : t("New folder")}
+				title={parentPath ? t("New folder in \"{parent}\"", { parent: parentPath }) : t("New folder")}
 			>
 				<form
 					onSubmit={(e) => {
@@ -831,7 +960,7 @@ function NewFolderDialog({
 								color: "var(--destructive)",
 							}}
 						>
-							{collision ? t('"{path}" already exists in the tree', { path }) : ""}
+							{collision ? t("\"{path}\" already exists in the tree", { path }) : ""}
 						</span>
 					</div>
 					<div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
@@ -863,6 +992,7 @@ function AddAliasDialog({
 	onClose: () => void;
 	onSave: (aliasPath: string) => void;
 }) {
+	const { t } = useT();
 	const [folder, setFolder] = useState("");
 	const segment = tag.name.split("/").pop() || tag.name;
 
@@ -899,7 +1029,7 @@ function AddAliasDialog({
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={t('Alias "{name}"', { name: segment })}>
+			<DialogContent title={t("Alias \"{name}\"", { name: segment })}>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -924,12 +1054,10 @@ function AddAliasDialog({
 						<span style={{ fontSize: "0.85em", opacity: 0.7 }}>
 							{collision ? (
 								<span style={{ color: "var(--destructive)" }}>
-									{t('"{path}" already exists in the tree', { path: aliasPath })}
+									{t("\"{path}\" already exists in the tree", { path: aliasPath })}
 								</span>
 							) : (
-								<>
-									{t("Appears as")} <strong>{aliasPath}</strong>
-								</>
+								t("Appears as {path}", { path: aliasPath })
 							)}
 						</span>
 					</div>

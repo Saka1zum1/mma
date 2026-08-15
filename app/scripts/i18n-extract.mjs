@@ -302,18 +302,47 @@ export function auditUnwrapped(files) {
 
 const serialise = (obj) => JSON.stringify(obj, null, "\t") + "\n";
 
-/** The catalogs the current source tree should produce, as `[path, contents]`. */
+/** The catalogs the current source tree should produce, as `[path, contents]`.
+ *  Existing en.json keys not found in source are preserved (fork keeps upstream
+ *  strings until those call sites migrate to English-as-key). */
 export function catalogTargets() {
 	const files = sourceFiles(SRC);
 	const messages = extract(files);
 	for (const label of bindingLabels()) if (!messages.has(label)) messages.set(label, label);
-	const { en, xa } = build(messages);
+	const { en: builtEn, xa: builtXa } = build(messages);
+
+	const enPath = path.join(LOCALES, "en.json");
+	let preserved = 0;
+	const en = { ...builtEn };
+	if (fs.existsSync(enPath)) {
+		const prev = JSON.parse(fs.readFileSync(enPath, "utf8"));
+		for (const [k, v] of Object.entries(prev)) {
+			if (!(k in en)) {
+				en[k] = v;
+				preserved++;
+			}
+		}
+	}
+
+	const xa = { ...builtXa };
+	for (const [k, v] of Object.entries(en)) {
+		if (k in xa) continue;
+		xa[k] =
+			typeof v === "string"
+				? pseudo(v)
+				: Object.fromEntries(Object.entries(v).map(([c, s]) => [c, pseudo(s)]));
+	}
+
+	const sortedEn = Object.fromEntries(Object.keys(en).sort().map((k) => [k, en[k]]));
+	const sortedXa = Object.fromEntries(Object.keys(xa).sort().map((k) => [k, xa[k]]));
+
 	return {
 		files,
-		count: Object.keys(en).length,
+		count: Object.keys(sortedEn).length,
+		preserved,
 		targets: [
-			[path.join(LOCALES, "en.json"), serialise(en)],
-			[path.join(LOCALES, "en-XA.json"), serialise(xa)],
+			[enPath, serialise(sortedEn)],
+			[path.join(LOCALES, "en-XA.json"), serialise(sortedXa)],
 		],
 	};
 }
@@ -344,7 +373,7 @@ export function localeGaps() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-	const { files, count, targets } = catalogTargets();
+	const { files, count, preserved, targets } = catalogTargets();
 	if (process.argv.includes("--missing")) {
 		const write = process.argv.includes("--write");
 		let clean = true;
@@ -401,6 +430,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	} else {
 		fs.mkdirSync(LOCALES, { recursive: true });
 		for (const [file, contents] of targets) fs.writeFileSync(file, contents);
-		console.log(`Extracted ${count} messages from ${files.length} files -> en.json, en-XA.json`);
+		const extra = preserved ? ` (kept ${preserved} prior keys)` : "";
+		console.log(
+			`Extracted ${count} messages from ${files.length} files -> en.json, en-XA.json${extra}`,
+		);
 	}
 }

@@ -1,5 +1,7 @@
 /** Plural forms written at the call site. Authors supply English's `one`/`other`; other locales
  *  supply whatever categories `Intl.PluralRules` demands for them (Russian needs `few`/`many`). */
+import { toBcp47 } from "./i18n/types";
+
 export interface PluralForms {
 	one: string;
 	other: string;
@@ -7,7 +9,7 @@ export interface PluralForms {
 
 export type MessageSource = string | PluralForms;
 export type MessageParams = Record<string, string | number>;
-/** Structured fork keys (`plugin.localguessr.*`) and English-as-key upstream strings both work. */
+/** English source string (or structured legacy key during migration). */
 export type MessageKey = string;
 type CatalogEntry = string | Record<string, string>;
 
@@ -18,32 +20,29 @@ let locale = "en";
 let pluralRules = new Intl.PluralRules("en");
 let countFormat = new Intl.NumberFormat("en");
 
-/** Fork catalogs use stable structured keys; merge under the upstream JSON catalog. */
-async function structuredCatalog(code: string): Promise<Record<string, string>> {
-	if (code === "zh-Hans") {
-		const { zhHans } = await import("@/locales/zh-Hans");
-		return zhHans as Record<string, string>;
-	}
-	if (code === "en" || code === "en-XA") {
-		const { en } = await import("@/locales/en");
-		return en as Record<string, string>;
-	}
-	return {};
+async function jsonCatalog(code: string): Promise<Record<string, CatalogEntry>> {
+	const load = catalogs[`../locales/${code}.json`];
+	return load ? (await load()).default : {};
 }
 
 /** Load a locale's catalog. Call once before the first render -- language changes relaunch the
- *  app rather than re-rendering, so nothing observes `locale` changing mid-flight. */
+ *  app rather than re-rendering, so nothing observes `locale` changing mid-flight.
+ *
+ *  Merge order (later wins): English JSON, then the active locale's JSON. */
 export async function initLocale(code: string): Promise<void> {
-	const load = catalogs[`../locales/${code}.json`];
-	const json = load ? (await load()).default : {};
-	const structured = await structuredCatalog(code);
-	// Structured keys first; upstream English-as-key JSON wins on collisions.
-	catalog = { ...structured, ...json };
+	const enJson = await jsonCatalog("en");
+	const localeJson = code === "en" ? {} : await jsonCatalog(code);
+
+	catalog = {
+		...enJson,
+		...localeJson,
+	};
 	locale = code;
-	pluralRules = new Intl.PluralRules(code);
-	countFormat = new Intl.NumberFormat(code);
+	const bcp47 = toBcp47(code);
+	pluralRules = new Intl.PluralRules(bcp47);
+	countFormat = new Intl.NumberFormat(bcp47);
 	// Drives font selection for CJK and the language reported to screen readers.
-	document.documentElement.lang = code;
+	document.documentElement.lang = bcp47;
 }
 
 export function getLocale(): string {
@@ -94,16 +93,9 @@ export function t(src: MessageSource, params?: MessageParams): string {
 	);
 }
 
-/** Structured-catalog plural helper (`key.one` / `key.other`) used by fork toast copy. */
-export function tp(key: string, count: number, params?: MessageParams): string {
-	const form = pluralRules.select(count);
-	for (const candidate of [`${key}.${form}`, `${key}.other`, key]) {
-		const entry = catalog[candidate];
-		if (typeof entry === "string") {
-			return t(entry, { count, n: count, ...params });
-		}
-	}
-	return t(key, { count, n: count, ...params });
+/** Prefer `t({ one, other }, { n })` for new plurals; `tp` remains for older call shapes. */
+export function tp(key: MessageSource, count: number, params?: MessageParams): string {
+	return t(key, { n: count, count, ...params });
 }
 
 /** The resolved message split into literal runs and `{param}` slots, with string and number

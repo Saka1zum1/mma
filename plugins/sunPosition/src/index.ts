@@ -4,8 +4,12 @@ import type { Location, ExtraFieldDef } from "mma-plugin-types";
 const DEG = 180 / Math.PI;
 
 const FIELDS: Record<string, ExtraFieldDef> = {
-	sunAzimuth: { type: "number", label: "Sun azimuth", comparison: { type: "circular", period: 360 } },
-	sunAltitude: { type: "number", label: "Sun altitude" },
+	sunAzimuth: {
+		type: "number",
+		label: MMA.t("Sun azimuth"),
+		comparison: { type: "circular", period: 360 },
+	},
+	sunAltitude: { type: "number", label: MMA.t("Sun altitude") },
 };
 
 function computeSun(lat: number, lng: number, unixSeconds: number) {
@@ -40,8 +44,8 @@ async function enrich(
 MMA.registerPlugin({
 	activate() {
 		MMA.registerEnrichFields([
-			{ key: "sunAzimuth", label: "Sun azimuth" },
-			{ key: "sunAltitude", label: "Sun altitude" },
+			{ key: "sunAzimuth", label: MMA.t("Sun azimuth") },
+			{ key: "sunAltitude", label: MMA.t("Sun altitude") },
 		]);
 		MMA.registerEnrichmentProvider({
 			id: "sunPosition",

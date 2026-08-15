@@ -23,8 +23,8 @@ export function AddTagButton({
 
 	const defaultLabel =
 		variant === "summary-bulk"
-			? t("plugin.localguessr.addTagAllRounds")
-			: t("plugin.localguessr.addTag");
+			? t("Tag all rounds")
+			: t("Add tag");
 
 	const triggerLabel = label ?? defaultLabel;
 
@@ -78,8 +78,8 @@ export function AddTagButton({
 				locationIds={locationIds}
 				title={
 					variant === "summary-bulk"
-						? t("plugin.localguessr.addTagAllRounds")
-						: t("plugin.localguessr.addTag")
+						? t("Tag all rounds")
+						: t("Add tag")
 				}
 			/>
 		</>

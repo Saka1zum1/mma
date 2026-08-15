@@ -646,7 +646,6 @@ declare const KNOWN_FIELDS: readonly [{
     readonly circularPeriod: null;
     readonly defaultOff: true;
 }];
-type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  Map-level alternate basemap settings. Petal and Yandex are mutually exclusive
  *  (at most one `enabled: true` at a time); the frontend enforces that on write.
@@ -707,6 +706,7 @@ type AltProviderSettings = {
     lineWidthScale: number;
     pointSizeScale: number;
 };
+type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 /**
  *  A swap-removal from a render cell. JS must move the last element into `cell_index`
  *  and pop the array to mirror the Rust-side swap-remove.
@@ -2578,6 +2578,14 @@ declare const COMMANDS: {
         group: "Tags";
         execute: () => void;
     };
+    "copy-tags-count": {
+        label: "Copy tags count";
+        icon: string;
+        group: "Tags";
+        aliases: string[];
+        execute: () => Promise<void>;
+        enabled: typeof requiresMap;
+    };
     "tag-find-replace": {
         label: "Find and replace in tag names";
         icon: string;
@@ -2827,11 +2835,13 @@ declare const DEFAULTS: {
     polygonColor: RGB;
     panoDotScaled: boolean;
     tagViewMode: TagViewMode;
-    /** Tree view only: render each tag as the shortest path suffix that's still unique. */
+    /** Render each tag as the shortest path suffix that's still unique among visible tags. */
     truncateTagPaths: boolean;
     /** Tree view: how a colorless folder row gets its color. `direct` uses tagFolderColor;
      *  `firstChild` inherits the first own-colored descendant in display order,
-     *  with tagFolderColor as the fallback for colorless subtrees. */
+     *  with tagFolderColor as the fallback for colorless subtrees.
+     *  `random` uses a deterministic color from the folder path; `childGradient` paints
+     *  a gradient from descendant tag colors (fallback: tagFolderColor). */
     tagFolderColorMode: TagFolderColorMode;
     tagFolderColor: RGB;
     tagSortMode: TagSortMode;
@@ -3307,8 +3317,6 @@ export type EditorEventMap = typeof EVENT_DEFS;
 export type EditorEvent = keyof EditorEventMap;
 export type EventHandler<E extends EditorEvent> = (payload: EditorEventMap[E]) => void;
 
-/** Plural forms written at the call site. Authors supply English's `one`/`other`; other locales
- *  supply whatever categories `Intl.PluralRules` demands for them (Russian needs `few`/`many`). */
 export interface PluralForms {
     one: string;
     other: string;
@@ -3317,8 +3325,8 @@ export type MessageSource = string | PluralForms;
 export type MessageParams = Record<string, string | number>;
 declare function getLocale(): string;
 declare function t(src: MessageSource, params?: MessageParams): string;
-/** Structured-catalog plural helper (`key.one` / `key.other`) used by fork toast copy. */
-declare function tp(key: string, count: number, params?: MessageParams): string;
+/** Prefer `t({ one, other }, { n })` for new plurals; `tp` remains for older call shapes. */
+declare function tp(key: MessageSource, count: number, params?: MessageParams): string;
 
 /** Fetch a page of the seen (visited-panorama) history. */
 declare function getSeenEntries(limit?: number, offset?: number, filter?: SeenFilter, thumbnails?: boolean): Promise<SeenEntry[]>;
@@ -3591,11 +3599,25 @@ export interface SidecarOptions<T> {
     onLog?(line: string): void;
     signal?: AbortSignal;
 }
+/** Legacy handle returned by {@link spawnSidecarCompat}. Prefer {@link sidecarRequest}. */
+export interface SidecarRun {
+    runId: number;
+    onLine(cb: (line: string) => void): void;
+    onStderr(cb: (line: string) => void): void;
+    onExit(cb: (code: number | null) => void): void;
+    kill(): void;
+}
 /** Run one unit of work on a plugin's sidecar and resolve with its last emitted
  *  object (null if it emitted none). The app owns the process: commands the manifest
  *  lists under `serve` are answered by the plugin's resident sidecar, the rest by a
  *  one-shot run. `payload` is handed to the sidecar as JSON. */
 declare function sidecarRequest<T>(pluginId: string, command: string, payload?: unknown, opts?: SidecarOptions<T>): Promise<T | null>;
+/**
+ * Compatibility shim for plugins still calling `MMA.sidecar.spawn` (pre app-owned
+ * sidecar API). Translates CLI-style args (`detect --input path.json`) into
+ * {@link sidecarRequest}. New plugins should use `request` directly.
+ */
+declare function spawnSidecarCompat(pluginId: string, _binaryName: string, args: string[]): Promise<SidecarRun>;
 /** Explicitly exposed functions not in other APIs. */
 declare const surface: {
     ready: boolean;
@@ -3611,6 +3633,8 @@ declare const surface: {
     sidecar: {
         installedVersion: (pluginId: string) => Promise<string | null>;
         request: typeof sidecarRequest;
+        /** @deprecated Use `request`. Kept for installed plugins built against the old spawn API. */
+        spawn: typeof spawnSidecarCompat;
     };
     registerPlugin: typeof registerPlugin;
     registerEnrichFields: typeof registerEnrichFields;

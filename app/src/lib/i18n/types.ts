@@ -1,6 +1,5 @@
 /**
- * Built-in UI locales. JSON catalogs live under `src/locales/`.
- * Structured fork catalogs (`en.ts` / `zh-Hans.ts`) merge in at init for plugin keys.
+ * Built-in UI locales. JSON catalogs live under `src/locales/` (English-as-key).
  */
 export const LOCALES = {
 	en: "English",

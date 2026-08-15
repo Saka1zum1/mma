@@ -4,12 +4,13 @@ import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { Radio } from "@/components/primitives/Radio";
 import { TextInput } from "@/components/primitives/TextInput";
-import { useMapState, getVisibleTags } from "@/store/useMapStore";
+import { useMapState, getVisibleTags, getMapState } from "@/store/useMapStore";
 import type { Scope } from "@/bindings.gen";
 import { useMapSetting } from "@/store/useMapSetting";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl, saveExportTempFile } from "@/lib/util/util";
 import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
+import { serializeTagsForExport } from "@/lib/data/importExport";
 import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
 import { t } from "@/lib/i18n";
@@ -37,7 +38,8 @@ export function ExportDialog({ onClose }: Props) {
 	const baseName = fileName || map.meta.name || "export";
 	const scopeIds = scope.kind === "all" ? undefined : [...selectedIds];
 
-	const tagsJson = () => JSON.stringify(Object.fromEntries(getVisibleTags().map((t) => [t.id, t])));
+	const tagsJson = () =>
+		serializeTagsForExport(getVisibleTags(), getMapState().tagCounts);
 
 	const jsonPath = () =>
 		cmd.storeExportJson({

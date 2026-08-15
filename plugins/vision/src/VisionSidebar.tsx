@@ -39,9 +39,9 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 			const locs = await MMA.fetchAllLocations();
 			if (abort.signal.aborted) return;
 			const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId!);
-			if (panoIds.length === 0) { setError("No locations with pano IDs"); return; }
+			if (panoIds.length === 0) { setError(MMA.t("No locations with pano IDs")); return; }
 
-			setProgress(`Embedding ${panoIds.length} panos (cached skip)...`);
+			setProgress(MMA.t("Embedding {n} panos (cached skip)...", { n: panoIds.length }));
 			let embedDone = 0;
 			const embedStart = Date.now();
 			await embed(panoIds, {
@@ -51,12 +51,18 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 					embedDone += count;
 					const elapsed = (Date.now() - embedStart) / 1000;
 					const rate = elapsed > 0.5 ? (embedDone / elapsed).toFixed(1) : "--";
-					setProgress(`Embedding: ${embedDone}/${panoIds.length} (${rate} panos/s)`);
+					setProgress(
+						MMA.t("Embedding: {done}/{total} ({rate} panos/s)", {
+							done: embedDone,
+							total: panoIds.length,
+							rate,
+						}),
+					);
 				},
 			});
 			if (abort.signal.aborted) return;
 
-			setProgress(`Searching for "${q}"...`);
+			setProgress(MMA.t('Searching for "{q}"...', { q }));
 			const results = await searchText(q, null, threshold, abort.signal);
 			if (abort.signal.aborted) return;
 
@@ -65,7 +71,11 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 				.filter((id): id is number => id != null);
 
 			if (matchedIds.length > 0) {
-				await MMA.addSelections([{ type: "Locations", locations: matchedIds, name: `Vision: "${q}"` }]);
+				await MMA.addSelections([{
+					type: "Locations",
+					locations: matchedIds,
+					name: MMA.t('Vision: "{q}"', { q }),
+				}]);
 			}
 			setResultCount(matchedIds.length);
 			setProgress("");
@@ -87,19 +97,19 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 	useEffect(() => () => abortRef.current?.abort(), []);
 
 	return (
-		<Sidebar title="Vision" onBack={onClose}>
+		<Sidebar title={MMA.t("Vision")} onBack={onClose}>
 			<style>{CSS}</style>
 			<div className="vision-sidebar__body">
-				<Field label="Search for">
+				<Field label={MMA.t("Search for")}>
 					<input
 						className="input"
-						placeholder="cars, snow, indoor..."
+						placeholder={MMA.t("cars, snow, indoor...")}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						onKeyDown={(e) => { if (e.key === "Enter" && !running) run(); }}
 					/>
 				</Field>
-				<Field label={`Min confidence: ${threshold.toFixed(3)}`}>
+				<Field label={MMA.t("Min confidence: {n}", { n: threshold.toFixed(3) })}>
 					<input
 						type="range"
 						min={0}
@@ -113,17 +123,17 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 				<div className="vision-sidebar__actions">
 					{!running ? (
 						<button className="button button--primary" disabled={!query.trim()} onClick={run}>
-							Search
+							{MMA.t("Search")}
 						</button>
 					) : (
-						<button className="button" onClick={cancel}>Cancel</button>
+						<button className="button" onClick={cancel}>{MMA.t("Cancel")}</button>
 					)}
 				</div>
 
 				{progress && <div className="vision-sidebar__progress">{progress}</div>}
 				{error && <div className="vision-sidebar__error">{error}</div>}
 				{resultCount !== null && !running && (
-					<div className="vision-sidebar__results">{resultCount} locations selected</div>
+					<div className="vision-sidebar__results">{MMA.t("{n} locations selected", { n: resultCount })}</div>
 				)}
 			</div>
 		</Sidebar>
