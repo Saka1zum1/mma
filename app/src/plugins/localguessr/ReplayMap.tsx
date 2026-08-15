@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react
 import type { LatLng } from "@/types";
 import { useT } from "@/lib/i18n";
 import type { RoundResult } from "./GameState";
-import { applyReplayResultOverlay } from "./ResultOverlay";
+import { applyReplayResultOverlay } from "./resultMapOverlay";
 import { createMapHost, hostKindForMapType, type MapHost, type DeckOverlayHandle } from "@/lib/map/host";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { getLocal, useLocalStorage } from "@/lib/hooks/useLocalStorage";

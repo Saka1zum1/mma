@@ -3367,41 +3367,9 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         }
     }
 
-    // Order the overlay by selection index, so a later selection's markers overdraw an
-    // earlier one's. Emitting in batch-row order instead would let two overlapping markers
-    // settle their z by whichever row came first in the batch. Counting sort — the key is a
-    // small dense integer, and it is stable, so rows within one selection keep batch order.
-    let num_sels = store.selections.resolved.len();
-    if num_sels > 1 && sel_ov.ids.len() > 1 {
-        let n = sel_ov.ids.len();
-        let mut at = vec![0u32; num_sels + 1];
-        for &si in &sel_ov.sel_idx {
-            at[si as usize + 1] += 1;
-        }
-        for i in 1..at.len() {
-            at[i] += at[i - 1];
-        }
-        let mut sorted = SelOverlay {
-            ids: vec![0; n],
-            positions: vec![0.0; n * 2],
-            colors: vec![0; n * 4],
-            angles: vec![0.0; n],
-            sel_idx: vec![0; n],
-        };
-        for src in 0..n {
-            let si = sel_ov.sel_idx[src] as usize;
-            let dst = at[si] as usize;
-            at[si] += 1;
-            sorted.positions[dst * 2] = sel_ov.positions[src * 2];
-            sorted.positions[dst * 2 + 1] = sel_ov.positions[src * 2 + 1];
-            sorted.colors[dst * 4..dst * 4 + 4]
-                .copy_from_slice(&sel_ov.colors[src * 4..src * 4 + 4]);
-            sorted.angles[dst] = sel_ov.angles[src];
-            sorted.ids[dst] = sel_ov.ids[src];
-            sorted.sel_idx[dst] = si as u32;
-        }
-        sel_ov = sorted;
-    }
+    // Selection overlay stays in emission (batch-row) order. `selIdx` is the z key:
+    // JS sorts by it in CellManager.load, so overlapping markers don't need a Rust
+    // counting sort here.
 
     // Rebuild per-cell render tracking
     store.render.cells = [const { None }; 32];

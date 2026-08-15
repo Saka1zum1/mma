@@ -69,12 +69,12 @@ fn migrate_v1_converts_timestamps_to_epoch() {
     assert_eq!(batch_version(out.schema().metadata()), CURRENT_VERSION);
 
     let created = out
-        .column(10)
+        .column(arrow_bridge::COL_CREATED_AT)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .unwrap();
     let modified = out
-        .column(11)
+        .column(arrow_bridge::COL_MODIFIED_AT)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .unwrap();
@@ -100,7 +100,7 @@ fn migrate_v1_unparseable_created_falls_back_to_zero() {
     let v1 = downgrade_to_v1(&v2, vec![Some("garbage")], vec![None]);
     let out = migrate(v1).unwrap();
     let created = out
-        .column(10)
+        .column(arrow_bridge::COL_CREATED_AT)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .unwrap();
@@ -135,7 +135,7 @@ fn migrate_preserves_delta_op_column() {
     assert_eq!(op.value(0), arrow_bridge::OP_REMOVED);
     assert_eq!(op.value(1), arrow_bridge::OP_CREATED);
     assert!(out
-        .column(10)
+        .column(arrow_bridge::COL_CREATED_AT)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .is_some());

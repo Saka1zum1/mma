@@ -17,7 +17,7 @@ import { cmd } from "@/lib/commands";
 import type { LatLng, MapTypeKey } from "@/types";
 import { useT } from "@/lib/i18n";
 import { createGuessPinLayer } from "./guessMapLayers";
-import { applyRoundResultOverlay, fitRoundResultCamera } from "./ResultOverlay";
+import { applyRoundResultOverlay, fitRoundResultCamera } from "./resultMapOverlay";
 import type { RoundLocation } from "./GameState";
 
 const MIN_SIZE = 1;
