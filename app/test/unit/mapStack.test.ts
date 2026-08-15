@@ -9,9 +9,18 @@ vi.mock("@/lib/sv/opensv", () => {
 		) {}
 	}
 	class ImageMapType {
+		opacity = 1;
 		constructor(public opts: { getTileUrl(c: { x: number; y: number }, z: number): string }) {}
+		setOpacity(opacity: number) {
+			this.opacity = opacity;
+		}
+		getOpacity() {
+			return this.opacity;
+		}
 		getTile(_coord: unknown, _zoom: number, doc: Document) {
-			return doc.createElement("div");
+			const el = doc.createElement("div");
+			el.style.opacity = String(this.opacity);
+			return el;
 		}
 	}
 	return { google: { maps: { Size, ImageMapType } } };
@@ -35,8 +44,8 @@ const svUrlAt = (r: ReturnType<typeof buildMapStack>, zoom: number) =>
 		r.svLayer as unknown as { opts: { getTileUrl(c: { x: number; y: number }, z: number): string } }
 	).opts.getTileUrl({ x: 0, y: 0 }, zoom);
 
-const svTileOpacityAt = (r: ReturnType<typeof buildMapStack>, zoom: number) =>
-	Number((r.svLayer.getTile(null, zoom, document) as HTMLElement).style.opacity);
+const svLayerOpacity = (r: ReturnType<typeof buildMapStack>) =>
+	(r.svLayer as unknown as { getOpacity(): number }).getOpacity();
 
 beforeAll(() => {
 	(globalThis as Record<string, unknown>).devicePixelRatio = 1;
@@ -74,26 +83,24 @@ describe("buildMapStack layer composition", () => {
 	});
 });
 
-describe("SV coverage per-tile style and opacity", () => {
-	it("carries svOpacity onto SV tiles", () => {
+describe("SV coverage layer opacity and tile style", () => {
+	it("carries svOpacity onto the SV ImageMapType", () => {
 		const r = buildMapStack({ ...base, svOpacity: 0.8 }, {});
-		expect(svTileOpacityAt(r, 5)).toBeCloseTo(0.8);
-		expect(svTileOpacityAt(r, 14)).toBeCloseTo(0.8);
+		expect(svLayerOpacity(r)).toBeCloseTo(0.8);
 	});
 
-	it("dims single-coverage blobby tiles only up to the threshold zoom", () => {
+	it("dims single-coverage blobby SV layer when useBlobby is set", () => {
 		const r = buildMapStack(
-			{ ...base, svBlobby: true, svCoverageType: "official", svOpacity: 0.5 },
-			{},
+			{ ...base, svCoverageType: "official", svOpacity: 0.5 },
+			{ useBlobby: true },
 		);
-		expect(svTileOpacityAt(r, BLOBBY_ZOOM_THRESHOLD)).toBeCloseTo(0.3);
-		expect(svTileOpacityAt(r, BLOBBY_ZOOM_THRESHOLD + 1)).toBeCloseTo(0.5);
+		expect(svLayerOpacity(r)).toBeCloseTo(0.3);
 	});
 
-	it("serves blobby tiles up to the threshold zoom and line tiles above it", () => {
-		const on = buildMapStack({ ...base, svBlobby: true }, {});
+	it("uses blobby tile URLs when useBlobby is set (zoom threshold is MapEmbed's job)", () => {
+		const on = buildMapStack(base, { useBlobby: true });
 		const off = buildMapStack(base, {});
 		expect(svUrlAt(on, BLOBBY_ZOOM_THRESHOLD)).not.toBe(svUrlAt(off, BLOBBY_ZOOM_THRESHOLD));
-		expect(svUrlAt(on, BLOBBY_ZOOM_THRESHOLD + 1)).toBe(svUrlAt(off, BLOBBY_ZOOM_THRESHOLD + 1));
+		expect(svUrlAt(on, BLOBBY_ZOOM_THRESHOLD + 1)).not.toBe(svUrlAt(off, BLOBBY_ZOOM_THRESHOLD + 1));
 	});
 });

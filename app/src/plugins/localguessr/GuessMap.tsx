@@ -16,11 +16,9 @@ import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 import { cmd } from "@/lib/commands";
 import type { LatLng, MapTypeKey } from "@/types";
 import { useT } from "@/lib/i18n";
-import {
-	createGuessPinLayer,
-	createResultLineLayer,
-	createTruthPinLayer,
-} from "./guessMapLayers";
+import { createGuessPinLayer } from "./guessMapLayers";
+import { applyRoundResultOverlay, fitRoundResultCamera } from "./ResultOverlay";
+import type { RoundLocation } from "./GameState";
 
 const MIN_SIZE = 1;
 const MAX_SIZE = 4;
@@ -278,7 +276,8 @@ export function GuessMap({
 }: {
 	variant: "play" | "result";
 	guess: LatLng | null;
-	truth: LatLng | null;
+	/** Answer location for the result phase (needed for Street View links). */
+	truth: RoundLocation | null;
 	showResult: boolean;
 	locked?: boolean;
 	mapSize: number;
@@ -432,56 +431,45 @@ export function GuessMap({
 
 	const mapActive = variant === "result" || sticky || isActive;
 
-	// Deck layers: rebuild only when pin/line data changes — never on zoom/pan
-	// (PathStyleExtension keeps dash density constant in screen pixels).
+	// Deck layers: play keeps a guess pin; result layers + truth-pin click live in ResultOverlay.
 	useEffect(() => {
 		const overlay = overlayRef.current;
 		if (!overlay || !ready) return;
 
-		const layers = [];
-
-		if (showResult && truth && guess) {
-			const line = createResultLineLayer(guess, truth);
-			if (line) layers.push(line);
+		if (showResult && truth) {
+			applyRoundResultOverlay(overlay, hostRef.current, {
+				guess,
+				truth,
+				idleCursor: null,
+			});
+			return;
 		}
 
+		const layers = [];
 		if (guess) {
 			const pin = createGuessPinLayer("gg-guess-pin", guess);
 			if (pin) layers.push(pin);
 		}
-
-		if (showResult && truth) {
-			const pin = createTruthPinLayer("gg-truth-pin", truth);
-			if (pin) layers.push(pin);
-		}
-
-		overlay.setProps({ layers });
-	}, [guess, truth, showResult, ready, overlayRef]);
+		overlay.setProps({
+			layers,
+			onClick: undefined,
+			onHover: undefined,
+		});
+		hostRef.current?.setCursor(locked ? null : "crosshair");
+	}, [guess, truth, showResult, ready, overlayRef, hostRef, locked]);
 
 	// Camera fit for the result view — separate so fitBounds doesn't thrash layers.
 	useEffect(() => {
 		const host = hostRef.current;
-		if (!host || !ready) return;
+		if (!host || !ready || !showResult || !truth) return;
 
-		if (showResult && truth && guess) {
-			// Defer until the container has been laid out after expanding to result size.
-			const raf = requestAnimationFrame(() => {
-				requestAnimationFrame(() => {
-					host.fitBounds(
-						{
-							south: Math.min(guess.lat, truth.lat),
-							west: Math.min(guess.lng, truth.lng),
-							north: Math.max(guess.lat, truth.lat),
-							east: Math.max(guess.lng, truth.lng),
-						},
-						60,
-					);
-				});
+		// Defer until the container has been laid out after expanding to result size.
+		const raf = requestAnimationFrame(() => {
+			requestAnimationFrame(() => {
+				fitRoundResultCamera(host, guess, truth);
 			});
-			return () => cancelAnimationFrame(raf);
-		} else if (showResult && truth) {
-			host.moveCamera({ center: truth, zoom: 10 });
-		}
+		});
+		return () => cancelAnimationFrame(raf);
 	}, [showResult, truth, guess, ready, hostRef]);
 
 	useEffect(() => {

@@ -238,7 +238,7 @@ async function spawnSidecarCompat(
 	let inputPath: string | undefined;
 	for (let i = 1; i < args.length; i++) {
 		if (args[i] === "--input" && args[i + 1]) {
-			inputPath = args[++i];
+			inputPath = args[i + 1];
 			break;
 		}
 	}

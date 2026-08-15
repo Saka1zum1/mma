@@ -2,12 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react
 import type { LatLng } from "@/types";
 import { useT } from "@/lib/i18n";
 import type { RoundResult } from "./GameState";
-import {
-	createGuessPinsLayer,
-	createResultLinesLayer,
-	createTruthPinsLayer,
-	type ResultLinePair,
-} from "./guessMapLayers";
+import { applyReplayResultOverlay } from "./ResultOverlay";
 import { createMapHost, hostKindForMapType, type MapHost, type DeckOverlayHandle } from "@/lib/map/host";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { getLocal, useLocalStorage } from "@/lib/hooks/useLocalStorage";
@@ -171,30 +166,10 @@ export function ReplayMap({
 					: []
 				: rounds;
 
-		const lines: ResultLinePair[] = [];
-		const guesses: LatLng[] = [];
-		const truths: LatLng[] = [];
-		for (const r of visible) {
-			const truth: LatLng = { lat: r.location.lat, lng: r.location.lng };
-			truths.push(truth);
-			if (r.guess) {
-				guesses.push(r.guess);
-				lines.push({ guess: r.guess, truth });
-			}
-		}
-
-		const pinSize = highlighted != null ? 36 : 28;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const layers: any[] = [];
-		const lineLayer = createResultLinesLayer("gg-replay-lines", lines);
-		if (lineLayer) layers.push(lineLayer);
-		const guessLayer = createGuessPinsLayer("gg-replay-guesses", guesses, pinSize);
-		if (guessLayer) layers.push(guessLayer);
-		const truthLayer = createTruthPinsLayer("gg-replay-truths", truths, pinSize);
-		if (truthLayer) layers.push(truthLayer);
-
-		overlay.setProps({ layers });
-	}, [rounds, highlighted, ready, overlayRef]);
+		applyReplayResultOverlay(overlay, hostRef.current, visible, {
+			pinSize: highlighted != null ? 36 : 28,
+		});
+	}, [rounds, highlighted, ready, overlayRef, hostRef]);
 
 	useEffect(() => {
 		if (!ready) return;

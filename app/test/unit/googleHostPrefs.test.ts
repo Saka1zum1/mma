@@ -9,9 +9,18 @@ vi.mock("@/lib/sv/opensv", () => {
 		) {}
 	}
 	class ImageMapType {
+		opacity = 1;
 		constructor(public opts: unknown) {}
+		setOpacity(opacity: number) {
+			this.opacity = opacity;
+		}
+		getOpacity() {
+			return this.opacity;
+		}
 		getTile(_coord: unknown, _zoom: number, doc: Document) {
-			return doc.createElement("div");
+			const el = doc.createElement("div");
+			el.style.opacity = String(this.opacity);
+			return el;
 		}
 	}
 	class MapMock {
@@ -52,7 +61,6 @@ vi.mock("@/lib/geo/stackedMapType", () => ({
 }));
 
 import { createGoogleMapHost } from "@/lib/map/googleHost";
-import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
 import { DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 
 type Host = ReturnType<typeof createGoogleMapHost>;
@@ -60,37 +68,44 @@ type Host = ReturnType<typeof createGoogleMapHost>;
 const makeHost = (): Host =>
 	createGoogleMapHost(document.createElement("div"), DEFAULT_PREFS, { customStyles: [] });
 
-// The roadmap stack is [basemap, SV coverage, labels]; opacity rides each SV tile.
-const svOpacity = (host: Host, zoom = 5) => {
+// Opacity is applied via ImageMapType.setOpacity (MapEmbed may further dim for blobby).
+const svOpacity = (host: Host) => {
 	const stack = (host.getHostInstance() as unknown as { stack: { layers: google.maps.ImageMapType[] } })
 		.stack;
-	return Number((stack.layers[1].getTile(null, zoom, document) as HTMLElement).style.opacity);
+	return (stack.layers[1] as unknown as { getOpacity(): number }).getOpacity();
 };
 
 describe("GoogleMapHost.applyPrefs", () => {
-	it("installs a stack carrying the passed svOpacity", () => {
+	it("installs a stack carrying the host SV opacity", () => {
 		const host = makeHost();
 		expect(svOpacity(host)).toBeCloseTo(DEFAULT_PREFS.svOpacity);
-		host.applyPrefs({ ...DEFAULT_PREFS, svOpacity: 0.9 }, { customStyles: [] });
+		host.setSvOpacity(0.9);
 		expect(svOpacity(host)).toBeCloseTo(0.9);
 	});
 
-	// The minimap toggles blue lines through applyPrefs alone: no other opacity path exists.
+	// The minimap toggles blue lines through setSvOpacity alone: no other opacity path exists.
 	it("hides the SV layer at zero opacity, and brings it back", () => {
 		const host = makeHost();
-		host.applyPrefs({ ...DEFAULT_PREFS, svOpacity: 0 }, { customStyles: [] });
+		host.setSvOpacity(0);
 		expect(svOpacity(host)).toBe(0);
-		host.applyPrefs({ ...DEFAULT_PREFS, svOpacity: 0.5 }, { customStyles: [] });
+		host.setSvOpacity(0.5);
 		expect(svOpacity(host)).toBeCloseTo(0.5);
 	});
 
-	it("dims single-coverage blobby tiles only up to the threshold zoom", () => {
+	it("rebuilds blobby tile URLs when useBlobby is set", () => {
 		const host = makeHost();
 		host.applyPrefs(
-			{ ...DEFAULT_PREFS, svBlobby: true, svCoverageType: "official", svOpacity: 0.5 },
-			{ customStyles: [] },
+			{ ...DEFAULT_PREFS, svCoverageType: "official", svOpacity: 0.5 },
+			{ customStyles: [], useBlobby: true },
 		);
-		expect(svOpacity(host, BLOBBY_ZOOM_THRESHOLD)).toBeCloseTo(0.3);
-		expect(svOpacity(host, BLOBBY_ZOOM_THRESHOLD + 1)).toBeCloseTo(0.5);
+		// MapEmbed owns the 0.6× dim via setSvOpacity; the host keeps the last set value.
+		host.setSvOpacity(0.5 * 0.6);
+		expect(svOpacity(host)).toBeCloseTo(0.3);
+		host.applyPrefs(
+			{ ...DEFAULT_PREFS, svCoverageType: "official", svOpacity: 0.5 },
+			{ customStyles: [], useBlobby: false },
+		);
+		host.setSvOpacity(0.5);
+		expect(svOpacity(host)).toBeCloseTo(0.5);
 	});
 });

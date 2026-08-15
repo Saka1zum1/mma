@@ -751,7 +751,8 @@
 	font-weight: 600;
 	color: var(--gg-text);
 	line-height: 1.35;
-	max-width: 50rem;
+	max-width: 100%;
+	white-space: nowrap;
 }
 
 .gg-round-result__actions {
@@ -784,7 +785,7 @@
 	.gg-round-result__center { grid-area: center; }
 }
 
-/* Legacy result card (ResultOverlay) */
+/* Result settlement chrome (ResultOverlay) */
 .gg-result {
 	position: absolute;
 	inset: 0;

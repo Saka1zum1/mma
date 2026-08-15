@@ -13,6 +13,7 @@ fn sample_loc() -> Location {
         pitch: 5.0,
         zoom: 1.5,
         pano_id: Some("CAoSLEF".into()),
+        provider: None,
         flags: crate::types::LocationFlags::LOAD_AS_PANO_ID,
         tags: vec![1, 2, 3],
         extra: Some(serde_json::from_str(r#"{"country":"FR"}"#).unwrap()),
@@ -298,17 +299,17 @@ fn mmap_preserves_nullable_fields() {
     let (loaded, _handle) = read_arrow_ipc_mmap(&path).unwrap();
 
     // Verify nullable columns preserved via the raw column (Array trait)
-    assert!(loaded.column(6).is_null(0));
+    assert!(loaded.column(arrow_bridge::COL_PANO_ID).is_null(0));
     let pano_col = loaded
-        .column(6)
+        .column(arrow_bridge::COL_PANO_ID)
         .as_any()
         .downcast_ref::<arrow_array::StringArray>()
         .unwrap();
     assert_eq!(pano_col.value(1), "abc");
 
-    assert!(loaded.column(9).is_null(0));
+    assert!(loaded.column(arrow_bridge::COL_EXTRA).is_null(0));
     let extra_col = loaded
-        .column(9)
+        .column(arrow_bridge::COL_EXTRA)
         .as_any()
         .downcast_ref::<arrow_array::StringArray>()
         .unwrap();

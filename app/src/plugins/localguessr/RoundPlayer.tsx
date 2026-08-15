@@ -18,7 +18,6 @@ import {
 	totalRoundsLabel,
 	type ActiveGame,
 	type RoundResult,
-	type StreakMode,
 	resolveCountryName,
 } from "./GameState";
 import { scoreForGuess } from "./ScoreUtils";
@@ -26,102 +25,7 @@ import { checkStreakHit, reverseGeocodePlace } from "./streakValidator";
 import { GamePanoView, type GamePanoHandle } from "./GamePanoView";
 import { GameTimer } from "./GameTimer";
 import { GuessMap } from "./GuessMap";
-
-import { streakResultMessage } from "./streakCopy";
-import { AddTagButton } from "./AddTagButton";
-
-function splitDistanceDisplay(meters: number | null): { value: string; unit: string } {
-	if (meters == null) return { value: "—", unit: "" };
-	if (meters > 1000) {
-		return {
-			value: Math.round(meters / 1000).toLocaleString(),
-			unit: "km",
-		};
-	}
-	return { value: Math.round(meters).toLocaleString(), unit: "m" };
-}
-
-/* ---- Round result bottom bar (GeoGuessr gameUI_2) ---- */
-function RoundResultBar({
-	result,
-	rounds,
-	streakMode,
-	streak,
-	stateStreak,
-	isLast,
-	onNext,
-	onFinish,
-	t,
-	locale,
-}: {
-	result: RoundResult;
-	rounds: RoundResult[];
-	streakMode: StreakMode;
-	streak: number;
-	stateStreak: number;
-	isLast: boolean;
-	onNext: () => void;
-	onFinish: () => void;
-	t: ReturnType<typeof useT>["t"];
-	locale: string;
-}) {
-	const dist = splitDistanceDisplay(result.distanceMeters);
-	const streakMsg =
-		streakMode !== "off"
-			? streakResultMessage(result, rounds, streakMode, streak, stateStreak, t, locale)
-			: null;
-
-	return (
-		<div className="gg-round-result__bar" data-qa="result-view-bottom">
-			<div className="gg-round-result__bar-inner">
-				<div className="gg-round-result__distance">
-					<div className="gg-round-result__distance-value">
-						<span className="gg-shadow-text gg-shadow-text--positive gg-shadow-text--md">
-							{dist.value}
-						</span>
-						{dist.unit && (
-							<span className="gg-shadow-text gg-shadow-text--positive gg-shadow-text--md">
-								{dist.unit}
-							</span>
-						)}
-					</div>
-					<p className="gg-round-result__label">
-						{result.distanceMeters != null
-							? t("From location")
-							: t("No guess placed")}
-					</p>
-				</div>
-
-				<div className="gg-round-result__center">
-					{streakMsg && <div className="gg-round-result__streak">{streakMsg}</div>}
-					<div className="gg-round-result__actions">
-						<AddTagButton locationIds={[result.location.id]} variant="result" />
-						{isLast ? (
-							<Button variant="primary" onClick={onFinish}>
-								{t("View summary")}
-							</Button>
-						) : (
-							<Button variant="primary" onClick={onNext}>
-								{t("Next round")}
-							</Button>
-						)}
-						<p className="gg-round-result__space">
-							{t("Hit")}{" "}
-							<span className="gg-kbd">Space</span> {t("to continue")}
-						</p>
-					</div>
-				</div>
-
-				<div className="gg-round-result__points">
-					<div className="gg-shadow-text gg-shadow-text--negative gg-shadow-text--md">
-						{result.score.toLocaleString()}
-					</div>
-					<p className="gg-round-result__label">{t("Of {max} points", { max: "5,000" })}</p>
-				</div>
-			</div>
-		</div>
-	);
-}
+import { ResultOverlay } from "./ResultOverlay";
 
 export function RoundPlayer({
 	active,
@@ -444,7 +348,7 @@ export function RoundPlayer({
 
 	if (!round) return null;
 
-	const truth: LatLng | null = showResult ? { lat: round.lat, lng: round.lng } : null;
+	const truth = showResult ? round : null;
 	const displayGuess = showResult ? (lastResult?.guess ?? localGuess) : localGuess;
 	const cumScore = active.rounds.reduce((s, r) => s + r.score, 0);
 
@@ -655,7 +559,7 @@ export function RoundPlayer({
 					/>
 				</div>
 				{showResult && lastResult && (
-					<RoundResultBar
+					<ResultOverlay
 						result={lastResult}
 						rounds={active.rounds}
 						streakMode={streakMode}
@@ -664,8 +568,6 @@ export function RoundPlayer({
 						isLast={isLastRound(active)}
 						onNext={onNext}
 						onFinish={onFinish}
-						t={t}
-						locale={locale}
 					/>
 				)}
 			</div>

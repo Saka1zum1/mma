@@ -59,6 +59,7 @@ function pinIconLayer(
 	points: LatLng[],
 	icon: typeof GUESS_ICON,
 	sizePx: number,
+	pickable = false,
 ) {
 	if (points.length === 0) return null;
 	return new IconLayer({
@@ -71,7 +72,7 @@ function pinIconLayer(
 		sizeMinPixels: sizePx,
 		sizeMaxPixels: sizePx,
 		billboard: true,
-		pickable: false,
+		pickable,
 		alphaCutoff: 0.05,
 		parameters: { depthTest: false },
 		updateTriggers: {
@@ -83,12 +84,17 @@ function pinIconLayer(
 
 /** Batched guess pins — one IconLayer for all points (mirrors app: few layers, many instances). */
 export function createGuessPinsLayer(id: string, points: LatLng[], sizePx = 36) {
-	return pinIconLayer(id, points, GUESS_ICON, sizePx);
+	return pinIconLayer(id, points, GUESS_ICON, sizePx, false);
 }
 
-/** Batched truth pins. */
-export function createTruthPinsLayer(id: string, points: LatLng[], sizePx = 36) {
-	return pinIconLayer(id, points, TRUTH_ICON, sizePx);
+/** Batched truth / answer pins. When `pickable`, clicks open Street View (handled by the overlay). */
+export function createTruthPinsLayer(
+	id: string,
+	points: LatLng[],
+	sizePx = 36,
+	opts: { pickable?: boolean } = {},
+) {
+	return pinIconLayer(id, points, TRUTH_ICON, sizePx, opts.pickable ?? false);
 }
 
 /** Convenience for a single pin. */
@@ -96,8 +102,13 @@ export function createGuessPinLayer(id: string, point: LatLng, sizePx = 36) {
 	return createGuessPinsLayer(id, [point], sizePx);
 }
 
-export function createTruthPinLayer(id: string, point: LatLng, sizePx = 36) {
-	return createTruthPinsLayer(id, [point], sizePx);
+export function createTruthPinLayer(
+	id: string,
+	point: LatLng,
+	sizePx = 36,
+	opts: { pickable?: boolean } = {},
+) {
+	return createTruthPinsLayer(id, [point], sizePx, opts);
 }
 
 export type ResultLinePair = { guess: LatLng; truth: LatLng };
