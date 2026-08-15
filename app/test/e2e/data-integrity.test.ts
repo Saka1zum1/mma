@@ -1,30 +1,18 @@
 import type { Location } from "@/bindings.gen";
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	flushAndWait,
 	openMap,
 	addLocs,
 	getLoc,
 	createLocation,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Data integrity - flags", () => {
-	let mapId: string;
+	const map = useMap("E2E Integrity Flags");
 	let fl0Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Integrity Flags");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("flag=0 stays 0 through save/load", async () => {
 		const ids = await addLocs([createLocation({ lat: 10, lng: 20, flags: 0 })]);
@@ -32,7 +20,7 @@ describe("Data integrity - flags", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(fl0Id);
 		expect(loc.flags).toBe(0);
@@ -46,7 +34,7 @@ describe("Data integrity - flags", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const reloaded = await getLoc(fl0Id);
 		expect(reloaded.flags).toBe(1);
@@ -57,7 +45,7 @@ describe("Data integrity - flags", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.flags).toBe(2);
@@ -70,7 +58,7 @@ describe("Data integrity - flags", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.flags).toBe(3);
@@ -79,19 +67,9 @@ describe("Data integrity - flags", () => {
 });
 
 describe("Data integrity - panoId", () => {
-	let mapId: string;
+	const map = useMap("E2E Integrity Pano");
 	let pnNullId: number;
 	let pnStrId: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Integrity Pano");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("null panoId stays null", async () => {
 		const ids = await addLocs([createLocation({ lat: 10, lng: 20, panoId: null })]);
@@ -99,7 +77,7 @@ describe("Data integrity - panoId", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(pnNullId);
 		expect(loc.panoId).toBeNull();
@@ -117,7 +95,7 @@ describe("Data integrity - panoId", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(pnStrId);
 		expect(loc.panoId).toBe("CAoSK0FGMVFpcE9YUV9QMWN6bUc1RG1RMHRES1");
@@ -131,7 +109,7 @@ describe("Data integrity - panoId", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const reloaded = await getLoc(pnStrId);
 		expect(reloaded.panoId).toBeNull();
@@ -139,17 +117,7 @@ describe("Data integrity - panoId", () => {
 });
 
 describe("Data integrity - coordinates", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Integrity Coords");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Integrity Coords");
 
 	it("extreme lat/lng values survive save/load", async () => {
 		const ids = await addLocs([
@@ -160,7 +128,7 @@ describe("Data integrity - coordinates", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const max = await getLoc(ids[0]);
 		const min = await getLoc(ids[1]);
@@ -193,7 +161,7 @@ describe("Data integrity - coordinates", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.lat).toBeCloseTo(40.7128123456789, 6);
@@ -203,17 +171,7 @@ describe("Data integrity - coordinates", () => {
 });
 
 describe("Data integrity - extras", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Integrity Extras");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Integrity Extras");
 
 	it("string extra survives", async () => {
 		const ids = await addLocs([
@@ -226,7 +184,7 @@ describe("Data integrity - extras", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.extra.country).toBe("United States of America");
@@ -243,7 +201,7 @@ describe("Data integrity - extras", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.extra.altitude).toBeCloseTo(8848.86, 2);
@@ -262,7 +220,7 @@ describe("Data integrity - extras", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.extra.meta.source).toBe("import");
@@ -281,7 +239,7 @@ describe("Data integrity - extras", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		// Empty extra may be omitted or kept as {} -- both are valid
@@ -295,7 +253,7 @@ describe("Data integrity - extras", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc).toBeTruthy();
@@ -304,17 +262,7 @@ describe("Data integrity - extras", () => {
 });
 
 describe("Data integrity - createdAt", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Integrity Dates");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Integrity Dates");
 
 	it("createdAt timestamp survives save/load", async () => {
 		const date = 1718461800; // 2024-06-15T14:30:00Z
@@ -322,7 +270,7 @@ describe("Data integrity - createdAt", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.createdAt).toBe(date);
@@ -330,17 +278,7 @@ describe("Data integrity - createdAt", () => {
 });
 
 describe("Data integrity - concurrent operations", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Integrity Concurrent");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Integrity Concurrent");
 
 	it("rapid add/remove does not corrupt", async () => {
 		const result = await withApi(async (api) => {
@@ -403,7 +341,7 @@ describe("Data integrity - concurrent operations", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const trigger = await getLoc(result.triggerId);
 		const during = await getLoc(result.duringId);

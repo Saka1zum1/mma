@@ -3,6 +3,7 @@ import type { LatLng } from "@/types";
 import type { CommitDelta, CommitDiff, CommitInfo, Location } from "@/bindings.gen";
 import { cmd } from "@/lib/commands";
 import { fitMapToBounds } from "@/lib/map/mapState";
+import { boundsOfCoords } from "@/lib/map/host";
 import { emit as emitEvent, subscribe, useEventValue } from "@/lib/events";
 import { getMapState, setWorkArea } from "./useMapStore";
 
@@ -115,20 +116,8 @@ export async function beginCommitDiffPreview(commit: CommitInfo) {
 	};
 	emitEvent("diff-markers:changed");
 	setWorkArea("diff");
-	const all = [...added, ...removed, ...modified];
-	if (all.length > 0) {
-		let west = Infinity,
-			south = Infinity,
-			east = -Infinity,
-			north = -Infinity;
-		for (const l of all) {
-			if (l.lng < west) west = l.lng;
-			if (l.lng > east) east = l.lng;
-			if (l.lat < south) south = l.lat;
-			if (l.lat > north) north = l.lat;
-		}
-		fitMapToBounds({ west, south, east, north }, 100);
-	}
+	const bounds = boundsOfCoords([...added, ...removed, ...modified]);
+	if (bounds) fitMapToBounds(bounds, 100);
 }
 
 /** Leave commit-diff preview and restore the regular markers. */

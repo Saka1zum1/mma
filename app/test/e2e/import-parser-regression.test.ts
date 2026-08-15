@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-	waitForReady,
 	createAndOpenMap,
 	closeMap,
 	deleteMap,
@@ -10,6 +9,7 @@ import {
 	createLocation,
 	flushAndWait,
 	withApi,
+	useMap,
 } from "./helpers";
 
 // ============================================================================
@@ -17,17 +17,7 @@ import {
 // ============================================================================
 
 describe("Import — escaped quotes in extra fields", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Escaped Quotes");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Escaped Quotes");
 
 	it("handles escaped quotes in string values", async () => {
 		const result = await withApi(async (api) => {
@@ -93,17 +83,7 @@ describe("Import — escaped quotes in extra fields", () => {
 // ============================================================================
 
 describe("Import — panoId with special characters", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E PanoId Special");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E PanoId Special");
 
 	it("preserves panoId containing unicode", async () => {
 		const result = await withApi(async (api) => {
@@ -181,17 +161,7 @@ describe("Import — panoId with special characters", () => {
 // ============================================================================
 
 describe("Import — countryCode/stateCode at top level", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E CountryCode");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E CountryCode");
 
 	it("captures countryCode from location root", async () => {
 		const result = await withApi(async (api) => {
@@ -256,17 +226,7 @@ describe("Import — countryCode/stateCode at top level", () => {
 // ============================================================================
 
 describe("Import — nested objects in extra", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Nested Extra");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Nested Extra");
 
 	it("preserves deeply nested objects in extra", async () => {
 		const result = await withApi(async (api) => {
@@ -364,17 +324,7 @@ describe("Import — nested objects in extra", () => {
 // ============================================================================
 
 describe("Import — empty customCoordinates", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Empty Coords");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Empty Coords");
 
 	it("preview returns zero for empty array", async () => {
 		const result = await withApi(async (api) => {
@@ -412,17 +362,7 @@ describe("Import — empty customCoordinates", () => {
 // ============================================================================
 
 describe("Import — export/reimport tag round-trip", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Roundtrip");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Tag Roundtrip");
 
 	it("tags survive export and reimport into a new map", async () => {
 		const tagA = await createTag("Alpine");
@@ -458,9 +398,9 @@ describe("Import — export/reimport tag round-trip", () => {
 		});
 
 		await closeMap();
-		await deleteMap(mapId);
+		await deleteMap(map.id);
 
-		mapId = await createAndOpenMap("E2E Tag Roundtrip Re");
+		map.id = await createAndOpenMap("E2E Tag Roundtrip Re");
 
 		const result = await withApi(async (api, jsonStr) => {
 			const path = await api.cmd.writeTempFile("tag_rt.json", jsonStr);

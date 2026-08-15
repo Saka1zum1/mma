@@ -9,6 +9,7 @@ const FIXTURE = path.join(os.tmpdir(), `mma_perf_1000000.json`);
 
 describe("Perf - selection sync 1M", () => {
 	let mapId: string;
+
 	before(async function () {
 		this.timeout(300_000);
 		if (!fs.existsSync(FIXTURE))

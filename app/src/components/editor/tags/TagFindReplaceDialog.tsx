@@ -1,19 +1,12 @@
 import { useState } from "react";
 import { getVisibleTags, updateTags } from "@/store/useMapStore";
 import { TagPill } from "@/components/primitives/TagPill";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
-export function TagFindReplaceDialog({
-	open,
-	onOpenChange,
-}: {
-	open: boolean;
-	onOpenChange: (v: boolean) => void;
-}) {
-	const { t, tp } = useT();
+export function TagFindReplaceDialog({ open, onOpenChange }: DialogProps) {
 	const [find, setFind] = useState("");
 	const [replace, setReplace] = useState("");
 	const [applied, setApplied] = useState(false);
@@ -26,10 +19,7 @@ export function TagFindReplaceDialog({
 		const patches = matches.map((t) => ({
 			id: t.id,
 			patch: {
-				name: t.name.replaceAll(
-					new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
-					replace,
-				),
+				name: t.name.replaceAll(new RegExp(RegExp.escape(find), "gi"), replace),
 			},
 		}));
 		await updateTags(patches);
@@ -47,10 +37,10 @@ export function TagFindReplaceDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={handleOpenChange}>
-			<DialogContent title={t("dialog.findReplaceTags")} className="tag-find-replace-modal">
+			<DialogContent title={t("Find and replace in tag names")} className="tag-find-replace-modal">
 				<div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}>
 					<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-						<span style={{ width: 60 }}>{t("common.find")}</span>
+						<span style={{ width: 60 }}>{t("Find")}</span>
 						<TextInput
 							style={{ flex: 1 }}
 							value={find}
@@ -58,12 +48,12 @@ export function TagFindReplaceDialog({
 								setFind(e.target.value);
 								setApplied(false);
 							}}
-							placeholder={t("editor.findPlaceholder")}
+							placeholder={t("Text to find...")}
 							autoFocus
 						/>
 					</label>
 					<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-						<span style={{ width: 60 }}>{t("common.replace")}</span>
+						<span style={{ width: 60 }}>{t("Replace")}</span>
 						<TextInput
 							style={{ flex: 1 }}
 							value={replace}
@@ -71,13 +61,16 @@ export function TagFindReplaceDialog({
 								setReplace(e.target.value);
 								setApplied(false);
 							}}
-							placeholder={t("editor.replacePlaceholder")}
+							placeholder={t("Replace with...")}
 						/>
 					</label>
 					{find && (
 						<div>
 							<p style={{ margin: "0 0 0.25rem", fontSize: "0.85rem", color: "var(--text-2)" }}>
-								{tp("editor.tagsAffected", matches.length, { count: String(matches.length) })}
+								{t(
+									{ one: "{n} tag will be affected:", other: "{n} tags will be affected:" },
+									{ n: matches.length },
+								)}
 							</p>
 							<ul
 								style={{
@@ -90,10 +83,7 @@ export function TagFindReplaceDialog({
 								}}
 							>
 								{matches.map((t) => {
-									const newName = t.name.replaceAll(
-										new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
-										replace,
-									);
+									const newName = t.name.replaceAll(new RegExp(RegExp.escape(find), "gi"), replace);
 									return (
 										<li
 											key={t.id}
@@ -109,11 +99,11 @@ export function TagFindReplaceDialog({
 						</div>
 					)}
 					<p style={{ margin: 0, fontSize: "0.8rem", color: "var(--accent)" }}>
-						{t("editor.tagRenamesIrreversible")}
+						{t("Tag renames cannot be undone.")}
 					</p>
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
 						<Button onClick={() => handleOpenChange(false)}>
-							{applied ? t("common.close") : t("common.cancel")}
+							{applied ? t("Close") : t("Cancel")}
 						</Button>
 						{!applied && (
 							<Button
@@ -121,14 +111,14 @@ export function TagFindReplaceDialog({
 								disabled={!find || matches.length === 0}
 								onClick={handleApply}
 							>
-								{tp("editor.replaceTags", matches.length, { count: String(matches.length) })}
+								{t({ one: "Replace {n} tag", other: "Replace {n} tags" }, { n: matches.length })}
 							</Button>
 						)}
 						{applied && (
 							<span
 								style={{ alignSelf: "center", color: "var(--constructive)", fontSize: "0.85rem" }}
 							>
-								{t("editor.done")}
+								{t("Done!")}
 							</span>
 						)}
 					</div>

@@ -15,6 +15,7 @@ import {
 	getAllLocs,
 	flushAndWait,
 	withApi,
+	useMap,
 } from "./helpers";
 
 // ============================================================================
@@ -124,17 +125,7 @@ describe("Malformed JSON import", () => {
 // ============================================================================
 
 describe("Paste import edge cases", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Paste Errors");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Paste Errors");
 
 	it("empty string paste does not crash", async () => {
 		await withApi(async (api) => {
@@ -193,17 +184,7 @@ describe("Paste import edge cases", () => {
 // ============================================================================
 
 describe("CSV import edge cases", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E CSV Errors");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E CSV Errors");
 
 	it("CSV with headers only (no data rows) imports zero locations", async () => {
 		const result = await withApi(async (api) => {
@@ -248,13 +229,10 @@ describe("CSV import edge cases", () => {
 // ============================================================================
 
 describe("Import does not corrupt existing data", () => {
-	let mapId: string;
+	useMap("E2E Import Safety");
 	let existingIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Safety");
-
 		const locs = [
 			createLocation({ lat: 10, lng: 20, heading: 90 }),
 			createLocation({ lat: 30, lng: 40, heading: 180 }),
@@ -262,12 +240,6 @@ describe("Import does not corrupt existing data", () => {
 		existingIds = await addLocs(locs);
 		await flushAndWait();
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("failed import leaves existing locations intact", async () => {
 		// Try to import garbage
 		await withApi(async (api) => {

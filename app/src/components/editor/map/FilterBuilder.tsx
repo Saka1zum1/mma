@@ -8,13 +8,13 @@ import { useEvent } from "@/lib/events";
 import { pickPeriodEnd, hasTimeOfDay, dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { useMapState, addSelections } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
-import { useT } from "@/lib/i18n";
-import type { MessageKey } from "@/locales/en";
+import { OP_LABELS } from "@/store/selections";
 import { DatePicker } from "@/components/primitives/DatePicker";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { mdiArrowRight, mdiArrowLeft } from "@mdi/js";
+import { t, msg } from "@/lib/i18n";
 
 const ALL_OPS: FilterOp[] = ["eq", "neq", "gt", "lt", "gte", "lte", "between", "has", "nothas"];
 const EQUALITY_OPS: FilterOp[] = ["eq", "neq", "has", "nothas"];
@@ -32,42 +32,15 @@ const ARRAY_OPS: FilterOp[] = [
 	"has",
 	"nothas",
 ];
-const FILTER_OP_KEYS: Record<FilterOp, MessageKey> = {
-	eq: "editor.filterOp.eq",
-	neq: "editor.filterOp.neq",
-	gt: "editor.filterOp.gt",
-	lt: "editor.filterOp.lt",
-	gte: "editor.filterOp.gte",
-	lte: "editor.filterOp.lte",
-	between: "editor.filterOp.between",
-	between_anyyear: "editor.filterOp.betweenAnyYear",
-	between_anytime: "editor.filterOp.betweenAnytime",
-	has: "editor.filterOp.has",
-	nothas: "editor.filterOp.nothas",
-	contains: "editor.filterOp.contains",
-	notcontains: "editor.filterOp.notcontains",
+const ARRAY_OP_LABELS: Partial<Record<FilterOp, string>> = {
+	eq: msg("length ="),
+	neq: msg("length !="),
+	gt: msg("length >"),
+	lt: msg("length <"),
+	gte: msg("length >="),
+	lte: msg("length <="),
+	between: msg("length between"),
 };
-const ARRAY_FILTER_OP_KEYS: Partial<Record<FilterOp, MessageKey>> = {
-	eq: "editor.filterOp.lengthEq",
-	neq: "editor.filterOp.lengthNeq",
-	gt: "editor.filterOp.lengthGt",
-	lt: "editor.filterOp.lengthLt",
-	gte: "editor.filterOp.lengthGte",
-	lte: "editor.filterOp.lengthLte",
-	between: "editor.filterOp.lengthBetween",
-};
-
-export function filterOpLabel(
-	t: (key: MessageKey) => string,
-	op: FilterOp,
-	isArray: boolean,
-): string {
-	if (isArray) {
-		const key = ARRAY_FILTER_OP_KEYS[op];
-		if (key) return t(key);
-	}
-	return t(FILTER_OP_KEYS[op]);
-}
 const filterBuilderState = new Map<
 	string,
 	{
@@ -173,7 +146,6 @@ function FilterValueInput({
 	showTzLocal?: boolean;
 	onYearSelect?: (year: number) => void;
 }) {
-	const { t } = useT();
 	const type = fieldEntry?.def.type;
 	const def = fieldEntry?.def;
 	const enumValues = useEnumValues(fieldEntry?.key, def);
@@ -185,7 +157,7 @@ function FilterValueInput({
 				<option value="">--</option>
 				{enumValues.map((v) => (
 					<option key={v} value={v}>
-						{def?.labels?.[v] ?? v}
+						{def?.labels?.[v] ? t(def.labels[v]) : v}
 					</option>
 				))}
 			</NSelect>
@@ -219,7 +191,7 @@ function FilterValueInput({
 			<TextInput
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				placeholder={placeholder ?? t("editor.filterValue")}
+				placeholder={placeholder ?? t("Value")}
 			/>
 		);
 	}
@@ -230,7 +202,7 @@ function FilterValueInput({
 				type="number"
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				placeholder={placeholder ?? (type === "array" ? t("editor.filterLength") : t("editor.filterValue"))}
+				placeholder={placeholder ?? (type === "array" ? t("Length") : t("Value"))}
 			/>
 		);
 	}
@@ -239,7 +211,7 @@ function FilterValueInput({
 		<TextInput
 			value={value}
 			onChange={(e) => onChange(e.target.value)}
-			placeholder={placeholder ?? "Value"}
+			placeholder={placeholder ?? t("Value")}
 		/>
 	);
 }
@@ -300,7 +272,6 @@ export function FilterForm({
 	) => void;
 	onClose?: () => void;
 }) {
-	const { t } = useT();
 	const fields = useExtraFieldKeys();
 	const saved = initial ?? (persistKey ? filterBuilderState.get(persistKey) : undefined);
 	const [field, setField] = useState(() => saved?.field || fields[0]?.key || "");
@@ -510,19 +481,19 @@ export function FilterForm({
 				handleAdd();
 			}}
 		>
-			<label>{t("editor.filterByMetadata")}</label>
+			<label>{t("Filter by metadata:")}</label>
 			<NSelect value={field} onChange={(e) => handleFieldChange(e.target.value)}>
-				{fields.length === 0 && <option value="">{t("editor.noMetadataYet")}</option>}
+				{fields.length === 0 && <option value="">{t("No metadata yet")}</option>}
 				{fields.map((f) => (
 					<option key={f.key} value={f.key}>
-						{f.label}
+						{t(f.label)}
 					</option>
 				))}
 			</NSelect>
 			<NSelect value={op} onChange={(e) => handleOpChange(e.target.value as FilterOp)}>
 				{availableOps.map((o) => (
 					<option key={o} value={o}>
-						{filterOpLabel(t, o, fieldEntry?.def.type === "array")}
+						{t((fieldEntry?.def.type === "array" && ARRAY_OP_LABELS[o]) || OP_LABELS[o])}
 					</option>
 				))}
 			</NSelect>
@@ -548,7 +519,7 @@ export function FilterForm({
 				<span className="extra-filter-builder__copy">
 					<button
 						type="button"
-						title={t("editor.copyToMax")}
+						title={t("Copy to max")}
 						disabled={!value}
 						onClick={() => setValue2(value)}
 					>
@@ -556,7 +527,7 @@ export function FilterForm({
 					</button>
 					<button
 						type="button"
-						title={t("editor.copyToMin")}
+						title={t("Copy to min")}
 						disabled={!value2}
 						onClick={() => setValue(value2)}
 					>
@@ -570,24 +541,23 @@ export function FilterForm({
 					op={op}
 					value={value2}
 					onChange={setValue2}
-					placeholder={t("editor.filterMax")}
+					placeholder={t("Max")}
 					anyYear={anyYear}
 					anyTime={anyTime}
 					tzLocal={tzLocal}
 				/>
 			)}
 			<Button type="submit">{submitLabel}</Button>
-			{onClose && <Button onClick={onClose}>{t("common.cancel")}</Button>}
+			{onClose && <Button onClick={onClose}>{t("Cancel")}</Button>}
 		</form>
 	);
 }
 
 export function FilterBuilder({ mapId }: { mapId: string }) {
-	const { t } = useT();
 	return (
 		<FilterForm
 			persistKey={mapId}
-			submitLabel={t("editor.addFilter")}
+			submitLabel={t("Add filter")}
 			onSubmit={(field, op, value, value2, tzLocal) =>
 				addSelections([{ type: "Filter", field, op, value, value2, tzLocal }])
 			}

@@ -293,7 +293,7 @@ export class SelectionOverlay {
 	}
 
 	/** Replace every entry with arrays sliced straight out of Rust's render binary, which
-	 *  ships them already in selection order. */
+	 *  ships them in emission order, then put them in selection order. */
 	load(
 		positions: Float32Array<ArrayBuffer>,
 		colors: Uint8Array<ArrayBuffer>,
@@ -316,6 +316,7 @@ export class SelectionOverlay {
 			this.slot[id] = i;
 		}
 		this.version++;
+		this.order();
 	}
 
 	/** Size up front for a rebuild of known size, so `set` never reallocates mid-loop. */
@@ -512,7 +513,7 @@ export class CellManager {
 			this.totalCount += count;
 		}
 
-		// Selection overlay, in selection order:
+		// Selection overlay, in emission order (`load` sorts it by selIdx):
 		// [u32 count][f32[] positions][u8[] colors][f32[] angles][u32[] ids][u32[] selIdx]
 		if (offset + 4 <= buf.byteLength) {
 			const selCount = dv.getUint32(offset, true);

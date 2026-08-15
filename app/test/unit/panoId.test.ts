@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isOfficialPano } from "@/lib/sv/panoId";
+import { isOfficialPano, newestOfficialPano } from "@/lib/sv/panoId";
 
 describe("isOfficialPano", () => {
 	it("recognizes F: prefix as unofficial", () => {
@@ -29,5 +29,29 @@ describe("isOfficialPano", () => {
 
 	it("handles empty string as unofficial", () => {
 		expect(isOfficialPano("")).toBe(false);
+	});
+});
+
+describe("newestOfficialPano", () => {
+	const off1 = "KQ2dSFpRKZZMxJEBc4FhcA";
+	const off2 = "KQ2dSFpRKZZMxJEBc4Fhcw";
+	const ugc = "F:CAoSLEFGMVFpcE";
+
+	it("returns null for an empty or all-unofficial timeline", () => {
+		expect(newestOfficialPano([])).toBeNull();
+		expect(newestOfficialPano([{ pano: ugc }, { pano: "junk" }])).toBeNull();
+	});
+
+	// Timelines arrive sorted ascending, so the newest official entry is the LAST one —
+	// not the first match, and not the last entry when that entry is unofficial.
+	it("takes the last official entry, skipping trailing unofficial ones", () => {
+		expect(newestOfficialPano([{ pano: off1 }, { pano: off2 }])?.pano).toBe(off2);
+		expect(newestOfficialPano([{ pano: off1 }, { pano: off2 }, { pano: ugc }])?.pano).toBe(off2);
+		expect(newestOfficialPano([{ pano: ugc }, { pano: off1 }])?.pano).toBe(off1);
+	});
+
+	it("preserves the entry object, not just the id", () => {
+		const entry = { pano: off1, date: new Date(2019, 5) };
+		expect(newestOfficialPano([entry])).toBe(entry);
 	});
 });

@@ -912,6 +912,130 @@ HeatmapLayer.layerName = "HeatmapLayer";
 HeatmapLayer.defaultProps = defaultProps;
 var heatmap_layer_default = HeatmapLayer;
 
+// heatmap/src/gradients.ts
+var MIN_STOPS = 2;
+var clamp01 = (n) => Math.min(1, Math.max(0, n));
+function evenStops(colors) {
+  if (colors.length === 1) return [{ color: colors[0], pos: 0 }];
+  return colors.map((color, i) => ({ color, pos: i / (colors.length - 1) }));
+}
+var BUILTIN_COLORS = [
+  // deck.gl's built-in default colorRange (6-step ColorBrewer YlOrRd) — the original look.
+  { id: "classic", name: "Classic", colors: [[255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60], [240, 59, 32], [189, 0, 38]] },
+  { id: "viridis", name: "Viridis", colors: [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]] },
+  { id: "inferno", name: "Inferno", colors: [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]] },
+  { id: "plasma", name: "Plasma", colors: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]] },
+  { id: "magma", name: "Magma", colors: [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]] },
+  { id: "cividis", name: "Cividis", colors: [[0, 32, 76], [87, 92, 109], [170, 156, 116], [255, 234, 70]] },
+  { id: "heat", name: "Heat", colors: [[0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 255, 0], [255, 0, 0]] },
+  { id: "blue-red", name: "Blue-Red", colors: [[66, 133, 244], [234, 67, 53]] },
+  { id: "green-yellow-red", name: "Green-Yellow-Red", colors: [[52, 168, 83], [251, 188, 4], [234, 67, 53]] },
+  { id: "purple-orange", name: "Purple-Orange", colors: [[136, 84, 208], [255, 152, 0]] },
+  { id: "blues", name: "Blues", colors: [[222, 235, 247], [158, 202, 225], [49, 130, 189]] },
+  { id: "reds", name: "Reds", colors: [[254, 224, 210], [252, 146, 114], [222, 45, 38]] },
+  { id: "greens", name: "Greens", colors: [[229, 245, 224], [161, 217, 155], [49, 163, 84]] },
+  { id: "purples", name: "Purples", colors: [[239, 237, 245], [188, 189, 220], [117, 107, 177]] }
+];
+var BUILTIN_GRADIENTS = BUILTIN_COLORS.map((g) => ({
+  id: g.id,
+  name: g.name,
+  stops: evenStops(g.colors)
+}));
+var DEFAULT_GRADIENT_ID = BUILTIN_GRADIENTS[0].id;
+var BUILTIN_IDS = new Set(BUILTIN_GRADIENTS.map((g) => g.id));
+function isBuiltinGradient(id) {
+  return BUILTIN_IDS.has(id);
+}
+function gradientIdFromLegacyIndex(index) {
+  if (typeof index !== "number") return DEFAULT_GRADIENT_ID;
+  return BUILTIN_GRADIENTS[index]?.id ?? DEFAULT_GRADIENT_ID;
+}
+function normalizeStops(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  if (Array.isArray(raw[0])) return evenStops(raw);
+  return raw.filter((s) => s && Array.isArray(s.color)).map((s) => ({ color: [...s.color], pos: clamp01(Number(s.pos) || 0) })).sort((a, b) => a.pos - b.pos);
+}
+function normalizeGradient(g) {
+  return { ...g, stops: normalizeStops(g.stops) };
+}
+function resolveGradient(id, customs) {
+  return BUILTIN_GRADIENTS.find((g) => g.id === id) ?? customs.find((g) => g.id === id) ?? BUILTIN_GRADIENTS[0];
+}
+function newCustomGradient(from) {
+  return {
+    id: crypto.randomUUID(),
+    name: `${from.name} copy`,
+    stops: from.stops.map((s) => ({ color: [...s.color], pos: s.pos }))
+  };
+}
+function colorAt(stops, t) {
+  if (stops.length === 0) return [0, 0, 0];
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  if (t <= first.pos) return first.color;
+  if (t >= last.pos) return last.color;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (t > b.pos) continue;
+    const span = b.pos - a.pos;
+    const f = span <= 0 ? 0 : (t - a.pos) / span;
+    return [
+      Math.round(a.color[0] + (b.color[0] - a.color[0]) * f),
+      Math.round(a.color[1] + (b.color[1] - a.color[1]) * f),
+      Math.round(a.color[2] + (b.color[2] - a.color[2]) * f)
+    ];
+  }
+  return last.color;
+}
+function sampleColorRange(stops, n = 32) {
+  if (stops.length === 0) return sampleColorRange(BUILTIN_GRADIENTS[0].stops, n);
+  if (n === 1) return [colorAt(stops, 0)];
+  return Array.from({ length: n }, (_, i) => colorAt(stops, i / (n - 1)));
+}
+function gradientCss(stops) {
+  if (stops.length === 0) return "transparent";
+  const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+  if (stops.length === 1) return rgb(stops[0].color);
+  const parts = stops.map((s) => `${rgb(s.color)} ${+(s.pos * 100).toFixed(2)}%`);
+  return `linear-gradient(to right, ${parts.join(", ")})`;
+}
+function moveStop(stops, index, pos) {
+  const target = stops[index];
+  if (!target) return { stops, index };
+  const moved = { color: [...target.color], pos: clamp01(pos) };
+  const next = stops.map((s, i) => i === index ? moved : s).sort((a, b) => a.pos - b.pos);
+  return { stops: next, index: next.indexOf(moved) };
+}
+function addStopAt(stops, pos) {
+  const p = clamp01(pos);
+  const added = { color: colorAt(stops, p), pos: p };
+  const next = [...stops, added].sort((a, b) => a.pos - b.pos);
+  return { stops: next, index: next.indexOf(added) };
+}
+function removeStop(stops, index) {
+  if (stops.length <= MIN_STOPS) return stops;
+  return stops.filter((_, i) => i !== index);
+}
+function setStopColor(stops, index, color) {
+  return stops.map((s, i) => i === index ? { ...s, color } : s);
+}
+function reverseStops(stops) {
+  return stops.map((s) => ({ ...s, pos: 1 - s.pos })).reverse();
+}
+function rgbToHex(c) {
+  return `#${c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
+}
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  return [
+    parseInt(full.slice(0, 2), 16) || 0,
+    parseInt(full.slice(2, 4), 16) || 0,
+    parseInt(full.slice(4, 6), 16) || 0
+  ];
+}
+
 // heatmap/src/heatmap.ts
 var LAYER_DEFAULTS = {
   visible: true,
@@ -919,7 +1043,7 @@ var LAYER_DEFAULTS = {
   radiusPixels: 30,
   opacity: 0.6,
   threshold: 0.05,
-  gradientIndex: 0
+  gradientId: DEFAULT_GRADIENT_ID
 };
 var store = MMA.storage("heatmap");
 function defaultSource() {
@@ -928,52 +1052,31 @@ function defaultSource() {
 function newLayer() {
   return { id: crypto.randomUUID(), source: defaultSource(), ...LAYER_DEFAULTS };
 }
+function migrateLayer(stored) {
+  const { gradientIndex, ...rest } = stored;
+  const layer = { ...newLayer(), ...rest };
+  if (rest.gradientId === void 0) layer.gradientId = gradientIdFromLegacyIndex(gradientIndex);
+  return layer;
+}
 function loadLayers() {
   const stored = store.get("layers");
-  if (stored?.length) return stored.map((l) => ({ ...newLayer(), ...l }));
+  if (stored?.length) return stored.map(migrateLayer);
   const legacy = store.get("settings");
-  return [{ ...newLayer(), ...legacy ?? {} }];
+  return [migrateLayer(legacy ?? {})];
 }
-var GRADIENTS = [
-  // deck.gl's built-in default colorRange (6-step ColorBrewer YlOrRd) — the original look.
-  { name: "Classic", stops: [[255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60], [240, 59, 32], [189, 0, 38]] },
-  { name: "Viridis", stops: [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]] },
-  { name: "Inferno", stops: [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]] },
-  { name: "Plasma", stops: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]] },
-  { name: "Magma", stops: [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]] },
-  { name: "Cividis", stops: [[0, 32, 76], [87, 92, 109], [170, 156, 116], [255, 234, 70]] },
-  { name: "Heat", stops: [[0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 255, 0], [255, 0, 0]] },
-  { name: "Blue-Red", stops: [[66, 133, 244], [234, 67, 53]] },
-  { name: "Green-Yellow-Red", stops: [[52, 168, 83], [251, 188, 4], [234, 67, 53]] },
-  { name: "Purple-Orange", stops: [[136, 84, 208], [255, 152, 0]] },
-  { name: "Blues", stops: [[222, 235, 247], [158, 202, 225], [49, 130, 189]] },
-  { name: "Reds", stops: [[254, 224, 210], [252, 146, 114], [222, 45, 38]] },
-  { name: "Greens", stops: [[229, 245, 224], [161, 217, 155], [49, 163, 84]] },
-  { name: "Purples", stops: [[239, 237, 245], [188, 189, 220], [117, 107, 177]] }
-];
-function sampleColorRange(stops, n = 6) {
-  if (stops.length === 1) return Array.from({ length: n }, () => stops[0]);
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1) * (stops.length - 1);
-    const idx = Math.min(Math.floor(t), stops.length - 2);
-    const f = t - idx;
-    const a = stops[idx];
-    const b = stops[idx + 1];
-    out.push([
-      Math.round(a[0] + (b[0] - a[0]) * f),
-      Math.round(a[1] + (b[1] - a[1]) * f),
-      Math.round(a[2] + (b[2] - a[2]) * f)
-    ]);
-  }
-  return out;
+function loadGradients() {
+  return (store.get("gradients") ?? []).map(normalizeGradient);
 }
 var overlay = null;
 var locStore = null;
 var layers = loadLayers();
+var customGradients = loadGradients();
 var onSettingsChange = null;
 function getLayers() {
   return layers;
+}
+function getCustomGradients() {
+  return customGradients;
 }
 function setOnSettingsChange(cb) {
   onSettingsChange = cb;
@@ -999,6 +1102,27 @@ function resetLayers() {
   layers = [newLayer()];
   commit();
 }
+function commitGradients() {
+  store.set("gradients", customGradients);
+  commit();
+}
+function addCustomGradient(layerId, from) {
+  const gradient = newCustomGradient(from);
+  customGradients = [...customGradients, gradient];
+  layers = layers.map((l) => l.id === layerId ? { ...l, gradientId: gradient.id } : l);
+  commitGradients();
+  return gradient;
+}
+function updateCustomGradient(id, patch) {
+  if (isBuiltinGradient(id)) return;
+  customGradients = customGradients.map((g) => g.id === id ? { ...g, ...patch } : g);
+  commitGradients();
+}
+function removeCustomGradient(id) {
+  customGradients = customGradients.filter((g) => g.id !== id);
+  layers = layers.map((l) => l.gradientId === id ? { ...l, gradientId: DEFAULT_GRADIENT_ID } : l);
+  commitGradients();
+}
 async function sourceData(source) {
   if (!locStore) return [];
   const pool = locStore.get();
@@ -1023,7 +1147,7 @@ async function rebuild() {
       intensity: l.intensity,
       threshold: l.threshold,
       opacity: l.opacity,
-      colorRange: sampleColorRange((GRADIENTS[l.gradientIndex] ?? GRADIENTS[0]).stops),
+      colorRange: sampleColorRange(resolveGradient(l.gradientId, customGradients).stops),
       debounceTimeout: 100
     })
   );
@@ -1051,6 +1175,7 @@ async function init() {
       overlay = null;
     }
     layers = loadLayers();
+    customGradients = loadGradients();
     onSettingsChange = null;
   };
 }
@@ -1119,6 +1244,54 @@ var CSS = `
 }
 .heatmap-sidebar__gradient--active { border-color: var(--accent-color, #4a9eff); }
 .heatmap-sidebar__gradient-bar { height: 14px; border-radius: 2px; }
+.heatmap-sidebar__gradient-new {
+  border: 1px dashed var(--color-divider, #444); border-radius: 4px;
+  background: none; color: var(--text-secondary, #999); cursor: pointer;
+  font-size: 12px; padding: 3px 2px;
+}
+.heatmap-sidebar__gradient-new:hover {
+  color: var(--text-primary, #fff); border-color: var(--text-secondary, #999);
+}
+.heatmap-sidebar__editor {
+  border: 1px solid var(--color-divider, #333); border-radius: 4px;
+  padding: 8px; margin-top: 6px; display: flex; flex-direction: column; gap: 8px;
+}
+.heatmap-sidebar__editor-name {
+  width: 100%; box-sizing: border-box; font-size: 13px; padding: 4px 6px;
+  background: var(--surface-2, #1c1c1c); color: inherit;
+  border: 1px solid var(--color-divider, #333); border-radius: 3px;
+}
+.heatmap-sidebar__track { position: relative; height: 34px; touch-action: none; }
+.heatmap-sidebar__track-bar {
+  height: 18px; border-radius: 3px; cursor: copy;
+  border: 1px solid var(--color-divider, #333);
+}
+.heatmap-sidebar__handle {
+  position: absolute; top: 14px; transform: translateX(-50%);
+  width: 12px; height: 12px; padding: 0; cursor: grab;
+  border: 2px solid var(--surface-1, #111); border-radius: 3px;
+  box-shadow: 0 0 0 1px #0000008c;
+}
+.heatmap-sidebar__handle:before {
+  content: ""; position: absolute; left: 50%; top: -6px;
+  width: 1px; height: 6px; background: var(--text-secondary, #999);
+}
+.heatmap-sidebar__handle--selected {
+  border-color: var(--accent-color, #4a9eff); z-index: 1;
+}
+.heatmap-sidebar__handle:active { cursor: grabbing; }
+.heatmap-sidebar__stop-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.heatmap-sidebar__stop-row input[type="color"] {
+  width: 28px; height: 24px; padding: 0; cursor: pointer;
+  background: none; border: 1px solid var(--color-divider, #444); border-radius: 3px;
+}
+.heatmap-sidebar__stop-row input[type="number"] {
+  width: 52px; font-size: 12px; padding: 3px 4px;
+  background: var(--surface-2, #1c1c1c); color: inherit;
+  border: 1px solid var(--color-divider, #333); border-radius: 3px;
+}
+.heatmap-sidebar__hint { font-size: 11px; color: var(--text-secondary, #999); margin: 0; }
+.heatmap-sidebar__editor-actions { display: flex; gap: 10px; align-items: center; }
 `;
 var styleEl = null;
 function injectCSS() {
@@ -1252,27 +1425,188 @@ function LayerControls({
         onChange: (v) => set({ threshold: v })
       }
     ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GradientPicker, { layerId: l.id, gradientId: l.gradientId, onSelect: (id) => set({ gradientId: id }) })
+  ] });
+}
+function GradientPicker({
+  layerId,
+  gradientId,
+  onSelect
+}) {
+  const [editingId, setEditingId] = (0, import_react.useState)(null);
+  const customs = getCustomGradients();
+  const current = resolveGradient(gradientId, customs);
+  const editing = customs.find((g) => g.id === editingId) ?? null;
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__section-title", style: { marginTop: 8 }, children: "Gradient" }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "heatmap-sidebar__gradients", children: GRADIENTS.map((g, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-      "button",
-      {
-        className: `heatmap-sidebar__gradient ${i === l.gradientIndex ? "heatmap-sidebar__gradient--active" : ""}`,
-        onClick: () => set({ gradientIndex: i }),
-        title: g.name,
-        children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-          "div",
-          {
-            className: "heatmap-sidebar__gradient-bar",
-            style: {
-              background: `linear-gradient(to right, ${g.stops.map(
-                (c, si) => `rgb(${c[0]},${c[1]},${c[2]}) ${si / (g.stops.length - 1) * 100}%`
-              ).join(", ")})`
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__gradients", children: [
+      [...BUILTIN_GRADIENTS, ...customs].map((g) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "button",
+        {
+          className: `heatmap-sidebar__gradient ${g.id === current.id ? "heatmap-sidebar__gradient--active" : ""}`,
+          onClick: () => onSelect(g.id),
+          title: g.name,
+          children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "div",
+            {
+              className: "heatmap-sidebar__gradient-bar",
+              style: { background: gradientCss(g.stops) }
             }
+          )
+        },
+        g.id
+      )),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "button",
+        {
+          className: "heatmap-sidebar__gradient-new",
+          onClick: () => setEditingId(addCustomGradient(layerId, current).id),
+          title: "Create an editable copy of the selected gradient",
+          children: "+ New"
+        }
+      )
+    ] }),
+    !isBuiltinGradient(current.id) && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__editor-actions", style: { marginTop: 6 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "button",
+        {
+          className: "heatmap-sidebar__reset",
+          onClick: () => setEditingId(editing?.id === current.id ? null : current.id),
+          children: editing?.id === current.id ? "Done" : "Edit gradient"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "button",
+        {
+          className: "heatmap-sidebar__reset",
+          onClick: () => removeCustomGradient(current.id),
+          children: "Delete"
+        }
+      )
+    ] }),
+    editing && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GradientEditor, { gradient: editing })
+  ] });
+}
+function GradientEditor({ gradient: g }) {
+  const [selectedRaw, setSelected] = (0, import_react.useState)(0);
+  const trackRef = (0, import_react.useRef)(null);
+  const colorInputRef = (0, import_react.useRef)(null);
+  const selected = Math.min(selectedRaw, g.stops.length - 1);
+  const stop = g.stops[selected];
+  const setStops = (stops) => updateCustomGradient(g.id, { stops });
+  const posFromClientX = (clientX) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect?.width) return 0;
+    return (clientX - rect.left) / rect.width;
+  };
+  const startDrag = (index) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    setSelected(index);
+    const el = e.currentTarget;
+    const from = g.stops;
+    const onMove = (ev) => {
+      const next = moveStop(from, index, posFromClientX(ev.clientX));
+      setSelected(next.index);
+      setStops(next.stops);
+    };
+    const onUp = () => {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    };
+    el.setPointerCapture(e.pointerId);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+  };
+  const nudge = (index) => (e) => {
+    const step = e.shiftKey ? 0.05 : 0.01;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const delta = e.key === "ArrowLeft" ? -step : step;
+      const next = moveStop(g.stops, index, g.stops[index].pos + delta);
+      setSelected(next.index);
+      setStops(next.stops);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      setStops(removeStop(g.stops, index));
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      "input",
+      {
+        className: "heatmap-sidebar__editor-name",
+        value: g.name,
+        onChange: (e) => updateCustomGradient(g.id, { name: e.target.value }),
+        "aria-label": "Gradient name"
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__track", ref: trackRef, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "div",
+        {
+          className: "heatmap-sidebar__track-bar",
+          style: { background: gradientCss(g.stops) },
+          title: "Click to add a stop",
+          onClick: (e) => {
+            const next = addStopAt(g.stops, posFromClientX(e.clientX));
+            setSelected(next.index);
+            setStops(next.stops);
           }
-        )
-      },
-      g.name
-    )) })
+        }
+      ),
+      g.stops.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "button",
+        {
+          className: `heatmap-sidebar__handle ${i === selected ? "heatmap-sidebar__handle--selected" : ""}`,
+          style: { left: `${s.pos * 100}%`, background: rgbToHex(s.color) },
+          onPointerDown: startDrag(i),
+          onKeyDown: nudge(i),
+          onDoubleClick: () => colorInputRef.current?.click(),
+          onContextMenu: (e) => {
+            e.preventDefault();
+            setStops(removeStop(g.stops, i));
+          },
+          title: `${Math.round(s.pos * 100)}% \u2014 drag to move, right-click to remove`,
+          "aria-label": `Stop ${i + 1} at ${Math.round(s.pos * 100)}%`
+        },
+        i
+      ))
+    ] }),
+    stop && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__stop-row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "input",
+        {
+          ref: colorInputRef,
+          type: "color",
+          value: rgbToHex(stop.color),
+          onChange: (e) => setStops(setStopColor(g.stops, selected, hexToRgb(e.target.value))),
+          "aria-label": "Stop colour"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "input",
+        {
+          type: "number",
+          min: 0,
+          max: 100,
+          value: Math.round(stop.pos * 100),
+          onChange: (e) => {
+            const next = moveStop(g.stops, selected, Number(e.target.value) / 100);
+            setSelected(next.index);
+            setStops(next.stops);
+          },
+          "aria-label": "Stop position"
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "%" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => setStops(reverseStops(g.stops)), children: "Reverse" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "heatmap-sidebar__hint", children: g.stops.length <= MIN_STOPS ? `Click the bar to add a stop (${MIN_STOPS} minimum).` : "Click the bar to add a stop, right-click a handle to remove it." })
   ] });
 }
 function Slider({

@@ -186,18 +186,17 @@ export function useMeasureInteraction(host: MapHost | null) {
 			endMeasure();
 		};
 
-		div.addEventListener("pointerdown", onDown);
+		const ac = new AbortController();
+		const { signal } = ac;
+		div.addEventListener("pointerdown", onDown, { signal });
 		// On window, so a drag that runs past the map edge keeps tracking.
-		window.addEventListener("pointermove", onMove);
-		window.addEventListener("pointerup", onUp);
-		document.addEventListener("keydown", onKey);
+		window.addEventListener("pointermove", onMove, { signal });
+		window.addEventListener("pointerup", onUp, { signal });
+		document.addEventListener("keydown", onKey, { signal });
 
 		return () => {
 			offClick();
-			div.removeEventListener("pointerdown", onDown);
-			window.removeEventListener("pointermove", onMove);
-			window.removeEventListener("pointerup", onUp);
-			document.removeEventListener("keydown", onKey);
+			ac.abort();
 			dragIndex = null;
 			host.setDraggable(true);
 			host.setCursor(null);

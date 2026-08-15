@@ -5,7 +5,7 @@
 
 import type { MMA } from "@/api";
 import { createLocation } from "../../src/types";
-import type { Location } from "@/bindings.gen";
+import type { Location, SelectionProps } from "@/bindings.gen";
 
 /**
  * Run an async function in the browser with the MMA API injected as `api`.
@@ -66,6 +66,27 @@ export async function createAndOpenMap(name: string): Promise<string> {
 		.waitForExist({ timeout: 10000, timeoutMsg: "map editor never mounted after open" });
 	await browser.pause(300);
 	return id;
+}
+
+/**
+ * Mocha fixture for the standard describe lifecycle: boot, create + open a map before the
+ * block, close + delete it after. Returns a ref whose `id` is filled in by the before hook.
+ *
+ * Usage: `const map = useMap("E2E Tags");` then `map.id` inside tests.
+ * Pass `{ closeLocation: true }` when the block leaves a location open.
+ */
+export function useMap(name: string, opts: { closeLocation?: boolean } = {}) {
+	const ref = { id: "" };
+	before(async () => {
+		await waitForReady();
+		ref.id = await createAndOpenMap(name);
+	});
+	after(async () => {
+		if (opts.closeLocation) await closeLocation();
+		await closeMap();
+		await deleteMap(ref.id);
+	});
+	return ref;
 }
 
 export async function openMap(id: string) {
@@ -133,6 +154,18 @@ export async function addLocs(locs: Location[]): Promise<number[]> {
 	}, locs);
 }
 
+type LocSpec = Partial<Location> & { lat: number; lng: number };
+
+/** Build `n` locations, `fn(i)` supplying each one's fields. */
+export function makeLocs(n: number, fn: (i: number) => LocSpec): Location[] {
+	return Array.from({ length: n }, (_, i) => createLocation(fn(i)));
+}
+
+/** Build `n` locations via `fn(i)` and add them in one batch. Returns the assigned ids. */
+export async function seedLocs(n: number, fn: (i: number) => LocSpec): Promise<number[]> {
+	return addLocs(makeLocs(n, fn));
+}
+
 export async function getLoc(id: number): Promise<Location> {
 	const loc = await withApi(async (api, locId) => api.fetchLocation(locId), id);
 	if (loc == null) throw new Error(`Location ${id} not found`);
@@ -150,6 +183,19 @@ export async function getAllLocs(): Promise<Location[]> {
 
 export async function getLocCount(): Promise<number> {
 	return withApi(async (api) => (await api.cmd.storeGetSummary()).locationCount);
+}
+
+/** Add selections to the live map. */
+export async function select(...props: SelectionProps[]) {
+	await withApi(async (api, p) => api.addSelections(p), props);
+}
+
+/** Add selections and return how many locations they resolve to. */
+export async function selectCount(...props: SelectionProps[]): Promise<number> {
+	return withApi(async (api, p) => {
+		await api.addSelections(p);
+		return api.getMapState().selectedLocationIds.size;
+	}, props);
 }
 
 export async function refreshSelections(): Promise<number[]> {

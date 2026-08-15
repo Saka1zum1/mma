@@ -1,4 +1,5 @@
 import type { SelectionProps } from "@/bindings.gen";
+import { localeFormat } from "@/lib/util/format";
 
 export interface PivotRow {
 	label: string;
@@ -60,6 +61,10 @@ export function pivotCellValue(data: PivotData, row: PivotRow, col: string, mode
 	return v;
 }
 
+const pctFmt = localeFormat<number>(
+	(l) => new Intl.NumberFormat(l, { style: "percent", maximumFractionDigits: 1 }),
+);
+
 export function formatPct(x: number): string {
-	return `${(x * 100).toFixed(1).replace(/\.0$/, "")}%`;
+	return pctFmt.format(x);
 }

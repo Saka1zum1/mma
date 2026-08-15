@@ -1,5 +1,6 @@
 import { useIsMeasuring, useMeasureLength, endMeasure } from "@/lib/sv/measure";
 import { formatDistance, computeScore, useScoreMaxError } from "@/lib/geo/scoring";
+import { t } from "@/lib/i18n";
 
 export function MeasurementBar() {
 	const isMeasuring = useIsMeasuring();
@@ -15,12 +16,12 @@ export function MeasurementBar() {
 		>
 			<div className="map-control measurement-control">
 				<p className="measurement-control__measurements">
-					Distance: {formatDistance(length)}
+					{t("Distance:")} {formatDistance(length)}
 					<br />
-					Score: {computeScore(length, maxError)}
+					{t("Score:")} {computeScore(length, maxError)}
 				</p>
 				<button className="button measurement-control__end" onClick={endMeasure}>
-					End
+					{t("End")}
 				</button>
 			</div>
 		</div>

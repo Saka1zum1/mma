@@ -1,10 +1,10 @@
 export const title = "Filters";
 
-A **Filter** selection queries a field on each location and selects the matches. Build one in the Tools section (filter builder) or edit one from a selection's menu.
+A **Filter** selection queries a field on each location and selects the matches. Build one with **Filter by metadata...** (command palette, or its button in the pinned toolbar, where the form opens inline), or edit an existing one from its selection menu.
 
 ## Fields you can query
 
-- **Built-in fields.** **Created** and **Modified** timestamps, **Tag count**, **Heading**, **Pitch**, and **Zoom**.
+- **Built-in fields.** **Latitude** and **Longitude**, **ID**, **Created** and **Modified** timestamps, **Tag count**, **Heading**, **Pitch**, and **Zoom**.
 - **Metadata fields.** Any field present on the map, such as **countryCode**, **cameraType**, **panoType**, **altitude**, **imageDate**, exact date, timezone, and any custom fields you have added. Custom fields can be typed as text, number, date, month, enum, or array.
 
 ## Operators
@@ -15,7 +15,7 @@ A **Filter** selection queries a field on each location and selects the matches.
 - **has / does not have** presence of a value.
 - **contains / does not contain** for array fields, plus length-based comparisons (length =, length >, length between, etc.).
 
-Enum fields (such as camera type) offer only the equality operators and a value list. Date and month fields use a date picker, including any-year mode for season-style filters. A date pick at midnight means "the whole day" — the filter spans the full calendar day. Use the clear-time button on the picker to reset to day-grain.
+Enum fields (such as camera type) offer only the equality operators and a value list. Date and month fields use a date picker, including any-year mode for season-style filters. A date pick at midnight means "the whole day" - the filter spans the full calendar day. Use the clear-time button on the picker to reset to day-grain.
 
 ## Timezone
 

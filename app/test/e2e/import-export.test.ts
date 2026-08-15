@@ -1,14 +1,4 @@
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	getLoc,
-	createLocation,
-	createTag,
-	withApi,
-} from "./helpers";
+import { addLocs, getLoc, createLocation, createTag, withApi, useMap } from "./helpers";
 
 interface ExportedCoord {
 	lat: number;
@@ -21,18 +11,8 @@ interface ExportedCoord {
 }
 
 describe("JSON import/export round-trip", () => {
-	let mapId: string;
+	useMap("E2E Import Export");
 	let locIds: number[];
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Export");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("export JSON and re-import produces same locations", async () => {
 		const locs = [
@@ -191,17 +171,7 @@ describe("JSON import/export round-trip", () => {
 });
 
 describe("CSV import/export", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E CSV");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E CSV");
 
 	it("CSV export produces valid format", async () => {
 		await addLocs([
@@ -260,23 +230,14 @@ describe("CSV import/export", () => {
 });
 
 describe("GeoJSON export", () => {
-	let mapId: string;
+	useMap("E2E GeoJSON");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E GeoJSON");
-
 		await addLocs([
 			createLocation({ lat: 40.7, lng: -74.0, heading: 90, panoId: "GJ1" }),
 			createLocation({ lat: 51.5, lng: -0.1, heading: 0, panoId: null }),
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("GeoJSON export produces valid FeatureCollection", async () => {
 		const result = await withApi(async (api) => {
 			const path = await api.cmd.storeExportGeojson(null, JSON.stringify(api.getMapState().tags));
@@ -299,17 +260,7 @@ describe("GeoJSON export", () => {
 });
 
 describe("JSON import edge cases", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Edge");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Import Edge");
 
 	it("import with extra fields preserves them via Rust import", async () => {
 		const result = await withApi(async (api) => {

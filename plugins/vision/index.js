@@ -42,38 +42,6 @@ var require_jsx_runtime = __commonJS({
 var import_react = __toESM(require_react());
 
 // vision/src/sidecar.ts
-var IS_WIN = navigator.userAgent.includes("Windows");
-var SEP = IS_WIN ? "\\" : "/";
-var _pluginDir = null;
-async function pluginDir() {
-  if (!_pluginDir) {
-    const appData = await MMA.cmd.getAppDataDir();
-    _pluginDir = `${appData}${SEP}plugins${SEP}vision`;
-  }
-  return _pluginDir;
-}
-async function modelDir() {
-  return `${await pluginDir()}${SEP}sidecar${SEP}models`;
-}
-async function clipCacheDir() {
-  return `${await pluginDir()}${SEP}clip-cache`;
-}
-var tempCounter = 0;
-async function writeInputFile(data) {
-  const name = `mma_vision_${Date.now()}_${tempCounter++}.json`;
-  return MMA.cmd.writeTempFile(name, JSON.stringify(data));
-}
-async function spawnCommand(args) {
-  const run = await MMA.sidecar.spawn("vision", "mma-vision", args);
-  run.onStderr((line) => console.error("[vision]", line));
-  const proc = {
-    kill: () => run.kill(),
-    onLine: (cb) => run.onLine(cb),
-    onStderr: (cb) => run.onStderr(cb)
-  };
-  const done = new Promise((resolve) => run.onExit(() => resolve()));
-  return { process: proc, done };
-}
 async function resolveWorldSizes(panoIds, onProgress) {
   const BATCH = 200;
   const entries = [];
@@ -81,8 +49,7 @@ async function resolveWorldSizes(panoIds, onProgress) {
     const batch = panoIds.slice(i, i + BATCH);
     const metas = await MMA.fetchSvMetadata(batch);
     for (let j = 0; j < batch.length; j++) {
-      const m = metas[j];
-      const ws = m?.tiles?.worldSize;
+      const ws = metas[j]?.tiles?.worldSize;
       entries.push({
         panoId: batch[j],
         worldWidth: ws?.width ?? 6656,
@@ -94,132 +61,46 @@ async function resolveWorldSizes(panoIds, onProgress) {
   return entries;
 }
 async function listCached() {
-  const cd = await clipCacheDir();
-  const run = await MMA.sidecar.spawn("vision", "mma-vision", ["list-cached", "--cache-dir", cd]);
-  let out = "";
-  run.onLine((line) => {
-    out += line;
-  });
-  await new Promise((resolve) => run.onExit(() => resolve()));
-  try {
-    return new Set(JSON.parse(out.trim()));
-  } catch {
-    return /* @__PURE__ */ new Set();
-  }
+  const ids = await MMA.sidecar.request("vision", "list-cached");
+  return new Set(ids ?? []);
 }
-async function spawnEmbed(panoIds, onMetaProgress) {
-  onMetaProgress?.(`Checking cache...`);
+async function embed(panoIds, opts = {}) {
+  opts.onStatus?.("Checking cache...");
   const cached = await listCached();
   const uncached = panoIds.filter((id) => !cached.has(id));
   if (uncached.length === 0) {
-    onMetaProgress?.(`All ${panoIds.length} panos cached`);
-    const proc = {
-      kill() {
-      },
-      onLine() {
-      },
-      onStderr() {
-      }
-    };
-    return { process: proc, done: Promise.resolve() };
+    opts.onStatus?.(`All ${panoIds.length} panos cached`);
+    return;
   }
-  onMetaProgress?.(`Fetching metadata for ${uncached.length} uncached panos...`);
+  opts.onStatus?.(`Fetching metadata for ${uncached.length} uncached panos...`);
   const panos = await resolveWorldSizes(uncached, (done, total) => {
-    onMetaProgress?.(`Metadata: ${done}/${total}`);
+    opts.onStatus?.(`Metadata: ${done}/${total}`);
   });
-  const inputPath = await writeInputFile({ panos });
-  const md = await modelDir();
-  const cd = await clipCacheDir();
-  return spawnCommand(["embed", "--input", inputPath, "--model-dir", md, "--cache-dir", cd]);
-}
-var serve = null;
-var serveUnsupported = false;
-async function startServe() {
-  try {
-    const md = await modelDir();
-    const cd = await clipCacheDir();
-    const run = await MMA.sidecar.spawn("vision", "mma-vision", [
-      "serve",
-      "--model-dir",
-      md,
-      "--cache-dir",
-      cd
-    ]);
-    run.onStderr((line) => console.error("[vision serve]", line));
-    const port = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("serve start timeout")), 15e3);
-      run.onLine((line) => {
-        try {
-          const p = JSON.parse(line)?.port;
-          if (typeof p === "number") {
-            clearTimeout(timer);
-            resolve(p);
-          }
-        } catch {
-        }
-      });
-      run.onExit(() => {
-        clearTimeout(timer);
-        reject(new Error("serve exited on startup"));
-      });
-    });
-    run.onExit(() => {
-      serve = null;
-    });
-    return { port, kill: () => run.kill() };
-  } catch (e) {
-    console.error("[vision] serve unavailable, using one-shot search:", e);
-    serveUnsupported = true;
-    return null;
-  }
-}
-async function serveSearch(path, payload) {
-  if (serveUnsupported) return null;
-  const handle = await (serve ??= startServe());
-  if (!handle) return null;
-  try {
-    const res = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error(`serve responded ${res.status}`);
-    return await res.json();
-  } catch (e) {
-    console.error("[vision] serve request failed:", e);
-    serve = null;
-    return null;
-  }
-}
-function stopServe() {
-  void serve?.then((h) => h?.kill());
-  serve = null;
-}
-function resolvedRun(lines) {
-  const proc = {
-    kill() {
+  await MMA.sidecar.request("vision", "embed", { panos }, {
+    signal: opts.signal,
+    onLog: (line) => {
+      if (line.startsWith("[vision]")) opts.onStatus?.(line);
     },
-    onLine(cb) {
-      for (const line of lines) cb(line);
-    },
-    onStderr() {
-    }
-  };
-  return { process: proc, done: Promise.resolve() };
+    onLine: (s) => opts.onUnit?.(s.status === "cache_hit" ? s.count ?? 1 : 1)
+  });
 }
-async function spawnTextSearch(query, k, threshold) {
-  const served = await serveSearch("/search-text", { query, k, threshold });
-  if (served) return resolvedRun([JSON.stringify(served)]);
-  const inputPath = await writeInputFile({ query, k, threshold });
-  const md = await modelDir();
-  const cd = await clipCacheDir();
-  return spawnCommand(["search-text", "--input", inputPath, "--model-dir", md, "--cache-dir", cd]);
+async function searchText(query, k, threshold, signal) {
+  const res = await MMA.sidecar.request(
+    "vision",
+    "search-text",
+    { query, k, threshold },
+    { signal }
+  );
+  return res?.results ?? [];
 }
-async function spawnImageSearch(panoId, k, threshold) {
-  const served = await serveSearch("/search-image", { panoId, k, threshold });
-  if (served) return resolvedRun([JSON.stringify(served)]);
-  const inputPath = await writeInputFile({ panoId, k, threshold });
-  const cd = await clipCacheDir();
-  return spawnCommand(["search-image", "--input", inputPath, "--cache-dir", cd]);
+async function searchImage(panoId, k, threshold, signal) {
+  const res = await MMA.sidecar.request(
+    "vision",
+    "search-image",
+    { panoId, k, threshold },
+    { signal }
+  );
+  return res?.results ?? [];
 }
 
 // vision/src/VisionSidebar.tsx
@@ -243,18 +124,18 @@ function VisionSidebar({ onClose }) {
   const [progress, setProgress] = (0, import_react.useState)("");
   const [error, setError] = (0, import_react.useState)("");
   const [resultCount, setResultCount] = (0, import_react.useState)(null);
-  const cancelledRef = (0, import_react.useRef)(false);
-  const killRef = (0, import_react.useRef)(null);
+  const abortRef = (0, import_react.useRef)(null);
   const run = (0, import_react.useCallback)(async () => {
     const q = query.trim();
     if (!q) return;
     setRunning(true);
     setError("");
     setResultCount(null);
-    cancelledRef.current = false;
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       const locs = await MMA.fetchAllLocations();
-      if (cancelledRef.current) return;
+      if (abort.signal.aborted) return;
       const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId);
       if (panoIds.length === 0) {
         setError("No locations with pano IDs");
@@ -263,41 +144,20 @@ function VisionSidebar({ onClose }) {
       setProgress(`Embedding ${panoIds.length} panos (cached skip)...`);
       let embedDone = 0;
       const embedStart = Date.now();
-      const { process: embedProc, done: embedWhen } = await spawnEmbed(panoIds, setProgress);
-      killRef.current = () => embedProc.kill();
-      embedProc.onStderr((line) => {
-        if (line.startsWith("[vision]")) setProgress(line);
-      });
-      embedProc.onLine((line) => {
-        try {
-          const r = JSON.parse(line);
-          if (r.status === "cache_hit") {
-            embedDone += r.count ?? 1;
-          } else {
-            embedDone++;
-          }
+      await embed(panoIds, {
+        signal: abort.signal,
+        onStatus: setProgress,
+        onUnit: (count) => {
+          embedDone += count;
           const elapsed = (Date.now() - embedStart) / 1e3;
           const rate = elapsed > 0.5 ? (embedDone / elapsed).toFixed(1) : "--";
           setProgress(`Embedding: ${embedDone}/${panoIds.length} (${rate} panos/s)`);
-        } catch {
         }
       });
-      await embedWhen;
-      if (cancelledRef.current) return;
+      if (abort.signal.aborted) return;
       setProgress(`Searching for "${q}"...`);
-      const { process: searchProc, done: searchDone } = await spawnTextSearch(q, null, threshold);
-      killRef.current = () => searchProc.kill();
-      let results = [];
-      searchProc.onLine((line) => {
-        try {
-          const r = JSON.parse(line);
-          if (r.results) results = r.results;
-        } catch {
-        }
-      });
-      await searchDone;
-      if (cancelledRef.current) return;
-      killRef.current = null;
+      const results = await searchText(q, null, threshold, abort.signal);
+      if (abort.signal.aborted) return;
       const matchedIds = results.map((r) => panoIdToLocId(locs, r.panoId)).filter((id) => id != null);
       if (matchedIds.length > 0) {
         await MMA.addSelections([{ type: "Locations", locations: matchedIds, name: `Vision: "${q}"` }]);
@@ -305,18 +165,19 @@ function VisionSidebar({ onClose }) {
       setResultCount(matchedIds.length);
       setProgress("");
     } catch (e) {
-      if (!cancelledRef.current) setError(String(e));
+      if (!abort.signal.aborted) setError(String(e));
     } finally {
+      abortRef.current = null;
       setRunning(false);
     }
   }, [query, threshold]);
   const cancel = (0, import_react.useCallback)(() => {
-    cancelledRef.current = true;
-    killRef.current?.();
-    killRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
     setRunning(false);
     setProgress("");
   }, []);
+  (0, import_react.useEffect)(() => () => abortRef.current?.abort(), []);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Sidebar, { title: "Vision", onBack: onClose, children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)("style", { children: CSS }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "vision-sidebar__body", children: [
@@ -370,18 +231,8 @@ function FindSimilarButton() {
     try {
       const locs = await MMA.fetchAllLocations();
       const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId);
-      const { done: embedDone } = await spawnEmbed(panoIds);
-      await embedDone;
-      const { process: proc, done: searchDone } = await spawnImageSearch(active.panoId, null, SIMILARITY_THRESHOLD);
-      let results = [];
-      proc.onLine((line) => {
-        try {
-          const r = JSON.parse(line);
-          if (r.results) results = r.results;
-        } catch {
-        }
-      });
-      await searchDone;
+      await embed(panoIds);
+      const results = await searchImage(active.panoId, null, SIMILARITY_THRESHOLD);
       const matchedIds = results.map((r) => locs.find((l) => l.panoId === r.panoId)?.id).filter((id) => id != null);
       if (matchedIds.length > 0) {
         await MMA.addSelections([{
@@ -414,7 +265,6 @@ function FindSimilarButton() {
 // vision/src/index.tsx
 MMA.registerPlugin({
   activate() {
-    return () => stopServe();
   },
   sidebar: VisionSidebar,
   locationPanel: FindSimilarButton,

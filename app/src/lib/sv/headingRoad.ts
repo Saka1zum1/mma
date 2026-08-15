@@ -1,6 +1,7 @@
 import type { Location } from "@/bindings.gen";
 import { normalizeHeading } from "@/lib/sv/lookup";
 import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
+import { msg } from "@/lib/i18n";
 
 export type RoadDirection = "forwards" | "backwards";
 
@@ -9,7 +10,7 @@ export type RoadDirection = "forwards" | "backwards";
  *  "forwards" faces it, "backwards" faces the opposite. */
 export const headingRoadResolver: SvResolver = {
 	id: "headingRoad",
-	label: "Pan heading along road",
+	label: msg("Pan heading along road"),
 	pending: () => true,
 	needsPanoResolve: (loc) => !loc.panoId,
 	needsMetadata: true,

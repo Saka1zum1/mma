@@ -1,8 +1,9 @@
-import type { Selection, SelectionProps, PolygonGeometry, FilterOp } from "@/bindings.gen";
+import type { Selection, SelectionProps } from "@/bindings.gen";
 import { buildSelection } from "./selections";
 import { getSettings, setSetting } from "./settings";
 import { addSelections, getTag, getVisibleTags } from "./useMapStore";
 import { cmd } from "@/lib/commands";
+import { t } from "@/lib/i18n";
 
 export interface SavedSelectionItem {
 	props: SavedSelectionProps;
@@ -16,33 +17,36 @@ export interface SavedSelection {
 	createdAt: number;
 }
 
+/** Selection types bound to the open map (raw location ids, review sessions): a rule
+ *  built from them would be a frozen snapshot, so they are never saved. Everything else
+ *  is saveable as-is. */
+export const MAP_LOCAL_TYPES = ["Locations", "Manual", "ValidationState", "Reviewed"] as const;
+export type MapLocalType = (typeof MAP_LOCAL_TYPES)[number];
+
+type MapLocalProps = Extract<SelectionProps, { type: MapLocalType }>;
+type PortableProps = Exclude<SelectionProps, MapLocalProps>;
+
 export type SavedSelectionProps =
-	| { type: "Everything" }
-	| { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean }
+	| Exclude<PortableProps, { type: "Tag" | "Intersection" | "Union" | "Invert" }>
 	| { type: "TagName"; tagName: string }
-	| { type: "Untagged" }
-	| { type: "Unpanned" }
-	| { type: "PanoIds" }
-	| { type: "NotPanoIds" }
-	| { type: "Uncommitted" }
-	| { type: "Duplicates"; distance: number }
-	| { type: "Filter"; field: string; op: FilterOp; value: unknown; value2?: unknown }
-	| { type: "TopK"; field: string; k: number; ascending: boolean }
 	| { type: "Intersection"; selections: SavedSelectionProps[] }
 	| { type: "Union"; selections: SavedSelectionProps[] }
 	| { type: "Invert"; selections: SavedSelectionProps[] };
+
+const MAP_LOCAL_SET: ReadonlySet<string> = new Set(MAP_LOCAL_TYPES);
+
+function isMapLocal(props: SelectionProps): props is MapLocalProps {
+	return MAP_LOCAL_SET.has(props.type);
+}
 
 export function selectionToSaved(sel: Selection): SavedSelectionProps | null {
 	return propsToSaved(sel.props);
 }
 
 function propsToSaved(props: SelectionProps): SavedSelectionProps | null {
-	switch (props.type) {
-		case "Locations":
-		case "Manual":
-		case "ValidationState":
-			return null;
+	if (isMapLocal(props)) return null;
 
+	switch (props.type) {
 		case "Tag": {
 			const tag = getTag(props.tagId);
 			if (!tag) return null;
@@ -60,7 +64,7 @@ function propsToSaved(props: SelectionProps): SavedSelectionProps | null {
 		}
 
 		default:
-			return props as SavedSelectionProps;
+			return props;
 	}
 }
 
@@ -95,7 +99,7 @@ export function savedToSelectionProps(saved: SavedSelectionProps): SelectionProp
 		}
 
 		default:
-			return saved as SelectionProps;
+			return saved;
 	}
 }
 
@@ -121,34 +125,45 @@ export async function resolveSavedSelectionIds(id: string): Promise<Set<number>>
 export function describeRule(props: SavedSelectionProps): string {
 	switch (props.type) {
 		case "Everything":
-			return "All";
+			return t("All");
 		case "Polygon":
-			return props.polygon.properties?.name || "Polygon";
+			return props.polygon.properties?.name || t("Polygon");
 		case "TagName":
-			return `Tag: ${props.tagName}`;
+			return t("Tag: {name}", { name: props.tagName });
 		case "Untagged":
-			return "Untagged";
+			return t("Untagged");
 		case "Unpanned":
-			return "Unpanned";
+			return t("Unpanned");
 		case "PanoIds":
-			return "Has Pano ID";
+			return t("Has Pano ID");
 		case "NotPanoIds":
-			return "No Pano ID";
+			return t("No Pano ID");
 		case "Uncommitted":
-			return "Uncommitted";
+			return t("Uncommitted");
 		case "Duplicates":
-			return `Dupes (${props.distance}m)`;
+			return t("Dupes ({distance}m)", { distance: props.distance });
 		case "Filter":
-			return `${props.field} ${props.op} ${String(props.value)}`;
+			return t("{field} {op} {value}", {
+				field: props.field,
+				op: props.op,
+				value: String(props.value),
+			});
 		case "TopK":
-			return `${props.ascending ? "Bottom" : "Top"} ${props.k} by ${props.field}`;
+			return props.ascending
+				? t("Bottom {k} by {field}", { k: props.k, field: props.field })
+				: t("Top {k} by {field}", { k: props.k, field: props.field });
+		// Boolean composites read as a formal expression, so only the operator tokens translate.
 		case "Intersection":
-			return props.selections.map(describeRule).join(" AND ");
+			return props.selections.map(describeRule).join(` ${t("AND")} `);
 		case "Union":
-			return props.selections.map(describeRule).join(" OR ");
+			return props.selections.map(describeRule).join(` ${t("OR")} `);
 		case "Invert":
-			return `NOT (${props.selections.map(describeRule).join(", ")})`;
+			return t("NOT ({selections})", {
+				selections: props.selections.map(describeRule).join(", "),
+			});
 	}
+	const unhandled: never = props;
+	return unhandled;
 }
 
 // CRUD

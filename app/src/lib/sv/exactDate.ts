@@ -1,3 +1,5 @@
+import { ymParse } from "@/lib/util/date";
+
 const RPC_URL =
 	"https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/SingleImageSearch";
 
@@ -53,7 +55,9 @@ export async function resolveExactTimestamp(
 	radius = 50,
 	accuracy = 1,
 ): Promise<number> {
-	const [year, month] = yearMonth.split("-").map(Number);
+	const ym = ymParse(yearMonth);
+	if (!ym) throw new Error(`Bad year-month: ${yearMonth}`);
+	const { y: year, m: month } = ym;
 
 	const startDate = new Date(Date.UTC(year, month - 1, 1));
 	startDate.setUTCDate(startDate.getUTCDate() - 1);

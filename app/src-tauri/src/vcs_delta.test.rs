@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_util::TempDir;
 use std::collections::BTreeMap;
 
 fn loc(id: u32, lat: f64, lng: f64) -> Location {
@@ -6,16 +7,9 @@ fn loc(id: u32, lat: f64, lng: f64) -> Location {
         id,
         lat,
         lng,
-        heading: 0.0,
-        pitch: 0.0,
         zoom: 1.0,
-        pano_id: None,
-        provider: None,
-        flags: crate::types::LocationFlags::empty(),
-        tags: vec![],
-        extra: None,
         created_at: crate::util::iso_to_unix("2024-01-01T00:00:00Z").unwrap() as u32,
-        modified_at: None,
+        ..Default::default()
     }
 }
 
@@ -130,9 +124,7 @@ fn deltas_round_trip_through_disk_and_replay() {
         (vec![loc(4, 70.0, 80.0)], vec![]),
     ];
 
-    let dir = std::env::temp_dir().join("mma_test_vcs_delta_disk");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TempDir::new("mma_test_vcs_delta_disk");
 
     for (i, (created, removed)) in commits.iter().enumerate() {
         let batch = arrow_bridge::delta_to_batch(created, removed);
@@ -154,8 +146,6 @@ fn deltas_round_trip_through_disk_and_replay() {
     let locs: Vec<Location> = state.into_values().collect();
     let back = arrow_bridge::batch_to_locations(&arrow_bridge::locations_to_batch(&locs));
     assert_eq!(back.iter().map(|l| l.id).collect::<Vec<_>>(), vec![1, 3, 4]);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // -----------------------------------------------------------------------
@@ -283,7 +273,6 @@ fn arb_location_body() -> impl Strategy<Value = Location> {
                     pitch,
                     zoom,
                     pano_id,
-                    provider: None,
                     flags,
                     tags,
                     extra,

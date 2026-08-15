@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from "vitest";
-import { parseHotkey, matchesKey, buildComboString } from "@/lib/hooks/useHotkey";
+import {
+	parseHotkey,
+	matchesKey,
+	buildComboString,
+	firesInEditable,
+	blockBrowserAccelerators,
+} from "@/lib/hooks/useHotkey";
 import {
 	getAllBindings,
 	getAltSlowConflict,
@@ -262,5 +268,56 @@ describe("reassignBinding", () => {
 		expect(getBinding("returnToSpawn")).toBe("");
 		expect(getBinding("pointNorth")).toBe("");
 		expect(cleared.sort()).toEqual(["pointNorth", "returnToSpawn"]);
+	});
+});
+
+describe("firesInEditable", () => {
+	const pk = (combo: string) => parseHotkey(combo)[0][0];
+
+	it("allows function keys", () => {
+		expect(firesInEditable(pk("F5"))).toBe(true);
+		expect(firesInEditable(pk("f12"))).toBe(true);
+	});
+
+	it("leaves the field every combo the text editing layer owns", () => {
+		for (const combo of [
+			"Mod+a",
+			"Mod+c",
+			"Mod+v",
+			"Mod+x",
+			"Mod+z",
+			"Mod+Shift+z",
+			"Mod+ArrowLeft",
+			"Ctrl+e",
+			"Alt+Backspace",
+			"g",
+			"5",
+			"space",
+			"enter",
+			"escape",
+			"tab",
+			"ArrowLeft",
+			"Shift+g",
+		]) {
+			expect(firesInEditable(pk(combo))).toBe(false);
+		}
+	});
+});
+
+describe("blockBrowserAccelerators", () => {
+	function press(init: KeyboardEventInit): KeyboardEvent {
+		const e = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+		window.dispatchEvent(e);
+		return e;
+	}
+
+	it("suppresses reload and print when no binding claimed them", () => {
+		blockBrowserAccelerators();
+
+		expect(press({ key: "F5" }).defaultPrevented).toBe(true);
+		expect(press({ key: "r", ctrlKey: true }).defaultPrevented).toBe(true);
+		expect(press({ key: "R", ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+		expect(press({ key: "p", ctrlKey: true }).defaultPrevented).toBe(true);
+		expect(press({ key: "j" }).defaultPrevented).toBe(false);
 	});
 });

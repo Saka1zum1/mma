@@ -41,6 +41,37 @@ function monthToken(tok: string): number | null {
 
 const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
 
+export function ymParse(s: string): { y: number; m: number } | null {
+	const m = /^(\d{4})-(\d{2})$/.exec(s);
+	if (!m) return null;
+	const mo = Number(m[2]);
+	return mo >= 1 && mo <= 12 ? { y: Number(m[1]), m: mo } : null;
+}
+
+export function ymFormat(y: number, m: number): string {
+	return `${String(y).padStart(4, "0")}-${pad2(m)}`;
+}
+
+export function ymFromDate(d: Date): string {
+	return ymFormat(d.getFullYear(), d.getMonth() + 1);
+}
+
+/** First of the month, local frame. */
+export function ymToDate(s: string): Date | null {
+	const p = ymParse(s);
+	return p ? new Date(p.y, p.m - 1) : null;
+}
+
+/** Comparable month ordinal (`y*12 + m-1`). */
+export function ymOrdinal(s: string): number | null {
+	const p = ymParse(s);
+	return p ? p.y * 12 + (p.m - 1) : null;
+}
+
+export function ymFromOrdinal(i: number): string {
+	return ymFormat(Math.floor(i / 12), (i % 12) + 1);
+}
+
 export interface TypedDateOpts {
 	mode: "date" | "month";
 	anyYear?: boolean;

@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
+import { errText } from "@/lib/util/util";
 
 /** A call routed in from the local REST transport (see src-tauri/remote_api.rs). */
 interface RemoteCall {
@@ -46,8 +47,8 @@ export function initRemoteHost(): void {
 			const result = await executeMmaPath(path, args ?? []);
 			await cmd.remoteApiRespond(id, true, toJson(result));
 		} catch (e) {
-			log.warn(`[remote-api] ${path} failed: ${e instanceof Error ? e.message : e}`);
-			const msg = e instanceof Error ? e.message : String(e);
+			const msg = errText(e);
+			log.warn(`[remote-api] ${path} failed: ${msg}`);
 			await cmd.remoteApiRespond(id, false, JSON.stringify(msg));
 		}
 	});

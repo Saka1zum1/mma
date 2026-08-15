@@ -1,5 +1,6 @@
 use super::*;
 use crate::arrow_bridge;
+use crate::test_util::TempDir;
 use crate::types::Location;
 use crate::util::sha256_hex;
 
@@ -12,7 +13,6 @@ fn sample_loc() -> Location {
         pitch: 5.0,
         zoom: 1.5,
         pano_id: Some("CAoSLEF".into()),
-        provider: None,
         flags: crate::types::LocationFlags::LOAD_AS_PANO_ID,
         tags: vec![1, 2, 3],
         extra: Some(serde_json::from_str(r#"{"country":"FR"}"#).unwrap()),
@@ -47,18 +47,7 @@ fn timestamps_serialize_as_numbers_not_iso() {
 fn location_data_null_optionals() {
     let loc = Location {
         id: 1,
-        lat: 0.0,
-        lng: 0.0,
-        heading: 0.0,
-        pitch: 0.0,
-        zoom: 0.0,
-        pano_id: None,
-        provider: None,
-        flags: crate::types::LocationFlags::empty(),
-        tags: vec![],
-        extra: None,
-        created_at: 0,
-        modified_at: None,
+        ..Default::default()
     };
     let json = serde_json::to_string(&loc).unwrap();
     assert!(json.contains(r#""extra":null"#));
@@ -69,17 +58,9 @@ fn location_data_null_optionals() {
 
 #[test]
 fn location_data_id_defaults_to_zero() {
-    let json = r#"{"id":0,"lat":0,"lng":0,"heading":0,"pitch":0,"zoom":0,"panoId":null,"provider":null,"flags":0,"tags":[],"extra":null,"createdAt":0,"modifiedAt":null}"#;
-    let loc: Location = serde_json::from_str(json).unwrap();
-    assert_eq!(loc.id, 0);
-}
-
-#[test]
-fn location_missing_provider_defaults_to_google() {
-    // Pre-provider GeoGuessr / remote export JSON has no provider key.
     let json = r#"{"id":0,"lat":0,"lng":0,"heading":0,"pitch":0,"zoom":0,"panoId":null,"flags":0,"tags":[],"extra":null,"createdAt":0,"modifiedAt":null}"#;
     let loc: Location = serde_json::from_str(json).unwrap();
-    assert_eq!(loc.provider.as_deref(), Some("google"));
+    assert_eq!(loc.id, 0);
 }
 
 // -----------------------------------------------------------------------
@@ -167,11 +148,8 @@ fn parse_data_location_trims_and_rejects_empty() {
 
 #[test]
 fn read_data_location_override_round_trip() {
-    let cfg = std::env::temp_dir().join("mma_test_dataloc_cfg");
-    let target = std::env::temp_dir().join("mma_test_dataloc_target");
-    let _ = std::fs::remove_dir_all(&cfg);
-    let _ = std::fs::remove_dir_all(&target);
-    std::fs::create_dir_all(&cfg).unwrap();
+    let cfg = TempDir::new("mma_test_dataloc_cfg");
+    let target = TempDir::slot("mma_test_dataloc_target");
 
     // Absent pointer -> no override.
     assert_eq!(read_data_location_override(&cfg), None);
@@ -182,15 +160,15 @@ fn read_data_location_override_round_trip() {
         target.to_string_lossy().as_bytes(),
     )
     .unwrap();
-    assert_eq!(read_data_location_override(&cfg), Some(target.clone()));
+    assert_eq!(
+        read_data_location_override(&cfg),
+        Some(target.to_path_buf())
+    );
     assert!(target.exists());
 
     // Empty pointer -> no override.
     std::fs::write(cfg.join(DATA_LOCATION_FILE), b"").unwrap();
     assert_eq!(read_data_location_override(&cfg), None);
-
-    let _ = std::fs::remove_dir_all(&cfg);
-    let _ = std::fs::remove_dir_all(&target);
 }
 
 // -----------------------------------------------------------------------
@@ -204,16 +182,11 @@ fn make_test_batch(ids: &[u32]) -> arrow_array::RecordBatch {
             id,
             lat: id as f64,
             lng: id as f64 * 2.0,
-            heading: 0.0,
-            pitch: 0.0,
             zoom: 1.0,
             pano_id: Some(format!("pano_{id}")),
-            provider: None,
-            flags: crate::types::LocationFlags::empty(),
             tags: vec![1],
-            extra: None,
             created_at: crate::util::iso_to_unix("2024-01-01T00:00:00Z").unwrap() as u32,
-            modified_at: None,
+            ..Default::default()
         })
         .collect();
     arrow_bridge::locations_to_batch(&locs)
@@ -222,8 +195,7 @@ fn make_test_batch(ids: &[u32]) -> arrow_array::RecordBatch {
 #[test]
 fn mmap_round_trip_preserves_data() {
     let batch = make_test_batch(&[1, 2, 3]);
-    let dir = std::env::temp_dir().join("mma_test_mmap");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_mmap");
     let path = dir.join("round_trip.arrow");
 
     write_arrow_ipc(&path, &batch).unwrap();
@@ -246,29 +218,23 @@ fn mmap_round_trip_preserves_data() {
     assert_eq!(lats.value(0), 1.0);
     assert_eq!(lats.value(1), 2.0);
     assert_eq!(lats.value(2), 3.0);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn mmap_empty_file() {
     let batch = arrow_bridge::locations_to_batch(&[]);
-    let dir = std::env::temp_dir().join("mma_test_mmap_empty");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_mmap_empty");
     let path = dir.join("empty.arrow");
 
     write_arrow_ipc(&path, &batch).unwrap();
     let (loaded, _handle) = read_arrow_ipc_mmap(&path).unwrap();
     assert_eq!(loaded.num_rows(), 0);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn mmap_matches_heap_read() {
     let batch = make_test_batch(&[10, 20, 30, 40, 50]);
-    let dir = std::env::temp_dir().join("mma_test_mmap_cmp");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_mmap_cmp");
     let path = dir.join("compare.arrow");
 
     write_arrow_ipc(&path, &batch).unwrap();
@@ -283,14 +249,11 @@ fn mmap_matches_heap_read() {
             "column {col} mismatch between heap and mmap read"
         );
     }
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn mmap_handle_drop_allows_overwrite() {
-    let dir = std::env::temp_dir().join("mma_test_mmap_drop");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_mmap_drop");
     let path = dir.join("overwrite.arrow");
 
     let batch1 = make_test_batch(&[1, 2]);
@@ -305,8 +268,6 @@ fn mmap_handle_drop_allows_overwrite() {
     write_arrow_ipc(&path, &batch2).unwrap();
     let (loaded2, _handle2) = read_arrow_ipc_mmap(&path).unwrap();
     assert_eq!(loaded2.num_rows(), 3);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -314,38 +275,23 @@ fn mmap_preserves_nullable_fields() {
     let locs = vec![
         Location {
             id: 1,
-            lat: 0.0,
-            lng: 0.0,
-            heading: 0.0,
-            pitch: 0.0,
-            zoom: 0.0,
-            pano_id: None,
-            provider: None,
-            flags: crate::types::LocationFlags::empty(),
-            tags: vec![],
-            extra: None,
             created_at: crate::util::iso_to_unix("2024-01-01T00:00:00Z").unwrap() as u32,
-            modified_at: None,
+            ..Default::default()
         },
         Location {
             id: 2,
             lat: 1.0,
             lng: 1.0,
-            heading: 0.0,
-            pitch: 0.0,
-            zoom: 0.0,
             pano_id: Some("abc".into()),
-            provider: None,
-            flags: crate::types::LocationFlags::empty(),
             tags: vec![1, 2],
             extra: Some(serde_json::from_str(r#"{"key":"val"}"#).unwrap()),
             created_at: crate::util::iso_to_unix("2024-01-01T00:00:00Z").unwrap() as u32,
             modified_at: Some(crate::util::iso_to_unix("2024-06-01T00:00:00Z").unwrap() as u32),
+            ..Default::default()
         },
     ];
     let batch = arrow_bridge::locations_to_batch(&locs);
-    let dir = std::env::temp_dir().join("mma_test_mmap_null");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_mmap_null");
     let path = dir.join("nullable.arrow");
 
     write_arrow_ipc(&path, &batch).unwrap();
@@ -360,15 +306,13 @@ fn mmap_preserves_nullable_fields() {
         .unwrap();
     assert_eq!(pano_col.value(1), "abc");
 
-    assert!(loaded.column(10).is_null(0));
+    assert!(loaded.column(9).is_null(0));
     let extra_col = loaded
-        .column(10)
+        .column(9)
         .as_any()
         .downcast_ref::<arrow_array::StringArray>()
         .unwrap();
     assert!(extra_col.value(1).contains("key"));
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // -----------------------------------------------------------------------
@@ -396,8 +340,7 @@ fn truncation_lengths(total_len: usize) -> Vec<usize> {
 #[test]
 fn truncation_sweep_heap_reader_never_panics() {
     let batch = make_test_batch(&[1, 2, 3, 4, 5]);
-    let dir = std::env::temp_dir().join("mma_test_crash_trunc_heap");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_trunc_heap");
     let valid_path = dir.join("valid.arrow");
     write_arrow_ipc(&valid_path, &batch).unwrap();
     let full_bytes = std::fs::read(&valid_path).unwrap();
@@ -418,15 +361,12 @@ fn truncation_sweep_heap_reader_never_panics() {
             full_bytes.len()
         );
     }
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn truncation_sweep_mmap_reader_never_panics() {
     let batch = make_test_batch(&[1, 2, 3, 4, 5]);
-    let dir = std::env::temp_dir().join("mma_test_crash_trunc_mmap");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_trunc_mmap");
     let valid_path = dir.join("valid.arrow");
     write_arrow_ipc(&valid_path, &batch).unwrap();
     let full_bytes = std::fs::read(&valid_path).unwrap();
@@ -452,8 +392,6 @@ fn truncation_sweep_mmap_reader_never_panics() {
             full_bytes.len()
         );
     }
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // Files under 10 bytes short-circuit to Ok(empty batch) in read_arrow_ipc_mmap
@@ -462,8 +400,7 @@ fn truncation_sweep_mmap_reader_never_panics() {
 // corruption. See SUSPECTED BUGS in the delivering task's report.
 #[test]
 fn mmap_sub_10_byte_file_reads_as_empty_batch() {
-    let dir = std::env::temp_dir().join("mma_test_crash_mmap_sub10");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_mmap_sub10");
     let path = dir.join("sub10.arrow");
 
     for len in [0usize, 1, 5, 9] {
@@ -471,15 +408,12 @@ fn mmap_sub_10_byte_file_reads_as_empty_batch() {
         let (loaded, _handle) = read_arrow_ipc_mmap(&path).unwrap();
         assert_eq!(loaded.num_rows(), 0, "len {len} should read as empty batch");
     }
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn garbage_bytes_heap_and_mmap_no_panic() {
     let batch = make_test_batch(&[1, 2, 3]);
-    let dir = std::env::temp_dir().join("mma_test_crash_garbage");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_garbage");
     let valid_path = dir.join("valid.arrow");
     write_arrow_ipc(&valid_path, &batch).unwrap();
     let mut valid_bytes = std::fs::read(&valid_path).unwrap();
@@ -515,8 +449,6 @@ fn garbage_bytes_heap_and_mmap_no_panic() {
             "read_arrow_ipc_mmap panicked on pattern {name}"
         );
     }
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // Attempts to hit the footer.schema().unwrap() panic (storage.rs ~line 620) by
@@ -530,8 +462,7 @@ enum value decoded from a corrupted footer (arrow-ipc convert.rs:356), reached v
 read_arrow_ipc_mmap's unchecked footer parse. See SUSPECTED BUGS."]
 fn footer_region_corruption_does_not_panic() {
     let batch = make_test_batch(&[1, 2, 3]);
-    let dir = std::env::temp_dir().join("mma_test_crash_footer");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_footer");
     let valid_path = dir.join("valid.arrow");
     write_arrow_ipc(&valid_path, &batch).unwrap();
     let full_bytes = std::fs::read(&valid_path).unwrap();
@@ -560,14 +491,11 @@ fn footer_region_corruption_does_not_panic() {
         !any_panicked,
         "read_arrow_ipc_mmap panicked on a corrupted footer byte; see SUSPECTED BUGS"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn atomic_write_failure_leaves_dest_unchanged() {
-    let dir = std::env::temp_dir().join("mma_test_crash_atomic_fail");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_atomic_fail");
     let path = dir.join("dest.arrow");
 
     let batch = make_test_batch(&[1, 2, 3]);
@@ -587,8 +515,6 @@ fn atomic_write_failure_leaves_dest_unchanged() {
 
     let loaded = read_arrow_ipc(&path).unwrap();
     assert_eq!(loaded.num_rows(), 3);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // atomic_write leaves the .tmp sibling behind on write_fn failure (storage.rs
@@ -597,8 +523,7 @@ fn atomic_write_failure_leaves_dest_unchanged() {
 // SUSPECTED BUGS.
 #[test]
 fn atomic_write_failure_leaves_tmp_file_behind() {
-    let dir = std::env::temp_dir().join("mma_test_crash_atomic_tmp_leak");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_atomic_tmp_leak");
     let path = dir.join("dest.arrow");
     let tmp_path = path.with_extension("tmp");
 
@@ -614,14 +539,11 @@ fn atomic_write_failure_leaves_tmp_file_behind() {
         tmp_path.exists(),
         "current behavior: failed atomic_write leaves the .tmp file behind"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn stale_tmp_sibling_does_not_affect_reads() {
-    let dir = std::env::temp_dir().join("mma_test_crash_stale_tmp");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_stale_tmp");
     let path = dir.join("foo.arrow");
     let tmp_path = path.with_extension("tmp");
 
@@ -633,14 +555,11 @@ fn stale_tmp_sibling_does_not_affect_reads() {
     assert_eq!(heap.num_rows(), 2);
     let (mmap, _handle) = read_arrow_ipc_mmap(&path).unwrap();
     assert_eq!(mmap.num_rows(), 2);
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn overwrite_after_failed_write_preserves_data_then_succeeds() {
-    let dir = std::env::temp_dir().join("mma_test_crash_overwrite_seq");
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = TempDir::new("mma_test_crash_overwrite_seq");
     let path = dir.join("seq.arrow");
 
     let original = make_test_batch(&[1, 2, 3]);
@@ -666,8 +585,6 @@ fn overwrite_after_failed_write_preserves_data_then_succeeds() {
         4,
         "successful write must be readable after a prior failure"
     );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // -----------------------------------------------------------------------

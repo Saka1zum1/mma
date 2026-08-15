@@ -69,6 +69,8 @@ mod sync_engine;
 mod sync_geoguessr;
 mod sync_keying;
 mod sync_map_making;
+#[cfg(test)]
+mod test_util;
 mod vcs;
 mod vcs_delta;
 
@@ -155,44 +157,30 @@ fn set_data_location(path: Option<String>) -> AppResult<()> {
     storage::set_data_location(path.as_deref().map(std::path::Path::new))
 }
 
+/// Hand a path to the OS shell (file explorer / default handler).
+fn os_open(path: &std::path::Path) -> AppResult<()> {
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(target_os = "linux")]
+    let program = "xdg-open";
+    std::process::Command::new(program).arg(path).spawn()?;
+    Ok(())
+}
+
 /// Open the app data directory in the OS file explorer.
 #[tauri::command]
 #[specta::specta]
 fn open_data_folder() -> AppResult<()> {
-    let dir = storage::app_data_dir()?;
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer").arg(&dir).spawn()?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(&dir).spawn()?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open").arg(&dir).spawn()?;
-    }
-    Ok(())
+    os_open(&storage::app_data_dir()?)
 }
 
 /// Open the current log file in the OS default handler.
 #[tauri::command]
 #[specta::specta]
 fn open_log_file(app: tauri::AppHandle) -> AppResult<()> {
-    let path = app.path().app_log_dir()?.join("mma.log");
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer").arg(&path).spawn()?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(&path).spawn()?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open").arg(&path).spawn()?;
-    }
-    Ok(())
+    os_open(&app.path().app_log_dir()?.join("mma.log"))
 }
 
 /// A plugin's declared sidecar binary (downloaded from GitHub Releases on install).
@@ -205,8 +193,35 @@ struct PluginSidecar {
     sha256: Option<String>,
 }
 
+/// Manifest form of a sidecar: the digest is keyed per platform (`sha256-{platform_tag}`).
+#[derive(serde::Deserialize)]
+struct RawSidecar {
+    name: String,
+    version: String,
+    #[serde(flatten)]
+    digests: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl<'de> serde::Deserialize<'de> for PluginSidecar {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = RawSidecar::deserialize(d)?;
+        let sha256 = sidecar::platform_tag().ok().and_then(|p| {
+            raw.digests
+                .get(&format!("sha256-{p}"))?
+                .as_str()
+                .map(str::to_string)
+        });
+        Ok(PluginSidecar {
+            name: raw.name,
+            version: raw.version,
+            sha256,
+        })
+    }
+}
+
 /// Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`.
-#[derive(serde::Serialize, specta::Type)]
+#[derive(serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase", default)]
 struct PluginManifest {
     id: String,
     name: String,
@@ -216,34 +231,50 @@ struct PluginManifest {
     version: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     experimental: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    coming_soon: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_app_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sidecar: Option<PluginSidecar>,
 }
 
-/// Parse the optional `sidecar` object out of a manifest JSON value.
-fn parse_sidecar(val: &serde_json::Value) -> Option<PluginSidecar> {
-    let s = val.get("sidecar")?;
-    let sha256 = sidecar::platform_tag().ok().and_then(|p| {
-        s.get(format!("sha256-{p}"))?
-            .as_str()
-            .map(|s| s.to_string())
-    });
-    Some(PluginSidecar {
-        name: s.get("name")?.as_str()?.to_string(),
-        version: s.get("version")?.as_str()?.to_string(),
-        sha256,
-    })
+impl Default for PluginManifest {
+    fn default() -> Self {
+        PluginManifest {
+            id: String::new(),
+            name: String::new(),
+            description: String::new(),
+            icon: String::new(),
+            main: "index.js".to_string(),
+            version: String::new(),
+            experimental: false,
+            coming_soon: false,
+            min_app_version: None,
+            sidecar: None,
+        }
+    }
 }
 
-fn validate_sidecar_name(name: &str) -> AppResult<()> {
-    if name.is_empty()
-        || !name
+/// Plugin ids, sidecar names, and sidecar commands all end up in paths, argv, or URL
+/// paths, so they share one conservative charset.
+fn validate_ident(kind: &str, value: &str) -> AppResult<()> {
+    if value.is_empty()
+        || !value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(AppError(format!("Invalid sidecar name: {name}")));
+        return Err(AppError(format!("Invalid {kind}: {value}")));
     }
     Ok(())
+}
+
+fn validate_sidecar_name(name: &str) -> AppResult<()> {
+    validate_ident("sidecar name", name)
+}
+
+pub(crate) fn validate_sidecar_command(command: &str) -> AppResult<()> {
+    validate_ident("sidecar command", command)
 }
 
 /// Scan the `plugins/` directory under app data and return manifests for all installed plugins.
@@ -266,57 +297,18 @@ fn list_user_plugins() -> Vec<PluginManifest> {
         }
         let manifest_path = path.join("manifest.json");
         if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                let folder_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let id = val
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or(folder_name.clone());
-                let name = val
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or(folder_name);
-                let description = val
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let icon = val
-                    .get("icon")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let main = val
-                    .get("main")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("index.js")
-                    .to_string();
-                let version = val
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let experimental = val
-                    .get("experimental")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let sidecar = parse_sidecar(&val);
-                plugins.push(PluginManifest {
-                    id,
-                    name,
-                    description,
-                    icon,
-                    main,
-                    version,
-                    experimental,
-                    sidecar,
-                });
+            match serde_json::from_str::<PluginManifest>(&content) {
+                Ok(mut manifest) => {
+                    let folder_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+                    if manifest.id.is_empty() {
+                        manifest.id = folder_name.to_string();
+                    }
+                    if manifest.name.is_empty() {
+                        manifest.name = folder_name.to_string();
+                    }
+                    plugins.push(manifest);
+                }
+                Err(e) => log::warn!("Invalid manifest {}: {e}", manifest_path.display()),
             }
         }
     }
@@ -327,14 +319,7 @@ fn list_user_plugins() -> Vec<PluginManifest> {
 const PLUGIN_REPO_BASE: &str = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins";
 
 pub(crate) fn validate_plugin_id(id: &str) -> AppResult<()> {
-    if id.is_empty()
-        || !id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err(AppError(format!("Invalid plugin id: {id}")));
-    }
-    Ok(())
+    validate_ident("plugin id", id)
 }
 
 /// Download a plugin from the GitHub plugin repository and install it to the local plugins directory.
@@ -355,12 +340,9 @@ fn install_plugin(id: String) -> AppResult<PluginManifest> {
         .bytes()?;
     std::fs::write(dir.join("manifest.json"), &manifest_bytes)?;
 
-    let val: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+    let mut manifest: PluginManifest = serde_json::from_slice(&manifest_bytes)
         .map_err(|e| format!("Invalid manifest JSON: {e}"))?;
-    let main = val
-        .get("main")
-        .and_then(|v| v.as_str())
-        .unwrap_or("index.js");
+    let main = manifest.main.clone();
     if main.contains("..") || main.contains('/') || main.contains('\\') {
         return Err(AppError(format!("Invalid main field in manifest: {main}")));
     }
@@ -372,44 +354,13 @@ fn install_plugin(id: String) -> AppResult<PluginManifest> {
         .and_then(|r| r.error_for_status())
         .map_err(|e| format!("Failed to fetch {main}: {e}"))?
         .bytes()?;
-    std::fs::write(dir.join(main), &main_bytes)?;
+    std::fs::write(dir.join(&main), &main_bytes)?;
 
-    let name = val
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(&id)
-        .to_string();
-    let description = val
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let icon = val
-        .get("icon")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let version = val
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let experimental = val
-        .get("experimental")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let sidecar = parse_sidecar(&val);
-
-    Ok(PluginManifest {
-        id,
-        name,
-        description,
-        icon,
-        main: main.to_string(),
-        version,
-        experimental,
-        sidecar,
-    })
+    if manifest.name.is_empty() {
+        manifest.name = id.clone();
+    }
+    manifest.id = id;
+    Ok(manifest)
 }
 
 /// Remove a plugin by deleting its directory from the local plugins folder.
@@ -418,9 +369,14 @@ fn install_plugin(id: String) -> AppResult<PluginManifest> {
 fn uninstall_plugin(id: String) -> AppResult<()> {
     validate_plugin_id(&id)?;
     let dir = storage::app_data_dir()?.join("plugins").join(&id);
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir)?;
-    }
+    // A live sidecar holds the directory open on Windows, so delete under the
+    // plugin's process lock with everything stopped.
+    sidecar::with_plugin_stopped(&id, || {
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir)?;
+        }
+        Ok(())
+    })?;
     Ok(())
 }
 
@@ -468,13 +424,27 @@ fn resolve_client() -> &'static reqwest::blocking::Client {
     C.get_or_init(|| build_http_client(false))
 }
 
+/// Response builder pre-seeded with the CORS header every scheme handler sends.
+fn cors() -> tauri::http::response::Builder {
+    tauri::http::Response::builder().header("Access-Control-Allow-Origin", "*")
+}
+
+/// CORS response with a status and body, no content type.
+fn cors_resp(status: u16, body: Vec<u8>) -> tauri::http::Response<Vec<u8>> {
+    cors().status(status).body(body).unwrap()
+}
+
+/// Run a blocking scheme-handler body off the webview thread.
+fn respond_async(
+    responder: tauri::UriSchemeResponder,
+    f: impl FnOnce() -> tauri::http::Response<Vec<u8>> + Send + 'static,
+) {
+    std::thread::spawn(move || responder.respond(f()));
+}
+
 /// Build a 502 error response with CORS headers for failed proxy requests.
 pub(crate) fn proxy_error(msg: String) -> tauri::http::Response<Vec<u8>> {
-    tauri::http::Response::builder()
-        .status(502)
-        .header("Access-Control-Allow-Origin", "*")
-        .body(msg.into_bytes())
-        .unwrap()
+    cors_resp(502, msg.into_bytes())
 }
 
 /// Relays an upstream response body + content-type back to the webview with CORS.
@@ -490,10 +460,9 @@ pub(crate) fn relay(
         .unwrap_or(default_ct)
         .to_string();
     match resp.bytes() {
-        Ok(body) => tauri::http::Response::builder()
+        Ok(body) => cors()
             .status(status)
             .header("Content-Type", content_type)
-            .header("Access-Control-Allow-Origin", "*")
             .body(body.to_vec())
             .unwrap(),
         Err(e) => proxy_error(format!("read error: {e}")),
@@ -509,19 +478,12 @@ pub(crate) fn write_upload(path: &str, body: &[u8]) -> tauri::http::Response<Vec
         .parent()
         .and_then(|p| p.to_str())
         .is_some_and(|p| crate::export::upload_session_dir(p).is_ok());
-    let resp = tauri::http::Response::builder().header("Access-Control-Allow-Origin", "*");
     if !session_ok {
-        return resp
-            .status(403)
-            .body(b"upload outside session dir".to_vec())
-            .unwrap();
+        return cors_resp(403, b"upload outside session dir".to_vec());
     }
     match std::fs::write(target, body) {
-        Ok(()) => resp.status(200).body(vec![]).unwrap(),
-        Err(e) => resp
-            .status(500)
-            .body(format!("upload write failed: {e}").into_bytes())
-            .unwrap(),
+        Ok(()) => cors_resp(200, vec![]),
+        Err(e) => cors_resp(500, format!("upload write failed: {e}").into_bytes()),
     }
 }
 
@@ -619,21 +581,16 @@ pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Ve
             .get(reqwest::header::LOCATION)
             .and_then(|v| v.to_str().ok())
         {
-            Some(location) => tauri::http::Response::builder()
+            Some(location) => cors()
                 .status(200)
                 .header("Content-Type", "application/json")
-                .header("Access-Control-Allow-Origin", "*")
                 .body(
                     serde_json::to_string(location)
                         .unwrap_or_default()
                         .into_bytes(),
                 )
                 .unwrap(),
-            None => tauri::http::Response::builder()
-                .status(404)
-                .header("Access-Control-Allow-Origin", "*")
-                .body(Vec::new())
-                .unwrap(),
+            None => cors_resp(404, Vec::new()),
         },
         Err(e) => proxy_error(format!("googl fetch error: {e}")),
     }
@@ -670,6 +627,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         )
         // Exported for TS but not carried by any command signature.
         .typ::<map_meta::CameraType>()
+        .constant("KNOWN_FIELDS", map_meta::KNOWN_FIELDS)
+        .constant("BUILTIN_FIELDS", selections::BUILTIN_FIELDS)
         .commands(tauri_specta::collect_commands![
             write_temp_file,
             read_file,
@@ -685,8 +644,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             uninstall_plugin,
             sidecar::sidecar_install,
             sidecar::sidecar_installed_version,
-            sidecar::sidecar_spawn,
-            sidecar::sidecar_kill,
+            sidecar::sidecar_request,
+            sidecar::sidecar_stop,
+            sidecar::sidecar_stop_all,
+            sidecar::sidecar_cancel,
             borders::check_border_file,
             borders::download_border_file,
             borders::border_lookup,
@@ -798,6 +759,16 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             plugins::vali_cancel,
             plugins::vali_subdivisions,
         ])
+        .events(tauri_specta::collect_events![
+            sidecar::SidecarProgress,
+            sidecar::SidecarLine,
+            sidecar::SidecarLog,
+            sidecar::SidecarDone,
+            import::ImportProgress,
+            export::ExportProgress,
+            location_store::ExternalMutation,
+            plugins::ValiProgress,
+        ])
 }
 
 pub fn run() {
@@ -816,9 +787,8 @@ pub fn run() {
             // preflight the cross-origin request first.
             if req.method() == tauri::http::Method::OPTIONS {
                 responder.respond(
-                    tauri::http::Response::builder()
+                    cors()
                         .status(204)
-                        .header("Access-Control-Allow-Origin", "*")
                         .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                         .header("Access-Control-Allow-Headers", "*")
                         .body(Vec::new())
@@ -827,7 +797,7 @@ pub fn run() {
                 return;
             }
             let post_body = (req.method() == tauri::http::Method::POST).then(|| req.body().clone());
-            std::thread::spawn(move || {
+            respond_async(responder, move || {
                 let _t = std::time::Instant::now();
                 let trimmed = raw.trim_start_matches('/');
                 let clean = if trimmed.starts_with(|c: char| c.is_ascii_alphabetic())
@@ -838,29 +808,22 @@ pub fn run() {
                     &raw
                 };
                 if let Some(body) = post_body {
-                    responder.respond(write_upload(clean, &body));
-                    return;
+                    return write_upload(clean, &body);
                 }
-                let resp = match std::fs::read(clean) {
+                match std::fs::read(clean) {
                     Ok(data) => {
                         log::debug!(
                             "[mma-buf] read {} bytes in {:.1}ms",
                             data.len(),
                             _t.elapsed().as_secs_f64() * 1000.0
                         );
-                        tauri::http::Response::builder()
-                            .header("Access-Control-Allow-Origin", "*")
+                        cors()
                             .header("Content-Type", "application/octet-stream")
                             .body(data)
                             .unwrap()
                     }
-                    Err(e) => tauri::http::Response::builder()
-                        .status(404)
-                        .header("Access-Control-Allow-Origin", "*")
-                        .body(format!("file not found: {clean} — {e}").into_bytes())
-                        .unwrap(),
-                };
-                responder.respond(resp);
+                    Err(e) => cors_resp(404, format!("file not found: {clean} — {e}").into_bytes()),
+                }
             });
         })
         .register_uri_scheme_protocol("mma-plugin", |_ctx, req| {
@@ -884,11 +847,7 @@ pub fn run() {
                     } else {
                         "application/octet-stream"
                     };
-                    tauri::http::Response::builder()
-                        .header("Content-Type", mime)
-                        .header("Access-Control-Allow-Origin", "*")
-                        .body(data)
-                        .unwrap()
+                    cors().header("Content-Type", mime).body(data).unwrap()
                 }
                 Err(_) => tauri::http::Response::builder()
                     .status(404)
@@ -910,7 +869,7 @@ pub fn run() {
             } else {
                 format!("https://lh3.ggpht.com/jsapi2/a/b/c/{path}{query}")
             };
-            std::thread::spawn(move || responder.respond(fetch_svtile(&url)));
+            respond_async(responder, move || fetch_svtile(&url));
         })
         .register_asynchronous_uri_scheme_protocol("gmaps", |_ctx, req, responder| {
             let path = req.uri().path().to_string();
@@ -934,16 +893,15 @@ pub fn run() {
                 .unwrap_or("")
                 .to_string();
             let body = req.body().clone();
-            std::thread::spawn(move || {
-                responder.respond(proxy_gmaps(method, &url, content_type, user_agent, body))
+            respond_async(responder, move || {
+                proxy_gmaps(method, &url, content_type, user_agent, body)
             });
         })
         .register_asynchronous_uri_scheme_protocol("ggapi", |_ctx, req, responder| {
             if req.method() == tauri::http::Method::OPTIONS {
                 responder.respond(
-                    tauri::http::Response::builder()
+                    cors()
                         .status(204)
-                        .header("Access-Control-Allow-Origin", "*")
                         .header(
                             "Access-Control-Allow-Methods",
                             "GET, POST, PUT, PATCH, DELETE, OPTIONS",
@@ -963,14 +921,8 @@ pub fn run() {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_string);
             let body = req.body().clone();
-            std::thread::spawn(move || {
-                responder.respond(geoguessr::proxy(
-                    method,
-                    &path,
-                    query.as_deref(),
-                    content_type,
-                    body,
-                ))
+            respond_async(responder, move || {
+                geoguessr::proxy(method, &path, query.as_deref(), content_type, body)
             });
         })
         .register_asynchronous_uri_scheme_protocol("bmaps", |_ctx, req, responder| {
@@ -993,7 +945,7 @@ pub fn run() {
         })
         .register_asynchronous_uri_scheme_protocol("gdoc", |_ctx, req, responder| {
             let doc_id = req.uri().path().trim_start_matches('/').to_string();
-            std::thread::spawn(move || responder.respond(gdoc::fetch_gdoc(&doc_id)));
+            respond_async(responder, move || gdoc::fetch_gdoc(&doc_id));
         })
         .register_asynchronous_uri_scheme_protocol("googl", |_ctx, req, responder| {
             let id = req.uri().path().trim_start_matches('/').to_string();
@@ -1003,7 +955,7 @@ pub fn run() {
                 .unwrap_or("")
                 .split('&')
                 .any(|kv| kv == "source=mapsapp");
-            std::thread::spawn(move || responder.respond(resolve_googl(&id, mapsapp)));
+            respond_async(responder, move || resolve_googl(&id, mapsapp));
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())

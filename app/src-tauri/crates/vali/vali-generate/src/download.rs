@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::progress::{emit, CancelToken, Event, Progress};
 use anyhow::{bail, Context};
 use serde::Deserialize;
@@ -45,10 +43,8 @@ pub fn download_files(
     cancel: Option<&CancelToken>,
 ) -> anyhow::Result<()> {
     ensure_download_folder_writable(root)?;
-    let all_codes: Vec<&str> = crate::names::COUNTRY_NAMES
-        .iter()
-        .map(|(c, _)| *c)
-        .collect();
+    let all_codes: Vec<&str> =
+        crate::names::country_names().iter().map(|(c, _)| *c).collect();
     let country_codes: Vec<String> = match country.filter(|c| !c.is_empty()) {
         None => all_codes.iter().map(|c| c.to_string()).collect(),
         Some(code) => {

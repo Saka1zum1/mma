@@ -17,29 +17,10 @@
  * inside the running app with the full `window.MMA` API injected as `api`.
  */
 
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
-	getLoc,
-	withApi,
-} from "./helpers";
+import { addLocs, createLocation, getLoc, withApi, useMap } from "./helpers";
 
 describe("scratch", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Scratch");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("Scratch");
 
 	it("example: a location round-trips through the store", async () => {
 		const [id] = await addLocs([createLocation({ lat: 10, lng: 20, heading: 90 })]);

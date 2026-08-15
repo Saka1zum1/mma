@@ -6,7 +6,8 @@ import { addClickInterceptor } from "@/lib/map/mapState";
 import { latLngToWorld } from "@/lib/geo/mercator";
 import { densifyRing, unwrapLng } from "@/lib/geo/geo";
 import { POLYGON_CLOSE_VERTEX_PX } from "@/lib/render/buildSceneLayers";
-import { useT } from "@/lib/i18n";
+import { clamp } from "@/types/util";
+import { t } from "@/lib/i18n";
 
 type DrawMode = "polygon" | "rectangle" | "freehand" | null;
 
@@ -15,7 +16,7 @@ function perpDist(p: number[], a: number[], b: number[]): number {
 	const dy = b[1] - a[1];
 	const lenSq = dx * dx + dy * dy;
 	if (lenSq === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
-	const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq));
+	const t = clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq, 0, 1);
 	return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
 
@@ -61,7 +62,6 @@ export function PolygonTools({
 	polygonVerticesRef: React.RefObject<number[][] | null>;
 	requestOverlayUpdate: () => void;
 }) {
-	const { t } = useT();
 	const [mode, setMode] = useState<DrawMode>(null);
 	const isDrawingRef = useRef(false);
 	const emitDraw = useEffectEvent((rings: number[][][]) => onDraw(rings));
@@ -249,7 +249,7 @@ export function PolygonTools({
 				type="button"
 				onClick={() => setMode((m) => (m === "polygon" ? null : "polygon"))}
 				className={mode === "polygon" ? "is-active" : undefined}
-				aria-label={t("editor.drawPolygon")}
+				aria-label={t("Draw a polygon selection")}
 			>
 				<Icon path={polygonOutline} />
 			</button>
@@ -257,7 +257,7 @@ export function PolygonTools({
 				type="button"
 				onClick={() => setMode((m) => (m === "rectangle" ? null : "rectangle"))}
 				className={mode === "rectangle" ? "is-active" : undefined}
-				aria-label={t("editor.drawRectangle")}
+				aria-label={t("Draw a rectangle selection")}
 			>
 				<Icon path={rectangleOutline} />
 			</button>
@@ -265,7 +265,7 @@ export function PolygonTools({
 				type="button"
 				onClick={() => setMode((m) => (m === "freehand" ? null : "freehand"))}
 				className={mode === "freehand" ? "is-active" : undefined}
-				aria-label={t("editor.freehandPolygon")}
+				aria-label={t("Freehand polygon selection")}
 			>
 				<Icon path={mdiPencil} />
 			</button>

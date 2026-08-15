@@ -20,29 +20,29 @@ import {
 } from "@/store/useMapStore";
 import { useMapSetting } from "@/store/useMapSetting";
 import type { ExtraFieldDef } from "@/bindings.gen";
-import type { MergeWinner } from "@/lib/data/fieldOps";
+import { collectEnumCandidates, type MergeWinner } from "@/lib/data/fieldOps";
 import { mdiClose, mdiDatabasePlusOutline, mdiInformationOutline } from "@mdi/js";
-import { useT } from "@/lib/i18n";
-import type { MessageKey } from "@/locales/en";
+import { msg, t } from "@/lib/i18n";
+import { Trans } from "@/components/primitives/Trans";
 
 type Comparison = NonNullable<ExtraFieldDef["comparison"]>;
 const FIELD_TYPES: ExtraFieldDef["type"][] = ["string", "number", "date", "month", "enum", "array"];
-const TYPE_LABEL_KEYS: Record<ExtraFieldDef["type"], MessageKey> = {
-	string: "editor.fieldType.string",
-	number: "editor.fieldType.number",
-	date: "editor.fieldType.date",
-	month: "editor.fieldType.month",
-	enum: "editor.fieldType.enum",
-	array: "editor.fieldType.array",
+const TYPE_LABELS: Record<ExtraFieldDef["type"], string> = {
+	string: msg("Text"),
+	number: msg("Number"),
+	date: msg("Date/time"),
+	month: msg("Month (YYYY-MM)"),
+	enum: msg("Enum"),
+	array: msg("Array"),
 };
 
 // How a field is compared during disambiguation. "auto" = inferred from type.
 type CompToken = "auto" | "linear" | "circular" | "categorical";
-const COMP_OPTIONS: { token: CompToken; labelKey: MessageKey }[] = [
-	{ token: "auto", labelKey: "editor.compAuto" },
-	{ token: "linear", labelKey: "editor.compNumeric" },
-	{ token: "circular", labelKey: "editor.compCircular" },
-	{ token: "categorical", labelKey: "editor.compCategorical" },
+const COMP_OPTIONS: { token: CompToken; label: string }[] = [
+	{ token: "auto", label: msg("Auto") },
+	{ token: "linear", label: msg("Numeric") },
+	{ token: "circular", label: msg("Circular") },
+	{ token: "categorical", label: msg("Categorical") },
 ];
 const DEFAULT_PERIOD = 360;
 
@@ -70,6 +70,8 @@ interface FieldRow {
 	label: string;
 	type: ExtraFieldDef["type"];
 	comparison: ExtraFieldDef["comparison"];
+	values: string[] | null;
+	labels: Record<string, string> | null;
 	/** Field exists on this map (renameable, deletable, def-editable). */
 	present: boolean;
 	/** Field can be written by enrichment (has an Enrich checkbox). */
@@ -80,7 +82,7 @@ interface FieldRow {
 function buildRows(): FieldRow[] {
 	const known = new Set(getMapState().knownFieldKeys);
 	const enrichable = new Map(getEnrichFieldOptions().map((f) => [f.key, f]));
-	const keys = [...new Set([...known, ...enrichable.keys()])].sort();
+	const keys = [...known.union(enrichable)].sort();
 	return keys.map((key) => {
 		const def = getFieldDef(key);
 		const present = known.has(key);
@@ -90,6 +92,8 @@ function buildRows(): FieldRow[] {
 			label: present ? fieldLabel(key) : (def?.label ?? enrichable.get(key)?.label ?? key),
 			type: def?.type ?? "string",
 			comparison: def?.comparison ?? null,
+			values: def?.values ?? null,
+			labels: def?.labels ?? null,
 			present,
 			enrichable: enrichable.has(key),
 		};
@@ -97,11 +101,10 @@ function buildRows(): FieldRow[] {
 }
 
 function CoverageIcon({ ratio }: { ratio: number }) {
-	const { t } = useT();
 	const pct = Math.round(ratio * 100);
 	return (
 		<svg className="manage-fields-table__coverage" width="18" height="18" viewBox="0 0 14 14">
-			<title>{t("editor.coveragePercent", { pct: String(pct) })}</title>
+			<title>{t("{pct}% of locations", { pct })}</title>
 			<circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
 			{ratio > 0 && (
 				<circle
@@ -130,28 +133,32 @@ interface RenamePrompt {
  *  defined (label, type, comparison, rename, delete). Every edit applies
  *  immediately; destructive ones confirm first. */
 export function EnrichmentButton() {
-	const { t } = useT();
 	const [open, setOpen] = useState(false);
 	const [enrichMetadata, setEnrichMetadata] = useMapSetting("enrichMetadata");
 	const [enrichFields, setEnrichFields] = useMapSetting("enrichFields");
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<Tooltip content={t("dialog.enrichment")} side="bottom">
+			<Tooltip content={t("Enrichment")} side="bottom">
 				<DialogTrigger asChild>
-					<button className="icon-button" type="button" aria-label={t("dialog.enrichment")}>
+					<button className="icon-button" type="button" aria-label={t("Enrichment")}>
 						<Icon path={mdiDatabasePlusOutline} />
 					</button>
 				</DialogTrigger>
 			</Tooltip>
-			<DialogContent title={t("dialog.enrichment")} className="enrichment-modal">
+			<DialogContent title={t("Enrichment")} className="enrichment-modal">
 				<label className="enrichment-modal__toggle">
-					<Switch checked={enrichMetadata} onChange={setEnrichMetadata} label={t("editor.enrichLocations")} />
-					{t("editor.enrichAutoSave")}
+					<Switch
+						checked={enrichMetadata}
+						onChange={setEnrichMetadata}
+						label={t("Enrich locations")}
+					/>
+
+					{t("Automatically save metadata to locations")}
 					<button
 						className="icon-button icon-button--inline"
 						type="button"
-						title={t("editor.openManualChapter")}
+						title={t("Open manual chapter")}
 						style={{ marginLeft: "0.4rem" }}
 						onClick={(e) => {
 							e.preventDefault();
@@ -175,12 +182,16 @@ function FieldsTable({
 	enrichFields: string[] | null;
 	setEnrichFields: (v: string[] | null) => void;
 }) {
-	const { t } = useT();
 	const [rows, setRows] = useState(buildRows);
 	const [renamePrompt, setRenamePrompt] = useState<RenamePrompt | null>(null);
 	const [deleteKey, setDeleteKey] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [periodPrompt, setPeriodPrompt] = useState<{ key: string; value: string } | null>(null);
+	const [enumPrompt, setEnumPrompt] = useState<{
+		key: string;
+		rows: { value: string; label: string }[];
+		candidates: string[];
+	} | null>(null);
 	const [coverage, setCoverage] = useState<Map<string, number>>(new Map());
 	const [editingKey, setEditingKey] = useState<string | null>(null);
 	const [coverageEpoch, setCoverageEpoch] = useState(0);
@@ -215,9 +226,8 @@ function FieldsTable({
 		const fields: Record<string, ExtraFieldDef> = {};
 		for (const row of next.filter((r) => r.present)) {
 			const entry: ExtraFieldDef = { type: row.type, label: row.label };
-			const existing = getFieldDef(row.key);
-			if (existing?.values) entry.values = existing.values;
-			if (existing?.labels) entry.labels = existing.labels;
+			if (row.values) entry.values = row.values;
+			if (row.labels) entry.labels = row.labels;
 			if (row.comparison) entry.comparison = row.comparison;
 			fields[row.key] = entry;
 		}
@@ -260,6 +270,55 @@ function FieldsTable({
 			true,
 		);
 		setPeriodPrompt(null);
+	};
+
+	const openEnumValues = async (row: FieldRow) => {
+		const valueRows = (row.values ?? []).map((v) => ({ value: v, label: row.labels?.[v] ?? "" }));
+		if (valueRows.length === 0) valueRows.push({ value: "", label: "" });
+		setEnumPrompt({ key: row.key, rows: valueRows, candidates: [] });
+		const locs = await fetchAllLocations();
+		const candidates = collectEnumCandidates(locs, row.key, row.values ?? []);
+		setEnumPrompt((p) => (p && p.key === row.key ? { ...p, candidates } : p));
+	};
+
+	const setEnumRow = (i: number, patch: Partial<{ value: string; label: string }>) =>
+		setEnumPrompt((p) =>
+			p ? { ...p, rows: p.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) } : p,
+		);
+
+	const addCandidates = () =>
+		setEnumPrompt((p) => {
+			if (!p) return p;
+			const present = new Set(p.rows.map((r) => r.value.trim()));
+			const fresh = p.candidates.filter((v) => !present.has(v));
+			const kept = p.rows.filter((r) => r.value.trim() !== "" || r.label.trim() !== "");
+			return {
+				...p,
+				rows: [...kept, ...fresh.map((v) => ({ value: v, label: "" }))],
+				candidates: [],
+			};
+		});
+
+	const confirmEnumValues = () => {
+		if (!enumPrompt) return;
+		const values: string[] = [];
+		const labels: Record<string, string> = {};
+		for (const r of enumPrompt.rows) {
+			const v = r.value.trim();
+			if (!v || values.includes(v)) continue;
+			values.push(v);
+			const l = r.label.trim();
+			if (l) labels[v] = l;
+		}
+		updateRow(
+			enumPrompt.key,
+			{
+				values: values.length > 0 ? values : null,
+				labels: Object.keys(labels).length > 0 ? labels : null,
+			},
+			true,
+		);
+		setEnumPrompt(null);
 	};
 
 	const proposeRename = async (row: FieldRow) => {
@@ -314,11 +373,11 @@ function FieldsTable({
 				<thead>
 					<tr>
 						<th />
-						<th>{t("editor.enrichColumn")}</th>
-						<th>{t("editor.fieldColumn")}</th>
-						<th>{t("editor.labelColumn")}</th>
-						<th>{t("editor.typeColumn")}</th>
-						<th>{t("editor.compareAsColumn")}</th>
+						<th>{t("Enrich")}</th>
+						<th>{t("Field")}</th>
+						<th>{t("Label")}</th>
+						<th>{t("Type")}</th>
+						<th>{t("Compare as")}</th>
 						<th />
 					</tr>
 				</thead>
@@ -332,7 +391,7 @@ function FieldsTable({
 								<Checkbox
 									checked={row.enrichable && isEnrichOn(row.key)}
 									disabled={!row.enrichable}
-									title={row.enrichable ? undefined : t("editor.notEnrichmentField")}
+									title={row.enrichable ? undefined : t("Not an enrichment field")}
 									onChange={(e) => toggleEnrich(row.key, e.target.checked)}
 								/>
 							</td>
@@ -380,24 +439,36 @@ function FieldsTable({
 								/>
 							</td>
 							<td>
-								<NSelect
-									className="nselect--limited"
-									value={row.type}
-									disabled={!row.present}
-									onChange={(e) =>
-										updateRow(row.key, { type: e.target.value as ExtraFieldDef["type"] }, true)
-									}
-								>
-									{FIELD_TYPES.map((ft) => (
-										<option key={ft} value={ft}>
-											{t(TYPE_LABEL_KEYS[ft])}
-										</option>
-									))}
-								</NSelect>
+								<div className="manage-fields-table__type">
+									<NSelect
+										value={row.type}
+										disabled={!row.present}
+										onChange={(e) =>
+											updateRow(row.key, { type: e.target.value as ExtraFieldDef["type"] }, true)
+										}
+									>
+										{FIELD_TYPES.map((fieldType) => (
+											<option key={fieldType} value={fieldType}>
+												{t(TYPE_LABELS[fieldType])}
+											</option>
+										))}
+									</NSelect>
+									{row.type === "enum" && row.present && (
+										<button
+											className="manage-fields-table__values"
+											type="button"
+											title={t("Edit allowed values")}
+											onClick={() => openEnumValues(row)}
+										>
+											{row.values?.length
+												? t("Values ({n})", { n: row.values.length })
+												: t("Values...")}
+										</button>
+									)}
+								</div>
 							</td>
 							<td>
 								<NSelect
-									className="nselect--limited"
 									value={compToToken(row.comparison)}
 									disabled={!row.present}
 									onChange={(e) => {
@@ -422,8 +493,8 @@ function FieldsTable({
 									{COMP_OPTIONS.map((o) => (
 										<option key={o.token} value={o.token}>
 											{o.token === "circular" && row.comparison?.type === "circular"
-												? t("editor.compCircularPeriod", { period: String(row.comparison.period) })
-												: t(o.labelKey)}
+												? t("Circular · {period}", { period: row.comparison.period })
+												: t(o.label)}
 										</option>
 									))}
 								</NSelect>
@@ -432,7 +503,7 @@ function FieldsTable({
 								<button
 									className="manage-fields-table__delete"
 									type="button"
-									title={row.present ? t("dialog.deleteField") : undefined}
+									title={row.present ? t("Delete field") : undefined}
 									disabled={busy || !row.present}
 									onClick={() => setDeleteKey(row.key)}
 								>
@@ -446,49 +517,67 @@ function FieldsTable({
 
 			<Dialog open={renamePrompt !== null} onOpenChange={(open) => !open && cancelRename()}>
 				<DialogContent
-					title={renamePrompt?.merge ? t("dialog.mergeField") : t("dialog.renameField")}
+					title={renamePrompt?.merge ? t("Merge field") : t("Rename field")}
 					className="period-prompt"
 				>
 					{renamePrompt && (
 						<>
 							<p className="period-prompt__help">
-								{renamePrompt.merge
-									? t("editor.mergeFieldHelp", {
-											from: renamePrompt.key,
-											to: renamePrompt.target,
-											count: String(renamePrompt.affected),
-										})
-									: t("editor.renameFieldHelp", {
-											from: renamePrompt.key,
-											to: renamePrompt.target,
-											count: String(renamePrompt.affected),
-										})}
+								{renamePrompt.merge ? (
+									<>
+										<Trans
+											msg={{
+												one: "Merge {from} into existing field {to} across {n} location. This cannot be undone.",
+												other:
+													"Merge {from} into existing field {to} across {n} locations. This cannot be undone.",
+											}}
+											from={<code>{renamePrompt.key}</code>}
+											to={<code>{renamePrompt.target}</code>}
+											n={renamePrompt.affected}
+										/>
+									</>
+								) : (
+									<>
+										<Trans
+											msg={{
+												one: "Rename {from} to {to} across {n} location. This cannot be undone.",
+												other: "Rename {from} to {to} across {n} locations. This cannot be undone.",
+											}}
+											from={<code>{renamePrompt.key}</code>}
+											to={<code>{renamePrompt.target}</code>}
+											n={renamePrompt.affected}
+										/>
+									</>
+								)}
 							</p>
 							{renamePrompt.merge && (
 								<fieldset className="manage-fields-action__winner">
-									<legend>{t("editor.onConflictKeep")}</legend>
+									<legend>{t("On conflict, keep:")}</legend>
 									<label>
 										<Radio
 											checked={renamePrompt.winner === "from"}
 											onChange={() => setRenamePrompt({ ...renamePrompt, winner: "from" })}
 										/>{" "}
-										{t("editor.fromValues", { name: renamePrompt.key })}
+										<Trans msg={"{field}\u2019s values"} field={<code>{renamePrompt.key}</code>} />
 									</label>
 									<label>
 										<Radio
 											checked={renamePrompt.winner === "to"}
 											onChange={() => setRenamePrompt({ ...renamePrompt, winner: "to" })}
 										/>{" "}
-										{t("editor.fromValues", { name: renamePrompt.target })}
+										<Trans
+											msg={"{field}\u2019s values"}
+											field={<code>{renamePrompt.target}</code>}
+										/>
 									</label>
 								</fieldset>
 							)}
 							<div className="period-prompt__actions">
 								<Button variant="primary" disabled={busy} onClick={confirmRename}>
-									{renamePrompt.merge ? t("common.merge") : t("common.rename")}
+									{renamePrompt.merge ? t("Merge") : t("Rename")}
 								</Button>
 								<Button disabled={busy} onClick={cancelRename}>
-									{t("common.cancel")}
+									{t("Cancel")}
 								</Button>
 							</div>
 						</>
@@ -497,24 +586,88 @@ function FieldsTable({
 			</Dialog>
 
 			<Dialog open={deleteKey !== null} onOpenChange={(open) => !open && setDeleteKey(null)}>
-				<DialogContent title={t("dialog.deleteField")} className="period-prompt">
+				<DialogContent title={t("Delete field")} className="period-prompt">
 					<p className="period-prompt__help">
-						{t("editor.deleteFieldConfirm", { name: deleteKey ?? "" })}
+						<Trans
+							msg="Delete {field} and clear its values from every location? This cannot be undone."
+							field={<code>{deleteKey}</code>}
+						/>
 					</p>
 					<div className="period-prompt__actions">
 						<Button variant="destructive" disabled={busy} onClick={confirmDelete}>
-							{t("dialog.deleteField")}
+							{t("Delete field")}
 						</Button>
 						<Button disabled={busy} onClick={() => setDeleteKey(null)}>
-							{t("common.cancel")}
+							{t("Cancel")}
 						</Button>
 					</div>
 				</DialogContent>
 			</Dialog>
 
+			<Dialog open={enumPrompt !== null} onOpenChange={(open) => !open && setEnumPrompt(null)}>
+				<DialogContent title={t("Enum values")} className="enum-values">
+					<p className="period-prompt__help">
+						<Trans
+							msg="Allowed values for {field}. Labels are optional display names; filters, pivots and bulk edits offer these values in this order."
+							field={<code>{enumPrompt?.key}</code>}
+						/>
+					</p>
+					{enumPrompt?.rows.map((r, i) => (
+						<div className="enum-values__row" key={i}>
+							<TextInput
+								value={r.value}
+								placeholder={t("value")}
+								onChange={(e) => setEnumRow(i, { value: e.target.value })}
+							/>
+							<TextInput
+								value={r.label}
+								placeholder={t("label")}
+								onChange={(e) => setEnumRow(i, { label: e.target.value })}
+							/>
+							<button
+								className="manage-fields-table__delete"
+								type="button"
+								title={t("Remove value")}
+								onClick={() =>
+									setEnumPrompt((p) => (p ? { ...p, rows: p.rows.filter((_, j) => j !== i) } : p))
+								}
+							>
+								<Icon path={mdiClose} size={18} />
+							</button>
+						</div>
+					))}
+					<div className="enum-values__add">
+						<Button
+							onClick={() =>
+								setEnumPrompt((p) =>
+									p ? { ...p, rows: [...p.rows, { value: "", label: "" }] } : p,
+								)
+							}
+						>
+							{t("Add value")}
+						</Button>
+						{enumPrompt && enumPrompt.candidates.length > 0 && (
+							<Button onClick={addCandidates}>
+								{t("Add {n} found in data", { n: enumPrompt.candidates.length })}
+							</Button>
+						)}
+					</div>
+					<div className="period-prompt__actions">
+						<Button variant="primary" onClick={confirmEnumValues}>
+							{t("Save")}
+						</Button>
+						<Button onClick={() => setEnumPrompt(null)}>{t("Cancel")}</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+
 			<Dialog open={periodPrompt !== null} onOpenChange={(open) => !open && setPeriodPrompt(null)}>
-				<DialogContent title={t("dialog.circularPeriod")} className="period-prompt">
-					<p className="period-prompt__help">{t("editor.circularPeriodHelp")}</p>
+				<DialogContent title={t("Circular period")} className="period-prompt">
+					<p className="period-prompt__help">
+						{t(
+							"Value at which this field wraps around (e.g. 360 for degrees, 24 for hours, 12 for\n\t\t\t\t\t\tmonths).",
+						)}
+					</p>
 					<form
 						onSubmit={(e) => {
 							e.preventDefault();
@@ -531,9 +684,9 @@ function FieldsTable({
 						/>
 						<div className="period-prompt__actions">
 							<Button variant="primary" type="submit">
-								{t("editor.set")}
+								{t("Set")}
 							</Button>
-							<Button onClick={() => setPeriodPrompt(null)}>{t("common.cancel")}</Button>
+							<Button onClick={() => setPeriodPrompt(null)}>{t("Cancel")}</Button>
 						</div>
 					</form>
 				</DialogContent>

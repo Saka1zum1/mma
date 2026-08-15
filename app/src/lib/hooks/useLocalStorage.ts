@@ -41,6 +41,15 @@ export function getLocal<T>(key: string, defaultValue: T): T {
 	return entryFor(key, defaultValue).value as T;
 }
 
+/** Re-read a key from localStorage into the in-memory authority and notify subscribers.
+ *  For cross-window bridges, where another window wrote the backing store. */
+export function reloadLocal<T>(key: string, defaultValue: T): T {
+	const entry = entryFor(key, defaultValue);
+	entry.value = read(key, defaultValue);
+	entry.listeners.forEach((l) => l());
+	return entry.value as T;
+}
+
 /** Imperative write: updates the in-memory authority, persists, and notifies every subscriber. */
 export function setLocal<T>(key: string, value: T): void {
 	const entry = entryFor(key, value);

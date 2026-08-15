@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import clsx from "clsx";
 import { useEventValue } from "@/lib/events";
 import { useSetting } from "@/store/settings";
@@ -14,25 +14,20 @@ import { Button } from "@/components/primitives/Button";
 import { useDialog } from "@/store/dialogBus";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
-import { commandLabel, useT } from "@/lib/i18n";
+import { toggleInSet } from "@/lib/util/util";
+import { t } from "@/lib/i18n";
 
 export interface PanelDef {
 	render: (onClose: () => void) => ReactNode;
 }
 
 export function PinnedToolbar({
-	left,
 	right,
-	insertAfter,
 	panels,
 }: {
-	left?: ReactNode;
 	right?: ReactNode;
-	/** Render a node immediately after a pinned command id (e.g. bulk-enrich). */
-	insertAfter?: { commandId: string; node: ReactNode };
 	panels: Record<string, PanelDef>;
 }) {
-	const { t } = useT();
 	const pinned = useSetting("pinnedCommands");
 	const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
 	const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -42,13 +37,7 @@ export function PinnedToolbar({
 	);
 
 	useDialog("inline-panel", (id) => {
-		if (panels[id])
-			setOpenPanels((prev) => {
-				const next = new Set(prev);
-				if (next.has(id)) next.delete(id);
-				else next.add(id);
-				return next;
-			});
+		if (panels[id]) setOpenPanels((prev) => toggleInSet(prev, id));
 	});
 
 	// eslint-disable-next-line react-hooks/exhaustive-deps -- enabled() reads arbitrary external state; no dep list covers it
@@ -66,14 +55,8 @@ export function PinnedToolbar({
 		if (changed) setOpenPanels(next);
 	});
 
-	if (pinned.length === 0 && !right && !left) return null;
-	const togglePanel = (id: string) =>
-		setOpenPanels((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
+	if (pinned.length === 0 && !right) return null;
+	const togglePanel = (id: string) => setOpenPanels((prev) => toggleInSet(prev, id));
 
 	const handleDragStart = (i: number, e: React.MouseEvent) => {
 		if (e.button !== 0) return;
@@ -111,7 +94,6 @@ export function PinnedToolbar({
 	return (
 		<div className="selection-manager__toolbar">
 			<div className="selection-manager__bar">
-				{left}
 				{pinned.map((id, i) => {
 					if (id === "---") {
 						return (
@@ -127,13 +109,13 @@ export function PinnedToolbar({
 									}
 								/>
 								<ContextMenu.Portal>
-									<ContextMenu.Positioner>
+									<ContextMenu.Positioner className="menu-positioner">
 										<ContextMenu.Popup className="context-menu">
 											<ContextMenu.Item
 												className="context-menu__item"
 												onClick={() => removePinnedAt(i)}
 											>
-												{t("editor.removeSeparator")}
+												{t("Remove separator")}
 											</ContextMenu.Item>
 										</ContextMenu.Popup>
 									</ContextMenu.Positioner>
@@ -143,7 +125,6 @@ export function PinnedToolbar({
 					}
 					const command = getCommand(id);
 					if (!command) return null;
-					const label = commandLabel(id);
 					const disabled = command.enabled ? !command.enabled() : false;
 					const hasPanel = id in panels;
 					const isOpen = openPanels.has(id);
@@ -159,7 +140,7 @@ export function PinnedToolbar({
 								"is-dragging": dragIdx === i,
 							})}
 							type="button"
-							aria-label={label}
+							aria-label={t(command.label)}
 							data-qa={id}
 							data-drop={dropIdx === i ? "" : undefined}
 							onClick={disabled ? undefined : handleClick}
@@ -180,64 +161,60 @@ export function PinnedToolbar({
 							onMouseDown={(e) => handleDragStart(i, e)}
 							onMouseMove={() => handleDragOver(i)}
 						>
-							{label}
+							{t(command.label)}
 						</Button>
 					);
 
 					return (
-						<Fragment key={id}>
-							<ContextMenu.Root>
-								<Tooltip content={label} side="bottom">
-									<ContextMenu.Trigger render={btn} />
-								</Tooltip>
-								<ContextMenu.Portal>
-									<ContextMenu.Positioner>
-										<ContextMenu.Popup className="context-menu">
-											{!isFirst && (
-												<ContextMenu.Item
-													className="context-menu__item"
-													onClick={() => movePinnedCommand(i, -1)}
-												>
-													{t("editor.moveLeft")}
-												</ContextMenu.Item>
-											)}
-											{!isLast && (
-												<ContextMenu.Item
-													className="context-menu__item"
-													onClick={() => movePinnedCommand(i, 1)}
-												>
-													{t("editor.moveRight")}
-												</ContextMenu.Item>
-											)}
-											<ContextMenu.Separator className="context-menu__separator" />
+						<ContextMenu.Root key={id}>
+							<Tooltip content={t(command.label)} side="bottom">
+								<ContextMenu.Trigger render={btn} />
+							</Tooltip>
+							<ContextMenu.Portal>
+								<ContextMenu.Positioner className="menu-positioner">
+									<ContextMenu.Popup className="context-menu">
+										{!isFirst && (
 											<ContextMenu.Item
 												className="context-menu__item"
-												onClick={() => insertSeparator(i, "before")}
+												onClick={() => movePinnedCommand(i, -1)}
 											>
-												{t("editor.addSeparatorBefore")}
+												{t("Move left")}
 											</ContextMenu.Item>
+										)}
+										{!isLast && (
 											<ContextMenu.Item
 												className="context-menu__item"
-												onClick={() => insertSeparator(i, "after")}
+												onClick={() => movePinnedCommand(i, 1)}
 											>
-												{t("editor.addSeparatorAfter")}
+												{t("Move right")}
 											</ContextMenu.Item>
-											<ContextMenu.Separator className="context-menu__separator" />
-											<ContextMenu.Item
-												className="context-menu__item"
-												onClick={() => removePinnedAt(i)}
-											>
-												{t("editor.removeFromToolbar")}
-											</ContextMenu.Item>
-										</ContextMenu.Popup>
-									</ContextMenu.Positioner>
-								</ContextMenu.Portal>
-							</ContextMenu.Root>
-							{insertAfter?.commandId === id ? insertAfter.node : null}
-						</Fragment>
+										)}
+										<ContextMenu.Separator className="context-menu__separator" />
+										<ContextMenu.Item
+											className="context-menu__item"
+											onClick={() => insertSeparator(i, "before")}
+										>
+											{t("Add separator before")}
+										</ContextMenu.Item>
+										<ContextMenu.Item
+											className="context-menu__item"
+											onClick={() => insertSeparator(i, "after")}
+										>
+											{t("Add separator after")}
+										</ContextMenu.Item>
+										<ContextMenu.Separator className="context-menu__separator" />
+										<ContextMenu.Item
+											className="context-menu__item"
+											onClick={() => removePinnedAt(i)}
+										>
+											{t("Remove from toolbar")}
+										</ContextMenu.Item>
+									</ContextMenu.Popup>
+								</ContextMenu.Positioner>
+							</ContextMenu.Portal>
+						</ContextMenu.Root>
 					);
 				})}
-				{insertAfter && !pinned.includes(insertAfter.commandId) ? insertAfter.node : null}
 				{right}
 			</div>
 			{Object.entries(panels)
@@ -248,13 +225,7 @@ export function PinnedToolbar({
 				})
 				.map(([id, panel]) => (
 					<div key={id} className="selection-manager__panel" hidden={!openPanels.has(id)}>
-						{panel.render(() =>
-							setOpenPanels((prev) => {
-								const next = new Set(prev);
-								next.delete(id);
-								return next;
-							}),
-						)}
+						{panel.render(() => setOpenPanels((prev) => toggleInSet(prev, id, false)))}
 					</div>
 				))}
 		</div>

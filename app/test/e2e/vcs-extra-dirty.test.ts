@@ -8,35 +8,17 @@
  * records -- so non-undoable extra writes count as modified and enable the
  * "Commit map" command, and the commit captures them.
  */
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
-	getLoc,
-	flushAndWait,
-	withApi,
-} from "./helpers";
+import { addLocs, createLocation, getLoc, flushAndWait, withApi, useMap } from "./helpers";
 
 describe("VCS — extra-only change commit semantics", () => {
-	let mapId: string;
+	const map = useMap("E2E VCS Extra Dirty");
 	let id: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Extra Dirty");
 		[id] = await addLocs([createLocation({ lat: 1, lng: 2, heading: 0 })]);
 		await flushAndWait();
 		await withApi(async (api) => api.commitMap("base"));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("an extra-only edit registers as modified on the commit-diff badge", async () => {
 		const loc = await getLoc(id);
 		await withApi(
@@ -69,7 +51,7 @@ describe("VCS — extra-only change commit semantics", () => {
 	});
 
 	it("checkout of the base (pre-extra) commit restores a location with no score", async () => {
-		const commits = await withApi(async (api, m) => api.cmd.storeListCommits(m), mapId);
+		const commits = await withApi(async (api, m) => api.cmd.storeListCommits(m), map.id);
 		const base = commits.find((c: any) => c.message === "base");
 		await withApi(async (api, cid) => api.checkoutCommit(cid), base!.id);
 		const restored = await getLoc(id);

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::filter::filter;
 use crate::goals::{goal_for_subdivision, subdivision_goal_from_custom_weights};
 use rustc_hash::FxHashMap;

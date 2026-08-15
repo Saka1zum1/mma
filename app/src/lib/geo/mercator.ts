@@ -1,11 +1,12 @@
 // Web Mercator projection (256px world at zoom 0, Google Maps convention).
 
 import type { LatLng } from "@/types";
+import { clamp } from "@/types/util";
 
 export const WORLD_SIZE = 256;
 
 export function latLngToWorld(p: LatLng): { x: number; y: number } {
-	const siny = Math.min(Math.max(Math.sin((p.lat * Math.PI) / 180), -0.9999), 0.9999);
+	const siny = clamp(Math.sin((p.lat * Math.PI) / 180), -0.9999, 0.9999);
 	return {
 		x: (p.lng / 360 + 0.5) * WORLD_SIZE,
 		y: (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * WORLD_SIZE,

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use vali_core::Location;
 const ROAD_TYPE_NAMES: [(&str, u32); 16] = [
     ("Motorway", 1),

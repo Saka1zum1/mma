@@ -140,7 +140,7 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 	// Single writer: persist the resolved exact date back to the active location's extra.
 	useEffect(() => {
 		if (exactDate.ts == null) return;
-		if (!(getMapState().map?.meta.settings.enrichMetadata ?? true)) return;
+		if (!getMapState().map?.meta.settings.enrichMetadata) return;
 		const loc = getMapState().activeLocation;
 		if (!loc || loc.extra?.datetime != null) return;
 		updateLocations(

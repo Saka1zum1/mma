@@ -68,6 +68,10 @@ impl ServeState {
                 let results = self.text.as_mut().unwrap().search(cache, &input);
                 (200, serde_json::to_string(&results).unwrap())
             }
+            ("POST", "/list-cached") => {
+                let ids = self.cache().pano_ids();
+                (200, serde_json::to_string(&ids).unwrap())
+            }
             ("POST", "/search-image") => {
                 let input: ImageSearchInput = match serde_json::from_str(body) {
                     Ok(i) => i,

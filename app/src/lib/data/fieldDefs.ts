@@ -1,4 +1,4 @@
-import type { ExtraFieldDef, Location } from "@/bindings.gen";
+import { KNOWN_FIELDS, type ExtraFieldDef, type Location } from "@/bindings.gen";
 import { registerPluginFieldDefs, unregisterPluginFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { trackDisposable } from "@/plugins/scope";
 
@@ -9,21 +9,30 @@ export interface EnrichFieldOption {
 	defaultOff?: boolean;
 }
 
-const coreFieldOptions: EnrichFieldOption[] = [
-	{ key: "altitude", label: "Altitude" },
-	{ key: "countryCode", label: "Country code" },
-	{ key: "cameraType", label: "Camera type" },
-	{ key: "panoType", label: "Pano type" },
-	{ key: "imageDate", label: "Image date" },
-	{ key: "datetime", label: "Exact date", defaultOff: true },
-	{ key: "timezone", label: "Timezone", defaultOff: true },
-	{ key: "drivingDirection", label: "Driving direction", defaultOff: true },
-	{ key: "uploaderName", label: "Uploader", defaultOff: true },
-	{ key: "coverageDates", label: "Coverage dates", defaultOff: true },
-	{ key: "subdivision", label: "Subdivision", defaultOff: true },
-];
+const coreFieldOptions: EnrichFieldOption[] = KNOWN_FIELDS.map((f) => ({
+	key: f.key,
+	label: f.label,
+	defaultOff: f.defaultOff,
+}));
 
 const pluginFieldOptions: EnrichFieldOption[] = [];
+
+/** Field defs for catalog keys, for providers that write well-known SV fields. */
+export function knownFieldDefs(...keys: string[]): Record<string, ExtraFieldDef> {
+	const out: Record<string, ExtraFieldDef> = {};
+	for (const key of keys) {
+		const f = KNOWN_FIELDS.find((k) => k.key === key);
+		if (!f) continue;
+		out[key] = {
+			type: f.type,
+			label: f.label,
+			values: f.values.length > 0 ? [...f.values] : null,
+			labels: f.labels.length > 0 ? Object.fromEntries(f.labels) : null,
+			comparison: f.circularPeriod != null ? { type: "circular", period: f.circularPeriod } : null,
+		};
+	}
+	return out;
+}
 
 export function getEnrichFieldOptions(): EnrichFieldOption[] {
 	return [...coreFieldOptions, ...pluginFieldOptions];

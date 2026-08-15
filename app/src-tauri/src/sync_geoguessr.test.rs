@@ -278,8 +278,10 @@ fn gg_coordinate_deserializes_null_and_absent_codes_alike() {
 
 #[test]
 fn classifies_auth_and_version_conflict_errors() {
-    assert!(is_auth_error(&http_error("read", 401)));
-    assert!(!is_auth_error(&http_error("read", 409)));
+    assert_eq!(http_error("read", 401).0, "auth: read: HTTP 401");
+    assert!(!http_error("read", 409)
+        .0
+        .starts_with(crate::sync::AUTH_PREFIX));
     assert!(is_version_conflict(&http_error("write", 409)));
     assert!(is_version_conflict(&http_error("write", 412)));
     assert!(!is_version_conflict(&http_error("write", 401)));

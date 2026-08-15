@@ -7,11 +7,19 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use clap::{Parser, Subcommand};
 use std::io::{self, Write};
 
+/// MMA hands every command the same two directories, so they are global rather than
+/// repeated per subcommand.
 #[derive(Parser)]
 #[command(name = "mma-copyright", about = "Copyright year detection sidecar for MMA")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Where the ONNX models live (inside the sidecar bundle).
+    #[arg(long, global = true, default_value = "models")]
+    model_dir: String,
+    /// Working data owned by this sidecar. Accepted but unused: detection is stateless.
+    #[arg(long, global = true, default_value = "data")]
+    data_dir: String,
 }
 
 #[derive(Subcommand)]
@@ -20,8 +28,6 @@ enum Command {
     Detect {
         #[arg(long)]
         input: String,
-        #[arg(long)]
-        model_dir: String,
     },
 }
 
@@ -53,11 +59,11 @@ fn init_ort() {
 
 fn main() {
     init_ort();
-    let cli = Cli::parse();
+    let Cli { command, model_dir, data_dir: _ } = Cli::parse();
     let mut stdout = io::stdout();
 
-    match cli.command {
-        Command::Detect { input, model_dir } => {
+    match command {
+        Command::Detect { input } => {
             let input: detect::DetectInput =
                 serde_json::from_str(&read_input(&input)).expect("invalid input JSON");
             detect::run(&input, &model_dir, |result| {

@@ -15,6 +15,10 @@ import {
 	randomHeading,
 	createTag,
 	withApi,
+	useMap,
+	seedLocs,
+	select,
+	selectCount,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 
@@ -90,17 +94,7 @@ describe("Delta recovery", () => {
 // =============================================================================
 
 describe("Bake with mixed overlay", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress MixedOverlay");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("Stress MixedOverlay");
 
 	it("add/update/remove then close/reopen produces correct state", async () => {
 		// Add 50 locations with deterministic data
@@ -135,7 +129,7 @@ describe("Bake with mixed overlay", () => {
 
 		// Close triggers bake, then reopen
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(45);
@@ -173,39 +167,25 @@ describe("Bake with mixed overlay", () => {
 // =============================================================================
 
 describe("Multiple save/close/reopen cycles", () => {
-	let mapId: string;
+	const map = useMap("Stress MultiCycle");
 	let batch1Ids: number[];
 	let batch2Ids: number[];
 
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress MultiCycle");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("cycle 1: add 50, close, reopen", async () => {
-		const locs = [];
-		for (let i = 0; i < 50; i++) locs.push(createLocation({ lat: i, lng: i }));
-		batch1Ids = await addLocs(locs);
+		batch1Ids = await seedLocs(50, (i) => ({ lat: i, lng: i }));
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(50);
 	});
 
 	it("cycle 2: add 30 more, close, reopen", async () => {
-		const locs = [];
-		for (let i = 0; i < 30; i++) locs.push(createLocation({ lat: 100 + i, lng: 100 + i }));
-		batch2Ids = await addLocs(locs);
+		batch2Ids = await seedLocs(30, (i) => ({ lat: 100 + i, lng: 100 + i }));
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(80);
@@ -225,7 +205,7 @@ describe("Multiple save/close/reopen cycles", () => {
 		await withApi((api, ids) => api.removeLocations(new Set(ids)), toRemove);
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(70);
@@ -245,17 +225,7 @@ describe("Multiple save/close/reopen cycles", () => {
 // =============================================================================
 
 describe("Repeated updates to same location", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress RepeatedUpdate");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("Stress RepeatedUpdate");
 
 	it("only the final heading value persists after close/reopen", async () => {
 		const ids = await addLocs([createLocation({ lat: 10, lng: 20 })]);
@@ -277,7 +247,7 @@ describe("Repeated updates to same location", () => {
 
 		// Close/reopen
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		loc = await getLoc(locId);
 		expect(loc.heading).toBe(315);
@@ -291,23 +261,11 @@ describe("Repeated updates to same location", () => {
 // =============================================================================
 
 describe("alive_count accuracy", () => {
-	let mapId: string;
+	const map = useMap("Stress AliveCount");
 	let allIds: number[];
 
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress AliveCount");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("add 100 -> count=100", async () => {
-		const locs = [];
-		for (let i = 0; i < 100; i++) locs.push(createLocation({ lat: i, lng: i }));
-		allIds = await addLocs(locs);
+		allIds = await seedLocs(100, (i) => ({ lat: i, lng: i }));
 
 		const count = await getLocCount();
 		expect(count).toBe(100);
@@ -336,9 +294,7 @@ describe("alive_count accuracy", () => {
 	});
 
 	it("add 10 more -> count=80", async () => {
-		const locs = [];
-		for (let i = 0; i < 10; i++) locs.push(createLocation({ lat: 200 + i, lng: 200 + i }));
-		await addLocs(locs);
+		await seedLocs(10, (i) => ({ lat: 200 + i, lng: 200 + i }));
 
 		const count = await getLocCount();
 		expect(count).toBe(80);
@@ -346,7 +302,7 @@ describe("alive_count accuracy", () => {
 
 	it("close -> reopen -> count=80", async () => {
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(80);
@@ -358,27 +314,15 @@ describe("alive_count accuracy", () => {
 // =============================================================================
 
 describe("Tag count accuracy", () => {
-	let mapId: string;
+	const map = useMap("Stress TagCount");
 	let tagId: number;
 	let taggedIds: number[];
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress TagCount");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("50 locs with tag -> tagCount=50", async () => {
 		const tag = await createTag("CountTag");
 		tagId = tag.id;
 
-		const locs = [];
-		for (let i = 0; i < 50; i++) locs.push(createLocation({ lat: i, lng: i, tags: [tagId] }));
-		taggedIds = await addLocs(locs);
+		taggedIds = await seedLocs(50, (i) => ({ lat: i, lng: i, tags: [tagId] }));
 
 		const counts = await withApi((api) => api.getMapState().tagCounts);
 		expect(counts[tagId]).toBe(50);
@@ -401,9 +345,7 @@ describe("Tag count accuracy", () => {
 
 	it("bulkAddTag to untagged locs -> tagCount=70", async () => {
 		// Add 20 untagged locs
-		const untaggedLocs = [];
-		for (let i = 0; i < 20; i++) untaggedLocs.push(createLocation({ lat: 100 + i, lng: 100 + i }));
-		await addLocs(untaggedLocs);
+		await seedLocs(20, (i) => ({ lat: 100 + i, lng: 100 + i }));
 
 		await withApi(async (api, tId) => {
 			await api.addSelections([{ type: "Everything" }]);
@@ -416,7 +358,7 @@ describe("Tag count accuracy", () => {
 
 	it("tagCount=70 survives close/reopen", async () => {
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const counts = await withApi((api) => api.getMapState().tagCounts);
 		expect(counts[tagId]).toBe(70);
@@ -428,17 +370,7 @@ describe("Tag count accuracy", () => {
 // =============================================================================
 
 describe("Float precision round-trip", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress FloatPrecision");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("Stress FloatPrecision");
 
 	it("high-precision floats survive close/reopen to 10 decimal places", async () => {
 		const lat = 48.856789012345;
@@ -451,7 +383,7 @@ describe("Float precision round-trip", () => {
 		const locId = ids[0];
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(locId);
 
@@ -469,20 +401,10 @@ describe("Float precision round-trip", () => {
 // =============================================================================
 
 describe("Null vs absent field round-trip", () => {
-	let mapId: string;
+	const map = useMap("Stress NullFields");
 	let id1: number;
 	let id2: number;
 	let id3: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress NullFields");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("null panoId and null/absent extra survive round-trip", async () => {
 		const result = await withApi(async (api) => {
@@ -509,7 +431,7 @@ describe("Null vs absent field round-trip", () => {
 		id3 = result.ids[2];
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const l1 = await getLoc(id1);
 		expect(l1.panoId).toBeNull();
@@ -535,17 +457,7 @@ describe("Null vs absent field round-trip", () => {
 // =============================================================================
 
 describe("Unicode in all fields", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress Unicode");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("Stress Unicode");
 
 	it("Unicode panoId, extra keys/values, and tag names survive round-trip", async () => {
 		const result = await withApi(async (api) => {
@@ -578,7 +490,7 @@ describe("Unicode in all fields", () => {
 		});
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(result.locId);
 		expect(loc.panoId).toBe("CAoSK0FG_東京_éè");
@@ -604,41 +516,27 @@ describe("Unicode in all fields", () => {
 // =============================================================================
 
 describe("Import into non-empty map", () => {
-	let mapId: string;
+	const map = useMap("Stress ImportNonEmpty");
 	let batch1Ids: number[];
 	let tagId: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress ImportNonEmpty");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("adding locations to a pre-populated, already-saved map", async () => {
 		const tag = await createTag("ImportTag");
 		tagId = tag.id;
 
 		// First batch: 50 locs with tag
-		const locs1 = [];
-		for (let i = 0; i < 50; i++) locs1.push(createLocation({ lat: i, lng: i, tags: [tagId] }));
-		batch1Ids = await addLocs(locs1);
+		batch1Ids = await seedLocs(50, (i) => ({ lat: i, lng: i, tags: [tagId] }));
 
 		await flushAndWait();
 
 		// Second batch: 30 more (simulates import path)
-		const locs2 = [];
-		for (let i = 0; i < 30; i++) locs2.push(createLocation({ lat: 100 + i, lng: 100 + i }));
-		await addLocs(locs2);
+		await seedLocs(30, (i) => ({ lat: 100 + i, lng: 100 + i }));
 
 		const count = await getLocCount();
 		expect(count).toBe(80);
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const afterReopen = await getLocCount();
 		expect(afterReopen).toBe(80);
@@ -655,37 +553,21 @@ describe("Import into non-empty map", () => {
 // =============================================================================
 
 describe("Export with scope", () => {
-	let mapId: string;
+	useMap("Stress ExportScope");
 	let tagId: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress ExportScope");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("export with selected IDs only exports those locations", async () => {
 		const tag = await createTag("ScopeTag");
 		tagId = tag.id;
 
-		const locs = [];
-		for (let i = 0; i < 10; i++) {
-			locs.push(
-				createLocation({
-					lat: i * 10,
-					lng: i * 10,
-					tags: i < 5 ? [tagId] : [],
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(10, (i) => ({
+			lat: i * 10,
+			lng: i * 10,
+			tags: i < 5 ? [tagId] : [],
+		}));
 
 		// Select by tag (first 5 have the tag)
-		await withApi((api, tId) => api.addSelections([{ type: "Tag", tagId: tId }]), tagId);
+		await select({ type: "Tag", tagId });
 
 		const selectedIds: number[] = await withApi((api) => [
 			...api.getMapState().selectedLocationIds,
@@ -719,32 +601,18 @@ describe("Export with scope", () => {
 // =============================================================================
 
 describe("VCS: checkout, edit, re-commit", () => {
-	let mapId: string;
+	const map = useMap("Stress VCS");
 	let v1CommitId: string;
 
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress VCS");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("commit v1 with 5 locs", async () => {
-		const locs = [];
-		for (let i = 0; i < 5; i++) locs.push(createLocation({ lat: i, lng: i }));
-		await addLocs(locs);
+		await seedLocs(5, (i) => ({ lat: i, lng: i }));
 
 		v1CommitId = await withApi((api) => api.commitMap("v1"));
 		expect(String(v1CommitId)).not.toContain("ERROR");
 	});
 
 	it("commit v2 with 5 more locs (total 10)", async () => {
-		const locs = [];
-		for (let i = 0; i < 5; i++) locs.push(createLocation({ lat: 100 + i, lng: 100 + i }));
-		await addLocs(locs);
+		await seedLocs(5, (i) => ({ lat: 100 + i, lng: 100 + i }));
 
 		const v2CommitId = await withApi((api) => api.commitMap("v2"));
 		expect(String(v2CommitId)).not.toContain("ERROR");
@@ -761,9 +629,7 @@ describe("VCS: checkout, edit, re-commit", () => {
 	});
 
 	it("add 3 new locs and commit v3 -> count=8", async () => {
-		const locs = [];
-		for (let i = 0; i < 3; i++) locs.push(createLocation({ lat: 200 + i, lng: 200 + i }));
-		await addLocs(locs);
+		await seedLocs(3, (i) => ({ lat: 200 + i, lng: 200 + i }));
 
 		await withApi((api) => api.commitMap("v3 from v1 fork"));
 
@@ -772,7 +638,7 @@ describe("VCS: checkout, edit, re-commit", () => {
 	});
 
 	it("3 commits exist in history", async () => {
-		const commits = await withApi((api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi((api, id) => api.cmd.storeListCommits(id), map.id);
 		// v1 + v2 + revert(checkout) + v3 = 4 commits total
 		// (checkout creates a revert commit, so we actually have 4)
 		expect(commits.length).toBeGreaterThanOrEqual(3);
@@ -787,23 +653,11 @@ describe("VCS: checkout, edit, re-commit", () => {
 // =============================================================================
 
 describe("Commit with pending overlay", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress CommitOverlay");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("Stress CommitOverlay");
 
 	it("commit bakes pending overlay data", async () => {
 		// Add 10 locs -- they sit in overlay, no save/close
-		const locs = [];
-		for (let i = 0; i < 10; i++) locs.push(createLocation({ lat: i, lng: i, panoId: `ov_${i}` }));
-		const ids = await addLocs(locs);
+		const ids = await seedLocs(10, (i) => ({ lat: i, lng: i, panoId: `ov_${i}` }));
 
 		// Commit immediately (overlay not flushed separately)
 		const commitId = await withApi((api) => api.commitMap("overlay commit"));
@@ -811,7 +665,7 @@ describe("Commit with pending overlay", () => {
 
 		// Close and reopen
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(10);
@@ -828,17 +682,7 @@ describe("Commit with pending overlay", () => {
 // =============================================================================
 
 describe("Large batch undo correctness", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Stress LargeBatchUndo");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("Stress LargeBatchUndo");
 
 	it("add 10000 -> undo -> redo -> close -> reopen", async () => {
 		// Add 10000 in a single batch (built in-browser to avoid serialization overhead)
@@ -874,7 +718,7 @@ describe("Large batch undo correctness", () => {
 
 		// Close and reopen
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		count = await getLocCount();
 		expect(count).toBe(10000);
@@ -1140,9 +984,7 @@ describe("Rapid batch updates", () => {
 
 	it("100 concurrent updateLocation calls all persist", async () => {
 		mapId = await createAndOpenMap("Stress RapidUpdate");
-		const locs: Location[] = [];
-		for (let i = 0; i < 100; i++) locs.push(createLocation({ lat: i, lng: i }));
-		const ids = await addLocs(locs);
+		const ids = await seedLocs(100, (i) => ({ lat: i, lng: i }));
 
 		// Fire 100 updates simultaneously -- each sets heading to its index
 		await withApi(async (api, idList) => {
@@ -1198,10 +1040,7 @@ describe("Selection during mutation", () => {
 		await addLocs(locs);
 
 		// Select by tag -- should get 30
-		const count1 = await withApi(async (api, tid) => {
-			await api.addSelections([{ type: "Tag", tagId: tid }]);
-			return api.getMapState().selectedLocationIds.size;
-		}, tag.id);
+		const count1 = await selectCount({ type: "Tag", tagId: tag.id });
 		expect(count1).toBe(30);
 
 		// Add 10 more tagged locations while selection is active
@@ -1295,9 +1134,7 @@ describe("Delete all then undo", () => {
 	it("empty map after delete-all, undo restores everything", async () => {
 		mapId = await createAndOpenMap("Stress DeleteAll");
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 25; i++) locs.push(createLocation({ lat: i, lng: i, heading: i * 14.4 }));
-		const ids = await addLocs(locs);
+		const ids = await seedLocs(25, (i) => ({ lat: i, lng: i, heading: i * 14.4 }));
 
 		// Delete all
 		await withApi((api, idList) => api.removeLocations(new Set(idList)), ids);

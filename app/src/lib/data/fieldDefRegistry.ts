@@ -24,6 +24,7 @@
  */
 
 import { emit } from "@/lib/events";
+import { BUILTIN_FIELDS } from "@/bindings.gen";
 import type { ExtraFieldDef } from "@/bindings.gen";
 
 /**
@@ -41,21 +42,18 @@ interface RegistryFieldDef extends ExtraFieldDef {
 	kind?: FieldKind;
 }
 
-const FIELDS: Record<string, RegistryFieldDef> = {
-	lat: { type: "number", label: "Latitude", kind: "identity" },
-	lng: { type: "number", label: "Longitude", kind: "identity" },
-	heading: {
-		type: "number",
-		label: "Heading",
-		comparison: { type: "circular", period: 360 },
-		kind: "writable",
-	},
-	pitch: { type: "number", label: "Pitch", kind: "writable" },
-	zoom: { type: "number", label: "Zoom", kind: "writable" },
-	createdAt: { type: "date", label: "Created" },
-	modifiedAt: { type: "date", label: "Modified" },
-	tagCount: { type: "number", label: "Tag count", kind: "virtual" },
-};
+/** Derived from the Rust `BUILTIN_FIELDS` table, which the filter resolvers share. */
+const FIELDS: Record<string, RegistryFieldDef> = Object.fromEntries(
+	BUILTIN_FIELDS.map((f) => [
+		f.key,
+		{
+			type: f.type,
+			label: f.label,
+			comparison: f.comparison,
+			kind: f.kind ?? undefined,
+		},
+	]),
+);
 
 /** True when `key` is a built-in Location field (stored top-level, not under `extra`). */
 export function isBuiltinField(key: string): boolean {

@@ -1,34 +1,16 @@
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	getLoc,
-	createLocation,
-	withApi,
-} from "./helpers";
+import { addLocs, getLoc, createLocation, withApi, useMap } from "./helpers";
 
 describe("Active location and work area", () => {
-	let mapId: string;
+	useMap("E2E Active Location");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Active Location");
-
 		locIds = await addLocs([
 			createLocation({ lat: 10, lng: 10, heading: 90 }),
 			createLocation({ lat: 20, lng: 20, heading: 180 }),
 			createLocation({ lat: 30, lng: 30, heading: 270 }),
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("starts with no active location", async () => {
 		const active = await withApi(async (api) => api.getMapState().activeLocation);
 		expect(active).toBeNull();
@@ -89,24 +71,15 @@ describe("Active location and work area", () => {
 });
 
 describe("Active location with undo/redo", () => {
-	let mapId: string;
+	useMap("E2E Active Undo");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Active Undo");
-
 		locIds = await addLocs([
 			createLocation({ lat: 10, lng: 10 }),
 			createLocation({ lat: 20, lng: 20 }),
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("updating active location field is persisted in store", async () => {
 		await withApi(async (api, id) => api.setActiveLocation(id), locIds[0]);
 

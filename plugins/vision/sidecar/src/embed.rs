@@ -217,6 +217,10 @@ pub struct EmbedCache {
 }
 
 impl EmbedCache {
+    pub fn pano_ids(&self) -> Vec<&str> {
+        self.entries.keys().map(String::as_str).collect()
+    }
+
     pub fn load(cache_dir: &str) -> Self {
         let p = Path::new(cache_dir).join(CACHE_FILE);
         let mut cache = Self::default();

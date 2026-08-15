@@ -24,7 +24,7 @@ beforeEach(() => {
 
 describe("field kinds", () => {
 	it("identity fields are builtin, readable, but never writable or listable", () => {
-		for (const key of ["lat", "lng"]) {
+		for (const key of ["lat", "lng", "id"]) {
 			expect(isBuiltinField(key)).toBe(true);
 			expect(getFieldDef(key)).toBeDefined();
 			expect(isWritableField(key)).toBe(false);

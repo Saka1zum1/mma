@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::arrow_bridge;
 use crate::location_store;
 use crate::storage;
-use crate::types::{is_ws, skip_string, Location, LocationFlags, Tag};
+use crate::types::{is_ws, scan_fields_from, skip_string, Location, LocationFlags, Tag};
 
 /// Read a file with sequential-scan hints for better OS prefetch on cold reads.
 fn read_sequential(path: &str) -> std::io::Result<Vec<u8>> {
@@ -84,6 +84,7 @@ pub struct ImportedMapInfo {
 
 /// Intermediate representation produced by all parsers (JSON, CSV, ZIP entry).
 /// Locations have placeholder IDs (0) -- real IDs are assigned at insert time.
+#[derive(Default)]
 struct ParsedMap {
     name: String,
     folder: Option<String>,
@@ -104,17 +105,8 @@ use crate::util::color_for_name;
 /// Parse CSV text into locations. Supports both named columns (lat/lng/heading/etc.)
 /// and positional (first two numeric columns = lat, lng). Skips malformed rows silently.
 fn parse_csv(text: &str) -> ParsedMap {
-    let empty = || ParsedMap {
-        name: String::new(),
-        folder: None,
-        locations: Vec::new(),
-        tags: Vec::new(),
-        fields: None,
-        warnings: Vec::new(),
-        settings: serde_json::Map::new(),
-    };
     let warn = |w: &str| {
-        let mut m = empty();
+        let mut m = ParsedMap::default();
         m.warnings.push(w.into());
         m
     };
@@ -226,13 +218,8 @@ fn parse_csv(text: &str) -> ParsedMap {
     }
 
     ParsedMap {
-        name: String::new(),
-        folder: None,
         locations,
-        tags: Vec::new(),
-        fields: None,
-        warnings: Vec::new(),
-        settings: serde_json::Map::new(),
+        ..Default::default()
     }
 }
 
@@ -243,97 +230,21 @@ struct ExtraTagMeta {
 }
 
 /// Parse the top-level `"extra"` object (sibling of the coordinate array) into a
-/// JSON Value without parsing the entire document. Uses a manual depth-tracking
-/// scanner to find the `"extra"` key at depth 1, avoiding a full-document parse on
-/// multi-MB files. Callers that already know where the coordinate array ends pass
+/// JSON Value without parsing the entire document. Callers that already know where
+/// the coordinate array ends pass
 /// `start` (just past the last object) + `start_depth` (2, still inside the array)
 /// so we scan only the tiny tail. Shared by tag-meta and settings extraction.
 fn find_top_level_extra(buf: &[u8], start: usize, start_depth: i32) -> Option<serde_json::Value> {
-    let needle = b"\"extra\"";
-    let mut i = start;
-    let mut depth = start_depth;
-    let mut in_str = false;
-    let mut esc2 = false;
-    let mut pos = None;
-    while i < buf.len() {
-        if esc2 {
-            esc2 = false;
-            i += 1;
-            continue;
+    let mut out = None;
+    scan_fields_from(buf, start, start_depth, |fs| {
+        if &buf[fs.key.clone()] == b"extra" {
+            out = serde_json::from_slice(&buf[fs.value.clone()]).ok();
+            true
+        } else {
+            false
         }
-        if buf[i] == b'\\' && in_str {
-            esc2 = true;
-            i += 1;
-            continue;
-        }
-        if !in_str
-            && depth == 1
-            && buf[i] == b'"'
-            && i + needle.len() <= buf.len()
-            && &buf[i..i + needle.len()] == needle
-        {
-            pos = Some(i);
-            break;
-        }
-        if buf[i] == b'"' {
-            in_str = !in_str;
-            i += 1;
-            continue;
-        }
-        if in_str {
-            i += 1;
-            continue;
-        }
-        if buf[i] == b'{' || buf[i] == b'[' {
-            depth += 1;
-        }
-        if buf[i] == b'}' || buf[i] == b']' {
-            depth -= 1;
-        }
-        i += 1;
-    }
-    let pos = pos?;
-    let mut j = pos + needle.len();
-    while j < buf.len() && matches!(buf[j], b' ' | b':' | b'\n' | b'\r' | b'\t') {
-        j += 1;
-    }
-    if j >= buf.len() || buf[j] != b'{' {
-        return None;
-    }
-    let obj_start = j;
-    let mut depth = 1i32;
-    let mut k = obj_start + 1;
-    let mut in_str = false;
-    let mut esc = false;
-    while k < buf.len() && depth > 0 {
-        if esc {
-            esc = false;
-            k += 1;
-            continue;
-        }
-        if buf[k] == b'\\' && in_str {
-            esc = true;
-            k += 1;
-            continue;
-        }
-        if buf[k] == b'"' {
-            in_str = !in_str;
-            k += 1;
-            continue;
-        }
-        if in_str {
-            k += 1;
-            continue;
-        }
-        if buf[k] == b'{' {
-            depth += 1;
-        }
-        if buf[k] == b'}' {
-            depth -= 1;
-        }
-        k += 1;
-    }
-    serde_json::from_slice(&buf[obj_start..k]).ok()
+    });
+    out
 }
 
 /// Tag color/order metadata from a parsed top-level `"extra"."tags"` block.
@@ -864,11 +775,8 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
             return ParsedMap {
                 name,
                 folder,
-                locations: Vec::new(),
-                tags: Vec::new(),
-                fields: None,
                 warnings,
-                settings: serde_json::Map::new(),
+                ..Default::default()
             };
         }
     };
@@ -1157,9 +1065,9 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
         folder,
         locations,
         tags,
-        fields: None,
         warnings,
         settings,
+        ..Default::default()
     }
 }
 
@@ -1339,8 +1247,9 @@ pub async fn bulk_import_preview(path: String) -> AppResult<Vec<ImportPreviewEnt
 
 /// Progress event emitted per-map during bulk import, consumed by the frontend
 /// to drive a progress indicator.
-#[derive(serde::Serialize, Clone, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "bulk-import-progress")]
 pub struct ImportProgress {
     pub current: u32,
     pub total: u32,
@@ -1641,13 +1550,9 @@ pub(crate) fn add_copied_to_store(
     tags: Vec<Tag>,
 ) -> AppResult<location_store::MutationResult> {
     let mut parsed = ParsedMap {
-        name: String::new(),
-        folder: None,
         locations,
         tags,
-        fields: None,
-        warnings: Vec::new(),
-        settings: serde_json::Map::new(),
+        ..Default::default()
     };
     add_parsed_to_store(store, &mut parsed, None)
 }

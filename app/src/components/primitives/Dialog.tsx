@@ -7,6 +7,12 @@ import { mdiClose } from "@mdi/js";
 
 const CloseContext = createContext<(() => void) | null>(null);
 
+/** Controlled open/close pair every dialog component takes. */
+export interface DialogProps {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}
+
 export function useCloseDialog() {
 	const close = useContext(CloseContext);
 	if (!close) throw new Error("useCloseDialog: not in a dialog context");

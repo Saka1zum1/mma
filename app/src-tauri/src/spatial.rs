@@ -1,8 +1,9 @@
 //! In-memory spatial index over the alive location set: a fixed-cell hash grid for
 //! meter-scale radius queries (find-nearby, dedupe, "anything already here?").
 //! Owned by `Store`, built lazily on the first spatial query, and maintained
-//! incrementally by the overlay mutation functions — O(delta) per mutation, O(cells
-//! in radius) per query, instead of the O(N) scan per query it replaces.
+//! incrementally by the overlay mutation functions — O(delta) per mutation,
+//! O(min(cells in radius, occupied cells)) per query, instead of the O(N) scan per
+//! query it replaces.
 //!
 //! Cells are keyed by floored lat/lng degree coordinates. Removal derives the cell
 //! from the coordinates the caller supplies (the location's current state), so no
@@ -13,12 +14,7 @@ use std::collections::HashMap;
 /// ~25m cells: 1-100m queries walk a handful of cells; a 1km query walks ~80x80.
 /// Longitude cells narrow toward the poles, which only means more (empty) cells
 /// walked there — correctness always comes from the caller's distance test.
-const CELL_DEG: f64 = 25.0 / 111_320.0;
-
-/// Cells walked per axis are capped so a degenerate query (huge radius, polar
-/// latitude) can't explode; capped queries may miss far candidates, but every
-/// in-app radius (≤ ~1km) stays far below the cap.
-const MAX_AXIS_CELLS: i64 = 4096;
+const CELL_DEG: f64 = 25.0 / mma_geo::M_PER_DEG;
 
 #[inline]
 fn cell_for(lat: f64, lng: f64) -> (i32, i32) {
@@ -86,29 +82,21 @@ impl SpatialIndex {
         }
     }
 
-    /// Ids in every cell touching the `radius_m` disc around the point. A superset:
-    /// the caller must distance-test each candidate against current coordinates.
+    /// Ids in every cell touching the `radius_m` disc around the point (antimeridian
+    /// wrap included). A superset: the caller must distance-test each candidate
+    /// against current coordinates. When the window holds more cells than are
+    /// occupied (huge radius, polar latitude), the occupied cells are scanned
+    /// instead — complete at any radius, O(occupied) worst case.
     pub(crate) fn candidates(&self, lat: f64, lng: f64, radius_m: f64, out: &mut Vec<u32>) {
-        if !lat.is_finite() || !lng.is_finite() {
-            return;
-        }
-        let d_lat = radius_m / 111_320.0;
-        let cos_lat = lat.to_radians().cos().max(1e-4);
-        let d_lng = radius_m / (111_320.0 * cos_lat);
-        let (cx0, cy0) = cell_for(lat - d_lat, lng - d_lng);
-        let (cx1, cy1) = cell_for(lat + d_lat, lng + d_lng);
-        if (cx1 as i64 - cx0 as i64) > MAX_AXIS_CELLS || (cy1 as i64 - cy0 as i64) > MAX_AXIS_CELLS
-        {
-            log::warn!(
-                "[spatial] query span too large (r={}m lat={}) — clamped",
-                radius_m,
-                lat
-            );
-        }
-        let cx1 = cx1.min(cx0.saturating_add(MAX_AXIS_CELLS as i32));
-        let cy1 = cy1.min(cy0.saturating_add(MAX_AXIS_CELLS as i32));
-        for cy in cy0..=cy1 {
-            for cx in cx0..=cx1 {
+        let cover = mma_geo::covering_cells(lat, lng, radius_m, CELL_DEG);
+        if cover.len() > self.cells.len() as u64 {
+            for (&(cx, cy), v) in &self.cells {
+                if cover.contains(cx, cy) {
+                    out.extend_from_slice(v);
+                }
+            }
+        } else {
+            for (cx, cy) in cover.cells() {
                 if let Some(v) = self.cells.get(&(cx, cy)) {
                     out.extend_from_slice(v);
                 }

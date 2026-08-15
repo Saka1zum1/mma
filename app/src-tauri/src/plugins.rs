@@ -50,12 +50,13 @@ impl From<GeoMapLocation> for ValiLocation {
     }
 }
 
-#[derive(serde::Serialize, Clone, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type, tauri_specta::Event)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+#[tauri_specta(event_name = "vali-progress")]
 pub enum ValiProgress {
     WorkItems {
         total: u32,

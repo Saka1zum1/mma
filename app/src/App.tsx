@@ -36,12 +36,8 @@ import { useDiscordPresence } from "@/lib/discord/presence";
 import { initRemoteHost } from "@/lib/remote/host";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { initI18n, syncLocaleFromSettings, useT } from "@/lib/i18n";
-import { subscribe } from "@/lib/events";
 import "@/plugins";
-
-initI18n();
-subscribe("settings:changed", syncLocaleFromSettings);
+import { t } from "@/lib/i18n";
 
 // Dynamic import (deck.gl/luma.gl out of the initial bundle) WITHOUT React.lazy/Suspense —
 // a Suspense boundary makes React 19 render the editor in a low-priority lane (~260ms/open).
@@ -108,7 +104,6 @@ function EditorRoot() {
 /** Floating UI shared by both window roles: settings/plugins gears, update pill, and the
  *  app-level dialogs. Hidden by App while a window is self-destructing. */
 function AppChrome() {
-	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const isMapList = !useTargetMapId();
 	const manualChapter = useManualChapter();
@@ -125,11 +120,6 @@ function AppChrome() {
 		if (map) goToList();
 	});
 
-	useEffect(() => {
-		const unsub = subscribe("settings:open", () => setShowSettings(true));
-		return unsub;
-	}, []);
-
 	const hasSeenWelcome = useSetting("hasSeenWelcome");
 	const fullscreenMap = useSetting("fullscreenMap");
 
@@ -142,11 +132,11 @@ function AppChrome() {
 						href="https://discord.gg/4wPNJTuzD8"
 						target="_blank"
 						rel="noopener noreferrer"
-						title={t("app.joinDiscord")}
+						title={t("Join the Discord")}
 					>
 						<Icon path={mdiDiscord} />
 					</a>
-					<button className="settings-gear" onClick={() => openManual()} title={t("common.manual")}>
+					<button className="settings-gear" onClick={() => openManual()} title={t("Manual")}>
 						<Icon path={mdiBookOpenPageVariantOutline} />
 					</button>
 				</div>
@@ -162,29 +152,37 @@ function AppChrome() {
 							{update.phase === "available" && (
 								<>
 									<button className="update-pill__label" onClick={installUpdate}>
-										{t("app.downloadUpdate", { version: update.version })}
+										{t("v{version} - download update", { version: update.version ?? "" })}
 									</button>
-									<button className="update-pill__dismiss" onClick={dismissUpdate} title={t("app.dismiss")}>
+									<button
+										className="update-pill__dismiss"
+										onClick={dismissUpdate}
+										title={t("Dismiss")}
+									>
 										<Icon path={mdiClose} size={14} />
 									</button>
 								</>
 							)}
 							{update.phase === "downloading" && (
 								<span className="update-pill__label">
-									{t("app.downloadingPercent", { percent: String(update.percent) })}
+									{t("Downloading")} {update.percent}%
 								</span>
 							)}
 							{update.phase === "ready" && (
 								<button className="update-pill__label" onClick={relaunchApp}>
-									{t("app.restartToUpdate")}
+									{t("Restart to update")}
 								</button>
 							)}
 							{update.phase === "error" && (
 								<>
 									<button className="update-pill__label" onClick={installUpdate}>
-										{t("app.updateFailedRetry")}
+										{t("Update failed - retry")}
 									</button>
-									<button className="update-pill__dismiss" onClick={dismissUpdate} title={t("app.dismiss")}>
+									<button
+										className="update-pill__dismiss"
+										onClick={dismissUpdate}
+										title={t("Dismiss")}
+									>
 										<Icon path={mdiClose} size={14} />
 									</button>
 								</>
@@ -192,10 +190,18 @@ function AppChrome() {
 						</div>
 					)}
 					{isMapList && <BulkActions />}
-					<button className="settings-gear" onClick={() => setShowPlugins(true)} title={t("dialog.plugins")}>
+					<button
+						className="settings-gear"
+						onClick={() => setShowPlugins(true)}
+						title={t("Plugins")}
+					>
 						<Icon path={mdiPuzzle} />
 					</button>
-					<button className="settings-gear" onClick={() => setShowSettings(true)} title={t("dialog.settings")}>
+					<button
+						className="settings-gear"
+						onClick={() => setShowSettings(true)}
+						title={t("Settings")}
+					>
 						<Icon path={mdiCog} />
 					</button>
 				</div>
@@ -280,6 +286,8 @@ function useCustomCss() {
 	}, [customCss]);
 }
 
+declare const __APP_VERSION__: string;
+
 function WelcomeDialog({ open, onDismiss }: { open: boolean; onDismiss: () => void }) {
 	return (
 		<Dialog
@@ -288,33 +296,47 @@ function WelcomeDialog({ open, onDismiss }: { open: boolean; onDismiss: () => vo
 				if (!v) onDismiss();
 			}}
 		>
-			<DialogContent title={`Welcome to ${APP_NAME}`} className="welcome-dialog">
-				<p>
-					If you're new, the{" "}
-					<a
-						href="#"
-						onClick={(e) => {
-							e.preventDefault();
+			<DialogContent title={t("Welcome to {app}", { app: APP_NAME })} className="welcome-dialog">
+				<div className="welcome-dialog__hero">
+					<img src="/icon-1024.png" alt="" width={80} height={80} draggable={false} />
+					<div className="welcome-dialog__name">{APP_NAME}</div>
+					<div className="welcome-dialog__version">
+						v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev"}
+					</div>
+				</div>
+				<div className="welcome-dialog__links">
+					<button
+						type="button"
+						className="welcome-dialog__link"
+						onClick={() => {
 							onDismiss();
 							openManual();
 						}}
 					>
-						manual
-					</a>{" "}
-					covers every feature. It's a recommended read and reference point!
-				</p>
-				<p>
-					Got questions or feedback?{" "}
-					<a href="https://discord.gg/4wPNJTuzD8" target="_blank" rel="noopener noreferrer">
-						Join the Discord
-					</a>
-					.
-				</p>
-				<div style={{ display: "flex", justifyContent: "flex-end" }}>
-					<button className="button button--primary" onClick={onDismiss}>
-						Got it
+						<Icon path={mdiBookOpenPageVariantOutline} />
+						<span>
+							<strong>{t("Read the manual")}</strong>
+							<small>
+								{t("Every feature, explained. A recommended read and reference point.")}
+							</small>
+						</span>
 					</button>
+					<a
+						className="welcome-dialog__link"
+						href="https://discord.gg/4wPNJTuzD8"
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						<Icon path={mdiDiscord} />
+						<span>
+							<strong>{t("Join the Discord")}</strong>
+							<small>{t("Questions, feedback, and release news.")}</small>
+						</span>
+					</a>
 				</div>
+				<button className="button button--primary welcome-dialog__cta" onClick={onDismiss}>
+					{t("Got it")}
+				</button>
 			</DialogContent>
 		</Dialog>
 	);

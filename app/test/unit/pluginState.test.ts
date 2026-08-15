@@ -81,7 +81,7 @@ describe("usePluginState", () => {
 	});
 
 	it("does not write to storage until set is called", () => {
-		mount("p1", "k", "default");
-		expect(createPluginStorage("p1").keys()).not.toContain("k");
+		mount("untouched", "k", "default");
+		expect(createPluginStorage("untouched").keys()).not.toContain("k");
 	});
 });

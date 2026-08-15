@@ -4,7 +4,8 @@
  */
 
 import { preloadModules, getAvailableExternals } from "./externals";
-import { setPendingManifest, getPlugins, activatePlugin, type PluginManifest } from "./registry";
+import { setPendingManifest, getPlugins, activatePlugin } from "./registry";
+import type { PluginManifest } from "@/bindings.gen";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 

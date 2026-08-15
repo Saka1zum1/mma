@@ -8,20 +8,11 @@ import {
 	createLocation,
 	createTag,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Bounds cache - empty and basic", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bounds Empty");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Bounds Empty");
 
 	it("empty map returns null", async () => {
 		const bounds = await withApi(async (api) => api.cmd.storeBounds(false));
@@ -38,17 +29,7 @@ describe("Bounds cache - empty and basic", () => {
 });
 
 describe("Bounds cache - add and remove", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bounds AddRemove");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Bounds AddRemove");
 
 	it("bounds contain all added locations", async () => {
 		await addLocs([
@@ -114,17 +95,7 @@ describe("Bounds cache - add and remove", () => {
 });
 
 describe("Bounds cache - update edge invalidation", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bounds Update");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Bounds Update");
 
 	it("moving an edge location inward shrinks bounds", async () => {
 		const ids = await addLocs([
@@ -158,17 +129,7 @@ describe("Bounds cache - update edge invalidation", () => {
 });
 
 describe("Bounds cache - antimeridian", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bounds Antimeridian");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Bounds Antimeridian");
 
 	it("locations near 180/-180 produce a crossing box (west > east)", async () => {
 		await addLocs([
@@ -200,17 +161,7 @@ describe("Bounds cache - antimeridian", () => {
 });
 
 describe("Bounds cache - undo/redo consistency", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bounds UndoRedo");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Bounds UndoRedo");
 
 	it("undo add reverts bounds", async () => {
 		await addLocs([createLocation({ lat: 10, lng: 20 })]);

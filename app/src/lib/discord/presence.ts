@@ -7,6 +7,7 @@ import { useSetting } from "@/store/settings";
 import type { DiscordPresenceMode } from "@/store/settings";
 import type { PresenceActivity } from "@/bindings.gen";
 import { isWeb } from "@/lib/util/util";
+import { t } from "@/lib/i18n";
 
 // Art-asset key uploaded to the Discord application (developer portal -> Rich Presence).
 const LARGE_IMAGE = "logo";
@@ -36,7 +37,7 @@ function buildActivity(level: Exclude<DiscordPresenceMode, "off">): PresenceActi
 	return {
 		...base,
 		details: `Editing ${map.meta.name}`,
-		state: `${count.toLocaleString()} location${count === 1 ? "" : "s"}`,
+		state: t({ one: "{n} location", other: "{n} locations" }, { n: count }),
 		start,
 	};
 }

@@ -9,8 +9,8 @@ publish = false
 anyhow = "1"
 bzip2 = "0.6.1"
 fastrand = "2"
-geo = "0.30"
 geojson = "0.24"
+mma-geo = { path = "../../geo" }
 rayon = "1"
 rust_decimal = "1"
 rustc-hash = "2"

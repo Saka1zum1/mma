@@ -1,8 +1,5 @@
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	flushAndWait,
 	addLocs,
 	createLocation,
@@ -10,21 +7,12 @@ import {
 	getAllLocs,
 	getLocCount,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Version control - commits", () => {
-	let mapId: string;
+	const map = useMap("E2E VCS");
 	let locIds: number[];
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("commitMap returns a commit ID", async () => {
 		locIds = await addLocs([
@@ -45,7 +33,7 @@ describe("Version control - commits", () => {
 	});
 
 	it("listCommits returns commit history", async () => {
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		expect(Array.isArray(commits)).toBe(true);
 		expect(commits.length).toBeGreaterThanOrEqual(1);
 		expect(commits[0].message).toBe("initial commit");
@@ -60,7 +48,7 @@ describe("Version control - commits", () => {
 
 		await withApi(async (api) => api.commitMap("add one remove one"));
 
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 
 		expect(commits.length).toBe(2);
 		expect(commits[0].message).toBe("add one remove one");
@@ -69,14 +57,11 @@ describe("Version control - commits", () => {
 });
 
 describe("Version control - checkout", () => {
-	let mapId: string;
+	const map = useMap("E2E VCS Checkout");
 	let firstCommitId: string;
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Checkout");
-
 		locIds = await addLocs([
 			createLocation({ lat: 10, lng: 20, heading: 0, panoId: null, flags: 0 }),
 			createLocation({ lat: 30, lng: 40, heading: 0, panoId: null, flags: 0 }),
@@ -84,12 +69,6 @@ describe("Version control - checkout", () => {
 
 		firstCommitId = await withApi(async (api) => api.commitMap("v1: two locations"));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("checkout reverts to committed state", async () => {
 		// Make changes after commit
 		await addLocs([createLocation({ lat: 50, lng: 60, heading: 0, panoId: null, flags: 0 })]);
@@ -123,7 +102,7 @@ describe("Version control - checkout", () => {
 	});
 
 	it("checkout creates a revert commit", async () => {
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		expect(commits.length).toBeGreaterThanOrEqual(2);
 		const revertCommit = commits[0];
 		expect(revertCommit.message).toContain("Revert");
@@ -132,7 +111,7 @@ describe("Version control - checkout", () => {
 	it("checkout result survives save/load", async () => {
 		await flushAndWait();
 		await closeMap();
-		await withApi(async (api, id) => api._test.openMap(id), mapId);
+		await withApi(async (api, id) => api._test.openMap(id), map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(2);
@@ -142,24 +121,16 @@ describe("Version control - checkout", () => {
 // Issue #122: deleting a tag's last location soft-deletes the tag, and restoring
 // a commit from before the delete must revive it - visible, with fresh counts.
 describe("Version control - checkout revives soft-deleted tags", () => {
-	let mapId: string;
+	useMap("E2E VCS Tag Revival");
 	let tagId: number;
 	let taggedCommitId: string;
 	let locId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Tag Revival");
 		tagId = (await createTag("Revivable")).id;
 		[locId] = await addLocs([createLocation({ lat: 10, lng: 20, tags: [tagId] })]);
 		taggedCommitId = await withApi(async (api) => api.commitMap("v1: tagged loc"));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("deleting the tag's only location soft-deletes it", async () => {
 		await withApi(async (api, id) => api.removeLocations(new Set([id])), locId);
 		await withApi(async (api) => api.commitMap("v2: loc deleted"));
@@ -177,5 +148,25 @@ describe("Version control - checkout revives soft-deleted tags", () => {
 		}, tagId);
 		expect(visible).toBe(true);
 		expect(count).toBe(1);
+	});
+});
+
+// Commit dialog: the Commit button opens a dialog whose typed message must land
+// on the commit; the dialog closes after committing.
+describe("Version control - commit message dialog", () => {
+	const map = useMap("E2E VCS Message UI");
+
+	it("typed message lands on the commit", async () => {
+		await addLocs([createLocation({ lat: 5, lng: 5, heading: 0, panoId: null, flags: 0 })]);
+		await browser.$("button=Commit").click();
+		const input = await browser.$(".commit-dialog__message");
+		await input.waitForExist();
+		await input.setValue("from the commit dialog");
+		await browser.$(".commit-dialog").$("button=Commit").click();
+		await browser.waitUntil(async () => {
+			const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
+			return commits.length >= 1 && commits[0].message === "from the commit dialog";
+		});
+		await input.waitForExist({ reverse: true });
 	});
 });

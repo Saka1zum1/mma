@@ -1,25 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	getLocCount,
-	withApi,
-} from "./helpers";
+import { getLocCount, withApi, useMap } from "./helpers";
 
 describe("Import from paste — JSON", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Paste JSON");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Import Paste JSON");
 
 	it("imports a JSON array of locations", async () => {
 		const json = JSON.stringify([
@@ -48,17 +31,7 @@ describe("Import from paste — JSON", () => {
 });
 
 describe("Import from paste — CSV-like", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Paste CSV");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Import Paste CSV");
 
 	it("imports lat,lng pairs", async () => {
 		const csv = "lat,lng\n51.5074,-0.1278\n35.6762,139.6503";
@@ -78,17 +51,7 @@ describe("Import from paste — CSV-like", () => {
 });
 
 describe("Import from paste — single coordinate", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Paste Single");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Import Paste Single");
 
 	it("imports a single lat,lng pair", async () => {
 		const result = await withApi(async (api) => {
@@ -102,17 +65,7 @@ describe("Import from paste — single coordinate", () => {
 });
 
 describe("Import from paste — undo", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Import Paste Undo");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Import Paste Undo");
 
 	it("undo reverses a paste import", async () => {
 		const json = JSON.stringify([

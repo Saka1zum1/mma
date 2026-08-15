@@ -1,44 +1,25 @@
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	flushAndWait,
 	openMap,
-	addLocs,
 	getAllLocs,
 	getLocCount,
-	createLocation,
 	randomLatLng,
 	randomHeading,
+	useMap,
+	seedLocs,
 } from "./helpers";
 
 describe("Storage round-trip", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Storage Test");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Storage Test");
 
 	it("should open the map and add locations", async () => {
-		const locs = [];
-		for (let i = 0; i < 200; i++) {
-			locs.push(
-				createLocation({
-					...randomLatLng(),
-					...randomHeading(),
-					panoId: i % 5 === 0 ? `pano_${i}` : null,
-					flags: i % 3 === 0 ? 1 : 0,
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(200, (i) => ({
+			...randomLatLng(),
+			...randomHeading(),
+			panoId: i % 5 === 0 ? `pano_${i}` : null,
+			flags: i % 3 === 0 ? 1 : 0,
+		}));
 
 		const count = await getLocCount();
 		expect(count).toBe(200);
@@ -47,7 +28,7 @@ describe("Storage round-trip", () => {
 	it("should persist after save", async () => {
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(200);
@@ -66,18 +47,14 @@ describe("Storage round-trip", () => {
 	});
 
 	it("should handle add + save correctly", async () => {
-		const locs = [];
-		for (let i = 0; i < 50; i++) {
-			locs.push(createLocation({ ...randomLatLng(), ...randomHeading() }));
-		}
-		await addLocs(locs);
+		await seedLocs(50, () => ({ ...randomLatLng(), ...randomHeading() }));
 
 		const afterAdd = await getLocCount();
 		expect(afterAdd).toBe(250);
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const afterReopen = await getLocCount();
 		expect(afterReopen).toBe(250);

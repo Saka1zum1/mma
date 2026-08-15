@@ -8,25 +8,16 @@ import {
 	addLocs,
 	createLocation,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Map rename", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Original Name");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Original Name");
 
 	it("rename open map updates in-memory name", async () => {
 		await withApi(async (api, id) => {
 			await api.renameMap(id, "Renamed Map");
-		}, mapId);
+		}, map.id);
 
 		const name = await withApi(async (api) => api.getMapState().map?.meta.name);
 		expect(name).toBe("Renamed Map");
@@ -35,7 +26,7 @@ describe("Map rename", () => {
 	it("rename persists after save/load", async () => {
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const name = await withApi(async (api) => api.getMapState().map?.meta.name);
 		expect(name).toBe("Renamed Map");
@@ -45,7 +36,7 @@ describe("Map rename", () => {
 		const maps = await withApi(async (api) => {
 			return await api.cmd.storeListMaps();
 		});
-		const ourMap = maps.find((m) => m.id === mapId);
+		const ourMap = maps.find((m) => m.id === map.id);
 		expect(ourMap).toBeTruthy();
 		expect(ourMap!.name).toBe("Renamed Map");
 	});
@@ -140,17 +131,7 @@ describe("Folder operations", () => {
 });
 
 describe("Map metadata updates", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Meta Update");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Meta Update");
 
 	it("update description", async () => {
 		await withApi(async (api) => {
@@ -185,7 +166,7 @@ describe("Map metadata updates", () => {
 	it("meta updates persist after save/load", async () => {
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const meta = await withApi(async (api) => api.getMapState().map!.meta);
 		expect(meta.description).toBe("Test map for E2E");
@@ -195,24 +176,16 @@ describe("Map metadata updates", () => {
 });
 
 describe("Active location and work area", () => {
-	let mapId: string;
+	useMap("E2E Active Loc");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Active Loc");
 		const locs = [
 			createLocation({ lat: 10, lng: 20, heading: 90, pitch: 5, zoom: 2, panoId: "P1", flags: 1 }),
 			createLocation({ lat: 30, lng: 40, heading: 180, pitch: 0, zoom: 1 }),
 		];
 		locIds = await addLocs(locs);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("setActiveLocation switches to location work area", async () => {
 		const id = locIds[0];
 		await withApi(async (api, locId) => {
@@ -266,17 +239,7 @@ describe("Active location and work area", () => {
 });
 
 describe("Extra field definitions", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Extra Fields");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Extra Fields");
 
 	it("set extra field definitions on map", async () => {
 		await withApi(async (api) => {
@@ -303,7 +266,7 @@ describe("Extra field definitions", () => {
 	it("extra field definitions persist", async () => {
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const extra = await withApi(async (api) => api.getMapState().map?.meta.extra);
 		expect(extra!.fields!.altitude.type).toBe("number");
@@ -361,7 +324,7 @@ describe("Extra field definitions", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const extra = await withApi(async (api) => api.getMapState().map?.meta.extra);
 		expect(extra!.fields!.fleeb).toBeDefined();
@@ -382,7 +345,7 @@ describe("Extra field definitions", () => {
 		// Persisted: reopen and re-resolve -- memory (live merge) and disk must agree.
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const reloaded = await withApi(async (api) => api.getFieldDef("roundtrip"));
 		expect(reloaded?.type).toBe(live?.type);

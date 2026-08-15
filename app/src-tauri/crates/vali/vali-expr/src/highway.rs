@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 const NAMES: [(&str, i32); 17] = [
     ("Unknown", 0),
     ("Motorway", 1),

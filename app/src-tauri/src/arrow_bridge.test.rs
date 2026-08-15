@@ -10,7 +10,6 @@ fn sample_locations() -> Vec<Location> {
             pitch: 5.0,
             zoom: 1.5,
             pano_id: Some("CAoSLEF...".to_string()),
-            provider: None,
             flags: crate::types::LocationFlags::LOAD_AS_PANO_ID,
             tags: vec![1, 2],
             extra: Some(serde_json::from_str(r#"{"countryCode":"FR","altitude":35.2}"#).unwrap()),
@@ -21,16 +20,9 @@ fn sample_locations() -> Vec<Location> {
             id: 2,
             lat: -33.8688,
             lng: 151.2093,
-            heading: 0.0,
-            pitch: 0.0,
             zoom: 1.0,
-            pano_id: None,
-            provider: None,
-            flags: crate::types::LocationFlags::empty(),
-            tags: vec![],
-            extra: None,
             created_at: crate::util::iso_to_unix("2024-06-20T15:00:00Z").unwrap() as u32,
-            modified_at: None,
+            ..Default::default()
         },
     ]
 }
@@ -48,7 +40,6 @@ fn schema_field_names_match_column_indices() {
         (COL_PITCH, "pitch"),
         (COL_ZOOM, "zoom"),
         (COL_PANO_ID, "pano_id"),
-        (COL_PROVIDER, "provider"),
         (COL_FLAGS, "flags"),
         (COL_TAGS, "tags"),
         (COL_EXTRA, "extra"),
@@ -70,7 +61,7 @@ fn round_trip() {
     let locs = sample_locations();
     let batch = locations_to_batch(&locs);
     assert_eq!(batch.num_rows(), 2);
-    assert_eq!(batch.num_columns(), 13);
+    assert_eq!(batch.num_columns(), 12);
 
     let restored = batch_to_locations(&batch);
     assert_eq!(restored.len(), 2);
@@ -83,7 +74,6 @@ fn round_trip() {
         assert!((orig.pitch - rest.pitch).abs() < 1e-10);
         assert!((orig.zoom - rest.zoom).abs() < 1e-10);
         assert_eq!(orig.pano_id, rest.pano_id);
-        assert_eq!(orig.provider, rest.provider);
         assert_eq!(orig.flags, rest.flags);
         assert_eq!(orig.tags, rest.tags);
         assert_eq!(
@@ -101,12 +91,12 @@ fn round_trip() {
 
 #[test]
 fn snapshot_batch_reads_as_all_created() {
-    // A genesis commit stores its delta as a plain 13-column base snapshot (no `op`
+    // A genesis commit stores its delta as a plain 12-column base snapshot (no `op`
     // column). batch_to_delta must read every row as created so it materializes back
     // to the full location set — this is what lets the genesis commit reuse the base
     // file instead of re-serializing a separate delta.
     let locs = sample_locations();
-    let snapshot = locations_to_batch(&locs); // base format, 13 columns, no op
+    let snapshot = locations_to_batch(&locs); // base format, 12 columns, no op
     let (created, removed) = batch_to_delta(&snapshot);
     assert!(removed.is_empty());
     assert_eq!(
@@ -341,7 +331,6 @@ fn arb_location_body() -> impl Strategy<Value = Location> {
                     pitch,
                     zoom,
                     pano_id,
-                    provider: None,
                     flags,
                     tags,
                     extra,

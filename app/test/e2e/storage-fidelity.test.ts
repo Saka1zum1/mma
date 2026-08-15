@@ -12,171 +12,23 @@ import {
 	getLocCount,
 	createLocation,
 	withApi,
+	useMap,
+	seedLocs,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 
-// =============================================================================
-// 1. Save failure recovery -- dirty state must survive a failed write
-// =============================================================================
-
-// Skipped: Tauri freezes __TAURI_INTERNALS__ (non-configurable), so we can't
-// intercept invoke() from JS to inject save failures. These tests need a
-// Rust-side test command behind #[cfg(feature = "e2e")] to arm failures.
-describe.skip("Save failure recovery", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E SaveFailure");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
-	it("data added before a failed save persists after a successful retry", async () => {
-		const result = await withApi(async (api) => {
-			const locs: Location[] = [
-				api.createLocation({ lat: 10, lng: 20, heading: 0, pitch: 0, zoom: 1 }),
-				api.createLocation({
-					lat: 30,
-					lng: 40,
-					heading: 90,
-					pitch: 0,
-					zoom: 1,
-					panoId: "pano_sf2",
-					flags: 1,
-				}),
-			];
-			await api.addLocations(locs);
-			const sf1Id = locs[0].id;
-			const sf2Id = locs[1].id;
-
-			// Intercept save_blob_chunks to simulate Rust write failure
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub hook, not yet implemented
-			(api as any).interceptInvoke("save_blob_chunks", "failOnce");
-
-			// This save should fail
-			let saveFailed = false;
-			try {
-				await api.flushSave();
-			} catch {
-				saveFailed = true;
-			}
-
-			// Retry -- this one should succeed
-			await api.flushSave();
-			return { saveFailed, sf1Id, sf2Id };
-		});
-		expect(result.saveFailed).toBe(true);
-
-		// Close and reopen to verify persistence
-		await closeMap();
-		await openMap(mapId);
-
-		const sf1 = await getLoc(result.sf1Id);
-		const sf2 = await getLoc(result.sf2Id);
-		const count = await getLocCount();
-
-		expect(count).toBe(2);
-		expect(sf1).toBeTruthy();
-		expect(sf1.lat).toBe(10);
-		expect(sf2).toBeTruthy();
-		expect(sf2.panoId).toBe("pano_sf2");
-		expect(sf2.flags).toBe(1);
-	});
-
-	it("data added AFTER a failed save also persists", async () => {
-		const result = await withApi(async (api) => {
-			const preLocs: Location[] = [
-				api.createLocation({ lat: 1, lng: 1, heading: 0, pitch: 0, zoom: 1 }),
-			];
-			await api.addLocations(preLocs);
-			const preId = preLocs[0].id;
-
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub hook, not yet implemented
-			(api as any).interceptInvoke("save_blob_chunks", "failOnce");
-			try {
-				await api.flushSave();
-			} catch {
-				/* expected failure */
-			}
-
-			// Add more data AFTER the failure
-			const postLocs: Location[] = [
-				api.createLocation({ lat: 2, lng: 2, heading: 0, pitch: 0, zoom: 1 }),
-			];
-			await api.addLocations(postLocs);
-			const postId = postLocs[0].id;
-
-			// This save must capture BOTH pre-failure and post-failure data
-			await api.flushSave();
-			return { preId, postId };
-		});
-
-		await closeMap();
-		await openMap(mapId);
-
-		const pre = await getLoc(result.preId);
-		const post = await getLoc(result.postId);
-		expect(pre).toBeTruthy();
-		expect(post).toBeTruthy();
-	});
-
-	it("delete_chunks failure preserves data", async () => {
-		const result = await withApi(async (api) => {
-			const locs: Location[] = [
-				api.createLocation({ lat: 50, lng: 50, heading: 0, pitch: 0, zoom: 1 }),
-			];
-			await api.addLocations(locs);
-			const delId = locs[0].id;
-			await api.flushSave();
-
-			// Now remove it (creates a delete_chunks call on next save)
-			await api.removeLocations(new Set([delId]));
-
-			// Fail the delete
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub hook, not yet implemented
-			(api as any).interceptInvoke("delete_chunks", "failOnce");
-			try {
-				await api.flushSave();
-			} catch {
-				/* expected failure */
-			}
-
-			// Retry
-			await api.flushSave();
-			return { delId };
-		});
-
-		await closeMap();
-		await openMap(mapId);
-
-		const loc = await getLocOrNull(result.delId);
-		// sf-del-1 was removed -- after successful retry it should be gone
-		expect(loc).toBeFalsy();
-	});
-});
+// Save-failure recovery is untested: Tauri freezes __TAURI_INTERNALS__, so JS cannot
+// intercept invoke() to inject write failures. Needs a Rust test command behind
+// #[cfg(feature = "e2e")] to arm them.
 
 // =============================================================================
 // 2. Save ordering -- mutations during in-flight save are not lost
 // =============================================================================
 
 describe("Save ordering under concurrent mutations", () => {
-	let mapId: string;
+	const map = useMap("E2E SaveOrdering");
 	let so1Id: number;
 	let so2Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E SaveOrdering");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("add during save is captured by next save cycle", async () => {
 		const result = await withApi(async (api) => {
@@ -203,7 +55,7 @@ describe("Save ordering under concurrent mutations", () => {
 		so2Id = result.id2;
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc1 = await getLoc(so1Id);
 		const loc2 = await getLoc(so2Id);
@@ -226,7 +78,7 @@ describe("Save ordering under concurrent mutations", () => {
 		}, loc);
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const reloaded = await getLoc(so1Id);
 		expect(reloaded.heading).toBe(180);
@@ -254,7 +106,7 @@ describe("Save ordering under concurrent mutations", () => {
 		});
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const old = await getLocOrNull(result.geoId1);
 		const newLoc = await getLoc(result.geoId2);
@@ -268,19 +120,9 @@ describe("Save ordering under concurrent mutations", () => {
 // =============================================================================
 
 describe("Field fidelity across multiple save cycles", () => {
-	let mapId: string;
+	const map = useMap("E2E FieldFidelity");
 	let ff1Id: number;
 	let ffNullId: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E FieldFidelity");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("all location fields survive 3 save/load cycles", async () => {
 		const result = await withApi(async (api) => {
@@ -306,7 +148,7 @@ describe("Field fidelity across multiple save cycles", () => {
 		for (let i = 0; i < 3; i++) {
 			await flushAndWait();
 			await closeMap();
-			await openMap(mapId);
+			await openMap(map.id);
 		}
 
 		const loaded = await getLoc(ff1Id);
@@ -333,7 +175,7 @@ describe("Field fidelity across multiple save cycles", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loaded = await getLoc(ff1Id);
 
@@ -367,7 +209,7 @@ describe("Field fidelity across multiple save cycles", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loaded = await getLoc(ffNullId);
 
@@ -385,17 +227,7 @@ describe("Field fidelity across multiple save cycles", () => {
 // =============================================================================
 
 describe("Geohash cell boundary correctness", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E GeohashBoundary");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E GeohashBoundary");
 
 	it("locations at geohash cell edges survive save/load", async () => {
 		const locs = [
@@ -409,7 +241,7 @@ describe("Geohash cell boundary correctness", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const allLocs = await getAllLocs();
 		const loadedIds = new Set(allLocs.map((l) => l.id));
@@ -422,16 +254,10 @@ describe("Geohash cell boundary correctness", () => {
 
 	it("locations in different geohash cells are independent", async () => {
 		// Add locations spread across many cells, remove from one cell only
-		const spreadLocs = [];
-		for (let i = 0; i < 20; i++) {
-			spreadLocs.push(
-				createLocation({
-					lat: -80 + i * 8,
-					lng: -170 + i * 18,
-				}),
-			);
-		}
-		const spreadIds = await addLocs(spreadLocs);
+		const spreadIds = await seedLocs(20, (i) => ({
+			lat: -80 + i * 8,
+			lng: -170 + i * 18,
+		}));
 
 		await flushAndWait();
 
@@ -444,7 +270,7 @@ describe("Geohash cell boundary correctness", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const allLocs = await getAllLocs();
 		const loadedIds = new Set(allLocs.map((l) => l.id));
@@ -463,18 +289,8 @@ describe("Geohash cell boundary correctness", () => {
 // =============================================================================
 
 describe("Large dataset save/load fidelity", () => {
-	let mapId: string;
+	const map = useMap("E2E LargeSave");
 	let lgIds: number[];
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E LargeSave");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("1000 locations survive save/load with correct field values", async () => {
 		const result = await withApi(async (api) => {
@@ -502,7 +318,7 @@ describe("Large dataset save/load fidelity", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(1000);
@@ -546,7 +362,7 @@ describe("Large dataset save/load fidelity", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const allLocs = await getAllLocs();
 		const loadedIds = new Set(allLocs.map((l) => l.id));
@@ -580,7 +396,7 @@ describe("Large dataset save/load fidelity", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		expect(count).toBe(766); // 666 + 100
@@ -596,18 +412,8 @@ describe("Large dataset save/load fidelity", () => {
 // =============================================================================
 
 describe("Dirty tracking accuracy", () => {
-	let mapId: string;
+	const map = useMap("E2E DirtyTracking");
 	let dt1Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E DirtyTracking");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("mutation marks dirty, close/reopen preserves the pending state", async () => {
 		const result = await withApi(async (api) => {
@@ -625,7 +431,7 @@ describe("Dirty tracking accuracy", () => {
 		expect(afterMutation).toBeGreaterThan(0);
 
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const afterReopen = await withApi(async (api) => {
 			return (await api.cmd.storeGetSummary()).dirtyCount;
@@ -666,17 +472,7 @@ describe("Dirty tracking accuracy", () => {
 // =============================================================================
 
 describe("Worker lifecycle across map close/open", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E WorkerLifecycle");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E WorkerLifecycle");
 
 	it("save works correctly after close and reopen", async () => {
 		const result1 = await withApi(async (api) => {
@@ -690,7 +486,7 @@ describe("Worker lifecycle across map close/open", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		// Add more after reopen (new worker instance)
 		const result2 = await withApi(async (api) => {
@@ -704,7 +500,7 @@ describe("Worker lifecycle across map close/open", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const count = await getLocCount();
 		const loc1 = await getLoc(wl1Id);
@@ -727,7 +523,7 @@ describe("Worker lifecycle across map close/open", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 		// Immediately add and save again
 		const result2 = await withApi(async (api) => {
 			const locs: Location[] = [
@@ -740,7 +536,7 @@ describe("Worker lifecycle across map close/open", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc1 = await getLoc(rapidId);
 		const loc2 = await getLoc(rapid2Id);

@@ -10,10 +10,7 @@
  * materializable.
  */
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	addLocs,
 	createLocation,
 	createTag,
@@ -22,6 +19,7 @@ import {
 	getLocCount,
 	flushAndWait,
 	withApi,
+	useMap,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 
@@ -53,15 +51,12 @@ async function commitDiff(): Promise<[number, number, number]> {
 }
 
 describe("VCS data fidelity — exact restoration through checkout", () => {
-	let mapId: string;
+	const map = useMap("E2E VCS Fidelity");
 	let ids: number[];
 	let v1Snapshot: ReturnType<typeof snap>[];
 	let tagId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Fidelity");
-
 		// Distinct data per location so a mix-up is detectable.
 		ids = await addLocs([
 			createLocation({ lat: 11.1, lng: 22.2, heading: 33, panoId: "PANO_A", flags: 1 }),
@@ -88,12 +83,6 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 		await withApi(async (api) => api.commitMap("v1"));
 		v1Snapshot = await snapshotAll();
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("v1 snapshot captured the seeded data", () => {
 		expect(v1Snapshot.length).toBe(4);
 		const byId = Object.fromEntries(v1Snapshot.map((s) => [s.id, s]));
@@ -128,7 +117,7 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 		await flushAndWait();
 		await withApi(async (api) => api.commitMap("v2"));
 
-		const commits = await listCommits(mapId);
+		const commits = await listCommits(map.id);
 		const v1 = commits.find((c) => c.message === "v1");
 		expect(v1).toBeTruthy();
 
@@ -139,7 +128,7 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 	});
 
 	it("checkout v2 restores the modified state exactly", async () => {
-		const commits = await listCommits(mapId);
+		const commits = await listCommits(map.id);
 		const v2 = commits.find((c) => c.message === "v2");
 		expect(v2).toBeTruthy();
 
@@ -162,7 +151,7 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 	it("checkout survives a save/load reopen with data intact", async () => {
 		await flushAndWait();
 		await closeMap();
-		await withApi(async (api, id) => api._test.openMap(id), mapId);
+		await withApi(async (api, id) => api._test.openMap(id), map.id);
 
 		const byId = Object.fromEntries((await getAllLocs()).map((l) => [l.id, l]));
 		expect(byId[ids[0]].heading).toBe(270);
@@ -171,12 +160,10 @@ describe("VCS data fidelity — exact restoration through checkout", () => {
 });
 
 describe("VCS commit-diff badge accuracy", () => {
-	let mapId: string;
+	useMap("E2E VCS Diff Badge");
 	let ids: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Diff Badge");
 		ids = await addLocs([
 			createLocation({ lat: 1, lng: 1, heading: 0 }),
 			createLocation({ lat: 2, lng: 2, heading: 0 }),
@@ -185,12 +172,6 @@ describe("VCS commit-diff badge accuracy", () => {
 		await flushAndWait();
 		await withApi(async (api) => api.commitMap("base"));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("clean tree shows no diff right after commit", async () => {
 		expect(await commitDiff()).toEqual([0, 0, 0]);
 		expect(await withApi(async (api) => api.hasCommitDiff())).toBe(false);
@@ -225,17 +206,7 @@ describe("VCS commit-diff badge accuracy", () => {
 });
 
 describe("VCS revert-commit chain integrity", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Revert Chain");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E VCS Revert Chain");
 
 	it("the auto revert commit stays materializable and tip-correct", async () => {
 		// c1 = 2 locs, c2 = +2 locs (4 total)
@@ -252,12 +223,12 @@ describe("VCS revert-commit chain integrity", () => {
 		await withApi(async (api, cid) => api.checkoutCommit(cid), c1);
 		expect(await getLocCount()).toBe(2);
 
-		const commits = await listCommits(mapId);
+		const commits = await listCommits(map.id);
 		expect(commits[0].message).toContain("Revert");
 		// Tip materializes to the c1 state (2 locs) -- proven by reopening.
 		await flushAndWait();
 		await closeMap();
-		await withApi(async (api, id) => api._test.openMap(id), mapId);
+		await withApi(async (api, id) => api._test.openMap(id), map.id);
 		expect(await getLocCount()).toBe(2);
 
 		// And we can still keep working + committing on top of the revert.
@@ -268,7 +239,7 @@ describe("VCS revert-commit chain integrity", () => {
 	});
 
 	it("checking out the revert tip after more work restores 3 locs", async () => {
-		const commits = await listCommits(mapId);
+		const commits = await listCommits(map.id);
 		const afterRevert = commits.find((c) => c.message === "after revert");
 		await addLocs([createLocation({ lat: 6, lng: 6 })]);
 		await flushAndWait();

@@ -1,28 +1,16 @@
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	addLocs,
 	createLocation,
 	getLoc,
 	flushAndWait,
 	openMap,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Extra field definitions", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Extra Fields");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Extra Fields");
 
 	it("registers field definitions that persist after reopen", async () => {
 		await withApi(async (api) => {
@@ -41,7 +29,7 @@ describe("Extra field definitions", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const fields = await withApi(async (api) => api.getMapState().map!.meta.extra?.fields);
 		expect(fields).toBeTruthy();
@@ -119,7 +107,7 @@ describe("Extra field definitions", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(ids[0]);
 		expect(loc.extra.altitude).toBe(8848);
@@ -129,17 +117,7 @@ describe("Extra field definitions", () => {
 });
 
 describe("Extra field auto-registration", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Extra AutoReg");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Extra AutoReg");
 
 	it("adding locations with new extra fields auto-registers definitions", async () => {
 		await addLocs([

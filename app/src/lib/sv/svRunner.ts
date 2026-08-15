@@ -11,15 +11,11 @@
 
 import type { Location, ExtraFieldDef } from "@/bindings.gen";
 import { fetchLocationsByIds, updateLocations } from "@/store/useMapStore";
-import { fetchSvMetadata } from "@/lib/sv/svMeta";
+import { fetchSvMetadataBatched } from "@/lib/sv/svMeta";
 import { resolvePanoIds } from "@/lib/sv/lookup";
 import { getEnrichmentProviders, providerWaves } from "@/lib/data/fieldDefs";
-import { runConcurrent } from "@/lib/util/concurrent";
 import type { Update, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
-
-// 200 is GetMetadata's hard per-request cap; concurrency saturates the endpoint ~48.
-const BATCH_SIZE = 200;
-const META_CONCURRENCY = 48;
+import { msg } from "@/lib/i18n";
 
 export type PanoData = google.maps.StreetViewResolvedPanoramaData;
 
@@ -121,10 +117,10 @@ export async function runResolvers(
 	const allUpdates: Update<LocationPatch>[] = [];
 	let resolvedPanoIds: Map<number, string> | undefined;
 	if (needResolve.length > 0) {
-		onProgress?.(0, needResolve.length, "Resolving panoramas");
+		onProgress?.(0, needResolve.length, msg("Resolving panoramas"));
 		const pr = await resolvePanoIds(needResolve, {
 			signal,
-			onProgress: (d) => onProgress?.(d, needResolve.length, "Resolving panoramas"),
+			onProgress: (d) => onProgress?.(d, needResolve.length, msg("Resolving panoramas")),
 		});
 		resolvedPanoIds = new Map(pr.resolved.map((x) => [x.id, x.panoId]));
 		for (const { id, panoId } of pr.resolved) {
@@ -143,18 +139,7 @@ export async function runResolvers(
 	for (const loc of metaNoPano)
 		for (const { r } of metaResolvers) if (r.pending(loc, force)) result[r.id].failed.push(loc.id);
 
-	async function metaBatch(batch: Location[], panoIds: string[]): Promise<void> {
-		signal?.throwIfAborted();
-		const datas = await fetchSvMetadata(panoIds);
-		signal?.throwIfAborted();
-
-		if (batch.length > 1 && datas.every((d) => d == null)) {
-			const mid = Math.ceil(batch.length / 2);
-			await metaBatch(batch.slice(0, mid), panoIds.slice(0, mid));
-			await metaBatch(batch.slice(mid), panoIds.slice(mid));
-			return;
-		}
-
+	function applyMetaBatch(batch: Location[], datas: (PanoData | null)[]): void {
 		for (let j = 0; j < batch.length; j++) {
 			const loc = batch[j];
 			const data = datas[j];
@@ -178,19 +163,15 @@ export async function runResolvers(
 	}
 
 	if (metaPending.length > 0) onProgress?.(0, metaPending.length);
-	const metaBatches: Location[][] = [];
-	for (let i = 0; i < metaLocs.length; i += BATCH_SIZE)
-		metaBatches.push(metaLocs.slice(i, i + BATCH_SIZE));
-	await runConcurrent(
-		metaBatches,
-		async (batch) => {
-			await metaBatch(
-				batch,
-				batch.map((l) => panoIdFor(l)!),
-			);
-			tick(Math.min(BATCH_SIZE, batch.length));
+	await fetchSvMetadataBatched(
+		metaLocs.map((l) => panoIdFor(l)!),
+		{
+			signal,
+			onBatch: (datas, start) => {
+				applyMetaBatch(metaLocs.slice(start, start + datas.length), datas);
+				tick(datas.length);
+			},
 		},
-		{ concurrency: META_CONCURRENCY, signal },
 	);
 	if (metaNoPano.length > 0) tick(metaNoPano.length);
 
@@ -231,7 +212,7 @@ export async function runResolvers(
 			const waveTotal = units.reduce((a, b) => a + b, 0);
 			const slow = wave.filter((p, i) => units[i] > 0 && p.label);
 			const label =
-				slow.length === 1 ? slow[0].label : slow.length > 1 ? "Enriching fields" : undefined;
+				slow.length === 1 ? slow[0].label : slow.length > 1 ? msg("Enriching fields") : undefined;
 			let waveDone = 0;
 			if (waveTotal > 0) onProgress?.(0, waveTotal, label);
 			const outcomeOf = (id: string) => (result[id] ??= { success: [], failed: [] });

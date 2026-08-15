@@ -1,10 +1,8 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use rustc_hash::FxHashSet;
 use vali_core::Location;
 use vali_expr::error::ExprError;
 const RESOLUTION_GEN4: i32 = 8192;
-pub const COUNTRY_CODES_ACCEPTABLE_WITHOUT_DESCRIPTION: [&str; 22] = [
+pub const COUNTRY_CODES_ACCEPTABLE_WITHOUT_DESCRIPTION: [&str; 23] = [
     "CX",
     "CC",
     "MP",
@@ -27,6 +25,7 @@ pub const COUNTRY_CODES_ACCEPTABLE_WITHOUT_DESCRIPTION: [&str; 22] = [
     "PK",
     "BY",
     "UM",
+    "XK",
 ];
 pub const SUBDIVISION_CODES_ACCEPTABLE_WITHOUT_DESCRIPTION: [&str; 4] = [
     "NO-21",

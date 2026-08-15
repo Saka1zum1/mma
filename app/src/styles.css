@@ -616,8 +616,8 @@ input {
 	/* Pre-boot defaults only: the runtime accent follows the SV coverage line
 	   color (applyAccentColor in lib/util/color.ts stamps these on :root). */
 	--accent: #1098ad;
-	--accent-hover: #13b2c9;
-	--accent-muted: #1098ad26;
+	--accent-hover: hsl(from var(--accent) h s min(calc(l + 8), 95));
+	--accent-muted: color-mix(in srgb, var(--accent) 15%, transparent);
 	--on-accent: #fff;
 
 	/* primary actions */
@@ -946,6 +946,11 @@ input[type="range"]:disabled {
 	left: 50%;
 	transform: translate(-50%, -50%);
 }
+/* Radix parks focus on the content element (tabindex -1) whenever a child unmounts;
+   it is never a tab stop, so its ring is noise. */
+.modal:focus {
+	outline: none;
+}
 .modal::backdrop,
 .modal__backdrop {
 	z-index: 10050;
@@ -1005,28 +1010,98 @@ input[type="range"]:disabled {
 	}
 }
 .welcome-dialog {
-	background: var(--surface-2);
-	color: var(--text-1);
-	max-width: 480px;
+	position: relative;
+	width: min(24rem, 92vw);
+	padding-bottom: 1.5rem;
 }
-.welcome-dialog .modal__title {
+/* keep the Radix title for a11y; the hero carries the visible name */
+.welcome-dialog__header {
+	position: absolute;
+	top: 0.75rem;
+	right: 0.75rem;
+	padding: 0;
+	z-index: 1;
+}
+.welcome-dialog__header .modal__title {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+}
+.welcome-dialog__hero {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.125rem;
+	padding: 1rem 0 1.25rem;
+	text-align: center;
+}
+.welcome-dialog__hero img {
+	width: 80px;
+	height: 80px;
+	margin-bottom: 0.625rem;
+	filter: drop-shadow(0 4px 12px #00000059);
+	user-select: none;
+}
+.welcome-dialog__name {
+	font-size: 1.3rem;
+	font-weight: 600;
+}
+.welcome-dialog__version {
+	font-family: var(--font-mono);
+	font-size: 0.75rem;
+	color: var(--text-3);
+}
+.welcome-dialog__links {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+}
+.welcome-dialog__link {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.625rem 0.75rem;
+	background: var(--surface-1);
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-2);
+	color: var(--text-1);
+	font: inherit;
+	text-align: left;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		border-color 0.1s,
+		background 0.1s;
+}
+.welcome-dialog__link:hover {
+	background: var(--surface-3);
+	border-color: var(--border-strong);
+}
+.welcome-dialog .modal__content a.welcome-dialog__link,
+.welcome-dialog .modal__content a.welcome-dialog__link:active,
+.welcome-dialog .modal__content a.welcome-dialog__link:visited {
 	color: var(--text-1);
 }
-.welcome-dialog .modal__close {
+.welcome-dialog__link svg {
+	flex-shrink: 0;
 	color: var(--text-2);
 }
-.welcome-dialog .modal__close:hover {
-	color: var(--text-1);
+.welcome-dialog__link strong {
+	display: block;
+	font-weight: 600;
+	font-size: 0.9rem;
 }
-.welcome-dialog .modal__content p {
-	margin: 0 0 0.75rem;
-	line-height: 1.5;
+.welcome-dialog__link small {
+	display: block;
 	color: var(--text-2);
+	font-size: 0.8rem;
+	line-height: 1.35;
 }
-.welcome-dialog .modal__content a,
-.welcome-dialog .modal__content a:active,
-.welcome-dialog .modal__content a:visited {
-	color: var(--accent);
+.welcome-dialog__cta {
+	width: 100%;
 }
 .edit-map-modal {
 	width: 540px;
@@ -1352,7 +1427,7 @@ input[type="range"]:disabled {
 .import-preview__item--dup {
 	background: var(--accent-muted);
 }
-.import-preview__item--deselected {
+.import-preview__item:has(input:not(:checked)) {
 	opacity: 0.5;
 }
 .import-preview__name {
@@ -1909,10 +1984,10 @@ input[type="range"]:disabled {
 	line-height: calc(2rem - 2px);
 	display: inline-block;
 }
-.tag-input.has-button {
+.tag-input:has(> .tag-input__button) {
 	padding-left: 0;
 }
-.tag-input.is-disabled {
+.tag-input:has(:disabled) {
 	opacity: 0.75;
 }
 .tag-input__button {
@@ -2096,7 +2171,13 @@ input[type="range"]:disabled {
 .map-type-control {
 	padding: 0;
 }
-.map-type-control__basemap--measure {
+.map-type-control__row {
+	display: flex;
+}
+.map-type-control__row .map-type-control__basemap {
+	flex: 1;
+}
+.map-type-control__row--measure {
 	position: fixed;
 	left: -9999px;
 	top: 0;
@@ -2106,8 +2187,31 @@ input[type="range"]:disabled {
 	height: auto;
 	overflow: visible;
 }
-.map-type-control__basemap--measure .map-type-control__button span {
+.map-type-control__row--measure .map-type-control__button span {
 	font-weight: 700;
+}
+.map-type-control__toggle {
+	color: #000;
+	cursor: pointer;
+	background: #fff;
+	border: none;
+	border-left: 1px solid #0000001f;
+	flex: none;
+	place-content: center;
+	width: 34px;
+	height: 40px;
+	display: grid;
+	transition: background 0.12s ease;
+}
+.map-type-control__toggle:hover,
+.map-type-control__toggle[data-state="open"] {
+	background: #ebebeb;
+}
+.map-type-control__toggle svg {
+	transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.map-type-control__toggle[data-state="open"] svg {
+	transform: rotate(180deg);
 }
 .map-type-control__basemap {
 	grid-auto-flow: column;
@@ -2148,6 +2252,10 @@ input[type="range"]:disabled {
 	position: absolute;
 	inset: 0;
 	overflow: hidden;
+	transition: opacity 0.12s ease;
+}
+.map-type-control__button:hover .map-type-control__background {
+	opacity: 0.62;
 }
 .map-type-control__background img {
 	position: absolute;
@@ -2158,6 +2266,13 @@ input[type="range"]:disabled {
 	transform: translate(-50%, -50%);
 	pointer-events: none;
 	user-select: none;
+}
+@media (prefers-reduced-motion) {
+	.map-type-control__toggle,
+	.map-type-control__toggle svg,
+	.map-type-control__background {
+		transition: none;
+	}
 }
 .layer-config {
 	width: 100%;
@@ -2797,6 +2912,50 @@ input[type="range"]:disabled {
 	align-items: center;
 	gap: 0.375rem;
 }
+.manage-fields-table__type {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+.manage-fields-table__values {
+	background: none;
+	border: none;
+	color: var(--stone-7);
+	cursor: pointer;
+	font-size: 0.8em;
+	padding: 0.125rem 0.25rem;
+	white-space: nowrap;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.manage-fields-table__values:hover {
+	color: var(--stone-9);
+}
+.enum-values {
+	width: min(30rem, 92vw);
+}
+.enum-values__row {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-bottom: 0.375rem;
+	min-width: 0;
+}
+.enum-values__row .text-input {
+	flex: 1;
+	width: 100%;
+	min-width: 0;
+	height: 28px;
+	line-height: 28px;
+}
+.enum-values__row .text-input:first-child {
+	font-family: monospace;
+}
+.enum-values__add {
+	display: flex;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+}
 .extra-filter-builder {
 	display: flex;
 	align-items: center;
@@ -3432,6 +3591,13 @@ input.date-picker__trigger:focus {
 	align-items: center;
 	gap: 0.5rem;
 }
+.selection-manager__inline-option {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	cursor: pointer;
+	opacity: 0.6;
+}
 .icon-button.is-active {
 	background: #ffffff1a;
 }
@@ -3510,7 +3676,7 @@ input.date-picker__trigger:focus {
 	max-width: 100%;
 	min-width: 0;
 }
-.tag.has-button {
+.tag:has(> .tag__button) {
 	display: inline-flex;
 	align-items: center;
 }
@@ -3522,7 +3688,7 @@ input.date-picker__trigger:focus {
 	opacity: 1;
 	padding: 0 1rem;
 }
-.tag.has-button {
+.tag:has(> .tag__button) {
 	padding: 0 0.75rem 0 0;
 }
 .tag[aria-roledescription="sortable"][aria-pressed="true"] {
@@ -3899,6 +4065,19 @@ body:not(.mm-tag-dragging) .tag-tree__edit:hover {
 }
 .map-meta__spacer {
 	flex-grow: 1;
+}
+.commit-dialog {
+	width: 22rem;
+}
+.commit-dialog__message {
+	width: 100%;
+	margin-top: 0.75rem;
+}
+.commit-dialog__actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-top: 1rem;
 }
 .map-meta__actions {
 	gap: 1rem;
@@ -4347,6 +4526,8 @@ body {
 	padding: 0.5rem 1rem;
 	font-size: 0.9rem;
 	line-height: 2rem;
+	/* Hangs below its trigger, so it unfolds from the top edge rather than its centre. */
+	transform-origin: top;
 	animation: 0.15s cubic-bezier(0.16, 1, 0.3, 1) popoverShow;
 	display: flex;
 }
@@ -4386,12 +4567,16 @@ body {
 .gm-style > div:nth-child(8) > div:first-child {
 	margin-left: 10px !important;
 }
+/* z-index must sit on the positioned element (the positioner), not the popup:
+ * it keeps menus above maplibre's z-indexed ctrl layer, which hosts the deck canvas. */
+.menu-positioner {
+	z-index: 10000;
+}
 .context-menu {
 	/* The popup takes focus on open; highlighted items carry the focus cue, not this box. */
 	outline: none;
 	color: var(--text-1);
 	width: max-content;
-	z-index: 10000;
 	box-shadow: var(--shadow-4);
 	background: var(--surface-3);
 	border: 1px solid var(--border-subtle);
@@ -4642,24 +4827,38 @@ body {
 	gap: 2px;
 }
 .settings-nav-item {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
 	text-align: left;
-	padding: 0.45rem 0.6rem;
+	padding: 0.5rem 0.65rem;
 	border: none;
 	border-radius: var(--radius-2);
 	background: none;
 	color: var(--text-2);
-	font-size: 0.9rem;
+	font-size: 0.95rem;
 	cursor: pointer;
 	transition:
 		color 0.12s,
 		background 0.12s;
 }
+.settings-nav-item__icon {
+	flex-shrink: 0;
+	color: var(--text-3);
+	transition: color 0.12s;
+}
 .settings-nav-item:hover {
 	background: var(--surface-2);
 	color: var(--text-1);
 }
+.settings-nav-item:hover .settings-nav-item__icon {
+	color: var(--text-2);
+}
 .settings-nav-item--active {
 	background: var(--accent-muted);
+	color: var(--accent);
+}
+.settings-nav-item--active .settings-nav-item__icon {
 	color: var(--accent);
 }
 .settings-content {
@@ -4688,8 +4887,11 @@ body {
 	letter-spacing: 0.04em;
 	color: var(--text-2);
 }
-/* A matched section keeps at least one row or auxiliary block; drop the rest. */
-.settings-content--search .settings-section:not(:has(.setting-row)):not(:has(.settings-aux)) {
+/* A matched section keeps at least one row, hotkey table, or auxiliary block; drop the rest. */
+.settings-content--search
+	.settings-section:not(:has(.setting-row)):not(:has(.settings-aux)):not(
+		:has(.settings-hotkey-table)
+	) {
 	display: none;
 }
 .settings-group {
@@ -4728,11 +4930,21 @@ body {
 	justify-content: space-between;
 	gap: 1rem;
 	min-height: 2.5rem;
-	padding: 0.35rem 0;
+	margin-inline: -0.5rem;
+	padding: 0.35rem 0.5rem;
 	border-bottom: 1px solid var(--border-subtle);
+	border-radius: var(--radius-2);
 }
+/* The whole row toggles, so it needs a hover to read as a target -- a control row doesn't. */
 .setting-row--boolean {
 	cursor: pointer;
+}
+.setting-row--boolean:not([aria-disabled="true"]):hover {
+	background: var(--surface-2);
+}
+/* A group's last row would otherwise leave a rule floating in the gap above the next heading. */
+.setting-row:has(+ .settings-group) {
+	border-bottom-color: transparent;
 }
 .setting-row[aria-disabled="true"] {
 	opacity: 0.5;
@@ -4755,6 +4967,17 @@ body {
 }
 .setting-row__title {
 	color: var(--text-1);
+}
+/* Marker beside a setting's name, matching the plugin-card label treatment. */
+.setting-row__badge {
+	display: inline-flex;
+	vertical-align: -2px;
+	margin-left: 5px;
+	color: var(--text-2);
+	opacity: 0.7;
+}
+.setting-row__badge:hover {
+	opacity: 1;
 }
 .setting-row__desc {
 	font-size: 0.85em;
@@ -4862,28 +5085,36 @@ body {
 }
 
 /* Hotkey display & recording */
+/* Same box metrics so swapping display for record never changes the row height. */
+.hotkey-display,
+.hotkey-record {
+	box-sizing: border-box;
+	display: inline-block;
+	font-size: 0.8rem;
+	line-height: 1.25rem;
+	padding: 2px 6px;
+	border: 2px solid transparent;
+	border-radius: 3px;
+}
 .hotkey-display {
 	cursor: pointer;
-	padding: 2px 6px;
-	border-radius: 3px;
-	font-size: 0.8rem;
 	transition: background 0.15s;
 }
 .hotkey-display:hover {
 	background: #ffffff14;
 }
+/* The blank cell has no text, so give it a line box or padding collapses onto itself. */
 .hotkey-display--empty {
 	min-width: 3.5rem;
-	display: inline-block;
+}
+.hotkey-display--empty::before {
+	content: "\00a0";
 }
 .hotkey-record {
 	width: 120px;
 	text-align: center;
-	font-size: 0.8rem;
-	border: 2px solid #2fcc8b;
-	border-radius: 3px;
+	border-color: #2fcc8b;
 	outline: none;
-	padding: 2px 6px;
 	animation: pulse 1s infinite;
 }
 @keyframes pulse {
@@ -4989,11 +5220,12 @@ body {
 	position: relative;
 }
 .split-handle {
-	position: absolute;
-	top: 0;
-	bottom: 0;
+	grid-area: map-embed;
+	justify-self: end;
+	position: relative;
 	width: 8px;
-	margin-left: -4px;
+	/* half the grid column gap, less half the handle, to sit centred in the gutter */
+	margin-right: calc(-0.5rem - 4px);
 	cursor: col-resize;
 	z-index: 10;
 	touch-action: none;

@@ -5,6 +5,7 @@ import {
 	planFieldSet,
 	planFieldExpr,
 	parseFieldExpr,
+	collectEnumCandidates,
 	evalFieldExpr,
 	fieldValue,
 	fieldPatch,
@@ -196,6 +197,8 @@ describe("field expressions", () => {
 		expect(fieldValue(loc, "heading")).toBe(33);
 		expect(fieldValue(loc, "foo")).toBe(7);
 		expect(fieldValue(loc, "missing")).toBeUndefined();
+		// `id` is a builtin column, so it must not fall through to `extra`.
+		expect(fieldValue(loc, "id")).toBe(1);
 	});
 
 	it("supports functions: mod wraps negatives, clamp bounds", () => {
@@ -387,5 +390,36 @@ describe("stepFilterWindow", () => {
 		expect(stepFilterWindow("enum", "eq", "US", undefined, 1)).toBeNull();
 		expect(stepFilterWindow("date", "between_anyyear", "06-01", "06-03", 1)).toBeNull();
 		expect(stepFilterWindow("string", "between", "a", "b", 1)).toBeNull();
+	});
+});
+
+describe("collectEnumCandidates", () => {
+	it("returns distinct sorted values not already in the def", () => {
+		const locs = [
+			makeLoc(1, { tz: "UTC" }),
+			makeLoc(2, { tz: "Asia/Tokyo" }),
+			makeLoc(3, { tz: "UTC" }),
+			makeLoc(4, {}),
+		];
+		expect(collectEnumCandidates(locs, "tz", ["UTC"])).toEqual(["Asia/Tokyo"]);
+	});
+
+	it("stringifies non-string scalars and skips objects, arrays, nulls, empties", () => {
+		const locs = [
+			makeLoc(1, { panoType: 2 }),
+			makeLoc(2, { panoType: "10" }),
+			makeLoc(3, { panoType: null }),
+			makeLoc(4, { panoType: { a: 1 } }),
+			makeLoc(5, { panoType: [3] }),
+			makeLoc(6, { panoType: "" }),
+			makeLoc(7, { panoType: true }),
+		];
+		expect(collectEnumCandidates(locs, "panoType", [])).toEqual(["10", "2", "true"]);
+	});
+
+	it("reads built-in fields via fieldValue", () => {
+		const loc = makeLoc(1);
+		(loc as unknown as { heading: number }).heading = 90;
+		expect(collectEnumCandidates([loc], "heading", [])).toEqual(["90"]);
 	});
 });

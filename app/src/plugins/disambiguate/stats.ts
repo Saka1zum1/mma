@@ -1,6 +1,8 @@
 // Statistical effect-size measures for selection disambiguation. Pure functions,
 // ported 1:1 from the Rust reference; unit-tested in stats.test.ts.
 
+import { clamp } from "@/types/util";
+
 const TWO_PI = Math.PI * 2;
 
 /** Epsilon-squared effect size from the tie-corrected Kruskal-Wallis H statistic.
@@ -153,7 +155,7 @@ function percentile(sorted: number[], q: number): number {
 }
 
 function clamp01(x: number): number {
-	return Math.max(0, Math.min(1, x));
+	return clamp(x, 0, 1);
 }
 
 function sum(xs: number[]): number {

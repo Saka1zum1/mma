@@ -1,19 +1,19 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use vali_core::{GoogleData, Location, NominatimData, OsmData};
-struct Reader<'a> {
+
+/// Cursor over a protobuf byte slice. Shared by every decoder in the workspace.
+pub struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
 }
 impl<'a> Reader<'a> {
-    fn new(buf: &'a [u8]) -> Self {
+    pub fn new(buf: &'a [u8]) -> Self {
         Self { buf, pos: 0 }
     }
-    fn at_end(&self) -> bool {
+    pub fn at_end(&self) -> bool {
         self.pos >= self.buf.len()
     }
     #[inline]
-    fn read_varint(&mut self) -> anyhow::Result<u64> {
+    pub fn read_varint(&mut self) -> anyhow::Result<u64> {
         if let Some(chunk) = self.buf.get(self.pos..self.pos + 10) {
             let mut result: u64 = 0;
             for (i, &byte) in chunk.iter().enumerate() {
@@ -46,11 +46,11 @@ impl<'a> Reader<'a> {
             }
         }
     }
-    fn read_tag(&mut self) -> anyhow::Result<(u32, u8)> {
+    pub fn read_tag(&mut self) -> anyhow::Result<(u32, u8)> {
         let key = self.read_varint()?;
         Ok(((key >> 3) as u32, (key & 7) as u8))
     }
-    fn read_f64(&mut self) -> anyhow::Result<f64> {
+    pub fn read_f64(&mut self) -> anyhow::Result<f64> {
         let end = self.pos + 8;
         let slice = self
             .buf
@@ -59,29 +59,36 @@ impl<'a> Reader<'a> {
         self.pos = end;
         Ok(f64::from_le_bytes(slice.try_into().unwrap()))
     }
-    fn read_len_slice(&mut self) -> anyhow::Result<&'a [u8]> {
+    pub fn read_len_slice(&mut self) -> anyhow::Result<&'a [u8]> {
+        // The length is wire-controlled, so the end offset can overflow on a corrupt buffer.
         let len = self.read_varint()? as usize;
-        let end = self.pos + len;
         let slice = self
-            .buf
-            .get(self.pos..end)
+            .pos
+            .checked_add(len)
+            .and_then(|end| self.buf.get(self.pos..end))
             .ok_or_else(|| anyhow::anyhow!("len-delimited field truncated"))?;
-        self.pos = end;
+        self.pos += len;
         Ok(slice)
     }
-    fn read_string(&mut self) -> anyhow::Result<compact_str::CompactString> {
+    pub fn read_string(&mut self) -> anyhow::Result<compact_str::CompactString> {
         Ok(compact_str::CompactString::from_utf8(self.read_len_slice()?)?)
     }
-    fn read_i64(&mut self) -> anyhow::Result<i64> {
+    /// Length-delimited field as a lossy UTF-8 `String`, for wire formats that may carry
+    /// invalid UTF-8 rather than treating it as a decode failure.
+    pub fn read_string_lossy(&mut self) -> anyhow::Result<String> {
+        Ok(String::from_utf8_lossy(self.read_len_slice()?).into_owned())
+    }
+    pub fn read_i64(&mut self) -> anyhow::Result<i64> {
         Ok(self.read_varint()? as i64)
     }
-    fn read_i32(&mut self) -> anyhow::Result<i32> {
+    pub fn read_i32(&mut self) -> anyhow::Result<i32> {
         Ok(self.read_varint()? as i64 as i32)
     }
-    fn read_bool(&mut self) -> anyhow::Result<bool> {
+    pub fn read_bool(&mut self) -> anyhow::Result<bool> {
         Ok(self.read_varint()? != 0)
     }
-    fn skip(&mut self, wire: u8) -> anyhow::Result<()> {
+    /// Advance past an unknown field of the given wire type.
+    pub fn skip(&mut self, wire: u8) -> anyhow::Result<()> {
         match wire {
             0 => {
                 self.read_varint()?;
@@ -96,12 +103,9 @@ impl<'a> Reader<'a> {
         }
         Ok(())
     }
-    fn advance(&mut self, n: usize) -> anyhow::Result<()> {
-        let end = self.pos + n;
-        if end > self.buf.len() {
-            anyhow::bail!("unexpected end of buffer");
-        }
-        self.pos = end;
+    pub fn advance(&mut self, n: usize) -> anyhow::Result<()> {
+        let end = self.pos.checked_add(n).filter(|&e| e <= self.buf.len());
+        self.pos = end.ok_or_else(|| anyhow::anyhow!("unexpected end of buffer"))?;
         Ok(())
     }
 }
@@ -210,3 +214,7 @@ fn decode_nominatim(buf: &[u8]) -> anyhow::Result<NominatimData> {
     }
     Ok(n)
 }
+
+#[cfg(test)]
+#[path = "decode.test.rs"]
+mod tests;

@@ -17,8 +17,8 @@ import { mapsPanoUrl, fovForZoom, appendLinkTags, shortenMapsUrl } from "@/lib/s
 import { downloadPano } from "@/lib/sv/panoDownload";
 import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
-import { useT, t as translate } from "@/lib/i18n";
 import type { Location } from "@/bindings.gen";
+import { t } from "@/lib/i18n";
 
 /** Copy a google.com/maps link aimed at the location's saved camera. Shortened when the
  *  service answers, long URL otherwise -- both open the same view. */
@@ -38,11 +38,10 @@ async function copyLocationLink(loc: Location) {
 	} catch {
 		await navigator.clipboard.writeText(long).catch(() => {});
 	}
-	toast(translate("toast.linkCopied"), 1500);
+	toast(t("Link copied"), 1500);
 }
 
 export const MapContextMenuContent = forwardRef<HTMLDivElement>((_props, ref) => {
-	const { t, tp } = useT();
 	const isMeasuring = useIsMeasuring();
 	const anchor = useEventValue("anchor:changed", getLatLngAnchor);
 	// Read during render: the popup unmounts on close, so this is the click just handled.
@@ -50,7 +49,7 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement>((_props, ref) =>
 	const polygonCount = polygonsAt(latLng.lat, latLng.lng).length;
 
 	return (
-		<ContextMenu.Positioner>
+		<ContextMenu.Positioner className="menu-positioner">
 			<ContextMenu.Popup className="context-menu" ref={ref}>
 				{location && (
 					<>
@@ -58,14 +57,14 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement>((_props, ref) =>
 							className="context-menu__item"
 							onClick={() => void copyLocationLink(location)}
 						>
-							{t("context.copyStreetViewLink")}
+							{t("Copy Street View link")}
 						</ContextMenu.Item>
 						<ContextMenu.Item
 							className="context-menu__item"
 							disabled={!location.panoId}
 							onClick={() => navigator.clipboard.writeText(location.panoId ?? "")}
 						>
-							{t("context.copyPanoId")}
+							{t("Copy pano ID")}
 						</ContextMenu.Item>
 						<ContextMenu.Item
 							className="context-menu__item"
@@ -75,36 +74,36 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement>((_props, ref) =>
 									downloadPano(location.panoId).catch((e) => log.error("[download] failed:", e));
 							}}
 						>
-							{t("context.downloadPanorama")}
+							{t("Download panorama")}
 						</ContextMenu.Item>
 						<ContextMenu.Item
 							className="context-menu__item"
 							onClick={() => openDialog("quick-copy-to-map", location.id)}
 						>
-							{t("context.copyToMap")}
+							{t("Copy to map...")}
 						</ContextMenu.Item>
 						<ContextMenu.Item
 							className="context-menu__item"
 							onClick={() => void duplicateLocation(location.id)}
 						>
-							{t("context.duplicateLocation")}
+							{t("Duplicate location")}
 						</ContextMenu.Item>
 						<ContextMenu.Item
 							className="context-menu__item"
 							onClick={() => void removeLocations(new Set([location.id]))}
 						>
-							{t("context.deleteLocation")}
+							{t("Delete location")}
 						</ContextMenu.Item>
 						<div className="context-menu__separator" />
 					</>
 				)}
 				{isMeasuring ? (
 					<ContextMenu.Item className="context-menu__item" onClick={endMeasure}>
-						{t("context.endMeasurement")}
+						{t("End measurement")}
 					</ContextMenu.Item>
 				) : (
 					<ContextMenu.Item className="context-menu__item" onClick={() => startMeasure(latLng)}>
-						{t("context.startMeasurement")}
+						{t("Start measurement")}
 					</ContextMenu.Item>
 				)}
 				<ContextMenu.Item
@@ -113,19 +112,19 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement>((_props, ref) =>
 						navigator.clipboard.writeText(`${latLng.lat.toFixed(6)}, ${latLng.lng.toFixed(6)}`)
 					}
 				>
-					{t("context.copyCoordinates")}
+					{t("Copy coordinates")}
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					className="context-menu__item"
 					onClick={() => void selectBorderAt(latLng.lat, latLng.lng, false)}
 				>
-					{t("context.selectThisCountry")}
+					{t("Select this country")}
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					className="context-menu__item"
 					onClick={() => void selectBorderAt(latLng.lat, latLng.lng, true)}
 				>
-					{t("context.selectThisSubdivision")}
+					{t("Select this subdivision")}
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					className="context-menu__item"
@@ -133,18 +132,21 @@ export const MapContextMenuContent = forwardRef<HTMLDivElement>((_props, ref) =>
 					onClick={() => deletePolygonsAt(latLng.lat, latLng.lng)}
 				>
 					{polygonCount > 1
-						? tp("context.deleteNPolygons", polygonCount, { count: polygonCount })
-						: t("context.deleteThisPolygon")}
+						? t(
+								{ one: "Delete {n} polygon here", other: "Delete {n} polygons here" },
+								{ n: polygonCount },
+							)
+						: t("Delete this polygon")}
 				</ContextMenu.Item>
 				<ContextMenu.Item className="context-menu__item" onClick={() => setLatLngAnchor(latLng)}>
-					{t("context.setAnchors")}
+					{t("Set latitude/longitude anchors")}
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					className="context-menu__item"
 					disabled={!anchor}
 					onClick={() => setLatLngAnchor(null)}
 				>
-					{t("context.clearAnchors")}
+					{t("Clear latitude/longitude anchors")}
 				</ContextMenu.Item>
 			</ContextMenu.Popup>
 		</ContextMenu.Positioner>

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 pub fn expand(named_expressions: &[(String, String)], expression: &str) -> String {
     let mut new_expression = expression.to_string();
     let mut iterations = 0u32;

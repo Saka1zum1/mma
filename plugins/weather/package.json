@@ -2,8 +2,8 @@
   "name": "mma-plugin-weather",
   "private": true,
   "scripts": {
-    "build": "node build.js",
-    "dev": "node build.js --watch"
+    "build": "node ../build-plugin.mjs .",
+    "dev": "node ../build-plugin.mjs . --watch"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

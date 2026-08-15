@@ -3,8 +3,9 @@ import { Icon } from "@/components/primitives/Icon";
 import { mdiClose, mdiChevronLeft, mdiChevronRight } from "@mdi/js";
 import { CHAPTERS } from "@/components/manual/chapters";
 import { MANUAL_COMPONENTS, ManualNav } from "@/components/manual/components";
-import { useT } from "@/lib/i18n";
+import { useHotkey } from "@/lib/hooks/useHotkey";
 import "@/components/manual/manual.css";
+import { t } from "@/lib/i18n";
 
 export function Manual({
 	chapterId,
@@ -15,20 +16,13 @@ export function Manual({
 	onNavigate: (id: string) => void;
 	onClose: () => void;
 }) {
-	const { t } = useT();
 	const found = CHAPTERS.findIndex((c) => c.id === chapterId);
 	const index = found >= 0 ? found : 0;
 	const contentRef = useRef<HTMLDivElement>(null);
 	const chapter = CHAPTERS[index];
 	const Body = chapter.Body;
 
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [onClose]);
+	useHotkey("escape", onClose);
 
 	useEffect(() => {
 		contentRef.current?.scrollTo(0, 0);
@@ -43,8 +37,8 @@ export function Manual({
 			<div className="manual">
 				<aside className="manual__sidebar">
 					<div className="manual__sidebar-head">
-						<span className="manual__title">{t("manual.title")}</span>
-						<button className="icon-button" onClick={onClose} aria-label={t("manual.close")}>
+						<span className="manual__title">{t("Manual")}</span>
+						<button className="icon-button" onClick={onClose} aria-label={t("Close manual")}>
 							<Icon path={mdiClose} />
 						</button>
 					</div>

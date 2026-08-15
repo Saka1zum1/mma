@@ -5,21 +5,15 @@
 // remembered - matching how a browser restores tabs open at quit but not ones you
 // closed yourself. Stored in localStorage (shared across all same-origin windows).
 
+import { getLocal, setLocal } from "@/lib/hooks/useLocalStorage";
+
 const KEY = "openMapSession";
 
 export function loadSession(): string[] {
-	try {
-		const parsed = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-		return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
-	} catch {
-		return [];
-	}
+	const parsed = getLocal<unknown>(KEY, []);
+	return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
 }
 
 export function saveSession(ids: string[]): void {
-	try {
-		localStorage.setItem(KEY, JSON.stringify(ids));
-	} catch {
-		// ignored
-	}
+	setLocal(KEY, ids);
 }

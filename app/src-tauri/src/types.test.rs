@@ -55,6 +55,68 @@ fn get_handles_escapes_and_non_objects() {
     assert_eq!(extra(r#""just a string""#).get("a"), None);
 }
 
+/// The field `café` with its key ASCII-escaped, as an ensure_ascii encoder writes it.
+fn escaped_key_extra() -> String {
+    let bs = '\\';
+    format!("{{\"caf{bs}u00e9\":\"au lait\"}}")
+}
+
+// Keys are matched on raw bytes, so an escaped key has to be decoded at every ingest
+// point or it silently matches nothing.
+#[test]
+fn escaped_keys_are_canonicalized_on_ingest() {
+    let escaped = escaped_key_extra();
+
+    let from_str = RawExtra::from_string(escaped.clone()).unwrap();
+    assert_eq!(from_str.as_str(), "{\"café\":\"au lait\"}");
+    assert_eq!(from_str.get("café"), Some(serde_json::json!("au lait")));
+
+    // IPC / on-disk JSON.
+    let ipc: RawExtra = serde_json::from_str(&escaped).unwrap();
+    assert_eq!(ipc.get("café"), Some(serde_json::json!("au lait")));
+
+    // Delta sidecar / undo blob (rmp string form).
+    let field: ExtraField = Some(Some(extra(&escaped)));
+    let bytes = rmp_serde::to_vec_named(&field).unwrap();
+    let back: ExtraField = rmp_serde::from_slice(&bytes).unwrap();
+    assert_eq!(
+        back.unwrap().unwrap().get("café"),
+        Some(serde_json::json!("au lait"))
+    );
+
+    // Field discovery reports the decoded name, so it registers as one field.
+    let mut keys: Vec<String> = Vec::new();
+    from_str.for_each_field(|k, _| keys.push(k.to_owned()));
+    assert_eq!(keys, vec!["café"]);
+}
+
+#[test]
+fn canonicalization_leaves_everything_else_byte_identical() {
+    // No escaped key -> the exact input bytes survive (values keep their escapes, and
+    // the common path never pays a reserialize).
+    for src in [
+        r#"{"café":"noir","n":1.50,"s":"a\"b\\cé"}"#,
+        r#"{"a":1,"b":[1,2]}"#,
+    ] {
+        assert_eq!(RawExtra::from_string(src.to_owned()).unwrap().as_str(), src);
+    }
+    // A key that JSON *requires* to be escaped keeps the escape (shortest legal form).
+    let bs = '\\';
+    let quoted = RawExtra::from_string(format!("{{\"a{bs}u0022b\":1}}")).unwrap();
+    assert_eq!(quoted.as_str(), r#"{"a\"b":1}"#);
+    assert_eq!(quoted.get("a\"b"), None); // still unmatchable by raw-byte compare
+}
+
+#[test]
+fn decode_json_key_decodes_only_escapes() {
+    let bs = '\\';
+    assert_eq!(decode_json_key("plain"), "plain");
+    assert_eq!(decode_json_key(&format!("caf{bs}u00e9")), "café");
+    assert_eq!(decode_json_key(&format!("a{bs}\"b")), "a\"b");
+    // Undecodable input is passed through rather than mangled.
+    assert_eq!(decode_json_key(&format!("a{bs}zb")), format!("a{bs}zb"));
+}
+
 #[test]
 fn human_readable_json_round_trips_transparently() {
     let field: ExtraField = Some(Some(extra(r#"{"k":[1,2,3]}"#)));

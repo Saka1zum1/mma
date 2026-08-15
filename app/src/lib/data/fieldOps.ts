@@ -4,6 +4,7 @@
  * rewrites; the store orchestrates IPC, definitions, and persistence. Side-effect-free.
  */
 
+import { clamp } from "@/types/util";
 import type {
 	Location,
 	ExtraFieldType,
@@ -14,6 +15,7 @@ import type {
 } from "@/bindings.gen";
 import { buildSelection } from "@/store/selections";
 import { isBuiltinField, isWritableField } from "@/lib/data/fieldDefRegistry";
+import { t, msg } from "@/lib/i18n";
 
 /** When a move target already holds a value, which field's value survives. */
 export type MergeWinner = "from" | "to";
@@ -104,7 +106,7 @@ type FieldExpr =
 
 const EXPR_FNS: Record<string, { arity: number; apply: (args: number[]) => number }> = {
 	mod: { arity: 2, apply: ([x, n]) => ((x % n) + n) % n },
-	clamp: { arity: 3, apply: ([x, lo, hi]) => Math.min(hi, Math.max(lo, x)) },
+	clamp: { arity: 3, apply: ([x, lo, hi]) => clamp(x, lo, hi) },
 	abs: { arity: 1, apply: ([x]) => Math.abs(x) },
 	min: { arity: 2, apply: ([a, b]) => Math.min(a, b) },
 	max: { arity: 2, apply: ([a, b]) => Math.max(a, b) },
@@ -125,7 +127,7 @@ function tokenize(src: string): Token[] {
 		}
 		if (/[0-9.]/.test(c)) {
 			const m = /^[0-9]*\.?[0-9]+/.exec(src.slice(i));
-			if (!m) throw new Error(`Invalid number at position ${i}`);
+			if (!m) throw new Error(t("Invalid number at position {position}", { position: i }));
 			tokens.push({ t: "num", v: Number(m[0]) });
 			i += m[0].length;
 			continue;
@@ -141,7 +143,7 @@ function tokenize(src: string): Token[] {
 			i++;
 			continue;
 		}
-		throw new Error(`Unexpected character "${c}" at position ${i}`);
+		throw new Error(t('Unexpected character "{char}" at position {position}', { char: c, position: i }));
 	}
 	return tokens;
 }
@@ -153,7 +155,7 @@ export function parseFieldExpr(src: string): FieldExpr {
 	const peek = () => tokens[pos];
 	const isOp = (v: string) => peek()?.t === "op" && (peek() as { v: string }).v === v;
 	const expectOp = (v: string) => {
-		if (!isOp(v)) throw new Error(`Expected "${v}"`);
+		if (!isOp(v)) throw new Error(t('Expected "{token}"', { token: v }));
 		pos++;
 	};
 
@@ -182,7 +184,7 @@ export function parseFieldExpr(src: string): FieldExpr {
 	}
 	function parsePrimary(): FieldExpr {
 		const tok = peek();
-		if (!tok) throw new Error("Unexpected end of expression");
+		if (!tok) throw new Error(t("Unexpected end of expression"));
 		if (tok.t === "num") {
 			pos++;
 			return { kind: "num", value: tok.v };
@@ -191,7 +193,7 @@ export function parseFieldExpr(src: string): FieldExpr {
 			pos++;
 			if (isOp("(")) {
 				const fn = EXPR_FNS[tok.v];
-				if (!fn) throw new Error(`Unknown function "${tok.v}"`);
+				if (!fn) throw new Error(t('Unknown function "{name}"', { name: tok.v }));
 				pos++;
 				const args: FieldExpr[] = [];
 				if (!isOp(")")) {
@@ -203,7 +205,12 @@ export function parseFieldExpr(src: string): FieldExpr {
 				}
 				expectOp(")");
 				if (args.length !== fn.arity)
-					throw new Error(`${tok.v}() takes ${fn.arity} argument${fn.arity === 1 ? "" : "s"}`);
+					throw new Error(
+						t(
+							{ one: "{name}() takes {n} argument", other: "{name}() takes {n} arguments" },
+							{ n: fn.arity, name: tok.v },
+						),
+					);
 				return { kind: "call", fn: tok.v, args };
 			}
 			return { kind: "field", name: tok.v };
@@ -214,13 +221,13 @@ export function parseFieldExpr(src: string): FieldExpr {
 			expectOp(")");
 			return inner;
 		}
-		throw new Error(`Unexpected "${(tok as { v: string }).v}"`);
+		throw new Error(t('Unexpected "{token}"', { token: (tok as { v: string }).v }));
 	}
 
 	const expr = parseAdditive();
 	if (pos < tokens.length) {
 		const tok = tokens[pos] as { v?: string };
-		throw new Error(`Unexpected "${tok.v ?? "token"}" after expression`);
+		throw new Error(t('Unexpected "{token}" after expression', { token: tok.v ?? "token" }));
 	}
 	return expr;
 }
@@ -229,6 +236,34 @@ export function parseFieldExpr(src: string): FieldExpr {
  *  everything else reads from `extra`. The read-side mirror of `fieldPatch`. */
 export function fieldValue(loc: Location, key: string): unknown {
 	return isBuiltinField(key) ? (loc as unknown as Record<string, unknown>)[key] : loc.extra?.[key];
+}
+
+/** Distinct values of field `key` across `locs` that are not already in `existing`,
+ *  sorted. Non-string scalars are stringified to match enum `values` (always strings);
+ *  objects/arrays are skipped. */
+export function collectEnumCandidates(
+	locs: readonly Location[],
+	key: string,
+	existing: readonly string[],
+): string[] {
+	const have = new Set(existing);
+	const found = new Set<string>();
+	for (const loc of locs) {
+		const v = fieldValue(loc, key);
+		if (v == null || typeof v === "object") continue;
+		const s = String(v);
+		if (s !== "" && !have.has(s)) found.add(s);
+	}
+	return [...found].sort();
+}
+
+/** Every `extra` key present on any of `locs`. */
+export function extraKeysOf(locs: readonly Location[]): Set<string> {
+	const keys = new Set<string>();
+	for (const loc of locs) {
+		if (loc.extra) for (const k of Object.keys(loc.extra)) keys.add(k);
+	}
+	return keys;
 }
 
 /** Evaluate an expression against one location. Returns null when any referenced
@@ -465,12 +500,12 @@ interface FieldProjection {
 }
 
 const TAG_PROJECTIONS: FieldProjection[] = [
-	{ id: "value", label: "Value", appliesTo: ["string", "enum", "number", "month"] },
-	{ id: "year", label: "Year", appliesTo: ["date", "month"], needsTz: true },
-	{ id: "yearMonth", label: "Year-month", appliesTo: ["date"], needsTz: true },
-	{ id: "day", label: "Exact day", appliesTo: ["date"], needsTz: true },
-	{ id: "monthOfYear", label: "Month of year", appliesTo: ["date", "month"], needsTz: true },
-	{ id: "hourOfDay", label: "Hour of day", appliesTo: ["date"], needsTz: true },
+	{ id: "value", label: msg("Value"), appliesTo: ["string", "enum", "number", "month"] },
+	{ id: "year", label: msg("Year"), appliesTo: ["date", "month"], needsTz: true },
+	{ id: "yearMonth", label: msg("Year-month"), appliesTo: ["date"], needsTz: true },
+	{ id: "day", label: msg("Exact day"), appliesTo: ["date"], needsTz: true },
+	{ id: "monthOfYear", label: msg("Month of year"), appliesTo: ["date", "month"], needsTz: true },
+	{ id: "hourOfDay", label: msg("Hour of day"), appliesTo: ["date"], needsTz: true },
 ];
 
 /** Projections valid for a field type, in display order (first = dialog default). */
@@ -491,7 +526,7 @@ export function partitionKeyOptions(
 ): { id: string; label: string }[] {
 	const projs = projectionsForType(type).map((p) => ({ id: p.id, label: p.label }));
 	const hasRange = type === "number" || (rangeForDates && type === "date");
-	return hasRange ? [{ id: RANGE_ID, label: "Range" }, ...projs] : projs;
+	return hasRange ? [{ id: RANGE_ID, label: msg("Range") }, ...projs] : projs;
 }
 
 export function rewriteSelectionFields(

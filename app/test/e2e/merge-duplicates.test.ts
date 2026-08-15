@@ -8,10 +8,6 @@
  * transitively but NOT A-C directly.
  */
 import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
 	addLocs,
 	createLocation,
 	createTag,
@@ -20,19 +16,17 @@ import {
 	getLocCount,
 	flushAndWait,
 	withApi,
+	useMap,
 } from "./helpers";
 
 const DIST = 16;
 
 describe("mergeDuplicates — transitive groups, tag/extra union, undo", () => {
-	let mapId: string;
+	useMap("E2E Merge Dups");
 	let A: number, B: number, C: number, D: number, E: number;
 	let T1: number, T2: number, T3: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Merge Dups");
-
 		[A, B, C, D, E] = await addLocs([
 			createLocation({ lat: 0.0, lng: 0, heading: 10 }),
 			createLocation({ lat: 0.0001, lng: 0, heading: 20 }),
@@ -66,12 +60,6 @@ describe("mergeDuplicates — transitive groups, tag/extra union, undo", () => {
 
 		await flushAndWait();
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("preview groups A,B,C transitively (not A-C directly) as one group", async () => {
 		const groups: number[][] = await withApi(async (api, d) => api.previewDuplicateGroups(d), DIST);
 		const big = groups.find((g) => g.length === 3);

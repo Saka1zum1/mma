@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::geoguessr::{proxy_headers, upstream_url};
 use crate::storage;
 use crate::sync::{
-    IdentityModel, NormalizedSyncLocation, PushBatch, PushedId, RemoteSnapshot, SyncLocalPin,
-    SyncProvider,
+    auth_error, IdentityModel, NormalizedSyncLocation, PushBatch, PushedId, RemoteSnapshot,
+    SyncLocalPin, SyncProvider,
 };
 use crate::types::{AppError, AppResult, LocationFlags};
 
@@ -131,13 +131,14 @@ pub(crate) fn stored_bson_size(coords: &[GgCoordinate]) -> usize {
 
 // --- error classification ---------------------------------------------------
 
+/// 401 means the stored session was rejected, which the whole app represents one way.
 fn http_error(context: &str, status: u16) -> AppError {
-    AppError(format!("{context}: HTTP {status}"))
-}
-
-/// 401: the stored session was rejected.
-pub(crate) fn is_auth_error(err: &AppError) -> bool {
-    err.0.contains("HTTP 401")
+    let msg = format!("{context}: HTTP {status}");
+    if status == 401 {
+        auth_error(msg)
+    } else {
+        AppError(msg)
+    }
 }
 
 /// 409/412: the sent version lost the optimistic-concurrency race.

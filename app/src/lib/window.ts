@@ -1,5 +1,6 @@
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { log } from "@/lib/util/log";
+import { t } from "@/lib/i18n";
 
 const MAP_LABEL_PREFIX = "map-";
 
@@ -14,7 +15,7 @@ export async function openMapWindow(id: string, name: string): Promise<void> {
 
 	const win = new WebviewWindow(label, {
 		url: `#map/${id}`,
-		title: name || "Map Editor",
+		title: name || t("Map Editor"),
 		width: 1400,
 		height: 900,
 		resizable: true,

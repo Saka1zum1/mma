@@ -1,5 +1,6 @@
 import type { GeneratorRegion } from "../engine/types";
 import { useProgressTick } from "./progressSignal";
+import { t } from "@/lib/i18n";
 
 export function ProgressDisplay({ regions }: { regions: GeneratorRegion[] }) {
 	useProgressTick();
@@ -10,7 +11,7 @@ export function ProgressDisplay({ regions }: { regions: GeneratorRegion[] }) {
 	return (
 		<div className="generator-progress">
 			<div className="generator-progress__total">
-				Total: {totalFound} / {totalTarget}
+				{t("Total:")} {totalFound} / {totalTarget}
 			</div>
 			{regions.map((r) => (
 				<div key={r.id} className="generator-progress__item">

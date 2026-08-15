@@ -1,5 +1,4 @@
 import {
-	waitForReady,
 	createAndOpenMap,
 	closeMap,
 	deleteMap,
@@ -7,6 +6,8 @@ import {
 	getLoc,
 	createLocation,
 	withApi,
+	useMap,
+	seedLocs,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 import type { EnrichOutcome } from "@/lib/sv/enrich";
@@ -24,12 +25,10 @@ function loc(overrides: Partial<Location> = {}): Location {
 // ============================================================================
 
 describe("Bulk operations -- enrichAll", () => {
-	let mapId: string;
+	const map = useMap("E2E Bulk Enrich");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bulk Enrich");
 		const locs = [
 			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO }),
 			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO }),
@@ -37,12 +36,6 @@ describe("Bulk operations -- enrichAll", () => {
 		];
 		locIds = await addLocs(locs);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("enriches locations with panoId", async () => {
 		const result = await withApi(async (api) => {
 			return await api.enrichAll(await api.fetchAllLocations());
@@ -72,8 +65,8 @@ describe("Bulk operations -- enrichAll", () => {
 	it("undo fully reverses enrichment including resolved panoIds", async () => {
 		// Start fresh
 		await closeMap();
-		await deleteMap(mapId);
-		mapId = await createAndOpenMap("E2E Bulk Enrich Undo");
+		await deleteMap(map.id);
+		map.id = await createAndOpenMap("E2E Bulk Enrich Undo");
 		const locs = [
 			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO }),
 		];
@@ -116,12 +109,10 @@ describe("Bulk operations -- enrichAll", () => {
 // ============================================================================
 
 describe("Bulk operations -- bulkPinToPano", () => {
-	let mapId: string;
+	useMap("E2E Bulk Pin");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bulk Pin");
 		const locs = [
 			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng }),
 			loc({ lat: OFFICIAL_COORDS.lat, lng: OFFICIAL_COORDS.lng, panoId: OFFICIAL_PANO }),
@@ -134,12 +125,6 @@ describe("Bulk operations -- bulkPinToPano", () => {
 		];
 		locIds = await addLocs(locs);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("pins unpinned locations and resolves panoId from coords", async () => {
 		const count = await withApi(async (api) => {
 			return await api.bulkPinToPano(await api.fetchAllLocations());
@@ -233,29 +218,15 @@ describe("Bulk operations -- needsEnrichment", () => {
 // ============================================================================
 
 describe("Bulk operations -- cancel preserves progress", () => {
-	let mapId: string;
+	useMap("E2E Bulk Cancel");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bulk Cancel");
 		// Create enough locations to span multiple batches
-		const locs = [];
-		for (let i = 0; i < 500; i++) {
-			locs.push(
-				createLocation({
-					lat: 52.109 + i * 0.0001,
-					lng: 34.901 + i * 0.0001,
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(500, (i) => ({
+			lat: 52.109 + i * 0.0001,
+			lng: 34.901 + i * 0.0001,
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("enrichAll with abort preserves completed batches", async () => {
 		const result = await withApi(async (api) => {
 			try {

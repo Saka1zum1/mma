@@ -1,6 +1,16 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { parseTypedDate, MONTHS, compareMonthOrder } from "@/lib/util/date";
+import {
+	parseTypedDate,
+	MONTHS,
+	compareMonthOrder,
+	ymParse,
+	ymFormat,
+	ymFromDate,
+	ymToDate,
+	ymOrdinal,
+	ymFromOrdinal,
+} from "@/lib/util/date";
 import { partsToEpoch, dateParts } from "@/lib/data/fieldOps";
 
 describe("MONTHS", () => {
@@ -115,6 +125,65 @@ describe("dateParts / partsToEpoch (property-based)", () => {
 				expect(p.mi).toBeLessThanOrEqual(59);
 				expect(p.s).toBeGreaterThanOrEqual(0);
 				expect(p.s).toBeLessThanOrEqual(59);
+			}),
+		);
+	});
+});
+
+describe("YYYY-MM codec", () => {
+	it("round-trips parse and format", () => {
+		fc.assert(
+			fc.property(fc.integer({ min: 1000, max: 9999 }), fc.integer({ min: 1, max: 12 }), (y, m) => {
+				const s = ymFormat(y, m);
+				expect(s).toMatch(/^\d{4}-\d{2}$/);
+				expect(ymParse(s)).toEqual({ y, m });
+			}),
+		);
+	});
+
+	it("rejects malformed input", () => {
+		for (const bad of ["", "2019", "2019-", "2019-1", "19-06", "2019-00", "2019-13", "2019-6a"]) {
+			expect(ymParse(bad)).toBeNull();
+			expect(ymOrdinal(bad)).toBeNull();
+			expect(ymToDate(bad)).toBeNull();
+		}
+	});
+
+	it("orders months monotonically as ordinals", () => {
+		expect(ymOrdinal("2019-01")).toBeLessThan(ymOrdinal("2019-02")!);
+		expect(ymOrdinal("2019-12")).toBeLessThan(ymOrdinal("2020-01")!);
+		expect(ymOrdinal("2020-06")! - ymOrdinal("2019-06")!).toBe(12);
+	});
+
+	it("round-trips through the ordinal", () => {
+		fc.assert(
+			fc.property(fc.integer({ min: 1000, max: 9999 }), fc.integer({ min: 1, max: 12 }), (y, m) => {
+				const s = ymFormat(y, m);
+				expect(ymFromOrdinal(ymOrdinal(s)!)).toBe(s);
+			}),
+		);
+	});
+
+	// `new Date("2019-06")` parses as UTC; every Date this gets compared to in the app is
+	// built locally. A UTC-framed parse lands on the wrong side of a month boundary in any
+	// non-zero offset, so ymToDate must agree with `new Date(y, m-1)` exactly.
+	it("builds dates in the local frame, not UTC", () => {
+		fc.assert(
+			fc.property(fc.integer({ min: 1900, max: 2100 }), fc.integer({ min: 1, max: 12 }), (y, m) => {
+				const d = ymToDate(ymFormat(y, m))!;
+				expect(d.getFullYear()).toBe(y);
+				expect(d.getMonth()).toBe(m - 1);
+				expect(d.getDate()).toBe(1);
+				expect(d.getTime()).toBe(new Date(y, m - 1).getTime());
+			}),
+		);
+	});
+
+	it("ymFromDate is the inverse of ymToDate", () => {
+		fc.assert(
+			fc.property(fc.integer({ min: 1000, max: 9999 }), fc.integer({ min: 1, max: 12 }), (y, m) => {
+				const s = ymFormat(y, m);
+				expect(ymFromDate(ymToDate(s)!)).toBe(s);
 			}),
 		);
 	});

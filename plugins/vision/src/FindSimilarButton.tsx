@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { spawnEmbed, spawnImageSearch } from "./sidecar";
+import { embed, searchImage } from "./sidecar";
 
 const SIMILARITY_THRESHOLD = 0.85;
 
@@ -18,19 +18,9 @@ export function FindSimilarButton() {
 			const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId!);
 
 			// Ensure embeddings exist (cached ones skip instantly)
-			const { done: embedDone } = await spawnEmbed(panoIds);
-			await embedDone;
+			await embed(panoIds);
 
-			// Search
-			const { process: proc, done: searchDone } = await spawnImageSearch(active.panoId!, null, SIMILARITY_THRESHOLD);
-			let results: { panoId: string; score: number }[] = [];
-			proc.onLine((line) => {
-				try {
-					const r = JSON.parse(line);
-					if (r.results) results = r.results;
-				} catch {}
-			});
-			await searchDone;
+			const results = await searchImage(active.panoId!, null, SIMILARITY_THRESHOLD);
 
 			const matchedIds = results
 				.map((r) => locs.find((l) => l.panoId === r.panoId)?.id)

@@ -108,31 +108,6 @@ pub fn hex_to_rgb(hex: &str) -> Option<[u8; 3]> {
     ])
 }
 
-pub fn compute_bounds(coords: impl Iterator<Item = (f64, f64)>) -> Option<[f64; 4]> {
-    let (mut w, mut s, mut e, mut n) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-    let mut count = 0usize;
-    for (lat, lng) in coords {
-        if lng < w {
-            w = lng;
-        }
-        if lat < s {
-            s = lat;
-        }
-        if lng > e {
-            e = lng;
-        }
-        if lat > n {
-            n = lat;
-        }
-        count += 1;
-    }
-    if count == 0 {
-        None
-    } else {
-        Some([w, s, e, n])
-    }
-}
-
 /// SHA-256 hash of `bytes` as a lowercase hex string.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);

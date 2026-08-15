@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::token::Token;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextSpan {

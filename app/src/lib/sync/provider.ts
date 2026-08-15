@@ -7,7 +7,7 @@ export interface RemoteMapSummary {
 	unsupported?: string;
 }
 
-/** The Rust reconcile prefixes auth failures with `auth: `; both providers detect them this way. */
+/** Rust stamps auth failures with `auth: ` (see `sync.rs`); both providers detect them this way. */
 export const isAuthPrefixed = (e: unknown): boolean =>
 	e instanceof Error && e.message.startsWith("auth: ");
 

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::ast::Node;
 use crate::error::ExprError;
 use crate::highway::highway_eq_str;

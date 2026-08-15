@@ -1,21 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
-	refreshSelections,
-	withApi,
-} from "./helpers";
+import { addLocs, createLocation, refreshSelections, withApi, useMap, select } from "./helpers";
 describe("Duplicate detection via selectDuplicates", () => {
-	let mapId: string;
+	useMap("E2E Duplicates");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Duplicates");
-
 		// Three clusters:
 		// Cluster 1: two locations 10m apart (should be duplicates at 50m radius)
 		// Cluster 2: two locations 10m apart
@@ -28,32 +16,26 @@ describe("Duplicate detection via selectDuplicates", () => {
 			createLocation({ lat: -33.8688, lng: 151.2093 }), // Sydney (isolated)
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
 
 	it("selectDuplicates with tight radius finds nearby locations", async () => {
-		await withApi(async (api) => api.addSelections([{ type: "Duplicates", distance: 50 }]));
+		await select({ type: "Duplicates", distance: 50 });
 		const ids = await refreshSelections();
 		// Should find at least the 4 locations in 2 clusters
 		expect(ids.length).toBeGreaterThanOrEqual(4);
 	});
 
 	it("selectDuplicates with very small radius finds fewer", async () => {
-		await withApi(async (api) => api.addSelections([{ type: "Duplicates", distance: 1 }]));
+		await select({ type: "Duplicates", distance: 1 });
 		const ids = await refreshSelections();
 		// At 1m, the ~5m-apart locations might not be duplicates
 		expect(ids.length).toBeLessThanOrEqual(4);
 	});
 
 	it("isolated location is not included in duplicates", async () => {
-		await withApi(async (api) => api.addSelections([{ type: "Duplicates", distance: 50 }]));
+		await select({ type: "Duplicates", distance: 50 });
 		const ids = await refreshSelections();
 		// Total is 5 locations. Isolated one should not be a duplicate.
 		expect(ids.length).toBeLessThan(5);
@@ -61,24 +43,15 @@ describe("Duplicate detection via selectDuplicates", () => {
 });
 
 describe("findNearby API", () => {
-	let mapId: string;
+	useMap("E2E FindNearby");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E FindNearby");
-
 		await addLocs([
 			createLocation({ lat: 0, lng: 0 }),
 			createLocation({ lat: 0.0001, lng: 0.0001 }), // ~15m away
 			createLocation({ lat: 1, lng: 1 }), // ~157km away
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("finds locations within radius", async () => {
 		const nearby = await withApi(async (api) => {
 			return api.cmd.storeFindNearby(0, 0, 100); // 100m radius

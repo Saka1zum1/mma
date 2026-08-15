@@ -4,6 +4,7 @@ import { log } from "@/lib/util/log";
 import { getSettings } from "@/store/settings";
 import { saveSession } from "@/store/session";
 import { openMapWindowIds } from "@/lib/window";
+import { errText } from "@/lib/util/util";
 
 type Phase = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
 
@@ -52,7 +53,7 @@ export async function checkForUpdate() {
 		}
 	} catch (e) {
 		log.warn("[updater] check failed:", e);
-		set({ phase: "error", error: e instanceof Error ? e.message : String(e) });
+		set({ phase: "error", error: errText(e) });
 	}
 }
 
@@ -93,7 +94,7 @@ export async function installUpdate() {
 		set({ phase: "ready" });
 	} catch (e) {
 		log.error("[updater] install failed:", e);
-		set({ phase: "error", error: e instanceof Error ? e.message : String(e) });
+		set({ phase: "error", error: errText(e) });
 	}
 }
 

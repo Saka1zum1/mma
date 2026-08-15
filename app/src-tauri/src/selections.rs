@@ -7,6 +7,12 @@
 //! bitmasks. The bitmasks are then serialized into a per-cell binary format that JS reads
 //! to color the selection overlay.
 
+use mma_geo::equirect_m2;
+pub(crate) use mma_geo::{
+    anchor_bbox, extend_bbox_with_ring, haversine_m, in_bbox, polygon_contains, PreparedRing,
+};
+#[cfg(test)]
+pub(crate) use mma_geo::{point_in_ring, unwrap_ring};
 use crate::types::{Location, LocationFlags};
 use crate::util::{tz_offset_seconds, unix_to_hour_min, unix_to_month_day};
 use arrow_array::{Array, Float64Array, ListArray, RecordBatch, StringArray, UInt32Array};
@@ -14,7 +20,6 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 /// Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
@@ -311,11 +316,11 @@ impl<'a, 'v> RowRef<'a, 'v> {
                         tz.is_some() && fv_extra.is_some()
                     });
                 }
-                // Built-in names come from their columns; keep in sync with resolve_field_arrow.
-                let fv = match field {
-                    "lat" | "lng" | "heading" | "pitch" | "zoom" | "id" | "createdAt"
-                    | "modifiedAt" => resolve_field_arrow(v, *i, field),
-                    _ => fv_extra,
+                // Built-in names come from their columns, not the extras blob.
+                let fv = if is_builtin_field(field) {
+                    resolve_field_arrow(v, *i, field)
+                } else {
+                    fv_extra
                 };
                 (fv, tz)
             }
@@ -793,102 +798,7 @@ pub fn resolve(view: &LocView, props: &SelectionProps) -> Vec<u32> {
     resolve_set(view, props).into_iter().collect()
 }
 
-// --- Geometry (ray-casting point-in-polygon) ---
-
-/// Shortest signed longitude delta from `from` to `to`, in [-180, 180].
-#[inline]
-pub(crate) fn lng_delta(from: f64, to: f64) -> f64 {
-    let d = (to - from) % 360.0;
-    if d > 180.0 {
-        d - 360.0
-    } else if d < -180.0 {
-        d + 360.0
-    } else {
-        d
-    }
-}
-
-/// Rewrite longitudes so each vertex sits within 180° of its predecessor; the span may
-/// run outside [-180, 180]. Edges of 180° or more fold the short way round - split them
-/// first (JS `densifyRing`). Mirrors JS `unwrapRing`. Borrows when already continuous.
-pub(crate) fn unwrap_ring(ring: &[[f64; 2]]) -> Cow<'_, [[f64; 2]]> {
-    if ring.windows(2).all(|w| (w[1][0] - w[0][0]).abs() <= 180.0) {
-        return Cow::Borrowed(ring);
-    }
-    let mut out = Vec::with_capacity(ring.len());
-    out.push(ring[0]);
-    let mut prev = ring[0][0];
-    for &[lng, lat] in &ring[1..] {
-        prev += lng_delta(prev, lng);
-        out.push([prev, lat]);
-    }
-    Cow::Owned(out)
-}
-
-/// Shift `lng` by whole turns into `[min, min + 360)`.
-#[inline]
-pub(crate) fn fold_lng(lng: f64, min: f64) -> f64 {
-    min + (lng - min).rem_euclid(360.0)
-}
-
-/// Ray-casting algorithm: cast a horizontal ray eastward from (lng, lat) and count
-/// edge crossings. Odd count = inside. O(V) where V = vertices.
-pub(crate) fn point_in_ring(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
-    if ring.is_empty() {
-        return false;
-    }
-    let ring = unwrap_ring(ring);
-    let min = ring.iter().map(|v| v[0]).fold(f64::INFINITY, f64::min);
-    ring_test_raw(fold_lng(lng, min), lat, &ring)
-}
-
-/// Crossing-number loop with no per-edge folding; callers pre-fold both the ring and
-/// the test longitude into one frame.
-#[inline]
-fn ring_test_raw(lng: f64, lat: f64, ring: &[[f64; 2]]) -> bool {
-    let mut inside = false;
-    let n = ring.len();
-    let mut j = n.wrapping_sub(1);
-    for i in 0..n {
-        let [xi, yi] = ring[i];
-        let [xj, yj] = ring[j];
-        if ((yi > lat) != (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
-            inside = !inside;
-        }
-        j = i;
-    }
-    inside
-}
-
-/// One ring preprocessed for repeated point tests: the unwrap pass and the bbox are
-/// paid once here instead of once per tested point, so the crossing-number loop runs
-/// branch-free over longitudes already in the ring's own frame.
-pub(crate) struct PreparedRing<'a> {
-    ring: Cow<'a, [[f64; 2]]>,
-    /// `[min_lng, min_lat, max_lng, max_lat]` in the unwrapped ring's frame, so
-    /// `min_lng` may sit below -180 and `max_lng` above it.
-    bb: [f64; 4],
-}
-
-impl<'a> PreparedRing<'a> {
-    pub(crate) fn new(ring: &'a [[f64; 2]]) -> Self {
-        let ring = unwrap_ring(ring);
-        let mut bb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-        let mut any = false;
-        extend_bbox_with_ring(&mut bb, &mut any, &ring);
-        Self { ring, bb }
-    }
-
-    /// Bbox reject, then the raw crossing test. Equivalent to `point_in_ring`.
-    #[inline]
-    pub(crate) fn contains(&self, lng: f64, lat: f64) -> bool {
-        let lng = fold_lng(lng, self.bb[0]);
-        lng <= self.bb[2]
-            && lat >= self.bb[1]
-            && lat <= self.bb[3]
-            && ring_test_raw(lng, lat, &self.ring)
-    }
-}
+// --- Geometry (ray-casting point-in-polygon; primitives live in mma-geo) ---
 
 /// A whole geometry (primary polygon + extras) preprocessed with per-ring bboxes and
 /// antimeridian flags. Build once per resolve; `contains` is then bbox-rejected per
@@ -922,28 +832,6 @@ impl<'a> PreparedGeometry<'a> {
             None => false,
         })
     }
-}
-
-/// Test point-in-polygon with holes over rings yielded as slices: inside the outer
-/// ring (first) and outside all hole rings (rest). The single source of truth for the
-/// outer/hole composition, shared by owned `Vec`-backed and mmap'd archived geometry.
-pub(crate) fn polygon_contains<'a>(
-    lng: f64,
-    lat: f64,
-    mut rings: impl Iterator<Item = &'a [[f64; 2]]>,
-) -> bool {
-    let Some(outer) = rings.next() else {
-        return false;
-    };
-    if !point_in_ring(lng, lat, outer) {
-        return false;
-    }
-    for hole in rings {
-        if point_in_ring(lng, lat, hole) {
-            return false;
-        }
-    }
-    true
 }
 
 fn point_in_polygon(lng: f64, lat: f64, coords: &[Vec<[f64; 2]>]) -> bool {
@@ -989,65 +877,6 @@ pub(crate) fn geometry_bbox(geom: &PolygonGeometry) -> Option<[f64; 4]> {
     } else {
         None
     }
-}
-
-/// Grow a running `[min_lng, min_lat, max_lng, max_lat]` to cover one ring, unwrapped
-/// then shifted by whole turns to sit nearest the box so far. `any` flips true once at
-/// least one vertex has been seen. Shared by owned and archived bbox computation.
-pub(crate) fn extend_bbox_with_ring(bb: &mut [f64; 4], any: &mut bool, ring: &[[f64; 2]]) {
-    let ring = unwrap_ring(ring);
-    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-    for &[lng, _] in ring.iter() {
-        lo = lo.min(lng);
-        hi = hi.max(lng);
-    }
-    if lo > hi {
-        return;
-    }
-    let shift = if *any {
-        (((bb[0] + bb[2]) - (lo + hi)) / 720.0).round() * 360.0
-    } else {
-        0.0
-    };
-    for &[lng, lat] in ring.iter() {
-        let lng = lng + shift;
-        if lng < bb[0] {
-            bb[0] = lng;
-        }
-        if lat < bb[1] {
-            bb[1] = lat;
-        }
-        if lng > bb[2] {
-            bb[2] = lng;
-        }
-        if lat > bb[3] {
-            bb[3] = lat;
-        }
-        *any = true;
-    }
-}
-
-/// Slide a finished box so its western edge sits in [-180, 180), letting the hot
-/// `in_bbox` fold a test longitude with one conditional add instead of a modulo.
-#[inline]
-pub(crate) fn anchor_bbox(bb: &mut [f64; 4]) {
-    let shift = -((bb[0] + 180.0) / 360.0).floor() * 360.0;
-    bb[0] += shift;
-    bb[2] += shift;
-}
-
-/// `bb` is `[min_lng, min_lat, max_lng, max_lat]` with `min_lng` anchored in [-180, 180)
-/// by `anchor_bbox`; `max_lng` may run past 180 when the box crosses the antimeridian.
-/// Requires a test longitude in [-180, 180]. Nothing normalizes longitude on ingest, so
-/// an import carrying lng 200 would miss here; fix that at the ingest boundary, not with
-/// a modulo on this hot path.
-#[inline]
-pub(crate) fn in_bbox(lng: f64, lat: f64, bb: &[f64; 4]) -> bool {
-    if lat < bb[1] || lat > bb[3] {
-        return false;
-    }
-    let lng = if lng < bb[0] { lng + 360.0 } else { lng };
-    lng <= bb[2]
 }
 
 // --- Duplicates (bitmask version) ---
@@ -1134,7 +963,7 @@ fn exact_coord_groups(pts: &[(f64, f64)]) -> HashMap<(u64, u64), Vec<usize>> {
 }
 
 /// The grid broad-phase every duplicate path runs on: cell sizing, coordinate
-/// quantization, and the 3x3 neighborhood walk live here once, so the pair sweep and
+/// quantization, and the neighborhood walk live here once, so the pair sweep and
 /// the parallel per-point scan cannot drift apart. Read-only after build, so callers
 /// may probe it from parallel iterators.
 struct DupGrid {
@@ -1143,13 +972,15 @@ struct DupGrid {
     cells: Vec<(i32, i32)>,
     grid: SpatialHash,
     thresh_m2: f64,
+    radius_m: f64,
+    cell_deg: f64,
 }
 
 impl DupGrid {
     /// `None` for a degenerate radius (distance == 0, or a non-finite cell size) —
     /// callers fall back to `exact_coord_groups`.
     fn build(pts: &[(f64, f64)], distance_m: f64) -> Option<DupGrid> {
-        let cell_deg = distance_m / 111_000.0 * 1.5;
+        let cell_deg = distance_m / mma_geo::M_PER_DEG * 1.5;
         if !(cell_deg > 0.0) {
             return None;
         }
@@ -1169,6 +1000,8 @@ impl DupGrid {
             cells,
             grid,
             thresh_m2: distance_m * distance_m,
+            radius_m: distance_m,
+            cell_deg,
         })
     }
 
@@ -1183,27 +1016,22 @@ impl DupGrid {
         mut visit: impl FnMut(usize) -> bool,
     ) -> bool {
         let (lat, lng) = self.pts[pi];
-        let (cx, cy) = self.cells[pi];
         let cos_lat = lat.to_radians().cos();
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                // saturating: a stray non-finite coord can floor to i32::MAX/MIN; a plain
-                // add would overflow (panic in debug, wrap in release).
-                let (nx, ny) = (cx.saturating_add(dx), cy.saturating_add(dy));
-                for &pj in self.grid.bucket(nx, ny) {
-                    let pj = pj as usize;
-                    if pj == pi || pj < min_pj {
-                        continue;
-                    }
-                    // Bucket may hold points from collided cells; the cell-coord check
-                    // keeps us to the true 3x3 neighborhood. Then the distance test.
-                    if self.cells[pj] != (nx, ny) {
-                        continue;
-                    }
-                    let (plat, plng) = self.pts[pj];
-                    if equirect_m2(lat, lng, plat, plng, cos_lat) <= self.thresh_m2 && visit(pj) {
-                        return true;
-                    }
+        let cover = mma_geo::covering_cells(lat, lng, self.radius_m, self.cell_deg);
+        for (nx, ny) in cover.cells() {
+            for &pj in self.grid.bucket(nx, ny) {
+                let pj = pj as usize;
+                if pj == pi || pj < min_pj {
+                    continue;
+                }
+                // Bucket may hold points from collided cells; the cell-coord check
+                // keeps us to the true neighborhood. Then the distance test.
+                if self.cells[pj] != (nx, ny) {
+                    continue;
+                }
+                let (plat, plng) = self.pts[pj];
+                if equirect_m2(lat, lng, plat, plng, cos_lat) <= self.thresh_m2 && visit(pj) {
+                    return true;
                 }
             }
         }
@@ -1518,79 +1346,118 @@ fn prune_thinning(locs: &[&Location], distance_m: f64) -> Vec<u32> {
     (0..n).filter(|&i| removed[i]).map(|i| locs[i].id).collect()
 }
 
-/// Great-circle distance in metres using the haversine formula. Assumes spherical Earth (R = 6371 km).
-pub(crate) fn haversine_m(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
-    let r = 6_371_000.0;
-    let dlat = (lat2 - lat1).to_radians();
-    let dlng = (lng2 - lng1).to_radians();
-    let a = (dlat / 2.0).sin().powi(2)
-        + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlng / 2.0).sin().powi(2);
-    2.0 * r * a.sqrt().asin()
-}
-
-const EARTH_R_M: f64 = 6_371_000.0;
-
-/// Squared equirectangular distance in metres², for cheap threshold tests at small
-/// separations (no trig, no sqrt). `cos_lat` is `cos(reference latitude)`, precomputed
-/// once per query point. Error vs haversine is sub-mm under ~1km — negligible for the
-/// meter-scale radii dedup/find-nearby use. Compare against `threshold * threshold`.
-#[inline]
-fn equirect_m2(lat1: f64, lng1: f64, lat2: f64, lng2: f64, cos_lat: f64) -> f64 {
-    let x = (lng2 - lng1).to_radians() * cos_lat;
-    let y = (lat2 - lat1).to_radians();
-    (x * x + y * y) * EARTH_R_M * EARTH_R_M
-}
 
 // --- Filter: field-level comparison predicates ---
 
-/// Resolve a field name to its JSON value from a `Location` struct.
-/// Built-in fields (lat, lng, heading, etc.) are accessed directly;
-/// unknown fields fall through to `loc.extra`.
-fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
-    match field {
-        "lat" => Some(serde_json::json!(loc.lat)),
-        "lng" => Some(serde_json::json!(loc.lng)),
-        "heading" => Some(serde_json::json!(loc.heading)),
-        "pitch" => Some(serde_json::json!(loc.pitch)),
-        "zoom" => Some(serde_json::json!(loc.zoom)),
-        "id" => Some(serde_json::json!(loc.id)),
-        "createdAt" => Some(serde_json::json!(loc.created_at as f64)),
-        "modifiedAt" => loc.modified_at.map(|ts| serde_json::json!(ts as f64)),
-        "tagCount" => Some(serde_json::json!(loc.tags.len())),
-        _ => loc.extra.as_ref().and_then(|e| e.get(field)),
-    }
+/// How a built-in field may be accessed by the field system on the TS side.
+/// `None` means listable and filterable but read-only.
+#[derive(Clone, Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum BuiltinFieldKind {
+    /// Composes the location itself: never writable, never offered in pickers.
+    Identity,
+    /// Derived, not stored on the location. Never writable.
+    Virtual,
+    /// Explicitly bulk-editable top-level field.
+    Writable,
 }
 
-/// Resolve a field name to its JSON value directly from Arrow columns (avoids
-/// materializing a full `Location`). Falls through to `extras` JSON for unknown fields.
-fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_json::Value> {
-    match field {
-        "lat" => view.lats.map(|c| serde_json::json!(c.value(idx))),
-        "lng" => view.lngs.map(|c| serde_json::json!(c.value(idx))),
-        "heading" => view.headings.map(|c| serde_json::json!(c.value(idx))),
-        "pitch" => view.pitches.map(|c| serde_json::json!(c.value(idx))),
-        "zoom" => view.zooms.map(|c| serde_json::json!(c.value(idx))),
-        "id" => view.ids.map(|c| serde_json::json!(c.value(idx))),
-        "createdAt" => view
-            .created_ats
-            .map(|c| serde_json::json!(c.value(idx) as f64)),
-        "modifiedAt" => view.modified_ats.and_then(|c| {
-            if c.is_null(idx) {
-                return None;
-            }
-            Some(serde_json::json!(c.value(idx) as f64))
-        }),
-        "tagCount" => view.tags.map(|c| serde_json::json!(c.value(idx).len())),
-        _ => {
-            let extras = view.extras?;
-            if extras.is_null(idx) {
-                return None;
-            }
-            // Byte-scan for the one key; parses only its value slice instead of the
-            // whole extras document per row.
-            crate::types::json_field(extras.value(idx), field)
+/// One entry of the built-in field vocabulary. Exported to TS as a specta constant so
+/// `fieldDefRegistry` derives its table from here rather than restating it.
+#[derive(Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltinField {
+    pub key: &'static str,
+    pub label: &'static str,
+    #[serde(rename = "type")]
+    pub field_type: crate::map_meta::ExtraFieldType,
+    pub kind: Option<BuiltinFieldKind>,
+    pub comparison: Option<crate::map_meta::ComparisonType>,
+}
+
+/// Single source of truth for the built-in field vocabulary: the exported table, the two
+/// per-row resolvers, and the "is this a column, not an extras key" test all expand from
+/// one list. Match arms are literal-keyed, so resolution stays allocation-free.
+macro_rules! builtin_fields {
+    ($(
+        $key:literal, $label:literal, $ty:expr, $kind:expr, $cmp:expr,
+        |$l:ident| $loc_expr:expr,
+        |$v:ident, $i:ident| $arrow_expr:expr;
+    )*) => {
+        pub const BUILTIN_FIELDS: &[BuiltinField] = &[$(BuiltinField {
+            key: $key,
+            label: $label,
+            field_type: $ty,
+            kind: $kind,
+            comparison: $cmp,
+        }),*];
+
+        /// True for fields backed by a Location column rather than the `extras` blob.
+        pub fn is_builtin_field(field: &str) -> bool {
+            matches!(field, $($key)|*)
         }
-    }
+
+        /// Resolve a field name to its JSON value from a `Location` struct.
+        /// Unknown fields fall through to `loc.extra`.
+        fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
+            match field {
+                $($key => { let $l = loc; $loc_expr })*
+                _ => loc.extra.as_ref().and_then(|e| e.get(field)),
+            }
+        }
+
+        /// Resolve a field name to its JSON value directly from Arrow columns (avoids
+        /// materializing a full `Location`). Falls through to `extras` JSON otherwise.
+        fn resolve_field_arrow(view: &LocView, idx: usize, field: &str) -> Option<serde_json::Value> {
+            match field {
+                $($key => { let ($v, $i) = (view, idx); $arrow_expr })*
+                _ => {
+                    let extras = view.extras?;
+                    if extras.is_null(idx) {
+                        return None;
+                    }
+                    // Byte-scan for the one key; parses only its value slice instead of
+                    // the whole extras document per row.
+                    crate::types::json_field(extras.value(idx), field)
+                }
+            }
+        }
+    };
+}
+
+use crate::map_meta::{ComparisonType, ExtraFieldType};
+
+builtin_fields! {
+    "lat", "Latitude", ExtraFieldType::Number, Some(BuiltinFieldKind::Identity), None,
+        |l| Some(serde_json::json!(l.lat)),
+        |v, i| v.lats.map(|c| serde_json::json!(c.value(i)));
+    "lng", "Longitude", ExtraFieldType::Number, Some(BuiltinFieldKind::Identity), None,
+        |l| Some(serde_json::json!(l.lng)),
+        |v, i| v.lngs.map(|c| serde_json::json!(c.value(i)));
+    "heading", "Heading", ExtraFieldType::Number, Some(BuiltinFieldKind::Writable),
+        Some(ComparisonType::Circular { period: 360.0 }),
+        |l| Some(serde_json::json!(l.heading)),
+        |v, i| v.headings.map(|c| serde_json::json!(c.value(i)));
+    "pitch", "Pitch", ExtraFieldType::Number, Some(BuiltinFieldKind::Writable), None,
+        |l| Some(serde_json::json!(l.pitch)),
+        |v, i| v.pitches.map(|c| serde_json::json!(c.value(i)));
+    "zoom", "Zoom", ExtraFieldType::Number, Some(BuiltinFieldKind::Writable), None,
+        |l| Some(serde_json::json!(l.zoom)),
+        |v, i| v.zooms.map(|c| serde_json::json!(c.value(i)));
+    "id", "ID", ExtraFieldType::Number, Some(BuiltinFieldKind::Identity), None,
+        |l| Some(serde_json::json!(l.id)),
+        |v, i| v.ids.map(|c| serde_json::json!(c.value(i)));
+    "createdAt", "Created", ExtraFieldType::Date, None, None,
+        |l| Some(serde_json::json!(l.created_at as f64)),
+        |v, i| v.created_ats.map(|c| serde_json::json!(c.value(i) as f64));
+    "modifiedAt", "Modified", ExtraFieldType::Date, None, None,
+        |l| l.modified_at.map(|ts| serde_json::json!(ts as f64)),
+        |v, i| v.modified_ats.and_then(|c| {
+            (!c.is_null(i)).then(|| serde_json::json!(c.value(i) as f64))
+        });
+    "tagCount", "Tag count", ExtraFieldType::Number, Some(BuiltinFieldKind::Virtual), None,
+        |l| Some(serde_json::json!(l.tags.len())),
+        |v, i| v.tags.map(|c| serde_json::json!(c.value(i).len()));
 }
 
 /// Core comparison dispatch. Supports eq, neq, has, nothas, gt, lt, gte, lte, between,

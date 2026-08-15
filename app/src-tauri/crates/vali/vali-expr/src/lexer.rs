@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::error::ExprError;
 use crate::token::{Token, TokenKind};
 pub fn tokenize(expression: &str) -> Result<Vec<Token>, ExprError> {

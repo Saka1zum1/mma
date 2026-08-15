@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::definition::Prepared;
 use crate::goals::country_location_count_goal;
 use crate::tags::tags;

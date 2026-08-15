@@ -445,6 +445,17 @@ pub fn store_upload_abort(session_dir: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Progress event emitted per-map during bulk export, consumed by the frontend
+/// to drive a progress indicator.
+#[derive(serde::Serialize, Clone, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "bulk-export-progress")]
+pub struct ExportProgress {
+    pub current: u32,
+    pub total: u32,
+    pub map_name: String,
+}
+
 /// Export every map in the database as a ZIP of JSON files. Duplicate map names get a numeric suffix.
 // Reads Arrow IPC files directly from disk (bypasses the in-memory store); runs on a blocking thread.
 #[tauri::command]
@@ -481,9 +492,11 @@ pub async fn store_export_bulk_zip() -> AppResult<String> {
             for (i, (map_id, name, _folder, tags_json, extra_json)) in maps.iter().enumerate() {
                 crate::emit_event(
                     "bulk-export-progress",
-                    serde_json::json!({
-                        "current": i + 1, "total": total, "mapName": name,
-                    }),
+                    ExportProgress {
+                        current: (i + 1) as u32,
+                        total: total as u32,
+                        map_name: name.clone(),
+                    },
                 );
                 // Base file + uncommitted delta sidecar = the map's full current state.
                 let locs = crate::location_store::read_full_state_from_disk(map_id)?;

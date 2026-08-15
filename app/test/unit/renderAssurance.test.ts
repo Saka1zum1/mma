@@ -3,37 +3,9 @@ import {
 	CellBuffer,
 	CellManager,
 	type SelCellEntry,
-	type SelColor,
 	type SelectedIds,
 } from "@/lib/render/CellManager";
-import type { RenderDelta, RenderEntry } from "@/bindings.gen";
-
-function entry(
-	cell: string,
-	id: number,
-	lng: number,
-	lat: number,
-	heading = 0,
-	sel: SelColor = null,
-): RenderEntry {
-	return { cell, id, lng, lat, heading, sel, movedFrom: null };
-}
-
-/** A `SelColor`: the paint a delta entry carries. `idx` is the drawing selection's
- *  position in the selection list, which is what the overlay orders by. */
-function paint(color: [number, number, number], idx = 0): SelColor {
-	return { idx, color };
-}
-
-/** A render delta with everything defaulted, so a case names only what it exercises. */
-function delta(parts: Partial<RenderDelta> = {}): RenderDelta {
-	return { added: [], updated: [], removed: [], fullReset: false, ...parts };
-}
-
-/** A coordinate-free patch: the shape a pure membership change arrives as. */
-function selPatch(cell: string, cellIndex: number, sel: SelColor) {
-	return { cell, cellIndex, lng: null, lat: null, heading: null, sel };
-}
+import { delta, entry, paint, selPatch } from "./fixtures/renderFixtures";
 
 /** Base-layer visibility byte for a location, or null if it has no marker. There is no
  *  per-marker base colour any more: every base marker draws in the one constant the layer

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 pub mod ast;
 pub mod compile;
 pub mod decompose;

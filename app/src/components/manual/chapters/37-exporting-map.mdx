@@ -11,13 +11,15 @@ The **Export** button writes locations out. You choose the scope, a format, and 
 
 - **File name.** The output file name.
 - **Save zoom levels.** Include each location's zoom.
-- **Save app data.** Include app-specific data such as tags. Turning it off makes the file smaller, which helps when uploading very large maps to GeoGuessr. Tag order is preserved through export and re-import.
+- **Save app data.** Include app-specific data such as tags. Turning it off makes the file smaller, which helps when uploading maps with 100K+ locations to GeoGuessr. Tag order is preserved through export and re-import.
 - **Bypass GeoGuessr auto-panning for locations with 0 heading.** Keeps your deliberately unpanned locations unpanned in the game.
+
+These three options apply to the JSON and GeoJSON formats. CSV ignores them.
 
 ## Formats
 
-- **JSON (recommended).** Copy to clipboard or download.
-- **CSV.** Copy or download. CSV does not retain camera orientation or pano IDs.
-- **GeoJSON.** Download, for use in non-GeoGuessr mapping tools.
+- **JSON (recommended).** Copy to clipboard or download. The only format that carries everything.
+- **CSV.** Copy or download. **Coordinates only** - a `lat,lng` file. No heading, pitch, or zoom, no pano IDs, no tags, and no metadata, whatever the options above are set to. Use it to hand coordinates to another tool, not to move a map.
+- **GeoJSON.** Download, for use in non-GeoGuessr mapping tools. Each point carries its tag names.
 
 Download opens a native **Save as** dialog so you choose exactly where the file lands, and a notification confirms when the export is written.

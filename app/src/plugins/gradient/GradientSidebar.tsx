@@ -4,31 +4,32 @@ import { NSelect } from "@/components/primitives/NSelect";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import type { ExtraFieldType, KeySpec, DatePart } from "@/bindings.gen";
-import { getFieldDef, fieldLabel } from "@/lib/data/fieldDefRegistry";
-import type { FieldEntry } from "@/components/editor/map/FilterBuilder";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { useExtraFieldKeys, type FieldEntry } from "@/components/editor/map/FilterBuilder";
+import { useMapState } from "@/store/useMapStore";
 import { partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { isNumericField, colorPartition } from "./gradientMath";
 import { partition, useScope } from "@/store/scope";
 import { usePluginState } from "@/plugins/registry";
 import { useSetting } from "@/store/settings";
-import { useT, type MessageKey } from "@/lib/i18n";
 import "./gradient.css";
+import { t, msg } from "@/lib/i18n";
 
 interface GradientPreset {
-	id: MessageKey;
+	name: string;
 	stops: [number, number, number][];
 }
 
 const PRESETS: GradientPreset[] = [
 	{
-		id: "plugin.gradient.preset.blueRed",
+		name: msg("Blue-Red"),
 		stops: [
 			[66, 133, 244],
 			[234, 67, 53],
 		],
 	},
 	{
-		id: "plugin.gradient.preset.greenYellowRed",
+		name: msg("Green-Yellow-Red"),
 		stops: [
 			[52, 168, 83],
 			[251, 188, 4],
@@ -36,14 +37,14 @@ const PRESETS: GradientPreset[] = [
 		],
 	},
 	{
-		id: "plugin.gradient.preset.purpleOrange",
+		name: msg("Purple-Orange"),
 		stops: [
 			[136, 84, 208],
 			[255, 152, 0],
 		],
 	},
 	{
-		id: "plugin.gradient.preset.coolWarm",
+		name: msg("Cool-Warm"),
 		stops: [
 			[33, 150, 243],
 			[200, 200, 200],
@@ -51,7 +52,7 @@ const PRESETS: GradientPreset[] = [
 		],
 	},
 	{
-		id: "plugin.gradient.preset.viridis",
+		name: "Viridis",
 		stops: [
 			[68, 1, 84],
 			[59, 82, 139],
@@ -80,42 +81,25 @@ function defaultProjection(type: ExtraFieldType): string {
 		: (gradientOptions(type)[0]?.id ?? "value");
 }
 
-function buildGradientFields(knownKeys: ReadonlySet<string>): FieldEntry[] {
-	const result: FieldEntry[] = [];
-	for (const key of knownKeys) {
-		const def = getFieldDef(key);
-		if (
-			!def ||
-			isNumericField(def) ||
-			def.type === "enum" ||
-			def.type === "string" ||
-			def.type === "month"
-		) {
-			if (def) result.push({ key, label: fieldLabel(key), def });
-		}
-	}
-	return result;
+// Fields the map actually carries that a gradient can project.
+function gradientFields(all: FieldEntry[], knownKeys: ReadonlySet<string>): FieldEntry[] {
+	return all.filter((f) => {
+		if (!knownKeys.has(f.key)) return false;
+		const def = getFieldDef(f.key);
+		return (
+			!!def &&
+			(isNumericField(def) || def.type === "enum" || def.type === "string" || def.type === "month")
+		);
+	});
 }
 
 function defaultGradientField(fields: FieldEntry[]): string {
 	return (fields.find((f) => f.key === "altitude") ?? fields[0])?.key ?? "";
 }
 
-const PROJECTION_KEYS: Record<string, MessageKey> = {
-	[RANGE_ID]: "plugin.gradient.projection.range",
-	value: "plugin.gradient.projection.value",
-	year: "plugin.gradient.projection.year",
-	yearMonth: "plugin.gradient.projection.yearMonth",
-	day: "plugin.gradient.projection.day",
-	monthOfYear: "plugin.gradient.projection.monthOfYear",
-	hourOfDay: "plugin.gradient.projection.hourOfDay",
-};
-
 export function GradientSidebar({ onClose }: { onClose: () => void }) {
-	const { t, tp } = useT();
-	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("gradient", "fieldKey", () =>
-		defaultGradientField(buildGradientFields(MMA.getMapState().knownFieldKeys)),
-	);
+	// Empty resolves to nothing, so the effective field falls back to the default below.
+	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("gradient", "fieldKey", "");
 	const [projectionIdRaw, setProjectionId] = usePluginState("gradient", "projectionId", RANGE_ID);
 	const [presetIdxRaw, setPresetIdx] = usePluginState("gradient", "presetIdx", 0);
 	const [bucketCount, setBucketCount] = usePluginState("gradient", "bucketCount", 10);
@@ -127,8 +111,9 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 
 	const map = MMA.getMapState().map;
 
-	const knownKeys = MMA.getMapState().knownFieldKeys;
-	const fields = useMemo(() => buildGradientFields(knownKeys), [knownKeys]);
+	const allFields = useExtraFieldKeys();
+	const knownKeys = useMapState((s) => s.knownFieldKeys);
+	const fields = useMemo(() => gradientFields(allFields, knownKeys), [allFields, knownKeys]);
 
 	// Persisted values are global; fall back when they don't resolve on this map.
 	const fieldKey = fields.some((f) => f.key === fieldKeyRaw)
@@ -201,16 +186,16 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 	}, [fieldKey, projectionId, presetIdx, bucketCount, reversed, scopeCtl.scope]);
 
 	return (
-		<Sidebar title={t("plugin.gradient.title")} onBack={onClose} className="gradient-sidebar">
+		<Sidebar title={t("Gradient")} onBack={onClose} className="gradient-sidebar">
 			{fields.length === 0 ? (
-				<EmptyState>{t("plugin.gradient.emptyNoFields")}</EmptyState>
+				<EmptyState>{t("No extra fields on this map. Enrich locations first.")}</EmptyState>
 			) : (
 				<>
-					<Field label={t("plugin.gradient.applyTo")}>
+					<Field label={t("Apply to")}>
 						<ScopeSelector ctl={scopeCtl} />
 					</Field>
 					<div className="gradient-sidebar__row">
-						<Field label={t("plugin.gradient.field")}>
+						<Field label={t("Field")}>
 							<NSelect
 								value={fieldKey}
 								onChange={(e) => {
@@ -225,12 +210,12 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							>
 								{fields.map((f) => (
 									<option key={f.key} value={f.key}>
-										{f.label}
+										{t(f.label)}
 									</option>
 								))}
 							</NSelect>
 						</Field>
-						<Field label={t("plugin.gradient.groupBy")}>
+						<Field label={t("Group by")}>
 							<NSelect
 								value={projectionId}
 								disabled={projOptions.length <= 1}
@@ -240,14 +225,14 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							>
 								{projOptions.map((p) => (
 									<option key={p.id} value={p.id}>
-										{t(PROJECTION_KEYS[p.id] ?? "plugin.gradient.projection.value")}
+										{t(p.label)}
 									</option>
 								))}
 							</NSelect>
 						</Field>
 					</div>
 
-					<Field label={t("plugin.gradient.buckets")}>
+					<Field label={t("Buckets")}>
 						<SegmentedControl
 							value={bucketCount}
 							onChange={setBucketCount}
@@ -256,21 +241,21 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 								label: String(n),
 								disabled: projectionId !== RANGE_ID,
 								title:
-									projectionId !== RANGE_ID ? t("plugin.gradient.bucketRangeOnly") : undefined,
+									projectionId !== RANGE_ID ? t("Only applies to Range grouping") : undefined,
 							}))}
 						/>
 					</Field>
 
-					<Field label={t("plugin.gradient.gradient")}>
+					<Field label={t("Gradient")}>
 						<div className="gradient-sidebar__presets">
 							{PRESETS.map((p, i) => (
 								<button
-									key={p.id}
+									key={p.name}
 									className={`gradient-sidebar__preset ${i === presetIdx ? "gradient-sidebar__preset--active" : ""}`}
 									onClick={() => {
 										setPresetIdx(i);
 									}}
-									title={t(p.id)}
+									title={t(p.name)}
 								>
 									<div
 										className="gradient-sidebar__preset-bar"
@@ -282,12 +267,13 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							))}
 						</div>
 						<div className="gradient-sidebar__preview-labels">
-							<span>{t("plugin.gradient.low")}</span>
-							<span>{t("plugin.gradient.high")}</span>
+							<span>{t("Low")}</span>
+							<span>{t("High")}</span>
 						</div>
 						<label className="gradient-sidebar__check">
 							<Checkbox checked={reversed} onChange={(e) => setReversed(e.target.checked)} />
-							{t("plugin.gradient.reverse")}
+
+							{t("Reverse")}
 						</label>
 					</Field>
 
@@ -297,20 +283,21 @@ export function GradientSidebar({ onClose }: { onClose: () => void }) {
 							onClick={applyGradient}
 							disabled={applying || !fieldKey}
 						>
-							{t("plugin.gradient.apply")}
+							{t("Apply")}
 						</button>
 						{lastResult != null && (
 							<span className="gradient-sidebar__result">
 								{!lastResult.applied
-									? t("plugin.gradient.resultTooMany", {
-											groups: lastResult.groups,
+									? t("{n} groups. Too many to color (max {max}).", {
+											n: lastResult.groups,
 											max: MAX_GROUPS,
 										})
 									: lastResult.groups === 0
-										? t("plugin.gradient.resultNoGroups")
-										: tp("plugin.gradient.resultApplied", lastResult.groups, {
-												count: lastResult.groups,
-											})}
+										? t("No groups found")
+										: t(
+												{ one: "{n} group applied", other: "{n} groups applied" },
+												{ n: lastResult.groups },
+											)}
 							</span>
 						)}
 					</div>

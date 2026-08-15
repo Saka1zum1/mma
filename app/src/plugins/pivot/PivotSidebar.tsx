@@ -7,10 +7,12 @@ import { selectionDisplayName, buildSelection } from "@/store/selections";
 import { savedToSelectionProps, describeRule, type SavedSelection } from "@/store/savedSelections";
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import type { ExtraFieldDef } from "@/bindings.gen";
-import { fieldLabel, getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { getFieldDef } from "@/lib/data/fieldDefRegistry";
+import { fieldValue } from "@/lib/data/fieldOps";
+import { useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
+import { useMapState } from "@/store/useMapStore";
 import { binNumeric, compareNatural } from "@/lib/util/util";
 import { usePluginState } from "@/plugins/registry";
-import { t, useT } from "@/lib/i18n";
 import {
 	stripNa,
 	pivotCellValue,
@@ -34,6 +36,7 @@ type RowSource = "all" | "active" | string; // "all", "active", or saved selecti
 const TAGS_FIELD_KEY = "__tags__";
 
 import type { FieldEntry } from "@/components/editor/map/FilterBuilder";
+import { msg, t } from "@/lib/i18n";
 
 async function computePivot(
 	rowSource: RowSource,
@@ -53,7 +56,7 @@ async function computePivot(
 
 	if (rowSource === "all") {
 		const allIds = new Set(allLocs.map((l) => l.id));
-		rowDefs = [{ label: t("plugin.pivot.allLocations"), color: [140, 140, 140] }];
+		rowDefs = [{ label: t("All locations"), color: [140, 140, 140] }];
 		idSets = [allIds];
 	} else if (rowSource === "active") {
 		const sels = MMA.getActiveSelections();
@@ -99,7 +102,7 @@ async function computePivot(
 	// user's choice and the field's cardinality.
 	const numericVals = isNumeric
 		? allLocs.flatMap((loc) => {
-				const v = loc.extra?.[fieldKey];
+				const v = fieldValue(loc, fieldKey);
 				const n = v == null ? NaN : Number(v);
 				return Number.isFinite(n) ? [n] : [];
 			})
@@ -125,7 +128,7 @@ async function computePivot(
 				);
 			}
 		} else {
-			const val = loc.extra?.[fieldKey];
+			const val = fieldValue(loc, fieldKey);
 			if (val == null) continue;
 			if (buckets) {
 				const n = Number(val);
@@ -186,8 +189,8 @@ async function computePivot(
 
 	const extraLabels = fieldDef?.labels ?? {};
 	const columnLabels = columns.map((c) => {
-		if (c === NA_KEY) return t("plugin.pivot.na");
-		if (isTags) return tagMap[Number(c)]?.name ?? t("plugin.pivot.tagLabel", { id: c });
+		if (c === NA_KEY) return t("N/A");
+		if (isTags) return tagMap[Number(c)]?.name ?? t("Tag {id}", { id: c });
 		return extraLabels[c] ?? c;
 	});
 
@@ -206,13 +209,11 @@ async function computePivot(
 	return { rows: pivotRows, columns, columnLabels, columnTotals, numericDistinct, columnProps };
 }
 
-function buildPivotFields(knownKeys: ReadonlySet<string>): FieldEntry[] {
-	const result: FieldEntry[] = [{ key: TAGS_FIELD_KEY, label: t("plugin.pivot.tags"), def: { type: "enum" } }];
-	for (const key of knownKeys) {
-		const def = getFieldDef(key);
-		if (def) result.push({ key, label: fieldLabel(key), def });
-	}
-	return result;
+const TAGS_FIELD: FieldEntry = { key: TAGS_FIELD_KEY, label: msg("Tags"), def: { type: "enum" } };
+
+// Fields the map actually carries, with a known definition.
+function pivotFields(all: FieldEntry[], knownKeys: ReadonlySet<string>): FieldEntry[] {
+	return [TAGS_FIELD, ...all.filter((f) => knownKeys.has(f.key) && getFieldDef(f.key))];
 }
 
 function defaultPivotField(fields: FieldEntry[]): string {
@@ -220,19 +221,18 @@ function defaultPivotField(fields: FieldEntry[]): string {
 }
 
 export function PivotSidebar({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
 	const [rowSourceRaw, setRowSource] = usePluginState<RowSource>("pivot", "rowSource", "active");
-	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("pivot", "fieldKey", () =>
-		defaultPivotField(buildPivotFields(MMA.getMapState().knownFieldKeys)),
-	);
+	// Empty resolves to nothing, so the effective field falls back to the default below.
+	const [fieldKeyRaw, setFieldKey] = usePluginState<string>("pivot", "fieldKey", "");
 	const [bucketCount, setBucketCount] = usePluginState<number | null>("pivot", "bucketCount", 10);
 	const [valueMode, setValueMode] = usePluginState<ValueMode>("pivot", "valueMode", "count");
 	const [includeNa, setIncludeNa] = usePluginState<boolean>("pivot", "includeNa", true);
 	const [data, setData] = useState<PivotData | null>(null);
 	const [loading, setLoading] = useState(false);
 
-	const knownKeys = MMA.getMapState().knownFieldKeys;
-	const fields = useMemo(() => buildPivotFields(knownKeys), [knownKeys]);
+	const allFields = useExtraFieldKeys();
+	const knownKeys = useMapState((s) => s.knownFieldKeys);
+	const fields = useMemo(() => pivotFields(allFields, knownKeys), [allFields, knownKeys]);
 
 	const savedSelections: SavedSelection[] = MMA.getSettings().savedSelections;
 
@@ -287,15 +287,15 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 	const view = useMemo(() => (data && !includeNa ? stripNa(data) : data), [data, includeNa]);
 
 	return (
-		<Sidebar title={t("plugin.pivot.title")} onBack={onClose} className="pivot-sidebar" flush>
+		<Sidebar title={t("Pivot Table")} onBack={onClose} className="pivot-sidebar" flush>
 			<div className="pivot-sidebar__controls">
-				<Field label={t("plugin.pivot.rows")}>
+				<Field label={t("Rows")}>
 					<NSelect value={rowSource} onChange={(e) => setRowSource(e.target.value)}>
 						<option value="all" className="pivot-sidebar__opt-builtin">
-							{t("plugin.pivot.allLocations")}
+							{t("All locations")}
 						</option>
 						<option value="active" className="pivot-sidebar__opt-builtin">
-							{t("plugin.pivot.activeSelections")}
+							{t("Active selections")}
 						</option>
 						{savedSelections.map((s) => (
 							<option key={s.id} value={s.id}>
@@ -304,17 +304,17 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 						))}
 					</NSelect>
 				</Field>
-				<Field label={t("plugin.pivot.columnField")}>
+				<Field label={t("Column field")}>
 					<NSelect value={fieldKey} onChange={(e) => setFieldKey(e.target.value)}>
 						{fields.map((f) => (
 							<option key={f.key} value={f.key}>
-								{f.label}
+								{t(f.label)}
 							</option>
 						))}
 					</NSelect>
 				</Field>
 				{isNumericField && !bucketHidden && (
-					<Field label={t("plugin.pivot.bucketNumeric")}>
+					<Field label={t("Bucket numeric values")}>
 						<NSelect
 							value={bucketForced ? (bucketCount ?? DEFAULT_BUCKETS) : (bucketCount ?? "off")}
 							onChange={(e) =>
@@ -322,50 +322,50 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 							}
 						>
 							<option value="off" disabled={bucketForced}>
-								{bucketForced ? t("plugin.pivot.bucketOffTooMany") : t("plugin.pivot.bucketOff")}
+								{bucketForced ? t("Off (too many values)") : t("Off")}
 							</option>
-							{([5, 10, 15, 20] as const).map((n) => (
-								<option key={n} value={String(n)}>
-									{t("plugin.pivot.bucketsN", { n })}
-								</option>
-							))}
+							<option value="5">{t("5 buckets")}</option>
+							<option value="10">{t("10 buckets")}</option>
+							<option value="15">{t("15 buckets")}</option>
+							<option value="20">{t("20 buckets")}</option>
 						</NSelect>
 					</Field>
 				)}
-				<Field label={t("plugin.pivot.values")}>
+				<Field label={t("Values")}>
 					<SegmentedControl<ValueMode>
 						value={valueMode}
 						onChange={setValueMode}
 						options={[
-							{ value: "count", label: t("plugin.pivot.count") },
-							{ value: "rowPct", label: t("plugin.pivot.rowPct") },
-							{ value: "colPct", label: t("plugin.pivot.colPct") },
+							{ value: "count", label: t("Count") },
+							{ value: "rowPct", label: t("Row %") },
+							{ value: "colPct", label: t("Col %") },
 						]}
 					/>
 				</Field>
 				{hasNa && (
 					<label className="pivot-sidebar__check">
 						<Checkbox checked={includeNa} onChange={(e) => setIncludeNa(e.target.checked)} />
-						{t("plugin.pivot.includeNa")}
+
+						{t("Include N/A")}
 					</label>
 				)}
 			</div>
 
 			<div className="pivot-sidebar__body">
 				{fields.length === 0 && (
-					<EmptyState>{t("plugin.pivot.emptyNoFields")}</EmptyState>
+					<EmptyState>{t("No extra fields on this map. Enrich locations first.")}</EmptyState>
 				)}
 				{fields.length > 0 && !data && !loading && (
 					<EmptyState>
 						{rowSource === "active"
-							? t("plugin.pivot.emptyNoSelections")
+							? t("No active selections. Add selections to see pivot data.")
 							: rowSource === "all"
-								? t("plugin.pivot.emptyNoLocations")
-								: t("plugin.pivot.emptySavedUnresolved")}
+								? t("No locations on this map.")
+								: t("Saved selection could not be resolved.")}
 					</EmptyState>
 				)}
-				{loading && !view && <EmptyState>{t("plugin.pivot.computing")}</EmptyState>}
-				{view && <PivotTable data={view} mode={valueMode} stale={loading} t={t} />}
+				{loading && !view && <EmptyState>{t("Computing...")}</EmptyState>}
+				{view && <PivotTable data={view} mode={valueMode} stale={loading} />}
 			</div>
 		</Sidebar>
 	);
@@ -373,17 +373,7 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 
 type SortKey = "label" | "total" | string; // column key or "label" or "total"
 
-function PivotTable({
-	data,
-	mode,
-	stale,
-	t,
-}: {
-	data: PivotData;
-	mode: ValueMode;
-	stale?: boolean;
-	t: (key: import("@/lib/i18n").MessageKey, params?: Record<string, string | number | boolean>) => string;
-}) {
+function PivotTable({ data, mode, stale }: { data: PivotData; mode: ValueMode; stale?: boolean }) {
 	const [sortKey, setSortKey] = useState<SortKey>("label");
 	const [sortAsc, setSortAsc] = useState(true);
 
@@ -469,7 +459,7 @@ function PivotTable({
 							className="pivot-sidebar__th-corner pivot-sidebar__th-sort"
 							onClick={() => handleSort("label")}
 						>
-							{t("plugin.pivot.selection")}
+							{t("Selection")}
 							{arrow("label")}
 						</th>
 						{data.columnLabels.map((label, i) => {
@@ -480,7 +470,9 @@ function PivotTable({
 									key={data.columns[i]}
 									className={`pivot-sidebar__th-sort${selected ? " pivot-sidebar__th-selected" : ""}`}
 									title={
-										selectable ? t("plugin.pivot.columnSortHint") : undefined
+										selectable
+											? t("Click to sort. Ctrl+Click to select matching locations.")
+											: undefined
 									}
 									onClick={(e) => {
 										if ((e.ctrlKey || e.metaKey) && selectable) toggleColumnSelection(i);
@@ -493,7 +485,7 @@ function PivotTable({
 							);
 						})}
 						<th className="pivot-sidebar__th-sort" onClick={() => handleSort("total")}>
-							{t("plugin.pivot.total")}
+							{t("Total")}
 							{arrow("total")}
 						</th>
 					</tr>
@@ -539,7 +531,7 @@ function PivotTable({
 				</tbody>
 				<tfoot>
 					<tr>
-						<td className="pivot-sidebar__row-label">{t("plugin.pivot.total")}</td>
+						<td className="pivot-sidebar__row-label">{t("Total")}</td>
 						{data.columnTotals.map((t, i) => (
 							<td key={data.columns[i]}>{t}</td>
 						))}

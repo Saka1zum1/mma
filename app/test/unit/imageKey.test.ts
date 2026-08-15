@@ -43,4 +43,9 @@ describe("imageKey codec", () => {
 	it("falls back to [2, panoId] for undecodable input", () => {
 		expect(panoIdToImageKey("!!!not-base64!!!")).toEqual([2, "!!!not-base64!!!"]);
 	});
+
+	it("encodes an id far past the argument limit", () => {
+		const id = "y".repeat(300_000);
+		expect(panoIdToImageKey(imageKeyToPanoId([10, id]))).toEqual([10, id]);
+	});
 });

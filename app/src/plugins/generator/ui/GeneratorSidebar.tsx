@@ -18,9 +18,9 @@ import type { Selection } from "@/bindings.gen";
 import { createPluginStorage } from "@/plugins/registry";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
 import { searchCoverage } from "../searchCoverage";
-import { MONTHS } from "@/lib/util/date";
-import { useT, type MessageKey } from "@/lib/i18n";
+import { MONTHS, ymParse } from "@/lib/util/date";
 import "./generator.css";
+import { t } from "@/lib/i18n";
 
 const genStore = createPluginStorage("map-generator");
 
@@ -53,14 +53,10 @@ async function resolveTagByName(name: string): Promise<number | null> {
 	return tag.id;
 }
 
-function selectionToRegion(
-	sel: Selection,
-	meta: GeneratorRegionMeta,
-	unnamed: string,
-): GeneratorRegion | null {
+function selectionToRegion(sel: Selection, meta: GeneratorRegionMeta): GeneratorRegion | null {
 	if (sel.props.type !== "Polygon") return null;
 	const poly = sel.props.polygon;
-	const name = poly.properties?.name || unnamed;
+	const name = poly.properties?.name || t("Unnamed polygon");
 	const geometry = poly.extraPolygons
 		? { type: "MultiPolygon" as const, coordinates: [poly.coordinates, ...poly.extraPolygons] }
 		: { type: "Polygon" as const, coordinates: poly.coordinates };
@@ -82,107 +78,76 @@ let sessionPaused = false;
 let sessionTagId: number | null = null;
 
 function formatYearMonth(ym: string) {
-	const [y, m] = ym.split("-");
-	return `${MONTHS.short[parseInt(m, 10) - 1]} ${y}`;
+	const p = ymParse(ym);
+	return p ? `${MONTHS.short[p.m - 1]} ${p.y}` : ym;
 }
 
-function summarizeSettings(
-	s: GeneratorSettings,
-	t: (key: MessageKey, params?: Record<string, string | number | boolean>) => string,
-): string {
+function summarizeSettings(s: GeneratorSettings): string {
 	const parts: string[] = [];
 
-	let coverage: string;
-	if (s.rejectUnofficial && !s.rejectOfficial) coverage = t("plugin.generator.summary.unofficialCoverage");
-	else if (s.rejectOfficial && !s.rejectUnofficial) coverage = t("plugin.generator.summary.officialCoverage");
-	else coverage = t("plugin.generator.summary.anyCoverage");
-	if (s.rejectGen1) coverage += t("plugin.generator.summary.noGen1");
+	// Coverage type
+	let coverage = "any";
+	if (s.rejectUnofficial && !s.rejectOfficial) coverage = "official";
+	else if (s.rejectOfficial && !s.rejectUnofficial) coverage = "unofficial";
+	if (s.rejectGen1) coverage += " (no Gen 1)";
 	if (s.findGeneration) {
-		const gen =
-			s.generation === 23
-				? t("plugin.generator.gen23")
-				: s.generation === 4
-					? t("plugin.generator.gen4")
-					: t("plugin.generator.gen1");
+		const gen = s.generation === 23 ? "Gen 2/3" : `Gen ${s.generation}`;
 		coverage += ` ${gen}`;
 	}
-	if (s.rejectDescription) coverage += t("plugin.generator.summary.trekker");
-	parts.push(coverage + t("plugin.generator.summary.coverageSuffix"));
+	if (s.rejectDescription) coverage += " trekker";
+	parts.push(`${coverage} coverage`);
 
+	// Date range
 	if (s.selectMonths) {
 		const fm = MONTHS.short[parseInt(s.fromMonth, 10) - 1];
 		const tm = MONTHS.short[parseInt(s.toMonth, 10) - 1];
-		parts.push(
-			t("plugin.generator.summary.inMonthRange", {
-				fromMonth: fm,
-				toMonth: tm,
-				fromYear: s.fromYear,
-				toYear: s.toYear,
-			}),
-		);
+		parts.push(`in ${fm}–${tm}, ${s.fromYear}–${s.toYear}`);
 	} else {
-		parts.push(
-			t("plugin.generator.summary.betweenDates", {
-				from: formatYearMonth(s.fromDate),
-				to: formatYearMonth(s.toDate),
-			}),
-		);
+		parts.push(`between ${formatYearMonth(s.fromDate)} and ${formatYearMonth(s.toDate)}`);
 	}
 
+	// Heading / pitch / zoom
 	if (s.adjustHeading) {
-		const refKey =
-			s.headingReference === "link"
-				? "plugin.generator.summary.ref.alongRoad"
-				: s.headingReference === "forward"
-					? "plugin.generator.summary.ref.forward"
-					: "plugin.generator.summary.ref.backward";
+		const ref = s.headingReference === "link" ? "along road" : s.headingReference;
 		const dev = s.headingDeviation > 0 ? ` ±${s.headingDeviation}°` : "";
-		parts.push(t("plugin.generator.summary.facingHeading", { ref: t(refKey), dev }));
+		parts.push(`facing ${ref}${dev}`);
 	}
-	if (s.adjustPitch) parts.push(t("plugin.generator.summary.pitchDev", { dev: s.pitchDeviation }));
-	if (s.adjustZoom) parts.push(t("plugin.generator.summary.zoomLevel", { level: s.zoomLevel }));
+	if (s.adjustPitch) parts.push(`pitch ±${s.pitchDeviation}°`);
+	if (s.adjustZoom) parts.push(`zoom ${s.zoomLevel}`);
 
-	parts.push(
-		s.radius >= 1000
-			? t("plugin.generator.summary.kmRadius", { radius: s.radius / 1000 })
-			: t("plugin.generator.summary.mRadius", { radius: s.radius }),
-	);
-	if (s.samplingMode !== "random") {
-		const modeKey = `plugin.generator.sampling.${s.samplingMode}` as MessageKey;
-		parts.push(t("plugin.generator.summary.samplingMode", { mode: t(modeKey) }));
-	}
+	// Radius
+	parts.push(s.radius >= 1000 ? `${s.radius / 1000}km radius` : `${s.radius}m radius`);
+	if (s.samplingMode !== "random") parts.push(`${s.samplingMode} sampling`);
 
-	if (s.checkAllDates) parts.push(t("plugin.generator.summary.checkingAllDates"));
-	if (s.randomInTimeline) parts.push(t("plugin.generator.summary.randomDateInTimeline"));
+	// Date behavior
+	if (s.checkAllDates) parts.push("checking all dates");
+	if (s.randomInTimeline) parts.push("random date in timeline");
 
-	if (!s.rejectDateless) parts.push(t("plugin.generator.summary.allowingDateless"));
-	if (!s.rejectNoDescription) parts.push(t("plugin.generator.summary.allowingNoDescription"));
-	if (s.onlyOneInTimeframe) parts.push(t("plugin.generator.summary.uniqueInTimeframe"));
+	// Acceptance toggles (only show non-default)
+	if (!s.rejectDateless) parts.push("allowing dateless");
+	if (!s.rejectNoDescription) parts.push("allowing no-description");
+	if (s.onlyOneInTimeframe) parts.push("unique in timeframe");
 
-	if (s.skipExisting)
-		parts.push(t("plugin.generator.summary.skippingExisting", { radius: s.skipExistingRadius }));
-	if (s.getIntersection) parts.push(t("plugin.generator.summary.intersections"));
-	if (s.pinpointSearch) parts.push(t("plugin.generator.summary.curvesOver", { angle: s.pinpointAngle }));
-	if (s.checkLinks) parts.push(t("plugin.generator.summary.checkingLinks", { depth: s.linksDepth }));
-	if (s.findRegions) parts.push(t("plugin.generator.summary.kmFromExisting", { radius: s.regionRadius }));
-	if (s.filterByLinks)
-		parts.push(t("plugin.generator.summary.linksRange", { min: s.minLinks, max: s.maxLinks }));
+	// Search strategy
+	if (s.skipExisting) parts.push(`skipping existing (${s.skipExistingRadius}m)`);
+	if (s.getIntersection) parts.push("intersections");
+	if (s.pinpointSearch) parts.push(`curves >${s.pinpointAngle}°`);
+	if (s.checkLinks) parts.push(`checking ${s.linksDepth} link hops`);
+	if (s.findRegions) parts.push(`${s.regionRadius}km from existing`);
+	if (s.filterByLinks) parts.push(`${s.minLinks}–${s.maxLinks} links`);
 	if (s.searchInDescription && s.searchTerms) {
-		const key =
-			s.searchFilterType === "include"
-				? "plugin.generator.summary.matchingTerms"
-				: "plugin.generator.summary.excludingTerms";
-		parts.push(t(key, { terms: s.searchTerms }));
+		const verb = s.searchFilterType === "include" ? "matching" : "excluding";
+		parts.push(`${verb} "${s.searchTerms}"`);
 	}
 
-	if (s.numGenerators > 1) parts.push(t("plugin.generator.summary.workers", { count: s.numGenerators }));
-	if (s.oneCountryAtATime) parts.push(t("plugin.generator.summary.oneRegionAtATime"));
+	// Parallelism
+	if (s.numGenerators > 1) parts.push(`${s.numGenerators} workers`);
+	if (s.oneCountryAtATime) parts.push("one region at a time");
 
 	return parts.join(", ");
 }
 
 export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
 	const [settings, setSettings] = useState<GeneratorSettings>(loadSettings);
 	const [meta, setMeta] = useState<Map<string, GeneratorRegionMeta>>(sessionMeta);
 	const [running, setRunning] = useState(sessionRunning);
@@ -273,7 +238,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 			m.checkedPanos = new Set();
 			m.isProcessing = false;
 			nextMeta.set(sel.key, m);
-			const region = selectionToRegion(sel, m, t("plugin.generator.unnamedPolygon"));
+			const region = selectionToRegion(sel, m);
 			if (region) regions.push(region);
 		}
 		setMeta(nextMeta);
@@ -317,7 +282,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 					isProcessing: false,
 				};
 				nextMeta.set(sel.key, m);
-				const region = selectionToRegion(sel, m, t("plugin.generator.unnamedPolygon"));
+				const region = selectionToRegion(sel, m);
 				if (region) desired.push(region);
 			}
 			setMeta(nextMeta);
@@ -348,14 +313,14 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 	for (const sel of polygonSelections) {
 		const m = meta.get(sel.key);
 		if (m) {
-			const region = selectionToRegion(sel, m, t("plugin.generator.unnamedPolygon"));
+			const region = selectionToRegion(sel, m);
 			if (region) regions.push(region);
 		}
 	}
 
 	return (
-		<Sidebar title={t("plugin.generator.title")} onBack={handleClose} className="generator-sidebar">
-			<Section title={t("plugin.generator.regions", { count: polygonSelections.length })}>
+		<Sidebar title={t("Map Generator")} onBack={handleClose} className="generator-sidebar">
+			<Section title={t("Regions ({n})", { n: polygonSelections.length })}>
 				<RegionSelector
 					defaultTarget={settings.defaultTarget}
 					onDefaultTargetChange={(v) => updateSettings({ defaultTarget: v })}
@@ -366,9 +331,9 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 
 			<SettingsPanel settings={settings} onChange={updateSettings} />
 
-			<Section title={t("plugin.generator.output")}>
+			<Section title={t("Output")}>
 				<label className="settings-popup__item settings-popup__select">
-					{t("plugin.generator.tagAs")}
+					{t("Tag as:")}
 					<input
 						className="text-input"
 						type="text"
@@ -377,14 +342,14 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 							setTagName(e.target.value);
 							genStore.set("tagName", e.target.value);
 						}}
-						placeholder={t("common.none")}
+						placeholder={t("None")}
 						disabled={running}
 					/>
 				</label>
 			</Section>
 
 			<div className="generator-sidebar__footer">
-				<p className="generator-sidebar__summary">{summarizeSettings(settings, t)}</p>
+				<p className="generator-sidebar__summary">{summarizeSettings(settings)}</p>
 				{running && regions.length > 0 && (
 					<div className="generator-progress">
 						<ProgressDisplay regions={regions} />
@@ -397,15 +362,15 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 							onClick={handleStart}
 							disabled={polygonSelections.length === 0}
 						>
-							{t("plugin.generator.start")}
+							{t("Start")}
 						</button>
 					) : (
 						<>
 							<button className="button" onClick={handlePause}>
-								{paused ? t("plugin.generator.resume") : t("plugin.generator.pause")}
+								{paused ? t("Resume") : t("Pause")}
 							</button>
 							<button className="button" onClick={handleStop}>
-								{t("plugin.generator.stop")}
+								{t("Stop")}
 							</button>
 						</>
 					)}

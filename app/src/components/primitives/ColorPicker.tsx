@@ -3,12 +3,13 @@ import * as Popover from "@radix-ui/react-popover";
 import { RgbColorPicker } from "react-colorful";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
 import type { RGB } from "@/lib/util/color";
+import { t } from "@/lib/i18n";
 
 /** A color swatch that opens the picker in a popover on click. */
 export function ColorPicker({
 	color,
 	onChange,
-	ariaLabel = "Pick color",
+	ariaLabel = t("Pick color"),
 }: {
 	color: RGB;
 	onChange: (color: RGB) => void;

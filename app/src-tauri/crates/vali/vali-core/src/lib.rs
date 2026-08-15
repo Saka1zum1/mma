@@ -1,4 +1,4 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
+//! Port of slashP/Vali @ 3.2.1 (d961e46).
 
 pub mod location;
 pub mod map_definition;

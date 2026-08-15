@@ -6,6 +6,7 @@ import {
 	flushAndWait,
 	createTag,
 	withApi,
+	useMap,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 
@@ -367,12 +368,10 @@ describe("Benchmarks - map open", () => {
 });
 
 describe("Benchmarks - selection refresh", () => {
-	let mapId: string;
+	useMap("Bench Selections");
 	let benchTagId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Bench Selections");
 		const tag = await createTag("bench-tag");
 		benchTagId = tag.id;
 
@@ -394,12 +393,6 @@ describe("Benchmarks - selection refresh", () => {
 			return "ok";
 		}, benchTagId);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => {
 			await api.resetSelections();
@@ -526,17 +519,7 @@ describe("Benchmarks - selection refresh", () => {
 });
 
 describe("Benchmarks - undo/redo", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Bench Undo");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("Bench Undo");
 
 	it("undo add of 10K locations", async () => {
 		await withApi(async (api) => {
@@ -591,11 +574,9 @@ describe("Benchmarks - undo/redo", () => {
 });
 
 describe("Benchmarks - batch update", () => {
-	let mapId: string;
+	useMap("Bench Batch Update");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("Bench Batch Update");
 		await withApi(async (api) => {
 			const locs: Location[] = [];
 			for (let i = 0; i < 10000; i++) {
@@ -611,12 +592,6 @@ describe("Benchmarks - batch update", () => {
 			return "ok";
 		});
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("batch update 1K locations", async () => {
 		const times: number[] = [];
 		for (let iter = 0; iter < ITERATIONS; iter++) {

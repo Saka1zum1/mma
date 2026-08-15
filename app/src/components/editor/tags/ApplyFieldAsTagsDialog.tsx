@@ -13,20 +13,13 @@ import { fetchLocationsByIds, createTags, updateLocations } from "@/store/useMap
 import { partition, useScope } from "@/store/scope";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { useSetting } from "@/store/settings";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { Checkbox } from "@/components/primitives/Checkbox";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
-export function ApplyFieldAsTagsDialog({
-	open,
-	onOpenChange,
-}: {
-	open: boolean;
-	onOpenChange: (v: boolean) => void;
-}) {
-	const { t } = useT();
+export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 	const tzDefault = useSetting("dateTimezone") === "location";
 	const [field, setField] = useState("");
 	const [projectionId, setProjectionId] = useState("");
@@ -113,7 +106,7 @@ export function ApplyFieldAsTagsDialog({
 				}
 			}}
 		>
-			<DialogContent title={t("dialog.applyMetadataAsTags")}>
+			<DialogContent title={t("Apply metadata as tags")}>
 				<form
 					onSubmit={(e) => {
 						e.preventDefault();
@@ -130,10 +123,10 @@ export function ApplyFieldAsTagsDialog({
 							style={{ flex: 1 }}
 							autoFocus
 						>
-							<option value="">{t("editor.selectField")}</option>
+							<option value="">{t("Select a field...")}</option>
 							{fields.map((f) => (
 								<option key={f.key} value={f.key}>
-									{f.label}
+									{t(f.label)}
 								</option>
 							))}
 						</NSelect>
@@ -145,7 +138,7 @@ export function ApplyFieldAsTagsDialog({
 							>
 								{projOptions.map((p) => (
 									<option key={p.id} value={p.id}>
-										{p.label}
+										{t(p.label)}
 									</option>
 								))}
 							</NSelect>
@@ -157,7 +150,7 @@ export function ApplyFieldAsTagsDialog({
 							min="0"
 							value={width}
 							onChange={(e) => setWidth(e.target.value)}
-							placeholder={t("editor.bucketWidthPlaceholder")}
+							placeholder={t("Bucket width...")}
 						/>
 					)}
 					{showTz && (
@@ -168,20 +161,21 @@ export function ApplyFieldAsTagsDialog({
 								gap: "0.5rem",
 								opacity: hasTzData ? 1 : 0.5,
 							}}
-							title={hasTzData ? undefined : t("editor.noTimezoneData")}
+							title={hasTzData ? undefined : t("No locations have timezone data")}
 						>
 							<Checkbox
 								checked={tzLocal && hasTzData}
 								disabled={!hasTzData}
 								onChange={(e) => setTzLocal(e.target.checked)}
 							/>
-							{t("editor.locationTimezone")}
+
+							{t("Location timezone")}
 						</label>
 					)}
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-						<Button onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+						<Button onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
 						<Button variant="primary" type="submit" disabled={!field || !widthValid}>
-							{t("common.apply")}
+							{t("Apply")}
 						</Button>
 					</div>
 				</form>

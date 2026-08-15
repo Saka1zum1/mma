@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("measuretool-googlemaps-v3", () => ({ default: class {} }));
 vi.mock("@/types", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@/types")>()),
 	Location: {},

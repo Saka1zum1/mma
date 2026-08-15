@@ -48,23 +48,13 @@ pub struct SeenWriteEntry {
 
 /// Optional filters for seen-history queries. All fields are AND-combined.
 /// `search` does a substring match on the `address` column.
-#[derive(serde::Deserialize, specta::Type)]
+#[derive(serde::Deserialize, specta::Type, Default)]
 #[serde(default)]
 pub struct SeenFilter {
     pub country: Option<String>,
     #[serde(rename = "mapId")]
     pub map_id: Option<String>,
     pub search: Option<String>,
-}
-
-impl Default for SeenFilter {
-    fn default() -> Self {
-        Self {
-            country: None,
-            map_id: None,
-            search: None,
-        }
-    }
 }
 
 /// Map id + display name pair for the "filter by map" dropdown.
@@ -75,26 +65,49 @@ pub struct SeenMapInfo {
     pub name: String,
 }
 
+/// SELECT column list shared by all readers, matching [`row_to_seen`]. The
+/// thumbnail is appended separately: the map overlay omits that blob.
+const COLS: &str = "id, pano_id, lat, lng, heading, pitch, zoom, entered_at, map_id, location_id, country_code, address";
+
+/// Decode a row (selected via [`COLS`]) into a `SeenEntry`.
+fn row_to_seen(row: &rusqlite::Row) -> rusqlite::Result<SeenEntry> {
+    Ok(SeenEntry {
+        id: row.get("id")?,
+        pano_id: row.get("pano_id")?,
+        lat: row.get("lat")?,
+        lng: row.get("lng")?,
+        heading: row.get("heading")?,
+        pitch: row.get("pitch")?,
+        zoom: row.get("zoom")?,
+        entered_at: row.get("entered_at")?,
+        map_id: row.get("map_id")?,
+        location_id: row.get("location_id")?,
+        country_code: row.get("country_code")?,
+        address: row.get("address")?,
+        thumbnail: row.get("thumbnail")?,
+    })
+}
+
 /// Builds a SQL WHERE clause and parameter list from the optional filter.
 /// Returns an empty string (no WHERE) when no filter fields are set.
 fn build_where_clause(
     filter: &Option<SeenFilter>,
 ) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
-    let mut conditions: Vec<String> = Vec::new();
+    let mut conditions: Vec<&str> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let f = filter.as_ref();
 
-    if let Some(f) = filter {
-        if let Some(ref country) = f.country {
-            conditions.push("country_code = ?".to_string());
-            params.push(Box::new(country.clone()));
-        }
-        if let Some(ref map_id) = f.map_id {
-            conditions.push("map_id = ?".to_string());
-            params.push(Box::new(map_id.clone()));
-        }
-        if let Some(ref search) = f.search {
-            conditions.push("address LIKE ?".to_string());
-            params.push(Box::new(format!("%{search}%")));
+    for (cond, value) in [
+        ("country_code = ?", f.and_then(|f| f.country.clone())),
+        ("map_id = ?", f.and_then(|f| f.map_id.clone())),
+        (
+            "address LIKE ?",
+            f.and_then(|f| f.search.as_ref().map(|s| format!("%{s}%"))),
+        ),
+    ] {
+        if let Some(v) = value {
+            conditions.push(cond);
+            params.push(Box::new(v));
         }
     }
 
@@ -152,30 +165,17 @@ pub fn store_seen_list(
     // The thumbnail blob dominates the payload; the map overlay omits it (thumbnails=false).
     let thumb_col = if thumbnails { "thumbnail" } else { "NULL" };
     let sql = format!(
-        "SELECT id, pano_id, lat, lng, heading, pitch, zoom, entered_at, map_id, location_id, country_code, address, {thumb_col} FROM seen{where_clause} ORDER BY entered_at DESC LIMIT ? OFFSET ?"
+        "SELECT {COLS}, {thumb_col} AS thumbnail FROM seen{where_clause} ORDER BY entered_at DESC LIMIT ? OFFSET ?"
     );
 
     params.push(Box::new(limit));
     params.push(Box::new(offset));
 
     let mut stmt = db.prepare(&sql)?;
-    let rows = stmt.query_map(params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
-        Ok(SeenEntry {
-            id: row.get(0)?,
-            pano_id: row.get(1)?,
-            lat: row.get(2)?,
-            lng: row.get(3)?,
-            heading: row.get(4)?,
-            pitch: row.get(5)?,
-            zoom: row.get(6)?,
-            entered_at: row.get(7)?,
-            map_id: row.get(8)?,
-            location_id: row.get(9)?,
-            country_code: row.get(10)?,
-            address: row.get(11)?,
-            thumbnail: row.get(12)?,
-        })
-    })?;
+    let rows = stmt.query_map(
+        params_from_iter(params.iter().map(|p| p.as_ref())),
+        row_to_seen,
+    )?;
 
     let mut entries = Vec::new();
     for row in rows {
@@ -234,8 +234,8 @@ pub fn store_seen_maps() -> AppResult<Vec<SeenMapInfo>> {
 
     let rows = stmt.query_map([], |row| {
         Ok(SeenMapInfo {
-            id: row.get(0)?,
-            name: row.get(1)?,
+            id: row.get("id")?,
+            name: row.get("name")?,
         })
     })?;
 

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::country_weights as cw;
 use crate::geometry::{self, GeometrySource, PreparedGeometryFilter};
 use crate::goals::subdivision_weights;
@@ -696,12 +694,12 @@ pub(crate) fn expand_country_code(
     };
     match code {
         "*" | "world" => codes_from(default_distribution(strategy)),
-        "europe" => codes_from(cw::EUROPE),
-        "asia" => codes_from(cw::ASIA),
-        "africa" => codes_from(cw::AFRICA),
-        "southamerica" => codes_from(cw::SOUTH_AMERICA),
-        "northamerica" => codes_from(cw::NORTH_AMERICA),
-        "oceania" => codes_from(cw::OCEANIA),
+        "europe" => codes_from(cw::preset(cw::EUROPE)),
+        "asia" => codes_from(cw::preset(cw::ASIA)),
+        "africa" => codes_from(cw::preset(cw::AFRICA)),
+        "southamerica" => codes_from(cw::preset(cw::SOUTH_AMERICA)),
+        "northamerica" => codes_from(cw::preset(cw::NORTH_AMERICA)),
+        "oceania" => codes_from(cw::preset(cw::OCEANIA)),
         _ => vec![code.to_uppercase()],
     }
 }
@@ -714,28 +712,28 @@ pub(crate) fn default_distribution(
         .map(str::to_lowercase)
         .as_deref()
     {
-        Some("aarw") => cw::ARBITRARY_RURAL_WORLD,
-        Some("aaw") => cw::WORLD,
-        Some("acw") => cw::COMMUNITY_WORLD,
-        Some("abw") => cw::BALANCED_WORLD,
-        Some("aiw") => cw::IMPROVED_WORLD,
-        Some("proworld") => cw::PRO_WORLD,
-        Some("aow") => cw::OFFICIAL_WORLD,
-        Some("rainboltworld") => cw::RAINBOLT_WORLD,
-        Some("geotime") => cw::GEO_TIME,
-        Some("lerg") => cw::LESS_EXTREME_REGION_GUESSING,
-        Some("amw") => cw::MOVING_WORLD,
-        Some("yellowbelly") => cw::YELLOW_BELLY,
-        Some("5kable") => cw::A5KABLE_WORLD,
+        Some("aarw") => cw::preset(cw::ARBITRARY_RURAL_WORLD),
+        Some("aaw") => cw::preset(cw::WORLD),
+        Some("acw") => cw::preset(cw::COMMUNITY_WORLD),
+        Some("abw") => cw::preset(cw::BALANCED_WORLD),
+        Some("aiw") => cw::preset(cw::IMPROVED_WORLD),
+        Some("proworld") => cw::preset(cw::PRO_WORLD),
+        Some("aow") => cw::preset(cw::OFFICIAL_WORLD),
+        Some("rainboltworld") => cw::preset(cw::RAINBOLT_WORLD),
+        Some("geotime") => cw::preset(cw::GEO_TIME),
+        Some("lerg") => cw::preset(cw::LESS_EXTREME_REGION_GUESSING),
+        Some("amw") => cw::preset(cw::MOVING_WORLD),
+        Some("yellowbelly") => cw::preset(cw::YELLOW_BELLY),
+        Some("5kable") => cw::preset(cw::A5KABLE_WORLD),
         Some(s) if !s.is_empty() => &[],
-        _ => cw::COMMUNITY_WORLD,
+        _ => cw::preset(cw::COMMUNITY_WORLD),
     }
 }
 pub(crate) fn resolve_country_distribution(
     def: &MapDefinition,
     expanded_codes: &[String],
 ) -> Result<Vec<(String, i32)>, String> {
-    let preset = |weights: &[(&str, i32)]| {
+    let owned = |weights: &[(&str, i32)]| {
         weights
             .iter()
             .filter(|(_, w)| *w > 0)
@@ -756,13 +754,13 @@ pub(crate) fn resolve_country_distribution(
     }
     let raw: Vec<&str> = def.country_codes.iter().map(String::as_str).collect();
     let result = match raw.as_slice() {
-        ["*"] => preset(default_distribution(&def.distribution_strategy)),
-        ["europe"] => preset(cw::EUROPE),
-        ["asia"] => preset(cw::ASIA),
-        ["africa"] => preset(cw::AFRICA),
-        ["southamerica"] => preset(cw::SOUTH_AMERICA),
-        ["northamerica"] => preset(cw::NORTH_AMERICA),
-        ["oceania"] => preset(cw::OCEANIA),
+        ["*"] => owned(default_distribution(&def.distribution_strategy)),
+        ["europe"] => owned(cw::preset(cw::EUROPE)),
+        ["asia"] => owned(cw::preset(cw::ASIA)),
+        ["africa"] => owned(cw::preset(cw::AFRICA)),
+        ["southamerica"] => owned(cw::preset(cw::SOUTH_AMERICA)),
+        ["northamerica"] => owned(cw::preset(cw::NORTH_AMERICA)),
+        ["oceania"] => owned(cw::preset(cw::OCEANIA)),
         _ if expanded_codes.len() == 1 => vec![(expanded_codes[0].clone(), 10)],
         _ => {
             default_distribution(&def.distribution_strategy)

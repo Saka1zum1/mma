@@ -9,20 +9,11 @@ import {
 	openMap,
 	getLocCount,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("SameLocation — duplicate picker", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E SameLocation");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E SameLocation");
 
 	it("findNearby returns co-located locations", async () => {
 		await addLocs([

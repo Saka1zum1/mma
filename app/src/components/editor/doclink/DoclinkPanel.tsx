@@ -25,8 +25,8 @@ import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { clamp, range } from "@/types/util";
 import { DocRenderer } from "@/components/editor/doclink/DocRenderer";
-import { useT } from "@/lib/i18n";
 import "./doclink.css";
+import { t } from "@/lib/i18n";
 
 const WIDTH_RANGE = range([280, 900]);
 
@@ -79,7 +79,6 @@ function collectSelectedTagIds(sels: Selection[], out: number[] = []): number[] 
 }
 
 export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProps) {
-	const { t } = useT();
 	const tagMap = useMapState((s) => s.tags);
 	const selections = useMapState(getActiveSelections);
 	const tags: Tag[] = doclinkedTags(tagMap);
@@ -105,7 +104,7 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 
 	const selTag = tags.find((t) => t.id === sel?.tagId);
 	const links = selTag?.doclinks ?? [];
-	const idx = Math.min(Math.max(sel?.idx ?? 0, 0), Math.max(0, links.length - 1));
+	const idx = clamp(sel?.idx ?? 0, 0, Math.max(0, links.length - 1));
 	const url: string | undefined = links[idx];
 	const docRef = url ? parseDoclink(url) : null;
 
@@ -157,17 +156,15 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 				if (!rect) return;
 				onWidthChange(Math.round(clamp(rect.right - ev.clientX, WIDTH_RANGE)));
 			};
-			const onUp = () => {
-				el.removeEventListener("pointermove", onMove);
-				el.removeEventListener("pointerup", onUp);
-			};
-			el.addEventListener("pointermove", onMove);
-			el.addEventListener("pointerup", onUp);
+			const ac = new AbortController();
+			const onUp = () => ac.abort();
+			el.addEventListener("pointermove", onMove, { signal: ac.signal });
+			el.addEventListener("pointerup", onUp, { signal: ac.signal });
 		},
 		[onWidthChange],
 	);
 
-	const title = shown?.docTitle ?? selTag?.name ?? t("editor.doclinkDefaultTitle");
+	const title = shown?.docTitle ?? selTag?.name ?? t("Doclink");
 
 	return (
 		<aside className="doclink-panel" style={{ width }} ref={panelRef}>
@@ -176,11 +173,11 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 				<span className="doclink-panel__title" title={title}>
 					{title}
 				</span>
-				<Tooltip content={t("editor.refetchDocument")} side="bottom">
+				<Tooltip content={t("Re-fetch document (bypass cache)")} side="bottom">
 					<button
 						className="icon-button"
 						type="button"
-						aria-label={t("editor.refreshDocument")}
+						aria-label={t("Refresh document")}
 						disabled={!url || loading}
 						onClick={onRefresh}
 					>
@@ -188,13 +185,13 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 					</button>
 				</Tooltip>
 				<Tooltip
-					content={wholeDoc ? t("editor.showLinkedSection") : t("editor.showWholeDocument")}
+					content={wholeDoc ? t("Show linked section only") : t("Show whole document")}
 					side="bottom"
 				>
 					<button
 						className="icon-button"
 						type="button"
-						aria-label={t("editor.toggleWholeDocument")}
+						aria-label={t("Toggle whole document")}
 						disabled={!docRef?.anchor}
 						onClick={() => setWholeDoc((w) => !w)}
 					>
@@ -202,34 +199,34 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 					</button>
 				</Tooltip>
 				<Tooltip
-					content={pinned ? t("editor.unpinFollowTags") : t("editor.pinSection")}
+					content={pinned ? t("Unpin (follow selected tags)") : t("Pin current section")}
 					side="bottom"
 				>
 					<button
 						className="icon-button"
 						type="button"
-						aria-label={t("editor.pinSection")}
+						aria-label={t("Pin section")}
 						onClick={() => setPinned((p) => !p)}
 					>
 						<Icon path={pinned ? mdiPin : mdiPinOutline} />
 					</button>
 				</Tooltip>
-				<Tooltip content={t("editor.openInBrowser")} side="bottom">
+				<Tooltip content={t("Open in browser")} side="bottom">
 					<button
 						className="icon-button"
 						type="button"
-						aria-label={t("editor.openInBrowser")}
+						aria-label={t("Open in browser")}
 						disabled={!url}
 						onClick={() => url && void openExternal(url)}
 					>
 						<Icon path={mdiOpenInNew} />
 					</button>
 				</Tooltip>
-				<Tooltip content={t("common.close")} side="bottom">
+				<Tooltip content={t("Close")} side="bottom">
 					<button
 						className="icon-button"
 						type="button"
-						aria-label={t("editor.closeDoclinkPanel")}
+						aria-label={t("Close doclink panel")}
 						onClick={onClose}
 					>
 						<Icon path={mdiClose} />
@@ -263,19 +260,27 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 					</div>
 				)}
 				{tags.length === 0 ? (
-					<div className="doclink-panel__status">{t("editor.noDoclinkTags")}</div>
+					<div className="doclink-panel__status">
+						{t("No tags in this map carry document links.")}
+					</div>
 				) : !selTag ? (
-					<div className="doclink-panel__status">{t("editor.selectDoclinkTag")}</div>
+					<div className="doclink-panel__status">
+						{t("Select a tag with document links to view its section.")}
+					</div>
 				) : !url ? (
-					<div className="doclink-panel__status">{t("editor.noDoclinkSelected")}</div>
+					<div className="doclink-panel__status">{t("No document link selected.")}</div>
 				) : !docRef ? (
-					<div className="doclink-panel__status">{t("editor.unsupportedDoclink", { url })}</div>
+					<div className="doclink-panel__status">
+						{t("Unsupported document link:")} {url}
+					</div>
 				) : error ? (
 					<div className="doclink-panel__status">
-						{t("editor.doclinkLoadFailed", { message: error.message })}
+						{t("Couldn't load the document.")} {error.message}
 					</div>
 				) : shown && !shown.anchorFound ? (
-					<div className="doclink-panel__status">{t("editor.doclinkSectionMissing")}</div>
+					<div className="doclink-panel__status">
+						{t("The linked section no longer exists in this document.")}
+					</div>
 				) : shown?.blocks ? (
 					<DocRenderer blocks={shown.blocks} />
 				) : shown ? (

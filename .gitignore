@@ -46,6 +46,7 @@ lint.json
 docs/
 CLAUDE.md
 mma-source
+vali-oracle/
 *.bin
 # sidecar ONNX models (exported/downloaded, not committed)
 plugins/*/sidecar/models/*
@@ -56,6 +57,13 @@ plugins/copyright/sidecar/verify_parity.py
 
 !plugins/copyright/sidecar/models/wm_cls.onnx
 !plugins/copyright/sidecar/models/wm_template.bin
+
+# render-binary layout fixture, emitted by the Rust writer (emit_render_fixture)
+!app/test/unit/fixtures/render-buffer.bin
+
+# C# oracle golden vectors + location slices for the vali parity gates
+!app/src-tauri/crates/vali/vali-geo/tests/fixtures/geo/*.bin
+!app/src-tauri/crates/vali/vali-generate/tests/fixtures/*.bin
 
 app/test/e2e/opensv-smoke.test.ts
 .tauri-keys/

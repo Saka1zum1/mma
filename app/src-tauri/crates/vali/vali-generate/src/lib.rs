@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 pub mod country_weights;
 pub mod definition;
 pub mod distribution;
@@ -14,6 +12,7 @@ pub mod neighbor;
 pub mod progress;
 pub mod proximity;
 pub mod store;
+pub mod tables;
 pub mod tags;
 pub mod weights;
 pub use definition::{prepare, Prepared};

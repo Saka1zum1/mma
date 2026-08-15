@@ -101,14 +101,7 @@ export interface RenderStats {
 }
 
 function currentPrefs(): MapEmbedPrefs {
-	try {
-		const raw = localStorage.getItem("mapEmbedPrefs");
-		return raw
-			? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<MapEmbedPrefs>) }
-			: DEFAULT_PREFS;
-	} catch {
-		return DEFAULT_PREFS;
-	}
+	return getLocal("mapEmbedPrefs", DEFAULT_PREFS);
 }
 
 export function computeRenderStats(): RenderStats | null {

@@ -1,4 +1,5 @@
 import type { MapStyle } from "@/lib/geo/tiles";
+import { msg } from "@/lib/i18n";
 
 export const MUTED_STYLES: MapStyle[] = [
 	{ stylers: [{ saturation: -60 }, { lightness: 10 }, { gamma: 1.2 }] },
@@ -428,19 +429,19 @@ export const BUILTIN_STYLE_MAP: Partial<Record<BuiltinStyleKey, MapStyle[]>> = {
 };
 
 export const BUILTIN_STYLE_LABELS: Record<BuiltinStyleKey, string> = {
-	default: "Default",
-	legacy: "Legacy",
-	muted: "Muted",
-	midnight: "Midnight",
-	minimal: "Minimal",
-	vintage: "Vintage",
-	grayscale: "Grayscale",
-	blueprint: "Blueprint",
-	arctic: "Arctic",
-	ember: "Ember",
-	forest: "Forest",
-	noir: "Noir",
-	dusk: "Dusk",
+	default: msg("Default"),
+	legacy: msg("Legacy"),
+	muted: msg("Muted"),
+	midnight: msg("Midnight"),
+	minimal: msg("Minimal"),
+	vintage: msg("Vintage"),
+	grayscale: msg("Grayscale"),
+	blueprint: msg("Blueprint"),
+	arctic: msg("Arctic"),
+	ember: msg("Ember"),
+	forest: msg("Forest"),
+	noir: msg("Noir"),
+	dusk: msg("Dusk"),
 };
 
 export const BUILTIN_STYLE_KEYS: BuiltinStyleKey[] = [

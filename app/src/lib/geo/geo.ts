@@ -147,6 +147,10 @@ export function pointInPolygon(lng: number, lat: number, coordinates: number[][]
 
 const EARTH_RADIUS_M = 6371000;
 
+/** Meters per degree of latitude (and of longitude at the equator). Mirrors
+ *  `M_PER_DEG` in the mma-geo crate. */
+export const M_PER_DEG = (EARTH_RADIUS_M * Math.PI) / 180;
+
 /** Great-circle (haversine) distance in meters. */
 export function distMeters(a: LatLng, b: LatLng): number {
 	const f1 = (a.lat * Math.PI) / 180;

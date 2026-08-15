@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
 
 // The store binds tag lookups internally; back them with a settable fake tag set.
 const h = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ import {
 	savedToSelectionProps,
 	describeRule,
 	resolveSavedSelectionIds,
+	MAP_LOCAL_TYPES,
 	type SavedSelection,
 	type SavedSelectionProps,
 } from "@/store/savedSelections";
@@ -340,6 +342,104 @@ describe("describeRule", () => {
 			selections: [{ type: "Everything" }],
 		});
 		expect(result).toBe("NOT (All)");
+	});
+});
+
+// ============================================================================
+// INVARIANT: every generated SelectionProps variant is either named map-local
+// (never saved) or fully saveable — convertible and describable. A new Rust
+// variant is saveable by default, so it must not be able to slip through
+// unhandled.
+// ============================================================================
+
+describe("SelectionProps coverage", () => {
+	const SAMPLES: Record<string, Selection["props"]> = {
+		Locations: { type: "Locations", locations: [1], name: null },
+		Everything: { type: "Everything" },
+		Polygon: {
+			type: "Polygon",
+			polygon: { type: "Feature", geometry: {}, properties: { name: "P" } } as any,
+			includeInformational: false,
+		},
+		Tag: { type: "Tag", tagId: 1 },
+		Untagged: { type: "Untagged" },
+		Unpanned: { type: "Unpanned" },
+		PanoIds: { type: "PanoIds" },
+		NotPanoIds: { type: "NotPanoIds" },
+		Uncommitted: { type: "Uncommitted" },
+		Manual: { type: "Manual", locations: [1] },
+		Duplicates: { type: "Duplicates", distance: 25 },
+		ValidationState: { type: "ValidationState", locations: [1], state: 0 },
+		Reviewed: { type: "Reviewed", locations: [1], sessionId: "s", mode: "reviewed" },
+		Intersection: {
+			type: "Intersection",
+			selections: [{ key: "e", color: [0, 0, 0], props: { type: "Everything" } }],
+		},
+		Union: {
+			type: "Union",
+			selections: [{ key: "e", color: [0, 0, 0], props: { type: "Everything" } }],
+		},
+		Invert: {
+			type: "Invert",
+			selections: [{ key: "e", color: [0, 0, 0], props: { type: "Everything" } }],
+		},
+		Filter: { type: "Filter", field: "altitude", op: "gt", value: 1, tzLocal: true },
+		TopK: { type: "TopK", field: "altitude", k: 5, ascending: false },
+	};
+
+	// Read the variants off the generated union so a new Rust variant fails here.
+	const generatedTypes = (): string[] => {
+		const src = readFileSync(new URL("../../src/bindings.gen.ts", import.meta.url), "utf8");
+		const line = src.split("\n").find((l) => l.startsWith("export type SelectionProps ="))!;
+		return [...line.matchAll(/type: "(\w+)"/g)].map((m) => m[1]);
+	};
+
+	it("has a sample for every generated variant", () => {
+		expect(generatedTypes().sort()).toEqual(Object.keys(SAMPLES).sort());
+	});
+
+	it("every variant is map-local or saveable and describable", () => {
+		h.tags = { 1: { id: 1, name: "T", color: "#fff", visible: true } };
+		for (const type of generatedTypes()) {
+			const saved = selectionToSaved(makeSel(SAMPLES[type]));
+			if ((MAP_LOCAL_TYPES as readonly string[]).includes(type)) {
+				expect(saved, `${type} is map-local`).toBeNull();
+				continue;
+			}
+			expect(saved, `${type} is saveable`).not.toBeNull();
+			const desc = describeRule(saved!);
+			expect(typeof desc, `${type} is describable`).toBe("string");
+			expect(desc.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("Reviewed never persists a session snapshot", () => {
+		const props: Selection["props"] = {
+			type: "Reviewed",
+			locations: [1, 2, 3],
+			sessionId: "session-1",
+			mode: "unreviewed",
+		};
+		expect(selectionToSaved(makeSel(props))).toBeNull();
+
+		// Nor smuggled in through a composite: the composite drops to null with it.
+		const composite = makeSel({
+			type: "Union",
+			selections: [{ key: "rev", color: [0, 0, 0], props }],
+		});
+		expect(selectionToSaved(composite)).toBeNull();
+
+		const mixed = selectionToSaved(
+			makeSel({
+				type: "Union",
+				selections: [
+					{ key: "rev", color: [0, 0, 0], props },
+					{ key: "untagged", color: [0, 0, 0], props: { type: "Untagged" } },
+				],
+			}),
+		);
+		expect(mixed).toEqual({ type: "Union", selections: [{ type: "Untagged" }] });
+		expect(JSON.stringify(mixed)).not.toContain("session-1");
 	});
 });
 

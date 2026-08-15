@@ -7,7 +7,8 @@ import { Checkbox } from "@/components/primitives/Checkbox";
 import { mdiClose } from "@mdi/js";
 import { dateParts, partsToEpoch } from "@/lib/data/fieldOps";
 import { MONTHS, parseTypedDate } from "@/lib/util/date";
-import { useT } from "@/lib/i18n";
+import { dateFmt, dayMonthFmt, shortDateFmt, monthShort } from "@/lib/util/format";
+import { t } from "@/lib/i18n";
 
 interface DatePickerProps {
 	mode: "date" | "month";
@@ -64,27 +65,23 @@ function formatDisplay(
 	anyTime?: boolean,
 	wallClock?: boolean,
 ): string {
-	if (!value) return "Select...";
+	if (!value) return t("Select...");
 	if (anyTime) {
-		return /^\d{2}:\d{2}$/.test(value) ? value : "Select...";
+		return /^\d{2}:\d{2}$/.test(value) ? value : t("Select...");
 	}
 	const d = parseToDate(value, wallClock);
-	if (!d) return "Select...";
+	if (!d) return t("Select...");
 	if (anyYear) {
 		if (mode === "month") {
-			return MONTHS.short[d.getMonth()] ?? "Select...";
+			return monthShort(d.getMonth());
 		}
-		return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+		return dayMonthFmt.format(d);
 	}
 	if (mode === "month") {
-		return `${MONTHS.short[d.getMonth()]} ${d.getFullYear()}`;
+		return dateFmt.format(d);
 	}
 	const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
-	const dateStr = d.toLocaleDateString("en-US", {
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-	});
+	const dateStr = shortDateFmt.format(d);
 	if (hasTime) {
 		const timeStr = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 		return `${dateStr} ${timeStr}`;
@@ -163,7 +160,7 @@ function MonthGrid({
 							className={`month-grid__cell${isSelected ? " month-grid__cell--selected" : ""}`}
 							onClick={() => handleClick(i)}
 						>
-							{name}
+							{monthShort(i)}
 						</button>
 					);
 				})}
@@ -189,7 +186,6 @@ export function DatePicker({
 	onYearSelect,
 	wallClock,
 }: DatePickerProps) {
-	const { t } = useT();
 	const [open, setOpen] = useState(false);
 	// Hand-typed text while the trigger input is being edited; null = displaying.
 	const [draft, setDraft] = useState<string | null>(null);
@@ -320,7 +316,7 @@ export function DatePicker({
 					className="date-picker__trigger"
 					size={inputSize}
 					value={draft ?? (value ? formatDisplay(value, mode, anyYear, anyTime, wallClock) : "")}
-					placeholder={draft != null ? formatHint(mode, anyYear, anyTime) : "Select..."}
+					placeholder={draft != null ? formatHint(mode, anyYear, anyTime) : t("Select...")}
 					onFocus={startEditing}
 					onClick={startEditing}
 					onChange={(e) => setDraft(e.target.value)}
@@ -361,7 +357,7 @@ export function DatePicker({
 					{anyTime ? (
 						<div className="date-picker__time-only">
 							<label>
-								Time of day:
+								{t("Time of day:")}
 								<input
 									type="time"
 									value={/^\d{2}:\d{2}$/.test(value) ? value : ""}
@@ -399,7 +395,7 @@ export function DatePicker({
 							{showTime && !anyYear && (
 								<div className="date-picker__time">
 									<label>
-										{t("datePicker.time")}
+										{t("Time:")}
 										<input
 											type="time"
 											value={time}
@@ -409,7 +405,7 @@ export function DatePicker({
 									<button
 										type="button"
 										className="date-picker__time-clear"
-										title={t("datePicker.clearTime")}
+										title={t("Clear time (whole day)")}
 										disabled={!time || time === "00:00"}
 										onClick={() => handleTimeChange("")}
 									>
@@ -427,7 +423,8 @@ export function DatePicker({
 										checked={anyYear ?? false}
 										onChange={(e) => onAnyYearToggle?.(e.target.checked)}
 									/>
-									Any year
+
+									{t("Any year")}
 								</label>
 							)}
 							{showAnyTime && (
@@ -436,7 +433,8 @@ export function DatePicker({
 										checked={anyTime ?? false}
 										onChange={(e) => onAnyTimeToggle?.(e.target.checked)}
 									/>
-									Any date
+
+									{t("Any date")}
 								</label>
 							)}
 							{showTzLocal && (
@@ -445,7 +443,8 @@ export function DatePicker({
 										checked={tzLocal ?? false}
 										onChange={(e) => onTzLocalToggle?.(e.target.checked)}
 									/>
-									Location timezone
+
+									{t("Location timezone")}
 								</label>
 							)}
 						</div>

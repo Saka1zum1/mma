@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
@@ -11,8 +11,9 @@ import {
 	getSeenCountries,
 	getSeenMaps,
 } from "@/lib/seen/seen";
+import { dayMonthFmt } from "@/lib/util/format";
+import { getLocale, t } from "@/lib/i18n";
 import type { SeenEntry, SeenFilter } from "@/bindings.gen";
-import { useT } from "@/lib/i18n";
 
 const PAGE_SIZE = 9;
 
@@ -20,9 +21,13 @@ function formatDateTime(ms: number): string {
 	const d = new Date(ms);
 	const now = new Date();
 	const sameDay = d.toDateString() === now.toDateString();
-	const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+	const time = d.toLocaleTimeString(getLocale(), {
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+	});
 	if (sameDay) return time;
-	return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+	return dayMonthFmt.format(d) + " " + time;
 }
 
 function SeenEntryCard({
@@ -62,12 +67,7 @@ export function SeenDialog({
 	open,
 	onOpenChange,
 	onLoadPano,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	onLoadPano: (entry: SeenEntry) => void;
-}) {
-	const { t } = useT();
+}: DialogProps & { onLoadPano: (entry: SeenEntry) => void }) {
 	const [entries, setEntries] = useState<SeenEntry[]>([]);
 	const [total, setTotal] = useState(0);
 	const [page, setPage] = useState(0);
@@ -150,14 +150,14 @@ export function SeenDialog({
 
 	return (
 		<Dialog open={open && ready} onOpenChange={onOpenChange}>
-			<DialogContent title={t("seen.title", { count: total })} className="seen-dialog">
+			<DialogContent title={t("Seen ({n})", { n: total })} className="seen-dialog">
 				<div className="seen-dialog__filters">
 					<NSelect
 						className="seen-dialog__select"
 						value={filterCountry || "_all"}
 						onChange={(e) => setFilterCountry(e.target.value === "_all" ? "" : e.target.value)}
 					>
-						<option value="_all">{t("seen.allCountries")}</option>
+						<option value="_all">{t("All countries")}</option>
 						{countries.map((c) => (
 							<option key={c} value={c}>
 								{c.toUpperCase()}
@@ -169,7 +169,7 @@ export function SeenDialog({
 						value={filterMap || "_all"}
 						onChange={(e) => setFilterMap(e.target.value === "_all" ? "" : e.target.value)}
 					>
-						<option value="_all">{t("seen.allMaps")}</option>
+						<option value="_all">{t("All maps")}</option>
 						{maps.map((m) => (
 							<option key={m.id} value={m.id}>
 								{m.name}
@@ -179,14 +179,14 @@ export function SeenDialog({
 					<TextInput
 						className="seen-dialog__search"
 						type="text"
-						placeholder={t("seen.searchAddress")}
+						placeholder={t("Search address...")}
 						value={filterSearch}
 						onChange={(e) => handleSearchInput(e.target.value)}
 					/>
 				</div>
 				<div className="seen-dialog__grid">
 					{entries.length === 0 && !loading ? (
-						<div className="seen-dialog__empty">{t("seen.noPanosFound")}</div>
+						<div className="seen-dialog__empty">{t("No panos found.")}</div>
 					) : (
 						entries.map((e) => <SeenEntryCard key={e.id} entry={e} onLoad={handleLoad} />)
 					)}
@@ -197,18 +197,18 @@ export function SeenDialog({
 						onClick={handleClear}
 						onBlur={() => setConfirmingClear(false)}
 					>
-						{confirmingClear ? t("common.areYouSure") : t("common.clear")}
+						{confirmingClear ? t("Are you sure?") : t("Clear")}
 					</Button>
 					<div className="seen-dialog__pagination">
 						<Button disabled={page === 0 || loading} onClick={() => load(page - 1, buildFilter())}>
-							{t("common.previous")}
+							{t("Prev")}
 						</Button>
 						<span className="mono">{totalPages > 0 ? `${page + 1} / ${totalPages}` : "0 / 0"}</span>
 						<Button
 							disabled={page >= totalPages - 1 || loading}
 							onClick={() => load(page + 1, buildFilter())}
 						>
-							{t("common.next")}
+							{t("Next")}
 						</Button>
 					</div>
 				</div>

@@ -27,8 +27,8 @@ RUN curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_a
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Node 22
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Node 24
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 

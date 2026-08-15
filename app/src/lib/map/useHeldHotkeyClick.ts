@@ -63,14 +63,14 @@ export function useHeldHotkeyClick(
 			return true;
 		});
 
-		document.addEventListener("keydown", onKeyDown);
-		document.addEventListener("keyup", onKeyUp);
-		window.addEventListener("blur", onBlur);
+		const ac = new AbortController();
+		const { signal } = ac;
+		document.addEventListener("keydown", onKeyDown, { signal });
+		document.addEventListener("keyup", onKeyUp, { signal });
+		window.addEventListener("blur", onBlur, { signal });
 
 		return () => {
-			document.removeEventListener("keydown", onKeyDown);
-			document.removeEventListener("keyup", onKeyUp);
-			window.removeEventListener("blur", onBlur);
+			ac.abort();
 			dispose();
 			document.body.style.cursor = "";
 		};

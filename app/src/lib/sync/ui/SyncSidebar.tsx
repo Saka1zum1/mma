@@ -10,7 +10,8 @@ import type { SyncController } from "../controller";
 import type { SyncOutcome } from "../engine";
 import type { RemoteMapSummary } from "../provider";
 import type { SyncStatus } from "../scheduler";
-import { useT, type MessageKey } from "@/lib/i18n";
+import { errText } from "@/lib/util/util";
+import { t, msg, getLocale } from "@/lib/i18n";
 
 type Side = "local" | "remote";
 
@@ -29,10 +30,6 @@ export interface SyncSidebarProps {
 	listMaps: () => Promise<RemoteMapSummary[]>;
 	/** Provider mark for the header's open-in-browser button (shown when linked). */
 	brand?: { path: string; color: string };
-}
-
-function errText(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
 }
 
 /** Compact signed-in row for the Connection section: avatar (or initial), name, action. */
@@ -90,57 +87,39 @@ export function ConnectionUser({
 	);
 }
 
-const CONFLICT_LABEL_KEYS: Record<Conflict["kind"], MessageKey> = {
-	"update-update": "plugin.sync.bothEdited",
-	"delete-update": "plugin.sync.deletedOneEditedOther",
-	"add-add": "plugin.sync.bothAdded",
+const CONFLICT_LABEL: Record<Conflict["kind"], string> = {
+	"update-update": msg("Both sides edited"),
+	"delete-update": msg("Deleted on one side, edited on the other"),
+	"add-add": msg("Both sides added"),
 };
 
 const coord = (n: NormalizedSyncLocation): string => `${n.lat.toFixed(5)}, ${n.lng.toFixed(5)}`;
 
-function fieldText(
-	field: keyof NormalizedSyncLocation,
-	v: NormalizedSyncLocation[keyof NormalizedSyncLocation],
-	none: string,
-): string {
-	switch (field) {
-		case "lat":
-		case "lng":
-			return (v as number).toFixed(5);
-		case "heading":
-		case "pitch":
-		case "zoom":
-		case "flags":
-			return String(v);
-		case "panoId":
-			return (v as string | null) ?? none;
-		case "tags": {
-			const tags = v as unknown as number[];
-			return tags.length ? tags.join(", ") : none;
-		}
-	}
-}
+const FIELD_TEXT: {
+	[K in keyof NormalizedSyncLocation]: (v: NormalizedSyncLocation[K]) => string;
+} = {
+	lat: (v) => v.toFixed(5),
+	lng: (v) => v.toFixed(5),
+	heading: (v) => String(v),
+	pitch: (v) => String(v),
+	zoom: (v) => String(v),
+	panoId: (v) => v ?? "none",
+	flags: (v) => String(v),
+	tags: (v) => (v.length ? v.join(", ") : "none"),
+};
+
+const FIELDS = Object.keys(FIELD_TEXT) as (keyof NormalizedSyncLocation)[];
 
 /** Only the fields that actually differ, rendered side by side. */
 function differences(
 	local: NormalizedSyncLocation,
 	remote: NormalizedSyncLocation,
-	none: string,
 ): { field: string; local: string; remote: string }[] {
-	const fields: (keyof NormalizedSyncLocation)[] = [
-		"lat",
-		"lng",
-		"heading",
-		"pitch",
-		"zoom",
-		"panoId",
-		"flags",
-		"tags",
-	];
 	const out: { field: string; local: string; remote: string }[] = [];
-	for (const f of fields) {
-		const l = fieldText(f, local[f], none);
-		const r = fieldText(f, remote[f], none);
+	for (const f of FIELDS) {
+		const show = FIELD_TEXT[f] as (v: NormalizedSyncLocation[typeof f]) => string;
+		const l = show(local[f]);
+		const r = show(remote[f]);
 		if (l !== r) out.push({ field: f, local: l, remote: r });
 	}
 	return out;
@@ -150,37 +129,38 @@ function ConflictItem({
 	conflict,
 	busy,
 	onResolve,
-	t,
 }: {
 	conflict: Conflict;
 	busy: boolean;
 	onResolve: (side: Side) => void;
-	t: (key: MessageKey, params?: Record<string, string | number | boolean>) => string;
 }) {
 	const { local, remote } = conflict;
 	const known = local ?? remote;
-	const none = t("plugin.sync.noneValue");
-	const diffs = local && remote ? differences(local, remote, none) : [];
+	const diffs = local && remote ? differences(local, remote) : [];
 
 	return (
 		<div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
 			<span className="mma-input__help">
-				{t(CONFLICT_LABEL_KEYS[conflict.kind])}
+				{t(CONFLICT_LABEL[conflict.kind])}
 				{known ? ` · ${coord(known)}` : ""}
 			</span>
-			{!local && <span className="mma-input__help">{t("plugin.sync.deletedHere")}</span>}
-			{!remote && <span className="mma-input__help">{t("plugin.sync.deletedRemote")}</span>}
+			{!local && <span className="mma-input__help">{t("Deleted here")}</span>}
+			{!remote && <span className="mma-input__help">{t("Deleted on the remote")}</span>}
 			{diffs.map((d) => (
 				<span className="mma-input__help" key={d.field}>
-					{t("plugin.sync.fieldDiff", { field: d.field, local: d.local, remote: d.remote })}
+					{t("{field}: local {local} · remote {remote}", {
+						field: d.field,
+						local: String(d.local),
+						remote: String(d.remote),
+					})}
 				</span>
 			))}
 			<div style={{ display: "flex", gap: 8 }}>
 				<button className="button" disabled={busy} onClick={() => onResolve("local")}>
-					{t("plugin.sync.keepLocal")}
+					{t("Keep local")}
 				</button>
 				<button className="button" disabled={busy} onClick={() => onResolve("remote")}>
-					{t("plugin.sync.keepRemote")}
+					{t("Keep remote")}
 				</button>
 			</div>
 		</div>
@@ -195,7 +175,6 @@ export function SyncSidebar({
 	listMaps,
 	brand,
 }: SyncSidebarProps) {
-	const { t, tp } = useT();
 	const [maps, setMaps] = useState<RemoteMapSummary[] | null>(null);
 	const [filter, setFilter] = useState("");
 	const [link, setLink] = useState(controller.getLink());
@@ -349,11 +328,11 @@ export function SyncSidebar({
 			onBack={onClose}
 			actions={
 				brand && remoteUrl ? (
-					<Tooltip content={t("plugin.sync.openInProvider", { provider: controller.provider.label })}>
+					<Tooltip content={t("Open in {provider}", { provider: controller.provider.label })}>
 						<button
 							className="icon-button"
 							type="button"
-							aria-label={t("plugin.sync.openInProvider", { provider: controller.provider.label })}
+							aria-label={t("Open in {provider}", { provider: controller.provider.label })}
 							onClick={() => void openExternal(remoteUrl)}
 						>
 							<Icon path={brand.path} size={18} style={{ fill: brand.color }} />
@@ -362,7 +341,7 @@ export function SyncSidebar({
 				) : undefined
 			}
 		>
-			<Section title={t("plugin.sync.connection")} defaultOpen>
+			<Section title={t("Connection")} defaultOpen>
 				{/* 2rem is the button height both auth states resolve to, so the swap does not shift. */}
 				{checking ? (
 					<div
@@ -373,37 +352,39 @@ export function SyncSidebar({
 							minHeight: "2rem",
 						}}
 					>
-						<span className="spinner" aria-label={t("plugin.sync.checkingConnection")} />
+						<span className="spinner" aria-label={t("Checking connection")} />
 					</div>
 				) : (
 					auth
 				)}
 			</Section>
 
-			{authed && !mapId && <EmptyState>{t("plugin.sync.openMapToLink")}</EmptyState>}
+			{authed && !mapId && <EmptyState>{t("Open a map to link it.")}</EmptyState>}
 
 			{/* mapId and link are synchronous; never gate this on the async identity check. */}
 			{mapId && link && (
-				<Section title={t("plugin.sync.sync")} defaultOpen>
-					<Field label={t("plugin.sync.linkedTo")} row>
+				<Section title={t("Sync")} defaultOpen>
+					<Field label={t("Linked to")} row>
 						<span>
-							{link.remoteMapName || t("plugin.sync.unnamed")}{" "}
+							{link.remoteMapName || t("(unnamed)")}{" "}
 							<span style={{ opacity: 0.6 }}>#{link.remoteMapId}</span>
 						</span>
 					</Field>
-					<Field label={t("plugin.sync.lastSynced")} row>
+					<Field label={t("Last synced")} row>
 						<span>
-							{link.lastSyncedAt ? new Date(link.lastSyncedAt).toLocaleString() : t("plugin.sync.never")}
+							{link.lastSyncedAt
+								? new Date(link.lastSyncedAt).toLocaleString(getLocale())
+								: t("never")}
 						</span>
 					</Field>
 					<Field
 						label={
 							<span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-								{t("plugin.sync.live")}
-								<Tooltip content={t("plugin.sync.liveHint")}>
+								{t("Live")}
+								<Tooltip content={t("Sync continuously while this map is open")}>
 									<span
 										style={{ display: "inline-flex", cursor: "help", opacity: 0.6 }}
-										aria-label={t("common.info")}
+										aria-label={t("info")}
 									>
 										<svg viewBox="0 0 24 24" width={14} height={14}>
 											<path d={mdiInformationOutline} fill="currentColor" />
@@ -433,17 +414,17 @@ export function SyncSidebar({
 								}}
 							/>
 							<button className={live ? "button button--primary" : "button"} onClick={toggleLive}>
-								{live ? t("plugin.sync.liveOn") : t("plugin.sync.liveOff")}
+								{live ? t("On") : t("Off")}
 							</button>
 						</span>
 					</Field>
 					<div style={{ display: "flex", gap: 8 }}>
 						{/* Driven by `busy` alone; the background poll must not drive this label. */}
 						<button className="button button--primary" disabled={busy} onClick={doSync}>
-							{busy ? t("plugin.sync.syncing") : t("plugin.sync.syncNow")}
+							{busy ? t("Syncing...") : t("Sync now")}
 						</button>
 						<button className="button" disabled={busy} onClick={doUnlink}>
-							{t("plugin.sync.unlink")}
+							{t("Unlink")}
 						</button>
 					</div>
 					{status === "error" && controller.liveError() && (
@@ -453,30 +434,35 @@ export function SyncSidebar({
 					)}
 					{outcome && (
 						<p className="mma-input__help">
-							{t("plugin.sync.outcome", {
-								pushedCreate: outcome.pushed.create,
-								pushedUpdate: outcome.pushed.update,
-								pushedDelete: outcome.pushed.delete,
-								pulledCreate: outcome.pulled.create,
-								pulledUpdate: outcome.pulled.update,
-								pulledDelete: outcome.pulled.delete,
-								adopted: outcome.adopted
-									? t("plugin.sync.outcomeAdopted", { count: outcome.adopted })
-									: "",
-								conflicts: outcome.conflicts.length
-									? t("plugin.sync.outcomeConflicts", { count: outcome.conflicts.length })
-									: "",
+							{t("Pushed +{pc} ~{pu} -{pd} · Pulled +{lc} ~{lu} -{ld}", {
+								pc: outcome.pushed.create,
+								pu: outcome.pushed.update,
+								pd: outcome.pushed.delete,
+								lc: outcome.pulled.create,
+								lu: outcome.pulled.update,
+								ld: outcome.pulled.delete,
 							})}
+							{outcome.adopted ? " · " + t("Adopted {n}", { n: outcome.adopted }) : ""}
+							{outcome.conflicts.length
+								? " · " +
+									t(
+										{
+											one: "{n} conflict held for review",
+											other: "{n} conflicts held for review",
+										},
+										{ n: outcome.conflicts.length },
+									)
+								: ""}
 						</p>
 					)}
 					{outcome && outcome.conflicts.length > 0 && (
 						<>
 							<div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
 								<button className="button" disabled={busy} onClick={() => resolveAll("local")}>
-									{t("plugin.sync.keepLocalAll")}
+									{t("Keep local for all")}
 								</button>
 								<button className="button" disabled={busy} onClick={() => resolveAll("remote")}>
-									{t("plugin.sync.keepRemoteAll")}
+									{t("Keep remote for all")}
 								</button>
 							</div>
 							{outcome.conflicts.map((c) => (
@@ -485,7 +471,6 @@ export function SyncSidebar({
 									conflict={c}
 									busy={busy}
 									onResolve={(side) => void resolve([{ key: c.key, side }])}
-									t={t}
 								/>
 							))}
 						</>
@@ -494,17 +479,17 @@ export function SyncSidebar({
 			)}
 
 			{authed && mapId && !link && !pendingLink && (
-				<Section title={t("plugin.sync.linkThisMap")} defaultOpen>
+				<Section title={t("Link this map")} defaultOpen>
 					{!maps && error ? (
 						<button className="button" onClick={() => setMapsAttempt((n) => n + 1)}>
-							{t("plugin.sync.retryLoadingMaps")}
+							{t("Retry loading maps")}
 						</button>
 					) : !maps ? (
 						<div style={{ display: "flex", justifyContent: "center", padding: "0.5rem 0" }}>
-							<span className="spinner" aria-label={t("plugin.sync.loadingMaps")} />
+							<span className="spinner" aria-label={t("Loading maps")} />
 						</div>
 					) : (
-						<Field label={t("plugin.sync.findRemoteMap")}>
+						<Field label={t("Find a remote map")}>
 							<SuggestInput
 								// Portalled: the sidebar clips overflow, so an inline dropdown is both cut
 								// off and forced to grow the section instead of floating over it.
@@ -516,7 +501,10 @@ export function SyncSidebar({
 								getKey={(m) => m.id}
 								onPick={(m) => !m.unsupported && doLink(m)}
 								disabled={busy}
-								placeholder={tp("plugin.sync.searchMaps", maps.length, { count: maps.length })}
+								placeholder={t(
+									{ one: "Search {n} map", other: "Search {n} maps" },
+									{ n: maps.length },
+								)}
 								renderItem={(m) => (
 									<span
 										style={{
@@ -526,7 +514,7 @@ export function SyncSidebar({
 											opacity: m.unsupported ? 0.5 : 1,
 										}}
 									>
-										<span>{m.name || t("plugin.sync.unnamed")}</span>
+										<span>{m.name || t("(unnamed)")}</span>
 										<span style={{ opacity: 0.6, whiteSpace: "nowrap" }}>
 											{m.unsupported ?? (m.locationCount !== null ? m.locationCount : "")}
 										</span>
@@ -539,13 +527,16 @@ export function SyncSidebar({
 			)}
 
 			{authed && mapId && !link && pendingLink && (
-				<Section title={t("plugin.sync.firstSync")} defaultOpen>
+				<Section title={t("First sync")} defaultOpen>
 					<p className="mma-input__help">
-						{t("plugin.sync.firstSyncPrompt", {
-							localCount: controller.localLocationCount(),
-							remoteName: pendingLink.name || t("plugin.sync.unnamed"),
-							remoteCount: pendingLink.locationCount ?? t("plugin.sync.countUnknown"),
-						})}
+						{t(
+							'This map ({local}) and "{name}" ({remote}) may both already have locations. How should the first sync go?',
+							{
+								local: controller.localLocationCount(),
+								name: pendingLink.name || t("(unnamed)"),
+								remote: pendingLink.locationCount ?? t("count unknown"),
+							},
+						)}
 					</p>
 					<button
 						className="button button--primary"
@@ -553,7 +544,7 @@ export function SyncSidebar({
 						style={{ display: "block", width: "100%", textAlign: "left" }}
 						onClick={() => performLink(pendingLink, "merge")}
 					>
-						{t("plugin.sync.mergeKeepBoth")}
+						{t("Merge · keep everything on both sides")}
 					</button>
 					<button
 						className="button"
@@ -561,7 +552,7 @@ export function SyncSidebar({
 						style={{ display: "block", width: "100%", textAlign: "left" }}
 						onClick={() => performLink(pendingLink, "mirrorFromRemote")}
 					>
-						{t("plugin.sync.useRemote")}
+						{t("Use remote · delete local-only pins")}
 					</button>
 					<button
 						className="button"
@@ -569,10 +560,10 @@ export function SyncSidebar({
 						style={{ display: "block", width: "100%", textAlign: "left" }}
 						onClick={() => performLink(pendingLink, "mirrorFromLocal")}
 					>
-						{t("plugin.sync.useLocal")}
+						{t("Use local · delete remote-only pins")}
 					</button>
 					<button className="button" disabled={busy} onClick={() => setPendingLink(null)}>
-						{t("common.cancel")}
+						{t("Cancel")}
 					</button>
 				</Section>
 			)}

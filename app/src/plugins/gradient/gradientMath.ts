@@ -1,4 +1,5 @@
 import type { ExtraFieldDef, PartitionBucket, SelectionProps } from "@/bindings.gen";
+import { ymOrdinal } from "@/lib/util/date";
 
 export function lerp(
 	a: [number, number, number],
@@ -32,10 +33,7 @@ export function isNumericField(def: ExtraFieldDef | undefined): boolean {
 // mapping. Months ("YYYY-MM") become an ordinal month count; numeric strings their
 // value. Returns null for non-numeric categories (caller falls back to even spacing).
 export function fieldScale(value: string, type: string | undefined): number | null {
-	if (type === "month") {
-		const [y, m] = value.split("-").map(Number);
-		return Number.isFinite(y) && Number.isFinite(m) ? y * 12 + (m - 1) : null;
-	}
+	if (type === "month") return ymOrdinal(value);
 	const n = Number(value);
 	return value.trim() !== "" && Number.isFinite(n) ? n : null;
 }

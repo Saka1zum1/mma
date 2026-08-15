@@ -7,6 +7,8 @@ import { LocationFlag, hasLoadAsPanoId, createLocation } from "@/types";
 import type { LatLng } from "@/types";
 import type { Location } from "@/bindings.gen";
 import { runConcurrent } from "@/lib/util/concurrent";
+import { ymToDate } from "@/lib/util/date";
+import { chunk } from "@/lib/util/util";
 
 import { SV_SEARCH_RADIUS, SV_CONCURRENCY } from "@/lib/sv/constants";
 import { installGoogleInjectBridge } from "@/lib/sv/providers/googleInject";
@@ -30,9 +32,9 @@ export function parsePanoDate(d: Date | { year?: number; month?: number } | stri
 	if (d && typeof d === "object" && "year" in d) {
 		return new Date(d.year ?? 0, (d.month ?? 1) - 1);
 	}
-	if (typeof d === "string" && d.includes("-")) {
-		const [y, m] = d.split("-").map(Number);
-		return new Date(y, (m ?? 1) - 1);
+	if (typeof d === "string") {
+		const ym = ymToDate(d);
+		if (ym) return ym;
 	}
 	return new Date(0);
 }
@@ -129,11 +131,11 @@ export async function resolvePanoIds(
 	const result: ResolvePanoResult = { resolved: [], failed: [] };
 	if (!google) return result;
 
-	for (let i = 0; i < locations.length; i += batchSize) {
+	let done = 0;
+	for (const batch of chunk(locations, batchSize)) {
 		signal?.throwIfAborted();
-		const chunk = locations.slice(i, i + batchSize);
 		await runConcurrent(
-			chunk,
+			batch,
 			async (loc) => {
 				const pano = await getPanoAtCoords(loc.lat, loc.lng);
 				if (pano) {
@@ -144,7 +146,8 @@ export async function resolvePanoIds(
 			},
 			{ concurrency, signal },
 		);
-		onProgress?.(Math.min(i + chunk.length, locations.length), locations.length);
+		done += batch.length;
+		onProgress?.(done, locations.length);
 	}
 
 	return result;

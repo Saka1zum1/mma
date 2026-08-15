@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef } from "react";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
-import { parseMapsUrl, parseCoordinates, parsePanoId, type ParsedLocation } from "@/lib/data/importExport";
-import { toBcp47, useT, getLocale } from "@/lib/i18n";
+import { parseMapsUrl, parseCoordinates, type ParsedLocation } from "@/lib/data/importExport";
 import type { LatLng } from "@/types";
+import { t } from "@/lib/i18n";
 
 type PlaceResult = LatLng & {
 	name: string;
@@ -15,10 +15,10 @@ export function SearchControl({
 	onResult: (lat: number, lng: number, name: string) => void;
 	onAddLocation: (parsed: ParsedLocation) => void | Promise<void>;
 }) {
-	const { t } = useT();
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<PlaceResult[]>([]);
 	const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+	const acRef = useRef<AbortController>(undefined);
 
 	const search = useCallback((q: string) => {
 		if (q.length < 3) {
@@ -26,11 +26,15 @@ export function SearchControl({
 			return;
 		}
 		clearTimeout(timerRef.current);
+		// Debouncing alone can't order responses: two queries typed 300ms apart both go out
+		// and Nominatim may answer them out of order.
+		acRef.current?.abort();
+		const ac = (acRef.current = new AbortController());
 		timerRef.current = setTimeout(async () => {
 			try {
 				const res = await fetch(
 					`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5`,
-					{ headers: { "Accept-Language": toBcp47(getLocale()) } },
+					{ headers: { "Accept-Language": "en" }, signal: ac.signal },
 				);
 				if (!res.ok) return;
 				const data = await res.json();
@@ -50,8 +54,7 @@ export function SearchControl({
 	// a Maps URL or coordinate resolves to a location, otherwise default geocode
 	const resolveOrSearch = useCallback(
 		async (q: string) => {
-			const parsed =
-				(await parseMapsUrl(q)) ?? (await parsePanoId(q)) ?? parseCoordinates(q);
+			const parsed = (await parseMapsUrl(q)) ?? parseCoordinates(q);
 			if (parsed) {
 				clearTimeout(timerRef.current);
 				setResults([]);
@@ -70,7 +73,7 @@ export function SearchControl({
 		<SuggestInput
 			containerClassName="map-control search-control"
 			inputClassName="search-control__input"
-			placeholder={t("map.searchPlaces")}
+			placeholder={t("Search for places…")}
 			value={query}
 			onChange={(v) => {
 				setQuery(v);

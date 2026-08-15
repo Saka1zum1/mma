@@ -2,7 +2,7 @@
   "name": "mma-sample-plugin",
   "private": true,
   "scripts": {
-    "build": "node build.js"
+    "build": "node ../build-plugin.mjs ."
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

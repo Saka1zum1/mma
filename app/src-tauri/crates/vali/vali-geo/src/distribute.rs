@@ -1,4 +1,6 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
+//! Oracle port, not general geometry -- see `distance.rs`. The grid walk and its
+//! constants mirror Vali.Core; `mma-geo`'s `covering_cells`/`M_PER_DEG` are a
+//! different contract and must not be substituted here.
 
 use crate::distance::points_are_closer_than;
 use rustc_hash::FxHashMap;

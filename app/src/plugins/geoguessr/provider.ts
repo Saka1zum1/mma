@@ -1,12 +1,13 @@
 import { createSyncController } from "@/lib/sync/controller";
 import { isAuthPrefixed, type SyncProvider } from "@/lib/sync/provider";
 import { listDrafts, listPublished } from "./api";
+import { msg, t } from "@/lib/i18n";
 
 export const PLUGIN_ID = "geoguessr";
 
 export const geoguessrProvider: SyncProvider = {
 	id: "geoguessr",
-	label: "GeoGuessr",
+	label: msg("GeoGuessr"),
 
 	isAuthError: isAuthPrefixed,
 
@@ -20,7 +21,7 @@ export const geoguessrProvider: SyncProvider = {
 			// The drafts list omits coordinates entirely, so a count would cost one request per map.
 			locationCount: null,
 			// Polygonal maps have regions instead of a coordinate list; there is nothing to sync.
-			unsupported: m.mode === "regions" ? "Polygonal map" : undefined,
+			unsupported: m.mode === "regions" ? t("Polygonal map") : undefined,
 		}));
 
 		// Sync writes the draft, so a map without one has nothing to write to. Surface those as
@@ -32,7 +33,7 @@ export const geoguessrProvider: SyncProvider = {
 				id: m.slug,
 				name: m.name,
 				locationCount: null,
-				unsupported: "No draft yet - open it once in GeoGuessr's map maker",
+				unsupported: t("No draft yet - open it once in GeoGuessr's map maker"),
 			}));
 
 		return [...linkable, ...draftless];

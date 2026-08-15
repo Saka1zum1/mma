@@ -1,28 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
-	getLocCount,
-	flushAndWait,
-	withApi,
-} from "./helpers";
+import { addLocs, createLocation, getLocCount, flushAndWait, withApi, useMap } from "./helpers";
 
 describe("Version control — commit and restore", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Edge");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E VCS Edge");
 
 	it("commit with no changes succeeds", async () => {
 		await withApi(async (api) => {
@@ -40,7 +20,7 @@ describe("Version control — commit and restore", () => {
 
 		await withApi(async (api) => api.commitMap("Two locations"));
 
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		expect(commits.length).toBeGreaterThanOrEqual(2);
 	});
 
@@ -53,7 +33,7 @@ describe("Version control — commit and restore", () => {
 	});
 
 	it("checkout restores to committed state", async () => {
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		// Find the "Two locations" commit
 		const twoLocCommit = commits.find((c: any) => c.message === "Two locations");
 		expect(twoLocCommit).toBeTruthy();
@@ -83,17 +63,7 @@ describe("Version control — commit and restore", () => {
 });
 
 describe("Version control — multiple commits", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E VCS Multi");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E VCS Multi");
 
 	it("creates a sequence of commits", async () => {
 		// Commit 1: empty
@@ -111,12 +81,12 @@ describe("Version control — multiple commits", () => {
 		await flushAndWait();
 		await withApi(async (api) => api.commitMap("Ten locations"));
 
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		expect(commits.length).toBeGreaterThanOrEqual(3);
 	});
 
 	it("commit messages are preserved", async () => {
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		const messages = commits.map((c: any) => c.message);
 		expect(messages).toContain("Initial");
 		expect(messages).toContain("Five locations");
@@ -124,7 +94,7 @@ describe("Version control — multiple commits", () => {
 	});
 
 	it("can checkout any prior commit", async () => {
-		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), mapId);
+		const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
 		const fiveCommit = commits.find((c: any) => c.message === "Five locations");
 
 		await withApi(async (api, commitId) => {

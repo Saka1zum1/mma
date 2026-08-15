@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isOfficialPano } from "@/lib/sv/panoId";
+import { ymFormat, ymParse } from "@/lib/util/date";
 import { PanoType } from "@/types";
 import type { CameraType } from "@/bindings.gen";
 import { PbfReader, PbfWriter } from "pbf";
+import { runConcurrent } from "@/lib/util/concurrent";
 import {
 	readGetMetadataResponse,
 	writeGetMetadataRequest,
@@ -13,18 +15,18 @@ import {
 const RPC_URL =
 	"https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata";
 
-const BADCAM_THRESHOLDS = new Map<string, (d: Date, lat: number) => boolean>([
-	["BD", (d) => d > new Date(2021, 3)],
-	["EC", (d) => d > new Date(2022, 2)],
-	["FI", (d) => d > new Date(2020, 8)],
-	["IN", (d) => d > new Date(2021, 9)],
-	["KH", (d) => d > new Date(2022, 9)],
-	["LB", (d) => d > new Date(2021, 0)],
-	["LK", (d) => d > new Date(2021, 1)],
-	["NG", (d) => d > new Date(2021, 5)],
-	["NP", (d) => d > new Date(2020, 0)],
-	["US", (d, lat) => lat > 52 && d > new Date(2019, 0)],
-	["VN", (d) => d > new Date(2020, 0)],
+const BADCAM_THRESHOLDS = new Map<string, (ym: string, lat: number) => boolean>([
+	["BD", (ym) => ym > "2021-04"],
+	["EC", (ym) => ym > "2022-03"],
+	["FI", (ym) => ym > "2020-09"],
+	["IN", (ym) => ym > "2021-10"],
+	["KH", (ym) => ym > "2022-10"],
+	["LB", (ym) => ym > "2021-01"],
+	["LK", (ym) => ym > "2021-02"],
+	["NG", (ym) => ym > "2021-06"],
+	["NP", (ym) => ym > "2020-01"],
+	["US", (ym, lat) => lat > 52 && ym > "2019-01"],
+	["VN", (ym) => ym > "2020-01"],
 	...[
 		"AT",
 		"BG",
@@ -44,7 +46,7 @@ const BADCAM_THRESHOLDS = new Map<string, (d: Date, lat: number) => boolean>([
 		"RO",
 		"SE",
 	].map(
-		(cc) => [cc, (d: Date) => d > new Date(2021, 0)] as [string, (d: Date, lat: number) => boolean],
+		(cc) => [cc, (ym: string) => ym > "2021-01"] as [string, (ym: string, lat: number) => boolean],
 	),
 	["CY", () => true],
 	["ST", () => true],
@@ -79,11 +81,11 @@ export function detectCameraType(
 	const scout = data.extra?._source === "scout";
 	const base = cameraTypeFromHeight(data.tiles.worldSize.height);
 	if (base !== "gen2") return base === "gen4" && scout ? "trekker" : base;
-	const imgDate = data.imageDate ? new Date(data.imageDate) : null;
-	if (imgDate && imgDate.getFullYear() > 2000) {
+	const ym = data.imageDate;
+	if (ym && ymParse(ym) && ym > "2000-12") {
 		const cc = data.extra?.countryCode;
 		const check = cc && BADCAM_THRESHOLDS.get(cc);
-		if (check && check(imgDate, data.location.latLng.lat())) return "badcam";
+		if (check && check(ym, data.location.latLng.lat())) return "badcam";
 	}
 	if (data.extra?._levelId != null) return "tripod";
 	return scout ? "trekker" : "gen2";
@@ -126,10 +128,10 @@ export function imageKeyToPanoId(key: any[]): string {
 	pbf.writeVarintField(1, type);
 	pbf.writeStringField(2, id);
 	const buf = pbf.finish();
-	return btoa(String.fromCharCode(...buf))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "");
+	// Spreading into fromCharCode blows the argument limit on a long id.
+	let bin = "";
+	for (const byte of buf) bin += String.fromCharCode(byte);
+	return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function buildGetMetadataRequest(panoIds: string[]): GetMetadataRequest {
@@ -166,10 +168,7 @@ export function parseResult(
 	const source = m.date?.sourceInfo?.source || null;
 
 	const incDate = m.date?.date;
-	const imageDate =
-		incDate && incDate.year > 0
-			? `${String(incDate.year).padStart(4, "0")}-${String(incDate.month).padStart(2, "0")}`
-			: "";
+	const imageDate = incDate && incDate.year > 0 ? ymFormat(incDate.year, incDate.month) : "";
 
 	const panoId = m.pano ? imageKeyToPanoId([m.pano.frontend, m.pano.id]) : "";
 	const refPanoId = (ref?: { key?: { frontend: number; id: string } }) =>
@@ -233,6 +232,7 @@ export function parseResult(
 /** Fetch full pano metadata directly from Google's internal RPC (bypasses StreetViewService). */
 export async function fetchSvMetadata(
 	panoIds: string[],
+	signal?: AbortSignal,
 ): Promise<(google.maps.StreetViewResolvedPanoramaData | null)[]> {
 	if (panoIds.length === 0) return [];
 	const writer = new PbfWriter();
@@ -247,10 +247,66 @@ export async function fetchSvMetadata(
 		body: writer.finish().slice(),
 		mode: "cors",
 		credentials: "omit",
+		signal,
 	});
 	if (!res.ok) return panoIds.map(() => null);
 	const resp = readGetMetadataResponse(new PbfReader(new Uint8Array(await res.arrayBuffer())));
 	const statusCode = resp.status?.code;
 	if (statusCode === 3 || statusCode === 5) return panoIds.map(() => null);
 	return resp.metadata.map(parseResult);
+}
+
+// 200 is GetMetadata's hard per-request cap.
+export const META_BATCH_SIZE = 200;
+export const META_CONCURRENCY = 48;
+
+type MetaResult = google.maps.StreetViewResolvedPanoramaData | null;
+
+/** An all-null response is usually one poisoned pano poisoning its whole request,
+ *  so split and retry rather than writing off the batch. */
+async function fetchInto(
+	panoIds: string[],
+	start: number,
+	len: number,
+	out: MetaResult[],
+	signal?: AbortSignal,
+): Promise<void> {
+	signal?.throwIfAborted();
+	const datas = await fetchSvMetadata(panoIds.slice(start, start + len), signal);
+	signal?.throwIfAborted();
+	if (len > 1 && datas.every((d) => d == null)) {
+		const mid = Math.ceil(len / 2);
+		await fetchInto(panoIds, start, mid, out, signal);
+		await fetchInto(panoIds, start + mid, len - mid, out, signal);
+		return;
+	}
+	for (let j = 0; j < len; j++) out[start + j] = datas[j] ?? null;
+}
+
+/** Metadata for arbitrarily many panos: chunked to the per-request cap, fetched
+ *  concurrently, bisected on all-null. Results stay aligned to `panoIds`. */
+export async function fetchSvMetadataBatched(
+	panoIds: string[],
+	opts: {
+		batchSize?: number;
+		concurrency?: number;
+		signal?: AbortSignal;
+		/** One resolved chunk, aligned to `panoIds[start .. start + datas.length)`. */
+		onBatch?: (datas: MetaResult[], start: number) => void | Promise<void>;
+	} = {},
+): Promise<MetaResult[]> {
+	const { batchSize = META_BATCH_SIZE, concurrency = META_CONCURRENCY, signal, onBatch } = opts;
+	const out: MetaResult[] = new Array(panoIds.length).fill(null);
+	const starts: number[] = [];
+	for (let i = 0; i < panoIds.length; i += batchSize) starts.push(i);
+	await runConcurrent(
+		starts,
+		async (start) => {
+			const len = Math.min(batchSize, panoIds.length - start);
+			await fetchInto(panoIds, start, len, out, signal);
+			await onBatch?.(out.slice(start, start + len), start);
+		},
+		{ concurrency, signal },
+	);
+	return out;
 }

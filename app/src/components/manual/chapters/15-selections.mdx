@@ -8,30 +8,33 @@ A selection is a named subset of your locations, drawn on the map in its own col
 
 - **Tag** and **Untagged.** Locations carrying a given tag, or carrying none.
 - **Unpanned.** Locations not yet framed and saved.
-- **Has Pano ID** / **No Pano ID.** By how they load (pinned to a pano vs resolved by coordinates).
+- **Pano ID locations** / **Coordinate locations.** By how they load (pinned to a pano vs resolved by coordinates).
+- **Uncommitted.** Locations added or changed since the last commit.
 - **Polygon.** An area you draw as a polygon, rectangle, or freehand shape. Polygon selections can be configured to include informational locations.
-- **Country / Subdivision.** Hold <Kbd>Q</Kbd> and click the map to select a country. Hold <Kbd>Q</Kbd>+<Kbd>Shift</Kbd> and click to select an admin-1 subdivision (state, province, etc.). Enable subdivisions and choose their detail level in **Settings → Street View → Border select → Subdivision data**.
+- **Country / Subdivision.** Hold <Kbd>Q</Kbd> and click the map to select a country. Hold <Kbd>Q</Kbd>+<Kbd>Shift</Kbd> and click to select an admin-1 subdivision (state, province, etc.). Enable subdivisions and choose their detail level in **Settings → Map → Borders → Subdivision data**.
 - **Duplicates.** Locations within a chosen distance of each other.
 - **Validation state.** Locations classified by the validator (see <ChapterLink id="validation" />).
+- **Reviewed / Unreviewed.** The two halves of a review session (see <ChapterLink id="reviewing" />).
 - **Filter.** A query over metadata fields (see <ChapterLink id="filters" />).
 - **Top / Bottom K.** The highest or lowest K locations by a chosen field.
 - **Manual.** Individual locations you toggle by <Kbd>Ctrl</Kbd>-clicking markers.
-- **Everything.** All locations (<Kbd>Ctrl</Kbd>+<Kbd>A</Kbd>).
+- **Everything.** All locations (<Kbd>Ctrl</Kbd>+<Kbd>A</Kbd>). <Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> clears every selection.
+- **GeoJSON shapes.** **Load shapes from GeoJSON as selection** turns the shapes in a `.geojson` file into polygon selections, which is how you bring boundaries in from other tools.
 
 ## Acting on a selection
 
 The menu on each selection row (the dots button) offers:
 
 - **Invert selection.** Everything except this selection.
-- **Ghost selection.** Dim it on the map without removing it. Each selection row also has an inline ghost toggle button. <Kbd>Alt</Kbd>-click the ghost button to **isolate** that selection (ghost every other selection); <Kbd>Alt</Kbd>-click again to restore all.
 - **Edit filter.** Re-open the filter form (Filter selections only).
 - **Review selection.** Step through its locations in the panorama viewer.
 - **Save as tag.** Snapshot just this selection into a new tag, without disturbing the rest of your selection setup.
+- **Prune duplicates.** On a Duplicates selection, thins each cluster out. Under 25m it keeps the single most relevant location per cluster; above that it thins to enforce that spacing. A location tagged `keep pano` is scored higher, so tag the ones you want kept before running it.
 - **Change color.** Recolor the selection (any non-Tag selection; Tag selections use the tag's color).
 - **Download GeoJSON** and **Rename.** For polygon selections.
-- **Prune duplicates.** On a Duplicates selection, keeps one location per cluster and removes the rest.
-- **Delete polygon.** Hold <Kbd>E</Kbd> and click the map to delete the polygon under the cursor.
 - **Deselect.** Remove the selection.
+
+Each row also has an inline **ghost** button, which dims that selection on the map without removing it. <Kbd>Alt</Kbd>-click it to **isolate** that selection (ghost every other one); <Kbd>Alt</Kbd>-click again to restore all. Polygons can be removed straight off the map by holding <Kbd>E</Kbd> and clicking the one you want gone.
 
 **Delete selected locations** also lives in the command palette. To tag the whole selection at once, use the **Bulk-add tag** input in the pinned toolbar - type to filter matching tags, or press <Kbd>Enter</Kbd> to create a new tag by name.
 
@@ -42,3 +45,9 @@ The menu on each selection row (the dots button) offers:
 ## Reducing density
 
 **Pick evenly spaced locations from selection** (command palette) replaces the current selection with a spread-out subset of itself. Choose **Count** to keep a target number of locations, spacing them as far apart as possible, or **Min distance** to keep as many locations as fit while staying at least that many meters apart. Use this to thin a dense cluster of locations without leaving obvious gaps or clumps.
+
+## Picking from each selection
+
+Both pickers offer **from each of N selections** whenever two or more selections are active. The count then becomes a per-selection cap rather than a total: with eight tags selected and a count of 25, you get up to 25 locations from each tag, unioned into one selection. A location carried by two of them is only picked once, so the total can come out below count x N.
+
+This is how you build an evenly weighted map out of tags with wildly different location counts. It works for any kind of selection, not just tags - per polygon, per filter, or per bucket of a gradient.

@@ -11,20 +11,20 @@ import type {
 	ValueFormat,
 	Labeled,
 } from "./engine";
-import { t as translate, useT, type MessageKey } from "@/lib/i18n";
 import "./disambiguate.css";
+import { t } from "@/lib/i18n";
 
 function rgb(c: [number, number, number]) {
 	return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
 }
 
-function badgeText(field: FieldDivergence, t: (key: MessageKey, params?: Record<string, string | number | boolean>) => string): string {
-	if (field.format === "month") return t("plugin.disambiguate.badge.month");
-	if (field.format === "dateTime") return t("plugin.disambiguate.badge.date");
+function badgeText(field: FieldDivergence): string {
+	if (field.format === "month") return t("Month");
+	if (field.format === "dateTime") return t("Date");
 	const c = field.comparison;
-	if (c.type === "circular") return t("plugin.disambiguate.badge.circular", { period: Math.round(c.period) });
-	if (c.type === "linear") return t("plugin.disambiguate.badge.numeric");
-	return t("plugin.disambiguate.badge.categorical");
+	if (c.type === "circular") return t("Circular {period}", { period: Math.round(c.period) });
+	if (c.type === "linear") return t("Numeric");
+	return t("Categorical");
 }
 
 function fmtNum(n: number | null | undefined): string {
@@ -51,12 +51,10 @@ function GroupCell({
 	field,
 	g,
 	color,
-	t,
 }: {
 	field: FieldDivergence;
 	g: GroupSummary;
 	color: [number, number, number];
-	t: (key: MessageKey, params?: Record<string, string | number | boolean>) => string;
 }) {
 	const coverage = g.n > 0 ? Math.round((g.present / g.n) * 100) : 0;
 	let body: ReactNode;
@@ -65,19 +63,17 @@ function GroupCell({
 			g.present > 0 ? (
 				<span>
 					{fmtNum(g.meanDeg)}&deg;{" "}
-					<span className="disambig__muted">
-						({t("plugin.disambiguate.concentration")} {g.concentration?.toFixed(2)})
-					</span>
+					<span className="disambig__muted">(conc {g.concentration?.toFixed(2)})</span>
 				</span>
 			) : (
-				<span className="disambig__muted">{t("plugin.disambiguate.noData")}</span>
+				<span className="disambig__muted">{t("no data")}</span>
 			);
 	} else if (field.comparison.type === "categorical") {
 		body =
 			g.top.length > 0 ? (
-				<span>{g.top.map((tval) => `${tval.label} ${Math.round(tval.freq * 100)}%`).join(", ")}</span>
+				<span>{g.top.map((t) => `${t.label} ${Math.round(t.freq * 100)}%`).join(", ")}</span>
 			) : (
-				<span className="disambig__muted">{t("plugin.disambiguate.noData")}</span>
+				<span className="disambig__muted">{t("no data")}</span>
 			);
 	} else {
 		body =
@@ -89,7 +85,7 @@ function GroupCell({
 					</span>
 				</span>
 			) : (
-				<span className="disambig__muted">{t("plugin.disambiguate.noData")}</span>
+				<span className="disambig__muted">{t("no data")}</span>
 			);
 	}
 	return (
@@ -108,20 +104,18 @@ function GroupCell({
 function FieldRow({
 	field,
 	colors,
-	t,
 }: {
 	field: FieldDivergence;
 	colors: [number, number, number][];
-	t: (key: MessageKey, params?: Record<string, string | number | boolean>) => string;
 }) {
 	const score = field.valueScore;
 	return (
 		<div className={`disambig__row${field.lowConfidence ? " disambig__row--weak" : ""}`}>
 			<div className="disambig__head">
-				<span className="disambig__label">{field.label}</span>
-				<span className="disambig__badge">{badgeText(field, t)}</span>
+				<span className="disambig__label">{t(field.label)}</span>
+				<span className="disambig__badge">{badgeText(field)}</span>
 				{field.lowConfidence && (
-					<span className="disambig__badge disambig__badge--warn">{t("plugin.disambiguate.badge.lowData")}</span>
+					<span className="disambig__badge disambig__badge--warn">{t("low data")}</span>
 				)}
 				<span className="disambig__score">{score !== null ? score.toFixed(2) : "-"}</span>
 			</div>
@@ -130,12 +124,14 @@ function FieldRow({
 			</div>
 			{field.coverageScore > 0.01 && (
 				<div className="disambig__muted">
-					{t("plugin.disambiguate.presenceDiffers", { score: field.coverageScore.toFixed(2) })}
+					{t("presence differs across groups (coverage {score})", {
+						score: field.coverageScore.toFixed(2),
+					})}
 				</div>
 			)}
 			<div className="disambig__groups">
 				{field.groups.map((g, i) => (
-					<GroupCell key={i} field={field} g={g} color={colors[i] ?? [128, 128, 128]} t={t} />
+					<GroupCell key={i} field={field} g={g} color={colors[i] ?? [128, 128, 128]} />
 				))}
 			</div>
 		</div>
@@ -149,12 +145,12 @@ interface Analysis {
 }
 
 /** Resolve the active selections to labeled groups (dropping multi-group overlap)
- *  and compute field divergence. Mirrors the Rust `store_disambiguate` orchestration. */
+ *  and compute field divergence. */
 async function analyze(): Promise<Analysis> {
 	const map = MMA.getMapState().map;
-	if (!map) throw new Error(translate("plugin.disambiguate.errorNoMap"));
+	if (!map) throw new Error(t("No map open"));
 	const sels: Selection[] = MMA.getActiveSelections();
-	if (sels.length < 2) throw new Error(translate("plugin.disambiguate.errorMinGroups"));
+	if (sels.length < 2) throw new Error(t("Select at least 2 groups to disambiguate."));
 
 	const colors = sels.map((s) => s.color);
 	const idSets = await Promise.all(
@@ -184,7 +180,6 @@ async function analyze(): Promise<Analysis> {
 }
 
 export function DisambiguateSidebar({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
 	const version = useEvent(SELECTION_EVENTS);
 	const selCount = MMA.getActiveSelections().length;
 	// Synchronous null short-circuit: no loading flash while under two groups.
@@ -196,16 +191,18 @@ export function DisambiguateSidebar({ onClose }: { onClose: () => void }) {
 
 	if (selCount < 2) {
 		return (
-			<Sidebar title={t("plugin.disambiguate.title")} onBack={onClose} className="disambig">
-				<EmptyState>{t("plugin.disambiguate.emptyHint")}</EmptyState>
+			<Sidebar title={t("Disambiguate selections")} onBack={onClose} className="disambig">
+				<EmptyState>
+					{t("Select at least two groups to compare - tags, polygons, or filters.")}
+				</EmptyState>
 			</Sidebar>
 		);
 	}
 
 	return (
-		<Sidebar title={t("plugin.disambiguate.title")} onBack={onClose} className="disambig">
+		<Sidebar title={t("Disambiguate selections")} onBack={onClose} className="disambig">
 			{error && <div className="disambig__error">{error.message}</div>}
-			{!error && loading && <div className="disambig__muted">{t("plugin.disambiguate.analyzing")}</div>}
+			{!error && loading && <div className="disambig__muted">{t("Analyzing\u2026")}</div>}
 			{!error && analysis && (
 				<>
 					<div className="disambig__summary disambig__muted">
@@ -220,13 +217,13 @@ export function DisambiguateSidebar({ onClose }: { onClose: () => void }) {
 						))}
 						{analysis.excludedOverlap > 0 && (
 							<span>
-								&middot; {t("plugin.disambiguate.excludedOverlap", { count: analysis.excludedOverlap })}
+								&middot; {t("{n} excluded (in multiple groups)", { n: analysis.excludedOverlap })}
 							</span>
 						)}
 					</div>
 					<div className="disambig__list">
 						{analysis.result.fields.map((f) => (
-							<FieldRow key={f.key} field={f} colors={analysis.colors} t={t} />
+							<FieldRow key={f.key} field={f} colors={analysis.colors} />
 						))}
 					</div>
 				</>

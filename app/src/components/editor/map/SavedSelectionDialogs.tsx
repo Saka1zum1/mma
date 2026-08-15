@@ -8,25 +8,19 @@ import {
 	describeRule,
 	type SavedSelectionItem,
 } from "@/store/savedSelections";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { mdiClose } from "@mdi/js";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 export function SaveSelectionsDialog({
 	open,
 	onOpenChange,
 	name,
 	onNameChange,
-}: {
-	open: boolean;
-	onOpenChange: (v: boolean) => void;
-	name: string;
-	onNameChange: (v: string) => void;
-}) {
-	const { t } = useT();
+}: DialogProps & { name: string; onNameChange: (v: string) => void }) {
 	const map = useMapState((s) => s.map);
 	const selections = useMapState((s) => s.selections);
 	const saveableItems: SavedSelectionItem[] = (() => {
@@ -51,9 +45,9 @@ export function SaveSelectionsDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("dialog.saveCurrentSelections")}>
+			<DialogContent title={t("Save current selections")}>
 				{saveableItems.length === 0 ? (
-					<p>{t("editor.noSaveableSelections")}</p>
+					<p>{t("No saveable selections active.")}</p>
 				) : (
 					<form
 						onSubmit={(e) => {
@@ -65,7 +59,7 @@ export function SaveSelectionsDialog({
 						<TextInput
 							value={name}
 							onChange={(e) => onNameChange(e.target.value)}
-							placeholder={t("editor.nameSelectionPlaceholder")}
+							placeholder={t("Name this selection...")}
 							autoFocus
 						/>
 						<div className="saved-selection-row__rules">
@@ -82,9 +76,9 @@ export function SaveSelectionsDialog({
 							))}
 						</div>
 						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-							<Button onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+							<Button onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
 							<Button variant="primary" type="submit" disabled={!name.trim()}>
-								{t("common.save")}
+								{t("Save")}
 							</Button>
 						</div>
 					</form>
@@ -94,22 +88,15 @@ export function SaveSelectionsDialog({
 	);
 }
 
-export function ApplySavedSelectionDialog({
-	open,
-	onOpenChange,
-}: {
-	open: boolean;
-	onOpenChange: (v: boolean) => void;
-}) {
-	const { t } = useT();
+export function ApplySavedSelectionDialog({ open, onOpenChange }: DialogProps) {
 	const map = useMapState((s) => s.map);
 	const saved = useSetting("savedSelections");
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("dialog.applySavedSelection")}>
+			<DialogContent title={t("Apply saved selection")}>
 				{saved.length === 0 ? (
-					<p>{t("editor.noSavedSelections")}</p>
+					<p>{t("No saved selections.")}</p>
 				) : (
 					<div className="saved-selection-list">
 						{saved.map((s) => (
@@ -131,7 +118,7 @@ export function ApplySavedSelectionDialog({
 											e.stopPropagation();
 											deleteSavedSelection(s.id);
 										}}
-										title={t("common.delete")}
+										title={t("Delete")}
 									>
 										<Icon path={mdiClose} size={14} />
 									</button>

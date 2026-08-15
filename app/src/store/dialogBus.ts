@@ -1,6 +1,7 @@
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useState, type Dispatch, type SetStateAction } from "react";
 
 type DialogPayloads = {
+	commit: void;
 	export: void;
 	import: void;
 	history: void;
@@ -22,6 +23,8 @@ type DialogPayloads = {
 };
 
 export type DialogKey = keyof DialogPayloads;
+
+type VoidDialogKey = { [K in DialogKey]: DialogPayloads[K] extends void ? K : never }[DialogKey];
 
 type Handler<K extends DialogKey> = DialogPayloads[K] extends void
 	? () => void
@@ -53,4 +56,11 @@ export function useDialog<K extends DialogKey>(key: K, handler: Handler<K>): voi
 			if (set!.size === 0) listeners.delete(key);
 		};
 	}, [key]);
+}
+
+/** Local open state for a dialog the bus can also open. */
+export function useDialogState(key: VoidDialogKey): [boolean, Dispatch<SetStateAction<boolean>>] {
+	const [open, setOpen] = useState(false);
+	useDialog(key, () => setOpen(true));
+	return [open, setOpen];
 }

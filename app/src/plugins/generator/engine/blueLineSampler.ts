@@ -2,6 +2,7 @@ import { TileConfig, LayerType, buildSvCoverageConfig, buildTileUrl } from "@/li
 import { getBoundingBox, pointInGeoJsonGeometry } from "./geo";
 import { latLngToWorld, worldToTile, pixelToLatLng } from "@/lib/geo/mercator";
 import { log } from "@/lib/util/log";
+import { chunk } from "@/lib/util/util";
 import type { Bounds, LatLng } from "@/types";
 
 const TILE_SIZE = 256;
@@ -120,8 +121,7 @@ export async function blueLineSample(
 	}
 
 	// Fetch tiles concurrently, scan pixels sequentially (canvas is shared)
-	for (let i = 0; i < tileJobs.length; i += FETCH_CONCURRENCY) {
-		const batch = tileJobs.slice(i, i + FETCH_CONCURRENCY);
+	for (const batch of chunk(tileJobs, FETCH_CONCURRENCY)) {
 		const bmps = await Promise.all(batch.map((j) => fetchTileBlob(cfg, j.tx, j.ty, zoom)));
 		for (let b = 0; b < batch.length; b++) {
 			const bmp = bmps[b];

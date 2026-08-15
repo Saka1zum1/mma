@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { TagPill } from "@/components/primitives/TagPill";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { useMapState, updateTags } from "@/store/useMapStore";
 import { parseDoclink, loadOutline, type DocRef } from "@/lib/doclink";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { textColorFor } from "@/lib/util/color";
 import type { Tag } from "@/bindings.gen";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 function headingUrl(docId: string, anchor: string): string {
 	return `https://docs.google.com/document/d/${docId}/edit#heading=${anchor}`;
@@ -23,14 +23,7 @@ function anchorsInDoc(tag: Tag, docId: string): Set<string> {
 	return out;
 }
 
-export function DoclinkAssignDialog({
-	open,
-	onOpenChange,
-}: {
-	open: boolean;
-	onOpenChange: (v: boolean) => void;
-}) {
-	const { t } = useT();
+export function DoclinkAssignDialog({ open, onOpenChange }: DialogProps) {
 	const tagMap = useMapState((s) => s.tags);
 	const tags: Tag[] = useMemo(
 		() =>
@@ -103,12 +96,12 @@ export function DoclinkAssignDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("dialog.assignDocLinks")} className="doclink-assign">
+			<DialogContent title={t("Assign document links")} className="doclink-assign">
 				<div className="doclink-assign__url">
 					<input
 						className="input"
 						type="text"
-						placeholder={t("editor.pasteGoogleDoc")}
+						placeholder={t("Paste a Google Docs link...")}
 						value={url}
 						onChange={(e) => setUrlInput(e.target.value)}
 					/>
@@ -116,19 +109,21 @@ export function DoclinkAssignDialog({
 						type="button"
 						className="button"
 						disabled={!docRef || assignments.size === 0}
-						title={t("editor.clearDocLinksTitle")}
+						title={t("Remove this document's links from every tag")}
 						onClick={() => void clearDoc()}
 					>
-						{t("editor.clearDocLinks")}
+						{t("Clear doc links")}
 					</button>
 				</div>
 				{!docRef ? (
-					<p className="doclink-assign__hint">{t("editor.pasteDocHint")}</p>
+					<p className="doclink-assign__hint">
+						{t("Paste a link to a Google Doc to load its headings.")}
+					</p>
 				) : (
 					<div className="doclink-assign__panes">
 						<div className="doclink-assign__tags">
 							<div className="doclink-assign__pane-title">
-								{armed ? t("editor.tagsLabel") : t("editor.tagsPickOne")}
+								{t("Tags")} {armed ? "" : t("(pick one to arm)")}
 							</div>
 							{tags.map((tag) => {
 								const n = anchorsInDoc(tag, docRef.docId).size;
@@ -149,20 +144,18 @@ export function DoclinkAssignDialog({
 								);
 							})}
 							{tags.length === 0 && (
-								<p className="doclink-assign__hint">{t("editor.noTagsInMap")}</p>
+								<p className="doclink-assign__hint">{t("This map has no tags.")}</p>
 							)}
 						</div>
 						<div className="doclink-assign__outline">
 							<div className="doclink-assign__pane-title">
-								{outline?.title ?? t("editor.document")}
-								{armed ? t("editor.clickHeadingAssign", { name: armed.name }) : ""}
+								{outline?.title ?? t("Document")}
+								{armed ? t(' — click a heading to assign "{name}"', { name: armed.name }) : ""}
 							</div>
-							{loading && (
-								<p className="doclink-assign__hint">{t("editor.loadingDocument")}</p>
-							)}
+							{loading && <p className="doclink-assign__hint">{t("Loading document...")}</p>}
 							{error && (
 								<p className="doclink-assign__hint">
-									{t("editor.loadFailed", { message: error.message })}
+									{t("Couldn't load:")} {error.message}
 								</p>
 							)}
 							{outline?.headings.map((h) => {
@@ -176,24 +169,26 @@ export function DoclinkAssignDialog({
 										onClick={() => armed && void toggle(armed, h.anchor)}
 									>
 										<span className="doclink-assign__heading-text">{h.text}</span>
-										{assigned.map((assignedTag) => (
+										{assigned.map((tag) => (
 											<span
-												key={assignedTag.id}
+												key={tag.id}
 												className="doclink-assign__chip"
-												style={{
-													background: assignedTag.color,
-													color: textColorFor(assignedTag.color),
-												}}
-												title={t("editor.assignedToTag", { name: assignedTag.name })}
+												style={{ background: tag.color, color: textColorFor(tag.color) }}
+												title={t(
+													"Assigned to {name} (click heading with this tag armed to remove)",
+													{ name: tag.name },
+												)}
 											>
-												{assignedTag.name}
+												{tag.name}
 											</span>
 										))}
 									</div>
 								);
 							})}
 							{outline && outline.headings.length === 0 && (
-								<p className="doclink-assign__hint">{t("editor.noLinkableHeadings")}</p>
+								<p className="doclink-assign__hint">
+									{t("No linkable headings found in this doc.")}
+								</p>
 							)}
 						</div>
 					</div>

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::ast::Node;
 use crate::token::TokenKind;
 pub fn neighbor_only_expression(expression: &str) -> Option<String> {

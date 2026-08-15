@@ -17,7 +17,6 @@ import { cmpVersion } from "@/lib/util/util";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl, downloadBlob } from "@/lib/util/util";
-import { listen } from "@tauri-apps/api/event";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { Dialog, DialogContent, useCloseDialog } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
@@ -37,7 +36,7 @@ import {
 } from "@mdi/js";
 import clsx from "clsx";
 import type { SortMode } from "@/types";
-import type { MapMeta } from "@/bindings.gen";
+import { events, type MapMeta } from "@/bindings.gen";
 import { fmt, relativeTime, shortDateFmt } from "@/lib/util/format";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
 import { useSetting, setSetting, getSettings, type MapListField } from "@/store/settings";
@@ -45,8 +44,8 @@ import { ColorPicker } from "@/components/primitives/ColorPicker";
 import { labelColor, rgbToHex, hexToRgb, textColorFor } from "@/lib/util/color";
 import { toast, progressToast } from "@/lib/util/toast";
 import { parseMapQuery, mapMatchesQuery, toggleLabelInQuery } from "./mapQuery";
-import { useT, t as translate, tp as translatePlural } from "@/lib/i18n";
-import type { MessageKey } from "@/locales/en";
+import { t, msg } from "@/lib/i18n";
+import { Trans } from "@/components/primitives/Trans";
 
 // --- What's new (latest release notes) ---
 
@@ -147,7 +146,7 @@ let changelogPromise: Promise<ChangelogSection[] | null> | null = null;
 
 function fetchChangelog(): Promise<ChangelogSection[] | null> {
 	if (!changelogPromise) {
-		changelogPromise = fetch("https://raw.githubusercontent.com/Saka1zum1/mma/master/CHANGELOG.md")
+		changelogPromise = fetch("https://raw.githubusercontent.com/ccmdi/mma/master/CHANGELOG.md")
 			.then((r) => (r.ok ? r.text() : null))
 			.then((md) => {
 				if (!md) return null;
@@ -206,7 +205,6 @@ function RollChar({ ch }: { ch: string }) {
 }
 
 function WhatsNew() {
-	const { t } = useT();
 	const [versions, setVersions] = useState<ChangelogSection[] | null>(null);
 	const [failed, setFailed] = useState(false);
 	const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -248,7 +246,7 @@ function WhatsNew() {
 		<li className="updates__item updates__item--new">
 			<span className="updates__circle" />
 			<time className="updates__time">
-				{t("mapList.whatsNew")}
+				{t("What's new")}
 				{displayTag && (
 					<>
 						<span className="updates__version-sep">·</span>
@@ -319,7 +317,6 @@ function RenameForm({
 	name: string;
 	onRename?: (from: string, to: string) => void;
 }) {
-	const { t } = useT();
 	const close = useCloseDialog();
 	return (
 		<form
@@ -346,7 +343,7 @@ function RenameForm({
 			</p>
 			<div className="edit-map-modal__actions">
 				<button type="submit" className="button button--primary">
-					{t("common.save")}
+					{t("Save")}
 				</button>
 			</div>
 		</form>
@@ -354,7 +351,6 @@ function RenameForm({
 }
 
 function MapEditForm({ id, name, labels }: { id: string; name: string; labels: string[] }) {
-	const { t } = useT();
 	const close = useCloseDialog();
 	const labelColors = useSetting("labelColors");
 	const [currentLabels, setCurrentLabels] = useState(labels);
@@ -395,7 +391,7 @@ function MapEditForm({ id, name, labels }: { id: string; name: string; labels: s
 				/>
 			</p>
 			<div className="map-edit-labels">
-				<div className="map-edit-labels__label">{t("mapList.labels")}</div>
+				<div className="map-edit-labels__label">{t("Labels")}</div>
 				<div className="map-edit-labels__list">
 					{currentLabels.map((l) => {
 						const [r, g, b] = hexToRgb(labelColor(l, labelColors));
@@ -404,7 +400,7 @@ function MapEditForm({ id, name, labels }: { id: string; name: string; labels: s
 								<ColorPicker
 									color={{ r, g, b }}
 									onChange={(rgb) => setLabelColor(l, rgbToHex(rgb))}
-									ariaLabel={t("mapList.colorFor", { label: l })}
+									ariaLabel={t("Color for {label}", { label: l })}
 								/>
 								{l}
 								<button
@@ -420,7 +416,7 @@ function MapEditForm({ id, name, labels }: { id: string; name: string; labels: s
 					<input
 						type="text"
 						className="map-edit-labels__input"
-						placeholder={t("mapList.addLabel")}
+						placeholder={t("Add label...")}
 						value={labelInput}
 						onChange={(e) => setLabelInput(e.target.value)}
 						onKeyDown={(e) => {
@@ -437,7 +433,7 @@ function MapEditForm({ id, name, labels }: { id: string; name: string; labels: s
 			</div>
 			<div className="edit-map-modal__actions">
 				<button type="submit" className="button button--primary">
-					{t("common.save")}
+					{t("Save")}
 				</button>
 			</div>
 		</form>
@@ -451,17 +447,12 @@ interface MapAction {
 	labels: string[];
 }
 
-const FIELD_RENDERERS: Record<
-	MapListField,
-	(meta: MapMeta, t: (key: MessageKey, params?: Record<string, string | number>) => string) => React.ReactNode
-> = {
-	locationCount: (meta, t) => (
-		<>
-			{fmt.format(meta.locationCount)} {t("mapList.locations")}
-		</>
+const FIELD_RENDERERS: Record<MapListField, (meta: MapMeta) => React.ReactNode> = {
+	locationCount: (meta) => (
+		<>{t({ one: "{n} location", other: "{n} locations" }, { n: meta.locationCount })}</>
 	),
-	lastOpened: (meta, t) =>
-		meta.lastOpenedAt ? <>{t("mapList.opened", { time: relativeTime(meta.lastOpenedAt) })}</> : null,
+	lastOpened: (meta) =>
+		meta.lastOpenedAt ? <>{t("opened {when}", { when: relativeTime(meta.lastOpenedAt) })}</> : null,
 	created: (meta) => <>{shortDateFmt.format(new Date(meta.createdAt))}</>,
 };
 
@@ -480,11 +471,10 @@ const MapEntry = React.memo(function MapEntry({
 	onLabelClick: (label: string) => void;
 	fields: MapListField[];
 }) {
-	const { t } = useT();
 	const labelColors = useSetting("labelColors");
 	const metaParts: React.ReactNode[] = [];
 	for (const f of fields) {
-		const node = FIELD_RENDERERS[f](meta, t);
+		const node = FIELD_RENDERERS[f](meta);
 		if (node) metaParts.push(<React.Fragment key={f}>{node}</React.Fragment>);
 	}
 
@@ -502,10 +492,7 @@ const MapEntry = React.memo(function MapEntry({
 				onPointerDown={(e) => {
 					if (e.button !== 0) return;
 					e.preventDefault();
-					onDragStart(
-						{ id: meta.id, folder: meta.folder, name: meta.name || t("mapList.unnamed") },
-						e,
-					);
+					onDragStart({ id: meta.id, folder: meta.folder, name: meta.name || "(unnamed)" }, e);
 				}}
 			>
 				<Icon path={mdiDragVertical} />
@@ -518,7 +505,7 @@ const MapEntry = React.memo(function MapEntry({
 					openMapWindow(meta.id, meta.name);
 				}}
 			>
-				{meta.name || t("mapList.unnamed")}
+				{meta.name || t("(unnamed)")}
 			</a>
 			{metaParts.length > 0 && (
 				<span className="map-list__meta">
@@ -537,7 +524,7 @@ const MapEntry = React.memo(function MapEntry({
 						key={l}
 						className="map-label map-label--inline"
 						style={{ backgroundColor: hex, color: textColorFor(hex), cursor: "pointer" }}
-						title={t("mapList.filterByLabel")}
+						title={t("Filter by this label")}
 						onClick={() => onLabelClick(l)}
 					>
 						{l}
@@ -546,7 +533,7 @@ const MapEntry = React.memo(function MapEntry({
 			})}
 			<button
 				className="map-list__edit icon-button"
-				aria-label={t("mapList.editMap")}
+				aria-label={t("Edit map")}
 				onClick={() =>
 					onAction({ type: "edit", id: meta.id, name: meta.name, labels: meta.labels })
 				}
@@ -555,7 +542,7 @@ const MapEntry = React.memo(function MapEntry({
 			</button>
 			<button
 				className="map-list__edit icon-button"
-				aria-label={t("mapList.deleteMap")}
+				aria-label={t("Delete map")}
 				onClick={() => onAction({ type: "delete", id: meta.id, name: meta.name, labels: [] })}
 			>
 				<Icon path={mdiDelete} />
@@ -589,7 +576,6 @@ const FolderEntry = React.memo(function FolderEntry({
 	onLabelClick: (label: string) => void;
 	fields: MapListField[];
 }) {
-	const { t } = useT();
 	const triggerId = `folder:${name}-trig`;
 	const [collapsed, setCollapsed] = useLocalStorage<string[]>("collapsedFolders", []);
 	const open = !collapsed.includes(name);
@@ -606,7 +592,7 @@ const FolderEntry = React.memo(function FolderEntry({
 						id={triggerId}
 						className="icon-button"
 						style={{ display: "inline-block" }}
-						aria-label={t("mapList.openCloseFolder")}
+						aria-label={t("Open or close folder")}
 					>
 						<Icon path={open ? mdiChevronDown : mdiChevronRight} />
 					</Collapsible.Trigger>
@@ -614,7 +600,8 @@ const FolderEntry = React.memo(function FolderEntry({
 						<strong>{name}</strong>
 						<span className="map-list__folder-count">
 							{" "}
-							{t("mapList.folderSummary", {
+							·{" "}
+							{t("{maps} maps · {locations} locations", {
 								maps: fmt.format(maps.length),
 								locations: fmt.format(count),
 							})}
@@ -622,14 +609,14 @@ const FolderEntry = React.memo(function FolderEntry({
 					</label>
 					<button
 						className="map-list__edit icon-button"
-						aria-label={t("mapList.renameFolder")}
+						aria-label={t("Rename folder")}
 						onClick={() => onFolderAction({ type: "rename-folder", name, mapCount: maps.length })}
 					>
 						<Icon path={mdiPencil} />
 					</button>
 					<button
 						className="map-list__edit icon-button"
-						aria-label={t("mapList.deleteFolder")}
+						aria-label={t("Delete folder")}
 						onClick={() => onFolderAction({ type: "delete-folder", name, mapCount: maps.length })}
 					>
 						<Icon path={mdiFolderRemove} />
@@ -701,9 +688,12 @@ async function applyFolderFiles(paths: string[], maps: MapMeta[]) {
 	const parts = [];
 	if (applied > 0)
 		parts.push(
-			translatePlural("mapList.folderAssigned", applied, { count: fmt.format(applied) }),
+			t(
+				{ one: "{n} map assigned to folders", other: "{n} maps assigned to folders" },
+				{ n: applied },
+			),
 		);
-	if (skipped > 0) parts.push(translate("mapList.notFoundLocally", { count: fmt.format(skipped) }));
+	if (skipped > 0) parts.push(t("{n} not found locally", { n: skipped }));
 	if (parts.length > 0) toast(parts.join(", "));
 }
 
@@ -716,7 +706,6 @@ function ImportPreviewModal({
 	onConfirm: (selectedIndices: number[]) => void;
 	onClose: () => void;
 }) {
-	const { t, tp } = useT();
 	const [entries, setEntries] = useState(preview.entries);
 	const selectedCount = entries.filter((e) => e.selected).length;
 	const totalLocs = entries.reduce((a, e) => a + (e.selected ? e.locationCount : 0), 0);
@@ -737,19 +726,19 @@ function ImportPreviewModal({
 				if (!open) onClose();
 			}}
 		>
-			<DialogContent title={t("dialog.importMaps")} className="import-preview-modal">
+			<DialogContent title={t("Import Maps")} className="import-preview-modal">
 				<div className="import-preview__actions">
 					<button className="button" onClick={selectAll}>
-						{t("mapList.importAll")}
+						{t("All")}
 					</button>
 					<button className="button" onClick={selectNone}>
-						{t("mapList.importNone")}
+						{t("None")}
 					</button>
 					<button className="button" onClick={selectNew}>
-						{t("mapList.importNewOnly")}
+						{t("New only")}
 					</button>
 					<span className="import-preview__summary">
-						{t("mapList.selectedOf", {
+						{t("{selected} of {total} selected ({locations} locations)", {
 							selected: selectedCount,
 							total: entries.length,
 							locations: fmt.format(totalLocs),
@@ -764,19 +753,19 @@ function ImportPreviewModal({
 							className={clsx(
 								"import-preview__item",
 								entry.isDuplicate && "import-preview__item--dup",
-								!entry.selected && "import-preview__item--deselected",
 							)}
 							onClick={() => toggle(i)}
 						>
 							<Checkbox checked={entry.selected} readOnly />
 							<span className="import-preview__name">{entry.name}</span>
 							<span className="import-preview__meta">
-								{fmt.format(entry.locationCount)} {t("mapList.locAbbr")}
-								{entry.tagCount > 0 && `, ${entry.tagCount} ${t("mapList.tagsAbbr")}`}
+								{t({ one: "{n} loc", other: "{n} loc" }, { n: entry.locationCount })}
+								{entry.tagCount > 0 &&
+									t({ one: ", {n} tag", other: ", {n} tags" }, { n: entry.tagCount })}
 								{entry.folder && ` [${entry.folder}]`}
 							</span>
 							{entry.isDuplicate && (
-								<span className="import-preview__badge">{t("mapList.importDuplicate")}</span>
+								<span className="import-preview__badge">{t("duplicate")}</span>
 							)}
 						</li>
 					))}
@@ -785,9 +774,7 @@ function ImportPreviewModal({
 				{preview.warnings.length > 0 && (
 					<details className="import-preview__warnings">
 						<summary>
-							{tp("mapList.importWarnings", preview.warnings.length, {
-								count: fmt.format(preview.warnings.length),
-							})}
+							{t({ one: "{n} warning", other: "{n} warnings" }, { n: preview.warnings.length })}
 						</summary>
 						<ul>
 							{preview.warnings.map((w, i) => (
@@ -799,7 +786,7 @@ function ImportPreviewModal({
 
 				<div className="import-preview__footer">
 					<button className="button" onClick={onClose}>
-						{t("common.cancel")}
+						{t("Cancel")}
 					</button>
 					<button
 						className="button button--primary"
@@ -809,7 +796,7 @@ function ImportPreviewModal({
 							onConfirm(indices);
 						}}
 					>
-						{tp("mapList.importCount", selectedCount, { count: fmt.format(selectedCount) })}
+						{t({ one: "Import {n} map", other: "Import {n} maps" }, { n: selectedCount })}
 					</button>
 				</div>
 			</DialogContent>
@@ -818,7 +805,6 @@ function ImportPreviewModal({
 }
 
 export function BulkActions() {
-	const { t } = useT();
 	const maps = useMapList();
 	const [exporting, setExporting] = useState(false);
 	const [importing, setImporting] = useState(false);
@@ -828,20 +814,18 @@ export function BulkActions() {
 
 	const handleExport = useCallback(async () => {
 		setExporting(true);
-		const progress = progressToast(t("mapList.exporting"));
-		const unlisten = await listen<{ current: number; total: number; mapName: string }>(
-			"bulk-export-progress",
-			(e) =>
-				progress.update(
-					e.payload.current / e.payload.total,
-					`${e.payload.current} / ${e.payload.total}`,
-				),
+		const progress = progressToast(t("Exporting maps..."));
+		const unlisten = await events.bulkExportProgress.listen((e) =>
+			progress.update(
+				e.payload.current / e.payload.total,
+				`${e.payload.current} / ${e.payload.total}`,
+			),
 		);
 		try {
 			const path = await cmd.storeExportBulkZip();
 			const res = await fetch(mmaBufUrl(path));
 			downloadBlob(await res.blob(), `mma-backup-${new Date().toISOString().slice(0, 10)}.zip`);
-			progress.finish(t("mapList.exportSaved"));
+			progress.finish(t("Export saved"));
 		} catch {
 			progress.finish();
 		} finally {
@@ -853,7 +837,7 @@ export function BulkActions() {
 	const handleImport = useCallback(async () => {
 		const selection = await openDialog({
 			multiple: true,
-			filters: [{ name: t("mapList.mapDataFilter"), extensions: ["json", "zip", "mmafolders"] }],
+			filters: [{ name: t("Map data"), extensions: ["json", "zip", "mmafolders"] }],
 		});
 		if (!selection) return;
 		const paths = Array.isArray(selection) ? selection : [selection];
@@ -866,7 +850,7 @@ export function BulkActions() {
 		}
 		if (mapFiles.length === 0) return;
 
-		setParseStatus(mapFiles.length > 1 ? t("mapList.scanningFiles") : t("mapList.scanningFile"));
+		setParseStatus(mapFiles.length > 1 ? t("Scanning files...") : t("Scanning file..."));
 		try {
 			const aggregated: ImportEntry[] = [];
 			const warnings: string[] = [];
@@ -924,14 +908,9 @@ export function BulkActions() {
 		setPreview(null);
 		const total = indices.length;
 		let base = 0; // maps confirmed in prior files, for global progress across the per-file loop
-		const progress = progressToast(t("mapList.importing"));
-		const unlisten = await listen<{ current: number; total: number; mapName: string }>(
-			"bulk-import-progress",
-			(e) =>
-				progress.update(
-					(base + e.payload.current) / total,
-					`${base + e.payload.current} / ${total}`,
-				),
+		const progress = progressToast(t("Importing maps..."));
+		const unlisten = await events.bulkImportProgress.listen((e) =>
+			progress.update((base + e.payload.current) / total, `${base + e.payload.current} / ${total}`),
 		);
 		let failed = 0;
 		try {
@@ -947,8 +926,8 @@ export function BulkActions() {
 			await invalidateMapList();
 			progress.finish(
 				failed
-					? t("mapList.importPartial", { ok: total - failed, failed })
-					: t("mapList.importComplete"),
+					? t("Imported {imported}, {failed} failed", { imported: total - failed, failed })
+					: t("Import complete"),
 			);
 		} catch (e) {
 			log.error("[bulk import] confirm failed:", e);
@@ -966,7 +945,7 @@ export function BulkActions() {
 				className="settings-gear"
 				onClick={handleExport}
 				disabled={exporting}
-				title={exporting ? t("mapList.exporting") : t("mapList.exportAll")}
+				title={exporting ? t("Exporting...") : t("Export all maps")}
 			>
 				<Icon path={mdiExport} />
 			</button>
@@ -974,7 +953,7 @@ export function BulkActions() {
 				className="settings-gear"
 				onClick={handleImport}
 				disabled={importing || parseStatus !== null}
-				title={parseStatus ?? (importing ? t("mapList.importing") : t("mapList.importMaps"))}
+				title={parseStatus ?? (importing ? t("Importing...") : t("Import maps"))}
 			>
 				<Icon path={mdiImport} />
 			</button>
@@ -995,14 +974,12 @@ export function BulkActions() {
 
 // --- Sorting ---
 
-const SORT_MODES: SortMode[] = ["name", "opened", "created", "amount"];
-
-const SORT_LABEL_KEYS: Record<SortMode, MessageKey> = {
-	name: "mapList.sort.name",
-	opened: "mapList.sort.opened",
-	created: "mapList.sort.created",
-	amount: "mapList.sort.amount",
-};
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+	{ value: "name", label: msg("Name") },
+	{ value: "opened", label: msg("Last opened") },
+	{ value: "created", label: msg("Date created") },
+	{ value: "amount", label: msg("Location count") },
+];
 
 function sortMaps(maps: MapMeta[], mode: SortMode): MapMeta[] {
 	const sorted = [...maps];
@@ -1047,7 +1024,6 @@ function applyFilter(listEl: HTMLElement | null, query: string) {
 }
 
 export function MapList() {
-	const { t } = useT();
 	const maps = useMapList();
 	const [sortMode, setSortMode] = useLocalStorage<SortMode>("mapListSort", "name");
 	const [syntheticFolders, setSyntheticFolders] = useState<string[]>([]);
@@ -1171,12 +1147,14 @@ export function MapList() {
 		<div className="page-map-list">
 			<section>
 				<h2>
-					{t("mapList.yourMaps")}{" "}
+					{t("Your Maps")}{" "}
 					<span style={{ color: "#fff8", fontWeight: "normal", fontSize: "0.75em" }}>
-						{t("mapList.mapsAndLocations", {
-							maps: fmt.format(maps.length),
-							locations: fmt.format(maps.reduce((a, m) => a + m.locationCount, 0)),
-						})}
+						({t({ one: "{n} map", other: "{n} maps" }, { n: maps.length })},{" "}
+						{t(
+							{ one: "{n} location", other: "{n} locations" },
+							{ n: maps.reduce((a, m) => a + m.locationCount, 0) },
+						)}
+						)
 					</span>
 				</h2>
 
@@ -1223,8 +1201,8 @@ export function MapList() {
 							}}
 							className="text-input"
 							type="text"
-							placeholder={t("mapList.searchPlaceholder")}
-							title={t("mapList.searchTitle")}
+							placeholder={t("Search maps...")}
+							title={t('Filter by name, or by label with label:name / label:"two words"')}
 							style={{ flexGrow: 1, paddingRight: hasFilter ? "1.75rem" : undefined }}
 							autoFocus
 						/>
@@ -1232,7 +1210,7 @@ export function MapList() {
 							<button
 								type="button"
 								className="icon-button"
-								aria-label={t("mapList.clearSearch")}
+								aria-label={t("Clear search")}
 								onClick={clearFilter}
 								style={{
 									position: "absolute",
@@ -1256,9 +1234,9 @@ export function MapList() {
 						value={sortMode}
 						onChange={(e) => setSortMode(e.target.value as SortMode)}
 					>
-						{SORT_MODES.map((mode) => (
-							<option key={mode} value={mode}>
-								{t(SORT_LABEL_KEYS[mode])}
+						{SORT_OPTIONS.map((o) => (
+							<option key={o.value} value={o.value}>
+								{t(o.label)}
 							</option>
 						))}
 					</NSelect>
@@ -1267,12 +1245,12 @@ export function MapList() {
 						onClick={() => {
 							const name = filterInputRef.current?.value.trim();
 							if (!name) {
-								toast(t("mapList.typeNameForFolder"));
+								toast(t("Type a name to create a folder"));
 								return;
 							}
 							setSyntheticFolders((prev) => (prev.includes(name) ? prev : [...prev, name]));
 						}}
-						aria-label={t("mapList.newFolder")}
+						aria-label={t("New folder")}
 					>
 						<Icon path={mdiFolder} />
 					</button>
@@ -1281,12 +1259,12 @@ export function MapList() {
 						onClick={() => {
 							const name = filterInputRef.current?.value.trim();
 							if (!name) {
-								toast(t("mapList.typeNameForMap"));
+								toast(t("Type a name to create a map"));
 								return;
 							}
 							createMap(name);
 						}}
-						aria-label={t("mapList.newMap")}
+						aria-label={t("New map")}
 					>
 						<Icon path={mdiPlus} />
 					</button>
@@ -1318,7 +1296,7 @@ export function MapList() {
 						/>
 					))}
 					{rootMaps.length === 0 && dragItem && (
-						<li className="map-list__entry">{t("mapList.dropHere")}</li>
+						<li className="map-list__entry">{t("drop map here to move out of folder")}</li>
 					)}
 				</ul>
 			</section>
@@ -1326,12 +1304,16 @@ export function MapList() {
 				<ul className="updates__container">
 					<li className="updates__item updates__item--warning">
 						<span className="updates__circle" />
-						<time className="updates__time">{t("mapList.wipWarning")}</time>
+						<time className="updates__time">{t("Warning")}</time>
 						<p>
-							{t("mapList.wipBody")}{" "}
-							<a target="_blank" href="https://github.com/Saka1zum1/mma/issues">
-								{t("mapList.here")}
-							</a>
+							<Trans
+								msg="This is a work in progress. Report bugs {here}"
+								here={
+									<a target="_blank" href="https://github.com/ccmdi/mma/issues">
+										{t("here")}
+									</a>
+								}
+							/>
 							.
 						</p>
 					</li>
@@ -1366,12 +1348,12 @@ export function MapList() {
 					<DialogContent
 						title={
 							activeAction.type === "edit"
-								? t("mapList.editMap")
+								? t("Edit map")
 								: activeAction.type === "delete"
-									? t("mapList.deleteMap")
+									? t("Delete map")
 									: activeAction.type === "rename-folder"
-										? t("mapList.renameFolder")
-										: t("mapList.deleteFolder")
+										? t("Rename folder")
+										: t("Delete folder")
 						}
 						className="edit-map-modal"
 					>
@@ -1384,14 +1366,10 @@ export function MapList() {
 						)}
 						{activeAction.type === "delete" && (
 							<>
-								<p>
-									{t("mapList.deleteConfirm", {
-										name: activeAction.name || t("mapList.unnamed"),
-									})}
-								</p>
+								<p>{t('Delete "{name}"?', { name: activeAction.name || t("(unnamed)") })}</p>
 								<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
 									<button className="button" onClick={() => setActiveAction(null)}>
-										{t("common.cancel")}
+										{t("Cancel")}
 									</button>
 									<button
 										className="button button--destructive"
@@ -1400,7 +1378,7 @@ export function MapList() {
 											setActiveAction(null);
 										}}
 									>
-										{t("common.delete")}
+										{t("Delete")}
 									</button>
 								</div>
 							</>
@@ -1416,14 +1394,18 @@ export function MapList() {
 						{activeAction.type === "delete-folder" && (
 							<>
 								<p>
-									{t("mapList.deleteFolderConfirm", {
-										name: activeAction.name,
-										count: (activeAction as FolderAction).mapCount,
-									})}
+									{t(
+										{
+											one: 'Delete folder "{name}"? The {n} map inside will be moved to the root.',
+											other:
+												'Delete folder "{name}"? The {n} maps inside will be moved to the root.',
+										},
+										{ name: activeAction.name, n: (activeAction as FolderAction).mapCount },
+									)}
 								</p>
 								<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
 									<button className="button" onClick={() => setActiveAction(null)}>
-										{t("common.cancel")}
+										{t("Cancel")}
 									</button>
 									<button
 										className="button button--destructive"
@@ -1434,7 +1416,7 @@ export function MapList() {
 											await deleteFolder(name);
 										}}
 									>
-										{t("mapList.deleteFolderButton")}
+										{t("Delete folder")}
 									</button>
 								</div>
 							</>

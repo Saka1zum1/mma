@@ -11,6 +11,7 @@ import {
 	flushAndWait,
 	openMap,
 	withApi,
+	select,
 } from "./helpers";
 
 describe("Multi-map isolation", () => {
@@ -109,7 +110,7 @@ describe("Multi-map isolation", () => {
 
 	it("selections are reset when switching maps", async () => {
 		await openMap(mapAId);
-		await withApi(async (api) => api.addSelections([{ type: "Everything" }]));
+		await select({ type: "Everything" });
 		const selCountA = await withApi(async (api) => api.getActiveSelections().length);
 		expect(selCountA).toBeGreaterThan(0);
 		await closeMap();

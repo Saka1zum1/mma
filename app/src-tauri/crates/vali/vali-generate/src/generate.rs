@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::definition::Prepared;
 use crate::distribution::{
     by_max_min_distance, densify_country, distribute_evenly,

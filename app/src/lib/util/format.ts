@@ -1,47 +1,45 @@
-import { subscribe } from "@/lib/events";
-import { getLocale, t, toBcp47 } from "@/lib/i18n";
+import { getLocale, t } from "@/lib/i18n";
 
+/** Product name -- never translated. */
 export const APP_NAME = "Map Making App";
 
-function localeTag() {
-	return toBcp47(getLocale());
+/** Resolves against the active locale on first use rather than at import time, so these are
+ *  correct however early a module reaches for them. */
+export function localeFormat<V>(build: (locale: string) => { format: (value: V) => string }) {
+	let cached: { locale: string; formatter: { format: (value: V) => string } } | null = null;
+	return {
+		format(value: V): string {
+			const locale = getLocale();
+			if (cached?.locale !== locale) cached = { locale, formatter: build(locale) };
+			return cached.formatter.format(value);
+		},
+	};
 }
 
-export let fmt = new Intl.NumberFormat("en");
-export let dateFmt = new Intl.DateTimeFormat("en-US", {
-	year: "numeric",
-	month: "short",
-});
-export let shortDateFmt = new Intl.DateTimeFormat("en-US", {
-	month: "short",
-	day: "numeric",
-	year: "numeric",
-});
-/** Day-level date like "21 May 2021" (alt pano providers / historical pickers). */
-export let panoDayFmt = new Intl.DateTimeFormat("en-GB", {
-	day: "numeric",
-	month: "short",
-	year: "numeric",
-});
+export const fmt = localeFormat<number>((l) => new Intl.NumberFormat(l));
+export const dateFmt = localeFormat<Date | number>(
+	(l) => new Intl.DateTimeFormat(l, { year: "numeric", month: "short" }),
+);
+export const shortDateFmt = localeFormat<Date | number>(
+	(l) => new Intl.DateTimeFormat(l, { month: "short", day: "numeric", year: "numeric" }),
+);
+export const dayMonthFmt = localeFormat<Date | number>(
+	(l) => new Intl.DateTimeFormat(l, { month: "short", day: "numeric" }),
+);
+export const dateTimeFmt = localeFormat<Date | number>(
+	(l) => new Intl.DateTimeFormat(l, { dateStyle: "medium", timeStyle: "short" }),
+);
 
-function refreshFormatters() {
-	const tag = localeTag();
-	fmt = new Intl.NumberFormat(tag);
-	dateFmt = new Intl.DateTimeFormat(tag, { year: "numeric", month: "short" });
-	shortDateFmt = new Intl.DateTimeFormat(tag, {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
-	panoDayFmt = new Intl.DateTimeFormat(tag === "en" ? "en-GB" : tag, {
-		day: "numeric",
-		month: "short",
-		year: "numeric",
-	});
+// Fixed to UTC so the month index can't slip a boundary in a negative-offset zone.
+const monthFmt = localeFormat<Date | number>(
+	(l) => new Intl.DateTimeFormat(l, { month: "short", timeZone: "UTC" }),
+);
+
+/** Localised short month name for a 0-based index. Display only -- `MONTHS` in `util/date`
+ *  stays English because it also backs date *parsing*. */
+export function monthShort(index: number): string {
+	return monthFmt.format(Date.UTC(2000, index, 1));
 }
-
-refreshFormatters();
-subscribe("locale:changed", refreshFormatters);
 
 /** Location timestamps are Unix seconds; JS Date wants milliseconds. */
 export function locDate(secs: number): Date {
@@ -74,9 +72,9 @@ const DAY = 86_400_000;
 export function relativeTime(time: string | number): string {
 	const ms = typeof time === "number" ? time * 1000 : new Date(time).getTime();
 	const delta = Date.now() - ms;
-	if (delta < MINUTE) return t("time.justNow");
-	if (delta < HOUR) return t("time.minutesAgo", { count: Math.floor(delta / MINUTE) });
-	if (delta < DAY) return t("time.hoursAgo", { count: Math.floor(delta / HOUR) });
-	if (delta < 30 * DAY) return t("time.daysAgo", { count: Math.floor(delta / DAY) });
+	if (delta < MINUTE) return t("just now");
+	if (delta < HOUR) return t("{n}m ago", { n: Math.floor(delta / MINUTE) });
+	if (delta < DAY) return t("{n}h ago", { n: Math.floor(delta / HOUR) });
+	if (delta < 30 * DAY) return t("{n}d ago", { n: Math.floor(delta / DAY) });
 	return shortDateFmt.format(new Date(ms));
 }

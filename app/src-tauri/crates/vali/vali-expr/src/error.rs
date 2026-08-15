@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExprError {

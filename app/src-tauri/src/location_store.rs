@@ -163,6 +163,30 @@ fn serialize_cell_segment(ci: usize, cr: &CellRender, per_sel: &[[Vec<u32>; 32]]
     seg
 }
 
+/// Build the selection-bitmask wire buffer for `sels` against the current render cells:
+/// route each selection to per-cell local indices, serialize the cells, assemble. Returns
+/// the buffer and the number of cells it covers. The only place those steps are sequenced.
+/// Cells and selections are independent, so both passes go parallel.
+fn build_selection_buf(render: &RenderState, sels: &[ResolvedSelection]) -> (Vec<u8>, usize) {
+    let render_total = render.total_len();
+    let routed: Vec<[Vec<u32>; 32]> = sels
+        .par_iter()
+        .map(|r| selection_cell_indices(render, render_total, &r.set))
+        .collect();
+    let segments: Vec<Vec<u8>> = render
+        .cells
+        .par_iter()
+        .enumerate()
+        .filter_map(|(ci, opt)| {
+            let cr = opt.as_ref()?;
+            Some(serialize_cell_segment(ci, cr, &routed))
+        })
+        .collect();
+    let num_cells = segments.len();
+    let buf = assemble_selection_bitmask(sels.iter().map(|r| &r.sel.color), &segments);
+    (buf, num_cells)
+}
+
 /// Binary search for a location ID in a sorted batch. O(log n).
 fn batch_row_for_id(batch: &RecordBatch, id: u32) -> Option<usize> {
     let ids = col_id(batch);
@@ -206,17 +230,45 @@ pub(crate) struct CellRender {
 /// overlay back into the batch. The sorted ID invariant on `batch` + `overlay_adds` enables
 /// O(log n) lookups via binary search. Render cells, selection bitmasks, undo/redo stacks,
 /// and tag metadata all live here.
+///
+/// This is also the on-disk `.delta` sidecar format: serializing it is the autosave, and
+/// deserializing it is the reload. `dead_ids`/`patches` are the wire names and shapes
+/// (a seq either way), so the msgpack stays byte-compatible with existing delta files.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Overlay {
     pub adds: Vec<Location>,
+    #[serde(rename = "dead_ids")]
     pub dead: HashSet<u32>,
+    #[serde(with = "patches_as_seq")]
     pub patches: HashMap<u32, Location>,
     /// Unsaved since the last autosave. Cleared by `store_save_dirty` after a
     /// confirmed write (rev-guarded); NOT a "has uncommitted content" flag — that
     /// is [`Overlay::is_empty`].
+    #[serde(skip)]
     pub dirty: bool,
     /// Bumped on every overlay mutation. `store_save_dirty` clears `dirty` only if
     /// the rev it serialized is still current once the async write lands.
+    #[serde(skip)]
     pub rev: u64,
+}
+
+/// Patches ride the wire as a plain list of locations, keyed back by id on the way in.
+mod patches_as_seq {
+    use super::{HashMap, Location};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(m: &HashMap<u32, Location>, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(m.values())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<HashMap<u32, Location>, D::Error> {
+        Ok(Vec::<Location>::deserialize(d)?
+            .into_iter()
+            .map(|l| (l.id, l))
+            .collect())
+    }
 }
 
 impl Overlay {
@@ -224,6 +276,17 @@ impl Overlay {
     /// clean but stays non-empty until baked by a commit.
     pub(crate) fn is_empty(&self) -> bool {
         self.adds.is_empty() && self.dead.is_empty() && self.patches.is_empty()
+    }
+
+    /// Apply these changes onto a plain location list read off disk.
+    fn apply_to(self, locs: &mut Vec<Location>) {
+        locs.retain(|l| !self.dead.contains(&l.id));
+        for l in locs.iter_mut() {
+            if let Some(p) = self.patches.get(&l.id) {
+                *l = p.clone();
+            }
+        }
+        locs.extend(self.adds);
     }
 
     /// Mark the overlay mutated: flag it unsaved and invalidate in-flight saves.
@@ -493,13 +556,7 @@ impl Store {
             version: 0,
             alive_count: 0,
             known_field_keys: HashSet::new(),
-            overlay: Overlay {
-                adds: Vec::new(),
-                dead: HashSet::new(),
-                patches: HashMap::new(),
-                dirty: false,
-                rev: 0,
-            },
+            overlay: Overlay::default(),
             render: RenderState {
                 cells: [const { None }; 32],
                 id_to_cell_idx: Vec::new(),
@@ -839,32 +896,7 @@ impl Store {
 
         let t0 = std::time::Instant::now();
         let num_sels = self.selections.resolved.len();
-        // Route selections to per-cell indices (parallel over selections, O(selected)),
-        // then serialize the cells in parallel; segments are self-describing so
-        // order is irrelevant.
-        let render_total = self.render.total_len();
-        let routed: Vec<[Vec<u32>; 32]> = self
-            .selections
-            .resolved
-            .par_iter()
-            .map(|r| selection_cell_indices(&self.render, render_total, &r.set))
-            .collect();
-        let segments: Vec<Vec<u8>> = self
-            .render
-            .cells
-            .par_iter()
-            .enumerate()
-            .filter_map(|(ci, opt)| {
-                let cr = opt.as_ref()?;
-                Some(serialize_cell_segment(ci, cr, &routed))
-            })
-            .collect();
-        let num_cells = segments.len();
-
-        let buf = assemble_selection_bitmask(
-            self.selections.resolved.iter().map(|r| &r.sel.color),
-            &segments,
-        );
+        let (buf, num_cells) = build_selection_buf(&self.render, &self.selections.resolved);
         let bitmask = if num_cells > 0 { Some(buf) } else { None };
 
         log::debug!(
@@ -1284,10 +1316,12 @@ impl Store {
         })
     }
 
-    /// Evenly spaced subset of the current selection: `target_count` thins to N ids
-    /// maximizing spacing; `min_distance_m` keeps as many as fit at that spacing.
+    /// Evenly spaced subset of `scope`, defaulting to the current selection:
+    /// `target_count` thins to N ids maximizing spacing; `min_distance_m` keeps as
+    /// many as fit at that spacing.
     pub(crate) fn pick_spaced(
         &self,
+        scope: Option<&SelectionProps>,
         target_count: Option<u32>,
         min_distance_m: Option<u32>,
     ) -> AppResult<SpacedPickResult> {
@@ -1307,13 +1341,18 @@ impl Store {
                     "pick_spaced: min_distance_m must be greater than 0",
                 ))
             }
+            (_, Some(d)) if d > i32::MAX as u32 => {
+                return Err(AppError::from("pick_spaced: min_distance_m too large"))
+            }
             _ => {}
         }
 
-        let mut candidates: Vec<(u32, f64, f64)> = self
-            .selections
-            .ids
-            .iter()
+        let candidate_ids: Vec<u32> = match scope {
+            Some(props) => selections::resolve(&self.loc_view(), props),
+            None => self.selections.ids.iter().collect(),
+        };
+        let mut candidates: Vec<(u32, f64, f64)> = candidate_ids
+            .into_iter()
             .filter_map(|id| {
                 let (lat, lng) = self.coords_of(id)?;
                 (lat.is_finite() && lng.is_finite()).then_some((id, lat, lng))
@@ -1790,7 +1829,7 @@ macro_rules! with_store {
 /// `known_field_keys` lists every extra-field key that exists in location data
 /// on this map. Add-only within a session; seeded from `MapMeta.extra.fields`
 /// on map open.
-#[derive(serde::Serialize, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreStatus {
     pub version: u64,
@@ -1823,7 +1862,7 @@ pub struct SummaryResult {
 /// Every entry states the row's resulting selection state, so applying a delta is
 /// idempotent and the base cells and the selection overlay cannot drift apart.
 /// `full_reset` signals JS to discard all cell data and re-fetch via `store_fill_render_file`.
-#[derive(serde::Serialize, Default, specta::Type)]
+#[derive(serde::Serialize, Clone, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderDelta {
     pub added: Vec<RenderEntry>,
@@ -1867,7 +1906,7 @@ pub struct SelPaint {
 }
 
 /// A marker appended to a render cell: position, heading, and selection state.
-#[derive(serde::Serialize, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderEntry {
     pub cell: String,
@@ -1886,7 +1925,7 @@ pub struct RenderEntry {
 /// Update to an existing marker within its cell. Position and heading are `None` when
 /// unchanged; `sel` always states the row's current selection state, so a membership
 /// change with no movement is just a patch with no coordinates.
-#[derive(serde::Serialize, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderPatchEntry {
     pub cell: String,
@@ -1899,7 +1938,7 @@ pub struct RenderPatchEntry {
 
 /// A swap-removal from a render cell. JS must move the last element into `cell_index`
 /// and pop the array to mirror the Rust-side swap-remove.
-#[derive(serde::Serialize, Default, specta::Type)]
+#[derive(serde::Serialize, Clone, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CellRemoval {
     pub cell: String,
@@ -1910,7 +1949,7 @@ pub struct CellRemoval {
 /// Selection bitmask sync payload. `bitmask` carries the packed per-cell bitmask bytes
 /// inline in the IPC response (no shared temp file → no clobber race under concurrent
 /// mutations). `None` when nothing changed. `counts` gives per-selection match counts.
-#[derive(serde::Serialize, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectionSync {
     /// Resolved count per selection node, keyed by `Selection.key` (top-level and nested).
@@ -1925,7 +1964,7 @@ pub struct SelectionSync {
 /// `new_field_defs` carries the inferred/known field definitions for extra-field keys
 /// discovered for the first time in this mutation. JS merges them straight into the
 /// field-def registry, so field metadata is live without a reload.
-#[derive(serde::Serialize, specta::Type)]
+#[derive(serde::Serialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MutationResult {
     #[serde(flatten)]
@@ -1934,6 +1973,16 @@ pub struct MutationResult {
     pub selection_sync: Option<SelectionSync>,
     pub new_field_defs: Option<HashMap<String, map_meta::ExtraFieldDef>>,
     pub tags: Option<HashMap<u32, Tag>>,
+}
+
+/// A mutation another window made to a map this window may have open, routed by `map_id`.
+#[derive(serde::Serialize, Clone, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+#[tauri_specta(event_name = "store-external-mutation")]
+pub struct ExternalMutation {
+    #[serde(flatten)]
+    pub result: MutationResult,
+    pub map_id: String,
 }
 
 /// Deserialize a present-but-null JSON field as `Some(None)` instead of `None`.
@@ -2017,7 +2066,7 @@ pub async fn store_open_map(
             };
             let delta = if delta_path.exists() {
                 match std::fs::read(&delta_path) {
-                    Ok(d) => match rmp_serde::from_slice::<DeltaOverlay>(&d) {
+                    Ok(d) => match rmp_serde::from_slice::<Overlay>(&d) {
                         Ok(parsed) => Some(parsed),
                         Err(e) => {
                             log::warn!("[store_open] delta parse failed, ignoring: {e}");
@@ -2087,12 +2136,9 @@ pub async fn store_open_map(
     store.mmap_handle = mmap_handle;
 
     // Load uncommitted edits into the overlay; the base batch stays at the last commit.
+    // `adds` are persisted in sorted-id order.
     if let Some(d) = delta {
-        store.overlay.dead = d.dead_ids.into_iter().collect();
-        for p in d.patches {
-            store.overlay.patches.insert(p.id, p);
-        }
-        store.overlay.adds = d.adds; // persisted in sorted-id order
+        store.overlay = d;
         store.overlay.dirty = true;
     }
     store.next_id = seed_next_id(max_id, &store.overlay.adds, &undo, &redo);
@@ -2124,7 +2170,7 @@ pub async fn store_open_map(
                 |row| row.get(0),
             )
             .unwrap_or_default();
-        let extra: map_meta::MapExtra = serde_json::from_str(&extra_str).unwrap_or_default();
+        let extra = map_meta::MapExtra::from_json(&extra_str);
         store.known_field_keys = extra
             .fields
             .as_ref()
@@ -2612,25 +2658,12 @@ pub async fn store_country_distribution(
     crate::borders::tally_countries(&level, &coords)
 }
 
-/// Msgpack-serialized overlay state written to the `.delta` file on autosave.
-/// On next `store_open_map` it is loaded back into the overlay (the base file stays
-/// pinned at the last commit); a commit bakes it into the base and deletes the file.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct DeltaOverlay {
-    adds: Vec<Location>,
-    dead_ids: Vec<u32>,
-    patches: Vec<Location>,
-}
-
-/// Serialize the overlay (uncommitted changes) as a `DeltaOverlay` msgpack blob.
-/// This is the sidecar that lets the base file stay pinned at the last commit.
+/// Msgpack-serialize the overlay (uncommitted changes) for the `.delta` sidecar.
+/// This is what lets the base file stay pinned at the last commit: on next
+/// `store_open_map` the blob is loaded straight back into the overlay, and a commit
+/// bakes it into the base and deletes the file.
 fn overlay_delta_bytes(store: &Store) -> AppResult<Vec<u8>> {
-    let overlay = DeltaOverlay {
-        adds: store.overlay.adds.clone(),
-        dead_ids: store.overlay.dead.iter().cloned().collect(),
-        patches: store.overlay.patches.values().cloned().collect(),
-    };
-    rmp_serde::to_vec_named(&overlay).map_err(AppError::from)
+    rmp_serde::to_vec_named(&store.overlay).map_err(AppError::from)
 }
 
 /// Read a map's full current state from disk = base file + uncommitted delta sidecar.
@@ -2649,17 +2682,8 @@ pub(crate) fn read_full_state_from_disk(map_id: &str) -> AppResult<Vec<Location>
     let delta_path = storage::arrow_delta_path(map_id)?;
     if delta_path.exists() {
         if let Ok(data) = std::fs::read(&delta_path) {
-            if let Ok(delta) = rmp_serde::from_slice::<DeltaOverlay>(&data) {
-                let dead: HashSet<u32> = delta.dead_ids.into_iter().collect();
-                let patches: HashMap<u32, Location> =
-                    delta.patches.into_iter().map(|l| (l.id, l)).collect();
-                locs.retain(|l| !dead.contains(&l.id));
-                for l in locs.iter_mut() {
-                    if let Some(p) = patches.get(&l.id) {
-                        *l = p.clone();
-                    }
-                }
-                locs.extend(delta.adds);
+            if let Ok(delta) = rmp_serde::from_slice::<Overlay>(&data) {
+                delta.apply_to(&mut locs);
             }
         }
     }
@@ -2874,14 +2898,13 @@ pub fn store_copy_locations_to_map(
                 _t.elapsed().as_millis()
             );
             // Ship the full MutationResult (+ target map id for routing) on the event.
-            let mut payload = serde_json::to_value(&result)?;
-            if let Some(obj) = payload.as_object_mut() {
-                obj.insert(
-                    "mapId".into(),
-                    serde_json::Value::String(target_map_id.clone()),
-                );
-            }
-            crate::emit_event("store-external-mutation", payload);
+            crate::emit_event(
+                "store-external-mutation",
+                ExternalMutation {
+                    result,
+                    map_id: target_map_id.clone(),
+                },
+            );
         }
         return Ok(CopyToMapResult {
             copied,
@@ -2936,14 +2959,10 @@ pub fn store_copy_locations_to_map(
         }
         let t_save = std::time::Instant::now();
         let delta_path = storage::arrow_delta_path(&target_map_id)?;
-        let mut delta: DeltaOverlay = if delta_path.exists() {
+        let mut delta: Overlay = if delta_path.exists() {
             rmp_serde::from_slice(&std::fs::read(&delta_path)?)?
         } else {
-            DeltaOverlay {
-                adds: Vec::new(),
-                dead_ids: Vec::new(),
-                patches: Vec::new(),
-            }
+            Overlay::default()
         };
         delta.adds.extend(fresh);
         let bytes = rmp_serde::to_vec_named(&delta)?;
@@ -3034,9 +3053,18 @@ pub async fn store_save_dirty(
 
     let size = delta_data.as_ref().map_or(0, |d| d.len());
     let wrote_delta = delta_data.is_some();
+    let wrote_tags = tags_json.is_some();
     let map_id2 = map_id.clone();
-    tokio::task::spawn_blocking(move || persist_dirty(&map_id2, delta_data, alive, tags_json))
-        .await??;
+    let write = tokio::task::spawn_blocking(move || persist_dirty(&map_id2, delta_data, alive, tags_json))
+        .await
+        .map_err(AppError::from)
+        .and_then(|r| r);
+    if write.is_err() && wrote_tags {
+        if let Ok(store) = state.lock()?.store_for_window(webview.label()) {
+            store.tags.dirty = true;
+        }
+    }
+    write?;
 
     if wrote_delta {
         let mut mgr = state.lock()?;
@@ -3270,8 +3298,8 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
     let mut cells: [Option<CellOut>; 32] = [NONE; 32];
 
     // Selection overlay: selected entries rendered as a separate colored layer. `sel_idx`
-    // is the drawing selection's index, both to order the entries below and so JS can keep
-    // them ordered as later edits add and drop entries.
+    // is the drawing selection's index, which JS orders the entries by on load and keeps
+    // them ordered by as later edits add and drop entries.
     struct SelOverlay {
         ids: Vec<u32>,
         positions: Vec<f32>,
@@ -3437,7 +3465,8 @@ fn build_cell_render_buffers(store: &mut Store, req: &RenderRequest) -> Vec<u8> 
         buf.extend_from_slice(bytemuck::cast_slice(&out.angles));
     }
 
-    // Selection overlay, already ordered by selection index:
+    // Selection overlay, in emission order. `selIdx` is the z key: JS sorts by it on load,
+    // the same way it does after every delta, so the ordering lives in one implementation.
     // [u32 count][f32[] positions][u8[] colors][f32[] angles][u32[] ids][u32[] selIdx]
     let sel_count = sel_ov.ids.len() as u32;
     buf.extend_from_slice(&sel_count.to_le_bytes());
@@ -3866,25 +3895,9 @@ pub async fn store_sync_selections(
         let selected_count = all_selected.len() as usize;
 
         // 3. Route selections to per-cell indices (O(selected), not O(S*N)), then
-        //    serialize the per-cell bitmask binary. Cells are independent → parallel.
+        //    serialize the per-cell bitmask binary.
         let render_total = store.render.total_len();
-        let routed: Vec<[Vec<u32>; 32]> = live
-            .par_iter()
-            .map(|r| selection_cell_indices(&store.render, render_total, &r.set))
-            .collect();
-        let segments: Vec<Vec<u8>> = store
-            .render
-            .cells
-            .par_iter()
-            .enumerate()
-            .filter_map(|(ci, opt)| {
-                let cr = opt.as_ref()?;
-                Some(serialize_cell_segment(ci, cr, &routed))
-            })
-            .collect();
-        let num_cells = segments.len();
-
-        let buf = assemble_selection_bitmask(live.iter().map(|r| &r.sel.color), &segments);
+        let (buf, num_cells) = build_selection_buf(&store.render, &live);
 
         store.selections.ids = all_selected;
         store.selections.resolved = live;
@@ -3927,30 +3940,30 @@ pub struct SpacedPickResult {
     pub distance_m: i32,
 }
 
-/// Pick an evenly spaced subset of the current selection. Exactly one of `target_count`
-/// (thin to N, maximizing spacing) or `min_distance_m` (keep as many as fit at that spacing)
-/// must be provided.
+/// Pick an evenly spaced subset of `scope`, or of the current selection when `scope` is
+/// null. Exactly one of `target_count` (thin to N, maximizing spacing) or `min_distance_m`
+/// (keep as many as fit at that spacing) must be provided.
 #[tauri::command]
 #[specta::specta]
 pub fn store_pick_spaced(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
+    scope: Option<SelectionProps>,
     target_count: Option<u32>,
     min_distance_m: Option<u32>,
 ) -> AppResult<SpacedPickResult> {
     let _t = std::time::Instant::now();
     with_store!(webview, state, |store| {
-        let candidate_count = store.selections.ids.len();
-        let result = store.pick_spaced(target_count, min_distance_m)?;
+        let result = store.pick_spaced(scope.as_ref(), target_count, min_distance_m)?;
         let mode = if target_count.is_some() {
             "count"
         } else {
             "distance"
         };
         log::debug!(
-            "[cmd] store_pick_spaced mode={} candidates={} picked={} distance_m={} total={}ms",
+            "[cmd] store_pick_spaced mode={} scoped={} picked={} distance_m={} total={}ms",
             mode,
-            candidate_count,
+            scope.is_some(),
             result.ids.len(),
             result.distance_m,
             _t.elapsed().as_millis()

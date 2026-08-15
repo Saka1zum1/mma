@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useSyncStore } from "@/lib/events";
-import { useT } from "@/lib/i18n";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiMinus, mdiPlus } from "@mdi/js";
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
@@ -15,12 +13,9 @@ import {
 	type MapHost,
 	type DeckOverlayHandle,
 } from "@/lib/map/host";
-import {
-	getProviderCoverageLayersEpoch,
-	subscribeProviderCoverageLayers,
-} from "@/lib/sv/providers/coverageLayers";
 import { usePanoViewer } from "./PanoViewerContext";
 import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
+import { t } from "@/lib/i18n";
 
 const MINIMAP_SCALE = range([0.5, 2]);
 const MINIMAP_SCALE_STEP = 0.25;
@@ -53,7 +48,6 @@ async function ensureMinimapHost(
 	}
 	if (!minimapHost) {
 		minimapHost = await createMapHost(kind, minimapDiv, prefs, {
-			useBlobby: prefs.svBlobby,
 			customStyles: getLocal<CustomStyle[]>(CUSTOM_STYLES_KEY, []),
 			camera: { center: { lat, lng }, zoom: 14 },
 			scaleControl: false,
@@ -66,7 +60,6 @@ async function ensureMinimapHost(
 }
 
 export function FullscreenMiniMap() {
-	const { t } = useT();
 	const { lat, lng } = usePanoViewer();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
@@ -124,15 +117,12 @@ export function FullscreenMiniMap() {
 		if (!inside) host.panTo({ lat, lng });
 	}, [lat, lng, surface]);
 
-	const coverageEpoch = useSyncStore(subscribeProviderCoverageLayers, getProviderCoverageLayersEpoch);
-
 	useEffect(() => {
 		if (!surface) return;
 		surface.host.applyPrefs(prefs, {
-			useBlobby: prefs.svBlobby,
 			customStyles: getLocal<CustomStyle[]>(CUSTOM_STYLES_KEY, []),
 		});
-	}, [prefs, surface, coverageEpoch]);
+	}, [prefs, surface]);
 
 	const setScale = (next: number) => {
 		const clamped = clamp(next, MINIMAP_SCALE);
@@ -159,7 +149,7 @@ export function FullscreenMiniMap() {
 				<button
 					type="button"
 					className="fullscreen-minimap__size-btn"
-					aria-label={t("editor.smallerMinimap")}
+					aria-label={t("Smaller minimap")}
 					disabled={scale <= MINIMAP_SCALE.min}
 					onClick={() => setScale(scale - MINIMAP_SCALE_STEP)}
 				>
@@ -168,7 +158,7 @@ export function FullscreenMiniMap() {
 				<button
 					type="button"
 					className="fullscreen-minimap__size-btn"
-					aria-label={t("editor.largerMinimap")}
+					aria-label={t("Larger minimap")}
 					disabled={scale >= MINIMAP_SCALE.max}
 					onClick={() => setScale(scale + MINIMAP_SCALE_STEP)}
 				>

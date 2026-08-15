@@ -31,39 +31,31 @@ export function getCommand(id: string): Command | undefined {
 import { getSettings, setSetting } from "./settings";
 
 export function togglePinnedCommand(id: string): void {
-	const pinned = [...getSettings().pinnedCommands];
+	const pinned = getSettings().pinnedCommands;
 	const idx = pinned.indexOf(id);
-	if (idx >= 0) {
-		pinned.splice(idx, 1);
-	} else {
-		pinned.push(id);
-	}
-	setSetting("pinnedCommands", pinned);
+	setSetting("pinnedCommands", idx >= 0 ? pinned.toSpliced(idx, 1) : [...pinned, id]);
 }
 
 export function movePinnedCommand(index: number, direction: -1 | 1): void {
-	const pinned = [...getSettings().pinnedCommands];
+	const pinned = getSettings().pinnedCommands;
 	const target = index + direction;
 	if (target < 0 || target >= pinned.length) return;
-	[pinned[index], pinned[target]] = [pinned[target], pinned[index]];
-	setSetting("pinnedCommands", pinned);
+	setSetting("pinnedCommands", pinned.with(index, pinned[target]).with(target, pinned[index]));
 }
 
 export function removePinnedAt(index: number): void {
-	const pinned = [...getSettings().pinnedCommands];
-	pinned.splice(index, 1);
-	setSetting("pinnedCommands", pinned);
+	setSetting("pinnedCommands", getSettings().pinnedCommands.toSpliced(index, 1));
 }
 
 export function insertSeparator(index: number, position: "before" | "after"): void {
-	const pinned = [...getSettings().pinnedCommands];
-	pinned.splice(position === "before" ? index : index + 1, 0, "---");
-	setSetting("pinnedCommands", pinned);
+	const at = position === "before" ? index : index + 1;
+	setSetting("pinnedCommands", getSettings().pinnedCommands.toSpliced(at, 0, "---"));
 }
 
 export function reorderPinned(fromIndex: number, toIndex: number): void {
-	const pinned = [...getSettings().pinnedCommands];
-	const [item] = pinned.splice(fromIndex, 1);
-	pinned.splice(toIndex, 0, item);
-	setSetting("pinnedCommands", pinned);
+	const pinned = getSettings().pinnedCommands;
+	setSetting(
+		"pinnedCommands",
+		pinned.toSpliced(fromIndex, 1).toSpliced(toIndex, 0, pinned[fromIndex]),
+	);
 }

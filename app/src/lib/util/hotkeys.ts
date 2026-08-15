@@ -1,5 +1,7 @@
 import { getCommands, getCommand } from "@/store/commands";
-import { emit as emitEvent, useEventValue } from "@/lib/events";
+import { bridgeAcrossWindows, emit as emitEvent, useEventValue } from "@/lib/events";
+import { getLocal, setLocal, reloadLocal } from "@/lib/hooks/useLocalStorage";
+import { msg } from "@/lib/i18n";
 
 const QUICKTAG_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 type QuicktagSlot = (typeof QUICKTAG_SLOTS)[number];
@@ -30,317 +32,347 @@ export interface HotkeyDef {
 const STATIC_HOTKEY_DEFS = [
 	{
 		action: "openCommandPalette",
-		label: "Open command palette",
-		group: "Global",
+		label: msg("Open command palette"),
+		group: msg("Global"),
 		defaultBinding: "Mod+k",
 	},
 	{
 		action: "openManualSearch",
-		label: "Search the manual",
-		group: "Global",
+		label: msg("Search the manual"),
+		group: msg("Global"),
 		defaultBinding: "Mod+?",
 	},
 	{
 		action: "toggleStats",
-		label: "Toggle stats for nerds",
-		group: "Global",
+		label: msg("Toggle stats for nerds"),
+		group: msg("Global"),
 		defaultBinding: "Mod+Shift+d",
 	},
 	{
 		action: "closeMap",
-		label: "Close map",
-		group: "Global",
+		label: msg("Close map"),
+		group: msg("Global"),
 		defaultBinding: "Mod+Shift+w",
 	},
 	{
 		action: "locationSave",
-		label: "Save location",
-		group: "Location Editor",
+		label: msg("Save location"),
+		group: msg("Location Editor"),
 		defaultBinding: "enter",
 	},
 	{
 		action: "locationClose",
-		label: "Close location",
-		group: "Location Editor",
+		label: msg("Close location"),
+		group: msg("Location Editor"),
 		defaultBinding: "escape",
 	},
 	{
 		action: "locationDelete",
-		label: "Delete location",
-		group: "Location Editor",
+		label: msg("Delete location"),
+		group: msg("Location Editor"),
 		defaultBinding: "delete",
 	},
 	{
 		action: "toggleFullscreen",
-		label: "Toggle fullscreen",
-		group: "Location Editor",
+		label: msg("Toggle fullscreen"),
+		group: msg("Location Editor"),
 		defaultBinding: "f",
 	},
 	{
 		action: "returnToSpawn",
-		label: "Return to spawn",
-		group: "Location Editor",
+		label: msg("Return to spawn"),
+		group: msg("Location Editor"),
 		defaultBinding: "r",
 	},
-	{ action: "pointNorth", label: "Point north", group: "Location Editor", defaultBinding: "n" },
+	{
+		action: "pointNorth",
+		label: msg("Point north"),
+		group: msg("Location Editor"),
+		defaultBinding: "n",
+	},
 	{
 		action: "centerRoad",
-		label: "Center toward nearest road direction",
-		group: "Location Editor",
+		label: msg("Center toward nearest road direction"),
+		group: msg("Location Editor"),
 		defaultBinding: "b",
 	},
-	{ action: "zoomIn", label: "Zoom in", group: "Location Editor", defaultBinding: "+" },
-	{ action: "zoomOut", label: "Zoom out", group: "Location Editor", defaultBinding: "-" },
+	{ action: "zoomIn", label: msg("Zoom in"), group: msg("Location Editor"), defaultBinding: "+" },
+	{ action: "zoomOut", label: msg("Zoom out"), group: msg("Location Editor"), defaultBinding: "-" },
 	{
 		action: "panoZoomReset",
-		label: "Zoom all the way out",
-		group: "Location Editor",
+		label: msg("Zoom all the way out"),
+		group: msg("Location Editor"),
 		defaultBinding: "0",
 	},
 	{
 		action: "copyLink",
-		label: "Copy Street View link",
-		group: "Location Editor",
+		label: msg("Copy Street View link"),
+		group: msg("Location Editor"),
 		defaultBinding: "Mod+c",
 	},
 	{
 		action: "toggleCrosshair",
-		label: "Toggle crosshair",
-		group: "Location Editor",
+		label: msg("Toggle crosshair"),
+		group: msg("Location Editor"),
 		defaultBinding: "x",
 	},
 	{
 		action: "toggleHideCar",
-		label: "Toggle hide car",
-		group: "Location Editor",
+		label: msg("Toggle hide car"),
+		group: msg("Location Editor"),
 		defaultBinding: "Mod+h",
 	},
 	{
 		action: "togglePanoUI",
-		label: "Toggle pano UI",
-		group: "Location Editor",
+		label: msg("Toggle pano UI"),
+		group: msg("Location Editor"),
 		defaultBinding: "h",
 	},
 	{
 		action: "cycleMovementMode",
-		label: "Cycle movement mode",
-		group: "Location Editor",
+		label: msg("Cycle movement mode"),
+		group: msg("Location Editor"),
 		defaultBinding: "Shift+m",
 	},
 	{
 		action: "duplicateLocation",
-		label: "Duplicate location",
-		group: "Location Editor",
+		label: msg("Duplicate location"),
+		group: msg("Location Editor"),
 		defaultBinding: "c",
 	},
 	{
 		action: "followRoad",
-		label: "Follow linked panos along road",
-		group: "Location Editor",
+		label: msg("Follow linked panos along road"),
+		group: msg("Location Editor"),
 		defaultBinding: "g",
 	},
 	{
 		action: "downloadPanoTile",
-		label: "Download panorama",
-		group: "Location Editor",
+		label: msg("Download panorama"),
+		group: msg("Location Editor"),
 		defaultBinding: "Mod+Shift+s",
 	},
 	{
 		action: "toggleFullscreenMap",
-		label: "Toggle fullscreen map",
-		group: "Global",
+		label: msg("Toggle fullscreen map"),
+		group: msg("Global"),
 		defaultBinding: "Mod+\\",
 	},
 	{
 		action: "nextPanoDate",
-		label: "Next date cycle",
-		group: "Location Editor",
+		label: msg("Next date cycle"),
+		group: msg("Location Editor"),
 		defaultBinding: "]",
 	},
 	{
 		action: "prevPanoDate",
-		label: "Previous date cycle",
-		group: "Location Editor",
+		label: msg("Previous date cycle"),
+		group: msg("Location Editor"),
 		defaultBinding: "[",
 	},
-	{ action: "spin180", label: "Spin 180°", group: "Location Editor", defaultBinding: "t" },
+	{
+		action: "spin180",
+		label: msg("Spin 180°"),
+		group: msg("Location Editor"),
+		defaultBinding: "t",
+	},
 	{
 		action: "refreshPano",
-		label: "Refresh panorama",
-		group: "Location Editor",
+		label: msg("Refresh panorama"),
+		group: msg("Location Editor"),
 		defaultBinding: "Shift+r",
 	},
 	{
 		action: "reviewNext",
-		label: "Next location",
-		group: "Review",
+		label: msg("Next location"),
+		group: msg("Review"),
 		defaultBinding: "Mod+ArrowRight",
 	},
 	{
 		action: "reviewPrev",
-		label: "Previous location",
-		group: "Review",
+		label: msg("Previous location"),
+		group: msg("Review"),
 		defaultBinding: "Mod+ArrowLeft",
 	},
 	{
 		action: "panLeft",
-		label: "Pan left",
-		group: "Map Navigation",
+		label: msg("Pan left"),
+		group: msg("Map Navigation"),
 		defaultBinding: "a",
 		altSlow: true,
 	},
 	{
 		action: "panRight",
-		label: "Pan right",
-		group: "Map Navigation",
+		label: msg("Pan right"),
+		group: msg("Map Navigation"),
 		defaultBinding: "d",
 		altSlow: true,
 	},
-	{ action: "panUp", label: "Pan up", group: "Map Navigation", defaultBinding: "w", altSlow: true },
+	{
+		action: "panUp",
+		label: msg("Pan up"),
+		group: msg("Map Navigation"),
+		defaultBinding: "w",
+		altSlow: true,
+	},
 	{
 		action: "panDown",
-		label: "Pan down",
-		group: "Map Navigation",
+		label: msg("Pan down"),
+		group: msg("Map Navigation"),
 		defaultBinding: "s",
 		altSlow: true,
 	},
 	{
 		action: "mapZoomIn",
-		label: "Zoom in",
-		group: "Map Navigation",
+		label: msg("Zoom in"),
+		group: msg("Map Navigation"),
 		defaultBinding: "Shift+w",
 		altSlow: true,
 	},
 	{
 		action: "mapZoomOut",
-		label: "Zoom out",
-		group: "Map Navigation",
+		label: msg("Zoom out"),
+		group: msg("Map Navigation"),
 		defaultBinding: "Shift+s",
 		altSlow: true,
 	},
 	{
 		action: "mapZoomBounds",
-		label: "Zoom to bounds",
-		group: "Map Navigation",
+		label: msg("Zoom to bounds"),
+		group: msg("Map Navigation"),
 		defaultBinding: "Shift+b",
 	},
 	{
 		action: "mapZoomReset",
-		label: "Zoom all the way out",
-		group: "Map Navigation",
+		label: msg("Zoom all the way out"),
+		group: msg("Map Navigation"),
 		defaultBinding: "Shift+0",
 	},
 	{
 		action: "panoLookLeft",
-		label: "Look left",
-		group: "Location Editor",
+		label: msg("Look left"),
+		group: msg("Location Editor"),
 		defaultBinding: "ArrowLeft",
 		altSlow: true,
 	},
 	{
 		action: "panoLookRight",
-		label: "Look right",
-		group: "Location Editor",
+		label: msg("Look right"),
+		group: msg("Location Editor"),
 		defaultBinding: "ArrowRight",
 		altSlow: true,
 	},
 	{
 		action: "panoLookUp",
-		label: "Look up",
-		group: "Location Editor",
+		label: msg("Look up"),
+		group: msg("Location Editor"),
 		defaultBinding: "ArrowUp",
 		altSlow: true,
 	},
 	{
 		action: "panoLookDown",
-		label: "Look down",
-		group: "Location Editor",
+		label: msg("Look down"),
+		group: msg("Location Editor"),
 		defaultBinding: "ArrowDown",
 		altSlow: true,
 	},
 	{
 		action: "panoMoveForward",
-		label: "Move forward",
-		group: "Location Editor",
+		label: msg("Move forward"),
+		group: msg("Location Editor"),
 		defaultBinding: "Shift+ArrowUp",
 		altSlow: true,
 	},
 	{
 		action: "panoMoveBackward",
-		label: "Move backward",
-		group: "Location Editor",
+		label: msg("Move backward"),
+		group: msg("Location Editor"),
 		defaultBinding: "Shift+ArrowDown",
 		altSlow: true,
 	},
 	{
 		action: "jumpForward",
-		label: "Jump forward 100m",
-		group: "Location Editor",
+		label: msg("Jump forward 100m"),
+		group: msg("Location Editor"),
 		defaultBinding: "}",
 	},
 	{
 		action: "jumpBackward",
-		label: "Jump backward 100m",
-		group: "Location Editor",
+		label: msg("Jump backward 100m"),
+		group: msg("Location Editor"),
 		defaultBinding: "{",
 	},
 	{
 		action: "panToLocation",
-		label: "Pan map to location",
-		group: "Location Editor",
+		label: msg("Pan map to location"),
+		group: msg("Location Editor"),
 		defaultBinding: "l",
 	},
 	{
 		action: "viewportLock",
-		label: "Lock viewport direction",
-		group: "Location Editor",
+		label: msg("Lock viewport direction"),
+		group: msg("Location Editor"),
 		defaultBinding: "v",
 	},
 	{
 		action: "countrySelect",
-		label: "Hold + click for country (+Shift for subdivision)",
-		group: "Global",
+		label: msg("Hold + click for country (+Shift for subdivision)"),
+		group: msg("Global"),
 		defaultBinding: "q",
 	},
 	{
 		action: "deletePolygon",
-		label: "Hold + click to delete polygon",
-		group: "Global",
+		label: msg("Hold + click to delete polygon"),
+		group: msg("Global"),
 		defaultBinding: "e",
 	},
 	{
 		action: "mapZoomSelection",
-		label: "Zoom to selection bounds",
-		group: "Map Navigation",
+		label: msg("Zoom to selected locations"),
+		group: msg("Map Navigation"),
 		defaultBinding: "Shift+e",
 	},
 	{
 		action: "toggleSelectOnly",
-		label: "Toggle select-only mode",
-		group: "Map Navigation",
+		label: msg("Toggle select-only mode"),
+		group: msg("Map Navigation"),
 		defaultBinding: "o",
 	},
 	{
 		action: "toggleSvOpacity",
-		label: "Toggle Street View layer opacity",
-		group: "Map Navigation",
+		label: msg("Toggle Street View layer opacity"),
+		group: msg("Map Navigation"),
 		defaultBinding: "p",
 	},
 	{
 		action: "toggleMarkerOpacity",
-		label: "Toggle marker layer opacity",
-		group: "Map Navigation",
+		label: msg("Toggle marker layer opacity"),
+		group: msg("Map Navigation"),
 		defaultBinding: "m",
 	},
 ] as const satisfies readonly (Omit<HotkeyDef, "action"> & { action: string })[];
+
+// Spelled out rather than built from a template: the extractor only sees plain literals, so an
+// interpolated `msg(\`Quick-tag slot ${n}\`)` would silently contribute nothing to the catalog.
+const QUICKTAG_LABELS: Record<QuicktagSlot, string> = {
+	1: msg("Quick-tag slot 1"),
+	2: msg("Quick-tag slot 2"),
+	3: msg("Quick-tag slot 3"),
+	4: msg("Quick-tag slot 4"),
+	5: msg("Quick-tag slot 5"),
+	6: msg("Quick-tag slot 6"),
+	7: msg("Quick-tag slot 7"),
+	8: msg("Quick-tag slot 8"),
+	9: msg("Quick-tag slot 9"),
+};
 
 const RAW_HOTKEY_DEFS: HotkeyDef[] = [
 	...STATIC_HOTKEY_DEFS,
 	...QUICKTAG_SLOTS.map(
 		(n): HotkeyDef => ({
 			action: `quicktag${n}`,
-			label: `Quick-tag slot ${n}`,
-			group: "Quicktag",
+			label: QUICKTAG_LABELS[n],
+			group: msg("Quicktag"),
 			defaultBinding: String(n),
 		}),
 	),
@@ -351,7 +383,7 @@ export function getAllBindings(): HotkeyDef[] {
 	const commandDefs: HotkeyDef[] = getCommands().map((cmd) => ({
 		action: cmd.id as HotkeyAction,
 		label: cmd.label,
-		group: "Commands",
+		group: msg("Commands"),
 		defaultBinding: cmd.defaultBinding ?? "",
 	}));
 	return [...commandDefs, ...RAW_HOTKEY_DEFS];
@@ -361,13 +393,12 @@ const STORAGE_KEY = "hotkeyOverrides";
 
 type HotkeyOverrides = Partial<Record<string, string>>;
 
-let overrides: HotkeyOverrides = {};
-try {
-	const stored = localStorage.getItem(STORAGE_KEY);
-	if (stored) overrides = JSON.parse(stored);
-} catch {
-	// ignored
-}
+let overrides: HotkeyOverrides = getLocal<HotkeyOverrides>(STORAGE_KEY, {});
+
+// Another window changed bindings: reread the shared localStorage before re-emitting.
+bridgeAcrossWindows("hotkeys:changed", () => {
+	overrides = reloadLocal<HotkeyOverrides>(STORAGE_KEY, {});
+});
 
 function getDefaultBinding(action: string): string {
 	for (const d of RAW_HOTKEY_DEFS) {
@@ -406,7 +437,7 @@ export function getConflicts(action: string, binding: string): HotkeyDef[] {
 
 export function setBinding(action: HotkeyAction, binding: string): void {
 	overrides[action] = binding;
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+	setLocal(STORAGE_KEY, overrides);
 	emitEvent("hotkeys:changed");
 }
 
@@ -416,20 +447,20 @@ export function reassignBinding(action: HotkeyAction, binding: string): string[]
 	const cleared = getConflicts(action, binding).map((d) => d.action);
 	for (const a of cleared) overrides[a] = "";
 	overrides[action] = binding;
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+	setLocal(STORAGE_KEY, overrides);
 	emitEvent("hotkeys:changed");
 	return cleared;
 }
 
 export function resetBinding(action: HotkeyAction): void {
 	delete overrides[action];
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+	setLocal(STORAGE_KEY, overrides);
 	emitEvent("hotkeys:changed");
 }
 
 export function resetAllBindings(): void {
 	overrides = {};
-	localStorage.removeItem(STORAGE_KEY);
+	setLocal(STORAGE_KEY, overrides);
 	emitEvent("hotkeys:changed");
 }
 

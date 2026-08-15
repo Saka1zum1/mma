@@ -1,15 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
 	addLocs,
 	createLocation,
 	openLocation,
 	closeLocation,
 	refreshSelections,
 	withApi,
+	useMap,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 
@@ -71,15 +68,13 @@ async function waitForPreview() {
 // ============================================================================
 
 describe("Enrichment — single location via preview", () => {
-	let mapId: string;
+	useMap("E2E Enrich Single", { closeLocation: true });
 	let enrichBasicId: number;
 	let enrichCustomExtraId: number;
 	let enrichExistingMetaId: number;
 	let enrichNoPanoId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Enrich Single");
 		await updateMapSettings({ enrichMetadata: true, enrichFields: undefined });
 		const locs = [
 			loc({
@@ -113,13 +108,6 @@ describe("Enrichment — single location via preview", () => {
 		enrichExistingMetaId = ids[2];
 		enrichNoPanoId = ids[3];
 	});
-
-	after(async () => {
-		await closeLocation();
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	afterEach(async () => {
 		await closeLocation();
 	});
@@ -219,12 +207,10 @@ describe("Enrichment — single location via preview", () => {
 // ============================================================================
 
 describe("Enrichment — respects enrichFields setting", () => {
-	let mapId: string;
+	useMap("E2E Enrich Fields", { closeLocation: true });
 	let fieldsSelectiveId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Enrich Fields");
 		const locs = [
 			loc({
 				lat: OFFICIAL_COORDS.lat,
@@ -236,13 +222,6 @@ describe("Enrichment — respects enrichFields setting", () => {
 		const ids = await addLocs(locs);
 		fieldsSelectiveId = ids[0];
 	});
-
-	after(async () => {
-		await closeLocation();
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	afterEach(async () => {
 		await closeLocation();
 	});
@@ -292,12 +271,10 @@ describe("Enrichment — respects enrichFields setting", () => {
 // ============================================================================
 
 describe("Enrichment — auto-registers field defs on map meta", () => {
-	let mapId: string;
+	useMap("E2E Enrich FieldDefs", { closeLocation: true });
 	let defsAutoId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Enrich FieldDefs");
 		await updateMapSettings({ enrichMetadata: true, enrichFields: undefined });
 		const locs = [
 			loc({
@@ -310,13 +287,6 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 		const ids = await addLocs(locs);
 		defsAutoId = ids[0];
 	});
-
-	after(async () => {
-		await closeLocation();
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	afterEach(async () => {
 		await closeLocation();
 	});
@@ -424,12 +394,10 @@ describe("Enrichment — auto-registers field defs on map meta", () => {
 // ============================================================================
 
 describe("Enrichment — exact date via preview", () => {
-	let mapId: string;
+	useMap("E2E Enrich ExactDate", { closeLocation: true });
 	let exactEnrichId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Enrich ExactDate");
 		await updateMapSettings({ enrichMetadata: true, enrichFields: undefined });
 		const locs = [
 			loc({
@@ -442,13 +410,6 @@ describe("Enrichment — exact date via preview", () => {
 		const ids = await addLocs(locs);
 		exactEnrichId = ids[0];
 	});
-
-	after(async () => {
-		await closeLocation();
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	afterEach(async () => {
 		await closeLocation();
 	});
@@ -502,15 +463,13 @@ describe("Enrichment — exact date via preview", () => {
 // ============================================================================
 
 describe("Enrichment — multiple providers merge without clobbering", () => {
-	let mapId: string;
+	useMap("E2E Enrich Merge", { closeLocation: true });
 	let singleId: number;
 	let bulkAId: number;
 	let bulkBId: number;
 	let trigId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Enrich Merge");
 		await updateMapSettings({ enrichMetadata: true, enrichFields: undefined });
 
 		// Register four providers writing distinct keys. They gate on per-test sentinel
@@ -573,13 +532,6 @@ describe("Enrichment — multiple providers merge without clobbering", () => {
 		bulkBId = ids[2];
 		trigId = ids[3];
 	});
-
-	after(async () => {
-		await closeLocation();
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	afterEach(async () => {
 		await closeLocation();
 	});
@@ -662,14 +614,12 @@ describe("Enrichment — multiple providers merge without clobbering", () => {
 // ============================================================================
 
 describe("Enrichment — metadata filter uses registered field types", () => {
-	let mapId: string;
+	useMap("E2E Enrich Filter");
 	let filterAId: number;
 	let filterBId: number;
 	let filterCId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Enrich Filter");
 		const locs = [
 			loc({
 				lat: 10,
@@ -708,12 +658,6 @@ describe("Enrichment — metadata filter uses registered field types", () => {
 			return "ok";
 		});
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("numeric filter (altitude > 75) selects correct locations", async () => {
 		await withApi(async (api) => {
 			await api.addSelections([

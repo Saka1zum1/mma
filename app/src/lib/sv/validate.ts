@@ -2,7 +2,7 @@ import { hasLoadAsPanoId } from "@/types";
 import type { Location } from "@/bindings.gen";
 import { ValidationState } from "@/store/selections";
 import { fetchSvMetadata } from "./svMeta";
-import { isOfficialPano } from "./panoId";
+import { isOfficialPano, newestOfficialPano } from "./panoId";
 import { getPanoAtCoords, isUnofficial } from "./lookup";
 import { runConcurrent } from "@/lib/util/concurrent";
 
@@ -11,57 +11,56 @@ const GOOD_CAM_TYPES = new Set(["gen4", "gen2"]);
 export async function validateOne(loc: Location, signal?: AbortSignal): Promise<ValidationState> {
 	signal?.throwIfAborted();
 
-	const n = hasLoadAsPanoId(loc);
-	let r: google.maps.StreetViewResolvedPanoramaData | null = null;
-	let i: google.maps.StreetViewResolvedPanoramaData | null = null;
-	let a = ValidationState.Ok;
+	const pinned = hasLoadAsPanoId(loc);
+	let data: google.maps.StreetViewResolvedPanoramaData | null = null;
+	let coordData: google.maps.StreetViewResolvedPanoramaData | null = null;
+	let state = ValidationState.Ok;
 
 	// Fetch by pano ID if stored
 	if (loc.panoId != null) {
-		[r] = await fetchSvMetadata([loc.panoId]).catch(() => [null]);
+		[data] = await fetchSvMetadata([loc.panoId]).catch(() => [null]);
 	}
 
-	if (n) {
+	if (pinned) {
 		// LoadAsPanoId: if pano lookup failed, mark broke, fall back to coord
-		if (r == null) {
-			if (loc.panoId != null) a = ValidationState.PanoIdBroke;
+		if (data == null) {
+			if (loc.panoId != null) state = ValidationState.PanoIdBroke;
 			const coordPano = await getPanoAtCoords(loc.lat, loc.lng);
-			if (coordPano) [r] = await fetchSvMetadata([coordPano]).catch(() => [null]);
+			if (coordPano) [data] = await fetchSvMetadata([coordPano]).catch(() => [null]);
 		}
 	} else {
 		// No LoadAsPanoId: do coord lookup
 		const coordPano = await getPanoAtCoords(loc.lat, loc.lng);
-		if (coordPano) [i] = await fetchSvMetadata([coordPano]).catch(() => [null]);
+		if (coordPano) [coordData] = await fetchSvMetadata([coordPano]).catch(() => [null]);
 	}
 
-	r ??= i;
+	data ??= coordData;
 
-	if (r == null) return ValidationState.NotFound;
-	if (isUnofficial(r)) return ValidationState.Unofficial;
+	if (data == null) return ValidationState.NotFound;
+	if (isUnofficial(data)) return ValidationState.Unofficial;
 
-	// Badcam check (only when !n)
-	if (!n && r.extra?.cameraType === "badcam" && r.time?.length) {
-		const timePanoIds = r.time.map((t) => t.pano);
+	// Badcam check (only when not pinned)
+	if (!pinned && data.extra?.cameraType === "badcam" && data.time?.length) {
+		const timePanoIds = data.time.map((t) => t.pano);
 		const timeResults = await fetchSvMetadata(timePanoIds).catch(() => []);
 		if (timeResults.some((t) => t && GOOD_CAM_TYPES.has(t.extra?.cameraType ?? ""))) {
 			return ValidationState.GoodcamAvailable;
 		}
 	}
 
-	// Coord update (only when !n, since i is only set then)
-	if (i != null && i.location.pano !== r.location.pano) {
+	// Coord update (only when not pinned, since coordData is only set then)
+	if (coordData != null && coordData.location.pano !== data.location.pano) {
 		return ValidationState.UpdateApplied;
 	}
 
-	// Timeline check
-	const time = r.time ?? [];
-	const o = time.filter((t) => isOfficialPano(t.pano));
-	const s = o.findIndex((t) => t.pano === loc.panoId);
-	if (s !== -1 && s !== o.length - 1) {
-		return n ? ValidationState.UpdateAvailable : ValidationState.UpdateApplied;
+	// Timeline check: the stored pano is a known official capture, but not the newest one
+	const time = data.time ?? [];
+	const storedIsOfficial = time.some((t) => t.pano === loc.panoId && isOfficialPano(t.pano));
+	if (storedIsOfficial && newestOfficialPano(time)?.pano !== loc.panoId) {
+		return pinned ? ValidationState.UpdateAvailable : ValidationState.UpdateApplied;
 	}
 
-	return a;
+	return state;
 }
 
 export interface ValidationProgress {

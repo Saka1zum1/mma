@@ -2,9 +2,18 @@
 //! trait. The engine (sync_engine.rs) is generic over [`SyncProvider`]; diff/keying are pure.
 //! The TS side keeps UI, scheduling and auth.
 
-use crate::types::{Location, LocationFlags};
+use crate::types::{AppError, Location, LocationFlags};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+
+/// The one encoding of "this provider rejected our credentials". Providers stamp it where the
+/// 401 is seen; the prefix is the wire contract the TS sync UI classifies on
+/// (`lib/sync/provider.ts`), which strips it before display.
+pub const AUTH_PREFIX: &str = "auth: ";
+
+pub fn auth_error(message: impl std::fmt::Display) -> AppError {
+    AppError(format!("{AUTH_PREFIX}{message}"))
+}
 
 /// Keep only the flag bits this crate declares. JS-side virtual bits - and any future bit not
 /// added to [`LocationFlags`] - are structurally excluded from the synced contract, so a new

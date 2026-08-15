@@ -7,7 +7,7 @@ import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
 import { Icon } from "@/components/primitives/Icon";
 import { useSetting, setSetting } from "@/store/settings";
 import { displayTagName } from "@/store/selections";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 export function FullscreenTagBar({
 	pendingTags,
@@ -18,7 +18,6 @@ export function FullscreenTagBar({
 	onChangeTags: (tags: string[]) => void;
 	tags: Tag[];
 }) {
-	const { t } = useT();
 	const [input, setInput] = useState("");
 	const [focused, setFocused] = useState(false);
 	const [hovered, setHovered] = useState(false);
@@ -48,16 +47,10 @@ export function FullscreenTagBar({
 
 	const pendingLower = new Set(pendingTags.map((n) => n.toLowerCase()));
 	const sorted = sortTagsByMode(tags, tagSortMode, getMapState().tagCounts);
-	const suggestionLimit = useSetting("tagSuggestionLimit");
 	const available = sorted.filter((t) => !pendingLower.has(t.name.toLowerCase()));
-	const capped =
-		suggestionLimit > 0 ? available.slice(0, suggestionLimit) : available;
 	const filtered = input.trim()
-		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase())).slice(
-				0,
-				suggestionLimit || available.length,
-			)
-		: capped;
+		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase()))
+		: available;
 
 	return (
 		<div
@@ -91,7 +84,7 @@ export function FullscreenTagBar({
 						<input
 							className="form-add-tag__input fullscreen-tagbar__input"
 							type="text"
-							placeholder={t("editor.addTagPlaceholder")}
+							placeholder={t("Add a tag...")}
 							spellCheck={false}
 							value={input}
 							onChange={(e) => setInput(e.target.value)}
@@ -104,7 +97,7 @@ export function FullscreenTagBar({
 			<button
 				type="button"
 				className="fullscreen-tagbar__collapse"
-				aria-label={collapsed ? t("editor.expandTagBar") : t("editor.collapseTagBar")}
+				aria-label={collapsed ? t("Expand tag bar") : t("Collapse tag bar")}
 				onClick={() => setSetting("fullscreenTagbarCollapsed", !collapsed)}
 			>
 				<Icon path={collapsed ? mdiChevronUp : mdiChevronDown} size={16} />

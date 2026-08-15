@@ -328,6 +328,24 @@ pub struct MapExtra {
     pub fields: Option<HashMap<String, ExtraFieldDef>>,
 }
 
+impl MapExtra {
+    /// Parse from the `maps.extra` JSON column. Field defs registered before ingest
+    /// canonicalized keys can carry escapes and match no location, so decode them
+    /// here; the next def write persists the repair. Default on invalid JSON.
+    pub fn from_json(s: &str) -> Self {
+        let mut extra: MapExtra = serde_json::from_str(s).unwrap_or_default();
+        if let Some(fields) = extra.fields.take() {
+            extra.fields = Some(
+                fields
+                    .into_iter()
+                    .map(|(k, v)| (crate::types::decode_json_key(&k).into_owned(), v))
+                    .collect(),
+            );
+        }
+        extra
+    }
+}
+
 /// Score bounding box: either `"auto"` (computed from locations) or an
 /// explicit `[south, west, north, east]` rectangle.
 #[derive(Clone, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -347,25 +365,38 @@ impl Default for ScoreBounds {
 // Known field defs + auto-registration
 // ---------------------------------------------------------------------------
 
-struct KnownField {
-    key: &'static str,
-    type_tag: &'static str,
-    label: &'static str,
-    values: &'static [&'static str],
-    labels: &'static [(&'static str, &'static str)],
-    circular_period: Option<f64>,
+/// One entry of the SV metadata field catalog. Exported to TS as the `KNOWN_FIELDS`
+/// constant, which is the only field list the frontend has.
+#[derive(serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownField {
+    pub key: &'static str,
+    #[serde(rename = "type")]
+    pub field_type: ExtraFieldType,
+    pub label: &'static str,
+    pub values: &'static [&'static str],
+    pub labels: &'static [(&'static str, &'static str)],
+    pub circular_period: Option<f64>,
+    /// Excluded from the default enrich set; the user must opt in.
+    pub default_off: bool,
 }
 
 impl KnownField {
-    const fn simple(key: &'static str, type_tag: &'static str, label: &'static str) -> Self {
+    const fn simple(key: &'static str, field_type: ExtraFieldType, label: &'static str) -> Self {
         Self {
             key,
-            type_tag,
+            field_type,
             label,
             values: &[],
             labels: &[],
             circular_period: None,
+            default_off: false,
         }
+    }
+
+    const fn off(mut self) -> Self {
+        self.default_off = true;
+        self
     }
 }
 
@@ -390,50 +421,43 @@ camera_types! {
     Trekker => "trekker", "Trekker";
 }
 
-static KNOWN_FIELDS: &[KnownField] = &[
-    KnownField::simple("altitude", "number", "Altitude"),
-    KnownField::simple("countryCode", "string", "Country code"),
+pub static KNOWN_FIELDS: &[KnownField] = &[
+    KnownField::simple("altitude", ExtraFieldType::Number, "Altitude"),
+    KnownField::simple("countryCode", ExtraFieldType::String, "Country code"),
     KnownField {
         key: "cameraType",
-        type_tag: "enum",
+        field_type: ExtraFieldType::Enum,
         label: "Camera type",
         values: CAMERA_TYPE_VALUES,
         labels: CAMERA_TYPE_LABELS,
         circular_period: None,
+        default_off: false,
     },
     KnownField {
         key: "panoType",
-        type_tag: "enum",
+        field_type: ExtraFieldType::Enum,
         label: "Pano type",
         values: &["2", "3", "10"],
         labels: &[("2", "Official"), ("3", "Unknown"), ("10", "User uploaded")],
         circular_period: None,
+        default_off: false,
     },
-    KnownField::simple("imageDate", "month", "Image date"),
-    KnownField::simple("datetime", "date", "Exact date"),
-    KnownField::simple("timezone", "enum", "Timezone"),
+    KnownField::simple("imageDate", ExtraFieldType::Month, "Image date"),
+    KnownField::simple("datetime", ExtraFieldType::Date, "Exact date").off(),
+    KnownField::simple("timezone", ExtraFieldType::Enum, "Timezone").off(),
     KnownField {
         key: "drivingDirection",
-        type_tag: "number",
+        field_type: ExtraFieldType::Number,
         label: "Driving direction",
         values: &[],
         labels: &[],
         circular_period: Some(360.0),
+        default_off: true,
     },
-    KnownField::simple("uploaderName", "string", "Uploader"),
-    KnownField::simple("coverageDates", "array", "Coverage dates"),
+    KnownField::simple("uploaderName", ExtraFieldType::String, "Uploader").off(),
+    KnownField::simple("coverageDates", ExtraFieldType::Array, "Coverage dates").off(),
+    KnownField::simple("subdivision", ExtraFieldType::String, "Subdivision").off(),
 ];
-
-fn type_from_tag(tag: &str) -> ExtraFieldType {
-    match tag {
-        "number" => ExtraFieldType::Number,
-        "date" => ExtraFieldType::Date,
-        "month" => ExtraFieldType::Month,
-        "enum" => ExtraFieldType::Enum,
-        "array" => ExtraFieldType::Array,
-        _ => ExtraFieldType::String,
-    }
-}
 
 /// Returns a curated field definition for well-known SV metadata keys
 /// (altitude, countryCode, cameraType, etc.). Falls back to `None` for
@@ -443,7 +467,7 @@ pub fn known_field_def(key: &str) -> Option<ExtraFieldDef> {
         .iter()
         .find(|f| f.key == key)
         .map(|f| ExtraFieldDef {
-            field_type: type_from_tag(f.type_tag),
+            field_type: f.field_type.clone(),
             label: Some(f.label.into()),
             values: if f.values.is_empty() {
                 None
@@ -535,7 +559,7 @@ pub fn persist_field_defs(
         params![map_id],
         |row| row.get(0),
     )?;
-    let mut extra: MapExtra = serde_json::from_str(&extra_str).unwrap_or_default();
+    let mut extra = MapExtra::from_json(&extra_str);
     let fields = extra.fields.get_or_insert_with(HashMap::new);
     for (k, v) in new_defs {
         fields.entry(k.clone()).or_insert_with(|| v.clone());
@@ -779,7 +803,7 @@ pub fn store_update_map_meta(
                 r.get(0)
             })
             .unwrap_or_default();
-        serde_json::from_str::<MapExtra>(&s).ok()
+        Some(MapExtra::from_json(&s))
     } else {
         None
     };
@@ -968,12 +992,33 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    fn map_settings_never_serializes_absent_keys() {
+        // JS reads settings with no fallback, so every key must survive an old
+        // settings row: missing on disk means the Rust default, present on the wire.
+        let settings: MapSettings = serde_json::from_str(r#"{"pointAlongRoad":true}"#).unwrap();
+        assert!(!settings.enrich_metadata);
+        let value: serde_json::Value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(value["enrichMetadata"], serde_json::Value::Bool(false));
+    }
+
+    #[test]
     fn map_settings_key_bindings_default_empty() {
         // Old settings JSON (no keyBindings) must deserialize with an empty list.
         let old_json = r#"{"pointAlongRoad":true}"#;
         let settings: MapSettings = serde_json::from_str(old_json).unwrap();
         assert!(settings.key_bindings.is_empty());
         assert!(MapSettings::default().key_bindings.is_empty());
+    }
+
+    #[test]
+    fn map_extra_decodes_escaped_field_keys() {
+        // Defs registered before ingest canonicalized keys spell the field with its raw
+        // JSON escape; reading them back must yield the name the location data uses.
+        let bs = '\\';
+        let json = format!(r#"{{"fields":{{"caf{bs}{bs}u00e9":{{"type":"string"}}}}}}"#);
+        let extra = MapExtra::from_json(&json);
+        let fields = extra.fields.unwrap();
+        assert!(fields.contains_key("café"), "got {:?}", fields.keys());
     }
 
     #[test]

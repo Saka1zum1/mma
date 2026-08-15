@@ -1,31 +1,5 @@
 import type { Location, ExtraFieldDef, EnrichCtx } from "mma-plugin-types";
 
-const BINARY_NAME = "mma-copyright";
-
-const IS_WIN = navigator.userAgent.includes("Windows");
-const SEP = IS_WIN ? "\\" : "/";
-
-let _pluginDir: string | null = null;
-async function pluginDir(): Promise<string> {
-	if (!_pluginDir) {
-		const appData = await MMA.cmd.getAppDataDir();
-		_pluginDir = `${appData}${SEP}plugins${SEP}copyright`;
-	}
-	return _pluginDir;
-}
-
-// Models ship inside the sidecar bundle, extracted next to the binary.
-async function modelDir(): Promise<string> {
-	return `${await pluginDir()}${SEP}sidecar${SEP}models`;
-}
-
-let tempCounter = 0;
-
-async function writeInputFile(data: unknown): Promise<string> {
-	const name = `mma_copyright_${Date.now()}_${tempCounter++}.json`;
-	return MMA.cmd.writeTempFile(name, JSON.stringify(data));
-}
-
 interface DetectResult {
 	panoId: string;
 	year: number | null;
@@ -75,41 +49,27 @@ async function enrich(
 	}
 	const panoIds = Array.from(idsByPano.keys());
 
-	const inputPath = await writeInputFile({ panoIds });
-	const md = await modelDir();
-	const proc = await MMA.sidecar.spawn("copyright", BINARY_NAME, [
-		"detect",
-		"--input",
-		inputPath,
-		"--model-dir",
-		md,
-	]);
-
-	const abortHandler = () => proc.kill();
-	ctx?.signal?.addEventListener("abort", abortHandler);
-
-	proc.onStderr((line) => console.error("[copyright]", line));
-	proc.onLine((line) => {
-		let result: DetectResult;
-		try {
-			result = JSON.parse(line);
-		} catch {
-			return;
-		}
-		const ids = idsByPano.get(result.panoId);
-		if (!ids) return;
-		for (const id of ids) {
-			if (result.error) {
-				ctx?.onFail?.(id);
-			} else if (result.year != null) {
-				patches.set(id, { copyrightYear: result.year });
-			}
-			ctx?.onUnit?.();
-		}
-	});
-
-	await new Promise<void>((resolve) => proc.onExit(() => resolve()));
-	ctx?.signal?.removeEventListener("abort", abortHandler);
+	try {
+		await MMA.sidecar.request<DetectResult>("copyright", "detect", { panoIds }, {
+			signal: ctx?.signal,
+			onLog: (line) => console.error("[copyright]", line),
+			onLine: (result) => {
+				const ids = idsByPano.get(result.panoId);
+				if (!ids) return;
+				for (const id of ids) {
+					if (result.error) {
+						ctx?.onFail?.(id);
+					} else if (result.year != null) {
+						patches.set(id, { copyrightYear: result.year });
+					}
+					ctx?.onUnit?.();
+				}
+			},
+		});
+	} catch (e) {
+		// Cancelling keeps whatever was detected before the abort.
+		if (!ctx?.signal?.aborted) throw e;
+	}
 
 	return patches;
 }

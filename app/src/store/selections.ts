@@ -6,9 +6,11 @@ import { getVisibleTags, getTag } from "@/store/useMapStore";
 import { hslToRgb } from "@/lib/util/color";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { localDateTime, utcDateTime } from "@/lib/util/format";
-import { isVariant, unionTuple, type Variant } from "@/types/util";
+import { clamp, isVariant, unionTuple, type Variant } from "@/types/util";
 import { pointInPolygon } from "@/lib/geo/geo";
 import { getSettings } from "@/store/settings";
+import { dayMonthFmt } from "@/lib/util/format";
+import { t, msg } from "@/lib/i18n";
 import { shortestUniqueSuffixes } from "@/components/editor/tags/tagTreeRange";
 import { subscribe } from "@/lib/events";
 
@@ -36,7 +38,8 @@ export enum ValidationState {
 	GoodcamAvailable = 6,
 }
 
-/** Display symbol/word for each filter operator. */
+/** Display symbol/word for each filter operator. Symbols are language-neutral; only the worded
+ *  operators are marked for translation. */
 export const OP_LABELS: Record<FilterOp, string> = {
 	eq: "=",
 	neq: "!=",
@@ -44,13 +47,13 @@ export const OP_LABELS: Record<FilterOp, string> = {
 	lt: "<",
 	gte: ">=",
 	lte: "<=",
-	between: "between",
-	between_anyyear: "between (any year)",
-	between_anytime: "between (any date)",
-	has: "has",
-	nothas: "does not have",
-	contains: "contains",
-	notcontains: "does not contain",
+	between: msg("between"),
+	between_anyyear: msg("between (any year)"),
+	between_anytime: msg("between (any date)"),
+	has: msg("has"),
+	nothas: msg("does not have"),
+	contains: msg("contains"),
+	notcontains: msg("does not contain"),
 };
 
 export function colorForKey(key: string): [number, number, number] {
@@ -79,7 +82,7 @@ export function isolateGhostKeys(
  *  `n` is floored and clamped to `[0, ids.length]` (so over-large counts return all ids).
  *  Uses a partial Fisher–Yates shuffle, so the result contains no duplicates and `ids` is not mutated. */
 export function sampleIds(ids: number[], n: number): number[] {
-	const k = Math.max(0, Math.min(Math.floor(n), ids.length));
+	const k = clamp(Math.floor(n), 0, ids.length);
 	const pool = ids.slice();
 	for (let i = 0; i < k; i += 1) {
 		const j = i + Math.floor(Math.random() * (pool.length - i));
@@ -118,32 +121,30 @@ function polygonKey(geom: PolygonGeometry): string {
 }
 
 function keyForProps(props: SelectionProps, locations: number[]): string {
-	return (
-		match(props)
-			.with({ type: "Locations" }, () => locationsKey(locations))
-			.with({ type: "Everything" }, () => "everything")
-			.with({ type: "Polygon" }, (p) => polygonKey(p.polygon))
-			.with({ type: "Tag" }, (p) => `tag:${p.tagId}`)
-			.with({ type: "Untagged" }, () => "untagged")
-			.with({ type: "Unpanned" }, () => "unpanned")
-			.with({ type: "PanoIds" }, () => "panoids")
-			.with({ type: "NotPanoIds" }, () => "notpanoids")
-			.with({ type: "Uncommitted" }, () => "uncommitted")
-			.with({ type: "Duplicates" }, (p) => `duplicates:${p.distance}`)
-			.with({ type: "Manual" }, () => "manual")
-			.with({ type: "ValidationState" }, (p) => `validation:${p.state}`)
-			.with({ type: "Reviewed" }, (p) => `review:${p.sessionId}:${p.mode}`)
-			.with({ type: "Intersection" }, (p) => p.selections.map((s) => `(${s.key})`).join("^"))
-			.with({ type: "Union" }, (p) => p.selections.map((s) => `(${s.key})`).join("|"))
-			.with({ type: "Invert" }, (p) => `!${p.selections[0].key}`)
-			.with(
-				{ type: "Filter" },
-				(p) =>
-					`filter:${p.field}:${p.op}:${String(p.value)}${p.value2 != null ? `:${String(p.value2)}` : ""}${p.tzLocal ? ":local" : ""}`,
-			)
-			.with({ type: "TopK" }, (p) => `topk:${p.field}:${p.k}:${p.ascending}`)
-			.exhaustive()
-	);
+	return match(props)
+		.with({ type: "Locations" }, () => locationsKey(locations))
+		.with({ type: "Everything" }, () => "everything")
+		.with({ type: "Polygon" }, (p) => polygonKey(p.polygon))
+		.with({ type: "Tag" }, (p) => `tag:${p.tagId}`)
+		.with({ type: "Untagged" }, () => "untagged")
+		.with({ type: "Unpanned" }, () => "unpanned")
+		.with({ type: "PanoIds" }, () => "panoids")
+		.with({ type: "NotPanoIds" }, () => "notpanoids")
+		.with({ type: "Uncommitted" }, () => "uncommitted")
+		.with({ type: "Duplicates" }, (p) => `duplicates:${p.distance}`)
+		.with({ type: "Manual" }, () => "manual")
+		.with({ type: "ValidationState" }, (p) => `validation:${p.state}`)
+		.with({ type: "Reviewed" }, (p) => `review:${p.sessionId}:${p.mode}`)
+		.with({ type: "Intersection" }, (p) => p.selections.map((s) => `(${s.key})`).join("^"))
+		.with({ type: "Union" }, (p) => p.selections.map((s) => `(${s.key})`).join("|"))
+		.with({ type: "Invert" }, (p) => `!${p.selections[0].key}`)
+		.with(
+			{ type: "Filter" },
+			(p) =>
+				`filter:${p.field}:${p.op}:${String(p.value)}${p.value2 != null ? `:${String(p.value2)}` : ""}${p.tzLocal ? ":local" : ""}`,
+		)
+		.with({ type: "TopK" }, (p) => `topk:${p.field}:${p.k}:${p.ascending}`)
+		.exhaustive();
 }
 
 /** Overlay color for a selection. Reviewed is green (145), unreviewed is violet (280): both stay
@@ -508,64 +509,72 @@ export function replaceSelection(
 	return current;
 }
 
-/** Human-readable label for a selection, resolving tag names and filter ops. */
+/** Human-readable label for a selection, resolving tag names and filter ops. Each branch is one
+ *  whole message with named params -- never assembled from translated fragments, so a language
+ *  can reorder it. */
 export function selectionDisplayName(sel: Selection): string {
 	return match(sel.props)
-		.with({ type: "Locations" }, (p) => p.name ?? "Selection")
-		.with({ type: "Everything" }, () => "Everything")
+		.with({ type: "Locations" }, (p) => p.name ?? t("Selection"))
+		.with({ type: "Everything" }, () => t("Everything"))
 		.with({ type: "Polygon" }, (p) =>
-			p.polygon.properties?.name ? `Polygon: ${p.polygon.properties.name}` : "Polygon",
+			p.polygon.properties?.name
+				? t("Polygon: {name}", { name: String(p.polygon.properties.name) })
+				: t("Polygon"),
 		)
-		.with({ type: "Tag" }, (p) => `Tag: ${tagDisplayName(p.tagId)}`)
-		.with({ type: "Untagged" }, () => "Untagged")
-		.with({ type: "Unpanned" }, () => "Unpanned")
-		.with({ type: "PanoIds" }, () => "Pano ID locations")
-		.with({ type: "NotPanoIds" }, () => "Coordinate locations")
-		.with({ type: "Uncommitted" }, () => "Uncommitted")
-		.with({ type: "Duplicates" }, (p) => `Duplicates (${p.distance}m)`)
-		.with({ type: "Manual" }, () => "Manual selection")
-		.with({ type: "ValidationState" }, (p) => validationStateLabel(p.state))
-		.with({ type: "Reviewed" }, (p) => (p.mode === "unreviewed" ? "Unreviewed" : "Reviewed"))
-		.with({ type: "Intersection" }, () => "Intersection")
-		.with({ type: "Union" }, () => "Union")
-		.with({ type: "Invert" }, (p) => `Invert: ${selectionDisplayName(p.selections[0])}`)
+		.with({ type: "Tag" }, (p) => t("Tag: {name}", { name: tagDisplayName(p.tagId) }))
+		.with({ type: "Untagged" }, () => t("Untagged"))
+		.with({ type: "Unpanned" }, () => t("Unpanned"))
+		.with({ type: "PanoIds" }, () => t("Pano ID locations"))
+		.with({ type: "NotPanoIds" }, () => t("Coordinate locations"))
+		.with({ type: "Uncommitted" }, () => t("Uncommitted"))
+		.with({ type: "Duplicates" }, (p) => t("Duplicates ({distance}m)", { distance: p.distance }))
+		.with({ type: "Manual" }, () => t("Manual selection"))
+		.with({ type: "ValidationState" }, (p) => t(validationStateLabel(p.state)))
+		.with({ type: "Reviewed" }, (p) => (p.mode === "unreviewed" ? t("Unreviewed") : t("Reviewed")))
+		.with({ type: "Intersection" }, () => t("Intersection"))
+		.with({ type: "Union" }, () => t("Union"))
+		.with({ type: "Invert" }, (p) =>
+			t("Invert: {selection}", { selection: selectionDisplayName(p.selections[0]) }),
+		)
 		.with({ type: "Filter" }, (p) => {
 			const fieldDef = getFieldDef(p.field);
-			const fieldLabel = fieldDef?.label ?? p.field;
-			if (p.op === "has") return `has ${fieldLabel}`;
-			if (p.op === "nothas") return `missing ${fieldLabel}`;
+			const fieldLabel = fieldDef?.label ? t(fieldDef.label) : p.field;
+			if (p.op === "has") return t("has {field}", { field: fieldLabel });
+			if (p.op === "nothas") return t("missing {field}", { field: fieldLabel });
 			const fmtMD = (v: unknown) => {
 				const s = String(v);
 				const m = /^(\d{2})-(\d{2})$/.exec(s);
 				if (m) {
 					const dt = new Date(2000, Number(m[1]) - 1, Number(m[2]));
-					return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+					return dayMonthFmt.format(dt);
 				}
 				return s;
 			};
 			// tzLocal values are wall-clock instants encoded as UTC epochs: render via UTC getters.
 			const fmtVal = (v: unknown) => {
 				const s = String(v);
-				if (fieldDef?.type === "enum" && fieldDef.labels?.[s]) return fieldDef.labels[s];
+				if (fieldDef?.type === "enum" && fieldDef.labels?.[s]) return t(fieldDef.labels[s]);
 				if (fieldDef?.type === "date") {
 					const n = Number(v);
 					if (!isNaN(n)) return p.tzLocal ? utcDateTime(n) : localDateTime(n);
 				}
 				return s;
 			};
-			const tzSuffix = p.tzLocal ? " (location time)" : "";
-			if (p.op === "between_anyyear")
-				return `${fieldLabel} ${OP_LABELS[p.op]} ${fmtMD(p.value)}..${fmtMD(p.value2)}${tzSuffix}`;
-			if (p.op === "between_anytime")
-				return `${fieldLabel} ${OP_LABELS[p.op]} ${p.value}..${p.value2}${tzSuffix}`;
+			const tzSuffix = p.tzLocal ? " " + t("(location time)") : "";
+			const clause = (op: FilterOp, value: string) =>
+				t("{field} {op} {value}", { field: fieldLabel, op: t(OP_LABELS[op]), value }) + tzSuffix;
+			if (p.op === "between_anyyear") return clause(p.op, `${fmtMD(p.value)}..${fmtMD(p.value2)}`);
+			if (p.op === "between_anytime") return clause(p.op, `${p.value}..${p.value2}`);
 			if (p.op === "between")
-				return `${fieldLabel} ${OP_LABELS[p.op as FilterOp]} ${fmtVal(p.value)}..${fmtVal(p.value2)}${tzSuffix}`;
-			return `${fieldLabel} ${OP_LABELS[p.op as FilterOp]} ${fmtVal(p.value)}${tzSuffix}`;
+				return clause(p.op as FilterOp, `${fmtVal(p.value)}..${fmtVal(p.value2)}`);
+			return clause(p.op as FilterOp, fmtVal(p.value));
 		})
 		.with({ type: "TopK" }, (p) => {
 			const fieldDef = getFieldDef(p.field);
-			const label = fieldDef?.label ?? p.field;
-			return `${p.ascending ? "Bottom" : "Top"} ${p.k} by ${label}`;
+			const label = fieldDef?.label ? t(fieldDef.label) : p.field;
+			return p.ascending
+				? t("Bottom {k} by {field}", { k: p.k, field: label })
+				: t("Top {k} by {field}", { k: p.k, field: label });
 		})
 		.exhaustive();
 }
@@ -601,22 +610,23 @@ function tagDisplayName(tagId: number): string {
 	return name == null ? String(tagId) : displayTagName(name);
 }
 
+/** English source strings -- callers translate. */
 function validationStateLabel(state: ValidationState): string {
 	switch (state) {
 		case ValidationState.Ok:
-			return "Valid location";
+			return msg("Valid location");
 		case ValidationState.UpdateAvailable:
-			return "Newer coverage available";
+			return msg("Newer coverage available");
 		case ValidationState.UpdateApplied:
-			return "Coverage updated since last view";
+			return msg("Coverage updated since last view");
 		case ValidationState.NotFound:
-			return "Not found";
+			return msg("Not found");
 		case ValidationState.PanoIdBroke:
-			return "Pano ID broke";
+			return msg("Pano ID broke");
 		case ValidationState.Unofficial:
-			return "Unofficial";
+			return msg("Unofficial");
 		case ValidationState.GoodcamAvailable:
-			return "Badcam, but good coverage available";
+			return msg("Badcam, but good coverage available");
 	}
 }
 

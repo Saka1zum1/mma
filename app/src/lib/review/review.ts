@@ -18,6 +18,7 @@ import {
 import { selectionDisplayName } from "@/store/selections";
 
 import type { ReviewSession, Selection } from "@/bindings.gen";
+import { t } from "@/lib/i18n";
 
 // --- Pure helpers (unit-tested; no side effects) ---
 
@@ -164,7 +165,7 @@ export async function beginReview(ids: number[], source?: Selection): Promise<vo
 	const order = ids.filter((id) => liveSet.has(id));
 	if (order.length === 0) return;
 
-	const name = source ? selectionDisplayName(source) : "Selected locations";
+	const name = source ? selectionDisplayName(source) : t("Selected locations");
 	const sourceProps = source?.props ?? { type: "Manual", locations: order };
 	try {
 		session = await cmd.storeReviewCreate({ mapId, name, sourceKey, sourceProps, order });

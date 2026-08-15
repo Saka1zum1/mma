@@ -1,27 +1,7 @@
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	getLoc,
-	createLocation,
-	flushAndWait,
-	withApi,
-} from "./helpers";
+import { addLocs, getLoc, createLocation, flushAndWait, withApi, useMap } from "./helpers";
 
 describe("Dirty tracking", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Dirty Tracking");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Dirty Tracking");
 
 	it("starts with zero dirty count on new map", async () => {
 		const count = await withApi(async (api) => (await api.cmd.storeGetSummary()).dirtyCount);
@@ -79,17 +59,7 @@ describe("Dirty tracking", () => {
 });
 
 describe("Dirty tracking across undo/redo", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Dirty Undo");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Dirty Undo");
 
 	it("undo marks map as dirty", async () => {
 		await addLocs([createLocation({ lat: 10, lng: 20 })]);

@@ -4,24 +4,22 @@ import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { Radio } from "@/components/primitives/Radio";
 import { TextInput } from "@/components/primitives/TextInput";
-import { useMapState, getVisibleTags, getMapState } from "@/store/useMapStore";
+import { useMapState, getVisibleTags } from "@/store/useMapStore";
 import type { Scope } from "@/bindings.gen";
 import { useMapSetting } from "@/store/useMapSetting";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl, saveExportTempFile } from "@/lib/util/util";
 import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
-import { serializeTagsForExport } from "@/lib/data/importExport";
-import { fmt } from "@/lib/util/format";
 import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { Trans } from "@/components/primitives/Trans";
 
 interface Props {
 	onClose: () => void;
 }
 
 export function ExportDialog({ onClose }: Props) {
-	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const selectedIds = useMapState((s) => s.selectedLocationIds);
 	const locationCount = useMapState((s) => s.locationCount);
@@ -39,8 +37,7 @@ export function ExportDialog({ onClose }: Props) {
 	const baseName = fileName || map.meta.name || "export";
 	const scopeIds = scope.kind === "all" ? undefined : [...selectedIds];
 
-	const tagsJson = () =>
-		serializeTagsForExport(getVisibleTags(), getMapState().tagCounts);
+	const tagsJson = () => JSON.stringify(Object.fromEntries(getVisibleTags().map((t) => [t.id, t])));
 
 	const jsonPath = () =>
 		cmd.storeExportJson({
@@ -64,41 +61,41 @@ export function ExportDialog({ onClose }: Props) {
 			if (ok !== false) toast(success);
 		} catch (e) {
 			log.error("[export] failed:", e);
-			toast(t("toast.exportFailed"));
+			toast(t("Export failed"));
 		}
 	};
 
 	const copyJson = withFeedback(
 		async () =>
 			navigator.clipboard.writeText(await (await fetch(mmaBufUrl(await jsonPath()))).text()),
-		t("toast.copiedJson"),
+		t("Copied JSON to clipboard"),
 	);
 	const downloadJson = withFeedback(
 		async () => saveToFile(await jsonPath(), "json"),
-		t("toast.downloadedFile", { name: `${baseName}.json` }),
+		t("Downloaded {file}", { file: `${baseName}.json` }),
 	);
 
 	const copyCsv = withFeedback(
 		async () =>
 			navigator.clipboard.writeText(await (await fetch(mmaBufUrl(await csvPath()))).text()),
-		t("toast.copiedCsv"),
+		t("Copied CSV to clipboard"),
 	);
 	const downloadCsv = withFeedback(
 		async () => saveToFile(await csvPath(), "csv"),
-		t("toast.downloadedFile", { name: `${baseName}.csv` }),
+		t("Downloaded {file}", { file: `${baseName}.csv` }),
 	);
 
 	const downloadGeoJson = withFeedback(
 		async () => saveToFile(await geojsonPath(), "geojson"),
-		t("toast.downloadedFile", { name: `${baseName}.geojson` }),
+		t("Downloaded {file}", { file: `${baseName}.geojson` }),
 	);
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={t("dialog.export")} className="export-modal">
+			<DialogContent title={t("Export")} className="export-modal">
 				<div className="export-modal__settings">
 					<div className="export-modal__filename">
-						<label htmlFor={`${uid}name`}>{t("export.fileName")}</label>
+						<label htmlFor={`${uid}name`}>{t("File name:")}</label>
 						<TextInput
 							id={`${uid}name`}
 							type="text"
@@ -116,7 +113,13 @@ export function ExportDialog({ onClose }: Props) {
 								checked={scope.kind === "all"}
 								onChange={() => setScope({ kind: "all" })}
 							/>
-							{t("editor.exportEverything", { count: fmt.format(locationCount) })}
+							{t(
+								{
+									one: "Export everything ({n} location)",
+									other: "Export everything ({n} locations)",
+								},
+								{ n: locationCount },
+							)}
 						</label>
 						<label>
 							<Radio
@@ -127,7 +130,13 @@ export function ExportDialog({ onClose }: Props) {
 								disabled={selCount === 0}
 							/>
 							<span style={selCount === 0 ? { opacity: 0.7 } : undefined}>
-								{t("editor.exportSelection", { count: fmt.format(selCount) })}
+								{t(
+									{
+										one: "Export selection ({n} location)",
+										other: "Export selection ({n} locations)",
+									},
+									{ n: selCount },
+								)}
 							</span>
 						</label>
 					</div>
@@ -138,7 +147,8 @@ export function ExportDialog({ onClose }: Props) {
 								checked={saveZoom}
 								onChange={(e) => setSaveZoom(e.target.checked)}
 							/>
-							{t("export.saveZoomLevels")}
+
+							{t("Save zoom levels")}
 						</label>
 						<label>
 							<Checkbox
@@ -146,9 +156,14 @@ export function ExportDialog({ onClose }: Props) {
 								checked={saveExtras}
 								onChange={(e) => setSaveExtras(e.target.checked)}
 							/>
-							{t("export.saveAppData")}
+
+							{t("Save app data")}
 							<br />
-							<small className="export-modal__help">{t("export.saveAppDataHelp")}</small>
+							<small className="export-modal__help">
+								{t(
+									"Include app-specific data like tags. Not including this makes the file smaller,\n\t\t\t\t\t\t\t\twhich can help when uploading maps with 100K+ locations to GeoGuessr.",
+								)}
+							</small>
 						</label>
 						<label>
 							<Checkbox
@@ -156,42 +171,52 @@ export function ExportDialog({ onClose }: Props) {
 								checked={bypassUnpanned}
 								onChange={(e) => setBypassUnpanned(e.target.checked)}
 							/>
-							{t("export.bypassUnpanned")}
+
+							{t("Bypass GeoGuessr auto-panning for locations with 0 heading")}
 							<br />
-							<small className="export-modal__help">{t("export.bypassUnpannedHelp")}</small>
+							<small className="export-modal__help">
+								{t(
+									"GeoGuessr auto-pans locations that point straight north along the road. To keep your\n\t\t\t\t\t\t\t\tunpanned locations unpanned, enable this option.",
+								)}
+							</small>
 						</label>
 					</div>
 				</div>
 				<div className="export-modal__formats">
 					<div className="export-modal__format export-modal__format--json">
-						<h3 className="export-modal__subhead">{t("export.asJson")}</h3>
+						<h3 className="export-modal__subhead">{t("As JSON (recommended)")}</h3>
 						<div className="export-modal__export-buttons">
 							<Button onClick={copyJson} disabled={!navigator.clipboard} data-qa="json-copy">
-								{t("common.copy")}
+								{t("Copy")}
 							</Button>
 							<Button onClick={downloadJson} data-qa="json-dl">
-								{t("common.download")}
+								{t("Download")}
 							</Button>
 						</div>
 					</div>
 					<div className="export-modal__format export-modal__format--csv">
-						<h3 className="export-modal__subhead">{t("export.asCsv")}</h3>
-						<p>{t("export.csvNote")}</p>
+						<h3 className="export-modal__subhead">{t("As CSV")}</h3>
+						<p>
+							<Trans
+								msg={"CSV exports do {not} retain camera orientation and pano\u00A0IDs."}
+								not={<em>{t("not")}</em>}
+							/>
+						</p>
 						<div className="export-modal__export-buttons">
 							<Button onClick={copyCsv} disabled={!navigator.clipboard} data-qa="csv-copy">
-								{t("common.copy")}
+								{t("Copy")}
 							</Button>
 							<Button onClick={downloadCsv} data-qa="csv-dl">
-								{t("common.download")}
+								{t("Download")}
 							</Button>
 						</div>
 					</div>
 					<div className="export-format export-modal__format--geojson">
-						<h3 className="export-modal__subhead">{t("export.asGeoJson")}</h3>
-						<p>{t("export.geoJsonNote")}</p>
+						<h3 className="export-modal__subhead">{t("As GeoJSON")}</h3>
+						<p>{t("For use in non-GeoGuessr mapping tools.")}</p>
 						<div className="export-modal__export-buttons">
 							<Button onClick={downloadGeoJson} data-qa="geojson-download">
-								{t("common.download")}
+								{t("Download")}
 							</Button>
 						</div>
 					</div>

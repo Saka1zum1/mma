@@ -26,7 +26,13 @@ import {
 	getAllFieldDefs,
 	isWritableField,
 } from "@/lib/data/fieldDefRegistry";
-import { planFieldSet, planFieldExpr, parseFieldExpr, fieldPatch } from "@/lib/data/fieldOps";
+import {
+	planFieldSet,
+	planFieldExpr,
+	parseFieldExpr,
+	fieldPatch,
+	extraKeysOf,
+} from "@/lib/data/fieldOps";
 import { ValidationState } from "@/store/selections";
 import { validateLocations } from "@/lib/sv/validate";
 import { enrichAll, type EnrichResult } from "@/lib/sv/enrich";
@@ -38,22 +44,22 @@ import {
 	type BulkDownloadResult,
 	type PanoRenderMode,
 } from "@/lib/sv/panoDownload";
+import { useAsync } from "@/lib/hooks/useAsync";
 import { saveExportTempFile } from "@/lib/util/util";
 import { fmt } from "@/lib/util/format";
 import { toast } from "@/lib/util/toast";
-import { useT, t as translate } from "@/lib/i18n";
-import type { MessageKey } from "@/locales/en";
+import { t, msg } from "@/lib/i18n";
 
-const TITLE_KEYS = {
-	validate: "bulk.validateLocations",
-	enrich: "bulk.enrichMetadata",
-	pinPano: "bulk.pinToPanoId",
-	clearFields: "bulk.clearMetadataFields",
-	setField: "bulk.setMetadataField",
-	headingRoad: "bulk.panHeadingsAlongRoad",
-	downloadPanoramas: "bulk.downloadPanoramas",
-} as const satisfies Record<string, MessageKey>;
-export type BulkOperation = keyof typeof TITLE_KEYS;
+const TITLES = {
+	validate: msg("Validate locations"),
+	enrich: msg("Enrich metadata"),
+	pinPano: msg("Pin to Pano ID"),
+	clearFields: msg("Clear metadata fields"),
+	setField: msg("Set metadata field"),
+	headingRoad: msg("Pan headings along road"),
+	downloadPanoramas: msg("Download panoramas"),
+} as const;
+export type BulkOperation = keyof typeof TITLES;
 
 type ProgressFn = (done: number, total: number, label?: string) => void;
 
@@ -89,7 +95,6 @@ interface SetupProps {
 // ---------------------------------------------------------------------------
 
 function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
-	const { t } = useT();
 	return (
 		<div className="bulk-operation">
 			<ScopeSelector ctl={scopeCtl} />
@@ -121,12 +126,18 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 								}));
 							if (batch.length > 0) addSelections(batch);
 							return {
-								doneMessage: t("bulk.doneValidated", { count: fmt.format(locations.length) }),
+								doneMessage: t(
+									{
+										one: "Done -- {n} location validated.",
+										other: "Done -- {n} locations validated.",
+									},
+									{ n: locations.length },
+								),
 							};
 						})
 					}
 				>
-					{t("bulk.start")}
+					{t("Start")}
 				</Button>
 			</div>
 		</div>
@@ -134,7 +145,6 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 }
 
 function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
-	const { t } = useT();
 	const [force, setForce] = useState(false);
 	const map = getMapState().map;
 	if (!map) return null;
@@ -157,7 +167,9 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 			<ScopeSelector ctl={scopeCtl} />
 			{enabledFields.length === 0 && (
 				<div className="bulk-operation__status" style={{ opacity: 0.8 }}>
-					{t("bulk.noEnrichmentFields")}
+					{t(
+						"No enrichment fields are enabled. Enable them in Map Settings under the Enrichment tab.",
+					)}
 				</div>
 			)}
 			{total > 0 && enabledFields.length > 0 && (
@@ -168,7 +180,7 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 							const pct = Math.round((c.have / total) * 100);
 							return (
 								<tr key={c.key} className={missing > 0 ? "is-incomplete" : ""}>
-									<td className="bulk-operation__coverage-label">{c.label}</td>
+									<td className="bulk-operation__coverage-label">{t(c.label)}</td>
 									<td className="bulk-operation__coverage-bar">
 										<span className="bulk-operation__coverage-fill" style={{ width: `${pct}%` }} />
 									</td>
@@ -185,12 +197,19 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 			)}
 			{noPano > 0 && (
 				<div className="bulk-operation__status">
-					{t("bulk.withoutPanoId", { count: fmt.format(noPano) })}
+					{t(
+						{
+							one: "{n} without pano ID will be resolved from coordinates.",
+							other: "{n} without pano ID will be resolved from coordinates.",
+						},
+						{ n: noPano },
+					)}
 				</div>
 			)}
 			<label className="bulk-operation__option">
 				<Checkbox checked={force} onChange={(e) => setForce(e.target.checked)} />
-				{t("bulk.reEnrich")}
+
+				{t("Re-enrich already enriched locations")}
 			</label>
 			<div className="bulk-operation__actions">
 				<Button
@@ -210,7 +229,7 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 					}
 					disabled={enabledFields.length === 0 || (!force && !needsAny)}
 				>
-					{t("bulk.start")}
+					{t("Start")}
 				</Button>
 			</div>
 		</div>
@@ -218,7 +237,6 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 }
 
 function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
-	const { t } = useT();
 	const [force, setForce] = useState(false);
 	const [useLatest, setUseLatest] = useState(false);
 	const scopedLocs = applyScope(scopeCtl.scope, locs);
@@ -228,15 +246,23 @@ function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
 		<div className="bulk-operation">
 			<ScopeSelector ctl={scopeCtl} />
 			<div className="bulk-operation__status">
-				{t("bulk.locationsNotPinned", { count: fmt.format(unpinned) })}
+				{t(
+					{
+						one: "{n} location not pinned to a pano ID.",
+						other: "{n} locations not pinned to a pano ID.",
+					},
+					{ n: unpinned },
+				)}
 			</div>
 			<label className="bulk-operation__option">
 				<Checkbox checked={force} onChange={(e) => setForce(e.target.checked)} />
-				{t("bulk.rePin")}
+
+				{t("Re-pin already pinned locations")}
 			</label>
 			<label className="bulk-operation__option">
 				<Checkbox checked={useLatest} onChange={(e) => setUseLatest(e.target.checked)} />
-				{t("bulk.useLatestTimeline")}
+
+				{t("Use latest timeline coverage")}
 			</label>
 			<div className="bulk-operation__actions">
 				<Button
@@ -249,12 +275,17 @@ function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
 								useLatest,
 								onProgress,
 							});
-							return { doneMessage: t("bulk.donePinned", { count: fmt.format(count) }) };
+							return {
+								doneMessage: t(
+									{ one: "Done -- {n} location pinned.", other: "Done -- {n} locations pinned." },
+									{ n: count },
+								),
+							};
 						})
 					}
 					disabled={!force && !useLatest && unpinned === 0}
 				>
-					{t("bulk.start")}
+					{t("Start")}
 				</Button>
 			</div>
 		</div>
@@ -262,13 +293,7 @@ function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
 }
 
 function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
-	const { t, tp } = useT();
-	const allKeys = new Set<string>();
-	for (const loc of locs) {
-		if (loc.extra) for (const k of Object.keys(loc.extra)) allKeys.add(k);
-	}
-
-	const sortedKeys = [...allKeys].sort();
+	const sortedKeys = [...extraKeysOf(locs)].sort();
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 
 	const toggle = (key: string) => {
@@ -286,7 +311,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 		<div className="bulk-operation">
 			<ScopeSelector ctl={scopeCtl} />
 			{sortedKeys.length === 0 ? (
-				<div className="bulk-operation__status">{t("bulk.noMetadataFields")}</div>
+				<div className="bulk-operation__status">{t("No metadata fields on this map.")}</div>
 			) : (
 				<div className="bulk-operation__field-list">
 					{sortedKeys.map((key) => {
@@ -295,12 +320,14 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 						return (
 							<label key={key} className="bulk-operation__field-item">
 								<Checkbox checked={selected.has(key)} onChange={() => toggle(key)} />
-								<span className="bulk-operation__field-label">{fieldLabel(key)}</span>
+								<span className="bulk-operation__field-label">{t(fieldLabel(key))}</span>
 								{def?.label && def.label !== key && (
 									<span className="bulk-operation__field-key">{key}</span>
 								)}
 								<span className="bulk-operation__field-count">
-									{count > 0 ? t("bulk.values", { count: fmt.format(count) }) : t("bulk.noData")}
+									{count > 0
+										? t({ one: "{n} value", other: "{n} values" }, { n: count })
+										: t("no data")}
 								</span>
 							</label>
 						);
@@ -325,15 +352,21 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 							}
 							if (updates.length > 0) await updateLocations(updates);
 							return {
-								doneMessage: t("bulk.clearedFields", { count: fmt.format(updates.length) }),
+								doneMessage: t(
+									{
+										one: "Cleared fields from {n} location.",
+										other: "Cleared fields from {n} locations.",
+									},
+									{ n: updates.length },
+								),
 							};
 						});
 					}}
 					disabled={selected.size === 0}
 				>
 					{selected.size > 0
-						? tp("bulk.clearFields", selected.size, { count: fmt.format(selected.size) })
-						: ""}
+						? t({ one: "Clear {n} field", other: "Clear {n} fields" }, { n: selected.size })
+						: t("Clear")}
 				</Button>
 			</div>
 		</div>
@@ -341,12 +374,9 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 }
 
 function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
-	const { t } = useT();
 	const sortedKeys = useMemo(() => {
 		const known = new Set<string>(Object.keys(getAllFieldDefs()).filter(isWritableField));
-		for (const loc of locs) {
-			if (loc.extra) for (const k of Object.keys(loc.extra)) known.add(k);
-		}
+		for (const k of extraKeysOf(locs)) known.add(k);
 		return [...known].sort();
 	}, [locs]);
 
@@ -365,7 +395,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 			parseFieldExpr(raw);
 			return null;
 		} catch (e) {
-			return e instanceof Error ? e.message : t("bulk.invalidExpressionShort");
+			return e instanceof Error ? e.message : t("Invalid expression");
 		}
 	}, [isNumber, raw]);
 	const invalid = !effectiveKey || (isNumber && (raw.trim() === "" || exprError != null));
@@ -374,7 +404,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 		<div className="bulk-operation">
 			<ScopeSelector ctl={scopeCtl} />
 			<label className="bulk-operation__option">
-				{t("bulk.field")}
+				{t("Field")}
 				<NSelect
 					value={creatingNew ? "__new__" : key}
 					onChange={(e) => {
@@ -387,29 +417,29 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 					}}
 				>
 					<option value="" disabled>
-						{t("bulk.selectField")}
+						{t("Select a field...")}
 					</option>
 					{sortedKeys.map((k) => (
 						<option key={k} value={k}>
-							{fieldLabel(k)}
+							{t(fieldLabel(k))}
 						</option>
 					))}
-					<option value="__new__">{t("bulk.newField")}</option>
+					<option value="__new__">{t("New field...")}</option>
 				</NSelect>
 			</label>
 			{creatingNew && (
 				<label className="bulk-operation__option">
-					{t("bulk.newFieldName")}
+					{t("New field name")}
 					<TextInput
 						value={newKey}
 						onChange={(e) => setNewKey(e.target.value)}
-						placeholder={t("bulk.fieldNamePlaceholder")}
+						placeholder={t("field name")}
 						autoFocus
 					/>
 				</label>
 			)}
 			<label className="bulk-operation__option">
-				{t("bulk.value")}
+				{t("Value")}
 				{isEnum ? (
 					<NSelect value={raw} onChange={(e) => setRaw(e.target.value)}>
 						<option value="" />
@@ -424,15 +454,15 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 						type="text"
 						value={raw}
 						onChange={(e) => setRaw(e.target.value)}
-						placeholder={isNumber ? t("bulk.numberPlaceholder") : undefined}
+						placeholder={isNumber ? t("e.g. 45 or mod(sunAzimuth + 180, 360)") : undefined}
 					/>
 				)}
 			</label>
 			{isNumber && (
 				<div className="bulk-operation__status">
 					{exprError
-						? t("bulk.invalidExpression", { error: exprError })
-						: t("bulk.expressionHint")}
+						? t("Invalid expression: {error}", { error: exprError })
+						: t("Constant or expression over fields (e.g. sunAzimuth, drivingDirection, lat).")}
 				</div>
 			)}
 			<div className="bulk-operation__actions">
@@ -447,22 +477,28 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 							if (useExpr) {
 								const { updates, skipped } = planFieldExpr(locations, ek, parseFieldExpr(rv));
 								if (updates.length > 0) await updateLocations(updates);
-								const msg =
-									t("bulk.setFieldOn", { count: fmt.format(updates.length) }) +
+								const message =
+									t(
+										{ one: "Set field on {n} location.", other: "Set field on {n} locations." },
+										{ n: updates.length },
+									) +
 									(skipped > 0
-										? ` ${t("bulk.skippedMissingFields", { count: fmt.format(skipped) })}`
+										? " " + t("{n} skipped (missing source fields).", { n: skipped })
 										: "");
-								return { doneMessage: msg };
+								return { doneMessage: message };
 							}
 							const updates = planFieldSet(locations, fieldPatch(ek, rv));
 							if (updates.length > 0) await updateLocations(updates);
 							return {
-								doneMessage: t("bulk.setFieldOn", { count: fmt.format(updates.length) }),
+								doneMessage: t(
+									{ one: "Set field on {n} location.", other: "Set field on {n} locations." },
+									{ n: updates.length },
+								),
 							};
 						});
 					}}
 				>
-					{t("bulk.setFieldButton")}
+					{t("Set field")}
 				</Button>
 			</div>
 		</div>
@@ -470,7 +506,6 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 }
 
 function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
-	const { t } = useT();
 	const [direction, setDirection] = useState<RoadDirection>("forwards");
 
 	return (
@@ -483,7 +518,8 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 						checked={direction === "forwards"}
 						onChange={() => setDirection("forwards")}
 					/>
-					{t("bulk.forwards")}
+
+					{t("Forwards (along driving direction)")}
 				</label>
 				<label>
 					<Radio
@@ -491,7 +527,8 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 						checked={direction === "backwards"}
 						onChange={() => setDirection("backwards")}
 					/>
-					{t("bulk.backwards")}
+
+					{t("Backwards")}
 				</label>
 			</div>
 			<div className="bulk-operation__actions">
@@ -500,11 +537,16 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
 							const count = await bulkPanHeading(locations, direction, { signal, onProgress });
-							return { doneMessage: t("bulk.pannedHeadings", { count: fmt.format(count) }) };
+							return {
+								doneMessage: t(
+									{ one: "Panned {n} heading.", other: "Panned {n} headings." },
+									{ n: count },
+								),
+							};
 						})
 					}
 				>
-					{t("bulk.start")}
+					{t("Start")}
 				</Button>
 			</div>
 		</div>
@@ -512,7 +554,6 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 }
 
 function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
-	const { t } = useT();
 	const [mode, setMode] = useState<PanoRenderMode>("equirectangular");
 	const [zoom, setZoom] = useState(5);
 	const [tileX, setTileX] = useState(0);
@@ -524,28 +565,27 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 			<ScopeSelector ctl={scopeCtl} />
 			{noPano > 0 && (
 				<div className="bulk-operation__status">
-					{t("bulk.withoutPanoIdProvider", { count: fmt.format(noPano) })}
+					{t(
+						{
+							one: "{n} without pano ID will be resolved from coordinates.",
+							other: "{n} without pano ID will be resolved from coordinates.",
+						},
+						{ n: noPano },
+					)}
 				</div>
 			)}
-			<div className="bulk-operation__status">
-				{mode === "thumbnail"
-					? t("bulk.thumbnailHint")
-					: mode === "tile"
-						? t("bulk.tileHint")
-						: t("bulk.equirectHint")}
-			</div>
 			<label className="bulk-operation__option">
-				{t("bulk.mode")}
+				{t("Mode")}
 				<NSelect value={mode} onChange={(e) => setMode(e.target.value as PanoRenderMode)}>
-					<option value="equirectangular">{t("bulk.equirectangular")}</option>
-					<option value="perspective">{t("bulk.perspective")}</option>
-					<option value="thumbnail">{t("bulk.thumbnail")}</option>
-					<option value="tile">{t("bulk.tile")}</option>
+					<option value="equirectangular">{t("Equirectangular (full panorama)")}</option>
+					<option value="perspective">{t("Perspective (1920×1080)")}</option>
+					<option value="thumbnail">{t("Thumbnail (1024×768)")}</option>
+					<option value="tile">{t("Tile (512×512)")}</option>
 				</NSelect>
 			</label>
 			{mode !== "thumbnail" && (
 				<label className="bulk-operation__option">
-					{t("bulk.zoomLevel")}
+					{t("Zoom level")}
 					<NSelect
 						style={{ width: 100 }}
 						value={String(zoom)}
@@ -562,7 +602,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 			{mode === "tile" && (
 				<>
 					<label className="bulk-operation__option">
-						{t("bulk.tileX")}
+						{t("Tile X")}
 						<TextInput
 							type="number"
 							min={0}
@@ -573,7 +613,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 						/>
 					</label>
 					<label className="bulk-operation__option">
-						{t("bulk.tileY")}
+						{t("Tile Y")}
 						<TextInput
 							type="number"
 							min={0}
@@ -601,24 +641,20 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 							try {
 								saved = await saveDownloadResult(result);
 							} catch {
-								toast(t("bulk.saveFailed"));
+								toast(t("Save failed"));
 							}
 							return {
 								doneMessage:
-									t("bulk.doneDownloaded", {
-										succeeded: fmt.format(result.succeeded.length),
-									}) +
+									t("Done -- {n} downloaded", { n: result.succeeded.length }) +
 									(result.failed.length > 0
-										? t("bulk.doneDownloadedFailed", {
-												failed: fmt.format(result.failed.length),
-											})
+										? t({ one: ", {n} failed.", other: ", {n} failed." }, { n: result.failed.length })
 										: "."),
 								doneActions: <DownloadDoneActions result={result} initiallySaved={saved} />,
 							};
 						});
 					}}
 				>
-					{t("bulk.start")}
+					{t("Start")}
 				</Button>
 			</div>
 		</div>
@@ -636,8 +672,11 @@ async function saveDownloadResult(result: BulkDownloadResult): Promise<boolean> 
 	if (ok) {
 		toast(
 			result.fileCount === 1
-				? translate("bulk.panoramaSaved")
-				: translate("bulk.savedPanoramasZip", { count: fmt.format(result.fileCount) }),
+				? t("Panorama saved")
+				: t(
+						{ one: "Saved {n} panorama as ZIP", other: "Saved {n} panoramas as ZIP" },
+						{ n: result.fileCount },
+					),
 		);
 	}
 	return ok;
@@ -650,7 +689,6 @@ function DownloadDoneActions({
 	result: BulkDownloadResult;
 	initiallySaved: boolean;
 }) {
-	const { t } = useT();
 	// storeSaveExportFile consumes the temp file, so a completed save is final.
 	const [saved, setSaved] = useState(initiallySaved);
 
@@ -658,7 +696,7 @@ function DownloadDoneActions({
 		try {
 			if (await saveDownloadResult(result)) setSaved(true);
 		} catch {
-			toast(t("bulk.saveFailed"));
+			toast(t("Save failed"));
 		}
 	};
 
@@ -666,7 +704,7 @@ function DownloadDoneActions({
 		<>
 			{result.outputPath != null && !saved && (
 				<Button variant="primary" onClick={() => void save()}>
-					{result.fileCount === 1 ? t("bulk.saveImage") : t("bulk.saveZip")}
+					{result.fileCount === 1 ? t("Save image") : t("Save ZIP")}
 				</Button>
 			)}
 			{result.failed.length > 0 && (
@@ -674,13 +712,17 @@ function DownloadDoneActions({
 					onClick={() => {
 						addSelections([{ type: "Manual", locations: result.failed }]);
 						toast(
-							t("toast.selectedFailedLocations", {
-								count: fmt.format(result.failed.length),
-							}),
+							t(
+								{
+									one: "Selected {n} failed location",
+									other: "Selected {n} failed locations",
+								},
+								{ n: result.failed.length },
+							),
 						);
 					}}
 				>
-					{t("bulk.selectFailed")}
+					{t("Select failed")}
 				</Button>
 			)}
 		</>
@@ -694,11 +736,10 @@ function EnrichSummary({
 	result: EnrichResult;
 	onSelect: (ids: number[], label: string) => void;
 }) {
-	const { t } = useT();
 	if (result.length === 0) {
 		return (
 			<div className="enrich-summary">
-				<div>{t("bulk.nothingToProcess")}</div>
+				<div>{t("Nothing to process.")}</div>
 			</div>
 		);
 	}
@@ -706,18 +747,17 @@ function EnrichSummary({
 		<div className="enrich-summary">
 			{result.map((r) => (
 				<div key={r.id}>
-					{r.label}: {fmt.format(r.success.length)} {t("bulk.updated")}
+					{t(r.label)}
+					{t(":")} {t({ one: "{n} updated", other: "{n} updated" }, { n: r.success.length })}
 					{r.failed.length > 0 && (
-						<>
-							, {fmt.format(r.failed.length)} {t("bulk.failed")}
-						</>
+						<>{t({ one: ", {n} failed", other: ", {n} failed" }, { n: r.failed.length })}</>
 					)}
 					{r.failed.length > 0 && (
 						<Button
 							style={{ marginLeft: 8 }}
-							onClick={() => onSelect(r.failed, `${r.label} failed`)}
+							onClick={() => onSelect(r.failed, t("{label} failed", { label: t(r.label) }))}
 						>
-							{t("bulk.selectFailed")}
+							{t("Select failed")}
 						</Button>
 					)}
 				</div>
@@ -739,7 +779,6 @@ function BulkProgress({
 	scope: Scope;
 	onClose: () => void;
 }) {
-	const { t } = useT();
 	const [progress, setProgress] = useState(0);
 	const [total, setTotal] = useState(0);
 	const [done, setDone] = useState(0);
@@ -798,7 +837,7 @@ function BulkProgress({
 			if (e instanceof Error && e.name === "AbortError") {
 				if (controllerRef.current === controller) setStatus("cancelled");
 			} else {
-				setError(e instanceof Error ? e.message : t("bulk.operationFailed"));
+				setError(e instanceof Error ? e.message : t("Operation failed"));
 				setStatus("error");
 			}
 		}
@@ -817,37 +856,48 @@ function BulkProgress({
 		<div className="bulk-operation">
 			<div className="bulk-operation__status">
 				{status === "running" &&
-					`${phaseLabel ? `${phaseLabel}: ` : ""}${t("bulk.progress", {
-						done: fmt.format(done),
-						total: fmt.format(total),
-						pct,
-					})}${rate != null ? ` -- ${fmt.format(Math.round(rate))}/s` : ""}`}
+					(phaseLabel ? `${t(phaseLabel)}${t(":")} ` : "") +
+						t("{done} / {total} ({pct}%)", {
+							done: fmt.format(done),
+							total: fmt.format(total),
+							pct,
+						}) +
+						(rate != null ? t(" -- {rate}/s", { rate: fmt.format(Math.round(rate)) }) : "")}
 				{status === "done" &&
 					(result.doneContent ??
 						result.doneMessage ??
-						t("bulk.doneProcessed", { count: fmt.format(total) }) +
+						t(
+							{
+								one: "Done -- {n} location processed",
+								other: "Done -- {n} locations processed",
+							},
+							{ n: total },
+						) +
 							(elapsed != null && elapsed > 0
-								? t("bulk.doneProcessedIn", {
+								? t(" in {seconds}s ({rate}/s)", {
 										seconds: elapsed.toFixed(1),
 										rate: fmt.format(Math.round(total / elapsed)),
 									})
 								: "") +
 							".")}
 				{status === "cancelled" &&
-					t("bulk.cancelledAt", { done: fmt.format(done), total: fmt.format(total) })}
-				{status === "error" && `${t("common.error")}: ${error}`}
+					t("Cancelled at {done} / {total}.", {
+						done: fmt.format(done),
+						total: fmt.format(total),
+					})}
+				{status === "error" && t("Error: {error}", { error: error ?? "" })}
 			</div>
 			<progress className="bulk-operation__bar" value={progress} max={1} />
 			<div className="bulk-operation__actions">
 				{status === "running" ? (
 					<Button variant="destructive" onClick={() => controllerRef.current?.abort()}>
-						{t("common.cancel")}
+						{t("Cancel")}
 					</Button>
 				) : (
 					<>
 						{status === "done" && result.doneActions}
 						<Button variant="primary" onClick={onClose}>
-							{t("common.close")}
+							{t("Close")}
 						</Button>
 					</>
 				)}
@@ -871,14 +921,9 @@ const SETUPS: Record<BulkOperation, React.ComponentType<SetupProps>> = {
 };
 
 export function BulkOperationModal({ operation, onClose }: Props) {
-	const { t } = useT();
 	const [runner, setRunner] = useState<BulkRunner | null>(null);
-	const [locs, setLocs] = useState<Location[] | null>(null);
 	const scopeCtl = useScope();
-
-	useEffect(() => {
-		fetchAllLocations().then(setLocs);
-	}, []);
+	const { data: locs } = useAsync(fetchAllLocations, []);
 
 	if (locs === null) return null;
 
@@ -893,7 +938,7 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 				if (!open) onClose();
 			}}
 		>
-			<DialogContent title={t(TITLE_KEYS[operation])} className="bulk-operation-modal">
+			<DialogContent title={t(TITLES[operation])} className="bulk-operation-modal">
 				{runner ? (
 					<BulkProgress runner={runner} scope={scopeCtl.scope} onClose={onClose} />
 				) : (

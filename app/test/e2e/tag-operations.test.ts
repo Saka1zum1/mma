@@ -1,33 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
 	createTag,
 	refreshSelections,
 	flushAndWait,
 	openMap,
 	withApi,
+	useMap,
+	seedLocs,
 } from "./helpers";
-import type { Location } from "@/bindings.gen";
 
 // ============================================================================
 // 1. Tag reordering
 // ============================================================================
 
 describe("Tag reordering", () => {
-	let mapId: string;
+	const map = useMap("E2E Tag Reorder");
 	let tag1Id: number;
 	let tag2Id: number;
 	let tag3Id: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Reorder");
-
 		const t1 = await createTag("Alpha");
 		tag1Id = t1.id;
 		const t2 = await createTag("Beta");
@@ -35,12 +28,6 @@ describe("Tag reordering", () => {
 		const t3 = await createTag("Gamma");
 		tag3Id = t3.id;
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("reorderTags changes tag order field", async () => {
 		const result = await withApi(
 			async (api, id1, id2, id3) => {
@@ -64,7 +51,7 @@ describe("Tag reordering", () => {
 	it("reorder persists after save/close/reopen", async () => {
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const result = await withApi(
 			async (api, id1, id2, id3) => {
@@ -90,34 +77,19 @@ describe("Tag reordering", () => {
 // ============================================================================
 
 describe("Tag visibility affecting selections", () => {
-	let mapId: string;
+	useMap("E2E Tag Visibility");
 	let visTagId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Visibility");
-
 		const vt = await createTag("Visible Tag");
 		visTagId = vt.id;
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 10; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					tags: i < 5 ? [visTagId] : [],
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(10, (i) => ({
+			lat: i,
+			lng: i,
+			tags: i < 5 ? [visTagId] : [],
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
@@ -154,29 +126,16 @@ describe("Tag visibility affecting selections", () => {
 // ============================================================================
 
 describe("Bulk tag add", () => {
-	let mapId: string;
+	useMap("E2E Bulk Tag");
 	let bulkTagId: number;
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Bulk Tag");
-
 		const bt = await createTag("BulkTag");
 		bulkTagId = bt.id;
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 20; i++) {
-			locs.push(createLocation({ lat: i, lng: i }));
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(20, (i) => ({ lat: i, lng: i }));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("bulkAddTag adds tag to all selected locations", async () => {
 		const result = await withApi(async (api, tagId) => {
 			await api.addSelections([{ type: "Everything" }]);
@@ -238,35 +197,20 @@ describe("Bulk tag add", () => {
 // ============================================================================
 
 describe("Tag deletion cascade", () => {
-	let mapId: string;
+	useMap("E2E Tag Delete Cascade");
 	let delTagId: number;
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Delete Cascade");
-
 		const dt = await createTag("ToDelete");
 		delTagId = dt.id;
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 10; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					tags: [delTagId],
-				}),
-			);
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(10, (i) => ({
+			lat: i,
+			lng: i,
+			tags: [delTagId],
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("deleting a tag removes it from all locations", async () => {
 		await withApi(async (api, tagId) => {
 			await api.deleteTags([tagId]);
@@ -293,22 +237,13 @@ describe("Tag deletion cascade", () => {
 // ============================================================================
 
 describe("Tag color update", () => {
-	let mapId: string;
+	const map = useMap("E2E Tag Color");
 	let colorTagId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Color");
-
 		const ct = await createTag("ColorTag");
 		colorTagId = ct.id;
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("can update tag color", async () => {
 		await withApi(async (api, tagId) => {
 			await api.updateTags([{ id: tagId, patch: { color: "#ff0000" } }]);
@@ -327,7 +262,7 @@ describe("Tag color update", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const color = await withApi(async (api, tagId) => {
 			return (api.getMapState().tags as any)[String(tagId)]?.color;

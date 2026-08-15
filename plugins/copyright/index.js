@@ -1,23 +1,4 @@
 // copyright/src/index.ts
-var BINARY_NAME = "mma-copyright";
-var IS_WIN = navigator.userAgent.includes("Windows");
-var SEP = IS_WIN ? "\\" : "/";
-var _pluginDir = null;
-async function pluginDir() {
-  if (!_pluginDir) {
-    const appData = await MMA.cmd.getAppDataDir();
-    _pluginDir = `${appData}${SEP}plugins${SEP}copyright`;
-  }
-  return _pluginDir;
-}
-async function modelDir() {
-  return `${await pluginDir()}${SEP}sidecar${SEP}models`;
-}
-var tempCounter = 0;
-async function writeInputFile(data) {
-  const name = `mma_copyright_${Date.now()}_${tempCounter++}.json`;
-  return MMA.cmd.writeTempFile(name, JSON.stringify(data));
-}
 var FIELD_DEFS = {
   // Year labels are identification categories, not distances: comparison stays
   // categorical (disambiguate) while type=number keeps numeric bucketing/ranges.
@@ -44,38 +25,26 @@ async function enrich(locations, enrichFields, ctx) {
     else idsByPano.set(panoId, [loc.id]);
   }
   const panoIds = Array.from(idsByPano.keys());
-  const inputPath = await writeInputFile({ panoIds });
-  const md = await modelDir();
-  const proc = await MMA.sidecar.spawn("copyright", BINARY_NAME, [
-    "detect",
-    "--input",
-    inputPath,
-    "--model-dir",
-    md
-  ]);
-  const abortHandler = () => proc.kill();
-  ctx?.signal?.addEventListener("abort", abortHandler);
-  proc.onStderr((line) => console.error("[copyright]", line));
-  proc.onLine((line) => {
-    let result;
-    try {
-      result = JSON.parse(line);
-    } catch {
-      return;
-    }
-    const ids = idsByPano.get(result.panoId);
-    if (!ids) return;
-    for (const id of ids) {
-      if (result.error) {
-        ctx?.onFail?.(id);
-      } else if (result.year != null) {
-        patches.set(id, { copyrightYear: result.year });
+  try {
+    await MMA.sidecar.request("copyright", "detect", { panoIds }, {
+      signal: ctx?.signal,
+      onLog: (line) => console.error("[copyright]", line),
+      onLine: (result) => {
+        const ids = idsByPano.get(result.panoId);
+        if (!ids) return;
+        for (const id of ids) {
+          if (result.error) {
+            ctx?.onFail?.(id);
+          } else if (result.year != null) {
+            patches.set(id, { copyrightYear: result.year });
+          }
+          ctx?.onUnit?.();
+        }
       }
-      ctx?.onUnit?.();
-    }
-  });
-  await new Promise((resolve) => proc.onExit(() => resolve()));
-  ctx?.signal?.removeEventListener("abort", abortHandler);
+    });
+  } catch (e) {
+    if (!ctx?.signal?.aborted) throw e;
+  }
   return patches;
 }
 MMA.registerPlugin({

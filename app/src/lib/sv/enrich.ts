@@ -1,23 +1,26 @@
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { resolveExactTimestamp } from "@/lib/sv/exactDate";
 import { resolveTimezone } from "@/lib/util/timezone";
+import { ymFromDate } from "@/lib/util/date";
 import { getMapState, updateLocations, fetchLocationsByIds } from "@/store/useMapStore";
 import {
 	filterEnrichPatch,
 	isFieldEnabled,
 	getEnrichmentProviders,
 	getDefaultEnrichKeys,
+	knownFieldDefs,
 	registerEnrichmentProvider,
 	providerWaves,
 	type EnrichmentProvider,
 } from "@/lib/data/fieldDefs";
 import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 import { SV_CONCURRENCY } from "@/lib/sv/constants";
+import { runConcurrent } from "@/lib/util/concurrent";
 import { log } from "@/lib/util/log";
 import { cmd } from "@/lib/commands";
 import { toast } from "@/lib/util/toast";
-import { t } from "@/lib/i18n";
 import type { Location } from "@/bindings.gen";
+import { msg, t } from "@/lib/i18n";
 
 /** True when the location is missing any of the given enrich fields (default: the enabled set). */
 export function needsEnrichment(loc: Location, enrichFields?: string[]): boolean {
@@ -31,7 +34,6 @@ export function buildPatch(
 	enrichFields: string[] | null,
 ): Record<string, unknown> | null {
 	if (!data.extra) return null;
-	const pad2 = (n: number) => String(n).padStart(2, "0");
 	const fullPatch: Record<string, unknown> = {
 		altitude: data.extra.altitude ?? 0,
 		countryCode: data.extra.countryCode ?? null,
@@ -40,10 +42,7 @@ export function buildPatch(
 		drivingDirection: data.extra.drivingDirection ?? null,
 		uploaderName: data.extra.uploaderName ?? null,
 		imageDate: data.imageDate || null,
-		coverageDates:
-			data.time
-				?.filter((t) => t.date)
-				.map((t) => `${t.date!.getFullYear()}-${pad2(t.date!.getMonth() + 1)}`) ?? [],
+		coverageDates: data.time?.filter((t) => t.date).map((t) => ymFromDate(t.date!)) ?? [],
 	};
 	const filtered = filterEnrichPatch(fullPatch, enrichFields);
 	// Stale exact-date data is wrong once imageDate changes; clear it regardless of the
@@ -66,7 +65,7 @@ export async function enrich(
 		if (!data) return false;
 	}
 	const map = getMapState().map;
-	if (!map || !(map.meta.settings.enrichMetadata ?? true)) return false;
+	if (!map || !map.meta.settings.enrichMetadata) return false;
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 	const write = (extra: Record<string, unknown>) =>
 		updateLocations([{ id: loc.id, patch: { extra } }], { undoable: false });
@@ -94,7 +93,7 @@ export async function enrich(
 /** Core metadata enrichment: pano data -> `extra` fields. Drives the provider pass. */
 export const enrichMetaResolver: SvResolver = {
 	id: "enrichMeta",
-	label: "Enrich metadata",
+	label: msg("Enrich metadata"),
 	pending: (loc, force) => {
 		if (force) return true;
 		const map = getMapState().map;
@@ -116,12 +115,9 @@ export const enrichMetaResolver: SvResolver = {
  *  pass has written `imageDate`. */
 export const exactDateProvider: EnrichmentProvider = {
 	id: "exactDate",
-	label: "Exact dates",
+	label: msg("Exact dates"),
 	requires: ["imageDate"],
-	fieldDefs: {
-		datetime: { type: "date", label: "Exact date" },
-		timezone: { type: "enum", label: "Timezone" },
-	},
+	fieldDefs: knownFieldDefs("datetime", "timezone"),
 	units: (locations, enrichFields, force) =>
 		isFieldEnabled(enrichFields, "datetime")
 			? locations.filter((l) => l.extra?.imageDate && (force || l.extra?.datetime == null)).length
@@ -132,12 +128,13 @@ export const exactDateProvider: EnrichmentProvider = {
 		const pending = locations.filter(
 			(l) => l.extra?.imageDate && (ctx?.force || l.extra?.datetime == null),
 		);
-		let next = 0;
-		async function worker() {
-			// On abort, stop early and return what resolved so far -- the runner
-			// persists partial results before propagating the abort.
-			while (next < pending.length && !ctx?.signal?.aborted) {
-				const loc = pending[next++];
+		// On abort, stop early and return what resolved so far -- the runner persists
+		// partial results before propagating the abort, so the signal isn't passed to
+		// runConcurrent (which would throw instead).
+		await runConcurrent(
+			pending,
+			async (loc) => {
+				if (ctx?.signal?.aborted) return;
 				try {
 					const ts = await resolveExactTimestamp(
 						loc.lat,
@@ -158,10 +155,8 @@ export const exactDateProvider: EnrichmentProvider = {
 					ctx?.onFail?.(loc.id);
 				}
 				ctx?.onUnit?.();
-			}
-		}
-		await Promise.all(
-			Array.from({ length: Math.min(SV_CONCURRENCY, pending.length) }, () => worker()),
+			},
+			{ concurrency: SV_CONCURRENCY },
 		);
 		return out;
 	},
@@ -171,12 +166,12 @@ let adm1Ready: Promise<boolean> | null = null;
 function ensureAdm1(): Promise<boolean> {
 	adm1Ready ??= (async () => {
 		if (await cmd.checkBorderFile("adm1")) return true;
-		toast(t("toast.subdivisionDownloading"));
+		toast(t("Subdivision borders missing - downloading..."));
 		try {
 			await cmd.downloadBorderFile("adm1");
 			return true;
 		} catch {
-			toast(t("toast.subdivisionDownloadFailed"));
+			toast(t("Couldn't download subdivision borders - check your connection"));
 			adm1Ready = null;
 			return false;
 		}
@@ -189,7 +184,7 @@ function ensureAdm1(): Promise<boolean> {
 export const subdivisionProvider: EnrichmentProvider = {
 	id: "subdivision",
 	fieldDefs: {
-		subdivision: { type: "string", label: "Subdivision" },
+		subdivision: { type: "string", label: msg("Subdivision") },
 	},
 	async enrich(locations, enrichFields, ctx) {
 		const out = new Map<number, Record<string, unknown>>();
@@ -238,7 +233,7 @@ export async function enrichAll(
 	const run = await runResolvers(locations, [{ id: "enrichMeta", config: enrichFields }], opts);
 	const labelOf = (id: string) =>
 		id === "enrichMeta"
-			? "Metadata"
+			? msg("Metadata")
 			: (getEnrichmentProviders().find((p) => p.id === id)?.label ?? id);
 	return Object.entries(run)
 		.filter(([, o]) => o.success.length > 0 || o.failed.length > 0)

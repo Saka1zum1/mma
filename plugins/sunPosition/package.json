@@ -2,8 +2,8 @@
   "name": "mma-plugin-sun-position",
   "private": true,
   "scripts": {
-    "build": "node build.js",
-    "dev": "node build.js --watch"
+    "build": "node ../build-plugin.mjs .",
+    "dev": "node ../build-plugin.mjs . --watch"
   },
   "dependencies": {
     "suncalc": "^1.9.0"

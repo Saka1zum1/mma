@@ -2,6 +2,9 @@ import { useState, useCallback, type ComponentType, type SetStateAction } from "
 import { emit as emitEvent } from "@/lib/events";
 import { runAsPlugin, disposePlugin } from "@/plugins/scope";
 import { cmpVersion } from "@/lib/util/util";
+import { cmd } from "@/lib/commands";
+import type { PluginManifest } from "@/bindings.gen";
+import { getLocal, setLocal } from "@/lib/hooks/useLocalStorage";
 
 export interface PluginSettingDef {
 	key: string;
@@ -28,24 +31,6 @@ export interface Plugin {
 	locationPanel?: ComponentType;
 }
 
-export interface PluginSidecarRef {
-	name: string;
-	version: string;
-	sha256?: string | null;
-}
-
-export interface PluginManifest {
-	id: string;
-	name: string;
-	description: string;
-	icon: string;
-	main: string;
-	version: string;
-	minAppVersion?: string;
-	experimental?: boolean;
-	sidecar?: PluginSidecarRef | null;
-}
-
 export type PluginBehavior = Partial<Plugin> & {
 	activate(): void | (() => void);
 };
@@ -53,7 +38,10 @@ export type PluginBehavior = Partial<Plugin> & {
 // The registry serves only the latest build of each plugin, so a stale app offered a
 // fresh plugin has exactly two options: take it or keep what it has. `minAppVersion`
 // lets the plugin declare when "take it" would break.
-export function isPluginCompatible(minAppVersion: string | undefined, appVersion: string): boolean {
+export function isPluginCompatible(
+	minAppVersion: string | null | undefined,
+	appVersion: string,
+): boolean {
 	return !minAppVersion || cmpVersion(appVersion, minAppVersion) >= 0;
 }
 
@@ -91,19 +79,11 @@ export function setPendingManifest(manifest: PluginManifest | null) {
 }
 
 const ENABLED_KEY = "mma_plugins_enabled";
-function loadEnabled(): Set<string> {
-	try {
-		return new Set(JSON.parse(localStorage.getItem(ENABLED_KEY) || "[]"));
-	} catch {
-		return new Set();
-	}
-}
-
 function saveEnabled(set: Set<string>) {
-	localStorage.setItem(ENABLED_KEY, JSON.stringify([...set]));
+	setLocal(ENABLED_KEY, [...set]);
 }
 
-const enabledSet = loadEnabled();
+const enabledSet = new Set(getLocal<string[]>(ENABLED_KEY, []));
 
 /** Register a plugin. `activate` runs when a map opens; its returned cleanup runs on map close. */
 export function registerPlugin(plugin: Plugin | PluginBehavior) {
@@ -174,15 +154,11 @@ function pluginStoreKey(id: string): string {
 }
 
 function readPluginStore(id: string): Record<string, unknown> {
-	try {
-		return JSON.parse(localStorage.getItem(pluginStoreKey(id)) || "{}");
-	} catch {
-		return {};
-	}
+	return getLocal<Record<string, unknown>>(pluginStoreKey(id), {});
 }
 
 function writePluginStore(id: string, data: Record<string, unknown>) {
-	localStorage.setItem(pluginStoreKey(id), JSON.stringify(data));
+	setLocal(pluginStoreKey(id), data);
 }
 
 /** Persistent key-value storage namespaced to a plugin. Survives restarts. */
@@ -261,6 +237,9 @@ export function deactivatePlugins() {
 		cleanup();
 	}
 	cleanups.clear();
+	// Nothing is active any more, so nothing should still be running. Covers plugins
+	// that registered no cleanup of their own.
+	cmd.sidecarStopAll().catch(() => {});
 }
 
 export function activatePlugin(id: string) {
@@ -276,6 +255,8 @@ export function deactivatePlugin(id: string) {
 		cleanup();
 		cleanups.delete(id);
 	}
+	// A disabled plugin keeps no processes, whether or not it cleaned up after itself.
+	cmd.sidecarStop(id).catch(() => {});
 	// Reverse every host registration the plugin made during activation, even when it
 	// returned no cleanup — so a disabled plugin's providers/fields/listeners stop.
 	disposePlugin(id);

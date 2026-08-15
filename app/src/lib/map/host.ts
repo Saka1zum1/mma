@@ -5,7 +5,7 @@
 // `hostInstance(host, kind)` and degrade when the active host is a different engine.
 
 import type { Layer, PickingInfo } from "@deck.gl/core";
-import type maplibregl from "maplibre-gl";
+import type * as maplibregl from "maplibre-gl";
 import type { LatLng, Bounds, MapTypeKey } from "@/types";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import type { CustomStyle } from "@/lib/geo/mapStack";
@@ -41,7 +41,6 @@ export interface MapHostEvents {
 }
 
 export interface BasemapOpts {
-	useBlobby: boolean;
 	customStyles: CustomStyle[];
 }
 
@@ -75,7 +74,6 @@ export interface MapHostContract<K extends MapHostKind = MapHostKind> {
 	triggerClickAt(latLng: LatLng): void;
 
 	applyPrefs(prefs: MapEmbedPrefs, opts: BasemapOpts): void;
-	setSvOpacity(v: number): void;
 	resize(): void;
 	destroy(): void;
 }

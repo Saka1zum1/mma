@@ -11,21 +11,15 @@ import {
 	poissonDiskSample,
 } from "./geo";
 import { blueLineSample } from "./blueLineSampler";
+import { ymFromDate } from "@/lib/util/date";
 import { passesInitialFilters, passesDateFilters, isPanoGood, computeHeading } from "./filters";
-import { fetchSvMetadata } from "@/lib/sv/svMeta";
+import { fetchSvMetadataBatched } from "@/lib/sv/svMeta";
 import { distMeters, lerpLng, unionBounds } from "@/lib/geo/geo";
 import { searchCoverage } from "../searchCoverage";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
+import { chunk } from "@/lib/util/util";
 import type { Bounds, LatLng } from "@/types";
-
-function chunk<T>(arr: T[], n: number): T[][] {
-	const result: T[][] = [];
-	for (let i = 0; i < arr.length; i += n) {
-		result.push(arr.slice(i, i + n));
-	}
-	return result;
-}
 
 export class GenerationEngine {
 	private settings: GeneratorSettings;
@@ -379,7 +373,7 @@ export class GenerationEngine {
 
 			region.isProcessing = true;
 			const frontier = queue.splice(0, Math.max(s.speed, 50));
-			const results = await fetchSvMetadata(frontier);
+			const results = await fetchSvMetadataBatched(frontier);
 
 			for (let i = 0; i < results.length; i++) {
 				if (region.found.length >= region.target) break;
@@ -395,28 +389,29 @@ export class GenerationEngine {
 				const lng = pano.location.latLng.lng();
 				if (!pointInGeoJsonGeometry(lng, lat, region.feature.geometry)) continue;
 
-				const depth = depthMap.get(frontier[i]) ?? 0;
+				let depth = depthMap.get(frontier[i]) ?? 0;
 
+				// a find resets depth
 				if (isPanoGood(pano, s)) {
 					await this.finalizeLoc(pano, region);
+					depth = 0;
+				} else if (++depth > maxDepth) {
+					continue;
 				}
 
-				// Enqueue linked panos
-				if (depth < maxDepth) {
-					for (const link of pano.links) {
-						if (link.pano && !visited.has(link.pano)) {
-							visited.add(link.pano);
-							queue.push(link.pano);
-							depthMap.set(link.pano, depth + 1);
-						}
+				for (const link of pano.links) {
+					if (link.pano && !visited.has(link.pano)) {
+						visited.add(link.pano);
+						queue.push(link.pano);
+						depthMap.set(link.pano, depth);
 					}
-					if (s.checkAllDates && pano.time) {
-						for (const entry of pano.time) {
-							if (entry.pano && !visited.has(entry.pano)) {
-								visited.add(entry.pano);
-								queue.push(entry.pano);
-								depthMap.set(entry.pano, depth + 1);
-							}
+				}
+				if (s.checkAllDates && pano.time) {
+					for (const entry of pano.time) {
+						if (entry.pano && !visited.has(entry.pano)) {
+							visited.add(entry.pano);
+							queue.push(entry.pano);
+							depthMap.set(entry.pano, depth);
 						}
 					}
 				}
@@ -530,7 +525,7 @@ export class GenerationEngine {
 						const entry = pano.time[idx];
 						const d = Object.values(entry).find((v): v is Date => v instanceof Date);
 						if (d) {
-							const ym = d.getFullYear() + "-" + (d.getMonth() > 8 ? "" : "0") + (d.getMonth() + 1);
+							const ym = ymFromDate(d);
 							if (
 								Date.parse(ym) < Date.parse(s.fromDate) ||
 								Date.parse(ym) > Date.parse(s.toDate)
@@ -551,7 +546,7 @@ export class GenerationEngine {
 							if (s.rejectUnofficial && entry.pano.length !== 22) continue;
 							const d = Object.values(entry).find((v): v is Date => v instanceof Date);
 							if (!d) continue;
-							const ym = d.getFullYear() + "-" + (d.getMonth() > 8 ? "" : "0") + (d.getMonth() + 1);
+							const ym = ymFromDate(d);
 							if (Date.parse(ym) >= fromDate && Date.parse(ym) <= toDate) {
 								this.getPanoDeep(entry.pano, region, 0);
 							}
@@ -600,7 +595,7 @@ export class GenerationEngine {
 						if (s.rejectUnofficial && entry.pano.length !== 22) continue;
 						const d = Object.values(entry).find((v): v is Date => v instanceof Date);
 						if (!d) continue;
-						const ym = d.getFullYear() + "-" + (d.getMonth() > 8 ? "" : "0") + (d.getMonth() + 1);
+						const ym = ymFromDate(d);
 						if (Date.parse(ym) >= fromDate && Date.parse(ym) <= toDate) {
 							this.getPanoDeep(entry.pano, region, good ? 1 : depth + 1);
 						}

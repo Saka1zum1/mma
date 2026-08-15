@@ -4,6 +4,8 @@ export const title = "Installing user plugins";
 
 On the **Additional** tab, press **Install** on a registry plugin. It downloads into your plugins folder, enables itself, and activates on the open map. Use the trash button to uninstall.
 
+Some plugins ship a **sidecar**: a helper program that does work the app can't (image models, OCR). Those are downloaded as part of installing the plugin, with a progress bar, and updated the same way. They are larger than the plugin itself, so the first install takes a while.
+
 ## Manually
 
 Plugins live in a `plugins/` subfolder of your application data folder, one folder per plugin. To install one by hand:
@@ -12,4 +14,4 @@ Plugins live in a `plugins/` subfolder of your application data folder, one fold
 2. Restart the app.
 3. Enable it in the marketplace.
 
-Each plugin folder contains a `manifest.json` (its identity: id, name, description, icon, version, entry file) and the entry JavaScript file.
+Each plugin folder contains a `manifest.json` (its identity: `id`, `name`, `description`, `icon`, `version`, and `main`, the entry file) and the entry JavaScript file.

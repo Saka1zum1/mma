@@ -1,45 +1,20 @@
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
-	refreshSelections,
-	withApi,
-} from "./helpers";
-import type { Location } from "@/bindings.gen";
+import { refreshSelections, withApi, useMap, seedLocs } from "./helpers";
 
 describe("Selection filters — extra field operations", () => {
-	let mapId: string;
+	useMap("E2E Filter Extras");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Filter Extras");
-
 		// Create locations with various extra fields
-		const locs: Location[] = [];
-		for (let i = 0; i < 20; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					extra: {
-						altitude: i * 100,
-						country: i < 10 ? "US" : "UK",
-						imageDate: `2024-${String((i % 12) + 1).padStart(2, "0")}`,
-					},
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(20, (i) => ({
+			lat: i,
+			lng: i,
+			extra: {
+				altitude: i * 100,
+				country: i < 10 ? "US" : "UK",
+				imageDate: `2024-${String((i % 12) + 1).padStart(2, "0")}`,
+			},
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
@@ -202,34 +177,19 @@ describe("Selection filters — extra field operations", () => {
 });
 
 describe("Selection filters — core field operations", () => {
-	let mapId: string;
+	useMap("E2E Filter Core");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Filter Core");
-
-		const locs: Location[] = [];
-		for (let i = 0; i < 30; i++) {
-			locs.push(
-				createLocation({
-					lat: i * 3,
-					lng: i * 2,
-					heading: i * 12,
-					pitch: (i % 10) - 5,
-					zoom: (i % 5) + 1,
-					panoId: i < 15 ? `pano${i}` : null,
-					flags: i < 10 ? 1 : 0,
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(30, (i) => ({
+			lat: i * 3,
+			lng: i * 2,
+			heading: i * 12,
+			pitch: (i % 10) - 5,
+			zoom: (i % 5) + 1,
+			panoId: i < 15 ? `pano${i}` : null,
+			flags: i < 10 ? 1 : 0,
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});

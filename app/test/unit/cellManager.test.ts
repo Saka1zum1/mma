@@ -1,39 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
 	CellBuffer,
 	CellManager,
 	decodeSelectionBitmask,
 	type SelEntry,
-	type SelColor,
 } from "@/lib/render/CellManager";
-import type { RenderDelta, RenderEntry } from "@/bindings.gen";
-
-function entry(
-	cell: string,
-	id: number,
-	lng: number,
-	lat: number,
-	heading = 0,
-	sel: SelColor = null,
-): RenderEntry {
-	return { cell, id, lng, lat, heading, sel, movedFrom: null };
-}
-
-/** A `SelColor`: the paint a delta entry carries. `idx` is the drawing selection's
- *  position in the selection list, which is what the overlay orders by. */
-function paint(color: [number, number, number], idx = 0): SelColor {
-	return { idx, color };
-}
-
-/** A render delta with everything defaulted, so a case names only what it exercises. */
-function delta(parts: Partial<RenderDelta> = {}): RenderDelta {
-	return { added: [], updated: [], removed: [], fullReset: false, ...parts };
-}
-
-/** A coordinate-free patch: the shape a pure membership change arrives as. */
-function selPatch(cell: string, cellIndex: number, sel: SelColor) {
-	return { cell, cellIndex, lng: null, lat: null, heading: null, sel };
-}
+import type { RenderDelta } from "@/bindings.gen";
+import { delta, entry, paint, selPatch } from "./fixtures/renderFixtures";
 
 /** A dense-bitmask SelEntry, the shape applySelectionBitmasks consumes. */
 const maskSel = (mask: Uint8Array): SelEntry => ({ kind: "mask", mask });
@@ -385,6 +360,50 @@ describe("CellManager", () => {
 		expect(mgr.selectedIds().has(7)).toBe(true);
 	});
 
+	it("initFromBinary orders the selection overlay by selection index", () => {
+		// Rust emits overlay entries in row order tagged with the drawing selection; the
+		// z-order between two selections' markers is decided here, on load.
+		const ids = [1, 2, 3, 4];
+		const sels = [0, 1, 0, 1];
+		const n = ids.length;
+		const buf = new ArrayBuffer(4 + 4 + n * (8 + 4 + 4 + 4 + 4));
+		const dv = new DataView(buf);
+		dv.setUint32(0, 0, true); // 0 cells
+		dv.setUint32(4, n, true);
+		let off = 8;
+		for (let i = 0; i < n; i++) {
+			dv.setFloat32(off, ids[i], true); // lng doubles as an entry marker
+			dv.setFloat32(off + 4, 0, true);
+			off += 8;
+		}
+		for (let i = 0; i < n; i++) {
+			dv.setUint8(off, ids[i]);
+			dv.setUint8(off + 3, 255);
+			off += 4;
+		}
+		off += n * 4; // angles, all zero
+		for (const id of ids) {
+			dv.setUint32(off, id, true);
+			off += 4;
+		}
+		for (const s of sels) {
+			dv.setUint32(off, s, true);
+			off += 4;
+		}
+
+		mgr.initFromBinary(buf);
+		expect(Array.from(mgr.overlay.sel.subarray(0, n))).toEqual([0, 0, 1, 1]);
+		expect(Array.from(mgr.overlay.ids.subarray(0, n))).toEqual([1, 3, 2, 4]);
+		// The other arrays move with their entry, and `slot` still points at each id.
+		expect(Array.from(mgr.overlay.positions.subarray(0, n * 2))).toEqual([
+			1, 0, 3, 0, 2, 0, 4, 0,
+		]);
+		expect(Array.from(mgr.overlay.colors.subarray(0, n * 4))).toEqual([
+			1, 0, 0, 255, 3, 0, 0, 255, 2, 0, 0, 255, 4, 0, 0, 255,
+		]);
+		for (const id of ids) expect(mgr.overlay.has(id)).toBe(true);
+	});
+
 	it("initFromBinary clears previous state", () => {
 		mgr.applyDelta(delta({ added: [entry("x", 1, 1, 1)] }));
 		expect(mgr.totalCount).toBe(1);
@@ -396,6 +415,69 @@ describe("CellManager", () => {
 		mgr.initFromBinary(buf);
 		expect(mgr.totalCount).toBe(0);
 		expect(mgr.cells.size).toBe(0);
+	});
+
+	// --- shared render-binary fixture ---
+	//
+	// `render-buffer.bin` is written by the Rust generator (location_store.test.rs,
+	// `emit_render_fixture`), which also describes the scene. Asserting against the real
+	// producer keeps the layout stated once.
+	// Regenerate with: cargo test emit_render_fixture -- --ignored
+	const fixturePath = fileURLToPath(new URL("./fixtures/render-buffer.bin", import.meta.url));
+
+	// Skips until the generator has been run, so a checkout without the artifact stays green.
+	it.skipIf(!existsSync(fixturePath))("parses the render binary Rust emits", () => {
+		const file = readFileSync(fixturePath);
+		const buf = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
+		mgr.initFromBinary(buf as ArrayBuffer);
+
+		expect([...mgr.cells.keys()].sort()).toEqual(["d", "r", "u"]);
+		expect(mgr.totalCount).toBe(4);
+		expect(mgr.maxId).toBe(4);
+
+		const d = mgr.cells.get("d")!;
+		expect(d.count).toBe(1);
+		expect(d.ids).toEqual([3]);
+		expect(d.positions[0]).toBeCloseTo(-74.0);
+		expect(d.positions[1]).toBeCloseTo(40.7);
+		expect(d.angles[0]).toBeCloseTo(-270);
+		expect(d.visible[0]).toBe(255); // unselected: the base layer draws it
+
+		const r = mgr.cells.get("r")!;
+		expect(r.ids).toEqual([2]);
+		expect(r.positions[0]).toBeCloseTo(151.2);
+		expect(r.positions[1]).toBeCloseTo(-33.8);
+		expect(r.angles[0]).toBeCloseTo(-180);
+		expect(r.visible[0]).toBe(0); // selected: the overlay draws it
+
+		const u = mgr.cells.get("u")!;
+		expect(u.count).toBe(2);
+		expect(u.ids).toEqual([1, 4]);
+		expect(u.positions[0]).toBeCloseTo(2.35);
+		expect(u.positions[1]).toBeCloseTo(48.8);
+		expect(u.positions[2]).toBeCloseTo(2.4);
+		expect(u.positions[3]).toBeCloseTo(48.9);
+		expect(u.angles[0]).toBeCloseTo(-90);
+		expect(u.angles[1]).toBeCloseTo(-45);
+		expect(Array.from(u.visible.subarray(0, 2))).toEqual([0, 0]);
+		expect(u.idToIndex.get(4)).toBe(1);
+
+		// Rust emits the overlay in row order (1, 2, 4); `load` sorts it by selection index,
+		// so "b"'s marker ends up last and overdraws.
+		const ov = mgr.overlay;
+		expect(ov.count).toBe(3);
+		expect(Array.from(ov.ids.subarray(0, 3))).toEqual([1, 4, 2]);
+		expect(Array.from(ov.sel.subarray(0, 3))).toEqual([0, 0, 1]);
+		expect(Array.from(ov.colors.subarray(0, 12))).toEqual([
+			255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 255, 255,
+		]);
+		expect(ov.positions[0]).toBeCloseTo(2.35);
+		expect(ov.positions[2]).toBeCloseTo(2.4);
+		expect(ov.positions[4]).toBeCloseTo(151.2);
+		expect(ov.angles[2]).toBeCloseTo(-180);
+		expect(mgr.selectedIds().size).toBe(3);
+		for (const id of [1, 2, 4]) expect(ov.has(id)).toBe(true);
+		expect(ov.has(3)).toBe(false);
 	});
 
 	it("an added entry that is already selected goes straight into the overlay", () => {

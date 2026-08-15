@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { emit as tauriEmit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { log } from "@/lib/util/log";
 import type {
 	Location,
@@ -75,6 +77,11 @@ const versions = new Map<EditorEvent, number>();
 
 export function emit<E extends EditorEvent>(evt: E, ...args: EmitArgs<E>): void {
 	versions.set(evt, (versions.get(evt) ?? 0) + 1);
+	if (!applyingRemote && bridgedEvents.has(evt)) {
+		void tauriEmit(`xwin:${evt}`, WINDOW_LABEL).catch((e) =>
+			log.error(`[event] broadcast ${evt}:`, e),
+		);
+	}
 	const set = handlers.get(evt);
 	if (!set) return;
 	const payload = args[0] as never;
@@ -85,6 +92,40 @@ export function emit<E extends EditorEvent>(evt: E, ...args: EmitArgs<E>): void 
 			log.error(`[event] ${evt}:`, e);
 		}
 	}
+}
+
+/** Events with no payload; the only kind a cross-window bridge can mirror, since the
+ *  receiver rereads state instead of receiving it. */
+type VoidEvent = { [E in EditorEvent]: EditorEventMap[E] extends void ? E : never }[EditorEvent];
+
+// Null outside a Tauri/webserve context (vitest, bare browser); the bridge is inert there.
+const WINDOW_LABEL = (() => {
+	try {
+		return getCurrentWindow().label;
+	} catch {
+		return null;
+	}
+})();
+const bridgedEvents = new Set<EditorEvent>();
+let applyingRemote = false;
+
+/** Mirror `event` to every window: local emits also broadcast a Tauri event, and another
+ *  window's broadcast runs `rehydrate` (reread the backing store into module state) before
+ *  re-emitting locally, so all consumers update through their normal subscription. Emits
+ *  during `rehydrate` don't re-broadcast, so two bridged windows can't echo. */
+export function bridgeAcrossWindows(event: VoidEvent, rehydrate: () => void): void {
+	if (WINDOW_LABEL === null) return;
+	bridgedEvents.add(event);
+	void listen<string>(`xwin:${event}`, (e) => {
+		if (e.payload === WINDOW_LABEL) return;
+		applyingRemote = true;
+		try {
+			rehydrate();
+			emit(event);
+		} finally {
+			applyingRemote = false;
+		}
+	});
 }
 
 /** Normalizes event input into a stable key, event list, and subscribe callback. */

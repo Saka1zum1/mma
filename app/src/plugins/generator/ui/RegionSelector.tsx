@@ -5,11 +5,11 @@ import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import type { Selection } from "@/bindings.gen";
 import type { GeneratorRegionMeta } from "../engine/types";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
-function getPolygonName(sel: Selection, unnamed: string): string {
+function getPolygonName(sel: Selection): string {
 	if (sel.props.type !== "Polygon") return sel.key;
-	return sel.props.polygon.properties?.name || unnamed;
+	return sel.props.polygon.properties?.name || t("Unnamed polygon");
 }
 
 function getPolygonCode(sel: Selection): string | undefined {
@@ -28,7 +28,6 @@ export function RegionSelector({
 	meta: Map<string, GeneratorRegionMeta>;
 	onMetaChange: (meta: Map<string, GeneratorRegionMeta>) => void;
 }) {
-	const { t } = useT();
 	const selections = useMapState(getActiveSelections);
 	const polygonSelections = selections.filter((s) => s.props.type === "Polygon");
 	const [capDialogOpen, setCapDialogOpen] = useState(false);
@@ -90,14 +89,13 @@ export function RegionSelector({
 		<div className="generator-regions">
 			{polygonSelections.length === 0 && (
 				<div className="generator-regions__hint">
-					{t("plugin.generator.selectRegionHintPrefix")}
-					<kbd>Q</kbd>
-					{t("plugin.generator.selectRegionHintSuffix")}
+					{t("Draw a polygon on the map or hold")} <kbd>{t("Q")}</kbd>{" "}
+					{t("+ click to select a country outline.")}
 				</div>
 			)}
 			<div className="generator-regions__controls">
 				<label className="generator-regions__target-label">
-					{t("plugin.generator.locationsPerRegion")}
+					{t("Locations per region:")}
 					<input
 						type="number"
 						className="text-input"
@@ -116,14 +114,14 @@ export function RegionSelector({
 						setCapDialogOpen(true);
 					}}
 				>
-					{t("plugin.generator.changeAllCaps")}
+					{t("Change all caps")}
 				</button>
 			</div>
 			<Dialog open={capDialogOpen} onOpenChange={setCapDialogOpen}>
-				<DialogContent title={t("plugin.generator.changeAllCaps")}>
+				<DialogContent title={t("Change all caps")}>
 					<div className="generator-cap-dialog">
 						<label className="generator-regions__target-label">
-							{t("plugin.generator.locationsCapAll")}
+							{t("Locations cap for all regions:")}
 							<TextInput
 								type="number"
 								min={1}
@@ -136,9 +134,9 @@ export function RegionSelector({
 						</label>
 						<div className="generator-cap-dialog__actions">
 							<Button variant="primary" onClick={confirmCap}>
-								{t("common.apply")}
+								{t("Apply")}
 							</Button>
-							<Button onClick={() => setCapDialogOpen(false)}>{t("common.cancel")}</Button>
+							<Button onClick={() => setCapDialogOpen(false)}>{t("Cancel")}</Button>
 						</div>
 					</div>
 				</DialogContent>
@@ -146,7 +144,7 @@ export function RegionSelector({
 			{polygonSelections.length > 0 && (
 				<div className="generator-regions__list">
 					{polygonSelections.map((sel) => {
-						const name = getPolygonName(sel, t("plugin.generator.unnamedPolygon"));
+						const name = getPolygonName(sel);
 						const code = getPolygonCode(sel);
 						const m = meta.get(sel.key);
 						const found = m?.found.length ?? 0;

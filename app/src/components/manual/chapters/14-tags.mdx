@@ -15,11 +15,12 @@ Tags are colored on/off labels you attach to locations. They are boolean: a loca
 - **Color.** Each tag has a color used for its markers, set with a color picker.
 - **Order & sort.** Drag tags to reorder, or sort by name or count.
 - **Visibility.** Hide a tag to declutter the map. A tag automatically becomes hidden when no location carries it.
-- **Suggestion limit.** Cap how many tags appear in autocomplete and quicktag lists in **Settings → Tags → Suggestions shown**.
+- **Suggestion limit.** Cap how many tags appear in autocomplete and quicktag lists in **Settings → Editing → Tags → Suggestions shown**.
+- **Spacing.** **Tag gap** controls how tightly tag pills pack together, useful on maps with hundreds of tags.
 
 ## Tree grouping
 
-With **tree** view enabled (**Settings → Tags**, or the Flat/Tree control on the Tags panel), tags whose names contain `/` are grouped hierarchically, e.g. `Europe/France` nests under `Europe`. Parents show partial-selection indicators and inherit color.
+With **View mode** set to **tree** (**Settings → Editing → Tags**), tags whose names contain `/` are grouped hierarchically, e.g. `Europe/France` nests under `Europe`. Parents show partial-selection indicators and inherit color. Two options refine it: **Folder color** (inherit from the first child, or a fixed color) and **Truncate tag names to shortest unique path**, which drops the redundant prefix from deeply nested names.
 
 - **Virtual folders.** Create folder nodes that don't correspond to a real tag. They get their own color and can be renamed or recolored from an edit dialog, with an option to cascade changes to all descendant tags.
 - **Tag aliases.** Place a tag at a second folder path via the **Add alias** item in a tag's context menu. The alias appears in the tree at the chosen path alongside the original.
@@ -29,3 +30,5 @@ With **tree** view enabled (**Settings → Tags**, or the Flat/Tree control on t
 - **Apply metadata as tags.** Pick a metadata field and <App /> creates one tag per distinct value, assigning each location the tag for its value (command palette). For example, applying **countryCode** turns a map into per-country tags in one step. Date and month fields offer a grouping choice (year, year-month, exact day, month of year, or hour of day), with an optional **Location timezone** checkbox; number fields can be bucketed by a fixed width (e.g. altitude in 500m bands). The same partition options are available in the Gradient plugin.
 - **Find and replace in tag names.** Bulk-rename across tags (command palette).
 - **Download tag counts as CSV.** Export per-tag counts (command palette).
+- **Delete selected tags.** Removes every tag you currently have selected, and its assignments (command palette).
+- **Assign document links.** Point tags at headings in a Google Doc, so the relevant section shows up beside the map. See <ChapterLink id="doclinks" />.

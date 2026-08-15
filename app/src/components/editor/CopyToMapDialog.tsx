@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { cmd } from "@/lib/commands";
+import { useAsync } from "@/lib/hooks/useAsync";
 import { log } from "@/lib/util/log";
-import type { MapMeta } from "@/bindings.gen";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { HotkeyInput } from "@/components/primitives/HotkeyInput";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
@@ -9,24 +9,24 @@ import { Button } from "@/components/primitives/Button";
 import { useMapSetting } from "@/store/useMapSetting";
 import { getMapCopyBindingKey, withMapCopyBinding } from "@/lib/map/mapKeyBindings";
 import { getMapState } from "@/store/useMapStore";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 /** Assign per-map hotkeys that copy the active location into other maps.
  *  Shows only configured maps; new targets are added via autocomplete (type a
  *  map name), then keyed. Bindings persist to this map's settings as changed. */
 export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
-	const [maps, setMaps] = useState<MapMeta[] | null>(null);
 	const [bindings, setBindings] = useMapSetting("keyBindings");
+	// Added via autocomplete but not yet keyed; persisted only once a key is recorded.
 	const [pendingIds, setPendingIds] = useState<string[]>([]);
 	const [query, setQuery] = useState("");
-
-	useEffect(() => {
-		cmd
-			.storeListMaps()
-			.then(setMaps)
-			.catch((e) => log.error("[copyToMap] list failed:", e));
-	}, []);
+	const { data: maps } = useAsync(
+		() =>
+			cmd.storeListMaps().catch((e) => {
+				log.error("[copyToMap] list failed:", e);
+				return null;
+			}),
+		[],
+	);
 
 	const byId = useMemo(() => new Map((maps ?? []).map((m) => [m.id, m])), [maps]);
 
@@ -67,6 +67,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 		if (combo) {
 			setPendingIds((prev) => prev.filter((p) => p !== id));
 		} else if (!pendingIds.includes(id)) {
+			// Cleared via Backspace: keep the row visible, just unkeyed.
 			setPendingIds((prev) => [...prev, id]);
 		}
 	};
@@ -78,9 +79,13 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 				if (!open) onClose();
 			}}
 		>
-			<DialogContent title={t("dialog.copyLocationToMapHotkeys")} className="copy-to-map-modal-host">
+			<DialogContent title={t("Copy location to map (hotkeys)")} className="copy-to-map-modal-host">
 				<div className="copy-to-map-modal">
-					<p className="copy-to-map-modal__hint">{t("copyToMap.hint")}</p>
+					<p className="copy-to-map-modal__hint">
+						{t(
+							"Pressing an assigned key while a location is open copies that location into the map\n\t\t\t\t\t\t(duplicates are skipped).",
+						)}
+					</p>
 					{rowIds.length > 0 && (
 						<ul className="copy-to-map-modal__list">
 							{rowIds.map((id) => {
@@ -89,11 +94,11 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 								return (
 									<li key={id} className="copy-to-map-modal__row">
 										<span className="copy-to-map-modal__name">
-											{meta ? meta.name || t("copyToMap.unnamed") : t("copyToMap.missingMap")}
+											{meta ? meta.name || t("(unnamed)") : t("(missing map)")}
 											{meta?.folder && <small> · {meta.folder}</small>}
 										</span>
 										<HotkeyInput value={key} onChange={(combo) => setRowKey(id, combo)} />
-										<Button onClick={() => removeRow(id)}>{t("common.remove")}</Button>
+										<Button onClick={() => removeRow(id)}>{t("Remove")}</Button>
 									</li>
 								);
 							})}
@@ -101,7 +106,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 					)}
 					<SuggestInput
 						containerClassName="copy-to-map-modal__add"
-						placeholder={t("copyToMap.addMapPlaceholder")}
+						placeholder={t("Add a map...")}
 						value={query}
 						onChange={setQuery}
 						suggestions={suggestions}
@@ -111,7 +116,7 @@ export function CopyToMapDialog({ onClose }: { onClose: () => void }) {
 						autoFocus
 						renderItem={(m) => (
 							<>
-								<strong>{m.name || t("copyToMap.unnamed")}</strong>
+								<strong>{m.name || t("(unnamed)")}</strong>
 								{m.folder && <span className="search-result__context"> · {m.folder}</span>}
 							</>
 						)}

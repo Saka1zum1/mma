@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	render: vi.fn(),
 	toBlob: vi.fn(),
 	download: vi.fn(),
+	copyImage: vi.fn(),
 	toast: vi.fn(),
 	settings: {
 		showScreenshotButton: true,
@@ -29,14 +30,14 @@ vi.mock("@/lib/sv/panoCapture", () => ({
 	renderPanoView: mocks.render,
 	canvasToBlob: mocks.toBlob,
 }));
-vi.mock("@/lib/util/util", () => ({ downloadBlob: mocks.download, schemeBase: () => "" }));
+vi.mock("@/lib/util/util", () => ({
+	downloadBlob: mocks.download,
+	copyImageToClipboard: mocks.copyImage,
+	schemeBase: () => "",
+}));
 vi.mock("@/lib/util/toast", () => ({ toast: mocks.toast }));
 vi.mock("@/lib/util/log", () => ({ log: { warn: vi.fn() } }));
 vi.mock("@/store/settings", () => ({ useSettings: () => mocks.settings }));
-vi.mock("@/store/useMapStore", () => ({
-	useMapState: (sel: (s: { activeLocation: null }) => unknown) => sel({ activeLocation: null }),
-	getMapState: () => ({ activeLocation: null }),
-}));
 vi.mock("@/lib/util/hotkeys", () => ({ useBinding: () => "f" }));
 vi.mock("@/lib/hooks/useHotkey", () => ({ useHotkeyRef: () => ({ current: null }) }));
 vi.mock("@/lib/hooks/usePanoEvent", () => ({ usePanoEvent: vi.fn() }));
@@ -49,9 +50,7 @@ import { PanoControls } from "@/components/editor/location/PanoControls";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const panorama = {
-	getPano: () => "pano-id",
-} as unknown as google.maps.StreetViewPanorama;
+const panorama = {} as google.maps.StreetViewPanorama;
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
@@ -76,6 +75,7 @@ beforeEach(() => {
 	mocks.render.mockReset();
 	mocks.toBlob.mockReset();
 	mocks.download.mockReset();
+	mocks.copyImage.mockReset().mockResolvedValue(true);
 	mocks.toast.mockReset();
 	mocks.settings.showScreenshotButton = true;
 	mocks.settings.showFullscreenButton = false;
@@ -95,7 +95,7 @@ describe("PanoControls screenshot button", () => {
 		renderControls();
 		const screenshot = container.querySelector("[data-qa='pano-screenshot']")!;
 		expect(screenshot).not.toBeNull();
-		expect(screenshot.getAttribute("aria-label")).toBe("Download screenshot");
+		expect(screenshot.getAttribute("aria-label")).toBe("Copy screenshot to clipboard");
 		expect(screenshot.closest(".map-control")?.querySelectorAll("button")).toHaveLength(1);
 
 		mocks.settings.showScreenshotButton = false;
@@ -103,7 +103,7 @@ describe("PanoControls screenshot button", () => {
 		expect(container.querySelector("[data-qa='pano-screenshot']")).toBeNull();
 	});
 
-	it("disables during capture and downloads the completed PNG once", async () => {
+	it("disables during capture and copies the completed PNG once", async () => {
 		let finish!: (canvas: HTMLCanvasElement) => void;
 		mocks.render.mockReturnValue(new Promise((resolve) => (finish = resolve)));
 		const blob = new Blob(["png"], { type: "image/png" });
@@ -121,14 +121,44 @@ describe("PanoControls screenshot button", () => {
 		);
 
 		await act(async () => finish(document.createElement("canvas")));
-		expect(mocks.download).toHaveBeenCalledOnce();
+		expect(mocks.copyImage).toHaveBeenCalledOnce();
+		expect(mocks.copyImage).toHaveBeenCalledWith(blob);
+		expect(mocks.download).not.toHaveBeenCalled();
+		expect(mocks.toast).toHaveBeenCalledWith("Screenshot copied");
+
+		act(() => vi.advanceTimersByTime(500));
+		expect(button.disabled).toBe(false);
+	});
+
+	it("downloads instead of copying on shift-click", async () => {
+		const blob = new Blob(["png"], { type: "image/png" });
+		mocks.render.mockResolvedValue(document.createElement("canvas"));
+		mocks.toBlob.mockResolvedValue(blob);
+		renderControls();
+		const button = container.querySelector<HTMLButtonElement>("[data-qa='pano-screenshot']")!;
+
+		await act(async () =>
+			button.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })),
+		);
+		expect(mocks.copyImage).not.toHaveBeenCalled();
 		expect(mocks.download).toHaveBeenCalledWith(
 			blob,
 			expect.stringMatching(/^pano-id_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.png$/),
 		);
+		expect(mocks.toast).toHaveBeenCalledWith("Screenshot downloaded");
+	});
 
-		act(() => vi.advanceTimersByTime(500));
-		expect(button.disabled).toBe(false);
+	it("falls back to downloading when the clipboard refuses the image", async () => {
+		const blob = new Blob(["png"], { type: "image/png" });
+		mocks.render.mockResolvedValue(document.createElement("canvas"));
+		mocks.toBlob.mockResolvedValue(blob);
+		mocks.copyImage.mockResolvedValue(false);
+		renderControls();
+		const button = container.querySelector<HTMLButtonElement>("[data-qa='pano-screenshot']")!;
+
+		await act(async () => button.click());
+		expect(mocks.download).toHaveBeenCalledOnce();
+		expect(mocks.toast).toHaveBeenCalledWith("Clipboard unavailable, downloaded instead");
 	});
 
 	it("toasts and re-enables when capture fails", async () => {

@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use rust_decimal::Decimal;
 use rustc_hash::FxHashMap;
 use vali_core::Location;

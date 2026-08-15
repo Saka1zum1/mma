@@ -1,4 +1,32 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+const h = vi.hoisted(() => ({
+	seeds: [] as { lat: number; lng: number; panoId: string }[],
+	// panoId -> the metadata GetMetadata would return for it
+	panos: new Map<string, unknown>(),
+	fetched: [] as string[],
+}));
+
+vi.mock("@/lib/util/log", () => ({
+	log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, trace: () => {} },
+	fireAndForget: (p: Promise<unknown>) => void p.catch(() => {}),
+}));
+
+vi.mock("@/lib/commands", () => ({
+	cmd: {
+		storeFindNearby: () => Promise.resolve(h.seeds),
+		storeNearAny: (lats: number[]) => Promise.resolve(lats.map(() => false)),
+	},
+}));
+
+vi.mock("@/lib/sv/svMeta", () => {
+	const fetchSvMetadata = (ids: string[]) => {
+		h.fetched.push(...ids);
+		return Promise.resolve(ids.map((id) => h.panos.get(id) ?? null));
+	};
+	return { fetchSvMetadata, fetchSvMetadataBatched: fetchSvMetadata };
+});
+
 import { passesDescriptionSearch, isPanoGood } from "@/plugins/generator/engine/filters";
 import { GenerationEngine } from "@/plugins/generator/engine/GenerationEngine";
 import { DEFAULT_SETTINGS } from "@/plugins/generator/engine/types";
@@ -406,6 +434,67 @@ describe("GenerationEngine live tuning", () => {
 
 		expect(probesAfterResume).toBeGreaterThanOrEqual(50);
 		expect(engine.isRunning()).toBe(false);
+	});
+});
+
+// --- Grow (kernels) sampling ---
+
+// A chain p0 -> p1 -> ... inside region A, each pano linking only to its successor.
+// 2005 sits outside the default from/to window, so it is how a pano is made to fail.
+function seedChain(length: number, isGood: (i: number) => boolean): void {
+	h.panos.clear();
+	for (let i = 0; i < length; i++) {
+		h.panos.set(`p${i}`, {
+			location: {
+				pano: `p${i}`,
+				description: "Main Street",
+				shortDescription: "",
+				latLng: { lat: () => 0, lng: () => -50 },
+			},
+			links: i + 1 < length ? [{ heading: 90, pano: `p${i + 1}` }] : [],
+			imageDate: isGood(i) ? "2020-06" : "2005-01",
+			time: [],
+			tiles: { centerHeading: 0, worldSize: { height: 6656 } },
+		});
+	}
+	h.seeds = [{ lat: 0, lng: -50, panoId: "p0" }];
+	h.fetched = [];
+}
+
+describe("GenerationEngine grow sampling", () => {
+	it("keeps growing past linksDepth while panos keep qualifying", async () => {
+		seedChain(60, () => true);
+		const region = regionAt("A", -60, -40);
+		region.target = 20;
+
+		const engine = new GenerationEngine(
+			fakeGoogleWith(() => {}),
+			permissive({ samplingMode: "kernels", linksDepth: 2 }),
+			[region],
+			noopCallbacks,
+		);
+
+		await engine.start();
+
+		// A fixed depth-2 ball around the lone seed would have stopped at 3 finds.
+		expect(region.found).toHaveLength(20);
+	});
+
+	it("gives up after linksDepth consecutive misses", async () => {
+		seedChain(60, () => false);
+		const region = regionAt("A", -60, -40);
+
+		const engine = new GenerationEngine(
+			fakeGoogleWith(() => {}),
+			permissive({ samplingMode: "kernels", linksDepth: 2 }),
+			[region],
+			noopCallbacks,
+		);
+
+		await engine.start();
+
+		expect(region.found).toHaveLength(0);
+		expect(h.fetched).toEqual(["p0", "p1", "p2"]);
 	});
 });
 

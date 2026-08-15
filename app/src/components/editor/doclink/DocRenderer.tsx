@@ -1,5 +1,7 @@
 import { createElement, useCallback } from "react";
 import { openDocHref, type DocBlock, type InlineMarks, type InlineSpan } from "@/lib/doclink";
+import { clamp } from "@/types/util";
+import { t } from "@/lib/i18n";
 
 function spanStyle(m: InlineMarks): React.CSSProperties | undefined {
 	const style: React.CSSProperties = {};
@@ -48,7 +50,7 @@ function Block({ block }: { block: DocBlock }) {
 	switch (block.kind) {
 		case "heading":
 			return createElement(
-				`h${Math.min(6, Math.max(1, block.level))}`,
+				`h${clamp(block.level, 1, 6)}`,
 				{ id: block.anchor },
 				<Spans spans={block.spans} />,
 			);
@@ -81,7 +83,7 @@ function Block({ block }: { block: DocBlock }) {
 		case "hr":
 			return <hr />;
 		case "placeholder":
-			return <p className="doclink-native__placeholder">{block.note}</p>;
+			return <p className="doclink-native__placeholder">{t(block.note)}</p>;
 	}
 }
 

@@ -19,7 +19,15 @@ export function useSettingsSearch() {
 	return { ...ctx, auxVisible: !ctx.searching || ctx.sectionMatched };
 }
 
-type Base = { label: string; description?: string; disabled?: boolean; sub?: boolean };
+/** `label` stays a plain string so settings search can match on it; `badge` is the escape hatch
+ *  for a marker sitting beside it, like the flask on an experimental plugin card. */
+type Base = {
+	label: string;
+	badge?: ReactNode;
+	description?: string;
+	disabled?: boolean;
+	sub?: boolean;
+};
 type BoolRow = Base & { checked: boolean; onChange: (v: boolean) => void };
 type AutoBoolRow = Base & { setting: keyof AppSettings };
 type ControlRow = Base & { control: ReactNode };
@@ -39,7 +47,7 @@ export function SettingRow(props: BoolRow | ControlRow | AutoBoolRow) {
 	const { query, searching, sectionMatched } = useContext(SettingsSearchContext);
 	if ("setting" in props) return <AutoWiredRow {...(props as AutoBoolRow)} />;
 
-	const { label, description, disabled, sub } = props;
+	const { label, badge, description, disabled, sub } = props;
 
 	if (searching && !sectionMatched) {
 		if (!`${label} ${description ?? ""}`.toLowerCase().includes(query)) return null;
@@ -53,7 +61,10 @@ export function SettingRow(props: BoolRow | ControlRow | AutoBoolRow) {
 			onClick={"control" in props ? undefined : () => !disabled && props.onChange(!props.checked)}
 		>
 			<div className="setting-row__label">
-				<span className="setting-row__title">{label}</span>
+				<span className="setting-row__title">
+					{label}
+					{badge}
+				</span>
 				{description && <span className="setting-row__desc">{description}</span>}
 			</div>
 			<div

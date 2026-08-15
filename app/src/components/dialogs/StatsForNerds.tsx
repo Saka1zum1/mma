@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
+import { useAsync } from "@/lib/hooks/useAsync";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
+import { fmt, localeFormat } from "@/lib/util/format";
 import { getMapState } from "@/store/useMapStore";
-import { useT, type MessageKey, type MessageParams } from "@/lib/i18n";
 import {
 	startFrameMeter,
 	stopFrameMeter,
@@ -16,6 +17,7 @@ import {
 	type DeckMetrics,
 	type RenderStats,
 } from "@/lib/render/renderStats";
+import { t } from "@/lib/i18n";
 
 declare const __APP_VERSION__: string;
 
@@ -61,14 +63,11 @@ async function gatherStats(): Promise<Stats> {
 		: "N/A";
 
 	const secs = Math.floor(performance.now() / 1000);
-	const mins = Math.floor(secs / 60);
-	const hrs = Math.floor(mins / 60);
-	const uptime =
-		hrs > 0
-			? `${hrs}h ${mins % 60}m ${secs % 60}s`
-			: mins > 0
-				? `${mins}m ${secs % 60}s`
-				: `${secs}s`;
+	const uptime = uptimeFmt.format({
+		hours: Math.floor(secs / 3600),
+		minutes: Math.floor(secs / 60) % 60,
+		seconds: secs % 60,
+	});
 
 	let webglRenderer = "unknown";
 	try {
@@ -113,83 +112,41 @@ interface LiveStats {
 	scene: RenderStats | null;
 }
 
-const fmtInt = (n: number) => Math.round(n).toLocaleString();
+const uptimeFmt = localeFormat<Partial<Record<Intl.DurationFormatUnit, number>>>(
+	(l) => new Intl.DurationFormat(l, { style: "narrow" }),
+);
+const fmtInt = (n: number) => fmt.format(Math.round(n));
 const fmtMB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
-function liveRows(
-	live: LiveStats,
-	t: (key: MessageKey, params?: MessageParams) => string,
-): [string, string][] {
+function liveRows(live: LiveStats): [string, string][] {
 	const { frame, deck, scene } = live;
 	const rows: [string, string][] = [
-		[
-			t("stats.fps"),
-			t("stats.fpsValue", {
-				fps: frame.fps,
-				p95: frame.p95.toFixed(1),
-				worst: frame.worst.toFixed(0),
-			}),
-		],
-		[
-			t("stats.longTasks"),
-			t("stats.longTasksValue", { count: frame.longTasks, ms: fmtInt(frame.longTaskMs) }),
-		],
+		["FPS", `${frame.fps} (p95 ${frame.p95.toFixed(1)} ms, worst ${frame.worst.toFixed(0)} ms)`],
+		["Long tasks", `${frame.longTasks} (${fmtInt(frame.longTaskMs)} ms)`],
 	];
 	if (scene) {
 		rows.push(
+			["Markers", `${fmtInt(scene.totalMarkers)} (${fmtInt(scene.onScreenMarkers)} on screen)`],
+			["Selection overlay", fmtInt(scene.selOverlay)],
+			["Layers", String(scene.layers)],
 			[
-				t("stats.markers"),
-				t("stats.markersValue", {
-					total: fmtInt(scene.totalMarkers),
-					onScreen: fmtInt(scene.onScreenMarkers),
-				}),
+				"Marker quad",
+				`${scene.quadSidePx.toFixed(1)}px ${scene.markerStyle} x${scene.markerSize} @ ${scene.dpr}dpr`,
 			],
-			[t("stats.selectionOverlay"), fmtInt(scene.selOverlay)],
-			[t("stats.layers"), String(scene.layers)],
-			[
-				t("stats.markerQuad"),
-				t("stats.markerQuadValue", {
-					size: scene.quadSidePx.toFixed(1),
-					style: scene.markerStyle,
-					markerSize: scene.markerSize,
-					dpr: scene.dpr,
-				}),
-			],
-			[
-				t("stats.estFragments"),
-				t("stats.estFragmentsValue", { count: (scene.estFragments / 1e6).toFixed(1) }),
-			],
-			[
-				t("stats.overdraw"),
-				t("stats.overdrawValue", { ratio: scene.overdraw.toFixed(2) }),
-			],
+			["Est fragments", `${(scene.estFragments / 1e6).toFixed(1)}M / frame`],
+			["Overdraw", `${scene.overdraw.toFixed(2)}x viewport`],
 		);
 	} else {
-		rows.push([t("stats.markers"), t("stats.markersNoMap")]);
+		rows.push(["Markers", "no map open"]);
 	}
 	if (deck) {
 		rows.push(
+			["Deck layers drawn", `${deck.drawLayersCount} of ${deck.layersCount}`],
+			["CPU / frame", `${deck.cpuTimePerFrame.toFixed(2)} ms`],
+			["GPU / frame", deck.gpuTimePerFrame > 0 ? `${deck.gpuTimePerFrame.toFixed(2)} ms` : "n/a"],
 			[
-				t("stats.deckLayersDrawn"),
-				t("stats.deckLayersDrawnValue", {
-					drawn: deck.drawLayersCount,
-					total: deck.layersCount,
-				}),
-			],
-			[t("stats.cpuPerFrame"), t("stats.cpuPerFrameValue", { ms: deck.cpuTimePerFrame.toFixed(2) })],
-			[
-				t("stats.gpuPerFrame"),
-				deck.gpuTimePerFrame > 0
-					? t("stats.gpuPerFrameValue", { ms: deck.gpuTimePerFrame.toFixed(2) })
-					: t("stats.na"),
-			],
-			[
-				t("stats.gpuMemory"),
-				t("stats.gpuMemoryValue", {
-					total: fmtMB(deck.gpuMemory),
-					buffer: fmtMB(deck.bufferMemory),
-					texture: fmtMB(deck.textureMemory),
-				}),
+				"GPU memory",
+				`${fmtMB(deck.gpuMemory)} (buf ${fmtMB(deck.bufferMemory)}, tex ${fmtMB(deck.textureMemory)})`,
 			],
 		);
 	}
@@ -197,16 +154,8 @@ function liveRows(
 }
 
 export function StatsForNerds({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
-	const [stats, setStats] = useState<Stats | null>(null);
 	const [live, setLive] = useState<LiveStats | null>(null);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		gatherStats()
-			.then(setStats)
-			.catch((e) => setError(String(e)));
-	}, []);
+	const { data: stats, error } = useAsync(gatherStats, []);
 
 	useEffect(() => {
 		startFrameMeter();
@@ -263,7 +212,7 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 					}}
 				>
 					<span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-1)" }}>
-						{t("stats.title")}
+						{t("Stats for Nerds")}
 					</span>
 					<button
 						onClick={onClose}
@@ -275,34 +224,33 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 							fontSize: 18,
 							padding: "0 4px",
 						}}
-						aria-label={t("common.close")}
 					>
-						×
+						x
 					</button>
 				</div>
-				{error && <div style={{ color: "var(--destructive)" }}>{error}</div>}
+				{error && <div style={{ color: "var(--destructive)" }}>{String(error)}</div>}
 				{stats && (
 					<table style={{ width: "100%", borderCollapse: "collapse" }}>
 						<tbody>
 							{[
-								[t("stats.version"), stats.appVersion],
-								[t("stats.build"), stats.buildMode],
-								[t("stats.maps"), stats.maps],
-								[t("stats.locations"), stats.locations.toLocaleString()],
-								[t("stats.tags"), stats.tags],
-								[t("stats.commits"), stats.commits],
-								[t("stats.pendingSaves"), stats.pendingSaves],
-								[t("stats.dbSize"), stats.dbSize],
-								[t("stats.journalMode"), stats.journalMode],
-								[t("stats.foreignKeys"), stats.foreignKeys],
-								[t("stats.opensv"), stats.opensvVersion],
-								[t("stats.webgl"), stats.webglRenderer],
-								[t("stats.dpr"), stats.devicePixelRatio],
-								[t("stats.viewport"), stats.viewport],
-								[t("stats.jsHeap"), stats.memory],
-								[t("stats.startup"), stats.startup],
-								[t("stats.uptime"), stats.uptime],
-								[t("stats.userAgent"), stats.userAgent],
+								["Version", stats.appVersion],
+								["Build", stats.buildMode],
+								["Maps", stats.maps],
+								["Locations", fmt.format(stats.locations)],
+								["Tags", stats.tags],
+								["Commits", stats.commits],
+								["Pending saves", stats.pendingSaves],
+								["DB size", stats.dbSize],
+								["Journal mode", stats.journalMode],
+								["Foreign keys", stats.foreignKeys],
+								["opensv", stats.opensvVersion],
+								["WebGL", stats.webglRenderer],
+								["DPR", stats.devicePixelRatio],
+								["Viewport", stats.viewport],
+								["JS heap", stats.memory],
+								["Startup", stats.startup],
+								["Uptime", stats.uptime],
+								["User agent", stats.userAgent],
 							].map(([label, value]) => (
 								<tr key={label}>
 									<td
@@ -335,11 +283,11 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 								letterSpacing: "0.05em",
 							}}
 						>
-							{t("stats.renderingLive")}
+							{t("Rendering (live)")}
 						</div>
 						<table style={{ width: "100%", borderCollapse: "collapse" }}>
 							<tbody>
-								{liveRows(live, t).map(([label, value]) => (
+								{liveRows(live).map(([label, value]) => (
 									<tr key={label}>
 										<td
 											className="text-muted"

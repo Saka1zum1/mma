@@ -7,53 +7,45 @@ mod serve;
 use clap::{Parser, Subcommand};
 use std::io::{self, Write};
 
+/// MMA hands every command the same two directories, so they are global rather than
+/// repeated per subcommand.
 #[derive(Parser)]
 #[command(name = "mma-vision", about = "Vision analysis sidecar for MMA")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Where the ONNX models live (inside the sidecar bundle).
+    #[arg(long, global = true, default_value = "models")]
+    model_dir: String,
+    /// Working data owned by this sidecar. Survives sidecar updates.
+    #[arg(long, global = true, default_value = "data")]
+    data_dir: String,
 }
 
 #[derive(Subcommand)]
 enum Command {
     /// List pano IDs already in the embedding cache
-    ListCached {
-        #[arg(long)]
-        cache_dir: String,
-    },
+    ListCached,
     /// Batch-compute CLIP image embeddings
     Embed {
         #[arg(long)]
         input: String,
-        #[arg(long)]
-        model_dir: String,
-        #[arg(long)]
-        cache_dir: String,
     },
     /// Text-to-image search over cached embeddings
     SearchText {
         #[arg(long)]
         input: String,
-        #[arg(long)]
-        model_dir: String,
-        #[arg(long)]
-        cache_dir: String,
     },
     /// Image-to-image similarity search
     SearchImage {
         #[arg(long)]
         input: String,
-        #[arg(long)]
-        cache_dir: String,
     },
     /// Resident search server: models + cache stay loaded across queries.
-    /// Prints `{"port":N}` on stdout, serves /search-text, /search-image, /ping
-    /// on 127.0.0.1, and exits by itself after `idle_secs` without a request.
+    /// Prints `{"port":N}` on stdout, serves /search-text, /search-image,
+    /// /list-cached, /ping on 127.0.0.1, and exits by itself after `idle_secs`
+    /// without a request.
     Serve {
-        #[arg(long)]
-        model_dir: String,
-        #[arg(long)]
-        cache_dir: String,
         #[arg(long, default_value_t = 600)]
         idle_secs: u64,
     },
@@ -103,43 +95,43 @@ fn init_ort() {
 fn main() {
     init_ort();
     let cli = Cli::parse();
+    let Cli { model_dir, data_dir, command } = cli;
     let mut stdout = io::stdout();
 
-    match cli.command {
-        Command::ListCached { cache_dir } => {
-            let cache = embed::EmbedCache::load(&cache_dir);
-            let ids: Vec<&str> = cache.entries.keys().map(|s| s.as_str()).collect();
-            let out = serde_json::to_string(&ids).unwrap();
+    match command {
+        Command::ListCached => {
+            let cache = embed::EmbedCache::load(&data_dir);
+            let out = serde_json::to_string(&cache.pano_ids()).unwrap();
             writeln!(stdout, "{out}").ok();
             stdout.flush().ok();
         }
-        Command::Embed { input, model_dir, cache_dir } => {
+        Command::Embed { input } => {
             let input: embed::EmbedInput =
                 serde_json::from_str(&read_input(&input)).expect("invalid input JSON");
-            embed::run(&input, &model_dir, &cache_dir, |status| {
+            embed::run(&input, &model_dir, &data_dir, |status| {
                 let line = serde_json::to_string(&status).unwrap();
                 writeln!(stdout, "{line}").ok();
                 stdout.flush().ok();
             });
         }
-        Command::SearchText { input, model_dir, cache_dir } => {
+        Command::SearchText { input } => {
             let input: search::TextSearchInput =
                 serde_json::from_str(&read_input(&input)).expect("invalid input JSON");
-            let results = search::text_search(&input, &model_dir, &cache_dir);
+            let results = search::text_search(&input, &model_dir, &data_dir);
             let out = serde_json::to_string(&results).unwrap();
             writeln!(stdout, "{out}").ok();
             stdout.flush().ok();
         }
-        Command::SearchImage { input, cache_dir } => {
+        Command::SearchImage { input } => {
             let input: search::ImageSearchInput =
                 serde_json::from_str(&read_input(&input)).expect("invalid input JSON");
-            let results = search::image_search(&input, &cache_dir);
+            let results = search::image_search(&input, &data_dir);
             let out = serde_json::to_string(&results).unwrap();
             writeln!(stdout, "{out}").ok();
             stdout.flush().ok();
         }
-        Command::Serve { model_dir, cache_dir, idle_secs } => {
-            serve::run(&model_dir, &cache_dir, idle_secs);
+        Command::Serve { idle_secs } => {
+            serve::run(&model_dir, &data_dir, idle_secs);
         }
         Command::DebugCrops { pano_id, world_width, world_height, output_dir } => {
             let out = std::path::Path::new(&output_dir);

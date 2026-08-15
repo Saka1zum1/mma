@@ -46,8 +46,6 @@ import {
 	mdiBookOpenOutline,
 	mdiDownloadBoxOutline,
 	mdiFileDocumentOutline,
-	mdiGraphOutline,
-	mdiClipboardTextOutline,
 } from "@mdi/js";
 import { registerCommand, type CommandDef } from "./commands";
 import {
@@ -58,13 +56,11 @@ import {
 	selectIntersection,
 	selectUnion,
 	resetSelections,
-	commitMap,
 	getMapState,
 	deleteTags,
 	getActiveSelections,
 	removeLocations,
 	toggleGhostAllSelections,
-	getVisibleTags,
 } from "./useMapStore";
 import { hasCommitDiff } from "./commitDiff";
 import { loadGeoJSON } from "@/lib/util/loadGeoJSON";
@@ -72,9 +68,7 @@ import { downloadBlob } from "@/lib/util/util";
 import { toggleSeenOverlay } from "@/lib/seen/seenOverlay";
 import { selectReviewedHistory } from "@/lib/review/review";
 import { openDialog } from "./dialogBus";
-import { isExpandingSvLinks, stopExpandSvLinks } from "@/lib/sv/expandLinks";
-import { toast } from "@/lib/util/toast";
-import { t } from "@/lib/i18n";
+import { msg } from "@/lib/i18n";
 
 const requiresMap = () => getMapState().map !== null;
 const hasActiveLocation = () => getMapState().activeLocation != null;
@@ -86,32 +80,32 @@ const openInlinePanel = (id: string) => () => openDialog("inline-panel", id);
 /** Every editor command (palette entries; all are hotkey-bindable in Settings). */
 const COMMANDS = {
 	save: {
-		label: "Commit map",
+		label: msg("Commit map"),
 		icon: mdiContentSave,
-		group: "Map",
+		group: msg("Map"),
 		defaultBinding: "Mod+s",
 		aliases: ["save", "snapshot"],
-		execute: () => commitMap(),
+		execute: () => openDialog("commit"),
 		enabled: () => requiresMap() && hasCommitDiff(),
 	},
 	import: {
-		label: "Import file",
+		label: msg("Import file"),
 		icon: mdiFileImportOutline,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => openDialog("import"),
 		enabled: requiresMap,
 	},
 	copyToMap: {
-		label: "Copy location to map via hotkeys...",
+		label: msg("Copy location to map via hotkeys..."),
 		icon: mdiMapPlus,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => openDialog("copy-to-map"),
 		enabled: requiresMap,
 	},
 	quickCopyToMap: {
-		label: "Copy location to map...",
+		label: msg("Copy location to map..."),
 		icon: mdiMapMarkerPlus,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => {
 			const id = getMapState().activeLocation?.id;
 			if (id != null) openDialog("quick-copy-to-map", id);
@@ -119,123 +113,123 @@ const COMMANDS = {
 		enabled: hasActiveLocation,
 	},
 	undo: {
-		label: "Undo",
+		label: msg("Undo"),
 		icon: mdiUndo,
-		group: "Map",
+		group: msg("Map"),
 		defaultBinding: "Mod+z",
 		execute: undo,
 		enabled: () => getMapState().canUndo,
 	},
 	redo: {
-		label: "Redo",
+		label: msg("Redo"),
 		icon: mdiRedo,
-		group: "Map",
+		group: msg("Map"),
 		defaultBinding: "Mod+y, Mod+Shift+z",
 		execute: redo,
 		enabled: () => getMapState().canRedo,
 	},
 	export: {
-		label: "Export",
+		label: msg("Export"),
 		icon: mdiFileExportOutline,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => openDialog("export"),
 		enabled: requiresMap,
 	},
 	"open-history": {
-		label: "Open version history",
+		label: msg("Open version history"),
 		icon: mdiHistory,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => openDialog("history"),
 		enabled: requiresMap,
 	},
 	"open-seen": {
-		label: "Open seen locations",
+		label: msg("Open seen locations"),
 		icon: mdiEye,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => openDialog("seen"),
 		enabled: requiresMap,
 	},
 	"toggle-seen-overlay": {
-		label: "Toggle seen locations overlay",
+		label: msg("Toggle seen locations overlay"),
 		icon: mdiEyeOutline,
-		group: "Map",
+		group: msg("Map"),
 		execute: () => toggleSeenOverlay(),
 		enabled: requiresMap,
 	},
 	selectAll: {
-		label: "Select everything",
+		label: msg("Select everything"),
 		icon: mdiSelectAll,
-		group: "Selections",
+		group: msg("Selections"),
 		defaultBinding: "Mod+a",
 		execute: () => addSelections([{ type: "Everything" }]),
 	},
 	"select-untagged": {
-		label: "Select untagged locations",
+		label: msg("Select untagged locations"),
 		icon: mdiTagOffOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["find untagged", "missing tags"],
 		execute: () => addSelections([{ type: "Untagged" }]),
 	},
 	"select-unpanned": {
-		label: "Select unpanned locations",
+		label: msg("Select unpanned locations"),
 		icon: mdiCompassOffOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => addSelections([{ type: "Unpanned" }]),
 	},
 	"select-panoid": {
-		label: "Select Pano ID locations",
+		label: msg("Select Pano ID locations"),
 		icon: mdiImageOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => addSelections([{ type: "PanoIds" }]),
 	},
 	"select-no-panoid": {
-		label: "Select non-Pano ID locations",
+		label: msg("Select non-Pano ID locations"),
 		icon: mdiImageOffOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => addSelections([{ type: "NotPanoIds" }]),
 	},
 	"select-uncommitted": {
-		label: "Select uncommitted locations",
+		label: msg("Select uncommitted locations"),
 		icon: mdiContentSaveAlertOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => addSelections([{ type: "Uncommitted" }]),
 	},
 	"select-reviewed": {
-		label: "Select reviewed locations",
+		label: msg("Select reviewed locations"),
 		icon: mdiEyeCheckOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => selectReviewedHistory(),
 		enabled: requiresMap,
 	},
 	"invert-selection": {
-		label: "Invert selection",
+		label: msg("Invert selection"),
 		icon: mdiSelectInverse,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => selectInverse(),
 	},
 	"intersect-selections": {
-		label: "Intersect (AND) selections",
+		label: msg("Intersect (AND) selections"),
 		icon: mdiSetCenter,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => selectIntersection(),
 	},
 	"union-selections": {
-		label: "Union (OR) selections",
+		label: msg("Union (OR) selections"),
 		icon: mdiSetAll,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => selectUnion(),
 	},
 	"load-geojson": {
-		label: "Load shapes from GeoJSON as selection",
+		label: msg("Load shapes from GeoJSON as selection"),
 		icon: mdiCodeJson,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["import polygon", "load polygon"],
 		execute: loadGeoJSON,
 	},
 	"download-polygon-geojson": {
-		label: "Download polygon selections as GeoJSON",
+		label: msg("Download polygon selections as GeoJSON"),
 		icon: mdiVectorPolygon,
-		group: "Selections",
+		group: msg("Selections"),
 		enabled: () => getActiveSelections().some((s) => s.props.type === "Polygon"),
 		execute: () => {
 			const features: unknown[] = [];
@@ -254,105 +248,94 @@ const COMMANDS = {
 		},
 	},
 	deselectAll: {
-		label: "Deselect everything",
+		label: msg("Deselect everything"),
 		icon: mdiSelectRemove,
-		group: "Selections",
+		group: msg("Selections"),
 		defaultBinding: "Mod+d",
 		execute: resetSelections,
 		enabled: hasAnySelections,
 	},
-	"expand-sv-links": {
-		label: "Expand Street View links",
-		icon: mdiGraphOutline,
-		group: "Selections",
-		aliases: ["crawl links", "hyperlapse links", "baidu links", "google links"],
-		execute: () => {
-			if (isExpandingSvLinks()) stopExpandSvLinks();
-			else openDialog("expand-sv-links");
-		},
-		enabled: () => isExpandingSvLinks() || hasSelection(),
-	},
 	"find-duplicates": {
-		label: "Find duplicates...",
+		label: msg("Find duplicates..."),
 		icon: mdiMapSearchOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["dedupe", "duplicate check"],
 		execute: openInlinePanel("find-duplicates"),
 	},
 	"merge-duplicates": {
-		label: "Merge duplicates...",
+		label: msg("Merge duplicates..."),
 		icon: mdiCallMerge,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["dedupe", "combine duplicates"],
 		execute: () => openDialog("merge-duplicates"),
 	},
 	"filter-by-metadata": {
-		label: "Filter by metadata...",
+		label: msg("Filter by metadata..."),
 		icon: mdiFilterOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["search by field", "field filter"],
 		execute: openInlinePanel("filter-by-metadata"),
 	},
 	"top-k": {
-		label: "Select top/bottom K...",
+		label: msg("Select top/bottom K..."),
 		icon: mdiPodium,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: openInlinePanel("top-k"),
 	},
 	"review-selected": {
-		label: "Review selected locations",
+		label: msg("Review selected locations"),
 		icon: mdiPlayOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		enabled: hasSelection,
 		execute: () => openDialog("review-selected"),
 	},
 	"review-sessions": {
-		label: "Review sessions",
+		label: msg("Review sessions"),
 		icon: mdiBookOpenOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => openDialog("review-sessions"),
 	},
 	"select-random": {
-		label: "Pick random locations from selection",
+		label: msg("Pick random locations from selection"),
 		icon: mdiDiceMultiple,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["sample", "random sample"],
 		execute: openInlinePanel("select-random"),
 		enabled: hasSelection,
 	},
 	"select-spaced": {
-		label: "Pick evenly spaced locations from selection",
+		label: msg("Pick evenly spaced locations from selection"),
 		icon: mdiDotsGrid,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["spaced", "thin", "reduce density", "distribute"],
 		execute: openInlinePanel("select-spaced"),
 		enabled: hasSelection,
 	},
 	"ghost-selections": {
-		label: "Ghost selections",
+		label: msg("Ghost selections"),
 		icon: mdiGhostOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		aliases: ["hide selections", "dim selections"],
 		execute: () => toggleGhostAllSelections(),
 		enabled: hasAnySelections,
 	},
 	"save-selections": {
-		label: "Save current selections...",
+		label: msg("Save current selections..."),
 		icon: mdiBookmarkOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => openDialog("save-selections"),
 		enabled: hasAnySelections,
 	},
 	"apply-saved-selection": {
-		label: "Apply saved selection...",
+		label: msg("Apply saved selection..."),
 		icon: mdiBookmarkCheckOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		execute: () => openDialog("apply-saved-selection"),
 	},
 	"selection-delete-locations": {
-		label: "Delete selected locations",
+		label: msg("Delete selected locations"),
 		icon: mdiTrashCanOutline,
-		group: "Selections",
+		group: msg("Selections"),
 		enabled: hasSelection,
 		execute: () => {
 			const ids = getMapState().selectedLocationIds;
@@ -360,58 +343,58 @@ const COMMANDS = {
 		},
 	},
 	"bulk-validate": {
-		label: "Validate locations",
+		label: msg("Validate locations"),
 		icon: mdiCheckDecagram,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["check locations", "verify"],
 		execute: openBulkOp("validate"),
 	},
 	"bulk-enrich": {
-		label: "Enrich metadata fields",
+		label: msg("Enrich metadata fields"),
 		icon: mdiDatabaseArrowUp,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["autotag", "fetch metadata", "auto-enrich"],
 		execute: openBulkOp("enrich"),
 	},
 	"bulk-set-field": {
-		label: "Set metadata field value",
+		label: msg("Set metadata field value"),
 		icon: mdiDatabaseEditOutline,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["edit field", "assign field"],
 		execute: openBulkOp("setField"),
 	},
 	"bulk-clear-fields": {
-		label: "Clear metadata fields",
+		label: msg("Clear metadata fields"),
 		icon: mdiDatabaseRemoveOutline,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["remove fields", "strip metadata"],
 		execute: openBulkOp("clearFields"),
 	},
 	"bulk-pin-pano": {
-		label: "Pin locations to pano ID",
+		label: msg("Pin locations to pano ID"),
 		icon: mdiMapMarkerCheck,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["snap to pano", "lock pano"],
 		execute: openBulkOp("pinPano"),
 	},
 	"bulk-heading-road": {
-		label: "Pan headings along road",
+		label: msg("Pan headings along road"),
 		icon: mdiCompassOutline,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["align headings", "road direction"],
 		execute: openBulkOp("headingRoad"),
 	},
 	"bulk-download-panoramas": {
-		label: "Download panoramas",
+		label: msg("Download panoramas"),
 		icon: mdiDownloadBoxOutline,
-		group: "Bulk Operations",
+		group: msg("Bulk Operations"),
 		aliases: ["bulk download", "export panoramas", "download street view"],
 		execute: openBulkOp("downloadPanoramas"),
 	},
 	"delete-selected-tags": {
-		label: "Delete selected tags",
+		label: msg("Delete selected tags"),
 		icon: mdiTagRemove,
-		group: "Tags",
+		group: msg("Tags"),
 		execute: async () => {
 			await deleteTags(
 				getActiveSelections()
@@ -422,9 +405,9 @@ const COMMANDS = {
 		enabled: () => getActiveSelections().some((s) => s.props.type === "Tag"),
 	},
 	"tag-download-csv": {
-		label: "Download tag counts as CSV",
+		label: msg("Download tag counts as CSV"),
 		icon: mdiFileDelimitedOutline,
-		group: "Tags",
+		group: msg("Tags"),
 		execute: () => {
 			const map = getMapState().map;
 			if (!map) return;
@@ -437,47 +420,26 @@ const COMMANDS = {
 			downloadBlob(new Blob([csv], { type: "text/csv" }), `${map.meta.name} tags.csv`);
 		},
 	},
-	"copy-tags-count": {
-		label: "Copy tags count",
-		icon: mdiClipboardTextOutline,
-		group: "Tags",
-		aliases: ["copy tag counts", "clipboard tag counts"],
-		execute: async () => {
-			const counts = getMapState().tagCounts;
-			const text = getVisibleTags()
-				.map((tag) => ({ name: tag.name, count: counts[tag.id] ?? 0 }))
-				.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-				.map((r) => `${r.name}: ${r.count}`)
-				.join(", ");
-			try {
-				await navigator.clipboard.writeText(text);
-				toast(t("toast.copiedTagsCount"));
-			} catch {
-				toast(t("toast.copyFailed"));
-			}
-		},
-		enabled: requiresMap,
-	},
 	"tag-find-replace": {
-		label: "Find and replace in tag names",
+		label: msg("Find and replace in tag names"),
 		icon: mdiFindReplace,
-		group: "Tags",
+		group: msg("Tags"),
 		aliases: ["rename tags", "bulk rename"],
 		execute: () => openDialog("tag-find-replace"),
 		enabled: requiresMap,
 	},
 	"apply-field-as-tags": {
-		label: "Apply metadata as tags",
+		label: msg("Apply metadata as tags"),
 		icon: mdiTagMultipleOutline,
-		group: "Tags",
+		group: msg("Tags"),
 		aliases: ["group by field", "metadata to tags"],
 		execute: () => openDialog("apply-field-as-tags"),
 		enabled: requiresMap,
 	},
 	"assign-doclinks": {
-		label: "Assign document links...",
+		label: msg("Assign document links..."),
 		icon: mdiFileDocumentOutline,
-		group: "Tags",
+		group: msg("Tags"),
 		aliases: ["doclinks", "link document"],
 		execute: () => openDialog("doclink-assign"),
 		enabled: requiresMap,

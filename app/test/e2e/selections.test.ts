@@ -1,54 +1,37 @@
 import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
 	addLocs,
 	createLocation,
 	createTag,
 	getLoc,
 	refreshSelections,
 	withApi,
+	useMap,
+	seedLocs,
+	selectCount,
 } from "./helpers";
-import type { Location } from "@/bindings.gen";
 
 describe("Selections - basic types", () => {
-	let mapId: string;
+	useMap("E2E Selections");
 	let locIds: number[];
 	let tagRedId: number;
 	let tagBlueId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Selections");
-
 		const tagRed = await createTag("tag-red");
 		tagRedId = tagRed.id;
 		const tagBlue = await createTag("tag-blue");
 		tagBlueId = tagBlue.id;
 
 		// Seed 200 locations with varied properties
-		const locs: Location[] = [];
-		for (let i = 0; i < 200; i++) {
-			locs.push(
-				createLocation({
-					lat: (i % 20) - 10,
-					lng: (i % 36) * 10 - 180,
-					heading: 0,
-					panoId: i < 80 ? `pano_${i}` : null,
-					flags: i < 50 ? 1 : 0,
-					tags: i < 60 ? [tagRedId] : i < 120 ? [tagBlueId] : [],
-				}),
-			);
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(200, (i) => ({
+			lat: (i % 20) - 10,
+			lng: (i % 36) * 10 - 180,
+			heading: 0,
+			panoId: i < 80 ? `pano_${i}` : null,
+			flags: i < 50 ? 1 : 0,
+			tags: i < 60 ? [tagRedId] : i < 120 ? [tagBlueId] : [],
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
@@ -56,10 +39,7 @@ describe("Selections - basic types", () => {
 	// --- Everything ---
 
 	it("selectEverything selects all locations", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([{ type: "Everything" }]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Everything" });
 		expect(result).toBe(200);
 	});
 
@@ -76,10 +56,7 @@ describe("Selections - basic types", () => {
 	});
 
 	it("selectNotPanoIds selects locations without LoadAsPanoId flag", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([{ type: "NotPanoIds" }]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "NotPanoIds" });
 		expect(result).toBe(150);
 	});
 
@@ -95,20 +72,14 @@ describe("Selections - basic types", () => {
 	// --- Untagged ---
 
 	it("selectUntagged selects locations with no tags", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([{ type: "Untagged" }]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Untagged" });
 		expect(result).toBe(80); // indices 120-199 have no tags
 	});
 
 	// --- Unpanned ---
 
 	it("selectUnpanned selects locations with heading=0", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([{ type: "Unpanned" }]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Unpanned" });
 		// All 200 seeded locations have heading=0
 		expect(result).toBe(200);
 	});
@@ -116,18 +87,12 @@ describe("Selections - basic types", () => {
 	// --- Tag selection ---
 
 	it("selectTag selects locations with specific tag", async () => {
-		const result = await withApi(async (api, tagId: number) => {
-			await api.addSelections([{ type: "Tag", tagId: tagId }]);
-			return api.getMapState().selectedLocationIds.size;
-		}, tagRedId);
+		const result = await selectCount({ type: "Tag", tagId: tagRedId });
 		expect(result).toBe(60);
 	});
 
 	it("selectTag for nonexistent tag selects none", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([{ type: "Tag", tagId: 999999 }]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Tag", tagId: 999999 });
 		expect(result).toBe(0);
 	});
 
@@ -163,25 +128,20 @@ describe("Selections - basic types", () => {
 	// --- Polygon selection ---
 
 	it("selectPolygon selects locations within polygon", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([
-				{
-					type: "Polygon",
-					polygon: {
-						coordinates: [
-							[
-								[-180, -10],
-								[-90, -10],
-								[-90, 0],
-								[-180, 0],
-								[-180, -10],
-							],
-						],
-					},
-					includeInformational: false,
-				},
-			]);
-			return api.getMapState().selectedLocationIds.size;
+		const result = await selectCount({
+			type: "Polygon",
+			polygon: {
+				coordinates: [
+					[
+						[-180, -10],
+						[-90, -10],
+						[-90, 0],
+						[-180, 0],
+						[-180, -10],
+					],
+				],
+			},
+			includeInformational: false,
 		});
 		expect(result).toBeGreaterThan(0);
 	});
@@ -204,36 +164,21 @@ describe("Selections - basic types", () => {
 });
 
 describe("Selection operations", () => {
-	let mapId: string;
+	useMap("E2E Selection Ops");
 	let tagAId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Selection Ops");
-
 		const tagA = await createTag("tag-a");
 		tagAId = tagA.id;
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 100; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					panoId: i < 40 ? `pano_${i}` : null,
-					flags: i < 30 ? 1 : 0,
-					tags: i < 50 ? [tagAId] : [],
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(100, (i) => ({
+			lat: i,
+			lng: i,
+			panoId: i < 40 ? `pano_${i}` : null,
+			flags: i < 30 ? 1 : 0,
+			tags: i < 50 ? [tagAId] : [],
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
@@ -318,32 +263,16 @@ describe("Selection operations", () => {
 });
 
 describe("Selection correctness after mutations", () => {
-	let mapId: string;
+	useMap("E2E Sel Mutations");
 	let locIds: number[];
 
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Sel Mutations");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("PanoIds selection updates after flag change", async () => {
-		const locs: Location[] = [];
-		for (let i = 0; i < 10; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					panoId: `pano_${i}`,
-					flags: 0,
-				}),
-			);
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(10, (i) => ({
+			lat: i,
+			lng: i,
+			panoId: `pano_${i}`,
+			flags: 0,
+		}));
 
 		const locsToFlag = [];
 		for (let i = 0; i < 5; i++) locsToFlag.push(await getLoc(locIds[i]));
@@ -435,106 +364,46 @@ describe("Selection correctness after mutations", () => {
 });
 
 describe("Selection with Filter", () => {
-	let mapId: string;
+	useMap("E2E Filter");
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Filter");
-
-		const locs: Location[] = [];
-		for (let i = 0; i < 50; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					extra: { altitude: i * 10, country: i < 25 ? "US" : "GB" },
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(50, (i) => ({
+			lat: i,
+			lng: i,
+			extra: { altitude: i * 10, country: i < 25 ? "US" : "GB" },
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
 
 	it("filter by string equality", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([
-				{
-					type: "Filter",
-					field: "country",
-					op: "eq",
-					value: "US",
-				},
-			]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Filter", field: "country", op: "eq", value: "US" });
 		expect(result).toBe(25);
 	});
 
 	it("filter by string inequality", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([
-				{
-					type: "Filter",
-					field: "country",
-					op: "neq",
-					value: "US",
-				},
-			]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Filter", field: "country", op: "neq", value: "US" });
 		expect(result).toBe(25);
 	});
 
 	it("filter by numeric greater than", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([
-				{
-					type: "Filter",
-					field: "altitude",
-					op: "gt",
-					value: 200,
-				},
-			]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Filter", field: "altitude", op: "gt", value: 200 });
 		expect(result).toBe(29);
 	});
 
 	it("filter by numeric less than", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([
-				{
-					type: "Filter",
-					field: "altitude",
-					op: "lt",
-					value: 100,
-				},
-			]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const result = await selectCount({ type: "Filter", field: "altitude", op: "lt", value: 100 });
 		expect(result).toBe(10);
 	});
 
 	it("filter by between", async () => {
-		const result = await withApi(async (api) => {
-			await api.addSelections([
-				{
-					type: "Filter",
-					field: "altitude",
-					op: "between",
-					value: 100,
-					value2: 200,
-				},
-			]);
-			return api.getMapState().selectedLocationIds.size;
+		const result = await selectCount({
+			type: "Filter",
+			field: "altitude",
+			op: "between",
+			value: 100,
+			value2: 200,
 		});
 		expect(result).toBe(11);
 	});

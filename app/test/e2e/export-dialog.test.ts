@@ -1,4 +1,4 @@
-import { waitForReady, createAndOpenMap, closeMap, deleteMap, openMap, withApi } from "./helpers";
+import { closeMap, openMap, withApi, useMap } from "./helpers";
 
 async function openExportDialog() {
 	await browser.$("button=Export").click();
@@ -22,17 +22,7 @@ async function checkboxStates() {
 }
 
 describe("Export dialog settings persistence", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Export Dialog");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Export Dialog");
 
 	it("shows defaults on first open", async () => {
 		await openExportDialog();
@@ -59,7 +49,7 @@ describe("Export dialog settings persistence", () => {
 
 	it("remembers toggles across map close and reopen", async () => {
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 		await openExportDialog();
 		expect(await checkboxStates()).toEqual({ zoom: true, extras: false, unpanned: false });
 		await closeExportDialog();

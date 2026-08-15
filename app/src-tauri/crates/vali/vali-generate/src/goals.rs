@@ -1,6 +1,4 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
 
-use crate::weights::COUNTRY_TO_SUBDIVISION;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 pub fn round_to_int(d: Decimal) -> i32 {
@@ -11,10 +9,7 @@ pub fn round_to_int(d: Decimal) -> i32 {
 pub fn subdivision_weights(
     country_code: &str,
 ) -> Option<&'static [(&'static str, i32)]> {
-    COUNTRY_TO_SUBDIVISION
-        .iter()
-        .find(|(cc, _)| *cc == country_code)
-        .map(|(_, subs)| *subs)
+    crate::weights::subdivision_weights(country_code)
 }
 pub fn country_location_count_goal(
     country_distribution: &[(String, i32)],

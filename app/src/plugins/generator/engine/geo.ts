@@ -1,8 +1,15 @@
-import { foldLng, inBbox, lerpLng, lngSpan, pointInPolygon, ringsBbox } from "@/lib/geo/geo";
+import {
+	foldLng,
+	inBbox,
+	lerpLng,
+	lngSpan,
+	M_PER_DEG,
+	pointInPolygon,
+	ringsBbox,
+} from "@/lib/geo/geo";
 import type { Bounds, LatLng } from "@/types";
 
 const DEG_TO_RAD = Math.PI / 180;
-const M_PER_DEG_LAT = 111_320;
 
 export { latLngToWorld, worldToTile as worldToTileAtZoom, pixelToLatLng } from "@/lib/geo/mercator";
 
@@ -65,13 +72,13 @@ export function poissonDiskSample(
 	if (!bounds) return [];
 	const { west, south, north } = bounds;
 	const midLat = (south + north) / 2;
-	const mPerDegLng = M_PER_DEG_LAT * Math.cos(midLat * DEG_TO_RAD);
+	const mPerDegLng = M_PER_DEG * Math.cos(midLat * DEG_TO_RAD);
 
 	// Metres run east from the western edge; a crossing box stays a plain interval here.
 	const toMx = (lng: number) => foldLng(lng - west, 0) * mPerDegLng;
-	const toMy = (lat: number) => (lat - south) * M_PER_DEG_LAT;
+	const toMy = (lat: number) => (lat - south) * M_PER_DEG;
 	const toLng = (mx: number) => foldLng(mx / mPerDegLng + west, -180);
-	const toLat = (my: number) => my / M_PER_DEG_LAT + south;
+	const toLat = (my: number) => my / M_PER_DEG + south;
 
 	const widthM = lngSpan(bounds) * mPerDegLng;
 	const heightM = toMy(north);

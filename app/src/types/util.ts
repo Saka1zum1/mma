@@ -85,7 +85,13 @@ export const range = <const T extends readonly [number, number]>(
 	return { min: tup[0], max: tup[1] };
 };
 
-export const clamp = (val: number, r: Range): number => Math.min(r.max, Math.max(r.min, val));
+export function clamp(val: number, r: Range): number;
+export function clamp(val: number, min: number, max: number): number;
+export function clamp(val: number, a: Range | number, b?: number): number {
+	const min = typeof a === "number" ? a : a.min;
+	const max = typeof a === "number" ? b! : a.max;
+	return Math.min(max, Math.max(min, val));
+}
 
 /** Step `step` places through a non-empty list from `current`, wrapping at both ends.
  *  A `current` that isn't in the list behaves as if it sat just before the first item. */

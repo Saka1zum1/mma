@@ -5,9 +5,10 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
+use vali_data::decode::Reader;
 
 use crate::sync::{
-    canon_tags, sync_flags, IdentityModel, NormalizedSyncLocation, PushBatch, PushedId,
+    auth_error, canon_tags, sync_flags, IdentityModel, NormalizedSyncLocation, PushBatch, PushedId,
     RemoteSnapshot, SyncProvider,
 };
 use crate::types::{AppError, AppResult};
@@ -20,18 +21,8 @@ const PUSH_CHUNK: usize = 200_000;
 /// EditActionType.Bulk from remote-types.ts.
 const EDIT_ACTION_BULK: u32 = 8;
 
-/// AppError message prefix stamped on an HTTP 401 from the API, so the engine can special-case
-/// auth failures without a typed error. `pull`/`push` are the only emitters; [`is_auth_error`]
-/// is the sole reader.
-const AUTH_ERROR_PREFIX: &str = "mma-http-401: ";
-
 pub(crate) struct MapMakingProvider {
     pub api_key: String,
-}
-
-/// Whether an [`AppError`] from this provider is a 401 (invalid/expired API key).
-pub(crate) fn is_auth_error(e: &AppError) -> bool {
-    e.0.starts_with(AUTH_ERROR_PREFIX)
 }
 
 // --- read shape (mirrors Remote.Location) -----------------------------------
@@ -180,7 +171,7 @@ impl SyncProvider for MapMakingProvider {
             return Err(api_error(status, &body));
         }
         Ok(RemoteSnapshot {
-            locations: decode_response(&body)?,
+            locations: decode_response(&body).map_err(|e| AppError(format!("{e:#}")))?,
             token: None,
         })
     }
@@ -227,8 +218,8 @@ impl MapMakingProvider {
 }
 
 /// Build an [`AppError`] from a non-2xx response. Prefers a JSON body's `message`, else the body
-/// text, else a status-only fallback (loosely mirrors MapMakingWebApiError). A 401 gets the
-/// [`AUTH_ERROR_PREFIX`] sentinel so [`is_auth_error`] can detect it.
+/// text, else a status-only fallback (loosely mirrors MapMakingWebApiError). A 401 becomes an
+/// [`auth_error`].
 fn api_error(status: u16, body: &[u8]) -> AppError {
     let message = match serde_json::from_slice::<serde_json::Value>(body) {
         Ok(v) => v
@@ -247,7 +238,7 @@ fn api_error(status: u16, body: &[u8]) -> AppError {
         }
     };
     if status == 401 {
-        AppError(format!("{AUTH_ERROR_PREFIX}{message}"))
+        auth_error(message)
     } else {
         AppError(message)
     }
@@ -366,94 +357,7 @@ pub(crate) fn push_apply(
     Ok(all)
 }
 
-// --- protobuf decode (hand-rolled, proto2) ----------------------------------
-
-/// Cursor over a protobuf byte slice.
-struct Reader<'a> {
-    buf: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(buf: &'a [u8]) -> Self {
-        Reader { buf, pos: 0 }
-    }
-
-    fn eof(&self) -> bool {
-        self.pos >= self.buf.len()
-    }
-
-    fn read_varint(&mut self) -> AppResult<u64> {
-        let mut result: u64 = 0;
-        let mut shift: u32 = 0;
-        loop {
-            let b = *self.buf.get(self.pos).ok_or("protobuf: varint truncated")?;
-            self.pos += 1;
-            result |= ((b & 0x7f) as u64) << shift;
-            if b & 0x80 == 0 {
-                break;
-            }
-            shift += 7;
-            if shift >= 64 {
-                return Err("protobuf: varint overflow".into());
-            }
-        }
-        Ok(result)
-    }
-
-    fn read_double(&mut self) -> AppResult<f64> {
-        let end = self.pos.checked_add(8).ok_or("protobuf: 64-bit overflow")?;
-        let slice = self
-            .buf
-            .get(self.pos..end)
-            .ok_or("protobuf: 64-bit truncated")?;
-        let arr: [u8; 8] = slice.try_into().expect("8-byte slice");
-        self.pos = end;
-        Ok(f64::from_le_bytes(arr))
-    }
-
-    fn read_bytes(&mut self) -> AppResult<&'a [u8]> {
-        let len = self.read_varint()? as usize;
-        let end = self
-            .pos
-            .checked_add(len)
-            .ok_or("protobuf: length overflow")?;
-        let slice = self
-            .buf
-            .get(self.pos..end)
-            .ok_or("protobuf: length-delimited truncated")?;
-        self.pos = end;
-        Ok(slice)
-    }
-
-    fn read_string(&mut self) -> AppResult<String> {
-        Ok(String::from_utf8_lossy(self.read_bytes()?).into_owned())
-    }
-
-    /// Advance past an unknown field of the given wire type.
-    fn skip(&mut self, wire: u64) -> AppResult<()> {
-        match wire {
-            0 => {
-                self.read_varint()?;
-            }
-            1 => {
-                self.read_double()?;
-            }
-            2 => {
-                self.read_bytes()?;
-            }
-            5 => {
-                let end = self.pos.checked_add(4).ok_or("protobuf: 32-bit overflow")?;
-                self.buf
-                    .get(self.pos..end)
-                    .ok_or("protobuf: 32-bit truncated")?;
-                self.pos = end;
-            }
-            _ => return Err(format!("protobuf: unknown wire type {wire}").into()),
-        }
-        Ok(())
-    }
-}
+// --- protobuf decode (proto2) -----------------------------------------------
 
 /// Raw location fields before the tag table is resolved.
 #[derive(Default)]
@@ -500,18 +404,16 @@ impl RawLoc {
     }
 }
 
-fn decode_response(buf: &[u8]) -> AppResult<Vec<MmLocation>> {
+fn decode_response(buf: &[u8]) -> anyhow::Result<Vec<MmLocation>> {
     let mut r = Reader::new(buf);
     let mut tags: Vec<String> = Vec::new();
     let mut raw: Vec<RawLoc> = Vec::new();
-    while !r.eof() {
-        let tag = r.read_varint()?;
-        let field = tag >> 3;
-        let wire = tag & 7;
+    while !r.at_end() {
+        let (field, wire) = r.read_tag()?;
         match (field, wire) {
-            (1, 2) => tags.push(r.read_string()?),
+            (1, 2) => tags.push(r.read_string_lossy()?),
             (2, 2) => {
-                let sub = r.read_bytes()?;
+                let sub = r.read_len_slice()?;
                 raw.push(decode_location(sub)?);
             }
             _ => r.skip(wire)?,
@@ -520,28 +422,26 @@ fn decode_response(buf: &[u8]) -> AppResult<Vec<MmLocation>> {
     Ok(raw.into_iter().map(|rl| rl.resolve(&tags)).collect())
 }
 
-fn decode_location(buf: &[u8]) -> AppResult<RawLoc> {
+fn decode_location(buf: &[u8]) -> anyhow::Result<RawLoc> {
     let mut r = Reader::new(buf);
     let mut loc = RawLoc::default();
-    while !r.eof() {
-        let tag = r.read_varint()?;
-        let field = tag >> 3;
-        let wire = tag & 7;
+    while !r.at_end() {
+        let (field, wire) = r.read_tag()?;
         match (field, wire) {
-            (1, 0) => loc.id = r.read_varint()? as i64,
+            (1, 0) => loc.id = r.read_i64()?,
             (2, 0) => loc.author = Some(r.read_varint()? as u32),
             (3, 2) => {
-                let (lat, lng) = decode_latlng(r.read_bytes()?)?;
+                let (lat, lng) = decode_latlng(r.read_len_slice()?)?;
                 loc.lat = lat;
                 loc.lng = lng;
             }
-            (4, 2) => loc.pano_id = r.read_string()?,
-            (5, 1) => loc.heading = r.read_double()?,
-            (6, 1) => loc.pitch = r.read_double()?,
-            (7, 1) => loc.zoom = r.read_double()?,
+            (4, 2) => loc.pano_id = r.read_string_lossy()?,
+            (5, 1) => loc.heading = r.read_f64()?,
+            (6, 1) => loc.pitch = r.read_f64()?,
+            (7, 1) => loc.zoom = r.read_f64()?,
             (8, 2) => {
-                let mut pr = Reader::new(r.read_bytes()?);
-                while !pr.eof() {
+                let mut pr = Reader::new(r.read_len_slice()?);
+                while !pr.at_end() {
                     loc.tag_index.push(pr.read_varint()? as u32);
                 }
             }
@@ -556,16 +456,14 @@ fn decode_location(buf: &[u8]) -> AppResult<RawLoc> {
     Ok(loc)
 }
 
-fn decode_latlng(buf: &[u8]) -> AppResult<(f64, f64)> {
+fn decode_latlng(buf: &[u8]) -> anyhow::Result<(f64, f64)> {
     let mut r = Reader::new(buf);
     let (mut lat, mut lng) = (0.0, 0.0);
-    while !r.eof() {
-        let tag = r.read_varint()?;
-        let field = tag >> 3;
-        let wire = tag & 7;
+    while !r.at_end() {
+        let (field, wire) = r.read_tag()?;
         match (field, wire) {
-            (1, 1) => lat = r.read_double()?,
-            (2, 1) => lng = r.read_double()?,
+            (1, 1) => lat = r.read_f64()?,
+            (2, 1) => lng = r.read_f64()?,
             _ => r.skip(wire)?,
         }
     }

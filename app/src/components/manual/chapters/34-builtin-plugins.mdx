@@ -3,15 +3,25 @@ export const title = "Built-in plugins";
 The Core tab includes:
 
 - **Map generator.** Generates Street View locations from coverage inside regions you draw, with extensive quality filters (camera generation, date ranges, official vs unofficial, minimum spacing, and more). It can follow linked panoramas to spread coverage. A **Sampling** control chooses how candidate points are distributed: **Random**, **Uniform** (Poisson disk), **Coverage** (blue-line sampling), or **Grow** (kernel-based expansion). Additional options include searching within panorama descriptions, filtering by number of links, setting a fixed output zoom level, and adjusting the generation speed. Settings changes apply mid-run. An optional search-coverage overlay visualizes where the generator has searched. The generator session persists across view switches, so you can leave and return without losing progress.
-- **Vali.** Generates locations from pre-built coverage data using the external Vali tool, streaming progress as it runs.
+- **Vali.** Generates locations from pre-built coverage data rather than by probing Street View, so it is much faster than the generator where that data exists. Progress streams as it runs.
 - **Distribution.** A live bar chart of how your locations are spread across countries, with flags and counts. It resolves countries offline from coordinates, so it works with zero enrichment; a **Coordinates** / **Metadata** toggle switches between coordinate-based counts and your enriched `countryCode` field when one is present.
 - **Disambiguate.** Ranks metadata fields by how strongly they separate your active selections, helping you find what distinguishes one group from another.
 - **Gradient.** Colors locations by a field value using gradient buckets. Supports the same date/number partition modes as **Apply metadata as tags**. A scope selector lets you color only the current selection, with bucket boundaries computed from the subset.
 - **Pivot Table.** Cross-tabulates selections against location metadata.
-- **JSON editor.** Shows the active location as editable raw JSON inside the location editor, with tag names resolved for readability.
-
-A couple of cards are marked **coming soon** and cannot yet be enabled.
+- **map-making.app sync** and **GeoGuessr.** Link the open map to a remote map and keep the two in step. See below.
 
 <Img name="generator.png" caption="The Map generator: draw regions, set coverage filters, and generate." />
 
 <Img name="distribution.png" caption="The Distribution plugin: locations per country as a bar chart." />
+
+## Syncing with a remote map
+
+Both sync plugins work the same way. Sign in, search the remote account for a map, and **Link this map** to pair it with the one you have open. On the first sync you choose how the two sides are reconciled:
+
+- **Merge.** Keep everything from both sides. Never deletes.
+- **Mirror from remote.** Make the local map match the remote one.
+- **Mirror from local.** Make the remote map match yours.
+
+After that it is a plain three-way merge: **Sync now** pushes your changes, pulls theirs, and lists anything it could not decide (both sides added, both sides edited, deleted on one side and edited on the other) for you to resolve. **Sync continuously while this map is open** does it in the background as you edit.
+
+Both are marked **experimental** - link a map you have a backup of before trusting them with real work.

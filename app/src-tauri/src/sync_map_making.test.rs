@@ -1,5 +1,7 @@
 use super::*;
-use crate::sync::{IdentityModel, NormalizedSyncLocation, PushBatch, PushedId, SyncProvider};
+use crate::sync::{
+    IdentityModel, NormalizedSyncLocation, PushBatch, PushedId, SyncProvider, AUTH_PREFIX,
+};
 use std::cell::RefCell;
 use std::collections::HashSet;
 
@@ -564,15 +566,14 @@ fn decode_empty_response_is_empty() {
 #[test]
 fn auth_error_detected_only_for_401() {
     let e401 = api_error(401, br#"{"message":"bad key"}"#);
-    assert!(is_auth_error(&e401));
-    assert!(e401.0.contains("bad key"));
+    assert_eq!(e401.0, "auth: bad key");
 
     let e500 = api_error(500, b"boom");
-    assert!(!is_auth_error(&e500));
+    assert!(!e500.0.starts_with(AUTH_PREFIX));
     assert_eq!(e500.0, "boom");
 
     let e404 = api_error(404, b"");
-    assert!(!is_auth_error(&e404));
+    assert!(!e404.0.starts_with(AUTH_PREFIX));
     assert!(e404.0.contains("HTTP 404"));
 
     // Valid JSON without a `message` falls back to the status message.
@@ -622,7 +623,11 @@ fn live_bad_key_surfaces_auth_error() {
     // RemoteSnapshot is not Debug, so match rather than unwrap_err.
     match p.pull(&map) {
         Ok(_) => panic!("expected an auth error from an invalid key"),
-        Err(err) => assert!(is_auth_error(&err), "expected auth error, got: {}", err.0),
+        Err(err) => assert!(
+            err.0.starts_with(AUTH_PREFIX),
+            "expected auth error, got: {}",
+            err.0
+        ),
     }
 }
 

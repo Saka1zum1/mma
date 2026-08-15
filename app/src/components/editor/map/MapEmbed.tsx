@@ -1,10 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
-import { useSyncStore } from "@/lib/events";
-import {
-	getProviderCoverageLayersEpoch,
-	subscribeProviderCoverageLayers,
-} from "@/lib/sv/providers/coverageLayers";
 import {
 	mdiGoogleStreetView,
 	mdiMapMarker,
@@ -26,7 +21,6 @@ import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
 import { useMapState, addSelections, mapOpen } from "@/store/useMapStore";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
-import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
 import { setMapHost, tryInterceptDraw } from "@/lib/map/mapState";
 import { createMapHost, hostKindForMapType, type MapHost } from "@/lib/map/host";
 import { mountSearchRadiusCursor } from "@/lib/map/searchRadiusCursor";
@@ -45,18 +39,17 @@ import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/Ma
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { type MapEmbedPrefs, DEFAULT_PREFS, toggledOpacity } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 /** Live zoom text with its own zoom subscription, so zooming doesn't re-render MapEmbed. */
 function ZoomReadout({ host }: { host: MapHost | null }) {
-	const { t } = useT();
 	const [zoom, setZoom] = useState(() => host?.getZoom() ?? 2);
 	useEffect(() => {
 		if (!host) return;
 		setZoom(host.getZoom());
 		return host.on("zoom", () => setZoom(Math.round(host.getZoom() * 100) / 100));
 	}, [host]);
-	return <> {t("editor.zoomReadout", { zoom: String(zoom) })}</>;
+	return <> · {t("zoom {zoom}", { zoom })}</>;
 }
 
 export function MapEmbed({
@@ -64,7 +57,6 @@ export function MapEmbed({
 }: {
 	onAddLocation: (parsed: ParsedLocation) => void | Promise<void>;
 }) {
-	const { t } = useT();
 	const map = useMapState((s) => s.map);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [host, setHost] = useState<MapHost | null>(null);
@@ -90,9 +82,6 @@ export function MapEmbed({
 			[key]: toggledOpacity(p[key], lastOpacityRef.current[key], getSettings().opacityToggleMode),
 		}));
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
-	// Boolean, not the raw zoom: re-renders only when crossing the blobby threshold.
-	// The live zoom readout subscribes itself (ZoomReadout).
-	const [belowBlobbyZoom, setBelowBlobbyZoom] = useState(2 <= BLOBBY_ZOOM_THRESHOLD);
 
 	const [customStyles, setCustomStyles] = useLocalStorage<CustomStyle[]>(CUSTOM_STYLES_KEY, []);
 	const [showStylesDialog, setShowStylesDialog] = useState(false);
@@ -164,7 +153,6 @@ export function MapEmbed({
 
 			const { prefs: p, customStyles: cs } = buildRef.current;
 			created = await createMapHost(hostKind, hostDiv, p, {
-				useBlobby: p.svBlobby,
 				customStyles: cs,
 				camera: savedCameraRef.current ?? undefined,
 			});
@@ -177,18 +165,14 @@ export function MapEmbed({
 			offs.push(
 				created.on("mousemove", (ll) => {
 					if (coordDisplayRef.current) {
-						coordDisplayRef.current.textContent = `${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}`;
+						coordDisplayRef.current.textContent = `${ll.lat.toFixed(6)}° ${ll.lng.toFixed(6)}°`;
 					}
-				}),
-				created.on("zoom", () => {
-					setBelowBlobbyZoom((hostRef.current?.getZoom() ?? 0) <= BLOBBY_ZOOM_THRESHOLD);
 				}),
 			);
 
 			hostRef.current = created;
 			setMapHost(created);
 			setHost(created);
-			setBelowBlobbyZoom(created.getZoom() <= BLOBBY_ZOOM_THRESHOLD);
 			if (first) {
 				mapOpen.mark("map-ready");
 				created.once("tilesloaded", () => mapOpen.mark("tiles"));
@@ -218,13 +202,6 @@ export function MapEmbed({
 		};
 	}, [hostKind]);
 
-	useEffect(() => {
-		if (!host) return;
-		const blobbySingleType =
-			prefs.svBlobby && belowBlobbyZoom && prefs.svCoverageType !== "default";
-		host.setSvOpacity(blobbySingleType ? svOpacity * 0.6 : svOpacity);
-	}, [host, svOpacity, prefs.svBlobby, belowBlobbyZoom, prefs.svCoverageType]);
-
 	// The editor map drives the single scene engine (delta/selection/active subscriptions)
 	useEffect(() => startSceneEngine(), []);
 
@@ -234,7 +211,7 @@ export function MapEmbed({
 		else clearScene();
 	}, [host, markerStyle]);
 
-	// Marker color repaints buffers in place 鈥?never a full scene reload.
+	// Marker color repaints buffers in place — never a full scene reload.
 	const markerColor = useSetting("markerColor");
 	useEffect(() => {
 		recolorScene(markerColor);
@@ -302,15 +279,9 @@ export function MapEmbed({
 		};
 	}, [host, showPreviews]);
 
-	const useBlobby = prefs.svBlobby && belowBlobbyZoom;
-	const coverageEpoch = useSyncStore(
-		subscribeProviderCoverageLayers,
-		getProviderCoverageLayersEpoch,
-	);
-
 	useEffect(() => {
-		hostRef.current?.applyPrefs(prefs, { useBlobby, customStyles });
-	}, [host, prefs, useBlobby, customStyles, coverageEpoch]);
+		hostRef.current?.applyPrefs(prefs, { customStyles });
+	}, [host, prefs, customStyles]);
 
 	const handleSearchResult = useCallback((lat: number, lng: number, _name: string) => {
 		hostRef.current?.fitBounds({
@@ -418,8 +389,8 @@ export function MapEmbed({
 						<Tooltip
 							content={
 								opacityTarget === "sv"
-									? t("editor.adjustingSvOpacity")
-									: t("editor.adjustingMarkerOpacity")
+									? t("Adjusting Street View opacity")
+									: t("Adjusting marker opacity")
 							}
 							side="left"
 						>
@@ -442,7 +413,11 @@ export function MapEmbed({
 							onChange={(e) =>
 								pref(opacityTarget === "sv" ? "svOpacity" : "markerOpacity")(Number(e.target.value))
 							}
-							title={opacityTarget === "sv" ? t("editor.svLayerOpacity") : t("editor.markerLayerOpacity")}
+							title={
+								opacityTarget === "sv"
+									? t("Street View layer opacity")
+									: t("Marker layer opacity")
+							}
 						/>
 					</div>
 				</div>
@@ -451,13 +426,13 @@ export function MapEmbed({
 					style={fullscreenMap ? { left: 0, bottom: 10 } : { right: 0, bottom: 10 }}
 				>
 					<div className="map-control map-control--button white">
-						<Tooltip content={t("common.zoomIn")} side="left">
-							<button onClick={zoomIn} aria-label={t("common.zoomIn")}>
+						<Tooltip content={t("Zoom in")} side="left">
+							<button onClick={zoomIn} aria-label={t("Zoom in")}>
 								<Icon path={mdiPlus} size={18} />
 							</button>
 						</Tooltip>
-						<Tooltip content={t("common.zoomOut")} side="left">
-							<button onClick={zoomOut} aria-label={t("common.zoomOut")}>
+						<Tooltip content={t("Zoom out")} side="left">
+							<button onClick={zoomOut} aria-label={t("Zoom out")}>
 								<Icon path={mdiMinus} size={18} />
 							</button>
 						</Tooltip>
@@ -484,7 +459,7 @@ export function MapEmbed({
 						<ZoomReadout host={host} />
 						{showFps && (
 							<>
-								<span style={{ margin: "0 4px" }}></span>
+								<span style={{ margin: "0 4px" }}>·</span>
 								<FpsCounter />
 							</>
 						)}
@@ -493,7 +468,7 @@ export function MapEmbed({
 			</div>
 			{showStylesDialog && (
 				<Dialog open onOpenChange={(open) => !open && setShowStylesDialog(false)}>
-					<DialogContent title={t("dialog.manageMapStyles")} className="map-styles-modal">
+					<DialogContent title={t("Manage map styles")} className="map-styles-modal">
 						{customStyles.length > 0 && (
 							<ul className="map-style-list">
 								{customStyles.map((s) => (
@@ -506,7 +481,7 @@ export function MapEmbed({
 												onClick={() => {
 													navigator.clipboard.writeText(JSON.stringify(s.style, null, 2));
 												}}
-												aria-label={t("editor.copyJson")}
+												aria-label={t("Copy JSON")}
 											>
 												<Icon path={mdiContentCopy} size={20} />
 											</button>
@@ -518,7 +493,7 @@ export function MapEmbed({
 													setCustomStyles(next);
 													if (prefs.mapStyleName === s.name) pref("mapStyleName")("default");
 												}}
-												aria-label={t("editor.deleteStyle")}
+												aria-label={t("Delete style")}
 											>
 												<Icon path={mdiDelete} size={20} />
 											</button>
@@ -527,8 +502,8 @@ export function MapEmbed({
 								))}
 							</ul>
 						)}
-						<strong>{t("editor.newStyle")}</strong>
-						<p style={{ margin: 0 }}>{t("editor.pasteStyleJson")}</p>
+						<strong>{t("New style")}</strong>
+						<p style={{ margin: 0 }}>{t("Paste a Google Maps style JSON array below.")}</p>
 						<form
 							onSubmit={(ev) => {
 								ev.preventDefault();
@@ -550,7 +525,7 @@ export function MapEmbed({
 							<p>
 								<TextInput
 									name="name"
-									placeholder={t("editor.styleName")}
+									placeholder={t("Style name")}
 									required
 									style={{ width: "100%" }}
 								/>
@@ -559,7 +534,7 @@ export function MapEmbed({
 								<textarea
 									name="style"
 									className="text-input"
-									placeholder={t("editor.styleJsonPlaceholder")}
+									placeholder='[{"featureType":"water","stylers":[{"color":"#ff0000"}]}]'
 									rows={5}
 									style={{
 										width: "100%",
@@ -571,14 +546,14 @@ export function MapEmbed({
 							</p>
 							<p>
 								<Button variant="primary" type="submit">
-									{t("common.upload")}
+									{t("Upload")}
 								</Button>
 							</p>
 						</form>
 					</DialogContent>
 				</Dialog>
 			)}
-			<ContextMenu.Trigger render={<span ref={contextTriggerRef} title={t("editor.contextMenu")} />} />
+			<ContextMenu.Trigger render={<span ref={contextTriggerRef} title={t("Context menu")} />} />
 			<ContextMenu.Portal>
 				<MapContextMenuContent />
 			</ContextMenu.Portal>

@@ -6,16 +6,19 @@ import { getSettings } from "@/store/settings";
 import { fetchAllLocations } from "@/store/useMapStore";
 import { subscribeMany, LOCATION_DATA_EVENTS } from "@/lib/events";
 import { usePluginState, createPluginStorage } from "@/plugins/registry";
-import { useT } from "@/lib/i18n";
 import "./distribution.css";
+import { t, getLocale } from "@/lib/i18n";
 
 type Source = "coords" | "metadata";
 
-const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
+let countryNames: { locale: string; names: Intl.DisplayNames } | null = null;
 
 function getCountryName(code: string): string {
+	const locale = getLocale();
+	if (countryNames?.locale !== locale)
+		countryNames = { locale, names: new Intl.DisplayNames([locale], { type: "region" }) };
 	try {
-		return countryNames.of(code) ?? code;
+		return countryNames.names.of(code) ?? code;
 	} catch {
 		return code;
 	}
@@ -50,7 +53,6 @@ function computeDistribution(locations: Location[]): { entries: CountryEntry[]; 
 }
 
 export function DistributionSidebar({ onClose }: { onClose: () => void }) {
-	const { t, tp } = useT();
 	const [entries, setEntries] = useState<CountryEntry[]>([]);
 	const [unknown, setUnknown] = useState(0);
 	const [total, setTotal] = useState(0);
@@ -103,29 +105,27 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 	const maxCount = entries.length > 0 ? entries[0].count : 1;
 
 	return (
-		<Sidebar title={t("plugin.distribution.title")} onBack={onClose} className="distribution-sidebar">
+		<Sidebar title={t("Distribution")} onBack={onClose} className="distribution-sidebar">
 			<SegmentedControl<Source>
 				value={metaAvailable ? source : "coords"}
 				onChange={setSource}
 				options={[
-					{ value: "coords", label: t("plugin.distribution.coordinates") },
+					{ value: "coords", label: t("Coordinates") },
 					{
 						value: "metadata",
-						label: t("plugin.distribution.metadata"),
+						label: t("Metadata"),
 						disabled: !metaAvailable,
-						title: metaAvailable ? undefined : t("plugin.distribution.metadataDisabledHint"),
+						title: metaAvailable ? undefined : t("Enrich metadata fields to enable"),
 					},
 				]}
 			/>
 			<div className="distribution-sidebar__summary">
-				{t("plugin.distribution.summary", {
-					total,
-					locations: tp("plugin.distribution.locationCount", total),
-					countries: tp("plugin.distribution.countryCount", entries.length),
-				})}
+				{t({ one: "{n} location", other: "{n} locations" }, { n: total })}{" "}
+				{t({ one: "across {n} country", other: "across {n} countries" }, { n: entries.length })}
 				{unknown > 0 && (
 					<span className="distribution-sidebar__unknown">
-						{t("plugin.distribution.withoutCountryData", { count: unknown })}
+						{" "}
+						{t("({n} without country data)", { n: unknown })}
 					</span>
 				)}
 			</div>

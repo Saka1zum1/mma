@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { Location } from "mma-plugin-types";
-import { spawnEmbed, spawnTextSearch } from "./sidecar";
+import { embed, searchText } from "./sidecar";
 
 const { Sidebar, Field } = MMA.ui;
 
@@ -24,8 +24,7 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 	const [progress, setProgress] = useState("");
 	const [error, setError] = useState("");
 	const [resultCount, setResultCount] = useState<number | null>(null);
-	const cancelledRef = useRef(false);
-	const killRef = useRef<(() => void) | null>(null);
+	const abortRef = useRef<AbortController | null>(null);
 
 	const run = useCallback(async () => {
 		const q = query.trim();
@@ -33,53 +32,34 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 		setRunning(true);
 		setError("");
 		setResultCount(null);
-		cancelledRef.current = false;
+		const abort = new AbortController();
+		abortRef.current = abort;
 
 		try {
 			const locs = await MMA.fetchAllLocations();
-			if (cancelledRef.current) return;
+			if (abort.signal.aborted) return;
 			const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId!);
 			if (panoIds.length === 0) { setError("No locations with pano IDs"); return; }
 
 			setProgress(`Embedding ${panoIds.length} panos (cached skip)...`);
 			let embedDone = 0;
 			const embedStart = Date.now();
-			const { process: embedProc, done: embedWhen } = await spawnEmbed(panoIds, setProgress);
-			killRef.current = () => embedProc.kill();
-			embedProc.onStderr((line) => {
-				if (line.startsWith("[vision]")) setProgress(line);
-			});
-			embedProc.onLine((line) => {
-				try {
-					const r = JSON.parse(line);
-					if (r.status === "cache_hit") {
-						embedDone += r.count ?? 1;
-					} else {
-						embedDone++;
-					}
+			await embed(panoIds, {
+				signal: abort.signal,
+				onStatus: setProgress,
+				onUnit: (count) => {
+					embedDone += count;
 					const elapsed = (Date.now() - embedStart) / 1000;
 					const rate = elapsed > 0.5 ? (embedDone / elapsed).toFixed(1) : "--";
 					setProgress(`Embedding: ${embedDone}/${panoIds.length} (${rate} panos/s)`);
-				} catch {}
+				},
 			});
-			await embedWhen;
-			if (cancelledRef.current) return;
+			if (abort.signal.aborted) return;
 
 			setProgress(`Searching for "${q}"...`);
-			const { process: searchProc, done: searchDone } = await spawnTextSearch(q, null, threshold);
-			killRef.current = () => searchProc.kill();
+			const results = await searchText(q, null, threshold, abort.signal);
+			if (abort.signal.aborted) return;
 
-			let results: { panoId: string; score: number }[] = [];
-			searchProc.onLine((line) => {
-				try {
-					const r = JSON.parse(line);
-					if (r.results) results = r.results;
-				} catch {}
-			});
-			await searchDone;
-			if (cancelledRef.current) return;
-
-			killRef.current = null;
 			const matchedIds = results
 				.map((r) => panoIdToLocId(locs, r.panoId))
 				.filter((id): id is number => id != null);
@@ -90,19 +70,21 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 			setResultCount(matchedIds.length);
 			setProgress("");
 		} catch (e) {
-			if (!cancelledRef.current) setError(String(e));
+			if (!abort.signal.aborted) setError(String(e));
 		} finally {
+			abortRef.current = null;
 			setRunning(false);
 		}
 	}, [query, threshold]);
 
 	const cancel = useCallback(() => {
-		cancelledRef.current = true;
-		killRef.current?.();
-		killRef.current = null;
+		abortRef.current?.abort();
+		abortRef.current = null;
 		setRunning(false);
 		setProgress("");
 	}, []);
+
+	useEffect(() => () => abortRef.current?.abort(), []);
 
 	return (
 		<Sidebar title="Vision" onBack={onClose}>

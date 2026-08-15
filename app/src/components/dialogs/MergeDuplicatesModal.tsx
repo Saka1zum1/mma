@@ -1,16 +1,14 @@
 import { useState, useCallback } from "react";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { previewDuplicateGroups, mergeDuplicates } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { fmt } from "@/lib/util/format";
 import { log } from "@/lib/util/log";
 import { useAsync } from "@/lib/hooks/useAsync";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
-interface Props {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
+interface Props extends DialogProps {
 	distance: number;
 }
 
@@ -21,7 +19,6 @@ interface Preview {
 }
 
 export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
-	const { t } = useT();
 	const [merging, setMerging] = useState(false);
 
 	const { data: preview, loading } = useAsync<Preview | null>(async () => {
@@ -42,8 +39,8 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 		try {
 			await mergeDuplicates(distance);
 			toast(
-				t("toast.mergedDuplicates", {
-					mergedAway: fmt.format(preview?.mergedAway ?? 0),
+				t("Merged {merged} duplicates into {groups} locations", {
+					merged: fmt.format(preview?.mergedAway ?? 0),
 					groups: fmt.format(preview?.groups ?? 0),
 				}),
 			);
@@ -53,13 +50,13 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 		} finally {
 			setMerging(false);
 		}
-	}, [distance, preview, onOpenChange, t]);
+	}, [distance, preview, onOpenChange]);
 
 	const nothing = !loading && preview != null && preview.groups === 0;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("dialog.mergeDuplicates")} className="merge-duplicates">
+			<DialogContent title={t("Merge duplicates")} className="merge-duplicates">
 				{loading && (
 					<div className="merge-duplicates__loading">
 						<div className="merge-duplicates__spinner" />
@@ -67,23 +64,30 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 				)}
 				{nothing && (
 					<p className="merge-duplicates__status">
-						{t("merge.noGroups", { distance: String(distance) })}
+						{t("No duplicate groups within {distance}m.", { distance })}
 					</p>
 				)}
 				{!loading && preview != null && preview.groups > 0 && (
 					<>
 						<p className="merge-duplicates__status">
-							{t("merge.preview", {
-								groups: fmt.format(preview.groups),
-								distance: String(distance),
-								mergedAway: fmt.format(preview.mergedAway),
-								largest: fmt.format(preview.largest),
-							})}
+							{t(
+								{ one: "{n} group within {distance}m.", other: "{n} groups within {distance}m." },
+								{ n: preview.groups, distance },
+							)}{" "}
+							{t(
+								{
+									one: "Merging removes {n} location, keeping one survivor each (tags combined).",
+									other:
+										"Merging removes {n} locations, keeping one survivor each (tags combined).",
+								},
+								{ n: preview.mergedAway },
+							)}{" "}
+							{t("Largest group: {n}.", { n: preview.largest })}
 						</p>
 						<div className="merge-duplicates__actions">
-							<Button onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+							<Button onClick={() => onOpenChange(false)}>{t("Cancel")}</Button>
 							<Button variant="primary" onClick={handleMerge} disabled={merging}>
-								{merging ? t("merge.merging") : t("common.merge")}
+								{merging ? t("Merging...") : t("Merge")}
 							</Button>
 						</div>
 					</>

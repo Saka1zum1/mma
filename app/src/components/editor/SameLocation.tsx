@@ -12,7 +12,9 @@ import { svThumbnailUrl } from "@/lib/sv/lookup";
 import { TagPill } from "@/components/primitives/TagPill";
 import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
-import { useT } from "@/lib/i18n";
+import { toggleInSet } from "@/lib/util/util";
+import { t } from "@/lib/i18n";
+import { Trans } from "@/components/primitives/Trans";
 
 function DuplicateItem({
 	location,
@@ -29,7 +31,6 @@ function DuplicateItem({
 	onClick: () => void;
 	tagMap: Record<number, { name: string; color: string }>;
 }) {
-	const { t } = useT();
 	const thumbSrc = location.panoId ? svThumbnailUrl(location.panoId, location.heading) : null;
 
 	return (
@@ -47,7 +48,7 @@ function DuplicateItem({
 			<div className="duplicate-item__tags">
 				{location.tags.length > 0 ? (
 					<>
-						<strong>{t("editor.tagsLabel")}:</strong>{" "}
+						<strong>{t("Tags:")}</strong>{" "}
 						{location.tags.map((tid) => {
 							const tag = tagMap[tid];
 							if (!tag) return null;
@@ -55,13 +56,13 @@ function DuplicateItem({
 						})}
 					</>
 				) : (
-					<em>{t("editor.noTags")}</em>
+					<em>{t("No tags")}</em>
 				)}
 			</div>
 			<div className="duplicate-item__meta">{Math.round(location.heading)}&deg;</div>
 			<div className="duplicate-item__actions">
 				<Button variant="destructive" onClick={onDelete}>
-					{t("common.delete")}
+					{t("Delete")}
 				</Button>
 			</div>
 		</li>
@@ -69,7 +70,6 @@ function DuplicateItem({
 }
 
 export default function SameLocation() {
-	const { t, tp } = useT();
 	const locations = useMapState((s) => s.duplicateLocations);
 	const tagMap = useMapState((s) => s.tags);
 
@@ -84,12 +84,7 @@ export default function SameLocation() {
 	);
 
 	const toggleSelect = useCallback((loc: Location, checked: boolean) => {
-		setSelected((prev) => {
-			const next = new Set(prev);
-			if (checked) next.add(loc.id);
-			else next.delete(loc.id);
-			return next;
-		});
+		setSelected((prev) => toggleInSet(prev, loc.id, checked));
 	}, []);
 
 	const deleteSingle = useCallback(
@@ -106,7 +101,7 @@ export default function SameLocation() {
 	);
 
 	const keepSelected = useCallback(() => {
-		const toDelete = new Set(locations.filter((l) => !selected.has(l.id)).map((l) => l.id));
+		const toDelete = new Set(locations.map((l) => l.id)).difference(selected);
 		removeLocations(toDelete);
 		const remaining = locations.find((l) => selected.has(l.id));
 		if (remaining) openDuplicateLocation(remaining);
@@ -122,8 +117,18 @@ export default function SameLocation() {
 
 	return (
 		<section className="duplicates">
-			<h2>{tp("editor.sameLocationHeading", locations.length, { count: locations.length })}</h2>
-			<p>{t("editor.sameLocationIntro")}</p>
+			<h2>
+				<Trans
+					msg={{ one: "{count} location", other: "{count} locations" }}
+					n={locations.length}
+					count={<span className="mono">{locations.length}</span>}
+				/>
+			</h2>
+			<p>
+				{t(
+					"Multiple locations were selected around this coordinate. Click one of the thumbnails below\n\t\t\t\tto view that location.",
+				)}
+			</p>
 			<ul className="duplicates__location-list">
 				{sorted.map((loc) => (
 					<DuplicateItem
@@ -138,17 +143,20 @@ export default function SameLocation() {
 				))}
 			</ul>
 			<div className="duplicates__actions">
-				<Tooltip content={t("editor.keepSelectedTooltip")} side="bottom">
+				<Tooltip
+					content={t("Delete all duplicate locations, except the selected ones")}
+					side="bottom"
+				>
 					<Button variant="destructive" disabled={selected.size === 0} onClick={keepSelected}>
-						{t("editor.keepSelected")}
+						{t("Keep selected")}
 					</Button>
 				</Tooltip>
-				<Tooltip content={t("editor.deleteSelectedTooltip")} side="bottom">
+				<Tooltip content={t("Delete selected locations")} side="bottom">
 					<Button variant="destructive" disabled={selected.size === 0} onClick={deleteSelected}>
-						{t("editor.deleteSelected")}
+						{t("Delete selected")}
 					</Button>
 				</Tooltip>
-				<Button onClick={closeDuplicates}>{t("common.cancel")}</Button>
+				<Button onClick={closeDuplicates}>{t("Cancel")}</Button>
 			</div>
 		</section>
 	);

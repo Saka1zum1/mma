@@ -3,9 +3,7 @@ import type { ScopeController, SourceScope } from "@/store/scope";
 import { getSavedSelections } from "@/store/savedSelections";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Radio } from "@/components/primitives/Radio";
-import { fmt } from "@/lib/util/format";
-import { useT } from "@/lib/i18n";
-
+import { t } from "@/lib/i18n";
 // Radio picker for a ScopeController (from useScope). One shared affordance for
 // "operate on all locations vs the current selection", used by core and plugins.
 // Controllers with `saved: true` additionally offer saved selections.
@@ -16,7 +14,6 @@ export function ScopeSelector({
 	ctl: ScopeController<SourceScope>;
 	className?: string;
 }) {
-	const { t } = useT();
 	const { scope, setScope, allCount, selectionCount } = ctl;
 	const name = useId();
 	const hasSelection = selectionCount > 0;
@@ -30,7 +27,7 @@ export function ScopeSelector({
 					checked={scope.kind === "all"}
 					onChange={() => setScope({ kind: "all" })}
 				/>
-				{t("editor.allLocations", { count: fmt.format(allCount) })}
+				{t("All locations ({n})", { n: allCount })}
 			</label>
 			<label
 				className="scope-selector__option"
@@ -42,7 +39,7 @@ export function ScopeSelector({
 					disabled={!hasSelection}
 					onChange={() => setScope({ kind: "selected" })}
 				/>
-				{t("editor.currentSelection", { count: fmt.format(selectionCount) })}
+				{t("Current selection ({n})", { n: selectionCount })}
 			</label>
 			{saved.length > 0 && (
 				<label className="scope-selector__option">
@@ -51,14 +48,15 @@ export function ScopeSelector({
 						checked={scope.kind === "saved"}
 						onChange={() => setScope({ kind: "saved", id: saved[0].id })}
 					/>
-					{t("editor.scopeSaved")}
+
+					{t("Saved")}
 					<NSelect
 						value={scope.kind === "saved" ? scope.id : ""}
 						onChange={(e) => setScope({ kind: "saved", id: e.target.value })}
 					>
 						{scope.kind !== "saved" && <option value="" disabled hidden />}
 						{savedMissing && scope.kind === "saved" && (
-							<option value={scope.id}>{t("editor.deletedSelection")}</option>
+							<option value={scope.id}>{t("(deleted selection)")}</option>
 						)}
 						{saved.map((s) => (
 							<option key={s.id} value={s.id}>

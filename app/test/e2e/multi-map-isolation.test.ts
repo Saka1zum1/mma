@@ -15,6 +15,8 @@ import {
 	flushAndWait,
 	openMap,
 	withApi,
+	seedLocs,
+	select,
 } from "./helpers";
 import type { Location } from "@/bindings.gen";
 
@@ -30,9 +32,7 @@ describe("Selection isolation across maps", () => {
 		await waitForReady();
 
 		mapAId = await createAndOpenMap("E2E SelIso A");
-		const locs: Location[] = [];
-		for (let i = 0; i < 10; i++) locs.push(createLocation({ lat: i, lng: i }));
-		await addLocs(locs);
+		await seedLocs(10, (i) => ({ lat: i, lng: i }));
 		await flushAndWait();
 		await closeMap();
 
@@ -52,7 +52,7 @@ describe("Selection isolation across maps", () => {
 
 	it("selecting Everything in A, switching to B: B has no selections", async () => {
 		await openMap(mapAId);
-		await withApi(async (api) => api.addSelections([{ type: "Everything" }]));
+		await select({ type: "Everything" });
 		const selA = await withApi(async (api) => api.getActiveSelections().length);
 		expect(selA).toBe(1);
 		await closeMap();
@@ -66,7 +66,7 @@ describe("Selection isolation across maps", () => {
 	it("tag selection in A does not create tag selection in B", async () => {
 		await openMap(mapAId);
 		const tag = await createTag("OnlyInA");
-		await withApi(async (api, tid) => api.addSelections([{ type: "Tag", tagId: tid }]), tag.id);
+		await select({ type: "Tag", tagId: tag.id });
 		const selsA = await withApi(async (api) => api.getActiveSelections().length);
 		expect(selsA).toBeGreaterThan(0);
 		await closeMap();
@@ -291,6 +291,7 @@ describe("Per-map settings isolation", () => {
 describe("Active location isolation across maps", () => {
 	let mapAId: string;
 	let mapBId: string;
+
 	before(async () => {
 		await waitForReady();
 

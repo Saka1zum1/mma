@@ -93,3 +93,24 @@ describe("detectCameraType", () => {
 		expect(detectCameraType(makeData({ ...past, lat: 40 }))).toBe("gen2");
 	});
 });
+
+// Exclusive on the month named. Was a UTC-vs-local Date comparison; TZ is pinned to +05:30
+// so a reintroduced Date fails here rather than passing on UTC CI.
+describe("badcam threshold boundary", () => {
+	const bd = (imageDate: string) =>
+		detectCameraType(makeData({ height: 6656, imageDate, countryCode: "BD" }));
+
+	it("excludes the threshold month itself", () => {
+		expect(bd("2021-04")).toBe("gen2");
+	});
+
+	it("includes months after the threshold", () => {
+		expect(bd("2021-05")).toBe("badcam");
+		expect(bd("2022-01")).toBe("badcam");
+	});
+
+	it("excludes months before the threshold", () => {
+		expect(bd("2021-03")).toBe("gen2");
+		expect(bd("2020-12")).toBe("gen2");
+	});
+});

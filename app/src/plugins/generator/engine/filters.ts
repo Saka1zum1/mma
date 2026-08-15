@@ -1,4 +1,5 @@
 import type { GeneratorSettings } from "./types";
+import { ymFromDate } from "@/lib/util/date";
 
 function normalizeText(text: string): string {
 	return text
@@ -83,10 +84,6 @@ function extractDate(entry: Record<string, unknown>): Date | null {
 	return null;
 }
 
-function dateToYM(d: Date): string {
-	return d.getFullYear() + "-" + (d.getMonth() > 8 ? "" : "0") + (d.getMonth() + 1);
-}
-
 export function passesInitialFilters(
 	res: google.maps.StreetViewResolvedPanoramaData,
 	s: GeneratorSettings,
@@ -139,7 +136,7 @@ export function passesDateFilters(
 			if (s.rejectUnofficial && entry.pano.length !== 22) continue;
 			const d = extractDate(entry);
 			if (!d) continue;
-			const iDate = Date.parse(dateToYM(d));
+			const iDate = Date.parse(ymFromDate(d));
 			if (iDate >= fromDate && iDate <= toDate) return "checkAll";
 		}
 		return false;
@@ -207,7 +204,7 @@ export function isPanoGood(
 			if (entry.pano === pano.location.pano) continue;
 			const d = extractDate(entry);
 			if (!d) continue;
-			const iDate = Date.parse(dateToYM(d));
+			const iDate = Date.parse(ymFromDate(d));
 			if (iDate >= fromDate && iDate <= toDate) return false;
 		}
 	}
@@ -221,7 +218,7 @@ export function isPanoGood(
 			if (s.rejectUnofficial && entry.pano.length !== 22) continue;
 			const d = extractDate(entry);
 			if (!d) continue;
-			const iDate = Date.parse(dateToYM(d));
+			const iDate = Date.parse(ymFromDate(d));
 			if (iDate >= fromDate && iDate <= toDate) {
 				dateWithin = true;
 				break;

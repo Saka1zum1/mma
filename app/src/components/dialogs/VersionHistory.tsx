@@ -1,12 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { useMapState, checkoutCommit } from "@/store/useMapStore";
 import { beginCommitDiffPreview } from "@/store/commitDiff";
 import { cmd } from "@/lib/commands";
+import { useAsync } from "@/lib/hooks/useAsync";
 import type { CommitInfo } from "@/bindings.gen";
-import { useT } from "@/lib/i18n";
-import { fmt } from "@/lib/util/format";
+import { t } from "@/lib/i18n";
+import { fmt, dateTimeFmt } from "@/lib/util/format";
 
 function diffLabel(c: CommitInfo): ReactNode | null {
 	const parts: ReactNode[] = [];
@@ -36,27 +37,15 @@ function diffLabel(c: CommitInfo): ReactNode | null {
 }
 
 export function VersionHistory({ onClose }: { onClose: () => void }) {
-	const { t, locale } = useT();
 	const map = useMapState((s) => s.map);
-	const [commits, setCommits] = useState<CommitInfo[]>([]);
-	const [loading, setLoading] = useState(true);
 	const [restoring, setRestoring] = useState<string | null>(null);
 	const [confirmingId, setConfirmingId] = useState<string | null>(null);
+	const { data: commits } = useAsync(
+		() => (map ? cmd.storeListCommits(map.meta.id) : null),
+		[map?.meta.id],
+	);
 
-	const dateFmt = new Intl.DateTimeFormat(locale === "zh-Hans" ? "zh-CN" : "en", {
-		dateStyle: "medium",
-		timeStyle: "short",
-	});
-
-	useEffect(() => {
-		if (!map) return;
-		cmd.storeListCommits(map.meta.id).then((c) => {
-			setCommits(c);
-			setLoading(false);
-		});
-	}, [map?.meta.id]);
-
-	if (!map || loading) return null;
+	if (!map || !commits) return null;
 
 	const viewDiff = async (commit: CommitInfo) => {
 		await beginCommitDiffPreview(commit);
@@ -77,9 +66,11 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent title={t("dialog.versionHistory")} className="version-history-modal">
+			<DialogContent title={t("Version history")} className="version-history-modal">
 				{commits.length === 0 && (
-					<p className="text-muted">{t("versionHistory.noCommits")}</p>
+					<p className="text-muted">
+						{t("No commits yet. Press Commit to create your first version.")}
+					</p>
 				)}
 				{commits.length > 0 && (
 					<div style={{ maxHeight: 400, overflowY: "auto" }}>
@@ -91,12 +82,10 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 										borderBottom: "1px solid var(--border-subtle)",
 									}}
 								>
-									<th style={{ padding: "6px 8px" }}>{t("versionHistory.date")}</th>
-									<th style={{ padding: "6px 8px" }}>{t("versionHistory.hash")}</th>
-									<th style={{ padding: "6px 8px" }}>{t("common.changes")}</th>
-									<th style={{ padding: "6px 8px", textAlign: "right" }}>
-										{t("versionHistory.locations")}
-									</th>
+									<th style={{ padding: "6px 8px" }}>{t("Date")}</th>
+									<th style={{ padding: "6px 8px" }}>{t("Hash")}</th>
+									<th style={{ padding: "6px 8px" }}>{t("Changes")}</th>
+									<th style={{ padding: "6px 8px", textAlign: "right" }}>{t("Locations")}</th>
 									<th style={{ padding: "6px 8px" }}></th>
 								</tr>
 							</thead>
@@ -109,14 +98,14 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 										<tr
 											key={c.id}
 											onClick={() => hasDiff && viewDiff(c)}
-											title={hasDiff ? t("versionHistory.viewChanges") : undefined}
+											title={hasDiff ? t("View changes on the map") : undefined}
 											style={{
 												borderBottom: "1px solid var(--border-subtle)",
 												cursor: hasDiff ? "pointer" : "default",
 											}}
 										>
 											<td className="mono" style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
-												{dateFmt.format(new Date(c.createdAt))}
+												{dateTimeFmt.format(new Date(c.createdAt))}
 											</td>
 											<td
 												className="mono"
@@ -133,9 +122,9 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 													color: diff ? undefined : msg ? undefined : "var(--text-3)",
 												}}
 											>
-												{diff ??
-													msg ??
-													(i === 0 ? t("versionHistory.latest") : t("versionHistory.noChanges"))}
+												{msg}
+												{msg && diff && " "}
+												{diff ?? (msg ? null : i === 0 ? t("(latest)") : t("(no changes)"))}
 											</td>
 											<td className="mono" style={{ padding: "6px 8px", textAlign: "right" }}>
 												{fmt.format(c.locationCount)}
@@ -151,12 +140,12 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 													onBlur={() => confirmingId === c.id && setConfirmingId(null)}
 												>
 													{restoring === c.id
-														? t("versionHistory.restoring")
+														? t("Restoring...")
 														: confirmingId === c.id
-															? t("versionHistory.areYouSure")
+															? t("Are you sure?")
 															: i === 0
-																? t("versionHistory.revert")
-																: t("versionHistory.restore")}
+																? t("Revert")
+																: t("Restore")}
 												</Button>
 											</td>
 										</tr>

@@ -16,6 +16,26 @@ export function mmaBufUrl(path: string): string {
 	return schemeBase("mma-buf") + path.replace(/\\/g, "/");
 }
 
+/** Message for an unknown thrown value. */
+export function errText(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
+
+/** Copy of `set` with `value` toggled, or forced on/off by `on`. */
+export function toggleInSet<T>(set: ReadonlySet<T>, value: T, on?: boolean): Set<T> {
+	const next = new Set(set);
+	if (on ?? !next.has(value)) next.add(value);
+	else next.delete(value);
+	return next;
+}
+
+/** Split into consecutive slices of at most `n` items. */
+export function chunk<T>(arr: readonly T[], n: number): T[][] {
+	const out: T[][] = [];
+	for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+	return out;
+}
+
 /** Compare two dotted version strings (e.g. "0.6.1"). Returns >0 if a > b. */
 export function cmpVersion(a: string, b: string): number {
 	const pa = a.split(".").map(Number);
@@ -55,6 +75,9 @@ async function downloadInBrowser(srcPath: string, fileName: string): Promise<boo
 		}
 		const res = await fetch(url);
 		if (!res.body) throw new Error("export stream unavailable");
+		// Reached only behind the showSaveFilePicker feature test above, which the lint rule
+		// can't see; without the picker we never get here and fall through to downloadBlob.
+		// eslint-disable-next-line local/no-unsupported-builtins
 		await res.body.pipeTo((await handle.createWritable()) as unknown as WritableStream<Uint8Array>);
 		return true;
 	}
@@ -77,6 +100,17 @@ export function downloadBlob(blob: Blob | string, fileName: string) {
   if (typeof blob !== "string") {
     URL.revokeObjectURL(url);
   }
+}
+
+/** Copy an image Blob to the clipboard. False when the platform refuses it. */
+export async function copyImageToClipboard(blob: Blob): Promise<boolean> {
+	if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") return false;
+	try {
+		await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** Prompt for a destination and move a temp export file there (native dialog in

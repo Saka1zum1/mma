@@ -16,18 +16,9 @@ fn tag(id: u32, name: &str) -> Tag {
 fn loc_with_tags(id: u32, tags: Vec<u32>) -> Location {
     Location {
         id,
-        lat: 0.0,
-        lng: 0.0,
-        heading: 0.0,
-        pitch: 0.0,
         zoom: 1.0,
-        pano_id: None,
-        provider: None,
-        flags: crate::types::LocationFlags::empty(),
         tags,
-        extra: None,
-        created_at: 0,
-        modified_at: None,
+        ..Default::default()
     }
 }
 
@@ -495,6 +486,42 @@ fn fast_path_tags_with_special_chars() {
 }
 
 #[test]
+fn ascii_escaped_field_names_survive_both_paths() {
+    // A file written by an ensure_ascii encoder spells `café` as an escape. The fast
+    // path keeps extra bytes verbatim and the map path decodes them, so without
+    // canonicalization one file yields two spellings of the same field -- and a filter
+    // on either matches only half the map. Loc 2's countryCode forces the map path.
+    let bs = '\\';
+    let json = format!(
+        r#"{{"customCoordinates":[
+        {{"lat":1,"lng":2,"extra":{{"caf{bs}u00e9":"au lait"}}}},
+        {{"lat":3,"lng":4,"countryCode":"FR","extra":{{"caf{bs}u00e9":"noir"}}}}
+    ]}}"#
+    );
+    let mut buf = json.into_bytes();
+    let parsed = parse_single_json_mut(&mut buf);
+    assert_eq!(parsed.locations.len(), 2);
+    for loc in &parsed.locations {
+        assert!(
+            loc.extra.as_ref().unwrap().get("café").is_some(),
+            "field must resolve under its decoded name"
+        );
+    }
+
+    let extras: Vec<&crate::types::RawExtra> = parsed
+        .locations
+        .iter()
+        .filter_map(|l| l.extra.as_ref())
+        .collect();
+    let defs =
+        crate::map_meta::auto_register_field_defs(&std::collections::HashSet::new(), &extras)
+            .unwrap();
+    let mut keys: Vec<&str> = defs.keys().map(|k| k.as_str()).collect();
+    keys.sort();
+    assert_eq!(keys, vec!["café", "countryCode"]);
+}
+
+#[test]
 fn nested_tags_key_not_stripped() {
     // A `tags` key nested inside a value object must be left intact; only the depth-1
     // `tags` array is stripped.
@@ -796,6 +823,7 @@ fn add_copied_reconciles_tags_and_reports_counts() {
     // The new tag def is shipped on the result (the receiver needs it to render).
     assert!(r.tags.as_ref().and_then(|m| m.get(&unique.id)).is_some());
 }
+
 
 #[test]
 fn parse_source_field_maps_to_internal_provider() {

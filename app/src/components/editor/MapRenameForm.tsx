@@ -4,17 +4,16 @@ import { useId, useState } from "react";
 import { useCloseDialog } from "../primitives/Dialog";
 import { Button } from "../primitives/Button";
 import { TextInput } from "../primitives/TextInput";
-import { useT } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 
 function DeleteMapSection({ mapId, name }: { mapId: string; name: string }) {
-	const { t } = useT();
 	const [confirming, setConfirming] = useState(false);
 
 	if (!confirming) {
 		return (
 			<div className="edit-map-modal__delete">
 				<Button variant="destructive" onClick={() => setConfirming(true)}>
-					{t("mapList.deleteMap")}
+					{t("Delete map")}
 				</Button>
 			</div>
 		);
@@ -23,14 +22,14 @@ function DeleteMapSection({ mapId, name }: { mapId: string; name: string }) {
 	return (
 		<div className="edit-map-modal__delete">
 			<p>
-				{t("editor.deleteMapConfirm", {
-					name: name || t("editor.unnamed"),
+				{t("Delete \u201C{name}\u201D? This permanently removes the map and its history.", {
+					name: name || t("(unnamed)"),
 				})}
 			</p>
 			<div className="edit-map-modal__actions">
-				<Button onClick={() => setConfirming(false)}>{t("common.cancel")}</Button>
+				<Button onClick={() => setConfirming(false)}>{t("Cancel")}</Button>
 				<Button variant="destructive" onClick={() => void deleteMap(mapId)}>
-					{t("mapList.deleteMap")}
+					{t("Delete map")}
 				</Button>
 			</div>
 		</div>
@@ -38,7 +37,6 @@ function DeleteMapSection({ mapId, name }: { mapId: string; name: string }) {
 }
 
 export function MapRenameForm({ mapId, currentName }: { mapId: string; currentName: string }) {
-	const { t } = useT();
 	const id = useId();
 	const close = useCloseDialog();
 	const [name, setName] = useState(currentName);
@@ -53,7 +51,7 @@ export function MapRenameForm({ mapId, currentName }: { mapId: string; currentNa
 				}}
 			>
 				<p className="edit-map-modal__name">
-					<label htmlFor={`${id}name`}>{t("editor.mapNameLabel")}</label>
+					<label htmlFor={`${id}name`}>{t("Map name:")}</label>
 					<TextInput
 						id={`${id}name`}
 						type="text"
@@ -66,7 +64,7 @@ export function MapRenameForm({ mapId, currentName }: { mapId: string; currentNa
 				</p>
 				<div className="edit-map-modal__actions">
 					<Button variant="primary" type="submit" disabled={name.trim().length === 0}>
-						{t("common.save")}
+						{t("Save")}
 					</Button>
 				</div>
 			</form>

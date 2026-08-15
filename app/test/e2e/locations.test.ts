@@ -1,8 +1,5 @@
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	flushAndWait,
 	openMap,
 	addLocs,
@@ -12,23 +9,14 @@ import {
 	randomLatLng,
 	randomHeading,
 	withApi,
+	useMap,
+	seedLocs,
 } from "./helpers";
 
 describe("Location CRUD", () => {
-	let mapId: string;
+	useMap("E2E Locations");
 	let singleLocId: number;
 	let bulkLocIds: number[];
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Locations");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	// --- Add ---
 
 	it("add single location", async () => {
@@ -41,11 +29,7 @@ describe("Location CRUD", () => {
 	});
 
 	it("add bulk locations (500)", async () => {
-		const locs = [];
-		for (let i = 0; i < 500; i++) {
-			locs.push(createLocation({ ...randomLatLng(), ...randomHeading() }));
-		}
-		bulkLocIds = await addLocs(locs);
+		bulkLocIds = await seedLocs(500, () => ({ ...randomLatLng(), ...randomHeading() }));
 		const count = await getLocCount();
 		expect(count).toBe(501);
 	});
@@ -210,39 +194,23 @@ describe("Location CRUD", () => {
 });
 
 describe("Location persistence", () => {
-	let mapId: string;
+	const map = useMap("E2E Persist Locs");
 	let persistLocIds: number[];
 
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Persist Locs");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("locations survive save/load cycle", async () => {
-		const locs = [];
-		for (let i = 0; i < 100; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: -i,
-					heading: i * 3.6,
-					pitch: 0,
-					zoom: 1,
-					panoId: i % 10 === 0 ? `pano_${i}` : null,
-					flags: i % 4 === 0 ? 1 : 0,
-				}),
-			);
-		}
-		persistLocIds = await addLocs(locs);
+		persistLocIds = await seedLocs(100, (i) => ({
+			lat: i,
+			lng: -i,
+			heading: i * 3.6,
+			pitch: 0,
+			zoom: 1,
+			panoId: i % 10 === 0 ? `pano_${i}` : null,
+			flags: i % 4 === 0 ? 1 : 0,
+		}));
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const result = await withApi(
 			async (api, id0, id50) => {
@@ -288,7 +256,7 @@ describe("Location persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const extra = await withApi(async (api, id) => {
 			const loc = await api.fetchLocation(id);
@@ -317,7 +285,7 @@ describe("Location persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const tags = await withApi(async (api, id) => {
 			const loc = await api.fetchLocation(id);
@@ -334,7 +302,7 @@ describe("Location persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const loc = await getLoc(persistLocIds[5]);
 		expect(loc.panoId).toBe("PINNED_PANO");

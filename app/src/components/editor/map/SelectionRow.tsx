@@ -18,7 +18,6 @@ import {
 	getVisibleTags,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
-import { useT } from "@/lib/i18n";
 import { downloadBlob } from "@/lib/util/util";
 import { stepFilterWindow } from "@/lib/data/fieldOps";
 import { cmd } from "@/lib/commands";
@@ -50,6 +49,7 @@ import { fmt } from "@/lib/util/format";
 import { rgbCss } from "@/lib/util/color";
 import { getMapHost } from "@/lib/map/mapState";
 import { boundsOfCoords, type MapHost } from "@/lib/map/host";
+import { t } from "@/lib/i18n";
 
 async function fitSelectionBounds(host: MapHost, selection: Selection) {
 	if (selection.props.type === "Polygon") {
@@ -125,7 +125,6 @@ export const SelectionRow = memo(function SelectionRow({
 	parentKey?: string | null;
 	inheritedGhost?: boolean;
 }) {
-	const { t, tp } = useT();
 	const map = useMapState((s) => s.map);
 	const tagColor = useMapState((s) => {
 		const i = innerOf(selection);
@@ -191,7 +190,7 @@ export const SelectionRow = memo(function SelectionRow({
 	const handleRename = () => {
 		if (selection.props.type !== "Polygon") return;
 		const current = selection.props.polygon.properties?.name ?? "";
-		const next = window.prompt(t("editor.polygonNamePrompt"), current);
+		const next = window.prompt(t("Polygon name"), current);
 		if (next != null) setPolygonName(selection.key, next);
 	};
 
@@ -241,11 +240,9 @@ export const SelectionRow = memo(function SelectionRow({
 			}
 		};
 
+		const ac = new AbortController();
 		const onUp = () => {
-			window.removeEventListener("mousemove", onMove);
-			window.removeEventListener("mouseup", onUp);
-			window.removeEventListener("keydown", onKey);
-			window.removeEventListener("keyup", onKeyUp);
+			ac.abort();
 			if (started) {
 				activeDrag = null;
 				notifyDragListeners();
@@ -271,10 +268,11 @@ export const SelectionRow = memo(function SelectionRow({
 			}
 		};
 
-		window.addEventListener("mousemove", onMove);
-		window.addEventListener("mouseup", onUp);
-		window.addEventListener("keydown", onKey);
-		window.addEventListener("keyup", onKeyUp);
+		const { signal } = ac;
+		window.addEventListener("mousemove", onMove, { signal });
+		window.addEventListener("mouseup", onUp, { signal });
+		window.addEventListener("keydown", onKey, { signal });
+		window.addEventListener("keyup", onKeyUp, { signal });
 	};
 
 	const handleMouseMove = (e: React.MouseEvent) => {
@@ -330,7 +328,7 @@ export const SelectionRow = memo(function SelectionRow({
 					{selectionDisplayName(selection)}
 				</span>
 				{isDropTarget && dropZone === "on" && (
-					<span className="selection-row__drop-hint">{drag?.altKey ? t("editor.dropHintOr") : t("editor.dropHintAnd")}</span>
+					<span className="selection-row__drop-hint">{drag?.altKey ? t("OR") : t("AND")}</span>
 				)}
 				<span className="selection-row__size mono">{fmt.format(count)}</span>
 				<span className="selection-row__actions">
@@ -339,7 +337,7 @@ export const SelectionRow = memo(function SelectionRow({
 							<button
 								className="icon-button"
 								type="button"
-								aria-label={t("editor.previousPeriod")}
+								aria-label={t("Previous period")}
 								onClick={() => stepFilter(-1)}
 							>
 								<Icon path={mdiChevronLeft} size={18} />
@@ -347,7 +345,7 @@ export const SelectionRow = memo(function SelectionRow({
 							<button
 								className="icon-button"
 								type="button"
-								aria-label={t("editor.nextPeriod")}
+								aria-label={t("Next period")}
 								onClick={() => stepFilter(1)}
 							>
 								<Icon path={mdiChevronRight} size={18} />
@@ -357,13 +355,13 @@ export const SelectionRow = memo(function SelectionRow({
 					<Menu.Root onOpenChange={(open) => !open && setView("contextmenu")}>
 						<Menu.Trigger
 							render={
-								<button className="icon-button" type="button" aria-label={t("editor.selectionOptions")}>
+								<button className="icon-button" type="button" aria-label={t("Selection options")}>
 									<Icon path={mdiDotsVertical} />
 								</button>
 							}
 						/>
 						<Menu.Portal>
-							<Menu.Positioner align="end">
+							<Menu.Positioner className="menu-positioner" align="end">
 								<Menu.Popup className="context-menu">
 									{view === "color" ? (
 										<div style={{ padding: "0.5rem", width: "14rem" }}>
@@ -382,14 +380,14 @@ export const SelectionRow = memo(function SelectionRow({
 												className="context-menu__item"
 												onClick={() => selectInverse([selection.key])}
 											>
-												{t("editor.invertSelection")}
+												{t("Invert selection")}
 											</Menu.Item>
 											{selection.props.type === "Filter" && (
 												<Menu.Item
 													className="context-menu__item"
 													onClick={() => setEditingFilter(true)}
 												>
-													{t("editor.editFilter")}
+													{t("Edit filter")}
 												</Menu.Item>
 											)}
 											<Menu.Item
@@ -400,7 +398,7 @@ export const SelectionRow = memo(function SelectionRow({
 													beginReview(ids, selection);
 												}}
 											>
-												{t("editor.reviewSelection")}
+												{t("Review selection")}
 											</Menu.Item>
 											{selection.props.type !== "Tag" && (
 												<Menu.Item
@@ -412,7 +410,7 @@ export const SelectionRow = memo(function SelectionRow({
 														setSavingTag(true);
 													}}
 												>
-													{t("editor.saveAsTag")}
+													{t("Save as tag")}
 												</Menu.Item>
 											)}
 											{pruneDistance(selection) != null && (
@@ -424,10 +422,18 @@ export const SelectionRow = memo(function SelectionRow({
 															selection.props,
 															pruneDistance(selection)!,
 														);
-														toast(tp("toast.prunedDuplicates", n, { count: fmt.format(n) }));
+														toast(
+															t(
+																{
+																	one: "Pruned {n} duplicate",
+																	other: "Pruned {n} duplicates",
+																},
+																{ n },
+															),
+														);
 													}}
 												>
-													{t("editor.pruneDuplicates")}
+													{t("Prune duplicates")}
 												</Menu.Item>
 											)}
 											{selection.props.type !== "Tag" && (
@@ -436,23 +442,23 @@ export const SelectionRow = memo(function SelectionRow({
 													closeOnClick={false}
 													onClick={() => setView("color")}
 												>
-													{t("editor.changeColor")}
+													{t("Change color")}
 												</Menu.Item>
 											)}
 											{isPoly && (
 												<>
 													<Menu.Separator className="context-menu__separator" />
 													<Menu.Item className="context-menu__item" onClick={handleDownloadGeoJSON}>
-														{t("editor.downloadGeoJSON")}
+														{t("Download GeoJSON")}
 													</Menu.Item>
 													<Menu.Item className="context-menu__item" onClick={handleRename}>
-														{t("common.rename")}
+														{t("Rename")}
 													</Menu.Item>
 												</>
 											)}
 											<Menu.Separator className="context-menu__separator" />
 											<Menu.Item className="context-menu__item" onClick={onRemove}>
-												{t("editor.deselect")}
+												{t("Deselect")}
 											</Menu.Item>
 										</>
 									)}
@@ -464,8 +470,8 @@ export const SelectionRow = memo(function SelectionRow({
 						<button
 							className="icon-button"
 							type="button"
-							aria-label={ghosted ? t("editor.unGhostSelection") : t("editor.ghostSelection")}
-							title={t("editor.ghostSelectionHint")}
+							aria-label={ghosted ? t("Un-ghost selection") : t("Ghost selection")}
+							title={t("Ghost selection (Alt-click to isolate)")}
 							onClick={(e) =>
 								e.altKey ? isolateSelection(selection.key) : toggleGhostSelection(selection.key)
 							}
@@ -473,7 +479,12 @@ export const SelectionRow = memo(function SelectionRow({
 							<Icon path={ghosted ? mdiGhost : mdiGhostOutline} />
 						</button>
 					)}
-					<button className="icon-button" type="button" onClick={onRemove} aria-label={t("editor.deselect")}>
+					<button
+						className="icon-button"
+						type="button"
+						onClick={onRemove}
+						aria-label={t("Deselect")}
+					>
 						<Icon path={mdiClose} />
 					</button>
 				</span>
@@ -481,7 +492,7 @@ export const SelectionRow = memo(function SelectionRow({
 			{editingFilter && selection.props.type === "Filter" && (
 				<FilterForm
 					initial={filterPropsToSeed(selection.props)}
-					submitLabel={t("editor.updateFilter")}
+					submitLabel={t("Update filter")}
 					onSubmit={(field, op, value, value2, tzLocal) =>
 						updateFilterSelection(selection.key, {
 							type: "Filter",
@@ -502,7 +513,7 @@ export const SelectionRow = memo(function SelectionRow({
 					if (!v) setTagName("");
 				}}
 			>
-				<DialogContent title={t("dialog.saveSelectionAsTag")}>
+				<DialogContent title={t("Save selection as tag")}>
 					<form
 						onSubmit={(e) => {
 							e.preventDefault();
@@ -514,7 +525,7 @@ export const SelectionRow = memo(function SelectionRow({
 							value={tagName}
 							onChange={(e) => setTagName(e.target.value)}
 							onFocus={(e) => e.currentTarget.select()}
-							placeholder={t("editor.tagNamePlaceholder")}
+							placeholder={t("Tag name...")}
 							autoFocus
 						/>
 						<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
@@ -524,10 +535,10 @@ export const SelectionRow = memo(function SelectionRow({
 									setTagName("");
 								}}
 							>
-								{t("common.cancel")}
+								{t("Cancel")}
 							</Button>
 							<Button variant="primary" type="submit" disabled={!tagName.trim()}>
-								{t("editor.createTag")}
+								{t("Create tag")}
 							</Button>
 						</div>
 					</form>

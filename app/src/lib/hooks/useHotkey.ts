@@ -122,6 +122,26 @@ export function matchesKey(
 	);
 }
 
+const FUNCTION_KEY = /^f\d+$/;
+
+// Function keys only. Modifier combos are not safe to claim: the text editing layer owns
+// Mod+A/C/V/X/Z/Y everywhere, and macOS adds Ctrl+A/E/K/D/F/B/N/P on top. Bindings that
+// genuinely want to run inside a field opt in with `enableInInputs`.
+/** Whether a binding may fire while a text field has focus. */
+export function firesInEditable(pk: ParsedKey): boolean {
+	return FUNCTION_KEY.test(pk.key);
+}
+
+const BLOCKED_COMBOS = ["F5", "Mod+r", "Mod+Shift+r", "Mod+p"].map(parseCombo);
+
+/** Suppress reload/print accelerators no binding claimed. Install once at startup. */
+export function blockBrowserAccelerators(): void {
+	window.addEventListener("keydown", (e) => {
+		if (e.defaultPrevented) return;
+		if (BLOCKED_COMBOS.some((pk) => matchesKey(e, pk))) e.preventDefault();
+	});
+}
+
 export function isEditableElement(el: EventTarget | null): boolean {
 	if (!(el instanceof HTMLElement)) return false;
 	const tag = el.tagName.toLowerCase();
@@ -154,13 +174,14 @@ export function useHotkey(
 
 	const onKey = useEffectEvent((e: KeyboardEvent) => {
 		if (e.defaultPrevented) return;
-		if (!options.enableInInputs && isEditableElement(e.target)) return;
+		const editable = !options.enableInInputs && isEditableElement(e.target);
 
 		for (const alt of parsed) {
 			if (
 				alt.length === 1 &&
 				matchesKey(e, alt[0], { ignoreAlt: options.ignoreAlt, ignoreShift: options.ignoreShift })
 			) {
+				if (editable && !firesInEditable(alt[0])) return;
 				e.preventDefault();
 				callback(e);
 				return;
@@ -198,7 +219,7 @@ export function useCommandHotkeys() {
 	useEffect(() => {
 		function handler(e: KeyboardEvent) {
 			if (e.defaultPrevented) return;
-			if (isEditableElement(e.target)) return;
+			const editable = isEditableElement(e.target);
 
 			for (const cmd of getCommands()) {
 				const binding = getBinding(cmd.id);
@@ -207,8 +228,10 @@ export function useCommandHotkeys() {
 				const parsed = parseHotkey(binding);
 				for (const alt of parsed) {
 					if (alt.length === 1 && matchesKey(e, alt[0])) {
-						if (cmd.enabled && !cmd.enabled()) return;
+						if (editable && !firesInEditable(alt[0])) return;
+						// Before the enabled check, or a disabled command leaks the key to the browser.
 						e.preventDefault();
+						if (cmd.enabled && !cmd.enabled()) return;
 						cmd.execute();
 						return;
 					}

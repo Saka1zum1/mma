@@ -1,31 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	flushAndWait,
 	openMap,
 	addLocs,
 	getLoc,
 	createLocation,
 	withApi,
+	useMap,
+	seedLocs,
 } from "./helpers";
 
 describe("Tag CRUD", () => {
-	let mapId: string;
+	useMap("E2E Tags");
 	let t1Id: number;
 	let t3Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tags");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("add a tag", async () => {
 		const result = await withApi(async (api) => {
@@ -89,15 +78,12 @@ describe("Tag CRUD", () => {
 });
 
 describe("Tag operations on locations", () => {
-	let mapId: string;
+	useMap("E2E Tag Ops");
 	let bulkTagId: number;
 	let otherTagId: number;
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Ops");
-
 		const tagResult = await withApi(async (api) => {
 			const resolved = await api.createTags(["Bulk", "Other"]);
 			return { bulkId: resolved[0].id, otherId: resolved[1].id };
@@ -105,18 +91,8 @@ describe("Tag operations on locations", () => {
 		bulkTagId = tagResult.bulkId;
 		otherTagId = tagResult.otherId;
 
-		const locs = [];
-		for (let i = 0; i < 50; i++) {
-			locs.push(createLocation({ lat: i, lng: i }));
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(50, (i) => ({ lat: i, lng: i }));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("add tag to individual location", async () => {
 		const loc0 = await getLoc(locIds[0]);
 		const tags = await withApi(
@@ -199,19 +175,9 @@ describe("Tag operations on locations", () => {
 });
 
 describe("Tag persistence", () => {
-	let mapId: string;
+	const map = useMap("E2E Tag Persist");
 	let pt1Id: number;
 	let pt2Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Persist");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("tags survive save/load", async () => {
 		const result = await withApi(async (api) => {
@@ -225,7 +191,7 @@ describe("Tag persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const tags = await withApi((api) => {
 			return api.getMapState().tags;
@@ -245,7 +211,7 @@ describe("Tag persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const tags = await withApi(async (api, id) => {
 			const loc = await api.fetchLocation(id);
@@ -267,7 +233,7 @@ describe("Tag persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const tags = await withApi((api) => {
 			return api.getMapState().tags;
@@ -280,14 +246,11 @@ describe("Tag persistence", () => {
 });
 
 describe("Tag merge on rename collision", () => {
-	let mapId: string;
+	useMap("E2E Tag Merge");
 	let tagAId: number;
 	let tagBId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Merge");
-
 		const tagResult = await withApi(async (api) => {
 			const resolved = await api.createTags(["Alpha", "Beta"]);
 			return { aId: resolved[0].id, bId: resolved[1].id };
@@ -306,12 +269,6 @@ describe("Tag merge on rename collision", () => {
 		locs.push(createLocation({ lat: 20, lng: 20, tags: [tagAId, tagBId] }));
 		await addLocs(locs);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("renaming tag A to tag B's name merges them", async () => {
 		const result = await withApi(
 			async (api, aId, bId) => {
@@ -384,14 +341,11 @@ describe("Tag merge on rename collision", () => {
 });
 
 describe("Tag merge persists across save/load", () => {
-	let mapId: string;
+	const map = useMap("E2E Tag Merge Persist");
 	let tagXId: number;
 	let tagYId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Merge Persist");
-
 		const tagResult = await withApi(async (api) => {
 			const resolved = await api.createTags(["Xray", "Yankee"]);
 			return { xId: resolved[0].id, yId: resolved[1].id };
@@ -404,12 +358,6 @@ describe("Tag merge persists across save/load", () => {
 			createLocation({ lat: 2, lng: 2, tags: [tagYId] }),
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("merge survives save/load", async () => {
 		await withApi(async (api, xId) => {
 			await api.updateTags([{ id: xId, patch: { name: "Yankee" } }]);
@@ -418,7 +366,7 @@ describe("Tag merge persists across save/load", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const result = await withApi(
 			async (api, xId, yId) => {
@@ -442,17 +390,7 @@ describe("Tag merge persists across save/load", () => {
 });
 
 describe("Tag name dedup on creation", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Dedup");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Tag Dedup");
 
 	it("resolveTagNames returns same tag for same name", async () => {
 		const result = await withApi(async (api) => {
@@ -497,17 +435,7 @@ describe("Tag name dedup on creation", () => {
 });
 
 describe("Tag visibility lifecycle", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Visibility");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Tag Visibility");
 
 	it("deleted tag reappears when re-resolved after save/load", async () => {
 		const tagId = await withApi(async (api) => {
@@ -518,7 +446,7 @@ describe("Tag visibility lifecycle", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const result = await withApi(async (api, id) => {
 			const before = api.getMapState().tags[String(id)]?.visible;
@@ -571,7 +499,7 @@ describe("Tag visibility lifecycle", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const result = await withApi(async (api, id) => {
 			return api.getMapState().tags[String(id)]?.color;
@@ -588,7 +516,7 @@ describe("Tag visibility lifecycle", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const result = await withApi(async (api, id) => {
 			return api.getMapState().tags[String(id)]?.name;
@@ -598,17 +526,7 @@ describe("Tag visibility lifecycle", () => {
 });
 
 describe("Tag edge cases", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Edge Cases");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	useMap("E2E Tag Edge Cases");
 
 	it("rename to same name is a no-op", async () => {
 		const result = await withApi(async (api) => {
@@ -665,15 +583,12 @@ describe("Tag edge cases", () => {
 });
 
 describe("Tag merge advanced", () => {
-	let mapId: string;
+	useMap("E2E Tag Merge Advanced");
 	let tagAId: number;
 	let tagBId: number;
 	let tagCId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Merge Advanced");
-
 		const tags = await withApi(async (api) => {
 			const resolved = await api.createTags(["MrgA", "MrgB", "MrgC"]);
 			return { a: resolved[0].id, b: resolved[1].id, c: resolved[2].id };
@@ -691,12 +606,6 @@ describe("Tag merge advanced", () => {
 			createLocation({ lat: 6, lng: 6, tags: [tagCId] }),
 		]);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("tag counts are correct after merge", async () => {
 		const result = await withApi(
 			async (api, aId, bId) => {
@@ -778,14 +687,11 @@ describe("Tag merge advanced", () => {
 });
 
 describe("Tag import dedup", () => {
-	let mapId: string;
+	useMap("E2E Tag Import Dedup");
 	let existingTagId: number;
 	let hiddenTagId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Tag Import Dedup");
-
 		const tags = await withApi(async (api) => {
 			const resolved = await api.createTags(["Existing", "WasHidden"]);
 			await api.deleteTags([resolved[1].id]);
@@ -794,12 +700,6 @@ describe("Tag import dedup", () => {
 		existingTagId = tags.existingId;
 		hiddenTagId = tags.hiddenId;
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("import with matching tag name reuses existing tag", async () => {
 		const json = JSON.stringify({
 			customCoordinates: [{ lat: 10, lng: 20, extra: { tags: ["Existing"] } }],

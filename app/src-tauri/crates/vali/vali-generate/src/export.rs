@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::definition::{
     default_distribution, map_country_codes, resolve_country_distribution,
 };

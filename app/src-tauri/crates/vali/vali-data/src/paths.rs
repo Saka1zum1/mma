@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use std::path::{Path, PathBuf};
 use serde::Deserialize;
 #[derive(Deserialize, Default)]

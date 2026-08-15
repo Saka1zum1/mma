@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { PANO_PITCH, FRAME_MS } from "@/lib/sv/constants";
 import { clamp } from "@/types/util";
 import { parseHotkey, matchesKey, isEditableElement } from "@/lib/hooks/useHotkey";
@@ -7,16 +7,9 @@ import { getBinding } from "@/lib/util/hotkeys";
 import { singletonPano } from "@/lib/sv/panoSingleton";
 import type { AppSettings } from "@/store/settings";
 
-/** Live Street View / provider proxy. Prefer the active preview pano over the Google singleton. */
-export function usePanoNavigation(
-	appSettings: AppSettings,
-	panoramaRef?: RefObject<google.maps.StreetViewPanorama | null | undefined>,
-) {
+export function usePanoNavigation(appSettings: AppSettings) {
 	const navRef = useRef({ held: new Set<string>(), rafId: 0, alt: false, lastTime: 0 });
 	const getAppSettings = useEffectEvent(() => appSettings);
-	const getPano = useEffectEvent(
-		() => panoramaRef?.current ?? singletonPano,
-	);
 
 	useEffect(() => {
 		const nav = navRef.current;
@@ -25,8 +18,7 @@ export function usePanoNavigation(
 		const allActions = [...lookActions, ...moveActions] as const;
 
 		function tick() {
-			const pano = getPano();
-			if (!pano || nav.held.size === 0) {
+			if (!singletonPano || nav.held.size === 0) {
 				nav.rafId = 0;
 				nav.lastTime = 0;
 				return;
@@ -39,7 +31,7 @@ export function usePanoNavigation(
 			const s = getAppSettings();
 			const slow = nav.alt ? s.slowModifier : 1;
 			const speed = (s.panoLookSpeed * 0.4 * dt) / slow;
-			const pov = pano.getPov();
+			const pov = singletonPano.getPov();
 			let dh = 0,
 				dp = 0;
 			if (nav.held.has("panoLookLeft")) dh -= speed;
@@ -48,8 +40,7 @@ export function usePanoNavigation(
 			if (nav.held.has("panoLookDown")) dp -= speed;
 
 			if (dh || dp) {
-				// Prefer setPov — provider proxies often stub setOptions as a no-op.
-				pano.setPov({
+				singletonPano.setPov({
 					heading: (pov.heading + dh + 360) % 360,
 					pitch: clamp(pov.pitch + dp, PANO_PITCH),
 				});
@@ -71,18 +62,17 @@ export function usePanoNavigation(
 			}
 			if (e.defaultPrevented || e.repeat) return;
 			if (isEditableElement(e.target)) return;
-			const pano = getPano();
 			for (const { action, parsed } of bindings) {
 				for (const alt of parsed) {
 					if (alt.length === 1 && matchesKey(e, alt[0], { ignoreAlt: true })) {
 						if (action === "panoMoveForward" || action === "panoMoveBackward") {
-							if (!pano) return;
+							if (!singletonPano) return;
 							if (getAppSettings().defaultMovementMode !== "moving") return;
-							const links = pano
+							const links = singletonPano
 								.getLinks()
 								?.filter((l): l is google.maps.StreetViewLink => l != null);
 							if (!links?.length) return;
-							const heading = pano.getPov().heading;
+							const heading = singletonPano.getPov().heading;
 							const target = action === "panoMoveForward" ? heading : (heading + 180) % 360;
 							let best = links[0];
 							let bestDiff = 360;
@@ -93,7 +83,7 @@ export function usePanoNavigation(
 									best = link;
 								}
 							}
-							if (best.pano) pano.setPano(best.pano);
+							if (best.pano) singletonPano.setPano(best.pano);
 							e.preventDefault();
 							e.stopImmediatePropagation();
 							return;
@@ -126,13 +116,13 @@ export function usePanoNavigation(
 			nav.held.clear();
 		}
 
-		document.addEventListener("keydown", onKeyDown, true);
-		document.addEventListener("keyup", onKeyUp, true);
-		window.addEventListener("blur", onBlur);
+		const ac = new AbortController();
+		const { signal } = ac;
+		document.addEventListener("keydown", onKeyDown, { capture: true, signal });
+		document.addEventListener("keyup", onKeyUp, { capture: true, signal });
+		window.addEventListener("blur", onBlur, { signal });
 		return () => {
-			document.removeEventListener("keydown", onKeyDown, true);
-			document.removeEventListener("keyup", onKeyUp, true);
-			window.removeEventListener("blur", onBlur);
+			ac.abort();
 			if (nav.rafId) cancelAnimationFrame(nav.rafId);
 			nav.held.clear();
 		};

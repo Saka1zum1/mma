@@ -60,7 +60,7 @@ export function TagPill<E extends ElementType = "span">({
 	return (
 		<Comp
 			{...props}
-			className={clsx("tag", small && "is-small", button && "has-button", className)}
+			className={clsx("tag", small && "is-small", className)}
 			style={{ backgroundColor: color, color: textColorFor(color), ...style }}
 		>
 			{button}

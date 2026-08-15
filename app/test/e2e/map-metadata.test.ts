@@ -7,20 +7,11 @@ import {
 	flushAndWait,
 	openMap,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Map metadata persistence", () => {
-	let mapId: string;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Map Meta");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
+	const map = useMap("E2E Map Meta");
 
 	it("description updates and persists", async () => {
 		await withApi(async (api) => {
@@ -29,7 +20,7 @@ describe("Map metadata persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const desc = await withApi(async (api) => api.getMapState().map!.meta.description);
 		expect(desc).toBe("A test map for e2e");
@@ -58,7 +49,7 @@ describe("Map metadata persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const settings = await withApi(async (api) => api.getMapState().map!.meta.settings);
 		expect(settings.pointAlongRoad).toBe(true);
@@ -76,7 +67,7 @@ describe("Map metadata persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const bounds = await withApi(async (api) => api.getMapState().map!.meta.scoreBounds);
 		expect(bounds).toEqual([-60, 70, -170, 170]);

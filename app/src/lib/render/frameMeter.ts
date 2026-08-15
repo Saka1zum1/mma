@@ -17,7 +17,7 @@ export interface FrameStats {
 }
 
 /** Nearest-rank percentile over an ascending-sorted array. */
-export function percentile(sorted: number[], q: number): number {
+export function percentile(sorted: ArrayLike<number>, q: number): number {
 	if (sorted.length === 0) return 0;
 	const idx = Math.min(sorted.length - 1, Math.ceil(sorted.length * q) - 1);
 	return sorted[Math.max(0, idx)];
@@ -53,14 +53,15 @@ export class FrameMeterCore {
 
 	stats(): FrameStats {
 		const count = Math.min(this.pushed, CAP);
-		const arr = Array.from(this.samples.subarray(0, count)).sort((a, b) => a - b);
+		// TypedArray#toSorted is numeric by default, unlike Array#sort.
+		const arr = this.samples.subarray(0, count).toSorted();
 		const sum = arr.reduce((a, b) => a + b, 0);
 		return {
 			frames: this.pushed,
 			fps: sum > 0 ? Math.round((count / sum) * 1000) : 0,
 			p50: percentile(arr, 0.5),
 			p95: percentile(arr, 0.95),
-			worst: count > 0 ? arr[count - 1] : 0,
+			worst: arr.at(-1) ?? 0,
 			longTasks: this.longTasks,
 			longTaskMs: this.longTaskMs,
 			elapsedMs: this.now() - this.startedAt,

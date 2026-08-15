@@ -7,6 +7,7 @@ import {
 	type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
+import { useClickOutside } from "@/lib/hooks/useClickOutside";
 
 /** Autocomplete input: owns open/close state, outside-click dismissal,
  *  Enter-picks-first, and Escape-closes. Suggestion sourcing stays at the call
@@ -74,12 +75,10 @@ export function SuggestInput<T>({
 		if (!portal || !open) return;
 		const update = () => setAnchor(containerRef.current?.getBoundingClientRect() ?? null);
 		update();
-		window.addEventListener("resize", update);
-		window.addEventListener("scroll", update, true);
-		return () => {
-			window.removeEventListener("resize", update);
-			window.removeEventListener("scroll", update, true);
-		};
+		const ac = new AbortController();
+		window.addEventListener("resize", update, { signal: ac.signal });
+		window.addEventListener("scroll", update, { capture: true, signal: ac.signal });
+		return () => ac.abort();
 	}, [portal, open]);
 
 	useEffect(() => {
@@ -89,21 +88,9 @@ export function SuggestInput<T>({
 		for (let i = 0; i < items.length; i++) items[i].setAttribute("aria-selected", String(i === 0));
 	}, [suggestions]);
 
-	useEffect(() => {
-		if (!open) return;
-		const handler = (e: MouseEvent) => {
-			const t = e.target as Node;
-			if (
-				containerRef.current &&
-				!containerRef.current.contains(t) &&
-				!listRef.current?.contains(t)
-			) {
-				setOpen(false);
-			}
-		};
-		document.addEventListener("mousedown", handler);
-		return () => document.removeEventListener("mousedown", handler);
-	}, [open]);
+	// The portaled list carries `suggest-portal`, which useClickOutside exempts; a
+	// non-portaled list sits inside the container.
+	useClickOutside(containerRef, () => setOpen(false), open);
 
 	const pick = (item: T) => {
 		onPick(item);

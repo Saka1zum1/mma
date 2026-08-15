@@ -10,7 +10,6 @@ fn make_loc(
         id: 1,
         lat: 10.0,
         lng: 20.0,
-        heading: 0.0,
         pitch: 5.0,
         zoom: 3.0,
         pano_id: Some("PANO".into()),
@@ -18,8 +17,7 @@ fn make_loc(
         flags,
         tags,
         extra: extra.as_ref().and_then(crate::types::RawExtra::from_map),
-        created_at: 0,
-        modified_at: None,
+        ..Default::default()
     }
 }
 

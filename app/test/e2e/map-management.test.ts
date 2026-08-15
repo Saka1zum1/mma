@@ -9,6 +9,8 @@ import {
 	getLocCount,
 	createLocation,
 	withApi,
+	seedLocs,
+	selectCount,
 } from "./helpers";
 import type { MapMeta } from "@/bindings.gen";
 
@@ -128,11 +130,7 @@ describe("Map management", () => {
 	it("open map with locations shows correct count", async () => {
 		await openMap(createdMapIds[0]);
 
-		const locs = [];
-		for (let i = 0; i < 25; i++) {
-			locs.push(createLocation({ lat: i, lng: i }));
-		}
-		await addLocs(locs);
+		await seedLocs(25, (i) => ({ lat: i, lng: i }));
 
 		await flushAndWait();
 		await closeMap();
@@ -202,10 +200,7 @@ describe("Empty map edge cases", () => {
 	});
 
 	it("selectEverything on empty map selects nothing", async () => {
-		const count = await withApi(async (api) => {
-			await api.addSelections([{ type: "Everything" }]);
-			return api.getMapState().selectedLocationIds.size;
-		});
+		const count = await selectCount({ type: "Everything" });
 		expect(count).toBe(0);
 	});
 

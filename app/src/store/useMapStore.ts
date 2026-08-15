@@ -7,15 +7,7 @@ import {
 	locId,
 	applyLocationPatch,
 } from "@/types";
-import type {
-	Location,
-	MapData,
-	MapMeta,
-	MapSettings,
-	Tag,
-	ExtraFieldDef,
-	StoreStatus,
-} from "@/bindings.gen";
+import type { Location, MapData, MapMeta, Tag, ExtraFieldDef, StoreStatus } from "@/bindings.gen";
 import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
@@ -377,17 +369,7 @@ async function patchMapMeta(id: string, patch: MapMetaPatch) {
 		if (patch.name != null) meta.name = patch.name;
 		if (patch.description != null) meta.description = patch.description;
 		if (patch.folder !== undefined) meta.folder = patch.folder;
-		if (patch.settings != null) {
-			// MapMetaPatch_Deserialize carries partial settings; merge onto the live map.
-			meta.settings = {
-				...meta.settings,
-				...patch.settings,
-				providers: {
-					...meta.settings.providers,
-					...patch.settings.providers,
-				},
-			} as MapSettings;
-		}
+		if (patch.settings != null) meta.settings = patch.settings;
 		if (patch.scoreBounds != null) meta.scoreBounds = patch.scoreBounds;
 		if (patch.extra != null) meta.extra = patch.extra;
 		if (patch.labels != null) meta.labels = patch.labels;
@@ -645,7 +627,7 @@ async function applySelectionUpdate(updater: (sels: Selection[]) => Selection[])
 function pruneGhosted(selections: Selection[], ghosted: ReadonlySet<string>): ReadonlySet<string> {
 	if (ghosted.size === 0) return ghosted;
 	const live = new Set(selections.map((s) => s.key));
-	const pruned = new Set([...ghosted].filter((k) => live.has(k)));
+	const pruned = ghosted.intersection(live);
 	return pruned.size !== ghosted.size ? pruned : ghosted;
 }
 
@@ -673,10 +655,10 @@ export function isolateSelection(key: string) {
 
 /** Ghost every top-level selection; if all are already ghosted, un-ghost them all. */
 export function toggleGhostAllSelections() {
-	const keys = state.selections.map((s) => s.key);
-	const allGhosted = keys.length > 0 && keys.every((k) => state.ghostedSelections.has(k));
+	const keys = new Set(state.selections.map((s) => s.key));
+	const allGhosted = keys.size > 0 && keys.isSubsetOf(state.ghostedSelections);
 	setState({
-		ghostedSelections: allGhosted ? new Set() : new Set([...state.ghostedSelections, ...keys]),
+		ghostedSelections: allGhosted ? new Set() : state.ghostedSelections.union(keys),
 	});
 	return applySelectionUpdate((sels) => sels);
 }
@@ -727,28 +709,56 @@ export function toggleManualSelection(locationId: number) {
 	return applySelectionUpdate((sels) => toggleManual(sels, locationId));
 }
 
+/** The buckets a pick runs over: one per active selection when `perSelection`, else the
+ *  whole selection as one. `null` means "whatever is currently selected" - the only way to
+ *  express a selected-id set that no live selection produced. Falls back to that single
+ *  bucket below two active selections, where per-bucket picking is the same operation. */
+function pickBuckets(perSelection: boolean): (SelectionProps | null)[] {
+	const active = getActiveSelections();
+	if (!perSelection || active.length < 2) return [null];
+	return active.map((s) => s.props);
+}
+
 /** Replace the current selection with a single Manual selection holding `count` ids picked
  *  at random from whatever is currently selected. `count` is clamped to the selection size.
- *  No-op when nothing is selected. Returns the number of ids actually picked. */
-export function selectRandomFromSelection(count: number): number {
-	const ids = Array.from(state.selectedLocationIds);
-	const picked = sampleIds(ids, count);
+ *  With `perSelection` it is a per-bucket cap: up to `count` ids from each active selection,
+ *  unioned. No-op when nothing is selected. Returns the number of ids actually picked. */
+export async function selectRandomFromSelection(
+	count: number,
+	perSelection = false,
+): Promise<number> {
+	const buckets = await Promise.all(
+		pickBuckets(perSelection).map((props) =>
+			props
+				? cmd.storeResolveSelection(props)
+				: Promise.resolve(Array.from(state.selectedLocationIds)),
+		),
+	);
+	const picked = [...new Set(buckets.flatMap((ids) => sampleIds(ids, count)))];
 	if (picked.length === 0) return 0;
-	void applySelectionUpdate(() => addSel([], { type: "Manual", locations: picked }));
+	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: picked }));
 	return picked.length;
 }
 
 /** Replace the current selection with a single Manual selection of ids picked from the
  *  current selection, spaced apart in Rust: either `count` ids maximizing spacing, or as
- *  many as fit at `minDistanceM`. No-op when the pick returns nothing. */
-export async function selectSpacedFromSelection(opts: {
-	count?: number;
-	minDistanceM?: number;
-}): Promise<{ picked: number; distanceM: number }> {
-	const result = await cmd.storePickSpaced(opts.count ?? null, opts.minDistanceM ?? null);
-	if (result.ids.length === 0) return { picked: 0, distanceM: 0 };
-	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: result.ids }));
-	return { picked: result.ids.length, distanceM: result.distanceM };
+ *  many as fit at `minDistanceM`. With `perSelection` each active selection is picked from
+ *  separately and the results unioned. No-op when the pick returns nothing. */
+export async function selectSpacedFromSelection(
+	opts: { count?: number; minDistanceM?: number },
+	perSelection = false,
+): Promise<{ picked: number; distanceM: number }> {
+	const results = await Promise.all(
+		pickBuckets(perSelection).map((props) =>
+			cmd.storePickSpaced(props, opts.count ?? null, opts.minDistanceM ?? null),
+		),
+	);
+	const ids = [...new Set(results.flatMap((r) => r.ids))];
+	if (ids.length === 0) return { picked: 0, distanceM: 0 };
+	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: ids }));
+	// Spacing only holds within a bucket - two buckets can each pick a coincident location.
+	const distanceM = results.length === 1 ? results[0].distanceM : 0;
+	return { picked: ids.length, distanceM };
 }
 
 /** Read-only preview of transitive duplicate groups (size >= 2) within `distance` metres. */
@@ -1011,22 +1021,6 @@ export function setWorkArea(area: WorkArea) {
 	emitEvent("store:changed");
 }
 
-export function toggleProvidersMode() {
-	if (state.workArea === "providers") {
-		setState({ workArea: "overview" });
-	} else {
-		setState({ workArea: "providers", activePluginId: null, activeLocationId: null });
-	}
-	emitEvent("store:changed");
-}
-
-export function exitProvidersMode() {
-	if (state.workArea === "providers") {
-		setState({ workArea: "overview" });
-		emitEvent("store:changed");
-	}
-}
-
 // --- Plugin mode ---
 
 /** Open a plugin's sidebar (switches the editor pane to "plugin"). */
@@ -1104,7 +1098,7 @@ async function modifyTagOnLocations(
 		if (next) updates.push({ id: l.id, patch: { tags: next } });
 	}
 	if (updates.length === 0) return;
-	await mutate(() => cmd.storeUpdateLocations(updates, true));
+	await updateLocations(updates);
 }
 
 /** Add a tag to locations (skips ones that already have it). Undoable. */

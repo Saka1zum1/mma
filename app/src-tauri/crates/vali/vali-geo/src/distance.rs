@@ -1,4 +1,8 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
+//! Oracle port, not general geometry. The constants and the order of operations mirror
+//! Vali.Core exactly because the greedy distributor's accept/reject decisions cascade:
+//! a "better" earth radius, a tighter early-out, or an added longitude wrap silently
+//! forks generated maps. `mma-geo` stays the authority everywhere else -- do not route
+//! these call sites to it. Gated by `tests/golden.rs` against the C# oracle vectors.
 
 pub const DEG_TO_RAD: f64 = 0.017453292519943295769236907684886127;
 const HALF_DEG_TO_RAD: f64 = DEG_TO_RAD * 0.5;

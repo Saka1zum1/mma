@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { mdiCheckCircleOutline, mdiCircleOutline, mdiPlay, mdiDelete } from "@mdi/js";
@@ -10,27 +10,17 @@ import {
 	selectReviewSet,
 	renameReview,
 } from "@/lib/review/review";
+import { shortDateFmt, relativeTime } from "@/lib/util/format";
+import { getLocale, t } from "@/lib/i18n";
 import type { ReviewSession } from "@/bindings.gen";
-import { useT } from "@/lib/i18n";
-import { relativeTime } from "@/lib/util/format";
 
-function formatDate(iso: string, locale: string): string {
+function formatDate(iso: string): string {
 	const d = new Date(iso);
-	return d.toLocaleDateString(locale === "zh-Hans" ? "zh-CN" : undefined, {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
+	return shortDateFmt.format(d);
 }
 
-export function ReviewSessionsModal({
-	open,
-	onOpenChange,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-}) {
-	const { t, locale } = useT();
+
+export function ReviewSessionsModal({ open, onOpenChange }: DialogProps) {
 	const [filter, setFilter] = useState<"active" | "done">("active");
 	const [sessions, setSessions] = useState<ReviewSession[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -57,7 +47,7 @@ export function ReviewSessionsModal({
 	};
 
 	const handleDelete = async (id: string) => {
-		setSessions((prev) => prev.filter((s) => s.id !== id));
+		setSessions((prev) => prev.filter((s) => s.id !== id)); // drop in place
 		await deleteSession(id);
 	};
 
@@ -77,33 +67,33 @@ export function ReviewSessionsModal({
 		const name = draft.trim();
 		setEditingId(null);
 		if (!id || !name) return;
-		setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
+		setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s))); // patch in place
 		await renameReview(id, name);
 	};
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("dialog.reviewSessions")} className="review-sessions-modal">
+			<DialogContent title={t("Review sessions")} className="review-sessions-modal">
 				<div className="review-sessions__tabs">
 					<button
 						className={`review-sessions__tab${filter === "active" ? " is-active" : ""}`}
 						onClick={() => setFilter("active")}
 					>
-						{t("review.inProgress")}
+						{t("In progress")}
 					</button>
 					<button
 						className={`review-sessions__tab${filter === "done" ? " is-active" : ""}`}
 						onClick={() => setFilter("done")}
 					>
-						{t("review.completed")}
+						{t("Completed")}
 					</button>
 				</div>
 
 				{loading ? (
-					<p className="review-sessions__empty">{t("common.loading")}</p>
+					<p className="review-sessions__empty">{t("Loading...")}</p>
 				) : sessions.length === 0 ? (
 					<p className="review-sessions__empty">
-						{filter === "active" ? t("review.noActive") : t("review.noCompleted")}
+						{filter === "active" ? t("No reviews in progress.") : t("No completed reviews.")}
 					</p>
 				) : (
 					<ul className="review-sessions__list">
@@ -143,25 +133,25 @@ export function ReviewSessionsModal({
 										) : (
 											<div
 												className="review-sessions__name"
-												title={t("review.clickToRename")}
+												title={t("Click to rename")}
 												onClick={() => startEdit(s)}
 											>
-												{s.name || t("review.defaultName")}
+												{s.name || t("Review")}
 											</div>
 										)}
 										<div className="review-sessions__meta">
 											<span>
-												{t("review.reviewedProgress", {
-													reviewed: s.reviewed.length,
+												{t("{done} / {total} reviewed ({pct}%)", {
+													done: s.reviewed.length,
 													total: s.order.length,
 													pct,
 												})}
 											</span>
-											<span title={new Date(s.createdAt).toLocaleString()}>
-												{t("review.started", { date: formatDate(s.createdAt, locale) })}
+											<span title={new Date(s.createdAt).toLocaleString(getLocale())}>
+												{t("Started")} {formatDate(s.createdAt)}
 											</span>
-											<span title={new Date(s.updatedAt).toLocaleString()}>
-												{t("review.updated", { time: relativeTime(s.updatedAt) })}
+											<span title={new Date(s.updatedAt).toLocaleString(getLocale())}>
+												{t("Updated")} {relativeTime(s.updatedAt)}
 											</span>
 										</div>
 										<div className="review-sessions__bar">
@@ -171,8 +161,8 @@ export function ReviewSessionsModal({
 									<div className="review-sessions__actions">
 										<button
 											className="icon-button"
-											title={t("review.selectReviewed")}
-											aria-label={t("review.selectReviewed")}
+											title={t("Select reviewed")}
+											aria-label={t("Select reviewed")}
 											onClick={() => handleSelect(s, "reviewed")}
 											data-qa="review-select-reviewed"
 										>
@@ -180,8 +170,8 @@ export function ReviewSessionsModal({
 										</button>
 										<button
 											className="icon-button"
-											title={t("review.selectUnreviewed")}
-											aria-label={t("review.selectUnreviewed")}
+											title={t("Select unreviewed")}
+											aria-label={t("Select unreviewed")}
 											onClick={() => handleSelect(s, "unreviewed")}
 											data-qa="review-select-unreviewed"
 										>
@@ -195,13 +185,14 @@ export function ReviewSessionsModal({
 												data-qa="review-resume"
 											>
 												<Icon path={mdiPlay} size={16} />
-												{t("review.resume")}
+
+												{t("Resume")}
 											</Button>
 										)}
 										<button
 											className="icon-button review-sessions__delete"
-											title={t("review.deleteSession")}
-											aria-label={t("review.deleteSession")}
+											title={t("Delete session")}
+											aria-label={t("Delete session")}
 											onClick={() => handleDelete(s.id)}
 											data-qa="review-session-delete"
 										>

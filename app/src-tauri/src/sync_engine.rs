@@ -612,17 +612,6 @@ impl MappingSink for DbSink<'_> {
 
 // --- Layer 3: the command ---------------------------------------------------
 
-/// Rewrap a provider auth failure as the `auth:` prefix the JS side classifies on, stripping the
-/// map-making 401 sentinel first so only the human message survives.
-fn normalize_auth_error(e: AppError, is_auth: fn(&AppError) -> bool) -> AppError {
-    if is_auth(&e) {
-        let msg = e.0.strip_prefix("mma-http-401: ").unwrap_or(&e.0);
-        AppError(format!("auth: {msg}"))
-    } else {
-        e
-    }
-}
-
 /// Pull, plan, and execute a linked map against one provider. Blocking (network + rusqlite).
 fn reconcile_with<P: SyncProvider>(
     provider: &P,
@@ -635,52 +624,48 @@ fn reconcile_with<P: SyncProvider>(
     conn: &mut Connection,
     provider_id: &str,
     map_id: &str,
-    is_auth: fn(&AppError) -> bool,
 ) -> AppResult<SyncReconcileResult> {
-    let mut run = || -> AppResult<SyncReconcileResult> {
-        let t = std::time::Instant::now();
-        let snapshot = provider.pull(remote_map_id)?;
-        log::info!(
-            "[sync] pull: {} remote locations in {:.1}s",
-            snapshot.locations.len(),
-            t.elapsed().as_secs_f64()
-        );
-        let token = snapshot.token;
-        let input = ReconcileInput {
-            provider,
-            local_locs,
-            remote: snapshot,
-            mapping: &mapping,
-            tag_names,
-            first_sync,
-            resolutions,
-        };
-        let t = std::time::Instant::now();
-        let planned = plan(&input);
-        log::info!(
-            "[sync] plan: push {}+{}+{} pull {}+{}+{} adopted {} conflicts {} rows {} in {:.1}s",
-            planned.counts_push.create,
-            planned.counts_push.update,
-            planned.counts_push.delete,
-            planned.counts_pull.create,
-            planned.counts_pull.update,
-            planned.counts_pull.delete,
-            planned.adopted,
-            planned.conflicts.len(),
-            planned.rows.len(),
-            t.elapsed().as_secs_f64()
-        );
-        let mut sink = DbSink {
-            conn,
-            provider: provider_id,
-            map_id,
-        };
-        let t = std::time::Instant::now();
-        let result = execute(provider, remote_map_id, planned, token, &mut sink);
-        log::info!("[sync] execute: {:.1}s", t.elapsed().as_secs_f64());
-        result
+    let t = std::time::Instant::now();
+    let snapshot = provider.pull(remote_map_id)?;
+    log::info!(
+        "[sync] pull: {} remote locations in {:.1}s",
+        snapshot.locations.len(),
+        t.elapsed().as_secs_f64()
+    );
+    let token = snapshot.token;
+    let input = ReconcileInput {
+        provider,
+        local_locs,
+        remote: snapshot,
+        mapping: &mapping,
+        tag_names,
+        first_sync,
+        resolutions,
     };
-    run().map_err(|e| normalize_auth_error(e, is_auth))
+    let t = std::time::Instant::now();
+    let planned = plan(&input);
+    log::info!(
+        "[sync] plan: push {}+{}+{} pull {}+{}+{} adopted {} conflicts {} rows {} in {:.1}s",
+        planned.counts_push.create,
+        planned.counts_push.update,
+        planned.counts_push.delete,
+        planned.counts_pull.create,
+        planned.counts_pull.update,
+        planned.counts_pull.delete,
+        planned.adopted,
+        planned.conflicts.len(),
+        planned.rows.len(),
+        t.elapsed().as_secs_f64()
+    );
+    let mut sink = DbSink {
+        conn,
+        provider: provider_id,
+        map_id,
+    };
+    let t = std::time::Instant::now();
+    let result = execute(provider, remote_map_id, planned, token, &mut sink);
+    log::info!("[sync] execute: {:.1}s", t.elapsed().as_secs_f64());
+    result
 }
 
 fn run_reconcile(
@@ -711,7 +696,6 @@ fn run_reconcile(
                 &mut conn,
                 provider_name,
                 map_id,
-                crate::sync_map_making::is_auth_error,
             )
         }
         "geoguessr" => {
@@ -727,7 +711,6 @@ fn run_reconcile(
                 &mut conn,
                 provider_name,
                 map_id,
-                crate::sync_geoguessr::is_auth_error,
             )
         }
         other => Err(AppError(format!("unknown sync provider '{other}'"))),

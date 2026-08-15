@@ -1,35 +1,14 @@
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	getLocCount,
-	createLocation,
-	withApi,
-} from "./helpers";
+import { addLocs, getLocCount, createLocation, withApi, useMap, seedLocs } from "./helpers";
 
 const SETTLE = 50; // ms for React state to settle after async review ops
 
 describe("Review mode", () => {
-	let mapId: string;
+	useMap("E2E Review");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Review");
-		const locs = [];
-		for (let i = 0; i < 10; i++) {
-			locs.push(createLocation({ lat: i * 10, lng: i * 10, heading: i * 36 }));
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(10, (i) => ({ lat: i * 10, lng: i * 10, heading: i * 36 }));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("beginReview sets active location to first in list", async () => {
 		const reviewIds = [locIds[3], locIds[5], locIds[7]];
 		const result = await withApi(
@@ -175,24 +154,12 @@ describe("Review mode", () => {
 });
 
 describe("Review mode - delete", () => {
-	let mapId: string;
+	useMap("E2E Review Delete");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Review Delete");
-		const locs = [];
-		for (let i = 0; i < 5; i++) {
-			locs.push(createLocation({ lat: i, lng: i }));
-		}
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(5, (i) => ({ lat: i, lng: i }));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("reviewDelete removes location and advances", async () => {
 		const reviewIds = [locIds[0], locIds[1], locIds[2]];
 		await withApi(
@@ -258,12 +225,10 @@ describe("Review mode - delete", () => {
 });
 
 describe("Review mode - skips deleted locations", () => {
-	let mapId: string;
+	useMap("E2E Review Skip");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Review Skip");
 		const locs = [
 			createLocation({ lat: 0, lng: 0 }),
 			createLocation({ lat: 1, lng: 1 }),
@@ -271,12 +236,6 @@ describe("Review mode - skips deleted locations", () => {
 		];
 		locIds = await addLocs(locs);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("reviewNext skips location deleted outside review", async () => {
 		const allIds = [locIds[0], locIds[1], locIds[2]];
 		const deleteId = locIds[1];
@@ -302,22 +261,12 @@ describe("Review mode - skips deleted locations", () => {
 });
 
 describe("Review mode - reviewed tracking & peek", () => {
-	let mapId: string;
+	useMap("E2E Review Peek");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Review Peek");
-		const locs = [];
-		for (let i = 0; i < 4; i++) locs.push(createLocation({ lat: i, lng: i }));
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(4, (i) => ({ lat: i, lng: i }));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("advancing marks the departed location reviewed", async () => {
 		const qids = [locIds[0], locIds[1], locIds[2]];
 		const r = await withApi(
@@ -417,22 +366,12 @@ describe("Review mode - reviewed tracking & peek", () => {
 });
 
 describe("Review mode - resume", () => {
-	let mapId: string;
+	useMap("E2E Review Resume");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Review Resume");
-		const locs = [];
-		for (let i = 0; i < 3; i++) locs.push(createLocation({ lat: i, lng: i }));
-		locIds = await addLocs(locs);
+		locIds = await seedLocs(3, (i) => ({ lat: i, lng: i }));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("cancel persists the session; resume restores the cursor + reviewed set", async () => {
 		const qids = [locIds[0], locIds[1], locIds[2]];
 		const r = await withApi(
@@ -471,21 +410,13 @@ describe("Review mode - resume", () => {
 });
 
 describe("Review mode - empty queue cleanup", () => {
-	let mapId: string;
+	useMap("E2E Review Empty");
 	let locIds: number[];
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Review Empty");
 		const locs = [createLocation({ lat: 0, lng: 0 }), createLocation({ lat: 1, lng: 1 })];
 		locIds = await addLocs(locs);
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	it("deleting the whole queue exits review and removes the session", async () => {
 		const qids = [locIds[0], locIds[1]];
 		const r = await withApi(

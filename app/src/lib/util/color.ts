@@ -24,14 +24,10 @@ export function resolveSvColorHex(color: string): string {
 	);
 }
 
-/** The app accent follows the SV coverage line color. Derives the full accent
- *  token family and stamps it on :root. */
+/** The app accent follows the SV coverage line color. */
 export function applyAccentColor(hex: string) {
-	const { h, s, l } = hexToHsl(hex);
 	const root = document.documentElement.style;
 	root.setProperty("--accent", hex);
-	root.setProperty("--accent-hover", hslToHex(h, s, Math.min(l + 8, 95)));
-	root.setProperty("--accent-muted", `${hex}26`);
 	root.setProperty("--on-accent", textColorFor(hex));
 }
 

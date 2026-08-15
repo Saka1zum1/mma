@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use crate::compile::{Ty, Val};
 use std::borrow::Cow;
 use vali_core::Location;

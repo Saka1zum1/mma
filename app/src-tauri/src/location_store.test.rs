@@ -1,22 +1,5 @@
 use super::*;
-
-fn loc(id: u32, lat: f64, lng: f64) -> Location {
-    Location {
-        id,
-        lat,
-        lng,
-        heading: 0.0,
-        pitch: 0.0,
-        zoom: 1.0,
-        pano_id: None,
-        provider: None,
-        flags: crate::types::LocationFlags::empty(),
-        tags: vec![],
-        extra: None,
-        created_at: 0,
-        modified_at: None,
-    }
-}
+use crate::test_util::{loc, patch};
 
 fn loc_with_tags(id: u32, lat: f64, lng: f64, tags: Vec<u32>) -> Location {
     Location {
@@ -29,23 +12,6 @@ fn loc_with_heading(id: u32, lat: f64, lng: f64, heading: f64) -> Location {
     Location {
         heading,
         ..loc(id, lat, lng)
-    }
-}
-
-fn patch() -> LocationPatch {
-    LocationPatch {
-        lat: None,
-        lng: None,
-        heading: None,
-        pitch: None,
-        zoom: None,
-        pano_id: None,
-        provider: None,
-        flags: None,
-        tags: None,
-        extra: None,
-        created_at: None,
-        modified_at: None,
     }
 }
 
@@ -110,14 +76,7 @@ fn overlay_remove_makes_get_return_none() {
 fn overlay_update_changes_fields() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(50.0),
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 50.0, heading: 90.0));
     let got = store.get_loc_by_id(1).unwrap();
     assert_eq!(got.lat, 50.0);
     assert_eq!(got.heading, 90.0);
@@ -133,13 +92,7 @@ fn overlay_update_extra_merges_keys() {
     let mut l = loc(1, 10.0, 20.0);
     l.extra = raw_extra(r#"{"a":1,"b":2}"#);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            extra: Some(raw_extra(r#"{"b":3,"c":4}"#)),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(extra: raw_extra(r#"{"b":3,"c":4}"#)));
     let got = store.get_loc_by_id(1).unwrap().extra.unwrap();
     assert_eq!(got.get("a"), Some(serde_json::json!(1)));
     assert_eq!(got.get("b"), Some(serde_json::json!(3)));
@@ -151,13 +104,7 @@ fn overlay_update_extra_null_value_deletes_key() {
     let mut l = loc(1, 10.0, 20.0);
     l.extra = raw_extra(r#"{"a":1,"b":2}"#);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            extra: Some(raw_extra(r#"{"a":null}"#)),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(extra: raw_extra(r#"{"a":null}"#)));
     let got = store.get_loc_by_id(1).unwrap().extra.unwrap();
     assert_eq!(got.get("a"), None);
     assert_eq!(got.get("b"), Some(serde_json::json!(2)));
@@ -167,13 +114,7 @@ fn overlay_update_extra_null_value_deletes_key() {
 fn overlay_update_extra_creates_extra_when_none() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            extra: Some(raw_extra(r#"{"a":1}"#)),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(extra: raw_extra(r#"{"a":1}"#)));
     let got = store.get_loc_by_id(1).unwrap().extra.unwrap();
     assert_eq!(got.get("a"), Some(serde_json::json!(1)));
 }
@@ -183,13 +124,7 @@ fn overlay_update_extra_empty_after_deletes_is_none() {
     let mut l = loc(1, 10.0, 20.0);
     l.extra = raw_extra(r#"{"a":1}"#);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            extra: Some(raw_extra(r#"{"a":null}"#)),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(extra: raw_extra(r#"{"a":null}"#)));
     assert!(store.get_loc_by_id(1).unwrap().extra.is_none());
 }
 
@@ -198,26 +133,14 @@ fn overlay_update_extra_top_level_null_clears() {
     let mut l = loc(1, 10.0, 20.0);
     l.extra = raw_extra(r#"{"a":1}"#);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            extra: Some(None),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(extra: None));
     assert!(store.get_loc_by_id(1).unwrap().extra.is_none());
 }
 
 #[test]
 fn overlay_update_nonexistent_is_noop() {
     let mut store = setup_store_with(&[]);
-    store.overlay_update(
-        999,
-        &LocationPatch {
-            lat: Some(50.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(999, &patch!(lat: 50.0));
     assert!(store.get_loc_by_id(999).is_none());
 }
 
@@ -228,13 +151,7 @@ fn overlay_update_stamps_modified_at_on_session_added_row() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
     assert!(store.get_loc_by_id(1).unwrap().modified_at.is_none());
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(50.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 50.0));
     assert!(store.get_loc_by_id(1).unwrap().modified_at.is_some());
 }
 
@@ -243,13 +160,7 @@ fn overlay_update_noop_does_not_stamp_session_added_row() {
     // A patch that changes nothing must not stamp (or it fabricates undo entries).
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(10.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 10.0));
     assert!(store.get_loc_by_id(1).unwrap().modified_at.is_none());
 }
 
@@ -258,13 +169,7 @@ fn overlay_update_stamps_modified_at_on_base_row() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
     store.bake_overlay();
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(50.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 50.0));
     assert!(store.get_loc_by_id(1).unwrap().modified_at.is_some());
 }
 
@@ -287,13 +192,7 @@ fn overlay_rev_bumps_on_every_mutation() {
     store.overlay_add(loc(1, 0.0, 0.0));
     let r1 = store.overlay.rev;
     assert!(r1 > r0);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(5.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 5.0));
     let r2 = store.overlay.rev;
     assert!(r2 > r1);
     store.overlay_remove(&[store.get_loc_by_id(1).unwrap()]);
@@ -339,13 +238,7 @@ fn commit_diff_counts_patch_on_base_row_without_undo() {
     let mut store = setup_store_with(&[loc(1, 0.0, 0.0)]);
     store.bake_overlay();
     assert_eq!(store.overlay_diff_counts(), (0, 0, 0));
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(5.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 5.0));
     assert!(store.edits.undo.is_empty());
     assert_eq!(store.overlay_diff_counts(), (0, 0, 1));
 }
@@ -930,13 +823,7 @@ fn bake_overlay_applies_patches() {
     let mut store = setup_store_with(&[loc(1, 10.0, 20.0)]);
     store.bake_overlay();
     // now loc 1 is in the batch; patch it
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(99.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 99.0));
     store.bake_overlay();
 
     let got = store.get_loc_by_id(1).unwrap();
@@ -966,13 +853,7 @@ fn noop_update_produces_no_undo_entry() {
     let mut store = setup_store_with(&[l.clone()]);
 
     // "update" with identical values
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(45.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 45.0));
     let new = store.get_loc_by_id(1).unwrap();
 
     // simulate the filter from store_update_locations
@@ -988,13 +869,7 @@ fn real_update_passes_filter() {
     let l = loc_with_heading(1, 10.0, 20.0, 0.0);
     let mut store = setup_store_with(&[l.clone()]);
 
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 90.0));
     let new = store.get_loc_by_id(1).unwrap();
 
     let pairs: Vec<_> = vec![(l, new)].into_iter().filter(|(o, n)| o != n).collect();
@@ -1008,20 +883,8 @@ fn batch_update_mixed_changed_unchanged() {
     let mut store = setup_store_with(&[l1.clone(), l2.clone()]);
 
     // update l1 (real change), "update" l2 with same value (noop)
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(180.0),
-            ..patch()
-        },
-    );
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 180.0));
+    store.overlay_update(2, &patch!(heading: 90.0));
     let n1 = store.get_loc_by_id(1).unwrap();
     let n2 = store.get_loc_by_id(2).unwrap();
 
@@ -1129,13 +992,7 @@ fn undo_update_when_location_is_in_baked_batch() {
 
     // update via overlay patch
     let updated = loc_with_heading(1, 10.0, 20.0, 90.0);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 90.0));
     assert_eq!(store.get_loc_by_id(1).unwrap().heading, 90.0);
 
     // undo: apply_edit should restore original via overlay
@@ -1192,14 +1049,7 @@ fn render_delta_for_update(store: &mut Store, id: u32, patch: LocationPatch) -> 
 fn update_delta_heading_only_produces_patch() {
     let l = loc_with_heading(1, 10.0, 20.0, 0.0);
     let mut store = setup_store_with(&[l]);
-    let delta = render_delta_for_update(
-        &mut store,
-        1,
-        LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    let delta = render_delta_for_update(&mut store, 1, patch!(heading: 90.0));
     assert!(delta.added.is_empty());
     assert!(delta.removed.is_empty());
     assert_eq!(delta.updated.len(), 1);
@@ -1212,14 +1062,7 @@ fn update_delta_same_cell_position_produces_patch() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
     // small position change that stays in the same render cell
-    let delta = render_delta_for_update(
-        &mut store,
-        1,
-        LocationPatch {
-            lat: Some(10.001),
-            ..patch()
-        },
-    );
+    let delta = render_delta_for_update(&mut store, 1, patch!(lat: 10.001));
     // should be an in-place patch, not a cell migration
     assert_eq!(delta.updated.len(), 1);
     assert!(delta.added.is_empty());
@@ -1230,15 +1073,7 @@ fn update_delta_cross_cell_position_produces_one_move() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
     // large position change that crosses render cells
-    let delta = render_delta_for_update(
-        &mut store,
-        1,
-        LocationPatch {
-            lat: Some(-80.0),
-            lng: Some(-170.0),
-            ..patch()
-        },
-    );
+    let delta = render_delta_for_update(&mut store, 1, patch!(lat: -80.0, lng: -170.0));
     assert!(delta.removed.is_empty(), "a move is not a removal");
     assert_eq!(delta.added.len(), 1, "new cell entry added");
     assert!(delta.updated.is_empty());
@@ -1256,14 +1091,7 @@ fn update_delta_cross_cell_position_produces_one_move() {
 fn update_delta_tags_only_produces_empty_delta() {
     let l = loc_with_tags(1, 10.0, 20.0, vec![10]);
     let mut store = setup_store_with(&[l]);
-    let delta = render_delta_for_update(
-        &mut store,
-        1,
-        LocationPatch {
-            tags: Some(vec![20]),
-            ..patch()
-        },
-    );
+    let delta = render_delta_for_update(&mut store, 1, patch!(tags: vec![20]));
     assert!(delta.added.is_empty());
     assert!(delta.removed.is_empty());
     assert!(delta.updated.is_empty());
@@ -1278,13 +1106,7 @@ fn overlay_update_on_overlay_add_item() {
     let mut store = setup_store_with(&[]);
     let l = loc(1, 10.0, 20.0);
     store.overlay_add(l);
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            lat: Some(50.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(lat: 50.0));
     let got = store.get_loc_by_id(1).unwrap();
     assert_eq!(got.lat, 50.0);
     // should still be in overlay_adds, not overlay_patches
@@ -1307,13 +1129,7 @@ fn collect_all_with_dead_patches_and_adds() {
     // kill l1
     store.overlay_remove(&[l1]);
     // patch l2
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            lat: Some(99.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(2, &patch!(lat: 99.0));
     // add l4
     let l4 = loc(4, 70.0, 80.0);
     store.overlay_add(l4);
@@ -1345,13 +1161,7 @@ fn bake_overlay_all_three_simultaneously() {
     // dead: remove l1
     store.overlay_remove(&[l1]);
     // patch: modify l2
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            heading: Some(180.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(2, &patch!(heading: 180.0));
     // add: new l3
     let l3 = loc(3, 50.0, 60.0);
     store.overlay_add(l3);
@@ -1369,20 +1179,26 @@ fn bake_overlay_all_three_simultaneously() {
 }
 
 // -----------------------------------------------------------------------
-// DeltaOverlay msgpack round-trip
+// Overlay (.delta sidecar) msgpack round-trip
 // -----------------------------------------------------------------------
+
+/// The overlay shape a delta file carries: adds, dead ids, patches keyed by id.
+fn delta_overlay(adds: Vec<Location>, dead: &[u32], patches: Vec<Location>) -> Overlay {
+    Overlay {
+        adds,
+        dead: dead.iter().copied().collect(),
+        patches: patches.into_iter().map(|l| (l.id, l)).collect(),
+        ..Overlay::default()
+    }
+}
 
 #[test]
 fn delta_overlay_msgpack_round_trip_empty() {
-    let overlay = DeltaOverlay {
-        adds: vec![],
-        dead_ids: vec![],
-        patches: vec![],
-    };
+    let overlay = delta_overlay(vec![], &[], vec![]);
     let bytes = rmp_serde::to_vec_named(&overlay).unwrap();
-    let restored: DeltaOverlay = rmp_serde::from_slice(&bytes).unwrap();
+    let restored: Overlay = rmp_serde::from_slice(&bytes).unwrap();
     assert!(restored.adds.is_empty());
-    assert!(restored.dead_ids.is_empty());
+    assert!(restored.dead.is_empty());
     assert!(restored.patches.is_empty());
 }
 
@@ -1390,18 +1206,16 @@ fn delta_overlay_msgpack_round_trip_empty() {
 fn delta_overlay_msgpack_round_trip_with_data() {
     let l1 = loc_with_tags(1, 48.8, 2.35, vec![10, 20]);
     let l2 = loc_with_heading(2, -33.8, 151.2, 90.0);
-    let overlay = DeltaOverlay {
-        adds: vec![l1.clone()],
-        dead_ids: vec![99, 100],
-        patches: vec![l2.clone()],
-    };
+    let overlay = delta_overlay(vec![l1.clone()], &[99, 100], vec![l2.clone()]);
     let bytes = rmp_serde::to_vec_named(&overlay).unwrap();
-    let restored: DeltaOverlay = rmp_serde::from_slice(&bytes).unwrap();
+    let restored: Overlay = rmp_serde::from_slice(&bytes).unwrap();
     assert_eq!(restored.adds.len(), 1);
     assert_eq!(restored.adds[0], l1);
-    assert_eq!(restored.dead_ids, vec![99, 100]);
+    let mut dead: Vec<u32> = restored.dead.into_iter().collect();
+    dead.sort_unstable();
+    assert_eq!(dead, vec![99, 100]);
     assert_eq!(restored.patches.len(), 1);
-    assert_eq!(restored.patches[0], l2);
+    assert_eq!(restored.patches[&2], l2);
 }
 
 #[test]
@@ -1410,16 +1224,51 @@ fn delta_overlay_preserves_extra_fields() {
     l.extra = Some(serde_json::from_str(r#"{"country":"FR","altitude":35.2}"#).unwrap());
     l.pano_id = Some("CAoSLEF".into());
     l.modified_at = Some(1_705_276_800);
-    let overlay = DeltaOverlay {
-        adds: vec![l.clone()],
-        dead_ids: vec![],
-        patches: vec![],
-    };
+    let overlay = delta_overlay(vec![l.clone()], &[], vec![]);
     let bytes = rmp_serde::to_vec_named(&overlay).unwrap();
-    let restored: DeltaOverlay = rmp_serde::from_slice(&bytes).unwrap();
+    let restored: Overlay = rmp_serde::from_slice(&bytes).unwrap();
     assert_eq!(restored.adds[0].extra, l.extra);
     assert_eq!(restored.adds[0].pano_id, l.pano_id);
     assert_eq!(restored.adds[0].modified_at, l.modified_at);
+}
+
+/// The literal on-disk `.delta` shape, restated independently of `Overlay` so a change
+/// to the in-memory field types cannot silently rewrite the file format. Unknown fields
+/// are rejected, so `dirty`/`rev` leaking into the file fails here.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeltaFile {
+    adds: Vec<Location>,
+    dead_ids: Vec<u32>,
+    patches: Vec<Location>,
+}
+
+#[test]
+fn delta_overlay_wire_format_is_stable() {
+    let l1 = loc(1, 1.0, 2.0);
+    let l3 = loc(3, 3.0, 4.0);
+
+    // Written by the app, read by the format spec.
+    let overlay = delta_overlay(vec![l1.clone()], &[7], vec![l3.clone()]);
+    let bytes = rmp_serde::to_vec_named(&overlay).unwrap();
+    let on_disk: DeltaFile = rmp_serde::from_slice(&bytes).unwrap();
+    assert_eq!(on_disk.adds, vec![l1.clone()]);
+    assert_eq!(on_disk.dead_ids, vec![7]);
+    assert_eq!(on_disk.patches, vec![l3.clone()]);
+
+    // Written by an older build, read by the app.
+    let legacy = rmp_serde::to_vec_named(&DeltaFile {
+        adds: vec![l1.clone()],
+        dead_ids: vec![7],
+        patches: vec![l3.clone()],
+    })
+    .unwrap();
+    let restored: Overlay = rmp_serde::from_slice(&legacy).unwrap();
+    assert_eq!(restored.adds, vec![l1]);
+    assert!(restored.dead.contains(&7));
+    assert_eq!(restored.patches[&3], l3);
+    assert!(!restored.dirty, "dirty is not carried by the file");
+    assert_eq!(restored.rev, 0);
 }
 
 // -----------------------------------------------------------------------
@@ -1489,13 +1338,7 @@ fn alive_count_stays_correct_through_all_mutations() {
     assert_eq!(store.alive_count, 2);
 
     // Update (should not change count)
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(2, &patch!(heading: 90.0));
     assert_eq!(store.alive_count, 2);
 
     // Bake (should not change count)
@@ -1578,13 +1421,7 @@ fn overlay_consistency_update_batch_id_goes_to_patches() {
     let mut store = setup_store_with(&[l]);
     store.bake_overlay();
     // Now l is in the batch
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(45.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 45.0));
     assert!(store.overlay.patches.contains_key(&1));
     assert!(!store.overlay.adds.iter().any(|l| l.id == 1));
 }
@@ -1594,13 +1431,7 @@ fn overlay_consistency_update_add_id_stays_in_adds() {
     let mut store = setup_store_with(&[]);
     store.batch = Some(empty_batch());
     store.overlay_add(loc(1, 10.0, 20.0));
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(45.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 45.0));
     // Should still be in overlay_adds, updated in place
     assert_eq!(store.overlay.adds.len(), 1);
     assert_eq!(store.overlay.adds[0].heading, 45.0);
@@ -1612,13 +1443,7 @@ fn overlay_consistency_remove_clears_patches() {
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l.clone()]);
     store.bake_overlay();
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(45.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 45.0));
     assert!(store.overlay.patches.contains_key(&1));
 
     store.overlay_remove(&[l]);
@@ -1887,29 +1712,19 @@ fn delta_overlay_only_includes_actual_changes() {
     store.bake_overlay();
 
     // Modify only l1
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 90.0));
 
-    // Build delta overlay
-    let overlay = DeltaOverlay {
-        adds: store.overlay.adds.clone(),
-        dead_ids: store.overlay.dead.iter().cloned().collect(),
-        patches: store.overlay.patches.values().cloned().collect(),
-    };
+    // The delta is the overlay itself.
+    let bytes = overlay_delta_bytes(&store).unwrap();
+    let overlay: Overlay = rmp_serde::from_slice(&bytes).unwrap();
     assert!(overlay.adds.is_empty(), "no new locations added");
-    assert!(overlay.dead_ids.is_empty(), "no locations deleted");
+    assert!(overlay.dead.is_empty(), "no locations deleted");
     assert_eq!(
         overlay.patches.len(),
         1,
         "only modified location in patches"
     );
-    assert_eq!(overlay.patches[0].id, 1);
-    assert_eq!(overlay.patches[0].heading, 90.0);
+    assert_eq!(overlay.patches[&1].heading, 90.0);
 }
 
 #[test]
@@ -1924,29 +1739,18 @@ fn delta_overlay_round_trip_preserves_store_state() {
     store.overlay_add(l3.clone());
     store.alive_count += 1;
     store.overlay_remove(&[l1.clone()]);
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            heading: Some(180.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(2, &patch!(heading: 180.0));
 
     // Serialize
-    let overlay = DeltaOverlay {
-        adds: store.overlay.adds.clone(),
-        dead_ids: store.overlay.dead.iter().cloned().collect(),
-        patches: store.overlay.patches.values().cloned().collect(),
-    };
-    let bytes = rmp_serde::to_vec_named(&overlay).unwrap();
+    let bytes = overlay_delta_bytes(&store).unwrap();
 
     // Simulate reopen: deserialize and verify
-    let restored: DeltaOverlay = rmp_serde::from_slice(&bytes).unwrap();
+    let restored: Overlay = rmp_serde::from_slice(&bytes).unwrap();
     assert_eq!(restored.adds.len(), 1);
     assert_eq!(restored.adds[0].id, 3);
-    assert!(restored.dead_ids.contains(&1));
+    assert!(restored.dead.contains(&1));
     assert_eq!(restored.patches.len(), 1);
-    assert_eq!(restored.patches[0].heading, 180.0);
+    assert_eq!(restored.patches[&2].heading, 180.0);
 }
 
 // -----------------------------------------------------------------------
@@ -2001,6 +1805,44 @@ fn push_resolved(store: &mut Store, key: &str, color: [u8; 3], members: &[u32]) 
     });
 }
 
+/// Generator, not an assertion. `cargo test emit_render_fixture -- --ignored` rewrites
+/// `app/test/unit/fixtures/render-buffer.bin`, which `cellManager.test.ts` parses.
+///
+/// Scene: 4 locations in 3 cells (d: id 3, r: id 2, u: ids 1 and 4), arrow style, and
+/// two selections -- "a" [255,0,0] over ids 1 and 4, "b" [0,0,255] over id 2.
+#[test]
+#[ignore]
+fn emit_render_fixture() {
+    let locs = vec![
+        loc_with_heading(1, 48.8, 2.35, 90.0),
+        loc_with_heading(2, -33.8, 151.2, 180.0),
+        loc_with_heading(3, 40.7, -74.0, 270.0),
+        loc_with_heading(4, 48.9, 2.4, 45.0),
+    ];
+    let mut store = setup_store_with(&locs);
+    store.bake_overlay();
+    push_resolved(&mut store, "a", [255, 0, 0], &[1, 4]);
+    push_resolved(&mut store, "b", [0, 0, 255], &[2]);
+    for id in [1, 2, 4] {
+        store.selections.ids.insert(id);
+    }
+
+    let req = RenderRequest {
+        west: -180.0,
+        south: -90.0,
+        east: 180.0,
+        north: 90.0,
+        selected_ids: None,
+        marker_style: "arrow".into(),
+        marker_color: None,
+    };
+    let buf = build_cell_render_buffers(&mut store, &req);
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../test/unit/fixtures");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("render-buffer.bin"), &buf).unwrap();
+}
+
 #[test]
 fn render_buffer_with_selection_overlay() {
     let l1 = loc(1, 10.0, 20.0);
@@ -2034,10 +1876,11 @@ fn render_buffer_with_selection_overlay() {
 }
 
 #[test]
-fn render_buffer_orders_the_overlay_by_selection() {
+fn render_buffer_ships_selection_index_per_entry() {
     // Ids alternate between the two selections, so batch order and selection order
-    // disagree. The overlay draws in buffer order with every marker at z=0, so the
-    // second selection's markers have to come out last or they stack at random.
+    // disagree. The buffer ships entries in emission order, each tagged with the
+    // selection that draws it; JS sorts by that tag in `CellManager.load`, which is
+    // where the z-order between overlapping markers is decided.
     let locs: Vec<_> = (1..=4).map(|id| loc(id, 10.0, 20.0)).collect();
     let mut store = setup_store_with(&locs);
     store.bake_overlay();
@@ -2075,8 +1918,8 @@ fn render_buffer_orders_the_overlay_by_selection() {
     };
     let sel: Vec<u32> = (0..n).map(|i| read(sel_at, i)).collect();
     let ids: Vec<u32> = (0..n).map(|i| read(ids_at, i)).collect();
-    assert_eq!(sel, vec![0, 0, 1, 1], "entries grouped by selection index");
-    assert_eq!(ids, vec![1, 3, 2, 4], "stable within a selection");
+    assert_eq!(ids, vec![1, 2, 3, 4], "emission order");
+    assert_eq!(sel, vec![0, 1, 0, 1], "each entry tagged with its drawing selection");
 }
 
 #[test]
@@ -2140,13 +1983,7 @@ fn bake_preserves_sorted_ids_after_adds() {
 fn bake_preserves_sorted_ids_after_patches() {
     let mut store = setup_store_with(&[loc(1, 10.0, 20.0), loc(2, 30.0, 40.0), loc(3, 50.0, 60.0)]);
     store.bake_overlay();
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            lat: Some(99.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(2, &patch!(lat: 99.0));
     store.bake_overlay();
     assert!(ids_sorted(&store));
     assert_eq!(store.get_loc_by_id(2).unwrap().lat, 99.0);
@@ -2163,13 +2000,7 @@ fn bake_preserves_sorted_ids_after_remove_and_patch() {
     store.bake_overlay();
     store.overlay_remove(&[loc(2, 10.0, 10.0)]);
     store.alive_count -= 1;
-    store.overlay_update(
-        3,
-        &LocationPatch {
-            heading: Some(45.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(3, &patch!(heading: 45.0));
     store.bake_overlay();
     assert!(ids_sorted(&store));
     let ids: Vec<u32> = {
@@ -2186,13 +2017,7 @@ fn bake_preserves_sorted_ids_after_mixed_ops() {
     // Remove 1, patch 2, add 3
     store.overlay_remove(&[loc(1, 0.0, 0.0)]);
     store.alive_count -= 1;
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            lat: Some(99.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(2, &patch!(lat: 99.0));
     let l3 = loc(3, 50.0, 50.0);
     store.overlay_add(l3);
     store.alive_count += 1;
@@ -2214,13 +2039,7 @@ fn bake_sorted_ids_survive_multiple_cycles() {
         store.overlay_add(loc(new_id, round as f64, round as f64));
         store.alive_count += 1;
         if round % 2 == 0 {
-            store.overlay_update(
-                2,
-                &LocationPatch {
-                    heading: Some(round as f64),
-                    ..patch()
-                },
-            );
+            store.overlay_update(2, &patch!(heading: round as f64));
         }
         store.bake_overlay();
         assert!(ids_sorted(&store), "failed at round {round}");
@@ -2329,27 +2148,9 @@ fn patch_all_rows_preserves_order() {
     let mut store = setup_store_with(&[loc(1, 0.0, 0.0), loc(2, 10.0, 10.0), loc(3, 20.0, 20.0)]);
     store.bake_overlay();
     // Patch every single row
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(10.0),
-            ..patch()
-        },
-    );
-    store.overlay_update(
-        2,
-        &LocationPatch {
-            heading: Some(20.0),
-            ..patch()
-        },
-    );
-    store.overlay_update(
-        3,
-        &LocationPatch {
-            heading: Some(30.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 10.0));
+    store.overlay_update(2, &patch!(heading: 20.0));
+    store.overlay_update(3, &patch!(heading: 30.0));
     store.bake_overlay();
     assert!(ids_sorted(&store));
     assert_eq!(store.get_loc_by_id(1).unwrap().heading, 10.0);
@@ -3210,18 +3011,14 @@ fn close_and_reopen(store: &Store) -> Store {
     let undo_bytes = rmp_serde::to_vec_named(&store.edits.undo).unwrap();
     let redo_bytes = rmp_serde::to_vec_named(&store.edits.redo).unwrap();
 
-    let delta: DeltaOverlay = rmp_serde::from_slice(&delta_bytes).unwrap();
+    let delta: Overlay = rmp_serde::from_slice(&delta_bytes).unwrap();
     let undo: Vec<EditEntry> = rmp_serde::from_slice(&undo_bytes).unwrap();
     let redo: Vec<EditEntry> = rmp_serde::from_slice(&redo_bytes).unwrap();
 
     let mut reopened = Store::new();
     reopened.map_id = store.map_id.clone();
     reopened.batch = Some(empty_batch());
-    reopened.overlay.dead = delta.dead_ids.into_iter().collect();
-    for p in delta.patches {
-        reopened.overlay.patches.insert(p.id, p);
-    }
-    reopened.overlay.adds = delta.adds;
+    reopened.overlay = delta;
     reopened.overlay.dirty = true;
     reopened.next_id = seed_next_id(0, &reopened.overlay.adds, &undo, &redo);
     reopened.alive_count = reopened.overlay.adds.len();
@@ -3517,24 +3314,12 @@ fn overlay_update_back_to_base_clears_patch() {
     let mut store = setup_store_with(&[base]);
     store.bake_overlay();
 
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(90.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 90.0));
     assert!(store.overlay.patches.contains_key(&1));
 
     // Reverting the heading doesn't clear the patch because overlay_update
     // stamps modified_at = now, which still differs from the base.
-    store.overlay_update(
-        1,
-        &LocationPatch {
-            heading: Some(0.0),
-            ..patch()
-        },
-    );
+    store.overlay_update(1, &patch!(heading: 0.0));
     assert!(
         store.overlay.patches.contains_key(&1),
         "modified_at prevents full revert to base"
@@ -3586,22 +3371,9 @@ fn spatial_matches_brute_force_across_mutations() {
 
     // Mutate through every overlay path and re-verify: remove, coord patch, re-add.
     store.overlay_remove(&[loc(2, base.0 + m, base.1)]);
-    store.overlay_update(
-        3,
-        &LocationPatch {
-            lat: Some(base.0),
-            lng: Some(base.1),
-            ..patch()
-        },
-    );
+    store.overlay_update(3, &patch!(lat: base.0, lng: base.1));
     store.overlay_add(loc(6, base.0, base.1 + m));
-    store.overlay_update(
-        4,
-        &LocationPatch {
-            lat: Some(10.0),
-            ..patch()
-        },
-    ); // move far away
+    store.overlay_update(4, &patch!(lat: 10.0)); // move far away
 
     for r in [0.0, 2.0, 50.0, 1000.0] {
         assert_eq!(
@@ -3699,7 +3471,7 @@ fn min_pairwise(ids: &[u32], coords: &std::collections::HashMap<u32, (f64, f64)>
 #[test]
 fn pick_spaced_count_returns_exactly_n_subset() {
     let store = spaced_grid_store();
-    let res = store.pick_spaced(Some(8), None).unwrap();
+    let res = store.pick_spaced(None, Some(8), None).unwrap();
     assert_eq!(res.ids.len(), 8);
     let uniq: std::collections::HashSet<u32> = res.ids.iter().copied().collect();
     assert_eq!(uniq.len(), 8, "no duplicates");
@@ -3715,7 +3487,7 @@ fn pick_spaced_count_returns_exactly_n_subset() {
 #[test]
 fn pick_spaced_count_ge_size_returns_all() {
     let store = spaced_grid_store();
-    let res = store.pick_spaced(Some(50), None).unwrap();
+    let res = store.pick_spaced(None, Some(50), None).unwrap();
     assert_eq!(res.ids.len(), 20);
     assert_eq!(res.distance_m, 0);
     let uniq: std::collections::HashSet<u32> = res.ids.iter().copied().collect();
@@ -3726,7 +3498,7 @@ fn pick_spaced_count_ge_size_returns_all() {
 fn pick_spaced_count_pairwise_spacing_meets_returned_distance() {
     let store = spaced_grid_store();
     let coords = coord_lookup(&store);
-    let res = store.pick_spaced(Some(6), None).unwrap();
+    let res = store.pick_spaced(None, Some(6), None).unwrap();
     let min = min_pairwise(&res.ids, &coords);
     assert!(
         min >= res.distance_m as f64 - 1e-6,
@@ -3740,7 +3512,7 @@ fn pick_spaced_count_pairwise_spacing_meets_returned_distance() {
 fn pick_spaced_distance_enforces_threshold() {
     let store = spaced_grid_store();
     let coords = coord_lookup(&store);
-    let res = store.pick_spaced(None, Some(250)).unwrap();
+    let res = store.pick_spaced(None, None, Some(250)).unwrap();
     assert_eq!(res.distance_m, 250);
     assert!(!res.ids.is_empty());
     let min = min_pairwise(&res.ids, &coords);
@@ -3750,20 +3522,49 @@ fn pick_spaced_distance_enforces_threshold() {
 #[test]
 fn pick_spaced_arg_validation() {
     let store = spaced_grid_store();
-    assert!(store.pick_spaced(Some(5), Some(100)).is_err(), "both set");
-    assert!(store.pick_spaced(None, None).is_err(), "neither set");
-    assert!(store.pick_spaced(None, Some(0)).is_err(), "zero distance");
+    assert!(
+        store.pick_spaced(None, Some(5), Some(100)).is_err(),
+        "both set"
+    );
+    assert!(store.pick_spaced(None, None, None).is_err(), "neither set");
+    assert!(
+        store.pick_spaced(None, None, Some(0)).is_err(),
+        "zero distance"
+    );
+    assert!(
+        store.pick_spaced(None, None, Some(u32::MAX)).is_err(),
+        "distance above i32::MAX"
+    );
 }
 
 #[test]
 fn pick_spaced_empty_selection() {
     let store = setup_store_with(&[]);
-    let count = store.pick_spaced(Some(5), None).unwrap();
+    let count = store.pick_spaced(None, Some(5), None).unwrap();
     assert!(count.ids.is_empty());
     assert_eq!(count.distance_m, 0);
-    let dist = store.pick_spaced(None, Some(100)).unwrap();
+    let dist = store.pick_spaced(None, None, Some(100)).unwrap();
     assert!(dist.ids.is_empty());
     assert_eq!(dist.distance_m, 0);
+}
+
+#[test]
+fn pick_spaced_scope_overrides_selection() {
+    let mut store = spaced_grid_store();
+    // Selection is the whole grid; scope to ids 1..=5 (one row).
+    let scope = SelectionProps::Manual {
+        locations: vec![1, 2, 3, 4, 5],
+    };
+    let res = store.pick_spaced(Some(&scope), Some(3), None).unwrap();
+    assert_eq!(res.ids.len(), 3);
+    for id in &res.ids {
+        assert!(*id <= 5, "id {} outside scope", id);
+    }
+
+    // An empty selection does not starve a scoped pick.
+    store.selections.ids = RoaringBitmap::new();
+    let res = store.pick_spaced(Some(&scope), Some(3), None).unwrap();
+    assert_eq!(res.ids.len(), 3);
 }
 
 // -----------------------------------------------------------------------
@@ -3781,9 +3582,7 @@ fn store_with_full_overlay() -> Store {
     store.alive_count = base.len();
     store.next_id = 10;
 
-    let mut p = patch();
-    p.heading = Some(99.0);
-    store.overlay_update(1, &p);
+    store.overlay_update(1, &patch!(heading: 99.0));
 
     let l2 = store.get_loc_by_id(2).unwrap();
     store.overlay_remove(std::slice::from_ref(&l2));
@@ -3801,7 +3600,7 @@ fn delta_parse_never_panics_on_corrupt_bytes() {
         vec![0xff, 0x00, 0x13, 0x37, 0xde, 0xad, 0xbe, 0xef],
     ];
     for bytes in &cases {
-        let result = std::panic::catch_unwind(|| rmp_serde::from_slice::<DeltaOverlay>(bytes));
+        let result = std::panic::catch_unwind(|| rmp_serde::from_slice::<Overlay>(bytes));
         assert!(result.is_ok(), "parsing must not panic: {:?}", bytes);
         assert!(result.unwrap().is_err(), "must fail to parse: {:?}", bytes);
     }
@@ -3814,7 +3613,7 @@ fn delta_parse_never_panics_on_truncated_bytes() {
     assert!(full_bytes.len() > 1, "sanity: overlay has real content");
     let truncated = &full_bytes[..full_bytes.len() / 2];
 
-    let result = std::panic::catch_unwind(|| rmp_serde::from_slice::<DeltaOverlay>(truncated));
+    let result = std::panic::catch_unwind(|| rmp_serde::from_slice::<Overlay>(truncated));
     assert!(result.is_ok(), "parsing must not panic on truncated bytes");
     assert!(
         result.unwrap().is_err(),
@@ -3826,21 +3625,11 @@ fn delta_parse_never_panics_on_truncated_bytes() {
 fn delta_bytes_roundtrip_exact() {
     let store = store_with_full_overlay();
     let bytes = overlay_delta_bytes(&store).unwrap();
-    let parsed: DeltaOverlay = rmp_serde::from_slice(&bytes).unwrap();
+    let parsed: Overlay = rmp_serde::from_slice(&bytes).unwrap();
 
     assert_eq!(parsed.adds, store.overlay.adds, "adds preserved exactly");
-
-    let mut expected_dead: Vec<u32> = store.overlay.dead.iter().cloned().collect();
-    expected_dead.sort_unstable();
-    let mut got_dead = parsed.dead_ids.clone();
-    got_dead.sort_unstable();
-    assert_eq!(got_dead, expected_dead, "dead ids preserved exactly");
-
-    let mut expected_patches: Vec<Location> = store.overlay.patches.values().cloned().collect();
-    expected_patches.sort_by_key(|l| l.id);
-    let mut got_patches = parsed.patches.clone();
-    got_patches.sort_by_key(|l| l.id);
-    assert_eq!(got_patches, expected_patches, "patches preserved exactly");
+    assert_eq!(parsed.dead, store.overlay.dead, "dead ids preserved exactly");
+    assert_eq!(parsed.patches, store.overlay.patches, "patches preserved exactly");
 }
 
 // -----------------------------------------------------------------------
@@ -3861,18 +3650,10 @@ fn crash_window_stale_delta_double_applies_baked_locations() {
     store.alive_count = x.len();
 
     // Stale delta from before the bake: re-adds the same ids the base now already has.
-    let delta = DeltaOverlay {
-        adds: x.clone(),
-        dead_ids: vec![],
-        patches: vec![],
-    };
+    let delta = delta_overlay(x.clone(), &[], vec![]);
 
     // Mirror store_open_map's delta-application block exactly.
-    store.overlay.dead = delta.dead_ids.into_iter().collect();
-    for p in delta.patches {
-        store.overlay.patches.insert(p.id, p);
-    }
-    store.overlay.adds = delta.adds;
+    store.overlay = delta;
     store.overlay.dirty = true;
 
     // Mirror the post-load alive_count recompute via scan_locations.
@@ -4003,10 +3784,7 @@ fn apply_model_op(
             let idx = pick % alive_ids.len();
             let id = alive_ids[idx];
             let old = store.get_loc_by_id(id).unwrap();
-            let mut p = patch();
-            p.heading = Some(*heading);
-            p.tags = Some(tags.clone());
-            store.overlay_update(id, &p);
+            store.overlay_update(id, &patch!(heading: *heading, tags: tags.clone()));
             let new_loc = store.get_loc_by_id(id).unwrap();
             let updated = vec![(old.clone(), new_loc.clone())];
             store.remove_tag_counts(std::slice::from_ref(&old));

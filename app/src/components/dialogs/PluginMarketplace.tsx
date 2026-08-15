@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Dialog, DialogContent } from "@/components/primitives/Dialog";
+import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
@@ -17,29 +17,14 @@ import {
 	isPluginCompatible,
 	isBackgroundPlugin,
 } from "@/plugins/registry";
-import type { PluginManifest, PluginSidecarRef } from "@/plugins/registry";
+import { events, type PluginManifest } from "@/bindings.gen";
 import { loadAndActivatePlugin, loadUserPlugin } from "@/plugins/index";
 import { cmd } from "@/lib/commands";
-import { listen } from "@tauri-apps/api/event";
 import { log } from "@/lib/util/log";
-import { useT, pluginCatalogName, pluginCatalogDescription } from "@/lib/i18n";
 
-const REGISTRY_URL = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins/registry.json";
+const REGISTRY_URL = "https://raw.githubusercontent.com/ccmdi/mma/master/plugins/registry.json";
 
 declare const __APP_VERSION__: string;
-
-interface RegistryEntry {
-	id: string;
-	name: string;
-	description: string;
-	icon: string;
-	version: string;
-	main: string;
-	comingSoon?: boolean;
-	experimental?: boolean;
-	minAppVersion?: string;
-	sidecar?: PluginSidecarRef | null;
-}
 
 // Download a plugin's sidecar (if declared), reporting progress via onProgress. Shared by
 // install + update so both paths fetch the binary the same way.
@@ -48,14 +33,11 @@ async function installSidecar(
 	onProgress: (pct: number) => void,
 ): Promise<void> {
 	if (!manifest.sidecar) return;
-	const unlisten = await listen<{ pluginId: string; downloaded: number; total: number }>(
-		"sidecar-install-progress",
-		(ev) => {
-			if (ev.payload.pluginId === manifest.id && ev.payload.total > 0) {
-				onProgress(Math.round((ev.payload.downloaded / ev.payload.total) * 100));
-			}
-		},
-	);
+	const unlisten = await events.sidecarInstallProgress.listen((ev) => {
+		if (ev.payload.pluginId === manifest.id && ev.payload.total > 0) {
+			onProgress(Math.round((ev.payload.downloaded / ev.payload.total) * 100));
+		}
+	});
 	try {
 		await cmd.sidecarInstall(manifest.id, manifest.sidecar.name, manifest.sidecar.version);
 	} finally {
@@ -65,7 +47,7 @@ async function installSidecar(
 
 type Tab = "core" | "additional";
 
-let registryCache: RegistryEntry[] | null = null;
+let registryCache: PluginManifest[] | null = null;
 
 function PluginSettings({ pluginId }: { pluginId: string }) {
 	const plugin = getPlugin(pluginId);
@@ -86,15 +68,15 @@ function PluginSettings({ pluginId }: { pluginId: string }) {
 							className="plugin-card__setting"
 							checked={Boolean(value)}
 							onChange={(v) => update(v)}
-							label={def.label}
+							label={t(def.label)}
 						>
-							<span>{def.label}</span>
+							<span>{t(def.label)}</span>
 						</SwitchRow>
 					);
 				}
 				return (
 					<label key={def.key} className="plugin-card__setting">
-						<span>{def.label}</span>
+						<span>{t(def.label)}</span>
 						<TextInput
 							type={def.type === "number" ? "number" : "text"}
 							value={def.type === "number" ? Number(value ?? 0) : String(value ?? "")}
@@ -113,6 +95,7 @@ import { mdiAutoFix, mdiDownload, mdiFlaskOutline, mdiRefresh, mdiTrashCanOutlin
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { Switch } from "@/components/primitives/Switch";
 import { SwitchRow } from "@/components/primitives/SwitchRow";
+import { t, msg } from "@/lib/i18n";
 
 /** One card's worth of state. Core plugins are just entries that ship installed and
  *  can't be uninstalled or updated independently of the app. */
@@ -129,29 +112,27 @@ interface PluginEntry {
 	latestVersion?: string;
 	comingSoon?: boolean;
 	experimental?: boolean;
-	requiresApp?: string;
+	requiresApp?: string | null;
 }
-
-import type { MessageKey } from "@/locales/en";
 
 /** Small hover-explained markers on a card. Each either derives from the loaded
  *  plugin's shape or from what the plugin declares about itself. */
 const CARD_LABELS: {
 	key: string;
 	icon: string;
-	tooltipKey: MessageKey;
+	tooltip: string;
 	applies: (entry: PluginEntry) => boolean;
 }[] = [
 	{
 		key: "experimental",
 		icon: mdiFlaskOutline,
-		tooltipKey: "plugins.experimental",
+		tooltip: msg("Experimental"),
 		applies: (e) => !!e.experimental,
 	},
 	{
 		key: "enrichment",
 		icon: mdiAutoFix,
-		tooltipKey: "plugins.enrichmentOnly",
+		tooltip: msg("Enrichment only: adds data fields, no panel of its own"),
 		applies: (e) => e.installed && isBackgroundPlugin(e.id),
 	},
 ];
@@ -177,9 +158,6 @@ function PluginCard({
 }: PluginCardProps) {
 	const { id, name, description, icon, core, installed, enabled, comingSoon, requiresApp } = entry;
 	const [busy, setBusy] = useState(false);
-	const { t } = useT();
-	const displayName = pluginCatalogName(id, name);
-	const displayDescription = pluginCatalogDescription(id, description);
 
 	const run = (fn: (id: string) => void | Promise<void>) => async () => {
 		setBusy(true);
@@ -197,16 +175,16 @@ function PluginCard({
 			<div className="plugin-card__icon">{icon ? <Icon path={icon} size={32} /> : null}</div>
 			<div className="plugin-card__info">
 				<div className="plugin-card__name">
-					{displayName}
+					{t(name)}
 					{CARD_LABELS.filter((l) => l.applies(entry)).map((l) => (
-						<Tooltip key={l.key} content={t(l.tooltipKey)}>
-							<span className="plugin-card__label" aria-label={t(l.tooltipKey)}>
+						<Tooltip key={l.key} content={t(l.tooltip)}>
+							<span className="plugin-card__label" aria-label={t(l.tooltip)}>
 								<Icon path={l.icon} size={14} />
 							</span>
 						</Tooltip>
 					))}
 				</div>
-				{displayDescription && <div className="plugin-card__desc">{displayDescription}</div>}
+				{description && <div className="plugin-card__desc">{t(description)}</div>}
 			</div>
 			{!comingSoon && (
 				<div className="plugin-card__actions">
@@ -220,10 +198,10 @@ function PluginCard({
 							disabled={busy || !!requiresApp}
 							title={
 								requiresApp
-									? t("plugins.requiresApp", { version: requiresApp })
-									: t("common.install")
+									? t("Requires app v{version} or newer", { version: requiresApp })
+									: t("Install")
 							}
-							aria-label={t("common.install")}
+							aria-label={t("Install")}
 						>
 							<Icon path={mdiDownload} size={16} />
 						</button>
@@ -232,7 +210,7 @@ function PluginCard({
 							checked={enabled}
 							onChange={(next) => (next ? onEnable(id) : onDisable(id))}
 							disabled={busy}
-							label={enabled ? t("common.disable") : t("common.enable")}
+							label={enabled ? t("Disable") : t("Enable")}
 						/>
 					)}
 					{installed && !core && entry.updatable && (
@@ -242,12 +220,12 @@ function PluginCard({
 							disabled={busy || !!requiresApp}
 							title={
 								requiresApp
-									? t("plugins.updateRequiresApp", { version: requiresApp })
+									? t("Update requires app v{version} or newer", { version: requiresApp })
 									: entry.latestVersion
-										? t("plugins.updateTo", { version: entry.latestVersion })
-										: t("common.update")
+										? t("Update to v{version}", { version: entry.latestVersion })
+										: t("Update")
 							}
-							aria-label={t("common.update")}
+							aria-label={t("Update")}
 						>
 							<Icon path={mdiRefresh} size={16} />
 						</button>
@@ -257,8 +235,8 @@ function PluginCard({
 							className="plugin-card__action-btn plugin-card__action-btn--uninstall"
 							onClick={() => onUninstall(id)}
 							disabled={busy}
-							title={t("common.uninstall")}
-							aria-label={t("common.uninstall")}
+							title={t("Uninstall")}
+							aria-label={t("Uninstall")}
 						>
 							<Icon path={mdiTrashCanOutline} size={16} />
 						</button>
@@ -270,16 +248,9 @@ function PluginCard({
 	);
 }
 
-export function PluginMarketplace({
-	open,
-	onOpenChange,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-}) {
-	const { t } = useT();
+export function PluginMarketplace({ open, onOpenChange }: DialogProps) {
 	const [tab, setTab] = useState<Tab>("core");
-	const [registry, setRegistry] = useState<RegistryEntry[] | null>(registryCache);
+	const [registry, setRegistry] = useState<PluginManifest[] | null>(registryCache);
 	const [fetchError, setFetchError] = useState<string | null>(null);
 	const [installedManifests, setInstalledManifests] = useState<PluginManifest[]>([]);
 	const [sidecarVersions, setSidecarVersions] = useState<Record<string, string | null>>({});
@@ -325,7 +296,7 @@ export function PluginMarketplace({
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
 				return r.json();
 			})
-			.then((data: RegistryEntry[]) => {
+			.then((data: PluginManifest[]) => {
 				registryCache = data;
 				setRegistry(data);
 			})
@@ -479,19 +450,19 @@ export function PluginMarketplace({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("dialog.plugins")} className="plugin-marketplace">
+			<DialogContent title={t("Plugins")} className="plugin-marketplace">
 				<div className="plugin-marketplace__tabs">
 					<button
 						className={`plugin-marketplace__tab ${tab === "core" ? "plugin-marketplace__tab--active" : ""}`}
 						onClick={() => setTab("core")}
 					>
-						{t("plugins.core")}
+						{t("Core")}
 					</button>
 					<button
 						className={`plugin-marketplace__tab ${tab === "additional" ? "plugin-marketplace__tab--active" : ""}`}
 						onClick={() => setTab("additional")}
 					>
-						{t("plugins.additional")}
+						{t("Additional")}
 					</button>
 				</div>
 
@@ -527,10 +498,10 @@ export function PluginMarketplace({
 							))}
 						{fetchError && (
 							<div className="plugin-marketplace__empty">
-								Failed to load registry: {fetchError}
+								{t("Failed to load registry:")} {fetchError}
 								<br />
 								<Button onClick={fetchRegistry} style={{ marginTop: 8 }}>
-									Retry
+									{t("Retry")}
 								</Button>
 							</div>
 						)}
@@ -543,7 +514,9 @@ export function PluginMarketplace({
 							/>
 						))}
 						{registry && installedEntries.length === 0 && registryEntries.length === 0 && (
-							<div className="plugin-marketplace__empty">{t("plugins.emptyAdditional")}</div>
+							<div className="plugin-marketplace__empty">
+								{t("No additional plugins available.")}
+							</div>
 						)}
 					</div>
 				)}

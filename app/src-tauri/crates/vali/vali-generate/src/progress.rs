@@ -1,5 +1,3 @@
-// Vendored from vali-rs @ e70fadd. Do not edit; regenerate instead.
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[derive(Debug, Clone)]

@@ -1,4 +1,5 @@
 import { LOCATION_DATA_EVENTS, TAG_DATA_EVENTS } from "@/lib/events";
+import { errText } from "@/lib/util/util";
 import { reconcile, type FirstSyncMode, type ReconcileOptions, type SyncOutcome } from "./engine";
 import { createMappingBackend } from "./mappingBackend";
 import { createScheduler, type Scheduler, type SyncStatus } from "./scheduler";
@@ -39,6 +40,23 @@ export interface SyncController {
 	pauseLive(): void;
 	/** Explicit user "off": clear the pref, then stop. */
 	stopLive(): void;
+}
+
+/** Plugin `activate()` for a sync plugin: resume the live loop when a linked map is
+ *  (re)opened and live was left on, and pause it on close. */
+export function activateSyncPlugin(controller: SyncController): () => void {
+	const M = window.MMA;
+	const resume = () => {
+		if (controller.getLink() && controller.livePref()) controller.startLive();
+	};
+	resume();
+	const offOpen = M.on("map:open", resume);
+	const offClose = M.on("map:close", () => controller.pauseLive());
+	return () => {
+		offOpen();
+		offClose();
+		controller.pauseLive();
+	};
 }
 
 /**
@@ -173,8 +191,8 @@ export function createSyncController(provider: SyncProvider, pluginId: string): 
 						await runReconcile();
 						liveError = null;
 					} catch (e) {
-						// The Rust reconcile marks auth failures with an "auth: " prefix; show it clean.
-						liveError = (e instanceof Error ? e.message : String(e)).replace(/^auth: /, "");
+						// Rust marks auth failures with an "auth: " prefix; show it clean.
+						liveError = errText(e).replace(/^auth: /, "");
 						// A dead credential never heals by retrying; stop the loop, keep the pref.
 						if (provider.isAuthError?.(e)) pauseLive();
 						throw e;

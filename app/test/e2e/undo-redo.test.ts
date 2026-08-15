@@ -1,9 +1,6 @@
 import type { Location } from "@/bindings.gen";
 import {
-	waitForReady,
-	createAndOpenMap,
 	closeMap,
-	deleteMap,
 	flushAndWait,
 	openMap,
 	addLocs,
@@ -11,21 +8,12 @@ import {
 	getLocCount,
 	createLocation,
 	withApi,
+	useMap,
 } from "./helpers";
 
 describe("Undo/Redo", () => {
-	let mapId: string;
+	useMap("E2E Undo Redo");
 	let undo1Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Undo Redo");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("undo add locations", async () => {
 		const ids = await addLocs([createLocation({ lat: 10, lng: 20, heading: 0 })]);
@@ -182,18 +170,8 @@ describe("Undo/Redo", () => {
 });
 
 describe("Undo/Redo persistence", () => {
-	let mapId: string;
+	const map = useMap("E2E Undo Persist");
 	let uh1Id: number;
-
-	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Undo Persist");
-	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
 
 	it("undo history survives save/load", async () => {
 		const result = await withApi(async (api) => {
@@ -207,7 +185,7 @@ describe("Undo/Redo persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		await withApi(async (api) => {
 			await api.undo();
@@ -225,7 +203,7 @@ describe("Undo/Redo persistence", () => {
 
 		await flushAndWait();
 		await closeMap();
-		await openMap(mapId);
+		await openMap(map.id);
 
 		const before = await getLoc(uh1Id);
 		expect(before.flags).toBe(1);

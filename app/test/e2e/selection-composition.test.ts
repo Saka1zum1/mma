@@ -1,51 +1,25 @@
-import {
-	waitForReady,
-	createAndOpenMap,
-	closeMap,
-	deleteMap,
-	addLocs,
-	createLocation,
-	createTag,
-	refreshSelections,
-	withApi,
-} from "./helpers";
-import type { Location } from "@/bindings.gen";
+import { createTag, refreshSelections, withApi, useMap, seedLocs } from "./helpers";
 
 describe("Selection composition", () => {
-	let mapId: string;
+	useMap("E2E Sel Compose");
 	let tagAId: number;
 	let tagBId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Sel Compose");
-
 		const tagA = await createTag("tag-a");
 		tagAId = tagA.id;
 		const tagB = await createTag("tag-b");
 		tagBId = tagB.id;
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 100; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					heading: i < 40 ? 0 : 90,
-					panoId: i < 60 ? `p${i}` : null,
-					flags: i < 30 ? 1 : 0,
-					tags: i < 50 ? [tagAId] : i < 80 ? [tagBId] : [],
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(100, (i) => ({
+			lat: i,
+			lng: i,
+			heading: i < 40 ? 0 : 90,
+			panoId: i < 60 ? `p${i}` : null,
+			flags: i < 30 ? 1 : 0,
+			tags: i < 50 ? [tagAId] : i < 80 ? [tagBId] : [],
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});
@@ -145,36 +119,21 @@ describe("Selection composition", () => {
 });
 
 describe("Selection composition edge cases", () => {
-	let mapId: string;
+	useMap("E2E Sel Compose Edge");
 	let edgeTagId: number;
 
 	before(async () => {
-		await waitForReady();
-		mapId = await createAndOpenMap("E2E Sel Compose Edge");
-
 		const edgeTag = await createTag("edge-tag");
 		edgeTagId = edgeTag.id;
 
-		const locs: Location[] = [];
-		for (let i = 0; i < 20; i++) {
-			locs.push(
-				createLocation({
-					lat: i,
-					lng: i,
-					panoId: i < 10 ? `p${i}` : null,
-					flags: i < 5 ? 1 : 0,
-					tags: i < 15 ? [edgeTagId] : [],
-				}),
-			);
-		}
-		await addLocs(locs);
+		await seedLocs(20, (i) => ({
+			lat: i,
+			lng: i,
+			panoId: i < 10 ? `p${i}` : null,
+			flags: i < 5 ? 1 : 0,
+			tags: i < 15 ? [edgeTagId] : [],
+		}));
 	});
-
-	after(async () => {
-		await closeMap();
-		await deleteMap(mapId);
-	});
-
 	beforeEach(async () => {
 		await withApi(async (api) => api.resetSelections());
 	});

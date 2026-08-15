@@ -8,6 +8,7 @@ import noDuplicateCommandIcons from "./eslint-rules/no-duplicate-command-icons.j
 import noIpcInLoop from "./eslint-rules/no-ipc-in-loop.js";
 import noRedundantMutateGuard from "./eslint-rules/no-redundant-mutate-guard.js";
 import noSelectionAlias from "./eslint-rules/no-selection-alias.js";
+import noUnsupportedBuiltins from "./eslint-rules/no-unsupported-builtins.js";
 
 const RESTRICTED_IMPORT_PATHS = [
 	{
@@ -71,11 +72,16 @@ export default defineConfig([
 					"no-duplicate-command-icons": noDuplicateCommandIcons,
 					"no-redundant-mutate-guard": noRedundantMutateGuard,
 					"no-selection-alias": noSelectionAlias,
+					"no-unsupported-builtins": noUnsupportedBuiltins,
 				},
 			},
 		},
 		languageOptions: {
 			globals: globals.browser,
+			// `local/no-unsupported-builtins` needs types to tell `someSet.union()` from a
+			// method of our own with the same name. projectService costs ~4s over the suite.
+			parser: tseslint.parser,
+			parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
 		},
 		rules: {
 			"react-hooks/refs": "off",
@@ -83,6 +89,7 @@ export default defineConfig([
 			"react-hooks/immutability": "off",
 			"react-hooks/preserve-manual-memoization": "off",
 			"no-console": "error",
+			"local/no-unsupported-builtins": "error",
 			"local/no-ipc-in-loop": "warn",
 			"local/no-redundant-mutate-guard": "warn",
 			"local/no-selection-alias": "warn",

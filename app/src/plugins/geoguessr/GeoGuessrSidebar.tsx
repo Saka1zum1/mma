@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { mdiMapMarker } from "@mdi/js";
 import { ConnectionUser, SyncSidebar } from "@/lib/sync/ui/SyncSidebar";
-import { useT } from "@/lib/i18n";
 import { log } from "@/lib/util/log";
+import { errText } from "@/lib/util/util";
 import { controller, geoguessrProvider, PLUGIN_ID } from "./provider";
+import { t } from "@/lib/i18n";
 
 const CACHED_USER = "user";
 const kv = () => window.MMA.storage(PLUGIN_ID);
@@ -21,7 +22,6 @@ interface GgIdentity {
  * without us ever handling a password.
  */
 export function GeoGuessrSidebar({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
 	// Last known identity, so reopening the sidebar paints the signed-in state immediately instead
 	// of spinning through a round trip every time. `undefined` only on the very first open, when
 	// there is genuinely nothing to show yet. The cache is corrected by the check below.
@@ -57,7 +57,7 @@ export function GeoGuessrSidebar({ onClose }: { onClose: () => void }) {
 			await window.MMA.cmd.geoguessrLogin();
 			await refresh();
 		} catch (e) {
-			setError(e instanceof Error ? e.message : String(e));
+			setError(errText(e));
 		} finally {
 			setBusy(false);
 		}
@@ -78,14 +78,14 @@ export function GeoGuessrSidebar({ onClose }: { onClose: () => void }) {
 			}
 			action={
 				<button className="button" onClick={() => void signOut()}>
-					{t("plugin.geoguessr.signOut")}
+					{t("Sign out")}
 				</button>
 			}
 		/>
 	) : (
 		<>
 			<button className="button button--primary" disabled={busy} onClick={() => void signIn()}>
-				{busy ? t("plugin.geoguessr.waitingSignIn") : t("plugin.geoguessr.signIn")}
+				{busy ? t("Waiting for sign-in...") : t("Sign in to GeoGuessr")}
 			</button>
 			{error && (
 				<p className="mma-input__help" style={{ color: "var(--red-9, #e5484d)" }}>
