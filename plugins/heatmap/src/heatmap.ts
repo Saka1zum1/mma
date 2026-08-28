@@ -167,8 +167,17 @@ export function removeCustomGradient(id: string) {
 }
 
 async function sourceData(source: SelectorPick): Promise<LatLng[]> {
-	const locs = await MMA.fetchLocations(MMA.selectorForPick(source));
-	return locs.map((l) => ({ lat: l.lat, lng: l.lng }));
+	const ids =
+		source.pick === "all"
+			? null
+			: new Set(await MMA.resolveIds(MMA.selectorForPick(source)));
+	const scene = MMA.getScenePositions();
+	const out: LatLng[] = [];
+	for (let i = 0; i < scene.ids.length; i++) {
+		if (ids && !ids.has(scene.ids[i])) continue;
+		out.push({ lng: scene.positions[i * 2], lat: scene.positions[i * 2 + 1] });
+	}
+	return out;
 }
 
 let rebuildToken = 0;
@@ -219,6 +228,7 @@ export async function init(): Promise<() => void> {
 		"location:update",
 		"location:invalidate",
 		"selection:change",
+		"scene:changed",
 	] as const;
 	const unsubs = events.map((e) => MMA.on(e, onChange));
 

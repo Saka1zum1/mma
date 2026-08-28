@@ -660,6 +660,17 @@ export class CellManager {
 		return this.overlay.selectedIds();
 	}
 
+	/** Walk every live row's id and lng/lat. Heatmap and similar overlays use this
+	 *  instead of re-fetching locations from the store. */
+	forEachPosition(fn: (id: number, lng: number, lat: number) => void): void {
+		for (const cb of this.cells.values()) {
+			const pos = cb.positions;
+			for (let i = 0; i < cb.count; i++) {
+				fn(cb.ids[i], pos[i * 2], pos[i * 2 + 1]);
+			}
+		}
+	}
+
 	/**
 	 * Decode per-cell bitmasks from Rust into the selection overlay. Selected rows are drawn
 	 * by the overlay in their selection's color and hidden in their base cell.

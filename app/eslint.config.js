@@ -71,6 +71,8 @@ export default defineConfig([
 		"dist",
 		"src/bindings.gen.ts",
 		"src/components/manual/manual-img-dims.gen.ts",
+		"src-tauri/**",
+		"procedures/**",
 		"vitest.config.ts",
 		"vitest.integration.config.ts",
 		"wdio.conf.ts",
@@ -220,6 +222,8 @@ export default defineConfig([
 		rules: {
 			"local/no-undefined-css-class": "off",
 			"local/no-primitive-class": "off",
+			"react-hooks/globals": "off",
+			"no-restricted-syntax": "off",
 		},
 	},
 	{

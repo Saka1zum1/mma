@@ -16,15 +16,9 @@ import { events } from "@/bindings.gen";
 import { cmd as commands, type Cmd } from "@/lib/commands";
 import { createLocation } from "@/types";
 import { registerPlugin, createPluginStorage, usePluginState } from "@/plugins/registry";
+import { useJob } from "@/lib/hooks/useJob";
 import { trackDisposable } from "@/plugins/scope";
-import {
-	Sidebar,
-	Section,
-	Field,
-	EmptyState,
-	SegmentedControl,
-} from "@/components/primitives/Sidebar";
-import { SelectorPicker } from "@/components/primitives/SelectorPicker";
+import * as ui from "@/components/primitives";
 import { toast } from "@/lib/util/toast";
 import { preloadModules, getAvailableExternals } from "@/plugins/externals";
 import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs";
@@ -48,6 +42,7 @@ import { bulkPinToPano } from "@/lib/sv/pinPano";
 import { validateLocations } from "@/lib/sv/validate";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { mmaBufUrl } from "@/lib/util/util";
+import { getScene } from "@/lib/render/sceneStore";
 import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
 import * as legacy from "@/legacy";
 import * as testApi from "@/testApi";
@@ -267,7 +262,7 @@ const surface = {
 	getAvailableExternals,
 
 	// --- UI primitives (for plugins) ---
-	ui: { Sidebar, Section, Field, EmptyState, SegmentedControl, SelectorPicker },
+	ui,
 
 	// --- Notifications ---
 	toast,
@@ -275,6 +270,7 @@ const surface = {
 	// --- Namespaced per-plugin storage ---
 	storage: createPluginStorage,
 	usePluginState,
+	useJob,
 
 	// --- Field definitions ---
 	getFieldDef,
@@ -286,6 +282,22 @@ const surface = {
 	// --- Map host ---
 	getMapHost,
 	waitForMapHost,
+
+	/** Packed scene positions the heatmap (and similar overlays) can sample without a
+	 *  store round trip. Refresh on `scene:changed`. */
+	getScenePositions(): { ids: Uint32Array; positions: Float32Array } {
+		const scene = getScene();
+		const ids = new Uint32Array(scene.totalCount);
+		const positions = new Float32Array(scene.totalCount * 2);
+		let n = 0;
+		scene.forEachPosition((id, lng, lat) => {
+			ids[n] = id;
+			positions[n * 2] = lng;
+			positions[n * 2 + 1] = lat;
+			n++;
+		});
+		return { ids: ids.subarray(0, n), positions: positions.subarray(0, n * 2) };
+	},
 
 	// --- Settings ---
 	setSetting,
