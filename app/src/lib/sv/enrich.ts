@@ -77,7 +77,11 @@ export async function enrich(
 	// path: core fields (imageDate) are in place before wave 1, and a provider that
 	// `requires` another provider's field sees it written before its wave runs.
 	for (const wave of providerWaves(getEnrichmentProviders())) {
-		const [fresh] = await fetchLocations({ kind: "ids", ids: [loc.id] });
+		const [fresh] = await fetchLocations({
+			type: "Locations",
+			locations: [loc.id],
+			name: null,
+		});
 		if (!fresh) break;
 		const results = await Promise.all(
 			wave.map((provider) => provider.enrich([fresh], enrichFields).then((m) => m.get(loc.id))),

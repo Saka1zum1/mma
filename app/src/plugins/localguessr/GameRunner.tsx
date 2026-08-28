@@ -52,7 +52,7 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 			toast(t("Open a map to play"));
 			return;
 		}
-		const all = await fetchLocations({ kind: "all" });
+		const all = await fetchLocations({ type: "Everything" });
 		if (all.length === 0) {
 			toast(t("This map has no locations"));
 			return;
@@ -101,7 +101,7 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 			nextIndex >= state.active.locations.length
 		) {
 			void (async () => {
-				const all = await fetchLocations({ kind: "all" });
+				const all = await fetchLocations({ type: "Everything" });
 				const more = pickRandomLocations(all, INFINITE_BATCH);
 				dispatch({ type: "EXTEND_LOCATIONS", locations: more });
 				dispatch({

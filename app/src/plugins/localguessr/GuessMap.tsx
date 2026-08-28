@@ -110,7 +110,7 @@ function useGuessMapHost(
 				// After a kind-switch we restore the saved camera so the user
 				// sees the same area they were just looking at.
 				if (!showResult && !savedCameraRef.current) {
-					fetchBounds({ kind: "all" })
+					fetchBounds({ type: "Everything" })
 						.then((bounds) => {
 							if (cancelled || !hostRef.current || !bounds) return;
 							hostRef.current.fitBounds(
@@ -236,7 +236,7 @@ function useGuessMapHost(
 		const host = hostRef.current;
 		if (!host || !ready) return;
 		let cancelled = false;
-		fetchBounds({ kind: "all" })
+		fetchBounds({ type: "Everything" })
 			.then((bounds) => {
 				if (cancelled || !hostRef.current) return;
 				if (bounds) {

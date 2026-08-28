@@ -15,7 +15,7 @@ use crate::util::now_iso;
 use rusqlite::Connection;
 
 /// A review session as returned to the frontend. `order`/`reviewed` are decoded from the
-/// JSON-text columns; `source_props` is the originating `SelectionProps` (opaque here).
+/// JSON-text columns; `source_props` is the originating `Selector` (opaque here).
 #[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewSession {

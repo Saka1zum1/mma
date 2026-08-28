@@ -1044,6 +1044,7 @@
 	"Panned {n} headings.": {
 		"other": "{n} 件の方位をパンしました。"
 	},
+	"Pano ID": "パノラマ ID",
 	"Pano ID broke": "Pano ID が無効",
 	"Pano ID locations": "Pano ID の地点",
 	"Pano look speed": "パノラマの視点移動速度",

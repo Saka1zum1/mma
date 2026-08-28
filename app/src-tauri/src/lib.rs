@@ -61,6 +61,7 @@ mod presence;
 mod remote_api;
 mod remote_mapping;
 mod review;
+mod saved_selections;
 mod seen;
 mod sidecar;
 mod sync;
@@ -632,6 +633,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .typ::<map_meta::CameraType>()
         .constant("KNOWN_FIELDS", map_meta::KNOWN_FIELDS)
         .constant("BUILTIN_FIELDS", selections::BUILTIN_FIELDS)
+        .constant("PROJECTIONS", selections::PROJECTIONS)
         .commands(tauri_specta::collect_commands![
             write_temp_file,
             read_file,
@@ -683,7 +685,16 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_update_locations,
             location_store::store_set_active,
             location_store::store_set_marker_color,
-            location_store::store_query,
+            location_store::store_resolve,
+            location_store::store_count,
+            location_store::store_sample,
+            location_store::store_spaced,
+            location_store::store_group_by,
+            location_store::store_count_by,
+            location_store::store_values,
+            location_store::store_coverage,
+            location_store::store_bounds,
+            location_store::store_collect,
             location_store::store_apply_field_op,
             location_store::store_country_distribution,
             location_store::store_find_nearby,
@@ -736,6 +747,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             review::store_review_list,
             review::store_review_update,
             review::store_review_delete,
+            saved_selections::store_list_saved_selections,
+            saved_selections::store_get_saved_selections,
+            saved_selections::store_save_selection,
+            saved_selections::store_delete_saved_selection,
+            saved_selections::legacy::store_import_legacy_saved_selections,
             remote_mapping::remote_mapping_get,
             remote_mapping::remote_mapping_upsert,
             remote_mapping::remote_mapping_delete,

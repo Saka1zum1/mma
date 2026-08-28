@@ -29,6 +29,9 @@ function fmt(msg: string, ...args: unknown[]): string {
 // Optional: Node/tsx (e2e specs) load this module without Vite, so `import.meta.env` is undefined.
 const DEV = Boolean(import.meta.env?.DEV);
 
+// The sink is fire-and-forget: outside a Tauri window (vitest, a bare browser) it rejects,
+// and a logger must never turn into an unhandled rejection of its own.
+
 /* eslint-disable no-console */
 export const log = {
 	info: (msg: string, ...args: unknown[]) => {

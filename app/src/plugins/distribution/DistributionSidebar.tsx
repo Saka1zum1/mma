@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Sidebar, SegmentedControl } from "@/components/primitives/Sidebar";
 import { cmd } from "@/lib/commands";
-import { getSettings } from "@/store/settings";
 import { countBy } from "@/store/useMapStore";
+import { getSettings } from "@/store/settings";
+
 import { subscribeMany, LOCATION_DATA_EVENTS } from "@/lib/events";
 import { usePluginState, createPluginStorage } from "@/plugins/registry";
 import "./distribution.css";
@@ -57,7 +58,10 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 		const count = MMA.getMapState().locationCount;
 		setTotal(count);
 
-		const meta = toDistribution(await countBy({ kind: "all" }, "countryCode", { kind: "value" }), count);
+		const meta = toDistribution(
+			await countBy({ type: "Everything" }, "countryCode", { kind: "value" }),
+			count,
+		);
 		const hasMeta = count > 0 && meta.unknown < count;
 		setMetaAvailable(hasMeta);
 
@@ -77,7 +81,10 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 			setEntries(meta.entries);
 			setUnknown(meta.unknown);
 		} else {
-			const counts = await cmd.storeCountryDistribution({ kind: "all" }, getSettings().borderDetail);
+			const counts = await cmd.storeCountryDistribution(
+				{ type: "Everything" },
+				getSettings().borderDetail,
+			);
 			setEntries(
 				counts
 					.map(([code, count]) => ({ code, name: getCountryName(code), count }))

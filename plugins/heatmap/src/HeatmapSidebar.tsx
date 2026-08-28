@@ -1,34 +1,34 @@
 import { useState, useEffect, useRef } from "react";
 import {
-	getLayers,
-	getCustomGradients,
-	updateLayer,
-	addLayer,
-	removeLayer,
-	resetLayers,
-	addCustomGradient,
-	updateCustomGradient,
-	removeCustomGradient,
-	setOnSettingsChange,
-	type HeatmapLayerSettings,
+  getLayers,
+  getCustomGradients,
+  updateLayer,
+  addLayer,
+  removeLayer,
+  resetLayers,
+  addCustomGradient,
+  updateCustomGradient,
+  removeCustomGradient,
+  setOnSettingsChange,
+  type HeatmapLayerSettings,
 } from "./heatmap";
 import {
-	BUILTIN_GRADIENTS,
-	MIN_STOPS,
-	addStopAt,
-	gradientCss,
-	hexToRgb,
-	isBuiltinGradient,
-	moveStop,
-	removeStop,
-	resolveGradient,
-	reverseStops,
-	rgbToHex,
-	setStopColor,
-	type GradientStop,
-	type HeatmapGradient,
+  BUILTIN_GRADIENTS,
+  MIN_STOPS,
+  addStopAt,
+  gradientCss,
+  hexToRgb,
+  isBuiltinGradient,
+  moveStop,
+  removeStop,
+  resolveGradient,
+  reverseStops,
+  rgbToHex,
+  setStopColor,
+  type GradientStop,
+  type HeatmapGradient,
 } from "./gradients";
-import type { ScopeWithSaved } from "mma-plugin-types";
+import type { SelectorPick } from "mma-plugin-types";
 
 const CSS = `
 .heatmap-sidebar { overflow: auto; }
@@ -81,7 +81,7 @@ const CSS = `
   color: var(--text-primary, #fff);
   border-color: var(--text-secondary, #999);
 }
-.heatmap-sidebar .scope-selector { padding: 2px 0 6px; font-size: 13px; }
+.heatmap-sidebar .selector-picker { padding: 2px 0 6px; font-size: 13px; }
 .heatmap-sidebar__gradients {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
 }
@@ -144,44 +144,45 @@ const CSS = `
 let styleEl: HTMLStyleElement | null = null;
 
 function injectCSS() {
-	if (styleEl) return;
-	styleEl = document.createElement("style");
-	styleEl.textContent = CSS;
-	document.head.appendChild(styleEl);
+  if (styleEl) return;
+  styleEl = document.createElement("style");
+  styleEl.textContent = CSS;
+  document.head.appendChild(styleEl);
 }
 
 function removeCSS() {
-	if (styleEl) {
-		styleEl.remove();
-		styleEl = null;
-	}
+  if (styleEl) {
+    styleEl.remove();
+    styleEl = null;
+  }
 }
 
-const ARROW_LEFT = "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
+const ARROW_LEFT =
+  "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
 
 function Icon({ path, size = 20 }: { path: string; size?: number }) {
-	return (
-		<svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor">
-			<path d={path} />
-		</svg>
-	);
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor">
+      <path d={path} />
+    </svg>
+  );
 }
 
 export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
-	const [, rerender] = useState(0);
-	const layers = getLayers();
+  const [, rerender] = useState(0);
+  const layers = getLayers();
 
-	useEffect(() => {
-		injectCSS();
-		setOnSettingsChange(() => rerender((n) => n + 1));
-		return () => {
-			setOnSettingsChange(null);
-			removeCSS();
-		};
-	}, []);
+  useEffect(() => {
+    injectCSS();
+    setOnSettingsChange(() => rerender((n) => n + 1));
+    return () => {
+      setOnSettingsChange(null);
+      removeCSS();
+    };
+  }, []);
 
-	const allCount = MMA.useMapState((s) => s.locationCount);
-	const selectedIds = MMA.useMapState((s) => s.selectedLocationIds);
+  const allCount = MMA.useMapState((s) => s.locationCount);
+  const selectedIds = MMA.useMapState((s) => s.selectedLocationIds);
 
 	return (
 		<section className="map-sidebar heatmap-sidebar">
@@ -196,16 +197,16 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 				</button>
 			</header>
 
-			<div className="heatmap-sidebar__body">
-				{layers.map((l, i) => (
-					<LayerControls
-						key={l.id}
-						layer={l}
-						index={i}
-						allCount={allCount}
-						selectionCount={selectedIds.size}
-					/>
-				))}
+      <div className="heatmap-sidebar__body">
+        {layers.map((l, i) => (
+          <LayerControls
+            key={l.id}
+            layer={l}
+            index={i}
+            allCount={allCount}
+            selectionCount={selectedIds.size}
+          />
+        ))}
 
 				<button className="heatmap-sidebar__add" onClick={addLayer}>
 					{MMA.t("Add heatmap")}
@@ -216,17 +217,18 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 }
 
 function LayerControls({
-	layer: l,
-	index,
-	allCount,
-	selectionCount,
+  layer: l,
+  index,
+  allCount,
+  selectionCount,
 }: {
-	layer: HeatmapLayerSettings;
-	index: number;
-	allCount: number;
-	selectionCount: number;
+  layer: HeatmapLayerSettings;
+  index: number;
+  allCount: number;
+  selectionCount: number;
 }) {
-	const set = (patch: Partial<HeatmapLayerSettings>) => updateLayer(l.id, patch);
+  const set = (patch: Partial<HeatmapLayerSettings>) =>
+    updateLayer(l.id, patch);
 
 	return (
 		<div className="heatmap-sidebar__section">
@@ -242,15 +244,16 @@ function LayerControls({
 				</button>
 			</div>
 
-			<MMA.ui.ScopeSelector
-				ctl={{
-					scope: l.source,
-					setScope: (s: ScopeWithSaved) => set({ source: s }),
-					allCount,
-					selectionCount,
-					saved: true,
-				}}
-			/>
+      <MMA.ui.SelectorPicker
+        ctl={{
+          selector: MMA.selectorForPick(l.source),
+          choice: l.source,
+          setChoice: (c: SelectorPick) => set({ source: c }),
+          allCount,
+          selectionCount,
+          saved: true,
+        }}
+      />
 
 			<Slider label={MMA.t("Intensity")} value={l.intensity} min={0.1} max={10} step={0.1}
 				onChange={(v) => set({ intensity: v })} />
@@ -261,24 +264,28 @@ function LayerControls({
 			<Slider label={MMA.t("Threshold")} value={l.threshold} min={0} max={1} step={0.01}
 				onChange={(v) => set({ threshold: v })} />
 
-			<GradientPicker layerId={l.id} gradientId={l.gradientId} onSelect={(id) => set({ gradientId: id })} />
-		</div>
-	);
+      <GradientPicker
+        layerId={l.id}
+        gradientId={l.gradientId}
+        onSelect={(id) => set({ gradientId: id })}
+      />
+    </div>
+  );
 }
 
 function GradientPicker({
-	layerId,
-	gradientId,
-	onSelect,
+  layerId,
+  gradientId,
+  onSelect,
 }: {
-	layerId: string;
-	gradientId: string;
-	onSelect: (id: string) => void;
+  layerId: string;
+  gradientId: string;
+  onSelect: (id: string) => void;
 }) {
-	const [editingId, setEditingId] = useState<string | null>(null);
-	const customs = getCustomGradients();
-	const current = resolveGradient(gradientId, customs);
-	const editing = customs.find((g) => g.id === editingId) ?? null;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const customs = getCustomGradients();
+  const current = resolveGradient(gradientId, customs);
+  const editing = customs.find((g) => g.id === editingId) ?? null;
 
 	return (
 		<>
@@ -323,65 +330,67 @@ function GradientPicker({
 				</div>
 			)}
 
-			{editing && <GradientEditor gradient={editing} />}
-		</>
-	);
+      {editing && <GradientEditor gradient={editing} />}
+    </>
+  );
 }
 
 function GradientEditor({ gradient: g }: { gradient: HeatmapGradient }) {
-	const [selectedRaw, setSelected] = useState(0);
-	const trackRef = useRef<HTMLDivElement>(null);
-	const colorInputRef = useRef<HTMLInputElement>(null);
-	const selected = Math.min(selectedRaw, g.stops.length - 1);
-	const stop = g.stops[selected];
+  const [selectedRaw, setSelected] = useState(0);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const selected = Math.min(selectedRaw, g.stops.length - 1);
+  const stop = g.stops[selected];
 
-	const setStops = (stops: GradientStop[]) => updateCustomGradient(g.id, { stops });
+  const setStops = (stops: GradientStop[]) =>
+    updateCustomGradient(g.id, { stops });
 
-	const posFromClientX = (clientX: number) => {
-		const rect = trackRef.current?.getBoundingClientRect();
-		if (!rect?.width) return 0;
-		return (clientX - rect.left) / rect.width;
-	};
+  const posFromClientX = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect?.width) return 0;
+    return (clientX - rect.left) / rect.width;
+  };
 
-	const startDrag = (index: number) => (e: React.PointerEvent<HTMLButtonElement>) => {
-		e.preventDefault();
-		e.stopPropagation();
-		if (e.button !== 0) return;
-		setSelected(index);
+  const startDrag =
+    (index: number) => (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.button !== 0) return;
+      setSelected(index);
 
-		const el = e.currentTarget;
-		// Every move recomputes from the drag-start snapshot, so re-sorting mid-drag
-		// can't make the tracked stop drift.
-		const from = g.stops;
-		const onMove = (ev: PointerEvent) => {
-			const next = moveStop(from, index, posFromClientX(ev.clientX));
-			setSelected(next.index);
-			setStops(next.stops);
-		};
-		const onUp = () => {
-			el.removeEventListener("pointermove", onMove);
-			el.removeEventListener("pointerup", onUp);
-			el.removeEventListener("pointercancel", onUp);
-		};
-		el.setPointerCapture(e.pointerId);
-		el.addEventListener("pointermove", onMove);
-		el.addEventListener("pointerup", onUp);
-		el.addEventListener("pointercancel", onUp);
-	};
+      const el = e.currentTarget;
+      // Every move recomputes from the drag-start snapshot, so re-sorting mid-drag
+      // can't make the tracked stop drift.
+      const from = g.stops;
+      const onMove = (ev: PointerEvent) => {
+        const next = moveStop(from, index, posFromClientX(ev.clientX));
+        setSelected(next.index);
+        setStops(next.stops);
+      };
+      const onUp = () => {
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", onUp);
+        el.removeEventListener("pointercancel", onUp);
+      };
+      el.setPointerCapture(e.pointerId);
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+      el.addEventListener("pointercancel", onUp);
+    };
 
-	const nudge = (index: number) => (e: React.KeyboardEvent) => {
-		const step = e.shiftKey ? 0.05 : 0.01;
-		if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-			e.preventDefault();
-			const delta = e.key === "ArrowLeft" ? -step : step;
-			const next = moveStop(g.stops, index, g.stops[index].pos + delta);
-			setSelected(next.index);
-			setStops(next.stops);
-		} else if (e.key === "Delete" || e.key === "Backspace") {
-			e.preventDefault();
-			setStops(removeStop(g.stops, index));
-		}
-	};
+  const nudge = (index: number) => (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.05 : 0.01;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const delta = e.key === "ArrowLeft" ? -step : step;
+      const next = moveStop(g.stops, index, g.stops[index].pos + delta);
+      setSelected(next.index);
+      setStops(next.stops);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      setStops(removeStop(g.stops, index));
+    }
+  };
 
 	return (
 		<div className="heatmap-sidebar__editor">
@@ -460,29 +469,37 @@ function GradientEditor({ gradient: g }: { gradient: HeatmapGradient }) {
 }
 
 function Slider({
-	label, value, min, max, step, onChange, format,
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  format,
 }: {
-	label: string;
-	value: number;
-	min: number;
-	max: number;
-	step: number;
-	onChange: (v: number) => void;
-	format?: (v: number) => string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  format?: (v: number) => string;
 }) {
-	const display = format ? format(value) : String(Math.round(value * 100) / 100);
-	return (
-		<div className="heatmap-sidebar__control">
-			<label>{label}</label>
-			<input
-				type="range"
-				min={min}
-				max={max}
-				step={step}
-				value={value}
-				onChange={(e) => onChange(Number(e.target.value))}
-			/>
-			<span className="heatmap-sidebar__value">{display}</span>
-		</div>
-	);
+  const display = format
+    ? format(value)
+    : String(Math.round(value * 100) / 100);
+  return (
+    <div className="heatmap-sidebar__control">
+      <label>{label}</label>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className="heatmap-sidebar__value">{display}</span>
+    </div>
+  );
 }

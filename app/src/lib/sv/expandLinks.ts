@@ -55,7 +55,7 @@ export async function startExpandSvLinks(opts: StartExpandOptions): Promise<numb
 	const ids = [...getMapState().selectedLocationIds];
 	if (!ids.length) throw new Error("no-selection");
 
-	const seeds = await fetchLocations({ kind: "ids", ids });
+	const seeds = await fetchLocations({ type: "Locations", locations: ids, name: null });
 	const usable = seeds.filter((l) => LINK_PROVIDERS.has(getLocationProvider(l)));
 	if (!usable.length) throw new Error("no-provider");
 
@@ -101,7 +101,7 @@ async function expandLinksCrawl(
 	maxCount: number,
 	onProgress?: ExpandProgressCb,
 ): Promise<number> {
-	const existing = await fetchLocations({ kind: "all" });
+	const existing = await fetchLocations({ type: "Everything" });
 	const seen = new Set<string>();
 	for (const loc of existing) {
 		const id = getLocationPanoId(loc);

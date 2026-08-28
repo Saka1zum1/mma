@@ -11,7 +11,7 @@
  *
  * Only the closed-target branch is exercised here. The open-target branch fires
  * when the target's store is resident, which in this app means a *second window*
- * has it open â€” and a single webview can't host one (switching the window to the
+ * has it open â€?and a single webview can't host one (switching the window to the
  * source closes the prior map). Its two halves are covered elsewhere: the consumer
  * mutate(payload) is the same path import uses (store.mutate(Promise.resolve(r)),
  * covered by the import specs), and the producer's add_copied_to_store result is
@@ -33,7 +33,7 @@ import {
 } from "./helpers";
 
 const copy = (targetMapId: string, ids: number[]) =>
-	withApi((api, t, i) => api.cmd.storeCopyLocationsToMap(t, { kind: "ids", ids: i }), targetMapId, ids);
+	withApi((api, t, i) => api.cmd.storeCopyLocationsToMap(t, { type: "Locations", locations: i, name: null }), targetMapId, ids);
 
 // Seed + persist a map, then close it (store evicted) so copies hit the closed-target branch.
 async function makeClosedMap(name: string, locs: any[] = []): Promise<string> {
@@ -196,7 +196,7 @@ describe("Copy to a closed map", () => {
 		const err = await withApi(async (api, i) => {
 			const selfId = api.getMapState().mapId!;
 			try {
-				await api.cmd.storeCopyLocationsToMap(selfId, { kind: "ids", ids: i });
+				await api.cmd.storeCopyLocationsToMap(selfId, { type: "Locations", locations: i, name: null });
 				return null;
 			} catch (e) {
 				return (e && (e as Error).message) || String(e);

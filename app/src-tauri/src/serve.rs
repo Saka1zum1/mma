@@ -87,7 +87,10 @@ fn register_web_schemes() {
         let url = if path.starts_with("gps-csg/") {
             format!("https://lh3.ggpht.com/{path}{}", qs(&req.query))
         } else {
-            format!("https://lh3.ggpht.com/jsapi2/a/b/c/{path}{}", qs(&req.query))
+            format!(
+                "https://lh3.ggpht.com/jsapi2/a/b/c/{path}{}",
+                qs(&req.query)
+            )
         };
         relay(crate::fetch_svtile(&url))
     });

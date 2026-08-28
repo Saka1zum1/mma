@@ -182,7 +182,7 @@ function timeComposite(setup: string, measure: string, tagId: number): Promise<n
 
 function timeRemoveAll(): Promise<number> {
 	return withApi(async (api) => {
-		const ids: number[] = await api.scopeIds({ kind: "props", props: { type: "Everything" } });
+		const ids: number[] = await api.scopeIds({ type: "Everything" });
 		const t0 = performance.now();
 		await api.removeLocations(new Set(ids));
 		return performance.now() - t0;
@@ -191,7 +191,7 @@ function timeRemoveAll(): Promise<number> {
 
 function timeRemoveOne(): Promise<number> {
 	return withApi(async (api) => {
-		const ids: number[] = await api.scopeIds({ kind: "props", props: { type: "Everything" } });
+		const ids: number[] = await api.scopeIds({ type: "Everything" });
 		if (ids.length === 0) return -1;
 		const t0 = performance.now();
 		await api.removeLocations(new Set([ids[0]]));
@@ -202,7 +202,7 @@ function timeRemoveOne(): Promise<number> {
 function timeBatchUpdate(count: number, iter: number): Promise<number> {
 	return withApi(
 		async (api, n: number, it: number) => {
-			const ids: number[] = await api.scopeIds({ kind: "props", props: { type: "Everything" } });
+			const ids: number[] = await api.scopeIds({ type: "Everything" });
 			const updates = ids.slice(0, n).map((id: number) => ({ id, patch: { heading: it * 10 } }));
 			const t0 = performance.now();
 			await api.updateLocations(updates);

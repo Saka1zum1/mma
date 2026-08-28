@@ -1044,6 +1044,7 @@
 	"Panned {n} headings.": {
 		"other": "已平移 {n} 个朝向。"
 	},
+	"Pano ID": "街景 ID",
 	"Pano ID broke": "全景 ID 失效",
 	"Pano ID locations": "全景 ID 位置",
 	"Pano look speed": "全景视角速度",

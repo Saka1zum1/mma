@@ -462,7 +462,7 @@ describe("Unicode in all fields", () => {
 	it("Unicode panoId, extra keys/values, and tag names survive round-trip", async () => {
 		const result = await withApi(async (api) => {
 			const resolved = await api.createTags([
-				"東京タワー", // CJK
+				"東京タワ�?, // CJK
 				"café crème", // diacritics
 				"Москва", // Cyrillic
 			]);
@@ -475,7 +475,7 @@ describe("Unicode in all fields", () => {
 				panoId: "CAoSK0FG_東京_éè",
 				tags: [resolved[0].id, resolved[1].id, resolved[2].id],
 				extra: {
-					地名: "東京タワー",
+					地名: "東京タワ�?,
 					straße: "café",
 					nested: { Адрес: "Москва" },
 				},
@@ -494,7 +494,7 @@ describe("Unicode in all fields", () => {
 
 		const loc = await getLoc(result.locId);
 		expect(loc.panoId).toBe("CAoSK0FG_東京_éè");
-		expect(loc.extra["地名"]).toBe("東京タワー");
+		expect(loc.extra["地名"]).toBe("東京タワ�?);
 		expect(loc.extra["straße"]).toBe("café");
 		expect(loc.extra.nested["Адрес"]).toBe("Москва");
 
@@ -505,7 +505,7 @@ describe("Unicode in all fields", () => {
 
 		// Verify tag names in meta
 		const tags = await withApi((api) => api.getMapState().tags);
-		expect(tags[result.tagIds[0]].name).toBe("東京タワー");
+		expect(tags[result.tagIds[0]].name).toBe("東京タワ�?);
 		expect(tags[result.tagIds[1]].name).toBe("café crème");
 		expect(tags[result.tagIds[2]].name).toBe("Москва");
 	});
@@ -581,7 +581,7 @@ describe("Export with scope", () => {
 				exportZoom: true,
 				exportUnpanned: true,
 				exportExtras: true,
-				scope: { kind: "ids", ids },
+				scope: { type: "Locations", locations: ids, name: null },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
 				extraFieldsJson: null,

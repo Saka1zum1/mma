@@ -10,15 +10,16 @@ import {
 	addSelections,
 	fetchLocations,
 	updateLocations,
+	useMapState,
 } from "@/store/useMapStore";
-import { useScope, applyScope, type ScopeController } from "@/store/scope";
+import { useSelectorPick, type SelectorPickController } from "@/store/selectorPick";
 import type {
-	Scope,
 	Location,
+	Selector,
 	Update,
 	LocationPatch_Deserialize as LocationPatch,
 } from "@/bindings.gen";
-import { ScopeSelector } from "@/components/primitives/ScopeSelector";
+import { SelectorPicker } from "@/components/primitives/SelectorPicker";
 import { isPinnedToPano } from "@/types";
 import {
 	getFieldDef,
@@ -84,7 +85,7 @@ interface Props {
 }
 
 interface SetupProps {
-	scopeCtl: ScopeController;
+	scopeCtl: SelectorPickController;
 	locs: Location[];
 	scopedLocs: Location[];
 	onReady: (run: BulkRunner) => void;
@@ -97,7 +98,7 @@ interface SetupProps {
 function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			<div className="bulk-operation__actions">
 				<Button
 					variant="primary"
@@ -144,12 +145,11 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 	);
 }
 
-function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
+function EnrichSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 	const [force, setForce] = useState(false);
 	const map = getMapState().map;
 	if (!map) return null;
 
-	const scopedLocs = applyScope(scopeCtl.scope, locs);
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 	const allOptions = getEnrichFieldOptions();
 	const enabledFields = allOptions.filter((f) => isFieldEnabled(enrichFields, f.key));
@@ -164,7 +164,7 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			{enabledFields.length === 0 && (
 				<div className="bulk-operation__status" style={{ opacity: 0.8 }}>
 					{t(
@@ -236,15 +236,14 @@ function EnrichSetup({ scopeCtl, locs, onReady }: SetupProps) {
 	);
 }
 
-function PinPanoSetup({ scopeCtl, locs, onReady }: SetupProps) {
+function PinPanoSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 	const [force, setForce] = useState(false);
 	const [useLatest, setUseLatest] = useState(false);
-	const scopedLocs = applyScope(scopeCtl.scope, locs);
 	const unpinned = scopedLocs.filter((l) => !isPinnedToPano(l)).length;
 
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			<div className="bulk-operation__status">
 				{t(
 					{
@@ -309,7 +308,7 @@ function ClearFieldsSetup({ locs, scopedLocs, scopeCtl, onReady }: SetupProps) {
 
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			{sortedKeys.length === 0 ? (
 				<div className="bulk-operation__status">{t("No metadata fields on this map.")}</div>
 			) : (
@@ -402,7 +401,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			<label className="bulk-operation__option">
 				{t("Field")}
 				<NSelect
@@ -510,7 +509,7 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			<div className="bulk-operation__fieldset">
 				<label>
 					<Radio
@@ -562,7 +561,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 
 	return (
 		<div className="bulk-operation">
-			<ScopeSelector ctl={scopeCtl} />
+			<SelectorPicker ctl={scopeCtl} />
 			{noPano > 0 && (
 				<div className="bulk-operation__status">
 					{t(
@@ -776,7 +775,7 @@ function BulkProgress({
 	onClose,
 }: {
 	runner: BulkRunner;
-	scope: Scope;
+	scope: Selector;
 	onClose: () => void;
 }) {
 	const [progress, setProgress] = useState(0);
@@ -922,13 +921,17 @@ const SETUPS: Record<BulkOperation, React.ComponentType<SetupProps>> = {
 
 export function BulkOperationModal({ operation, onClose }: Props) {
 	const [runner, setRunner] = useState<BulkRunner | null>(null);
-	const scopeCtl = useScope();
-	const { data: locs } = useAsync(() => fetchLocations({ kind: "all" }), []);
+	const scopeCtl = useSelectorPick();
+	const { data: locs } = useAsync(() => fetchLocations({ type: "Everything" }), []);
+	const selectedIds = useMapState((s) => s.selectedLocationIds);
 
 	if (locs === null) return null;
 
 	const onReady = (run: BulkRunner) => setRunner(() => run);
-	const scopedLocs = applyScope(scopeCtl.scope, locs);
+	const scopedLocs =
+		scopeCtl.choice.pick === "selection"
+			? locs.filter((location) => selectedIds.has(location.id))
+			: locs;
 	const Setup = SETUPS[operation];
 
 	return (
@@ -940,7 +943,7 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 		>
 			<DialogContent title={t(TITLES[operation])} className="bulk-operation-modal">
 				{runner ? (
-					<BulkProgress runner={runner} scope={scopeCtl.scope} onClose={onClose} />
+					<BulkProgress runner={runner} scope={scopeCtl.selector} onClose={onClose} />
 				) : (
 					<Setup scopeCtl={scopeCtl} locs={locs} scopedLocs={scopedLocs} onReady={onReady} />
 				)}

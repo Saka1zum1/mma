@@ -1,3 +1,6 @@
+import { cmd } from "@/lib/commands";
+import { log } from "@/lib/util/log";
+
 /** A fixup for one persisted blob, mutating the parsed value in place. Runs on every read, so it
  * must be idempotent: that lets migrations work without a stored schema version. */
 export type Migration = (stored: Record<string, unknown>) => void;
@@ -36,6 +39,14 @@ export const MIGRATIONS: StoredMigration[] = [
 			}
 		},
 	},
+	{
+		since: "0.9.3",
+		key: "appSettings",
+		describe: "savedSelections moved to SQLite; drop from localStorage",
+		apply: (stored) => {
+			delete stored.savedSelections;
+		},
+	},
 ];
 
 export function migrationsFor(key: string): Migration[] {
@@ -53,4 +64,29 @@ export function compareVersions(a: string, b: string): number {
 		if (difference !== 0) return difference;
 	}
 	return 0;
+}
+
+// --- One-time handoffs (delete once every install has upgraded) ---
+
+let importedSavedSelections = false;
+
+/** Hands the pre-0.9.3 `savedSelections` array to Rust, once per window. Reads the raw
+ *  blob rather than going through settings, whose migrations have already dropped the key
+ *  from the parsed value. Rust ignores the payload if it already holds any rules. */
+export async function importLegacySavedSelections(): Promise<void> {
+	if (importedSavedSelections) return;
+	importedSavedSelections = true;
+	let json: string;
+	try {
+		const raw = localStorage.getItem("appSettings");
+		const list = raw ? (JSON.parse(raw) as { savedSelections?: unknown[] }).savedSelections : null;
+		if (!Array.isArray(list) || list.length === 0) return;
+		json = JSON.stringify(list);
+	} catch (e) {
+		log.warn("[saved-selections] unreadable legacy blob:", e);
+		return;
+	}
+	await cmd
+		.storeImportLegacySavedSelections(json)
+		.catch((e) => log.error("[saved-selections] legacy import failed:", e));
 }

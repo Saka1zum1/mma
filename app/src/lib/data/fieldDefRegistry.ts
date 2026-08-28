@@ -24,8 +24,9 @@
  */
 
 import { emit } from "@/lib/events";
-import { BUILTIN_FIELDS } from "@/bindings.gen";
-import type { ExtraFieldDef } from "@/bindings.gen";
+import { BUILTIN_FIELDS, PROJECTIONS } from "@/bindings.gen";
+import type { ExtraFieldDef, ExtraFieldType } from "@/bindings.gen";
+import { msg } from "@/lib/i18n";
 
 /**
  * What a registry field *is*, which determines how it may be accessed:
@@ -158,4 +159,36 @@ export function getAllFieldDefs(): Record<string, ExtraFieldDef> {
 		if (merged) out[key] = merged;
 	}
 	return out;
+}
+
+const PROJECTION_LABELS: Record<string, string> = {
+	value: msg("Value"),
+	year: msg("Year"),
+	yearMonth: msg("Year-month"),
+	day: msg("Exact day"),
+	monthOfYear: msg("Month of year"),
+	hourOfDay: msg("Hour of day"),
+};
+
+export interface FieldProjection {
+	id: string;
+	label: string;
+	needsTz: boolean;
+}
+
+export function projectionsForType(type: ExtraFieldType): FieldProjection[] {
+	return PROJECTIONS.filter((p) => (p.appliesTo as readonly ExtraFieldType[]).includes(type)).map(
+		(p) => ({ id: p.id, label: PROJECTION_LABELS[p.id] ?? p.id, needsTz: p.needsTz }),
+	);
+}
+
+export const RANGE_ID = "range";
+
+export function partitionKeyOptions(
+	type: ExtraFieldType,
+	rangeForDates: boolean,
+): { id: string; label: string }[] {
+	const projs = projectionsForType(type).map((p) => ({ id: p.id, label: p.label }));
+	const hasRange = type === "number" || (rangeForDates && type === "date");
+	return hasRange ? [{ id: RANGE_ID, label: msg("Range") }, ...projs] : projs;
 }

@@ -16,7 +16,7 @@ import {
 // 1. Escaped quotes in extra fields
 // ============================================================================
 
-describe("Import — escaped quotes in extra fields", () => {
+describe("Import �?escaped quotes in extra fields", () => {
 	useMap("E2E Escaped Quotes");
 
 	it("handles escaped quotes in string values", async () => {
@@ -82,7 +82,7 @@ describe("Import — escaped quotes in extra fields", () => {
 // 1b. panoId with special characters (Cow<str> zero-copy path)
 // ============================================================================
 
-describe("Import — panoId with special characters", () => {
+describe("Import �?panoId with special characters", () => {
 	useMap("E2E PanoId Special");
 
 	it("preserves panoId containing unicode", async () => {
@@ -160,7 +160,7 @@ describe("Import — panoId with special characters", () => {
 // 2. Top-level countryCode/stateCode preservation
 // ============================================================================
 
-describe("Import — countryCode/stateCode at top level", () => {
+describe("Import �?countryCode/stateCode at top level", () => {
 	useMap("E2E CountryCode");
 
 	it("captures countryCode from location root", async () => {
@@ -225,7 +225,7 @@ describe("Import — countryCode/stateCode at top level", () => {
 // 3. Nested objects in extra (boundary scanner depth tracking)
 // ============================================================================
 
-describe("Import — nested objects in extra", () => {
+describe("Import �?nested objects in extra", () => {
 	useMap("E2E Nested Extra");
 
 	it("preserves deeply nested objects in extra", async () => {
@@ -323,7 +323,7 @@ describe("Import — nested objects in extra", () => {
 // 4. Empty customCoordinates array
 // ============================================================================
 
-describe("Import — empty customCoordinates", () => {
+describe("Import �?empty customCoordinates", () => {
 	useMap("E2E Empty Coords");
 
 	it("preview returns zero for empty array", async () => {
@@ -361,7 +361,7 @@ describe("Import — empty customCoordinates", () => {
 // 5. Export+reimport round-trip with tag membership
 // ============================================================================
 
-describe("Import — export/reimport tag round-trip", () => {
+describe("Import �?export/reimport tag round-trip", () => {
 	const map = useMap("E2E Tag Roundtrip");
 
 	it("tags survive export and reimport into a new map", async () => {
@@ -388,7 +388,7 @@ describe("Import — export/reimport tag round-trip", () => {
 				exportZoom: true,
 				exportUnpanned: true,
 				exportExtras: true,
-				scope: { kind: "all" },
+				selector: { type: "Everything" },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
 				extraFieldsJson: null,

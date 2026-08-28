@@ -51,7 +51,10 @@ export function AddTagPanel({
 		if (!tagName || busy || locationIds.length === 0) return;
 		setBusy(true);
 		try {
-			await createTags([tagName], { kind: "ids", ids: locationIds });
+			await createTags(
+				[tagName],
+				{ type: "Locations", locations: locationIds, name: null },
+			);
 			setRecent(rememberRecentTag(tagName));
 			toast(
 				locationIds.length === 1

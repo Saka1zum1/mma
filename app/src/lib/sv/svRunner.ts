@@ -207,7 +207,11 @@ export async function runResolvers(
 		const enrichFields = (configOf("enrichMeta") as string[] | null | undefined) ?? null;
 		for (const wave of providerWaves(getEnrichmentProviders())) {
 			signal?.throwIfAborted();
-			const pluginLocs = await fetchLocations({ kind: "ids", ids: scopeIds });
+			const pluginLocs = await fetchLocations({
+				type: "Locations",
+				locations: scopeIds,
+				name: null,
+			});
 			const units = wave.map((p) => p.units?.(pluginLocs, enrichFields, force) ?? 0);
 			const waveTotal = units.reduce((a, b) => a + b, 0);
 			const slow = wave.filter((p, i) => units[i] > 0 && p.label);

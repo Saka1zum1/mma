@@ -73,6 +73,15 @@ impl RawExtra {
         v.as_object().and_then(Self::from_map)
     }
 
+    /// Test-only: wrap a JSON string verbatim, skipping key canonicalization -- the shape
+    /// of blobs written to disk before canonicalization existed.
+    #[cfg(test)]
+    pub(crate) fn from_string_uncanonicalized(s: &str) -> Option<Self> {
+        serde_json::value::RawValue::from_string(s.to_string())
+            .ok()
+            .map(RawExtra::wrap)
+    }
+
     /// Build from a map. `None` if the map is empty.
     pub fn from_map(m: &serde_json::Map<String, serde_json::Value>) -> Option<Self> {
         if m.is_empty() {

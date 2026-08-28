@@ -42,7 +42,7 @@ export async function waitForReady() {
  * Clear a controlled (React) input reliably. WebdriverIO's clearValue() only mutates the
  * DOM value without firing input/change events, so a React-controlled field (e.g. a tag
  * filter or map search) keeps its old state and stays applied. Select-all + Backspace sends
- * real keystrokes that fire onChange â€” what a user actually does to empty a field.
+ * real keystrokes that fire onChange â€?what a user actually does to empty a field.
  */
 export async function clearInput(selector: string) {
 	const el = await browser.$(selector);
@@ -172,7 +172,7 @@ export async function getLoc(id: number): Promise<Location> {
 	return loc;
 }
 
-/** Like getLoc but returns null instead of throwing â€” for asserting a location was removed. */
+/** Like getLoc but returns null instead of throwing â€?for asserting a location was removed. */
 export async function getLocOrNull(id: number): Promise<Location | null> {
 	return withApi(async (api, locId) => api.fetchLocation(locId), id);
 }
@@ -205,7 +205,7 @@ export async function refreshSelections(): Promise<number[]> {
 			.map((s) => ({ key: s.key, props: s.props, color: s.color }));
 		if (sels.length === 0) return [] as number[];
 		await api.cmd.storeSyncSelections(sels);
-		return api.scopeIds({ kind: "selected" });
+		return api.resolveIds(api.currentSelection());
 	});
 }
 

@@ -9,9 +9,9 @@ import type {
 import { getProviderForField } from "@/lib/data/fieldDefs";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
-import { fetchLocations, createTags, updateLocations } from "@/store/useMapStore";
-import { partition, useScope } from "@/store/scope";
-import { ScopeSelector } from "@/components/primitives/ScopeSelector";
+import { fetchLocations, createTags, partition, updateLocations } from "@/store/useMapStore";
+import { useSelectorPick } from "@/store/selectorPick";
+import { SelectorPicker } from "@/components/primitives/SelectorPicker";
 import { useSetting } from "@/store/settings";
 import { Dialog, DialogContent, type DialogProps } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
@@ -25,7 +25,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 	const [projectionId, setProjectionId] = useState("");
 	const [width, setWidth] = useState("");
 	const [tzLocal, setTzLocal] = useState(tzDefault);
-	const scopeCtl = useScope();
+	const scopeCtl = useSelectorPick();
 	const fields = useExtraFieldKeys();
 
 	const fieldType = fields.find((f) => f.key === field)?.def.type ?? "string";
@@ -54,11 +54,15 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 				? { kind: "value" }
 				: { kind: "datePart", part: projectionId as DatePart, tzLocal: tzLocal && hasTzData };
 
-		const groups = await partition(field, key, scopeCtl.scope);
+		const groups = await partition(field, key, scopeCtl.selector);
 		if (groups.length === 0) return;
 
 		const transform = getProviderForField(field)?.transform;
-		const locs = await fetchLocations({ kind: "ids", ids: groups.flatMap((g) => g.ids) });
+		const locs = await fetchLocations({
+			type: "Locations",
+			locations: groups.flatMap((g) => g.ids),
+			name: null,
+		});
 		const locById = new Map(locs.map((l) => [l.id, l]));
 
 		const tagNames = new Set<string>();
@@ -114,7 +118,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 					}}
 					style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: 4 }}
 				>
-					<ScopeSelector ctl={scopeCtl} />
+					<SelectorPicker ctl={scopeCtl} />
 					<div style={{ display: "flex", gap: "0.5rem" }}>
 						<NSelect
 							className="nselect--compact"

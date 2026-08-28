@@ -9,7 +9,7 @@
 import * as store from "@/store/useMapStore";
 import * as importStaging from "@/store/importStaging";
 import * as commitDiff from "@/store/commitDiff";
-import * as scope from "@/store/scope";
+import * as picker from "@/store/selectorPick";
 import * as mapList from "@/store/mapList";
 import * as review from "@/lib/review/review";
 import { events } from "@/bindings.gen";
@@ -24,7 +24,7 @@ import {
 	EmptyState,
 	SegmentedControl,
 } from "@/components/primitives/Sidebar";
-import { ScopeSelector } from "@/components/primitives/ScopeSelector";
+import { SelectorPicker } from "@/components/primitives/SelectorPicker";
 import { toast } from "@/lib/util/toast";
 import { preloadModules, getAvailableExternals } from "@/plugins/externals";
 import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs";
@@ -35,7 +35,12 @@ import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialo
 import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 import { setSetting, getSettings } from "@/store/settings";
 import { t, tp, getLocale, LOCALES } from "@/lib/i18n";
-import { getSavedSelections, savedToSelectionProps, describeRule } from "@/store/savedSelections";
+import {
+	getSavedSelectionIndex,
+	loadSavedSelections,
+	savedParts,
+	savedSelector,
+} from "@/store/savedSelections";
 import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen";
 import { loadSeenPano } from "@/lib/sv/panoSingleton";
 import { enrichAll, needsEnrichment } from "@/lib/sv/enrich";
@@ -262,7 +267,7 @@ const surface = {
 	getAvailableExternals,
 
 	// --- UI primitives (for plugins) ---
-	ui: { Sidebar, Section, Field, EmptyState, SegmentedControl, ScopeSelector },
+	ui: { Sidebar, Section, Field, EmptyState, SegmentedControl, SelectorPicker },
 
 	// --- Notifications ---
 	toast,
@@ -293,9 +298,10 @@ const surface = {
 	LOCALES,
 
 	// --- Saved selections ---
-	getSavedSelections,
-	savedToSelectionProps,
-	describeRule,
+	getSavedSelectionIndex,
+	loadSavedSelections,
+	savedParts,
+	savedSelector,
 
 	// --- Events (for plugins) ---
 	on<E extends EditorEvent>(event: E, handler: EventHandler<E>) {
@@ -311,8 +317,13 @@ const surface = {
 	loadSeenPano,
 
 	// --- Enrichment ---
-	enrichAll,
-	bulkPinToPano,
+	// Rows are accepted only here, normalized by the legacy adapter; internals take a Selector.
+	enrichAll: async (target: legacy.SelectorOrLocations, opts?: Parameters<typeof enrichAll>[1]) =>
+		enrichAll(await store.fetchLocations(legacy.asSelector(target)), opts),
+	bulkPinToPano: async (
+		target: legacy.SelectorOrLocations,
+		opts?: Parameters<typeof bulkPinToPano>[1],
+	) => bulkPinToPano(await store.fetchLocations(legacy.asSelector(target)), opts),
 	validateLocations,
 	needsEnrichment,
 
@@ -329,7 +340,7 @@ const surface = {
 type StoreApi = typeof store;
 type ImportStagingApi = typeof importStaging;
 type CommitDiffApi = typeof commitDiff;
-type ScopeApi = typeof scope;
+type SelectorPickApi = typeof picker;
 type MapListApi = typeof mapList;
 type ReviewApi = typeof review;
 type SurfaceApi = typeof surface;
@@ -340,7 +351,7 @@ export interface MMA
 		StoreApi,
 		ImportStagingApi,
 		CommitDiffApi,
-		ScopeApi,
+		SelectorPickApi,
 		MapListApi,
 		ReviewApi,
 		SurfaceApi,
@@ -350,7 +361,7 @@ const mma: MMA = {
 	...store,
 	...importStaging,
 	...commitDiff,
-	...scope,
+	...picker,
 	...mapList,
 	...review,
 	...surface,

@@ -1085,6 +1085,7 @@
 		"many": "Se han orientado {n} rumbos.",
 		"other": "Se han orientado {n} rumbos."
 	},
+	"Pano ID": "ID de pano",
 	"Pano ID broke": "El Pano ID dejó de funcionar",
 	"Pano ID locations": "Ubicaciones con Pano ID",
 	"Pano look speed": "Velocidad de giro en el pano",

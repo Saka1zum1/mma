@@ -1085,6 +1085,7 @@
 		"many": "{n} caps orientés.",
 		"other": "{n} caps orientés."
 	},
+	"Pano ID": "ID pano",
 	"Pano ID broke": "Pano ID cassé",
 	"Pano ID locations": "Lieux par Pano ID",
 	"Pano look speed": "Vitesse de rotation dans le pano",

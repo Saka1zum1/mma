@@ -1,10 +1,10 @@
 import { bridgeAcrossWindows, emit as emitEvent, useEventValue } from "@/lib/events";
 import { getLocal, setLocal, reloadLocal, persisted } from "@/lib/hooks/useLocalStorage";
 import { msg } from "@/lib/i18n";
-import type { SavedSelection } from "./savedSelections";
 import type { TagSortMode } from "@/types";
 import type { PinnedEntry } from "./commandDefs";
 import type { RGB } from "@/lib/util/color";
+import type { MapKeyBinding } from "@/bindings.gen";
 
 /** Language names stay in their own language, the way every language picker does it -- a reader
  *  looking for their own has to recognise it without already reading English.
@@ -208,7 +208,9 @@ const DEFAULTS = {
 	subdivisionDetail: "off" as SubdivisionDetail,
 	previewAspectRatio: "16 / 9" as PreviewAspectRatio,
 	tagSuggestionLimit: 0 as number,
-	savedSelections: [] as SavedSelection[],
+	/** Copy-to-map hotkeys that work in every map (assigned in the copy-to-map dialog);
+	 *  a map's own binding on the same key shadows them. */
+	globalCopyBindings: [] as MapKeyBinding[],
 	/** Local REST transport for window.MMA (Settings > Advanced). */
 	remoteApi: false,
 	remoteApiKey: "",

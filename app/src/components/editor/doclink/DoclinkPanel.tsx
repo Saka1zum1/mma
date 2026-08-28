@@ -72,8 +72,8 @@ export interface DoclinkPanelProps {
 /** Tag ids of every Tag leaf in the selection tree, in list order (composites included). */
 function collectSelectedTagIds(sels: Selection[], out: number[] = []): number[] {
 	for (const s of sels) {
-		if (s.props.type === "Tag") out.push(s.props.tagId);
-		if ("selections" in s.props) collectSelectedTagIds(s.props.selections, out);
+		if (s.selector.type === "Tag") out.push(s.selector.tagId);
+		if ("selections" in s.selector) collectSelectedTagIds(s.selector.selections, out);
 	}
 	return out;
 }

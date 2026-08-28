@@ -149,7 +149,11 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 		setMetas([]);
 		setPath([]);
 		try {
-			const locations = await fetchLocations({ kind: "ids", ids });
+			const locations = await fetchLocations({
+				type: "Locations",
+				locations: ids,
+				name: null,
+			});
 			const result = await buildSequence({
 				settings,
 				locations,

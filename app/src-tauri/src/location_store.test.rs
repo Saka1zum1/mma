@@ -200,11 +200,28 @@ fn overlay_update_noop_on_patched_row_stays_a_noop() {
 }
 
 #[test]
-fn collect_all_scope() {
+fn collect_everything() {
     let locs = vec![loc(1, 10.0, 20.0), loc(2, 30.0, 40.0)];
     let store = setup_store_with(&locs);
-    let all = store.collect(&Scope::All);
+    let all = store.collect(&Selector::Everything);
     assert_eq!(all.len(), 2);
+}
+
+#[test]
+fn named_id_ordering_is_consumer_defined() {
+    // Pins the documented divergence on `Selector::Locations`: `collect` honours the
+    // caller's order and duplicates, set projections sort and dedup.
+    let locs = vec![loc(3, 0.0, 0.0), loc(7, 1.0, 1.0)];
+    let store = setup_store_with(&locs);
+    let selector = Selector::Locations {
+        locations: vec![7, 3, 3],
+        name: None,
+    };
+    let rows: Vec<u32> = store.collect(&selector).iter().map(|l| l.id).collect();
+    assert_eq!(rows, vec![7, 3, 3]);
+    let view = store.loc_view();
+    let set = selections::narrow(&view, &selector).unwrap();
+    assert_eq!(set.iter().collect::<Vec<u32>>(), vec![3, 7]);
 }
 
 // -----------------------------------------------------------------------
@@ -1161,7 +1178,7 @@ fn collect_all_with_dead_patches_and_adds() {
     store.overlay_add(l4);
     store.alive_count = 3; // l2, l3, l4
 
-    let all = store.collect(&Scope::All);
+    let all = store.collect(&Selector::Everything);
     assert_eq!(all.len(), 3);
     let ids: Vec<u32> = all.iter().map(|l| l.id).collect();
     assert!(!ids.contains(&1), "dead location should be excluded");
@@ -1823,7 +1840,7 @@ fn push_resolved(store: &mut Store, key: &str, color: [u8; 3], members: &[u32]) 
         sel: selections::Selection {
             key: key.into(),
             color,
-            props: selections::SelectionProps::Manual {
+            selector: selections::Selector::Manual {
                 locations: members.to_vec(),
             },
         },
@@ -2387,7 +2404,7 @@ fn add_tag_selection(store: &mut Store, tag_id: u32, color: [u8; 3]) {
         sel: selections::Selection {
             key: format!("tag:{}", tag_id),
             color,
-            props: selections::SelectionProps::Tag { tag_id },
+            selector: selections::Selector::Tag { tag_id },
         },
         set: RoaringBitmap::new(),
     });
@@ -3363,7 +3380,7 @@ fn overlay_update_back_to_base_clears_patch() {
 /// Brute-force reference: ids of alive locations within radius, sorted.
 fn brute_nearby(store: &Store, lat: f64, lng: f64, r: f64) -> Vec<u32> {
     let mut out: Vec<u32> = store
-        .collect(&Scope::All)
+        .collect(&Selector::Everything)
         .iter()
         .filter(|l| selections::haversine_m(lat, lng, l.lat, l.lng) <= r)
         .map(|l| l.id)
@@ -3591,24 +3608,24 @@ fn pick_spaced_empty_selection() {
 }
 
 #[test]
-fn pick_spaced_scope_overrides_selection() {
+fn pick_spaced_narrowing_overrides_selection() {
     let mut store = spaced_grid_store();
-    // Selection is the whole grid; scope to ids 1..=5 (one row).
-    let scope = selections::resolve_set(
+    // Selection is the whole grid; narrow to ids 1..=5 (one row).
+    let set = selections::resolve(
         &store.loc_view(),
-        &SelectionProps::Manual {
+        &Selector::Manual {
             locations: vec![1, 2, 3, 4, 5],
         },
     );
-    let res = store.pick_spaced(Some(&scope), Some(3), None).unwrap();
+    let res = store.pick_spaced(Some(&set), Some(3), None).unwrap();
     assert_eq!(res.ids.len(), 3);
     for id in &res.ids {
-        assert!(*id <= 5, "id {} outside scope", id);
+        assert!(*id <= 5, "id {} outside the set", id);
     }
 
-    // An empty selection does not starve a scoped pick.
+    // An empty selection does not starve a narrowed pick.
     store.selections.ids = RoaringBitmap::new();
-    let res = store.pick_spaced(Some(&scope), Some(3), None).unwrap();
+    let res = store.pick_spaced(Some(&set), Some(3), None).unwrap();
     assert_eq!(res.ids.len(), 3);
 }
 
@@ -3745,7 +3762,7 @@ fn crash_window_stale_delta_double_applies_baked_locations() {
         "stale delta double-counts ids already in the baked base"
     );
 
-    let all = store.collect(&Scope::All);
+    let all = store.collect(&Selector::Everything);
     assert_eq!(all.len(), 4, "whole-map collect also yields duplicates");
     let ids: Vec<u32> = all.iter().map(|l| l.id).collect();
     assert_eq!(
@@ -3885,7 +3902,7 @@ fn model_snapshot(model: &std::collections::BTreeMap<u32, Location>) -> Vec<Loca
 }
 
 fn store_snapshot(store: &Store) -> Vec<Location> {
-    let mut v = store.collect(&Scope::All);
+    let mut v = store.collect(&Selector::Everything);
     v.sort_by_key(|l| l.id);
     for l in &mut v {
         l.modified_at = None;
@@ -4066,16 +4083,16 @@ fn field_delete_takes_several_keys_at_once() {
 }
 
 #[test]
-fn field_op_honours_the_scope() {
+fn field_op_honours_the_selector() {
     let locs = [
         loc_with_extra(1, r#"{"a":5}"#),
         loc_with_extra(2, r#"{"a":6}"#),
     ];
     let fx = crate::test_util::Fx::base(&locs);
-    let scope: roaring::RoaringBitmap = [2u32].into_iter().collect();
+    let set: roaring::RoaringBitmap = [2u32].into_iter().collect();
     let (out, forget) = plan_field_op(
         &fx.view(),
-        Some(&scope),
+        Some(&set),
         &move_op("a", "b", MergeWinner::From),
     );
     assert_eq!(out.len(), 1);
@@ -4126,7 +4143,7 @@ fn field_op_round_trip_rename_reannounces_the_key() {
 
     let r1 = apply_field_op(
         &mut store,
-        &Scope::All,
+        &Selector::Everything,
         &move_op("a", "b", MergeWinner::From),
         false,
     )
@@ -4138,7 +4155,7 @@ fn field_op_round_trip_rename_reannounces_the_key() {
 
     let r2 = apply_field_op(
         &mut store,
-        &Scope::All,
+        &Selector::Everything,
         &move_op("b", "a", MergeWinner::From),
         false,
     )
@@ -4152,23 +4169,22 @@ fn field_op_round_trip_rename_reannounces_the_key() {
 }
 
 #[test]
-fn collect_honours_each_scope_variant() {
-    let mut store = setup_store_with(&[loc(1, 1.0, 1.0), loc(2, 2.0, 2.0), loc(3, 3.0, 3.0)]);
-    store.selections.ids = [2u32].into_iter().collect();
+fn collect_honours_each_selector_shape() {
+    let store = setup_store_with(&[loc(1, 1.0, 1.0), loc(2, 2.0, 2.0), loc(3, 3.0, 3.0)]);
     let ids = |locs: Vec<Location>| locs.iter().map(|l| l.id).collect::<Vec<u32>>();
 
-    assert_eq!(ids(store.collect(&Scope::All)), vec![1, 2, 3]);
-    assert_eq!(ids(store.collect(&Scope::Selected)), vec![2]);
-    // The ids fast-path keeps request order and skips dead ids.
+    assert_eq!(ids(store.collect(&Selector::Everything)), vec![1, 2, 3]);
+    // The named-ids fast path keeps request order and skips dead ids.
     assert_eq!(
-        ids(store.collect(&Scope::Ids { ids: vec![3, 1, 9] })),
+        ids(store.collect(&Selector::Locations {
+            locations: vec![3, 1, 9],
+            name: None,
+        })),
         vec![3, 1]
     );
     assert_eq!(
-        ids(store.collect(&Scope::Props {
-            props: SelectionProps::Manual {
-                locations: vec![1, 3]
-            }
+        ids(store.collect(&Selector::Manual {
+            locations: vec![1, 3]
         })),
         vec![1, 3]
     );

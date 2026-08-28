@@ -109,7 +109,7 @@ export const commands = {
 	 *  Copy locations into another map, skipping ones the target already has. Tags and extra
 	 *  fields carry over.
 	 */
-	storeCopyLocationsToMap: (targetMapId: string, scope: Scope) => __TAURI_INVOKE<CopyToMapResult>("store_copy_locations_to_map", { targetMapId, scope }),
+	storeCopyLocationsToMap: (targetMapId: string, selector: Selector) => __TAURI_INVOKE<CopyToMapResult>("store_copy_locations_to_map", { targetMapId, selector }),
 	/**  Lightweight status query: location count, version, and dirty flag. */
 	storeGetSummary: () => __TAURI_INVOKE<SummaryResult>("store_get_summary"),
 	/**  Return metadata for every map in the database. */
@@ -159,17 +159,39 @@ export const commands = {
 	 *  the JS side recolors its cell buffers in place (no full rebuild).
 	 */
 	storeSetMarkerColor: (color: [number, number, number]) => __TAURI_INVOKE<null>("store_set_marker_color", { color }),
+	/**  Ids of every location the selector resolves to, ascending. */
+	storeResolve: (selector: Selector) => __TAURI_INVOKE<number[]>("store_resolve", { selector }),
+	/**  How many locations the selector resolves to. Counts rows, never materializes them. */
+	storeCount: (selector: Selector) => __TAURI_INVOKE<number>("store_count", { selector }),
+	/**  `n` ids drawn uniformly at random from the selected set, without replacement. */
+	storeSample: (selector: Selector, n: number) => __TAURI_INVOKE<number[]>("store_sample", { selector, n }),
 	/**
-	 *  Read the scoped location set through one projection. The single read primitive:
-	 *  `scope` says which locations, `select` says what to bring back.
+	 *  An evenly spaced subset: exactly one of `target_count` (thin to N, maximizing
+	 *  spacing) or `min_distance_m` (keep as many as fit at that spacing).
 	 */
-	storeQuery: (scope: Scope, select: Select) => __TAURI_INVOKE<QueryResult>("store_query", { scope, select }),
-	storeApplyFieldOp: (scope: Scope, op: FieldOp, recordUndo: boolean | null) => __TAURI_INVOKE<MutationResult>("store_apply_field_op", { scope, op, recordUndo }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeSpaced: (selector: Selector, targetCount: number | null, minDistanceM: number | null) => __TAURI_INVOKE<SpacedPickResult>("store_spaced", { selector, targetCount, minDistanceM }),
+	/**  Group by a derived key, returning `{ key, ids, bin }` per group. */
+	storeGroupBy: (selector: Selector, field: string, key: KeySpec) => __TAURI_INVOKE<PartitionBucket[]>("store_group_by", { selector, field, key }).then((v) => (v.map(i=>({...i,bin:i.bin==null?i.bin:i.bin.map(i=>i)})) as typeof v)),
+	/**  Group by a derived key, returning counts only -- no member ids on the wire. */
+	storeCountBy: (selector: Selector, field: string, key: KeySpec) => __TAURI_INVOKE<([string, number])[]>("store_count_by", { selector, field, key }),
+	/**  Distinct values of `field` across the selected set, sorted. */
+	storeValues: (selector: Selector, field: string) => __TAURI_INVOKE<string[]>("store_values", { selector, field }),
+	/**  How many rows carry each top-level `extra` key, key-sorted. */
+	storeCoverage: (selector: Selector) => __TAURI_INVOKE<([string, number])[]>("store_coverage", { selector }),
+	/**  Bounding box `[west, south, east, north]`, or `None` when the set is empty. */
+	storeBounds: (selector: Selector) => __TAURI_INVOKE<[number, number, number, number] | null>("store_bounds", { selector }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
+	/**
+	 *  Full rows. The last resort -- prefer a projection. Every row is materialized in
+	 *  webview memory, so an `Everything` call costs O(map). Large answers are staged to a file
+	 *  rather than pushed through the IPC channel.
+	 */
+	storeCollect: (selector: Selector) => __TAURI_INVOKE<Rows>("store_collect", { selector }),
+	storeApplyFieldOp: (selector: Selector, op: FieldOp, recordUndo: boolean | null) => __TAURI_INVOKE<MutationResult>("store_apply_field_op", { selector, op, recordUndo }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
 	 *  `level` selects border precision, falling back to "light" if unavailable.
 	 */
-	storeCountryDistribution: (scope: Scope, level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { scope, level }),
+	storeCountryDistribution: (selector: Selector, level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { selector, level }),
 	/**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
 	storeFindNearby: (lat: number, lng: number, radiusM: number) => __TAURI_INVOKE<Location[]>("store_find_nearby", { lat, lng, radiusM }).then((v) => (v.map(i=>i) as typeof v)),
 	/**
@@ -187,7 +209,7 @@ export const commands = {
 	 *  tag visible at count 0 for the round trip in between, and makes the caller fetch every
 	 *  location into JS just to append an id Rust already has.
 	 */
-	storeCreateTags: (names: string[], scope: Scope) => __TAURI_INVOKE<MutationResult>("store_create_tags", { names, scope }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeCreateTags: (names: string[], selector: Selector) => __TAURI_INVOKE<MutationResult>("store_create_tags", { names, selector }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
 	 *  merges the two tags.
@@ -230,7 +252,7 @@ export const commands = {
 	 *  Thin duplicates among `ids` within `distance` metres, keeping the best location per
 	 *  cluster. Informational locations are never pruned. One undoable edit.
 	 */
-	storePruneDuplicates: (scope: Scope, distance: number, keepTagIds: number[]) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { scope, distance, keepTagIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storePruneDuplicates: (selector: Selector, distance: number, keepTagIds: number[]) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { selector, distance, keepTagIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Full render rebuild: single-pass over all alive locations, writes binary to a temp file.
 	 *  Returns the file path for JS to fetch via `mma-buf://`. Only called on map open or full reset.
@@ -279,12 +301,12 @@ export const commands = {
 	/**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
 	storeExportJson: (opts: ExportOpts) => __TAURI_INVOKE<string>("store_export_json", { opts }),
 	/**  Export locations as a minimal lat/lng CSV file. */
-	storeExportCsv: (scope: Scope) => __TAURI_INVOKE<string>("store_export_csv", { scope }),
+	storeExportCsv: (selector: Selector) => __TAURI_INVOKE<string>("store_export_csv", { selector }),
 	/**
 	 *  Export locations as a GeoJSON FeatureCollection of Point features.
 	 *  Each feature carries its tag names in `properties.tags`.
 	 */
-	storeExportGeojson: (scope: Scope, tagsJson: string) => __TAURI_INVOKE<string>("store_export_geojson", { scope, tagsJson }),
+	storeExportGeojson: (selector: Selector, tagsJson: string) => __TAURI_INVOKE<string>("store_export_geojson", { selector, tagsJson }),
 	/**
 	 *  Copy a temp export file to the destination chosen via the native save dialog,
 	 *  then remove the temp source. `dest_path` comes from the frontend save dialog.
@@ -339,6 +361,11 @@ export const commands = {
 	storeReviewList: (mapId: string, status: string | null) => __TAURI_INVOKE<ReviewSession[]>("store_review_list", { mapId, status }),
 	storeReviewUpdate: (update: ReviewUpdate) => __TAURI_INVOKE<null>("store_review_update", { update }),
 	storeReviewDelete: (id: string) => __TAURI_INVOKE<null>("store_review_delete", { id }),
+	storeListSavedSelections: () => __TAURI_INVOKE<SavedSelectionInfo[]>("store_list_saved_selections"),
+	storeGetSavedSelections: (ids: string[]) => __TAURI_INVOKE<SavedSelection[]>("store_get_saved_selections", { ids }),
+	storeSaveSelection: (name: string, selector: Selector, tagNames: { [key in number]: string }, color: [number, number, number]) => __TAURI_INVOKE<SavedSelection>("store_save_selection", { name, selector, tagNames, color }),
+	storeDeleteSavedSelection: (id: string) => __TAURI_INVOKE<null>("store_delete_saved_selection", { id }),
+	storeImportLegacySavedSelections: (json: string) => __TAURI_INVOKE<number>("store_import_legacy_saved_selections", { json }),
 	remoteMappingGet: (provider: string, mapId: string) => __TAURI_INVOKE<RemoteMappingRow[]>("remote_mapping_get", { provider, mapId }),
 	remoteMappingUpsert: (provider: string, mapId: string, rows: RemoteMappingRow[]) => __TAURI_INVOKE<null>("remote_mapping_upsert", { provider, mapId, rows }),
 	remoteMappingDelete: (provider: string, mapId: string, localIds: number[]) => __TAURI_INVOKE<null>("remote_mapping_delete", { provider, mapId, localIds }),
@@ -398,9 +425,11 @@ export const events = {
 };
 
 /* Constants */
-export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","kind":"identity","comparison":null},{"key":"lng","label":"Longitude","type":"number","kind":"identity","comparison":null},{"key":"heading","label":"Heading","type":"number","kind":"writable","comparison":{"type":"circular","period":360.0}},{"key":"pitch","label":"Pitch","type":"number","kind":"writable","comparison":null},{"key":"zoom","label":"Zoom","type":"number","kind":"writable","comparison":null},{"key":"id","label":"ID","type":"number","kind":"identity","comparison":null},{"key":"createdAt","label":"Created","type":"date","kind":null,"comparison":null},{"key":"modifiedAt","label":"Modified","type":"date","kind":null,"comparison":null},{"key":"tagCount","label":"Tag count","type":"number","kind":"virtual","comparison":null}] as const;
+export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","kind":"identity","comparison":null},{"key":"lng","label":"Longitude","type":"number","kind":"identity","comparison":null},{"key":"heading","label":"Heading","type":"number","kind":"writable","comparison":{"type":"circular","period":360.0}},{"key":"pitch","label":"Pitch","type":"number","kind":"writable","comparison":null},{"key":"zoom","label":"Zoom","type":"number","kind":"writable","comparison":null},{"key":"id","label":"ID","type":"number","kind":"identity","comparison":null},{"key":"createdAt","label":"Created","type":"date","kind":null,"comparison":null},{"key":"modifiedAt","label":"Modified","type":"date","kind":null,"comparison":null},{"key":"panoId","label":"Pano ID","type":"string","kind":null,"comparison":null},{"key":"provider","label":"Provider","type":"string","kind":null,"comparison":null},{"key":"tagCount","label":"Tag count","type":"number","kind":"virtual","comparison":null}] as const;
 
 export const KNOWN_FIELDS = [{"key":"altitude","type":"number","label":"Altitude","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"countryCode","type":"string","label":"Country code","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"cameraType","type":"enum","label":"Camera type","values":["gen1","gen2","gen4","badcam","tripod","trekker"],"labels":[["gen1","Gen 1"],["gen2","Gen 2/3"],["gen4","Gen 4"],["badcam","Bad cam"],["tripod","Tripod"],["trekker","Trekker"]],"circularPeriod":null,"defaultOff":false},{"key":"panoType","type":"enum","label":"Pano type","values":["2","3","10"],"labels":[["2","Official"],["3","Unknown"],["10","User uploaded"]],"circularPeriod":null,"defaultOff":false},{"key":"imageDate","type":"month","label":"Image date","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"datetime","type":"date","label":"Exact date","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"timezone","type":"enum","label":"Timezone","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"drivingDirection","type":"number","label":"Driving direction","values":[],"labels":[],"circularPeriod":360.0,"defaultOff":true},{"key":"uploaderName","type":"string","label":"Uploader","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"coverageDates","type":"array","label":"Coverage dates","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"subdivision","type":"string","label":"Subdivision","values":[],"labels":[],"circularPeriod":null,"defaultOff":true}] as const;
+
+export const PROJECTIONS = [{"id":"value","appliesTo":["string","enum","number","month"],"needsTz":false},{"id":"year","appliesTo":["date","month"],"needsTz":true},{"id":"yearMonth","appliesTo":["date"],"needsTz":true},{"id":"day","appliesTo":["date"],"needsTz":true},{"id":"monthOfYear","appliesTo":["date","month"],"needsTz":true},{"id":"hourOfDay","appliesTo":["date"],"needsTz":true}] as const;
 
 /* Types */
 /**
@@ -609,7 +638,7 @@ export type ExportOpts = {
 	exportUnpanned: boolean,
 	exportExtras: boolean,
 	/**  Which locations to export. */
-	scope: Scope,
+	selector: Selector,
 	mapName: string,
 	/**
 	 *  Serialized `{id: {name, color}}` tag definitions from the store, used to
@@ -670,12 +699,12 @@ export type FieldCount = {
  *  A field-wide rewrite of the `extra` map. Patches are derived *per row*, which is what
  *  separates these from `store_update_locations`' explicit patch list.
  */
-export type FieldOp =
+export type FieldOp = 
 /**
  *  Rename `from` into `to`. Merge is the same operation -- rename is just the case
  *  where nothing holds `to` -- so `winner` decides only where a row holds both.
  */
-{ kind: "move"; from: string; to: string; winner: MergeWinner } |
+{ kind: "move"; from: string; to: string; winner: MergeWinner } | 
 /**  Drop `keys` from every row that has them. */
 { kind: "delete"; keys: string[] };
 
@@ -1175,15 +1204,6 @@ export type PullUpdate = {
 	patch: SyncPatch,
 };
 
-export type QueryResult = { kind: "ids"; ids: number[] } | { kind: "rows"; locations: Location[] } |
-/**
- *  Rows too large for the IPC channel, staged for `mma-buf://`. Same answer as
- *  `Rows`; the transport is chosen by size and callers shouldn't care which arrives.
- */
-{ kind: "rowsFile"; path: string } |
-/**  `Spaced` ids plus the spacing achieved (count mode) or enforced (distance mode). */
-{ kind: "spaced"; ids: number[]; distanceM: number } | { kind: "groups"; groups: PartitionBucket[] } | { kind: "counts"; counts: ([string, number])[] } | { kind: "values"; values: string[] } | { kind: "bounds"; bounds: [number, number, number, number] | null };
-
 /**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
 export type RemoteMappingRow = {
 	localId: number,
@@ -1268,7 +1288,7 @@ export type ReviewCreate = {
 
 /**
  *  A review session as returned to the frontend. `order`/`reviewed` are decoded from the
- *  JSON-text columns; `source_props` is the originating `SelectionProps` (opaque here).
+ *  JSON-text columns; `source_props` is the originating `Selector` (opaque here).
  */
 export type ReviewSession = {
 	id: string,
@@ -1297,18 +1317,34 @@ export type ReviewUpdate = {
 	status: string | null,
 };
 
+/**
+ *  How `store_collect` shipped its answer. A transport choice, not a projection: both
+ *  variants carry the same rows, and callers take whichever arrives.
+ */
+export type Rows = { kind: "inline"; locations: Location[] } | { kind: "file"; path: string };
+
 /**  Result of `store_save_dirty`: bytes written to the delta sidecar (0 = skipped). */
 export type SaveResult = {
 	savedBytes: number,
 };
 
+export type SavedSelection = {
+	selector: Selector,
+	/**  Tag id -> the name it carried when saved. What makes a map-local `Tag` leaf portable. */
+	tagNames: { [key in number]: string },
+} & SavedSelectionInfo;
+
 /**
- *  Which locations to operate on. The one way to name a row set: resolved in Rust
- *  against the maintained selection set, so callers never materialize rows to narrow them.
- *  `All`/`Selected` reference state Rust already holds; `Ids`/`Props` carry their
- *  definition in the call.
+ *  A rule's identity and label, with no tree attached. What the UI lists and holds; the
+ *  body is a separate read because a single `Polygon` leaf can carry a country border's
+ *  coordinates (~1.7MB of JSON at the heavy border detail).
  */
-export type Scope = { kind: "all" } | { kind: "selected" } | { kind: "ids"; ids: number[] } | { kind: "props"; props: SelectionProps };
+export type SavedSelectionInfo = {
+	id: string,
+	name: string,
+	color: [number, number, number],
+	createdAt: string,
+};
 
 /**
  *  Score bounding box: either `"auto"` (computed from locations) or an
@@ -1383,59 +1419,24 @@ export type SelPaint = {
 };
 
 /**
- *  What one scoped traversal accumulates. Every variant is a projection of the same
- *  pass over the location view, so a new question is a variant, not a new command.
- */
-export type Select =
-/**  Ids of everything in scope. */
-{ kind: "ids" } |
-/**  Full rows, dumped to a temp JSON file. The last resort -- prefer a projection. */
-{ kind: "rows" } |
-/**  `n` ids drawn uniformly at random, without replacement. */
-{ kind: "sample"; n: number } |
-/**
- *  An evenly spaced subset: exactly one of `target_count` (thin to N, maximizing
- *  spacing) or `min_distance_m` (keep as many as fit at that spacing).
- */
-{ kind: "spaced"; targetCount: number | null; minDistanceM: number | null } |
-/**  Group by a derived key, returning `{ key, ids, bin }` per group. */
-{ kind: "groupBy"; field: string; key: KeySpec } |
-/**  Group by a derived key, returning counts only. */
-{ kind: "countBy"; field: string; key: KeySpec } |
-/**  Distinct values of a field. */
-{ kind: "values"; field: string } |
-/**  How many rows carry each top-level `extra` key. */
-{ kind: "coverage" } |
-/**  Bounding box `[west, south, east, north]` of the scope. */
-{ kind: "bounds" };
-
-/**
  *  A named, colored selection. `key` is deterministic (e.g., `"tag:5"`, `"polygon:abc"`)
  *  so JS can diff selections across syncs. `color` is the RGB overlay color.
  */
 export type Selection = {
 	key: string,
 	color: [number, number, number],
-	props: SelectionProps,
+	selector: Selector,
 };
 
 /**  Input for `store_sync_selections`: selection criteria + display color. */
 export type SelectionInput = {
 	/**  Deterministic selection key (e.g. `"tag:5"`), used to return per-node counts back keyed. */
 	key: string,
-	props: SelectionProps,
+	selector: Selector,
 	color: [number, number, number],
 	/**  Counted, but kept out of the overlay and the selected set. */
 	ghosted?: boolean,
 };
-
-/**
- *  Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
- *  for JS interop. Simple types (Tag, Untagged, PanoIds, etc.) resolve in O(N) with
- *   parallel batch scans. Composites (Intersection, Union, Invert) recursively resolve
- *  children. Duplicates uses a grid-accelerated spatial scan.
- */
-export type SelectionProps = { type: "Locations"; locations: number[]; name: string | null } | { type: "Everything" } | { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean } | { type: "Tag"; tagId: number } | { type: "Untagged" } | { type: "Unpanned" } | { type: "PanoIds" } | { type: "NotPanoIds" } | { type: "Uncommitted" } | { type: "Manual"; locations: number[] } | { type: "Duplicates"; distance: number } | { type: "ValidationState"; locations: number[]; state: number } | { type: "Reviewed"; locations: number[]; sessionId: string; mode: string } | { type: "Intersection"; selections: Selection[] } | { type: "Union"; selections: Selection[] } | { type: "Invert"; selections: Selection[] } | { type: "Filter"; field: string; op: FilterOp; value: any; value2?: any | null; tzLocal?: boolean } | { type: "TopK"; field: string; k: number; ascending: boolean };
 
 /**
  *  Selection bitmask sync payload. `bitmask` carries the packed per-cell bitmask bytes
@@ -1448,6 +1449,14 @@ export type SelectionSync = {
 	bitmask: number[] | null,
 	selectedCount: number,
 };
+
+/**
+ *  Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
+ *  for JS interop. Simple types (Tag, Untagged, PanoIds, etc.) resolve in O(N) with
+ *   parallel batch scans. Composites (Intersection, Union, Invert) recursively resolve
+ *  children. Duplicates uses a grid-accelerated spatial scan.
+ */
+export type Selector = { type: "Locations"; locations: number[]; name: string | null } | { type: "Everything" } | { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean } | { type: "Tag"; tagId: number } | { type: "Untagged" } | { type: "Unpanned" } | { type: "PanoIds" } | { type: "NotPanoIds" } | { type: "Uncommitted" } | { type: "Manual"; locations: number[] } | { type: "Duplicates"; distance: number } | { type: "ValidationState"; locations: number[]; state: number } | { type: "Reviewed"; locations: number[]; sessionId: string; mode: string } | { type: "Intersection"; selections: Selection[] } | { type: "Union"; selections: Selection[] } | { type: "Invert"; selections: Selection[] } | { type: "Filter"; field: string; op: FilterOp; value: any; value2?: any | null; tzLocal?: boolean } | { type: "TopK"; field: string; k: number; ascending: boolean };
 
 export type SideCounts = {
 	create: number,
@@ -1475,6 +1484,15 @@ export type SidecarProgress = {
 	pluginId: string,
 	downloaded: number,
 	total: number,
+};
+
+/**
+ *  `pick_spaced`'s answer: the picked ids plus the spacing achieved (count mode) or
+ *  enforced (distance mode).
+ */
+export type SpacedPickResult = {
+	ids: number[],
+	distanceM: number,
 };
 
 /**

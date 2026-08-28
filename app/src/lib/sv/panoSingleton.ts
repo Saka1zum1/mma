@@ -89,7 +89,7 @@ export async function loadSeenPano(entry: SeenEntry) {
 
 	const [fetched] =
 		entry.locationId != null
-			? await fetchLocations({ kind: "ids", ids: [entry.locationId] })
+			? await fetchLocations({ type: "Locations", locations: [entry.locationId], name: null })
 			: [];
 	const existing = fetched && fetched.panoId === entry.panoId ? fetched : null;
 
