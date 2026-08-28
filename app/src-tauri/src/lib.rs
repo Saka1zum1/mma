@@ -43,17 +43,18 @@ mod arrow_bridge;
 mod arrow_migrate;
 mod selections;
 mod spatial;
+#[cfg(all(debug_assertions, windows))]
+mod stall_reporter;
 #[macro_use]
 mod storage;
 mod types;
-mod util;
 mod update;
+mod util;
 #[macro_use]
 mod location_store;
-mod field_expr;
-mod procedure;
 mod borders;
 mod export;
+mod field_expr;
 mod gdoc;
 mod geocoder;
 mod geoguessr;
@@ -61,6 +62,7 @@ mod import;
 mod map_meta;
 mod plugins;
 mod presence;
+mod procedure;
 mod remote_api;
 mod remote_mapping;
 mod review;
@@ -77,6 +79,9 @@ mod sync_map_making;
 mod test_util;
 mod vcs;
 mod vcs_delta;
+
+#[cfg(feature = "bench")]
+pub use location_store::bench as bench_api;
 
 #[cfg(feature = "web-serve")]
 pub mod serve;
@@ -1056,6 +1061,9 @@ pub fn run() {
             log::info!("[startup] migrations: {}ms", t.elapsed().as_millis());
             std::thread::spawn(geocoder::warm);
 
+            #[cfg(all(debug_assertions, windows))]
+            stall_reporter::start();
+
             #[cfg(desktop)]
             {
                 app.handle()
@@ -1079,6 +1087,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, event| {
+            #[cfg(all(debug_assertions, windows))]
+            stall_reporter::beat();
             if let tauri::RunEvent::Exit = event {
                 sidecar::kill_all_sidecars();
                 presence::shutdown();

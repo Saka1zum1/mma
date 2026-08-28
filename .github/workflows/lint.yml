@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
@@ -52,6 +52,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # tauri.conf.json bundles procedures/*.js as resources; the build script fails when none exist.
+      - run: npm ci && npm run build:procedures
+        working-directory: app
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
@@ -72,6 +80,14 @@ jobs:
             patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libglib2.0-dev
           pkg-config --exists 'glib-2.0 >= 2.70'
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # tauri.conf.json bundles procedures/*.js as resources; the build script fails when none exist.
+      - run: npm ci && npm run build:procedures
+        working-directory: app
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
@@ -89,12 +105,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
         working-directory: app
       - run: npx vitest run
+        working-directory: app
+      - run: npm run test:procedures
         working-directory: app
 
   generated:
@@ -103,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci

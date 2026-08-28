@@ -76,6 +76,7 @@ import { ColorPicker } from "@/components/primitives/ColorPicker";
 import { t, msg } from "@/lib/i18n";
 import { errText } from "@/lib/util/util";
 import { Trans } from "@/components/primitives/Trans";
+import { collectDiagnostics } from "@/lib/diagnostics";
 
 /** Non-row section content. Hidden during search unless the section title
  *  matched, or `match` (a keyword string for content with no SettingRows)
@@ -1245,9 +1246,23 @@ function AdvancedBody() {
 			<Aux match="log file logs diagnostics">
 				<div style={{ display: "flex", gap: 8 }}>
 					<Button onClick={() => cmd.openLogFile()}>{t("Open log file")}</Button>
+					<CopyDiagnosticsButton />
 				</div>
 			</Aux>
 		</>
+	);
+}
+
+function CopyDiagnosticsButton() {
+	const [copied, setCopied] = useState(false);
+	const copy = async () => {
+		const diagnostics = await collectDiagnostics();
+		await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+	return (
+		<Button onClick={() => void copy()}>{copied ? t("Copied") : t("Copy diagnostics")}</Button>
 	);
 }
 

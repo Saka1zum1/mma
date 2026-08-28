@@ -87,10 +87,12 @@ impl ProcHost for MockProcHost {
             payload_json.to_string(),
         ));
         let trace = self.trace.clone();
-        Ok(Box::new(self.sidecar_lines.clone().into_iter().map(move |l| {
-            trace.lock().unwrap().push("line");
-            Ok(l)
-        })))
+        Ok(Box::new(self.sidecar_lines.clone().into_iter().map(
+            move |l| {
+                trace.lock().unwrap().push("line");
+                Ok(l)
+            },
+        )))
     }
     fn progress(&mut self, units: u32) {
         self.trace.lock().unwrap().push("progress");
@@ -514,7 +516,9 @@ fn a_throwing_line_handler_fails_the_sidecar_call() {
         sidecar_lines: vec!["one".into()],
         ..Default::default()
     };
-    let err = proc.run(&rows(), &mut host).expect_err("handler error surfaces");
+    let err = proc
+        .run(&rows(), &mut host)
+        .expect_err("handler error surfaces");
     assert!(err.0.contains("bad line"), "{}", err.0);
 }
 
@@ -530,7 +534,9 @@ fn a_line_handler_cannot_start_another_sidecar() {
         sidecar_lines: vec!["one".into()],
         ..Default::default()
     };
-    let err = proc.run(&rows(), &mut host).expect_err("nested sidecar is refused");
+    let err = proc
+        .run(&rows(), &mut host)
+        .expect_err("nested sidecar is refused");
     assert!(err.0.contains("line handler"), "{}", err.0);
 }
 

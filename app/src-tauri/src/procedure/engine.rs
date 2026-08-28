@@ -3,9 +3,7 @@
 //! progress. Nothing here knows what any provider actually computes.
 
 use super::{HttpRequestSpec, HttpResponse, PatchEntry, ProcHost, ProcShape, Procedure};
-use crate::location_store::{
-    apply_updates, ExternalMutation, LocationPatch, StoreState, Update,
-};
+use crate::location_store::{apply_updates, ExternalMutation, LocationPatch, StoreState, Update};
 use crate::selections::{ids_within, narrow, Selector};
 use crate::sidecar::SidecarStream;
 use crate::types::{AppError, AppResult, Location};
@@ -1397,7 +1395,8 @@ pub async fn procedure_run(
         };
         let state: tauri::State<'_, StoreState> = tauri::Manager::state(app);
         let deps = EngineDeps::production();
-        let progress: Arc<ProgressSink> = Arc::new(Box::new(crate::emit_typed::<ProcedureProgress>));
+        let progress: Arc<ProgressSink> =
+            Arc::new(Box::new(crate::emit_typed::<ProcedureProgress>));
         let results: Arc<ResultSink> = Arc::new(Box::new(crate::emit_typed::<ProcedureResult>));
         run_all(
             state.inner(),

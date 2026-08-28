@@ -20,6 +20,12 @@ tauri-build = { version = "2.5.6", features = [] }
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "store"
+harness = false
+required-features = ["bench"]
 
 [dependencies]
 anyhow = "1"
@@ -80,6 +86,9 @@ compact_str = { version = "0.9", features = ["serde"] }
 rquickjs = { version = "0.9", features = ["parallel"] }
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_Threading"] }
+
 [profile.dev]
 opt-level = 1
 
@@ -92,6 +101,8 @@ codegen-units = 1
 strip = true
 
 [features]
+# Exposes `app_lib::bench_api` (fixtures + store-internals access) for benches/store.rs.
+bench = ["tauri/test"]
 e2e = ["tauri-plugin-webdriver"]
 web-serve = ["dep:tauri-plugin-webserve"]
 

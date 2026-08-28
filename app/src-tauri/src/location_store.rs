@@ -4474,3 +4474,7 @@ pub fn store_near_any(
 #[cfg(test)]
 #[path = "location_store.test.rs"]
 mod tests;
+
+#[cfg(feature = "bench")]
+#[path = "location_store.bench.rs"]
+pub mod bench;

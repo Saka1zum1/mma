@@ -4150,10 +4150,17 @@ fn field_op_round_trip_rename_reannounces_the_key() {
         false,
     )
     .unwrap();
-    assert!(r1.mutation.delta.updated.is_empty(), "extra-only: no render delta");
+    assert!(
+        r1.mutation.delta.updated.is_empty(),
+        "extra-only: no render delta"
+    );
     assert!(!store.known_field_keys.contains("a"), "a erased, forgotten");
     assert!(store.known_field_keys.contains("b"), "b auto-registered");
-    assert!(!r1.mutation.status.known_field_keys.contains(&"a".to_string()));
+    assert!(!r1
+        .mutation
+        .status
+        .known_field_keys
+        .contains(&"a".to_string()));
 
     let r2 = apply_field_op(
         &mut store,
@@ -4165,7 +4172,9 @@ fn field_op_round_trip_rename_reannounces_the_key() {
     assert!(store.known_field_keys.contains("a"));
     assert!(!store.known_field_keys.contains("b"));
     assert!(
-        r2.mutation.new_field_defs.is_some_and(|d| d.contains_key("a")),
+        r2.mutation
+            .new_field_defs
+            .is_some_and(|d| d.contains_key("a")),
         "reappearing key is re-announced"
     );
 }
