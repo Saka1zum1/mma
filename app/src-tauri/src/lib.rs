@@ -1015,6 +1015,10 @@ pub fn run() {
             let _ = APP_HANDLE.set(app.handle().clone());
             storage::init_paths(app.handle())?;
             storage::run_migrations()?;
+            let swept = storage::sweep_orphaned_tmp();
+            if swept > 0 {
+                log::info!("[startup] swept {swept} orphaned .tmp files");
+            }
             log::info!("[startup] migrations: {}ms", t.elapsed().as_millis());
 
             #[cfg(desktop)]

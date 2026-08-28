@@ -384,7 +384,7 @@ fn truncation_sweep_mmap_reader_never_panics() {
         );
         let read_result = result.unwrap();
         if len < 10 {
-            // Pinned separately in mmap_sub_10_byte_file_reads_as_empty_batch.
+            // Pinned separately in mmap_sub_10_byte_file_errs_as_truncated.
             continue;
         }
         assert!(
@@ -395,19 +395,17 @@ fn truncation_sweep_mmap_reader_never_panics() {
     }
 }
 
-// Files under 10 bytes short-circuit to Ok(empty batch) in read_arrow_ipc_mmap
-// (storage.rs ~line 608) rather than erroring. A base file truncated below 10
-// bytes by a crash therefore reads as a silently-empty map, not a detected
-// corruption. See SUSPECTED BUGS in the delivering task's report.
 #[test]
-fn mmap_sub_10_byte_file_reads_as_empty_batch() {
+fn mmap_sub_10_byte_file_errs_as_truncated() {
     let dir = TempDir::new("mma_test_crash_mmap_sub10");
     let path = dir.join("sub10.arrow");
 
     for len in [0usize, 1, 5, 9] {
         std::fs::write(&path, vec![0xABu8; len]).unwrap();
-        let (loaded, _handle) = read_arrow_ipc_mmap(&path).unwrap();
-        assert_eq!(loaded.num_rows(), 0, "len {len} should read as empty batch");
+        assert!(
+            read_arrow_ipc_mmap(&path).is_err(),
+            "len {len} must Err, not read as an empty map"
+        );
     }
 }
 
@@ -452,15 +450,11 @@ fn garbage_bytes_heap_and_mmap_no_panic() {
     }
 }
 
-// Attempts to hit the footer.schema().unwrap() panic (storage.rs ~line 620) by
-// corrupting bytes strictly inside the footer flatbuffer region, leaving the
-// trailer (footer length + magic) and the record-batch body untouched. If
-// root_as_footer still parses the corrupted bytes as a valid footer with no
-// schema field, footer.schema().unwrap() panics.
+// Corrupts bytes strictly inside the footer flatbuffer region, leaving the
+// trailer (footer length + magic) and the record-batch body untouched. The
+// reader must Err or succeed, never panic (fb_to_schema panics on out-of-range
+// enum values, so the conversion is unwind-guarded in read_arrow_ipc_mmap).
 #[test]
-#[ignore = "confirmed panic: fb_to_schema panics on an out-of-range FloatingPoint precision \
-enum value decoded from a corrupted footer (arrow-ipc convert.rs:356), reached via \
-read_arrow_ipc_mmap's unchecked footer parse. See SUSPECTED BUGS."]
 fn footer_region_corruption_does_not_panic() {
     let batch = make_test_batch(&[1, 2, 3]);
     let dir = TempDir::new("mma_test_crash_footer");
@@ -492,6 +486,28 @@ fn footer_region_corruption_does_not_panic() {
         !any_panicked,
         "read_arrow_ipc_mmap panicked on a corrupted footer byte; see SUSPECTED BUGS"
     );
+}
+
+#[test]
+fn atomic_write_leaves_no_tmp_on_success() {
+    let dir = TempDir::new("mma_test_atomic_no_tmp");
+    let path = dir.join("dest.arrow");
+    write_arrow_ipc(&path, &make_test_batch(&[1])).unwrap();
+    assert!(path.exists());
+    assert!(!dir.join("dest.tmp").exists());
+}
+
+#[test]
+fn sweep_tmp_under_removes_only_tmp_recursively() {
+    let dir = TempDir::new("mma_test_sweep_tmp");
+    std::fs::create_dir_all(dir.join("commits").join("m1")).unwrap();
+    std::fs::write(dir.join("a.tmp"), b"x").unwrap();
+    std::fs::write(dir.join("commits").join("m1").join("b.tmp"), b"x").unwrap();
+    std::fs::write(dir.join("keep.arrow"), b"x").unwrap();
+    assert_eq!(sweep_tmp_under(&dir), 2);
+    assert!(!dir.join("a.tmp").exists());
+    assert!(!dir.join("commits").join("m1").join("b.tmp").exists());
+    assert!(dir.join("keep.arrow").exists());
 }
 
 #[test]

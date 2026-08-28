@@ -18,6 +18,7 @@ import type {
 import { emit as emitEvent, useEventValue } from "@/lib/events";
 import { log, fireAndForget } from "@/lib/util/log";
 import { hexToRgb } from "@/lib/util/color";
+import { toast } from "@/lib/util/toast";
 import { trace } from "@/lib/util/debug";
 import { nowUnix } from "@/lib/util/format";
 import { mmaBufUrl } from "@/lib/util/util";
@@ -228,6 +229,7 @@ export async function initStore() {
 	setCachedMapList(await cmd.storeListMaps());
 	emitEvent("store:changed");
 	listen("map-list-changed", () => reloadMapList());
+	listen<string>("store-warning", (event) => toast(event.payload, 8000));
 }
 
 /** Cross-module stopwatch for map-open latency. */

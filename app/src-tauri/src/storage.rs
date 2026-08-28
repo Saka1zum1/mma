@@ -661,8 +661,39 @@ pub(crate) fn atomic_write(
     let tmp = path.with_extension("tmp");
     let file = std::fs::File::create(&tmp)?;
     write_fn(file)?;
+    // write_fn consumed the handle; reopen to fsync so the rename cannot become
+    // durable before the temporary file's data.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&tmp)?
+        .sync_all()?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+/// Delete orphaned `.tmp` files left under the Arrow root by interrupted
+/// [`atomic_write`]s. Returns the number removed. Called once at startup.
+pub(crate) fn sweep_orphaned_tmp() -> usize {
+    arrow_dir().map(|d| sweep_tmp_under(&d)).unwrap_or(0)
+}
+
+/// Recursively delete `*.tmp` files under `dir`; returns the number removed.
+pub(crate) fn sweep_tmp_under(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut n = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            n += sweep_tmp_under(&path);
+        } else if path.extension().is_some_and(|extension| extension == "tmp")
+            && std::fs::remove_file(&path).is_ok()
+        {
+            n += 1;
+        }
+    }
+    n
 }
 
 /// Read an Arrow IPC file into a single RecordBatch.
@@ -715,18 +746,26 @@ pub(crate) fn read_arrow_ipc_mmap(
 
     let buf_len = buffer.len();
     if buf_len < 10 {
-        let schema = Arc::new(arrow_bridge::location_schema());
-        return Ok((
-            arrow_array::RecordBatch::new_empty(schema),
-            MmapHandle { _buffer: buffer },
-        ));
+        return Err(AppError(format!(
+            "Arrow file {} is truncated ({buf_len} bytes)",
+            path.display()
+        )));
     }
 
     let trailer: [u8; 10] = buffer[buf_len - 10..].try_into().unwrap();
     let footer_len = read_footer_length(trailer)?;
     let footer = root_as_footer(&buffer[buf_len - 10 - footer_len..buf_len - 10])
         .map_err(|e| AppError(e.to_string()))?;
-    let schema = Arc::new(fb_to_schema(footer.schema().unwrap()));
+    let fb_schema = footer.schema().ok_or_else(|| {
+        AppError(format!(
+            "Arrow file {}: footer has no schema",
+            path.display()
+        ))
+    })?;
+    // fb_to_schema panics rather than returning an error for some corrupt enum values.
+    let schema = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fb_to_schema(fb_schema)))
+        .map_err(|_| AppError(format!("Arrow file {}: corrupted footer", path.display())))?;
+    let schema = Arc::new(schema);
     let mut decoder = FileDecoder::new(schema.clone(), footer.version());
 
     // Read dictionaries if present

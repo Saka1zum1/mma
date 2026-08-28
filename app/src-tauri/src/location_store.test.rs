@@ -3632,6 +3632,32 @@ fn delta_bytes_roundtrip_exact() {
     assert_eq!(parsed.patches, store.overlay.patches, "patches preserved exactly");
 }
 
+#[test]
+fn load_delta_sets_aside_unreadable_file_as_corrupt() {
+    let dir = crate::test_util::TempDir::new("mma_test_load_delta_corrupt");
+    let path = dir.join("m1_delta.arrow");
+    std::fs::write(&path, b"definitely not msgpack").unwrap();
+
+    assert!(load_delta(&path).is_none());
+    assert!(!path.exists(), "unreadable delta must not stay in place");
+    assert!(
+        dir.join("m1_delta.corrupt").exists(),
+        "unreadable delta must be kept for recovery"
+    );
+}
+
+#[test]
+fn load_delta_reads_valid_and_missing_files() {
+    let dir = crate::test_util::TempDir::new("mma_test_load_delta_ok");
+    let path = dir.join("m1_delta.arrow");
+    assert!(load_delta(&path).is_none(), "missing file is no delta");
+
+    let bytes = rmp_serde::to_vec(&Overlay::default()).unwrap();
+    std::fs::write(&path, bytes).unwrap();
+    assert!(load_delta(&path).is_some());
+    assert!(path.exists(), "valid delta stays in place");
+}
+
 // -----------------------------------------------------------------------
 // Crash-window double-apply: save_arrow renames the base file, then
 // deletes the delta sidecar non-atomically. A crash between the two leaves a

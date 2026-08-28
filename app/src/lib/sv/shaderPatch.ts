@@ -111,6 +111,7 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 	let currentDefineKey = "default";
 	let needsRefresh = false;
 	const compiledPrograms: Record<string, WebGLProgram> = {};
+	const programKeys = new Map<WebGLProgram, string>();
 	const uniformLocCache: Record<string, Record<string, WebGLUniformLocation | null>> = {};
 	const savedUniforms: Record<string, { func: Function; args: any[] }> = {};
 	let currentProgram: any = null;
@@ -154,15 +155,11 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 		});
 	};
 
-	const compileDefines = (defines: string[]) => {
-		if (defines.length === 0) {
-			currentDefineKey = "default";
-			return;
-		}
+	const ensureCompiled = (defines: string[]): string => {
+		if (defines.length === 0) return "default";
 		defines.sort();
 		const key = defines.join("_");
-		currentDefineKey = key;
-		if (key in compiledPrograms) return;
+		if (key in compiledPrograms) return key;
 
 		const header = "//Custom shader\n" + defines.map((d) => `#define ${d}`).join("\n") + "\n";
 		const vs = gl.createShader(gl.VERTEX_SHADER)!;
@@ -175,9 +172,21 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 		origAttachShader(prog, vs);
 		origAttachShader(prog, fs);
 		gl.linkProgram(prog);
+		// Complete linking now so a toggle frame only swaps programs.
+		gl.getProgramParameter(prog, gl.LINK_STATUS);
 		compiledPrograms[key] = prog;
+		programKeys.set(prog, key);
 		uniformLocCache[key] = {};
+		return key;
 	};
+
+	const compileDefines = (defines: string[]) => {
+		currentDefineKey = ensureCompiled(defines);
+	};
+
+	// A fresh pano canvas (including LocalGuessr fullscreen) must not compile
+	// the car-toggle variant in the middle of its first toggle frame.
+	ensureCompiled(["NO_CAR"]);
 
 	/**
 	 * Re-apply all known uniform state (Google's own default-program uniforms,
@@ -221,21 +230,9 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 	 * Eagerly perform the shader swap the moment defines/uniforms change,
 	 * instead of waiting for Google to call useProgram again on its own.
 	 *
-	 * Root cause this closes: previously, `compileDefines` flipped
-	 * `currentDefineKey` synchronously on message receipt, but the actual GL
-	 * program swap (and `activeProgram` update) only happened lazily inside the
-	 * patched `useProgram`, whenever Google next called it. Between those two
-	 * moments, the patched uniform* setters below compare
-	 * `compiledPrograms[currentDefineKey] === activeProgram` — which is FALSE
-	 * during that gap — so they silently DROP every uniform Google tries to set
-	 * (see the `else return;` branch). If Google issues per-tile uniform calls
-	 * (e.g. the `b` UV-offset uniform) during that gap, those tiles render with
-	 * stale/missing uniforms — a corrupted frame. Normally the gap is closed
-	 * within a frame or two because hovering over link/arrow UI forces Google
-	 * to redraw repeatedly. Baidu panos with no links/neighbors have no such would-be
-	 * UI to trigger extra redraws, so nothing naturally closes the gap — the
-	 * corrupted frame just sticks, and toggling car visibility from an
-	 * already-loaded, link-less Baidu pano visibly breaks rendering.
+	 * This keeps the intended define and bound program in sync immediately.
+	 * The uniform wrappers below additionally translate writes against the
+	 * program GL actually has bound, covering any remaining mid-frame handoff.
 	 *
 	 * Calling this synchronously on every "update-material" message removes
 	 * the gap entirely: `currentDefineKey` and `activeProgram` always change
@@ -362,20 +359,18 @@ function installShaderHooks(gl: WebGLRenderingContext, canvas: HTMLCanvasElement
 			if (prog?.defaultProgram) {
 				savedUniforms[loc.uniformVariableName] = { func: orig, args };
 
-				if (currentDefineKey !== "default") {
-					const replacement = compiledPrograms[currentDefineKey];
-					if (replacement === activeProgram) {
-						uniformLocCache[currentDefineKey] ??= {};
-						uniformLocCache[currentDefineKey][loc.uniformVariableName] ||= origGetUniformLocation(
-							replacement,
-							loc.uniformVariableName,
-						);
-						args[0] = uniformLocCache[currentDefineKey][loc.uniformVariableName];
-					} else {
-						return;
-					}
-				} else if (prog !== activeProgram) {
-					return;
+				// Translate against the program GL actually has bound, not the
+				// define key a pending toggle intends to use.
+				const boundKey = activeProgram === prog ? "default" : programKeys.get(activeProgram);
+				if (boundKey === undefined) return;
+				if (boundKey !== "default") {
+					const boundProgram = compiledPrograms[boundKey];
+					uniformLocCache[boundKey] ??= {};
+					uniformLocCache[boundKey][loc.uniformVariableName] ||= origGetUniformLocation(
+						boundProgram,
+						loc.uniformVariableName,
+					);
+					args[0] = uniformLocCache[boundKey][loc.uniformVariableName];
 				}
 			}
 
