@@ -175,6 +175,8 @@ const DEFAULTS = {
 	geocodeProvider: "local" as GeocodeProvider,
 	nominatimApiKey: "",
 	panToImported: true,
+	/** With no location open, Enter shows a center crosshair and opens the location under it. */
+	enterOpensCenter: true,
 	/** Min half-extent (degrees) a single pasted/imported point is padded to before fitBounds */
 	pastePadding: 0.003 as number,
 	followActiveInReview: true,
@@ -229,6 +231,8 @@ const DEFAULTS = {
 		"bulk-enrich",
 	] as PinnedEntry[],
 	hasSeenWelcome: false,
+	/** Off = Commit applies immediately with no message prompt. */
+	askCommitMessage: true,
 };
 export type AppSettings = typeof DEFAULTS;
 

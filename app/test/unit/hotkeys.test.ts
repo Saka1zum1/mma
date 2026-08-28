@@ -5,6 +5,7 @@ import {
 	matchesKey,
 	buildComboString,
 	firesInEditable,
+	isActivationElement,
 	blockBrowserAccelerators,
 } from "@/lib/hooks/useHotkey";
 import {
@@ -319,5 +320,27 @@ describe("blockBrowserAccelerators", () => {
 		expect(press({ key: "R", ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
 		expect(press({ key: "p", ctrlKey: true }).defaultPrevented).toBe(true);
 		expect(press({ key: "j" }).defaultPrevented).toBe(false);
+	});
+});
+
+describe("isActivationElement", () => {
+	function el(html: string): HTMLElement {
+		const host = document.createElement("div");
+		host.innerHTML = html;
+		return host.firstElementChild as HTMLElement;
+	}
+
+	it("claims Enter for controls that activate on it", () => {
+		expect(isActivationElement(el("<button>x</button>"))).toBe(true);
+		expect(isActivationElement(el('<a href="#">x</a>'))).toBe(true);
+		expect(isActivationElement(el('<div role="button">x</div>'))).toBe(true);
+		expect(isActivationElement(el('<div role="menuitem">x</div>'))).toBe(true);
+	});
+
+	it("leaves Enter alone everywhere else", () => {
+		expect(isActivationElement(el("<div>x</div>"))).toBe(false);
+		expect(isActivationElement(el("<a>x</a>"))).toBe(false);
+		expect(isActivationElement(el('<input type="text" />'))).toBe(false);
+		expect(isActivationElement(null)).toBe(false);
 	});
 });

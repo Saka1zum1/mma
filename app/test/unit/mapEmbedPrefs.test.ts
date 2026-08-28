@@ -1,21 +1,35 @@
 import { describe, it, expect } from "vitest";
-import { toggledOpacity } from "@/store/mapEmbedPrefs";
+import { toggledLayer, svLayerOpacity, markerLayerOpacity } from "@/store/mapEmbedPrefs";
+import { DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 
-describe("toggledOpacity", () => {
-	it("hides a visible layer", () => {
-		expect(toggledOpacity(0.5, 0.5, "previous")).toBe(0);
-		expect(toggledOpacity(1, 1, "full")).toBe(0);
+describe("toggledLayer", () => {
+	it("hides a visible layer without changing opacity", () => {
+		expect(toggledLayer(0.5, true, "previous")).toEqual({ opacity: 0.5, visible: false });
+		expect(toggledLayer(1, true, "full")).toEqual({ opacity: 1, visible: false });
 	});
 
-	it("restores the last non-zero value", () => {
-		expect(toggledOpacity(0, 0.35, "previous")).toBe(0.35);
+	it("restores the stored opacity", () => {
+		expect(toggledLayer(0.35, false, "previous")).toEqual({ opacity: 0.35, visible: true });
 	});
 
 	it("restores full opacity when the setting says so", () => {
-		expect(toggledOpacity(0, 0.35, "full")).toBe(1);
+		expect(toggledLayer(0.35, false, "full")).toEqual({ opacity: 1, visible: true });
 	});
 
 	it("falls back to full opacity with no remembered value", () => {
-		expect(toggledOpacity(0, 0, "previous")).toBe(1);
+		expect(toggledLayer(0, false, "previous")).toEqual({ opacity: 1, visible: true });
+	});
+});
+
+describe("layer opacity", () => {
+	it("gates the stored opacity by visibility", () => {
+		expect(svLayerOpacity({ ...DEFAULT_PREFS, svOpacity: 0.4, svVisible: true })).toBe(0.4);
+		expect(svLayerOpacity({ ...DEFAULT_PREFS, svOpacity: 0.4, svVisible: false })).toBe(0);
+		expect(markerLayerOpacity({ ...DEFAULT_PREFS, markerOpacity: 0.8, markerVisible: true })).toBe(
+			0.8,
+		);
+		expect(markerLayerOpacity({ ...DEFAULT_PREFS, markerOpacity: 0.8, markerVisible: false })).toBe(
+			0,
+		);
 	});
 });

@@ -9,7 +9,7 @@ import type {
 import { getProviderForField } from "@/lib/data/fieldDefs";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
-import { fetchLocations, createTags, partition, updateLocations } from "@/store/useMapStore";
+import { fetchLocations, createTags, partition, updateLocations, resolveIds } from "@/store/useMapStore";
 import { useSelectorPick } from "@/store/selectorPick";
 import { SelectorPicker } from "@/components/primitives/SelectorPicker";
 import { useSetting } from "@/store/settings";
@@ -25,6 +25,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 	const [projectionId, setProjectionId] = useState("");
 	const [width, setWidth] = useState("");
 	const [tzLocal, setTzLocal] = useState(tzDefault);
+	const [tagMissing, setTagMissing] = useState(false);
 	const scopeCtl = useSelectorPick();
 	const fields = useExtraFieldKeys();
 
@@ -45,6 +46,9 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 		setTzLocal(tzDefault);
 	};
 
+	const fieldLabel = fields.find((f) => f.key === field)?.label ?? field;
+	const missingName = t("No {field} data", { field: t(fieldLabel) });
+
 	const handleApply = async () => {
 		if (!field || !widthValid) return;
 
@@ -55,17 +59,26 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 				: { kind: "datePart", part: projectionId as DatePart, tzLocal: tzLocal && hasTzData };
 
 		const groups = await partition(field, key, scopeCtl.selector);
-		if (groups.length === 0) return;
+
+		// Rust drops rows whose key does not resolve, so whatever the groups miss is exactly
+		// the set with no value for this field.
+		let missing: number[] = [];
+		if (tagMissing) {
+			const grouped = new Set(groups.flatMap((g) => g.ids));
+			missing = (await resolveIds(scopeCtl.selector)).filter((id) => !grouped.has(id));
+		}
+		if (groups.length === 0 && missing.length === 0) return;
 
 		const transform = getProviderForField(field)?.transform;
 		const locs = await fetchLocations({
 			type: "Locations",
-			locations: groups.flatMap((g) => g.ids),
+			locations: [...groups.flatMap((g) => g.ids), ...missing],
 			name: null,
 		});
 		const locById = new Map(locs.map((l) => [l.id, l]));
 
 		const tagNames = new Set<string>();
+		if (missing.length > 0) tagNames.add(missingName);
 		for (const g of groups) {
 			if (transform) {
 				for (const id of g.ids) {
@@ -93,6 +106,14 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 					updates.push({ id, patch: { tags: [...l.tags, tagId] } });
 			}
 		}
+		const missingTagId = tagIdByName.get(missingName.toLowerCase());
+		if (missingTagId != null) {
+			for (const id of missing) {
+				const l = locById.get(id);
+				if (l && !l.tags.includes(missingTagId))
+					updates.push({ id, patch: { tags: [...l.tags, missingTagId] } });
+			}
+		}
 		if (updates.length > 0) await updateLocations(updates);
 		onOpenChange(false);
 	};
@@ -107,6 +128,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 					setProjectionId("");
 					setWidth("");
 					setTzLocal(tzDefault);
+					setTagMissing(false);
 				}
 			}}
 		>
@@ -174,6 +196,15 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 							/>
 
 							{t("Location timezone")}
+						</label>
+					)}
+					{field && (
+						<label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+							<Checkbox
+								checked={tagMissing}
+								onChange={(e) => setTagMissing(e.target.checked)}
+							/>
+							{t("Tag locations with no value as “{name}”", { name: missingName })}
 						</label>
 					)}
 					<div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>

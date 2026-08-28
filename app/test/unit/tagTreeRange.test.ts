@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
 	rangeToggleTagIds,
 	reorderSiblingsFlatOrder,
+	stepSiblingFlatOrder,
 	collectDragBlock,
 	canDropInto,
 	moveIntoFolder,
@@ -866,5 +867,38 @@ describe("declared empty folders (virtualTags)", () => {
 		expect(move!.tagRenames).toEqual([]);
 		expect(move!.virtualTags).toEqual({ "F/E": {} });
 		expect(move!.orderedIds).toEqual([1]);
+	});
+});
+
+describe("stepSiblingFlatOrder", () => {
+	const tree: N[] = [leaf("a", 1), leaf("b", 2), leaf("c", 3)];
+
+	it("moves a node up one slot", () => {
+		expect(stepSiblingFlatOrder(tree, "c", "", -1)).toEqual([1, 3, 2]);
+	});
+
+	it("moves a node down one slot", () => {
+		expect(stepSiblingFlatOrder(tree, "a", "", 1)).toEqual([2, 1, 3]);
+	});
+
+	it("stops at either end", () => {
+		expect(stepSiblingFlatOrder(tree, "a", "", -1)).toBeNull();
+		expect(stepSiblingFlatOrder(tree, "c", "", 1)).toBeNull();
+	});
+
+	it("steps within a parent and leaves other subtrees alone", () => {
+		const nested: N[] = [
+			{
+				fullPath: "p",
+				tag: null,
+				children: [leaf("p/x", 10), leaf("p/y", 11), leaf("p/z", 12)],
+			},
+			leaf("q", 20),
+		];
+		expect(stepSiblingFlatOrder(nested, "p/z", "p", -1)).toEqual([10, 12, 11, 20]);
+	});
+
+	it("returns null for a path that isn't under the given parent", () => {
+		expect(stepSiblingFlatOrder(tree, "nope", "", 1)).toBeNull();
 	});
 });

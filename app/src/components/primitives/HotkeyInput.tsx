@@ -18,7 +18,7 @@ export function HotkeyInput({
 			readOnly
 			value={recording ? "" : value ? formatBinding(value) : ""}
 			placeholder={recording ? t("Press a key...") : t("None")}
-			onFocus={() => setRecording(true)}
+			onClick={() => setRecording(true)}
 			onBlur={() => setRecording(false)}
 			onKeyDown={(e) => {
 				if (!recording) return;

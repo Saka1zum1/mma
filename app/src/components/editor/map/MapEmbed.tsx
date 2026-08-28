@@ -44,8 +44,9 @@ import { MapTypeDropdown, MapSettingsDropdown } from "@/components/editor/map/Ma
 import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import {
 	MAP_EMBED_PREFS,
-	DEFAULT_PREFS,
-	toggledOpacity,
+	toggledLayer,
+	svLayerOpacity,
+	markerLayerOpacity,
 	type MapEmbedPrefs,
 } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
@@ -77,19 +78,22 @@ export function MapEmbed({
 		<K extends keyof MapEmbedPrefs>(k: K) =>
 		(v: MapEmbedPrefs[K]) =>
 			setPrefs((p) => ({ ...p, [k]: v }));
-	const { svOpacity, mapType, markerStyle, markerOpacity, showSearchRadiusCursor, showPreviews } =
-		prefs;
-	// Where each layer's opacity sat while visible, so the toggle hotkeys can restore it.
-	const lastOpacityRef = useRef({
-		svOpacity: DEFAULT_PREFS.svOpacity,
-		markerOpacity: DEFAULT_PREFS.markerOpacity,
-	});
-	if (svOpacity > 0) lastOpacityRef.current.svOpacity = svOpacity;
-	if (markerOpacity > 0) lastOpacityRef.current.markerOpacity = markerOpacity;
-	const toggleOpacity = (key: "svOpacity" | "markerOpacity") =>
+	const { mapType, markerStyle, showSearchRadiusCursor, showPreviews } = prefs;
+	const toggleLayer = (layer: "sv" | "marker") =>
+		setPrefs((p) => {
+			const next = toggledLayer(
+				p[`${layer}Opacity`],
+				p[`${layer}Visible`],
+				getSettings().opacityToggleMode,
+			);
+			return { ...p, [`${layer}Opacity`]: next.opacity, [`${layer}Visible`]: next.visible };
+		});
+	// The slider drives the effective opacity: dragging to 0 hides the layer without losing its value.
+	const setLayerOpacity = (layer: "sv" | "marker", v: number) =>
 		setPrefs((p) => ({
 			...p,
-			[key]: toggledOpacity(p[key], lastOpacityRef.current[key], getSettings().opacityToggleMode),
+			[`${layer}Visible`]: v > 0,
+			...(v > 0 ? { [`${layer}Opacity`]: v } : {}),
 		}));
 	const coordDisplayRef = useRef<HTMLSpanElement>(null);
 	// Boolean, not the raw zoom: re-renders only when crossing the blobby threshold.
@@ -102,7 +106,7 @@ export function MapEmbed({
 		date?: string;
 	} | null>(null);
 	const previewAbortRef = useRef<AbortController | null>(null);
-	const [opacityTarget, setOpacityTarget] = useState<"sv" | "markers">("sv");
+	const [opacityTarget, setOpacityTarget] = useState<"sv" | "marker">("sv");
 	const freehandPathRef = useRef<number[][] | null>(null);
 	const polygonVerticesRef = useRef<number[][] | null>(null);
 	const contextTriggerRef = useRef<HTMLSpanElement>(null);
@@ -223,8 +227,8 @@ export function MapEmbed({
 		if (!host) return;
 		const blobbySingleType =
 			prefs.svBlobby && belowBlobbyZoom && prefs.svCoverageType !== "default";
-		host.setSvOpacity(blobbySingleType ? svOpacity * 0.6 : svOpacity);
-	}, [host, svOpacity, prefs.svBlobby, belowBlobbyZoom, prefs.svCoverageType]);
+		host.setSvOpacity(blobbySingleType ? svLayerOpacity(prefs) * 0.6 : svLayerOpacity(prefs));
+	}, [host, prefs, belowBlobbyZoom]);
 
 	// The editor map drives the single scene engine (delta/selection/active subscriptions)
 	useEffect(() => startSceneEngine(), []);
@@ -342,8 +346,8 @@ export function MapEmbed({
 	useHotkey(useBinding("toggleSelectOnly"), () => {
 		setPrefs((p) => ({ ...p, selectOnly: !p.selectOnly }));
 	});
-	useHotkey(useBinding("toggleSvOpacity"), () => toggleOpacity("svOpacity"));
-	useHotkey(useBinding("toggleMarkerOpacity"), () => toggleOpacity("markerOpacity"));
+	useHotkey(useBinding("toggleSvOpacity"), () => toggleLayer("sv"));
+	useHotkey(useBinding("toggleMarkerOpacity"), () => toggleLayer("marker"));
 	useHotkey(useBinding("mapZoomBounds"), () => {
 		void fetchBounds({ type: "Everything" }).then((bounds) => {
 			if (!hostRef.current || !bounds) return;
@@ -426,7 +430,7 @@ export function MapEmbed({
 						>
 							<button
 								className="opacity-target-toggle"
-								onClick={() => setOpacityTarget((t) => (t === "sv" ? "markers" : "sv"))}
+								onClick={() => setOpacityTarget((cur) => (cur === "sv" ? "marker" : "sv"))}
 							>
 								<Icon
 									path={opacityTarget === "sv" ? mdiGoogleStreetView : mdiMapMarker}
@@ -439,9 +443,9 @@ export function MapEmbed({
 							min={0}
 							max={1}
 							step={0.05}
-							value={opacityTarget === "sv" ? svOpacity : markerOpacity}
+							value={opacityTarget === "sv" ? svLayerOpacity(prefs) : markerLayerOpacity(prefs)}
 							onChange={(e) =>
-								pref(opacityTarget === "sv" ? "svOpacity" : "markerOpacity")(Number(e.target.value))
+								setLayerOpacity(opacityTarget, Number(e.target.value))
 							}
 							title={
 								opacityTarget === "sv" ? t("Street View layer opacity") : t("Marker layer opacity")

@@ -3023,6 +3023,10 @@ input.date-picker__trigger:focus {
 	border-color: var(--accent);
 	outline: none;
 }
+input.date-picker__trigger.is-invalid,
+input.date-picker__trigger.is-invalid:focus {
+	border-color: var(--destructive);
+}
 .color-picker__swatch {
 	width: 28px;
 	height: 28px;
@@ -3991,10 +3995,16 @@ body:not(.mm-tag-dragging) .tag-tree__edit:hover {
 }
 .copy-to-map-modal__row {
 	display: grid;
-	grid-template-columns: 1fr 9rem auto;
+	grid-template-columns: 1fr auto 9rem auto;
 	grid-gap: 0.25rem;
 	align-items: center;
 	padding: 0.25rem 0;
+}
+.copy-to-map-modal__scope {
+	color: var(--text-3);
+}
+.copy-to-map-modal__scope.is-global {
+	color: var(--accent);
 }
 .copy-to-map-modal__name {
 	overflow: hidden;

@@ -585,6 +585,7 @@ const FolderEntry = React.memo(function FolderEntry({
 	onFolderAction,
 	onLabelClick,
 	fields,
+	searching,
 }: {
 	name: string;
 	maps: MapMeta[];
@@ -594,11 +595,15 @@ const FolderEntry = React.memo(function FolderEntry({
 	onFolderAction: (action: FolderAction) => void;
 	onLabelClick: (label: string) => void;
 	fields: MapListField[];
+	searching: boolean;
 }) {
 	const triggerId = `folder:${name}-trig`;
 	const [collapsed, setCollapsed] = useLocalStorage<string[]>("collapsedFolders", []);
-	const open = !collapsed.includes(name);
+	// A search reaches into closed folders: the entries have to be mounted for the filter to
+	// find them, and a folder with no match is hidden wholesale below.
+	const open = searching || !collapsed.includes(name);
 	const setOpen = (v: boolean) => {
+		if (searching) return;
 		setCollapsed((prev) => (v ? prev.filter((f) => f !== name) : [...prev, name]));
 	};
 	const count = useMemo(() => maps.reduce((a, m) => a + m.locationCount, 0), [maps]);
@@ -1301,6 +1306,7 @@ export function MapList() {
 							onFolderAction={handleFolderAction}
 							onLabelClick={toggleLabelFilter}
 							fields={mapListFields}
+							searching={hasFilter}
 						/>
 					))}
 					{rootMaps.map((m) => (

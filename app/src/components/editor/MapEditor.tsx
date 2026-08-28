@@ -30,10 +30,10 @@ import { CommandPalette } from "@/components/editor/CommandPalette";
 import { MapRenameForm } from "@/components/editor/MapRenameForm";
 import { EnrichmentButton } from "@/components/editor/map/EnrichmentDialog";
 import { Dialog, DialogTrigger, DialogContent } from "@/components/primitives/Dialog";
-import { useHotkey, useCommandHotkeys, isEditableElement } from "@/lib/hooks/useHotkey";
+import { useHotkey, useCommandHotkeys, isActivationElement, isEditableElement } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
-import { useSettings } from "@/store/settings";
+import { useSettings, getSettings } from "@/store/settings";
 import {
 	parseMapsUrl,
 	parseCoordinates,
@@ -61,7 +61,7 @@ import { log } from "@/lib/util/log";
 import { useT } from "@/lib/i18n";
 import { useCountrySelect } from "@/lib/map/useCountrySelect";
 import { useDeletePolygon } from "@/lib/map/useDeletePolygon";
-import { useMapKeyBindings } from "@/lib/map/mapKeyBindings";
+import { useMapKeyBindings, mergedKeyBindings } from "@/lib/map/mapKeyBindings";
 import { range, clamp } from "@/types/util";
 
 /** Mounted under PanoViewerProvider so pano/map fullscreen shortcuts stay live. */
@@ -285,7 +285,13 @@ export function MapEditor() {
 	usePasteHandler();
 	const fileDragging = useFileDrop();
 	useCommandHotkeys();
-	useMapKeyBindings(() => getMapState().map?.meta.settings.keyBindings ?? []);
+	useMapKeyBindings(() =>
+		mergedKeyBindings(
+			getMapState().map?.meta.settings.keyBindings ?? [],
+			getSettings().globalCopyBindings,
+			getMapState().mapId,
+		),
+	);
 	useCountrySelect();
 	useDeletePolygon();
 	useHotkey(
@@ -311,6 +317,8 @@ export function MapEditor() {
 		function onKeyDown(e: KeyboardEvent) {
 			if (e.key !== "Enter" || e.repeat) return;
 			if (isEditableElement(e.target)) return;
+			if (isActivationElement(document.activeElement)) return;
+			if (!getSettings().enterOpensCenter) return;
 			if (getMapState().activeLocation) return;
 			showMapCursorRef.current = true;
 			setShowMapCursor(true);

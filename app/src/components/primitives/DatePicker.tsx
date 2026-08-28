@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useRef } from "react";
+﻿import { useState, useCallback, useMemo, useRef } from "react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import * as Popover from "@radix-ui/react-popover";
@@ -283,6 +283,21 @@ export function DatePicker({
 		if (parsed != null) onChange(parsed);
 	}, [draft, mode, anyYear, anyTime, showTime, wallClock, onChange]);
 
+	// Typed text that parses to nothing: flagged while you type, so blurring away from it
+	// is a visible discard rather than a silent one.
+	const draftInvalid = useMemo(() => {
+		if (draft == null || draft.trim() === "") return false;
+		return (
+			parseTypedDate(draft, {
+				mode,
+				anyYear,
+				anyTime,
+				withTime: showTime && !anyYear,
+				wallClock,
+			}) == null
+		);
+	}, [draft, mode, anyYear, anyTime, showTime, wallClock]);
+
 	// Seed the draft with the exact display text: blur then repaints identical pixels,
 	// so clicking a calendar day never flashes the old value in another format.
 	// parseTypedDate accepts the display forms ("Jun 3, 2019 14:30", "Jun 2019", ...).
@@ -313,7 +328,8 @@ export function DatePicker({
 				<input
 					ref={inputRef}
 					type="text"
-					className="date-picker__trigger"
+					className={`date-picker__trigger${draftInvalid ? " is-invalid" : ""}`}
+					aria-invalid={draftInvalid || undefined}
 					size={inputSize}
 					value={draft ?? (value ? formatDisplay(value, mode, anyYear, anyTime, wallClock) : "")}
 					placeholder={draft != null ? formatHint(mode, anyYear, anyTime) : t("Select...")}

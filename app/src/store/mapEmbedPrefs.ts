@@ -4,6 +4,7 @@ import { persisted } from "@/lib/hooks/useLocalStorage";
 
 export interface MapEmbedPrefs {
 	svOpacity: number;
+	svVisible: boolean;
 	svColor: SvColor;
 	showLabels: boolean;
 	showTerrain: boolean;
@@ -22,6 +23,7 @@ export interface MapEmbedPrefs {
 	mapType: MapTypeKey;
 	markerStyle: MarkerStyle;
 	markerOpacity: number;
+	markerVisible: boolean;
 	markerSize: number;
 	showSvCoverage: boolean;
 	showPerfectScoreCircle: boolean;
@@ -32,6 +34,7 @@ export interface MapEmbedPrefs {
 
 export const DEFAULT_PREFS: MapEmbedPrefs = {
 	svOpacity: 0.5,
+	svVisible: true,
 	svColor: "#1098ad",
 	showLabels: true,
 	showTerrain: false,
@@ -50,6 +53,7 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 	mapType: "map",
 	markerStyle: "pin",
 	markerOpacity: 1,
+	markerVisible: true,
 	markerSize: 1,
 	showSvCoverage: true,
 	showPerfectScoreCircle: true,
@@ -60,13 +64,23 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 
 export const MAP_EMBED_PREFS = persisted("mapEmbedPrefs", DEFAULT_PREFS);
 
-/** Next value for a layer opacity toggle: a visible layer goes off, a hidden one comes
- *  back at `lastNonZero` (or full, per the setting). */
-export function toggledOpacity(
-	current: number,
-	lastNonZero: number,
+/** What the SV tile layer renders at: its opacity, gated by its visibility. */
+export function svLayerOpacity(prefs: MapEmbedPrefs): number {
+	return prefs.svVisible ? prefs.svOpacity : 0;
+}
+
+/** What the marker layers render at: their opacity, gated by their visibility. */
+export function markerLayerOpacity(prefs: MapEmbedPrefs): number {
+	return prefs.markerVisible ? prefs.markerOpacity : 0;
+}
+
+/** Next state for a layer visibility toggle. Hiding keeps the opacity value, so showing
+ *  restores it -- or full opacity, per the setting. */
+export function toggledLayer(
+	opacity: number,
+	visible: boolean,
 	mode: OpacityToggleMode,
-): number {
-	if (current > 0) return 0;
-	return mode === "full" || lastNonZero <= 0 ? 1 : lastNonZero;
+): { opacity: number; visible: boolean } {
+	if (visible) return { opacity, visible: false };
+	return { opacity: mode === "full" || opacity <= 0 ? 1 : opacity, visible: true };
 }

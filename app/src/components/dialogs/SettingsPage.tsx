@@ -562,6 +562,13 @@ function MapBody() {
 				setting="followActiveInReview"
 				label={t("Center map on active location during review")}
 			/>
+			<SettingRow
+				setting="enterOpensCenter"
+				label={t("Enter opens location at map center")}
+				description={t(
+					"With no location open, Enter opens the location at the center of the map.",
+				)}
+			/>
 
 			<GroupHeading>{t("Markers")}</GroupHeading>
 			<SettingRow
@@ -870,6 +877,9 @@ function EditingBody() {
 					)}
 				</>
 			)}
+
+			<GroupHeading>{t("Version control")}</GroupHeading>
+			<SettingRow setting="askCommitMessage" label={t("Ask for a commit message")} />
 
 			<GroupHeading>{t("Geocoding")}</GroupHeading>
 			<SettingRow

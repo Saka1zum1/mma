@@ -160,6 +160,17 @@ export function isEditableElement(el: EventTarget | null): boolean {
 	);
 }
 
+/** True when the element treats Enter/Space as its own activation (buttons, links, and
+ *  anything given a button role). Editor-level Enter handlers must yield to it. */
+export function isActivationElement(el: EventTarget | null): boolean {
+	if (!(el instanceof HTMLElement)) return false;
+	const tag = el.tagName.toLowerCase();
+	if (tag === "button" || tag === "summary") return true;
+	if (tag === "a" && el.hasAttribute("href")) return true;
+	const role = (el.getAttribute("role") ?? "").toLowerCase();
+	return role === "button" || role === "link" || role === "menuitem" || role === "tab";
+}
+
 export function useHotkey(
 	hotkey: string,
 	callback: (e: KeyboardEvent) => void,

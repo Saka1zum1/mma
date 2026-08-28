@@ -9,6 +9,7 @@ import {
 	withTagKeyBinding,
 	getMapCopyBindingKey,
 	withMapCopyBinding,
+	mergedKeyBindings,
 } from "@/lib/map/mapKeyBindings";
 import { isEditableElement } from "@/lib/hooks/useHotkey";
 import type { MapKeyBinding } from "@/bindings.gen";
@@ -134,6 +135,35 @@ describe("map copy binding helpers", () => {
 		const both = withMapCopyBinding(withTagKeyBinding([], 1, "a"), "map-b", "b");
 		expect(getTagBindingKey(both, 1)).toBe("a");
 		expect(getMapCopyBindingKey(both, "map-b")).toBe("b");
+	});
+});
+
+describe("mergedKeyBindings", () => {
+	const mapCopy = (mapId: string, key: string): MapKeyBinding => ({
+		key,
+		action: { type: "copyToMap", mapId },
+	});
+
+	it("appends global copy bindings after the map's own", () => {
+		const merged = mergedKeyBindings(
+			[mapCopy("a", "1")],
+			[mapCopy("b", "2")],
+			"current",
+		);
+		expect(merged.map((b) => (b.action.type === "copyToMap" ? b.action.mapId : ""))).toEqual([
+			"a",
+			"b",
+		]);
+	});
+
+	it("drops a global copy targeting the open map", () => {
+		const merged = mergedKeyBindings([], [mapCopy("current", "g")], "current");
+		expect(merged).toEqual([]);
+	});
+
+	it("leaves map bindings alone when nothing global applies", () => {
+		const local = [mapCopy("a", "1")];
+		expect(mergedKeyBindings(local, [mapCopy("current", "g")], "current")).toBe(local);
 	});
 });
 

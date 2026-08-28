@@ -40,6 +40,19 @@ export const MIGRATIONS: StoredMigration[] = [
 		},
 	},
 	{
+		since: "0.9.2",
+		key: "mapEmbedPrefs",
+		describe: "hidden layers were svOpacity/markerOpacity 0 -> sv/markerVisible false",
+		apply: (stored) => {
+			for (const layer of ["sv", "marker"]) {
+				if (stored[`${layer}Opacity`] === 0) {
+					stored[`${layer}Opacity`] = layer === "sv" ? 0.5 : 1;
+					stored[`${layer}Visible`] = false;
+				}
+			}
+		},
+	},
+	{
 		since: "0.9.3",
 		key: "appSettings",
 		describe: "savedSelections moved to SQLite; drop from localStorage",

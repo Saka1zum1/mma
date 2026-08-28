@@ -3475,6 +3475,7 @@ declare function mmaBufUrl(path: string): string;
 
 export interface MapEmbedPrefs {
     svOpacity: number;
+    svVisible: boolean;
     svColor: SvColor;
     showLabels: boolean;
     showTerrain: boolean;
@@ -3493,6 +3494,7 @@ export interface MapEmbedPrefs {
     mapType: MapTypeKey;
     markerStyle: MarkerStyle;
     markerOpacity: number;
+    markerVisible: boolean;
     markerSize: number;
     showSvCoverage: boolean;
     showPerfectScoreCircle: boolean;

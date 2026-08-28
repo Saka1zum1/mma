@@ -83,6 +83,20 @@ export function withMapCopyBinding(
 	);
 }
 
+/** Per-map bindings plus the global copy bindings. Map bindings come first (the matcher
+ *  takes the first hit, so a map's own binding on the same key shadows a global one), and
+ *  a global copy targeting the open map itself is dropped. */
+export function mergedKeyBindings(
+	mapBindings: MapKeyBinding[],
+	globalBindings: MapKeyBinding[],
+	currentMapId: string | null | undefined,
+): MapKeyBinding[] {
+	const applicable = globalBindings.filter(
+		(b) => !(b.action.type === "copyToMap" && b.action.mapId === currentMapId),
+	);
+	return applicable.length === 0 ? mapBindings : [...mapBindings, ...applicable];
+}
+
 export function matchMapKeyBinding(
 	e: KeyboardEvent,
 	bindings: MapKeyBinding[],

@@ -24,7 +24,7 @@ import type { YandexBasemapLanguage } from "@/lib/sv/yandex/endpoints";
 import { normalizeYandexBasemapLanguage } from "@/lib/sv/yandex/endpoints";
 import { getAltBasemapSettings } from "@/lib/sv/providers/settings";
 import { getProviderLineLayers } from "@/lib/sv/providers/coverageLayers";
-import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
+import { svLayerOpacity, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 
 export interface MapStackResult {
 	mapType: google.maps.ImageMapType;
@@ -90,10 +90,11 @@ export function createSvTileSource(prefs: MapEmbedPrefs): SvTileSource {
 	const blobbyAt = (z: number) => blobby !== null && z <= BLOBBY_ZOOM_THRESHOLD;
 	const url = (x: number, y: number, z: number) =>
 		buildTileUrl(blobbyAt(z) ? blobby! : line, x, y, z);
-	const dimmed = prefs.svCoverageType !== "default" ? prefs.svOpacity * 0.6 : prefs.svOpacity;
+	const opacity = svLayerOpacity(prefs);
+	const dimmed = prefs.svCoverageType !== "default" ? opacity * 0.6 : opacity;
 	return {
 		url,
-		opacity: (z) => (blobbyAt(z) ? dimmed : prefs.svOpacity),
+		opacity: (z) => (blobbyAt(z) ? dimmed : opacity),
 		key: url(0, 0, 0) + url(0, 0, BLOBBY_ZOOM_THRESHOLD + 1),
 	};
 }
@@ -280,7 +281,7 @@ export function buildMapStack(prefs: MapEmbedPrefs, opts: BuildOpts): MapStackRe
 		maxZoom: 20,
 	});
 	const blobbySingleType = (opts.useBlobby ?? false) && !(showOfficial && showUnofficial);
-	svLayer.setOpacity(blobbySingleType ? prefs.svOpacity * 0.6 : prefs.svOpacity);
+	svLayer.setOpacity(blobbySingleType ? svLayerOpacity(prefs) * 0.6 : svLayerOpacity(prefs));
 	if (!opts.skipCoverage) {
 		if (prefs.showSvCoverage !== false) layers.push(svLayer);
 		layers.push(...getProviderLineLayers());
