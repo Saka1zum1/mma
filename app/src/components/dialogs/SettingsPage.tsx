@@ -978,7 +978,7 @@ function UpdateBlock() {
 					</span>
 					<button
 						className="icon-button settings-updates__check"
-						onClick={checkForUpdate}
+						onClick={() => void checkForUpdate(true)}
 						disabled={checking || update.phase === "downloading"}
 						title={t("Check for updates")}
 						aria-label={t("Check for updates")}
@@ -1096,6 +1096,11 @@ function ApplicationBody() {
 
 			<GroupHeading>{t("Updates")}</GroupHeading>
 			<UpdateBlock />
+			<SettingRow
+				setting="prereleaseUpdates"
+				label={t("Include pre-release updates")}
+				description={t("Offer GitHub pre-releases (rc, beta) in the in-app updater.")}
+			/>
 
 			<GroupHeading>{t("Data")}</GroupHeading>
 			<DataBody />

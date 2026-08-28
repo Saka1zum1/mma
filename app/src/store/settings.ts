@@ -233,6 +233,8 @@ const DEFAULTS = {
 	hasSeenWelcome: false,
 	/** Off = Commit applies immediately with no message prompt. */
 	askCommitMessage: true,
+	/** Offer GitHub pre-releases in the in-app updater. */
+	prereleaseUpdates: false,
 };
 export type AppSettings = typeof DEFAULTS;
 

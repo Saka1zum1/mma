@@ -187,6 +187,41 @@ pub async fn vali_download(
     result
 }
 
+/// Download exactly the countries `vali_data_status` reports as behind. No-op when nothing
+/// is stale, so the caller can fire it without checking first.
+#[tauri::command]
+#[specta::specta]
+pub async fn vali_download_stale(state: tauri::State<'_, ValiState>) -> AppResult<()> {
+    let token = CancelToken::new();
+    *state.cancel.lock().unwrap() = Some(token.clone());
+    let result = tokio::task::spawn_blocking(move || {
+        let root = data_root()?;
+        let stale = vali_generate::download::stale_countries(
+            &root,
+            std::time::Duration::from_secs(30),
+            Some(&token),
+        )
+        .map_err(|e| AppError(format!("{e:#}")))?;
+        let codes: Vec<String> = stale.into_iter().map(|c| c.country_code).collect();
+        if codes.is_empty() {
+            return Ok(());
+        }
+        vali_generate::download::download_codes(
+            &root,
+            &codes,
+            false,
+            false,
+            Some(&emit_progress),
+            Some(&token),
+        )
+        .map_err(|e| AppError(format!("{e:#}")))
+    })
+    .await
+    .map_err(|e| AppError(format!("vali download task failed: {e}")))?;
+    *state.cancel.lock().unwrap() = None;
+    result
+}
+
 /// Cancel an in-flight vali generate or download.
 #[tauri::command]
 #[specta::specta]
@@ -201,6 +236,52 @@ pub fn vali_cancel(state: tauri::State<'_, ValiState>) {
 #[specta::specta]
 pub fn vali_subdivisions(country: String) -> AppResult<String> {
     vali_generate::export::subdivisions_export(&country, false).map_err(AppError)
+}
+
+/// How far behind one country's downloaded coverage data is.
+#[derive(serde::Serialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ValiCountryStatus {
+    pub country_code: String,
+    pub files: u32,
+    pub bytes: f64,
+}
+
+/// Countries whose downloaded coverage data is older than the remote copy. Object metadata
+/// only -- nothing is fetched. Errors while offline, which callers should read as "unknown"
+/// rather than "up to date".
+#[tauri::command]
+#[specta::specta]
+pub async fn vali_data_status() -> AppResult<Vec<ValiCountryStatus>> {
+    tokio::task::spawn_blocking(move || {
+        let stale = vali_generate::download::stale_countries(
+            &data_root()?,
+            std::time::Duration::from_secs(30),
+            None,
+        )
+        .map_err(|e| AppError(format!("{e:#}")))?;
+        Ok(stale
+            .into_iter()
+            .map(|c| ValiCountryStatus {
+                country_code: c.country_code,
+                files: c.files as u32,
+                bytes: c.bytes as f64,
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| AppError(format!("vali status task failed: {e}")))?
+}
+
+/// Country codes Vali has coverage data for, i.e. the set `vali download` iterates
+/// when no country is given. Display names are the caller's job.
+#[tauri::command]
+#[specta::specta]
+pub fn vali_countries() -> Vec<String> {
+    vali_generate::names::country_names()
+        .iter()
+        .map(|(code, _)| code.to_string())
+        .collect()
 }
 
 #[cfg(test)]

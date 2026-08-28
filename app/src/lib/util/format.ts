@@ -35,6 +35,34 @@ export const dateTimeFmt = localeFormat<Date | number>(
 	(l) => new Intl.DateTimeFormat(l, { dateStyle: "medium", timeStyle: "short" }),
 );
 
+const regionFmt = localeFormat<string>((l) => {
+	const names = new Intl.DisplayNames([l], { type: "region" });
+	return {
+		format: (code) => {
+			try {
+				return names.of(code) ?? code;
+			} catch {
+				return code;
+			}
+		},
+	};
+});
+
+/** Localised country name for an ISO 3166-1 alpha-2 code; the code itself if unknown. */
+export function countryName(code: string): string {
+	return regionFmt.format(code);
+}
+
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function fileTimestamp(date: Date = new Date()): string {
+	return date.toISOString().slice(0, 19).replace(/[T:]/g, "-");
+}
+
 // Fixed to UTC so the month index can't slip a boundary in a negative-offset zone.
 const monthFmt = localeFormat<Date | number>(
 	(l) => new Intl.DateTimeFormat(l, { month: "short", timeZone: "UTC" }),

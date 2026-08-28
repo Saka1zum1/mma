@@ -427,10 +427,36 @@ export const commands = {
 	valiGenerate: (definition: string) => __TAURI_INVOKE<ValiLocation[]>("vali_generate", { definition }).then((v) => (v.map(i=>({...i,zoom:i.zoom==null?i.zoom:i.zoom,pitch:i.pitch==null?i.pitch:i.pitch})) as typeof v)),
 	/**  Download Vali coverage data. `country` = code/continent alias/None for all. */
 	valiDownload: (country: string | null, full: boolean, updates: boolean) => __TAURI_INVOKE<null>("vali_download", { country, full, updates }),
+	/**
+	 *  Download exactly the countries `vali_data_status` reports as behind. No-op when nothing
+	 *  is stale, so the caller can fire it without checking first.
+	 */
+	valiDownloadStale: () => __TAURI_INVOKE<null>("vali_download_stale"),
 	/**  Cancel an in-flight vali generate or download. */
 	valiCancel: () => __TAURI_INVOKE<void>("vali_cancel"),
 	/**  Subdivision weights for a country (JSON text, same shape as `vali subdivisions`). */
 	valiSubdivisions: (country: string) => __TAURI_INVOKE<string>("vali_subdivisions", { country }),
+	/**
+	 *  Countries whose downloaded coverage data is older than the remote copy. Object metadata
+	 *  only -- nothing is fetched. Errors while offline, which callers should read as "unknown"
+	 *  rather than "up to date".
+	 */
+	valiDataStatus: () => __TAURI_INVOKE<ValiCountryStatus[]>("vali_data_status").then((v) => (v.map(i=>i) as typeof v)),
+	/**
+	 *  Country codes Vali has coverage data for, i.e. the set `vali download` iterates
+	 *  when no country is given. Display names are the caller's job.
+	 */
+	valiCountries: () => __TAURI_INVOKE<string[]>("vali_countries"),
+	/**
+	 *  Look for an update at `endpoint` (a release's `latest.json`). `None` means the announced
+	 *  version is not newer than the running one, which is the plugin's own comparison.
+	 */
+	updateCheck: (endpoint: string) => __TAURI_INVOKE<UpdateAvailable | null>("update_check", { endpoint }),
+	/**
+	 *  Download and install whatever the last [`update_check`] found. The installer replaces the
+	 *  running app, so nothing after this is guaranteed to run -- the caller saves its state first.
+	 */
+	updateInstall: () => __TAURI_INVOKE<null>("update_install"),
 };
 
 /** Events */
@@ -444,6 +470,7 @@ export const events = {
 	sidecarLine: makeEvent<SidecarLine>("sidecar-line"),
 	sidecarLog: makeEvent<SidecarLog>("sidecar-log"),
 	storeExternalMutation: makeEvent<ExternalMutation>("store-external-mutation", (v) => ({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}), (v) => ({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})),
+	updateProgress: makeEvent<UpdateProgress>("update-progress"),
 	valiProgress: makeEvent<ValiProgress>("vali-progress"),
 };
 
@@ -1755,6 +1782,25 @@ export type TagPatch = {
 export type Update<P> = {
 	id: number,
 	patch: P,
+};
+
+export type UpdateAvailable = {
+	version: string,
+	currentVersion: string,
+	notes: string | null,
+};
+
+/**  Download progress, emitted per chunk. `total` is absent when the server sends no length. */
+export type UpdateProgress = {
+	downloaded: number,
+	total: number | null,
+};
+
+/**  How far behind one country's downloaded coverage data is. */
+export type ValiCountryStatus = {
+	countryCode: string,
+	files: number,
+	bytes: number,
 };
 
 

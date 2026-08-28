@@ -47,6 +47,11 @@ export function cmpVersion(a: string, b: string): number {
 	return 0;
 }
 
+/** True for a semver pre-release (`0.10.0-rc.1`), as opposed to a stable dotted version. */
+export function isPrereleaseVersion(version: string): boolean {
+	return /[.-](alpha|beta|rc|pre|dev)/i.test(version) || version.includes("-");
+}
+
 /** True when running under the web-serve bridge (a plain browser, no native shell). */
 export function isWeb(): boolean {
 	return Boolean(

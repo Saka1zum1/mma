@@ -47,6 +47,7 @@ mod spatial;
 mod storage;
 mod types;
 mod util;
+mod update;
 #[macro_use]
 mod location_store;
 mod field_expr;
@@ -781,8 +782,13 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // --- Plugins (vali) ---
             plugins::vali_generate,
             plugins::vali_download,
+            plugins::vali_download_stale,
             plugins::vali_cancel,
             plugins::vali_subdivisions,
+            plugins::vali_data_status,
+            plugins::vali_countries,
+            update::update_check,
+            update::update_install,
         ])
         .events(tauri_specta::collect_events![
             sidecar::SidecarProgress,
@@ -795,6 +801,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             plugins::ValiProgress,
             procedure::engine::ProcedureProgress,
             procedure::engine::ProcedureResult,
+            update::UpdateProgress,
         ])
 }
 
