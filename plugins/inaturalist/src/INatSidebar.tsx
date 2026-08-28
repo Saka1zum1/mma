@@ -63,7 +63,7 @@ function removeCSS() {
 	}
 }
 
-const { Sidebar, Section } = MMA.ui;
+const { Sidebar, Section, TextInput, Button } = MMA.ui;
 
 export function INatSidebar({ onClose }: { onClose: () => void }) {
 	const [query, setQuery] = useState("");
@@ -114,8 +114,7 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 		<Sidebar title={MMA.t("iNaturalist")} onBack={onClose}>
 			<Section title={MMA.t("Observations")}>
 				<div className="inat-sidebar__search">
-					<input
-						className="input"
+					<TextInput
 						placeholder={MMA.t("Search species...")}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
@@ -125,9 +124,9 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 						}}
 						style={{ flex: 1 }}
 					/>
-					<button className="button" onClick={doSearch} disabled={searching || !query.trim()}>
+					<Button onClick={doSearch} disabled={searching || !query.trim()}>
 						{searching ? "..." : MMA.t("Search")}
-					</button>
+					</Button>
 				</div>
 
 				{results.length > 0 && (
@@ -157,15 +156,15 @@ export function INatSidebar({ onClose }: { onClose: () => void }) {
 				)}
 
 				<div className="inat-sidebar__actions">
-					<button className="button" onClick={toggleVisibility} disabled={!taxon}>
+					<Button onClick={toggleVisibility} disabled={!taxon}>
 						{vis ? MMA.t("Hide") : MMA.t("Show")}
-					</button>
-					<button className="button button--primary" onClick={handleImport} disabled={count === 0}>
+					</Button>
+					<Button variant="primary" onClick={handleImport} disabled={count === 0}>
 						{count > 0 ? MMA.t("Import ({n})", { n: count }) : MMA.t("Import")}
-					</button>
-					<button className="button button--danger" onClick={clearData} disabled={!taxon}>
+					</Button>
+					<Button variant="destructive" onClick={clearData} disabled={!taxon}>
 						{MMA.t("Clear")}
-					</button>
+					</Button>
 				</div>
 
 				{!taxon && (

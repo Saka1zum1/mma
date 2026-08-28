@@ -33,56 +33,32 @@ function Label({ children, info }: { children: ReactNode; info: string }) {
 	);
 }
 
-const { Section, Field, SegmentedControl } = MMA.ui;
+const { Section, Field, SegmentedControl, Button } = MMA.ui;
 
 export function TaxonomySorter() {
 	const storage = MMA.storage("inaturalist");
 	const [lang, setLang] = useState<string>(() => storage.get("taxo_lang", "en"));
 	const [deep, setDeep] = useState(true);
 	const [commonNames, setCommonNames] = useState(true);
-	const [running, setRunning] = useState(false);
-	const [progress, setProgress] = useState<SortProgress | null>(null);
-	const [result, setResult] = useState<SortResult | null>(null);
-	const [abortCtl, setAbortCtl] = useState<AbortController | null>(null);
 
 	const handleLangChange = useCallback((code: string) => {
 		setLang(code);
 		storage.set("taxo_lang", code);
 	}, [storage]);
 
-	const handleSort = useCallback(async () => {
-		setRunning(true);
-		setResult(null);
-		setProgress(null);
-		const ctl = new AbortController();
-		setAbortCtl(ctl);
-		try {
-			const opts: SortOptions = { lang, deep, commonNames };
-			const r = await sortTagsByTaxonomy(opts, setProgress, ctl.signal);
-			setResult(r);
-			if (r.sorted > 0) {
-				MMA.toast(MMA.t(
-					{ one: "Sorted {n} tag into taxonomy folders", other: "Sorted {n} tags into taxonomy folders" },
-					{ n: r.sorted },
-				));
-			} else {
-				MMA.toast(MMA.t("No tags needed sorting"));
-			}
-		} catch (e) {
-			if (e instanceof DOMException && e.name === "AbortError") {
-				MMA.toast(MMA.t("Taxonomy sort cancelled"));
-			} else {
-				MMA.toast(MMA.t("Taxonomy sort failed"));
-			}
+	const job = MMA.useJob<SortResult, SortProgress>(async ({ signal, report }) => {
+		const opts: SortOptions = { lang, deep, commonNames };
+		const r = await sortTagsByTaxonomy(opts, report, signal);
+		if (r.sorted > 0) {
+			MMA.toast(MMA.t(
+				{ one: "Sorted {n} tag into taxonomy folders", other: "Sorted {n} tags into taxonomy folders" },
+				{ n: r.sorted },
+			));
+		} else {
+			MMA.toast(MMA.t("No tags needed sorting"));
 		}
-		setRunning(false);
-		setAbortCtl(null);
-		setProgress(null);
-	}, [lang, deep, commonNames]);
-
-	const handleCancel = useCallback(() => {
-		abortCtl?.abort();
-	}, [abortCtl]);
+		return r;
+	});
 
 	const handleClearCache = useCallback(() => {
 		clearTaxonomyCache();
@@ -133,37 +109,40 @@ export function TaxonomySorter() {
 			</Field>
 
 			<div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-				{running ? (
-					<button className="button button--danger" onClick={handleCancel} style={{ flex: 1 }}>
+				{job.running ? (
+					<Button variant="destructive" onClick={job.cancel} style={{ flex: 1 }}>
 						{MMA.t("Cancel")}
-					</button>
+					</Button>
 				) : (
-					<button className="button button--primary" onClick={handleSort} style={{ flex: 1 }}>
+					<Button variant="primary" onClick={job.run} style={{ flex: 1 }}>
 						{MMA.t("Sort Tags")}
-					</button>
+					</Button>
 				)}
-				<button
-					className="button"
+				<Button
 					onClick={handleClearCache}
-					disabled={running}
+					disabled={job.running}
 					title={MMA.t("Clear cached API results")}
 				>
 					{MMA.t("Clear Cache")}
-				</button>
+				</Button>
 			</div>
 
-			{progress && (
+			{job.progress && (
 				<div style={{ fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }}>
-					{progress.phase} ({progress.current}/{progress.total})
-					{progress.detail && <div style={{ opacity: 0.7 }}>{progress.detail}</div>}
+					{job.progress.phase} ({job.progress.current}/{job.progress.total})
+					{job.progress.detail && <div style={{ opacity: 0.7 }}>{job.progress.detail}</div>}
 				</div>
 			)}
 
-			{result && !running && (
+			{job.error && (
+				<div style={{ fontSize: 11, color: "#e55", marginTop: 6 }}>{job.error}</div>
+			)}
+
+			{job.result && !job.running && (
 				<div style={{ fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }}>
 					{MMA.t("{sorted} sorted, {skipped} skipped", {
-						sorted: result.sorted,
-						skipped: result.skipped,
+						sorted: job.result.sorted,
+						skipped: job.result.skipped,
 					})}
 				</div>
 			)}

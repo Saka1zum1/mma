@@ -1,8 +1,8 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState } from "react";
 import type { Location } from "mma-plugin-types";
 import { embed, searchText } from "./sidecar";
 
-const { Sidebar, Field } = MMA.ui;
+const { Sidebar, Field, TextInput, Button } = MMA.ui;
 
 const CSS = `
 .vision-sidebar__body { padding: 8px 12px; display: flex; flex-direction: column; gap: 10px; }
@@ -20,93 +20,61 @@ function panoIdToLocId(locs: Location[], panoId: string): number | null {
 export function VisionSidebar({ onClose }: { onClose: () => void }) {
 	const [query, setQuery] = useState("");
 	const [threshold, setThreshold] = useState(0.01);
-	const [running, setRunning] = useState(false);
-	const [progress, setProgress] = useState("");
-	const [error, setError] = useState("");
-	const [resultCount, setResultCount] = useState<number | null>(null);
-	const abortRef = useRef<AbortController | null>(null);
 
-	const run = useCallback(async () => {
+	const job = MMA.useJob<number>(async ({ signal, report }) => {
 		const q = query.trim();
-		if (!q) return;
-		setRunning(true);
-		setError("");
-		setResultCount(null);
-		const abort = new AbortController();
-		abortRef.current = abort;
+		const locs = await MMA.fetchAllLocations();
+		signal.throwIfAborted();
 
-		try {
-			const locs = await MMA.fetchAllLocations();
-			if (abort.signal.aborted) return;
-			const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId!);
-			if (panoIds.length === 0) { setError(MMA.t("No locations with pano IDs")); return; }
+		const panoIds = locs.filter((l) => l.panoId).map((l) => l.panoId!);
+		if (panoIds.length === 0) throw new Error(MMA.t("No locations with pano IDs"));
 
-			setProgress(MMA.t("Embedding {n} panos (cached skip)...", { n: panoIds.length }));
-			let embedDone = 0;
-			const embedStart = Date.now();
-			await embed(panoIds, {
-				signal: abort.signal,
-				onStatus: setProgress,
-				onUnit: (count) => {
-					embedDone += count;
-					const elapsed = (Date.now() - embedStart) / 1000;
-					const rate = elapsed > 0.5 ? (embedDone / elapsed).toFixed(1) : "--";
-					setProgress(
-						MMA.t("Embedding: {done}/{total} ({rate} panos/s)", {
-							done: embedDone,
-							total: panoIds.length,
-							rate,
-						}),
-					);
-				},
-			});
-			if (abort.signal.aborted) return;
+		let embedded = 0;
+		const start = Date.now();
+		await embed(panoIds, {
+			signal,
+			onStatus: report,
+			onUnit: (count) => {
+				embedded += count;
+				const elapsed = (Date.now() - start) / 1000;
+				const rate = elapsed > 0.5 ? (embedded / elapsed).toFixed(1) : "--";
+				report(
+					MMA.t("Embedding: {done}/{total} ({rate} panos/s)", {
+						done: embedded,
+						total: panoIds.length,
+						rate,
+					}),
+				);
+			},
+		});
+		signal.throwIfAborted();
 
-			setProgress(MMA.t('Searching for "{q}"...', { q }));
-			const results = await searchText(q, null, threshold, abort.signal);
-			if (abort.signal.aborted) return;
+		report(MMA.t('Searching for "{q}"...', { q }));
+		const results = await searchText(q, null, threshold, signal);
+		const matchedIds = results
+			.map((r) => panoIdToLocId(locs, r.panoId))
+			.filter((id): id is number => id != null);
 
-			const matchedIds = results
-				.map((r) => panoIdToLocId(locs, r.panoId))
-				.filter((id): id is number => id != null);
-
-			if (matchedIds.length > 0) {
-				await MMA.addSelections([{
-					type: "Locations",
-					locations: matchedIds,
-					name: MMA.t('Vision: "{q}"', { q }),
-				}]);
-			}
-			setResultCount(matchedIds.length);
-			setProgress("");
-		} catch (e) {
-			if (!abort.signal.aborted) setError(String(e));
-		} finally {
-			abortRef.current = null;
-			setRunning(false);
+		if (matchedIds.length > 0) {
+			await MMA.addSelections([
+				{ type: "Locations", locations: matchedIds, name: MMA.t('Vision: "{q}"', { q }) },
+			]);
 		}
-	}, [query, threshold]);
-
-	const cancel = useCallback(() => {
-		abortRef.current?.abort();
-		abortRef.current = null;
-		setRunning(false);
-		setProgress("");
-	}, []);
-
-	useEffect(() => () => abortRef.current?.abort(), []);
+		return matchedIds.length;
+	});
 
 	return (
 		<Sidebar title={MMA.t("Vision")} onBack={onClose}>
 			<style>{CSS}</style>
 			<div className="vision-sidebar__body">
 				<Field label={MMA.t("Search for")}>
-					<input
-						className="input"
+					<TextInput
 						placeholder={MMA.t("cars, snow, indoor...")}
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
-						onKeyDown={(e) => { if (e.key === "Enter" && !running) run(); }}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" && !job.running && query.trim()) job.run();
+						}}
 					/>
 				</Field>
 				<Field label={MMA.t("Min confidence: {n}", { n: threshold.toFixed(3) })}>
@@ -121,19 +89,21 @@ export function VisionSidebar({ onClose }: { onClose: () => void }) {
 					/>
 				</Field>
 				<div className="vision-sidebar__actions">
-					{!running ? (
-						<button className="button button--primary" disabled={!query.trim()} onClick={run}>
+					{!job.running ? (
+						<Button variant="primary" disabled={!query.trim()} onClick={job.run}>
 							{MMA.t("Search")}
-						</button>
+						</Button>
 					) : (
-						<button className="button" onClick={cancel}>{MMA.t("Cancel")}</button>
+						<Button onClick={job.cancel}>{MMA.t("Cancel")}</Button>
 					)}
 				</div>
 
-				{progress && <div className="vision-sidebar__progress">{progress}</div>}
-				{error && <div className="vision-sidebar__error">{error}</div>}
-				{resultCount !== null && !running && (
-					<div className="vision-sidebar__results">{MMA.t("{n} locations selected", { n: resultCount })}</div>
+				{job.progress && <div className="vision-sidebar__progress">{job.progress}</div>}
+				{job.error && <div className="vision-sidebar__error">{job.error}</div>}
+				{job.result !== null && !job.running && (
+					<div className="vision-sidebar__results">
+						{MMA.t("{n} locations selected", { n: job.result })}
+					</div>
 				)}
 			</div>
 		</Sidebar>
