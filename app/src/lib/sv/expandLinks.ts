@@ -15,12 +15,7 @@ import { stripTencent } from "@/lib/sv/tencent/prefix";
 import { fetchYandexMeta } from "@/lib/sv/yandex/api";
 import { buildYandexExtra } from "@/lib/sv/yandex/panoExtra";
 import { stripYandex } from "@/lib/sv/yandex/prefix";
-import {
-	addLocations,
-	fetchAllLocations,
-	fetchLocationsByIds,
-	getMapState,
-} from "@/store/useMapStore";
+import { addLocations, fetchLocations, getMapState } from "@/store/useMapStore";
 import { emit } from "@/lib/events";
 import { log } from "@/lib/util/log";
 
@@ -60,7 +55,7 @@ export async function startExpandSvLinks(opts: StartExpandOptions): Promise<numb
 	const ids = [...getMapState().selectedLocationIds];
 	if (!ids.length) throw new Error("no-selection");
 
-	const seeds = await fetchLocationsByIds(ids);
+	const seeds = await fetchLocations({ kind: "ids", ids });
 	const usable = seeds.filter((l) => LINK_PROVIDERS.has(getLocationProvider(l)));
 	if (!usable.length) throw new Error("no-provider");
 
@@ -106,7 +101,7 @@ async function expandLinksCrawl(
 	maxCount: number,
 	onProgress?: ExpandProgressCb,
 ): Promise<number> {
-	const existing = await fetchAllLocations();
+	const existing = await fetchLocations({ kind: "all" });
 	const seen = new Set<string>();
 	for (const loc of existing) {
 		const id = getLocationPanoId(loc);

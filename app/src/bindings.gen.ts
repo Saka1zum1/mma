@@ -58,7 +58,7 @@ export const commands = {
 	 *  Stop every plugin's sidecar processes. Used when the editor tears all plugins
 	 *  down at once (map close), where nothing should still be running afterwards.
 	 */
-	sidecarStopAll: () => __TAURI_INVOKE<void>("sidecar_stop_all"),
+	sidecarStopAll: () => __TAURI_INVOKE<null>("sidecar_stop_all"),
 	/**
 	 *  Kill the process behind a one-shot request (no-op if it already finished).
 	 *  Resident-served requests have no process of their own, so this does not
@@ -109,7 +109,7 @@ export const commands = {
 	 *  Copy locations into another map, skipping ones the target already has. Tags and extra
 	 *  fields carry over.
 	 */
-	storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => __TAURI_INVOKE<CopyToMapResult>("store_copy_locations_to_map", { targetMapId, ids }),
+	storeCopyLocationsToMap: (targetMapId: string, scope: Scope) => __TAURI_INVOKE<CopyToMapResult>("store_copy_locations_to_map", { targetMapId, scope }),
 	/**  Lightweight status query: location count, version, and dirty flag. */
 	storeGetSummary: () => __TAURI_INVOKE<SummaryResult>("store_get_summary"),
 	/**  Return metadata for every map in the database. */
@@ -159,25 +159,17 @@ export const commands = {
 	 *  the JS side recolors its cell buffers in place (no full rebuild).
 	 */
 	storeSetMarkerColor: (color: [number, number, number]) => __TAURI_INVOKE<null>("store_set_marker_color", { color }),
-	/**  Fetch a single location by ID. Returns `None` if the ID is dead or doesn't exist. */
-	storeGetLocation: (id: number) => __TAURI_INVOKE<Location | null>("store_get_location", { id }).then((v) => (v==null?v:v as typeof v)),
-	/**  Fetch multiple locations by ID. Silently skips IDs that don't exist. */
-	storeGetLocationsByIds: (ids: number[]) => __TAURI_INVOKE<Location[]>("store_get_locations_by_ids", { ids }).then((v) => (v.map(i=>i) as typeof v)),
 	/**
-	 *  Dump every alive location to a temp JSON file. Returns the file path.
-	 *  Used by export and plugins that need the full dataset.
+	 *  Read the scoped location set through one projection. The single read primitive:
+	 *  `scope` says which locations, `select` says what to bring back.
 	 */
-	storeGetAllLocations: () => __TAURI_INVOKE<string>("store_get_all_locations"),
+	storeQuery: (scope: Scope, select: Select) => __TAURI_INVOKE<QueryResult>("store_query", { scope, select }),
+	storeApplyFieldOp: (scope: Scope, op: FieldOp, recordUndo: boolean | null) => __TAURI_INVOKE<MutationResult>("store_apply_field_op", { scope, op, recordUndo }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
 	 *  `level` selects border precision, falling back to "light" if unavailable.
 	 */
-	storeCountryDistribution: (level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { level }),
-	/**
-	 *  Compute the bounding box [west, south, east, north]. O(N).
-	 *  When `selected_only` is true, restricts to the current selection.
-	 */
-	storeBounds: (selectedOnly: boolean) => __TAURI_INVOKE<[number, number, number, number] | null>("store_bounds", { selectedOnly }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
+	storeCountryDistribution: (scope: Scope, level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { scope, level }),
 	/**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
 	storeFindNearby: (lat: number, lng: number, radiusM: number) => __TAURI_INVOKE<Location[]>("store_find_nearby", { lat, lng, radiusM }).then((v) => (v.map(i=>i) as typeof v)),
 	/**
@@ -187,11 +179,6 @@ export const commands = {
 	 */
 	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => __TAURI_INVOKE<boolean[]>("store_near_any", { lats: lats.map(i=>i), lngs: lngs.map(i=>i), radiusM }),
 	/**
-	 *  Collect all distinct values for an `extra` field across all alive locations. O(N).
-	 *  Used by the filter UI to populate dropdown options.
-	 */
-	storeExtraFieldValues: (field: string) => __TAURI_INVOKE<string[]>("store_extra_field_values", { field }),
-	/**
 	 *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
 	 *  already exists, it is made visible instead of creating a duplicate.
 	 * 
@@ -200,7 +187,7 @@ export const commands = {
 	 *  tag visible at count 0 for the round trip in between, and makes the caller fetch every
 	 *  location into JS just to append an id Rust already has.
 	 */
-	storeCreateTags: (names: string[], locationIds: number[]) => __TAURI_INVOKE<MutationResult>("store_create_tags", { names, locationIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeCreateTags: (names: string[], scope: Scope) => __TAURI_INVOKE<MutationResult>("store_create_tags", { names, scope }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
 	 *  merges the two tags.
@@ -229,24 +216,6 @@ export const commands = {
 	 *  patch file for JS to apply to the render overlay. Returns per-selection counts.
 	 */
 	storeSyncSelections: (sels: SelectionInput[]) => __TAURI_INVOKE<SelectionSync>("store_sync_selections", { sels }),
-	/**  Return the union of all currently selected location IDs. */
-	storeGetSelectedIdsList: () => __TAURI_INVOKE<number[]>("store_get_selected_ids_list"),
-	/**
-	 *  Pick an evenly spaced subset of `scope`, or of the current selection when `scope` is
-	 *  null. Exactly one of `target_count` (thin to N, maximizing spacing) or `min_distance_m`
-	 *  (keep as many as fit at that spacing) must be provided.
-	 */
-	storePickSpaced: (scope: SelectionProps | null, targetCount: number | null, minDistanceM: number | null) => __TAURI_INVOKE<SpacedPickResult>("store_pick_spaced", { scope: scope==null?scope:scope, targetCount, minDistanceM }),
-	/**
-	 *  Resolve a single selection to its matching location IDs without persisting it.
-	 *  Used by plugins and one-off queries (e.g., tag merge, export filtered).
-	 */
-	storeResolveSelection: (props: SelectionProps) => __TAURI_INVOKE<number[]>("store_resolve_selection", { props }),
-	/**
-	 *  Group locations by a derived key, returning `{ key, ids, bin }` per group.
-	 *  `scope` restricts to a selection; `None` partitions the whole map.
-	 */
-	storePartition: (field: string, key: KeySpec, scope: Scope) => __TAURI_INVOKE<PartitionBucket[]>("store_partition", { field, key, scope }).then((v) => (v.map(i=>({...i,bin:i.bin==null?i.bin:i.bin.map(i=>i)})) as typeof v)),
 	/**
 	 *  Transitive spatial duplicate groups (connected components, size >= 2) within `distance`
 	 *  metres. Read-only; used to preview a merge. Returns groups of location IDs.
@@ -261,7 +230,7 @@ export const commands = {
 	 *  Thin duplicates among `ids` within `distance` metres, keeping the best location per
 	 *  cluster. Informational locations are never pruned. One undoable edit.
 	 */
-	storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { ids, distance, keepTagIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storePruneDuplicates: (scope: Scope, distance: number, keepTagIds: number[]) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { scope, distance, keepTagIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Full render rebuild: single-pass over all alive locations, writes binary to a temp file.
 	 *  Returns the file path for JS to fetch via `mma-buf://`. Only called on map open or full reset.
@@ -310,12 +279,12 @@ export const commands = {
 	/**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
 	storeExportJson: (opts: ExportOpts) => __TAURI_INVOKE<string>("store_export_json", { opts }),
 	/**  Export locations as a minimal lat/lng CSV file. */
-	storeExportCsv: (scope: number[] | null) => __TAURI_INVOKE<string>("store_export_csv", { scope }),
+	storeExportCsv: (scope: Scope) => __TAURI_INVOKE<string>("store_export_csv", { scope }),
 	/**
 	 *  Export locations as a GeoJSON FeatureCollection of Point features.
 	 *  Each feature carries its tag names in `properties.tags`.
 	 */
-	storeExportGeojson: (scope: number[] | null, tagsJson: string) => __TAURI_INVOKE<string>("store_export_geojson", { scope, tagsJson }),
+	storeExportGeojson: (scope: Scope, tagsJson: string) => __TAURI_INVOKE<string>("store_export_geojson", { scope, tagsJson }),
 	/**
 	 *  Copy a temp export file to the destination chosen via the native save dialog,
 	 *  then remove the temp source. `dest_path` comes from the frontend save dialog.
@@ -639,8 +608,8 @@ export type ExportOpts = {
 	exportZoom: boolean,
 	exportUnpanned: boolean,
 	exportExtras: boolean,
-	/**  When `Some`, restricts export to these location IDs (e.g. current selection). */
-	scope: number[] | null,
+	/**  Which locations to export. */
+	scope: Scope,
 	mapName: string,
 	/**
 	 *  Serialized `{id: {name, color}}` tag definitions from the store, used to
@@ -696,6 +665,19 @@ export type FieldCount = {
 	key: string,
 	count: number,
 };
+
+/**
+ *  A field-wide rewrite of the `extra` map. Patches are derived *per row*, which is what
+ *  separates these from `store_update_locations`' explicit patch list.
+ */
+export type FieldOp =
+/**
+ *  Rename `from` into `to`. Merge is the same operation -- rename is just the case
+ *  where nothing holds `to` -- so `winner` decides only where a row holds both.
+ */
+{ kind: "move"; from: string; to: string; winner: MergeWinner } |
+/**  Drop `keys` from every row that has them. */
+{ kind: "delete"; keys: string[] };
 
 /**
  *  Filter comparison operator. Single source of truth: specta renders the literal
@@ -1026,6 +1008,9 @@ export type MapSettings = {
 	providers: ProvidersSettings,
 };
 
+/**  When a move target already holds a value, which side survives. */
+export type MergeWinner = "from" | "to";
+
 /**
  *  Unified response for every mutation IPC. Bundles the store status, render delta,
  *  optional selection sync, optional newly-discovered extra-field keys, and optional
@@ -1190,6 +1175,15 @@ export type PullUpdate = {
 	patch: SyncPatch,
 };
 
+export type QueryResult = { kind: "ids"; ids: number[] } | { kind: "rows"; locations: Location[] } |
+/**
+ *  Rows too large for the IPC channel, staged for `mma-buf://`. Same answer as
+ *  `Rows`; the transport is chosen by size and callers shouldn't care which arrives.
+ */
+{ kind: "rowsFile"; path: string } |
+/**  `Spaced` ids plus the spacing achieved (count mode) or enforced (distance mode). */
+{ kind: "spaced"; ids: number[]; distanceM: number } | { kind: "groups"; groups: PartitionBucket[] } | { kind: "counts"; counts: ([string, number])[] } | { kind: "values"; values: string[] } | { kind: "bounds"; bounds: [number, number, number, number] | null };
+
 /**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
 export type RemoteMappingRow = {
 	localId: number,
@@ -1309,10 +1303,12 @@ export type SaveResult = {
 };
 
 /**
- *  Which locations to operate on: the whole map or the current selection. Resolved in Rust
- *  against the maintained selection set.
+ *  Which locations to operate on. The one way to name a row set: resolved in Rust
+ *  against the maintained selection set, so callers never materialize rows to narrow them.
+ *  `All`/`Selected` reference state Rust already holds; `Ids`/`Props` carry their
+ *  definition in the call.
  */
-export type Scope = { kind: "all" } | { kind: "selected" };
+export type Scope = { kind: "all" } | { kind: "selected" } | { kind: "ids"; ids: number[] } | { kind: "props"; props: SelectionProps };
 
 /**
  *  Score bounding box: either `"auto"` (computed from locations) or an
@@ -1387,6 +1383,33 @@ export type SelPaint = {
 };
 
 /**
+ *  What one scoped traversal accumulates. Every variant is a projection of the same
+ *  pass over the location view, so a new question is a variant, not a new command.
+ */
+export type Select =
+/**  Ids of everything in scope. */
+{ kind: "ids" } |
+/**  Full rows, dumped to a temp JSON file. The last resort -- prefer a projection. */
+{ kind: "rows" } |
+/**  `n` ids drawn uniformly at random, without replacement. */
+{ kind: "sample"; n: number } |
+/**
+ *  An evenly spaced subset: exactly one of `target_count` (thin to N, maximizing
+ *  spacing) or `min_distance_m` (keep as many as fit at that spacing).
+ */
+{ kind: "spaced"; targetCount: number | null; minDistanceM: number | null } |
+/**  Group by a derived key, returning `{ key, ids, bin }` per group. */
+{ kind: "groupBy"; field: string; key: KeySpec } |
+/**  Group by a derived key, returning counts only. */
+{ kind: "countBy"; field: string; key: KeySpec } |
+/**  Distinct values of a field. */
+{ kind: "values"; field: string } |
+/**  How many rows carry each top-level `extra` key. */
+{ kind: "coverage" } |
+/**  Bounding box `[west, south, east, north]` of the scope. */
+{ kind: "bounds" };
+
+/**
  *  A named, colored selection. `key` is deterministic (e.g., `"tag:5"`, `"polygon:abc"`)
  *  so JS can diff selections across syncs. `color` is the RGB overlay color.
  */
@@ -1452,11 +1475,6 @@ export type SidecarProgress = {
 	pluginId: string,
 	downloaded: number,
 	total: number,
-};
-
-export type SpacedPickResult = {
-	ids: number[],
-	distanceM: number,
 };
 
 /**

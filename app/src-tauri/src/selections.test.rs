@@ -26,6 +26,23 @@ fn for_each_visits_alive_overlay_applied() {
     assert_eq!(seen, vec![(1, 1.0, 1.0), (3, 30.0, 30.0), (4, 4.0, 4.0)]);
 }
 
+// scoped(None) is the full alive walk; scoped(Some) filters to the resolved set,
+// preserving view order (batch rows, then adds).
+#[test]
+fn scoped_iterates_resolved_set_in_view_order() {
+    let base = vec![loc(1, 1.0, 1.0), loc(2, 2.0, 2.0), loc(3, 3.0, 3.0)];
+    let fx = Fx::base(&base)
+        .with_adds(vec![loc(4, 4.0, 4.0)])
+        .with_dead([2]);
+    let view = fx.view();
+
+    let ids = |set: Option<&RoaringBitmap>| view.scoped(set).map(|r| r.id()).collect::<Vec<u32>>();
+    assert_eq!(ids(None), vec![1, 3, 4]);
+    let set: RoaringBitmap = [4u32, 1].into_iter().collect();
+    assert_eq!(ids(Some(&set)), vec![1, 4]);
+    assert_eq!(ids(Some(&RoaringBitmap::new())), Vec::<u32>::new());
+}
+
 // -----------------------------------------------------------------------
 // Geometry: point_in_ring / point_in_polygon
 // -----------------------------------------------------------------------
@@ -1456,9 +1473,19 @@ fn duplicates_match_brute_force_at_high_latitude() {
                 .map(|b| haversine_m(a.lat, a.lng, b.lat, b.lng))
                 .fold(f64::INFINITY, f64::min);
             if nn <= d - 0.5 {
-                assert!(ids.contains(&a.id), "missed dup id {} at lat0={} (nn={nn:.1}m)", a.id, lat0);
+                assert!(
+                    ids.contains(&a.id),
+                    "missed dup id {} at lat0={} (nn={nn:.1}m)",
+                    a.id,
+                    lat0
+                );
             } else if nn >= d + 0.5 {
-                assert!(!ids.contains(&a.id), "false dup id {} at lat0={} (nn={nn:.1}m)", a.id, lat0);
+                assert!(
+                    !ids.contains(&a.id),
+                    "false dup id {} at lat0={} (nn={nn:.1}m)",
+                    a.id,
+                    lat0
+                );
             }
         }
     }
@@ -2527,4 +2554,201 @@ fn invert_of_empty_selections_is_the_alive_universe() {
     let view = fx.view();
     let ids = resolve(&view, &SelectionProps::Invert { selections: vec![] });
     assert_eq!(ids, vec![1, 2, 3]);
+}
+
+// -----------------------------------------------------------------------
+// Query projections: one scoped traversal, several accumulators
+// -----------------------------------------------------------------------
+
+#[test]
+fn scoped_ids_applies_the_overlay_and_the_scope() {
+    let base = vec![loc(1, 1.0, 1.0), loc(2, 2.0, 2.0), loc(3, 3.0, 3.0)];
+    let fx = Fx::base(&base)
+        .with_adds(vec![loc(4, 4.0, 4.0)])
+        .with_dead([2]);
+
+    assert_eq!(scoped_ids(&fx.view(), None), vec![1, 3, 4]);
+
+    let scope: RoaringBitmap = [2u32, 3, 4].into_iter().collect();
+    // 2 is dead, so the scope can't resurrect it.
+    assert_eq!(scoped_ids(&fx.view(), Some(&scope)), vec![3, 4]);
+}
+
+#[test]
+fn sample_draws_n_distinct_ids_and_clamps_to_the_pool() {
+    let pool: Vec<u32> = (1..=100).collect();
+
+    let drawn = sample(pool.clone(), 5);
+    assert_eq!(drawn.len(), 5);
+    let unique: std::collections::HashSet<u32> = drawn.iter().copied().collect();
+    assert_eq!(unique.len(), 5, "sample returned duplicates");
+    assert!(drawn.iter().all(|id| pool.contains(id)));
+
+    assert_eq!(sample(pool.clone(), 1000).len(), pool.len());
+    assert!(sample(pool, 0).is_empty());
+    assert!(sample(Vec::new(), 5).is_empty());
+}
+
+#[test]
+fn sample_reaches_every_member_of_the_pool() {
+    // Uniformity isn't asserted, but a draw that can't reach an element is a bug.
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..200 {
+        seen.extend(sample(vec![1, 2, 3, 4], 1));
+    }
+    assert_eq!(seen.len(), 4);
+}
+
+#[test]
+fn distinct_values_sorts_stringifies_scalars_and_skips_the_rest() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"t":"UTC"})),
+        loc_extra(2, serde_json::json!({"t":"Asia/Tokyo"})),
+        loc_extra(3, serde_json::json!({"t":"UTC"})),
+        loc_extra(4, serde_json::json!({"t":2})),
+        loc_extra(5, serde_json::json!({"t":true})),
+        loc_extra(6, serde_json::json!({"t":null})),
+        loc_extra(7, serde_json::json!({"t":{"a":1}})),
+        loc_extra(8, serde_json::json!({"t":[3]})),
+        loc_extra(9, serde_json::json!({"t":""})),
+        loc_extra(10, serde_json::json!({"other":1})),
+    ];
+    let fx = Fx::base(&locs);
+    assert_eq!(
+        distinct_values(&fx.view(), "t", None),
+        vec!["2", "Asia/Tokyo", "UTC", "true"]
+    );
+}
+
+#[test]
+fn distinct_values_honours_the_scope() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"t":"a"})),
+        loc_extra(2, serde_json::json!({"t":"b"})),
+    ];
+    let fx = Fx::base(&locs);
+    let scope: RoaringBitmap = [1u32].into_iter().collect();
+    assert_eq!(distinct_values(&fx.view(), "t", Some(&scope)), vec!["a"]);
+}
+
+#[test]
+fn count_by_matches_the_group_sizes_partition_reports() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"c":"US"})),
+        loc_extra(2, serde_json::json!({"c":"US"})),
+        loc_extra(3, serde_json::json!({"c":"FR"})),
+        loc_extra(4, serde_json::json!({"other":1})),
+    ];
+    let fx = Fx::base(&locs);
+    let view = fx.view();
+
+    let mut counts = count_by(&view, "c", &KeySpec::Value, None);
+    counts.sort();
+    assert_eq!(
+        counts,
+        vec![("FR".to_string(), 1u32), ("US".to_string(), 2)]
+    );
+
+    let mut sizes: Vec<(String, u32)> = partition(&view, "c", &KeySpec::Value, None)
+        .into_iter()
+        .map(|g| (g.key, g.ids.len() as u32))
+        .collect();
+    sizes.sort();
+    assert_eq!(counts, sizes);
+}
+
+#[test]
+fn extra_key_coverage_counts_rows_per_key_across_the_overlay() {
+    let base = vec![
+        loc_extra(1, serde_json::json!({"a":1,"b":2})),
+        loc_extra(2, serde_json::json!({"a":1})),
+        loc_extra(3, serde_json::json!({"b":2})),
+    ];
+    let fx = Fx::base(&base)
+        .with_adds(vec![loc_extra(
+            4,
+            serde_json::json!({"a":9,"c":{"nested":1}}),
+        )])
+        .with_dead([3]);
+
+    assert_eq!(
+        extra_key_coverage(&fx.view(), None),
+        vec![
+            ("a".to_string(), 3u32),
+            ("b".to_string(), 1),
+            ("c".to_string(), 1)
+        ]
+    );
+}
+
+#[test]
+fn extra_key_coverage_does_not_descend_into_nested_objects() {
+    let locs = vec![loc_extra(1, serde_json::json!({"outer":{"inner":1}}))];
+    let fx = Fx::base(&locs);
+    assert_eq!(
+        extra_key_coverage(&fx.view(), None),
+        vec![("outer".to_string(), 1u32)]
+    );
+}
+
+#[test]
+fn scope_resolves_to_the_id_set_it_names() {
+    let locs = vec![loc(1, 0.0, 0.0), loc(2, 1.0, 1.0), loc(7, 2.0, 2.0)];
+    let fx = Fx::base(&locs);
+    let view = fx.view();
+    let selected: RoaringBitmap = [7u32, 8].into_iter().collect();
+
+    assert!(Scope::All.resolve(&view, &selected).is_none());
+    assert_eq!(
+        Scope::Selected
+            .resolve(&view, &selected)
+            .unwrap()
+            .into_owned(),
+        selected
+    );
+    assert_eq!(
+        Scope::Ids { ids: vec![1, 2] }
+            .resolve(&view, &selected)
+            .unwrap()
+            .into_owned(),
+        [1u32, 2].into_iter().collect::<RoaringBitmap>()
+    );
+    // Props ships the predicate by value and resolves like any selection.
+    assert_eq!(
+        Scope::Props {
+            props: SelectionProps::Manual {
+                locations: vec![1, 7]
+            }
+        }
+        .resolve(&view, &selected)
+        .unwrap()
+        .into_owned(),
+        [1u32, 7].into_iter().collect::<RoaringBitmap>()
+    );
+}
+
+#[test]
+fn every_projection_honours_an_id_scope() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"c":"US"})),
+        loc_extra(2, serde_json::json!({"c":"FR"})),
+        loc_extra(3, serde_json::json!({"c":"FR"})),
+    ];
+    let fx = Fx::base(&locs);
+    let view = fx.view();
+    let selected = RoaringBitmap::new();
+    let scope = Scope::Ids { ids: vec![2, 3] };
+    let resolved = scope.resolve(&view, &selected);
+    let set = resolved.as_deref();
+
+    assert_eq!(scoped_ids(&view, set), vec![2, 3]);
+    assert_eq!(distinct_values(&view, "c", set), vec!["FR"]);
+    assert_eq!(
+        count_by(&view, "c", &KeySpec::Value, set),
+        vec![("FR".to_string(), 2u32)]
+    );
+    assert_eq!(
+        extra_key_coverage(&view, set),
+        vec![("c".to_string(), 2u32)]
+    );
 }

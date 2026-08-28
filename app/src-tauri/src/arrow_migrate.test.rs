@@ -17,7 +17,7 @@ fn loc(id: u32) -> Location {
     }
 }
 
-/// Rebuild a current (v2) batch in the v1 on-disk shape: `created_at`/`modified_at`
+/// Rebuild a current batch in the v1 on-disk shape: `created_at`/`modified_at`
 /// back to `Utf8`, schema metadata stripped (so it reads as v1). All other columns
 /// (including a delta `op` column) pass through untouched.
 fn downgrade_to_v1(
@@ -44,6 +44,23 @@ fn downgrade_to_v1(
         }
     }
     RecordBatch::try_new(Arc::new(Schema::new(fields)), cols).unwrap()
+}
+
+fn downgrade_to_v2(batch: &RecordBatch) -> RecordBatch {
+    let mut fields = Vec::new();
+    let mut columns = Vec::new();
+    for (index, field) in batch.schema().fields().iter().enumerate() {
+        if field.name() != "provider" {
+            fields.push(field.clone());
+            columns.push(batch.column(index).clone());
+        }
+    }
+    let metadata = HashMap::from([(VERSION_KEY.to_string(), "2".to_string())]);
+    RecordBatch::try_new(
+        Arc::new(Schema::new_with_metadata(fields, metadata)),
+        columns,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -109,11 +126,24 @@ fn migrate_v1_unparseable_created_falls_back_to_zero() {
 }
 
 #[test]
-fn migrate_v2_is_noop() {
-    let v2 = arrow_bridge::locations_to_batch(&[loc(1)]);
-    let out = migrate(v2.clone()).unwrap();
-    assert_eq!(out.schema(), v2.schema());
-    assert_eq!(out.num_rows(), v2.num_rows());
+fn migrate_v2_adds_google_provider_column() {
+    let current = arrow_bridge::locations_to_batch(&[loc(1), loc(2)]);
+    let v2 = downgrade_to_v2(&current);
+    assert!(v2.schema().column_with_name("provider").is_none());
+
+    let out = migrate(v2).unwrap();
+    assert_eq!(batch_version(out.schema().metadata()), CURRENT_VERSION);
+    assert_eq!(
+        out.schema().field(arrow_bridge::COL_PROVIDER).name(),
+        "provider"
+    );
+    let providers = out
+        .column(arrow_bridge::COL_PROVIDER)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(providers.value(0), "google");
+    assert_eq!(providers.value(1), "google");
 }
 
 #[test]

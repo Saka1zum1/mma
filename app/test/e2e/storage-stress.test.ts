@@ -575,13 +575,13 @@ describe("Export with scope", () => {
 		expect(selectedIds.length).toBe(5);
 
 		// Export with scope = selectedIds
-		const result = await withApi(async (api, scope) => {
+		const result = await withApi(async (api, ids) => {
 			const map = api.getMapState().map!;
 			const path = await api.cmd.storeExportJson({
 				exportZoom: true,
 				exportUnpanned: true,
 				exportExtras: true,
-				scope,
+				scope: { kind: "ids", ids },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
 				extraFieldsJson: null,

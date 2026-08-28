@@ -166,6 +166,14 @@ pub(crate) fn db_path() -> AppResult<std::path::PathBuf> {
 
 /// Open (or create) the SQLite database, ensuring the parent directory exists.
 /// The one place that owns per-connection setup (busy timeout, pragmas).
+/// Run `f` against a fresh connection on the blocking pool, so a busy-timeout
+/// wait never lands on a command thread.
+pub(crate) async fn with_db<T: Send + 'static>(
+    f: impl FnOnce(&mut Connection) -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    tokio::task::spawn_blocking(move || f(&mut open_db()?)).await?
+}
+
 pub(crate) fn open_db() -> AppResult<Connection> {
     let path = db_path()?;
     if let Some(parent) = path.parent() {
@@ -184,6 +192,14 @@ fn configure_connection(conn: &Connection) -> AppResult<()> {
     // process) fails instantly with "database is locked" instead of waiting.
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     conn.pragma_update(None, "foreign_keys", true)?;
+    Ok(())
+}
+
+pub(crate) fn set_location_count(conn: &Connection, map_id: &str, count: usize) -> AppResult<()> {
+    conn.execute(
+        "UPDATE maps SET location_count = ?1 WHERE id = ?2",
+        rusqlite::params![count, map_id],
+    )?;
     Ok(())
 }
 

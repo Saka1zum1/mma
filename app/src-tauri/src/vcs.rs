@@ -120,7 +120,7 @@ pub async fn store_commit(
         // Clean overlay + existing parent (checkout/revert commit): capture the current
         // baked state to diff against the parent below.
         let current_fallback = if pre_bake.is_none() && !genesis {
-            store.collect_all_locations()
+            store.collect(&crate::selections::Scope::All)
         } else {
             Vec::new()
         };
@@ -169,10 +169,7 @@ pub async fn store_commit(
         "INSERT INTO commits (id, map_id, parent_id, message, location_count, created_at, tree_hash, added, removed, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![id, map_id, parent_id, message, location_count, now, Option::<String>::None, added, removed_n, modified],
     )?;
-    conn.execute(
-        "UPDATE maps SET location_count = ?1 WHERE id = ?2",
-        params![location_count, map_id],
-    )?;
+    storage::set_location_count(&conn, &map_id, location_count as usize)?;
 
     log::info!(
         "[vcs] commit {} locs={} +{} -{} ~{} in {}ms (bake+base-write={:.0}ms delta-write={:.0}ms sqlite={:.0}ms genesis={})",
@@ -185,8 +182,8 @@ pub async fn store_commit(
 /// List all commits for a map, newest first.
 #[tauri::command]
 #[specta::specta]
-pub fn store_list_commits(map_id: String) -> AppResult<Vec<CommitInfo>> {
-    let conn = storage::open_db()?;
+pub async fn store_list_commits(map_id: String) -> AppResult<Vec<CommitInfo>> {
+    storage::with_db(move |conn| {
     let mut stmt = conn
         .prepare(
             "SELECT id, map_id, parent_id, message, tree_hash, added, removed, modified, location_count, created_at FROM commits WHERE map_id = ?1 ORDER BY created_at DESC, rowid DESC",
@@ -214,6 +211,8 @@ pub fn store_list_commits(map_id: String) -> AppResult<Vec<CommitInfo>> {
         commits.push(row?);
     }
     Ok(commits)
+    })
+    .await
 }
 
 /// Restore a map to the state captured by a previous commit. The caller must reopen

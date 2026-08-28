@@ -20,6 +20,7 @@ describe("event group constants", () => {
 	it("LOCATION_DATA_EVENTS contains exactly the location:* events", () => {
 		expect([...LOCATION_DATA_EVENTS].sort()).toEqual([
 			"location:add",
+			"location:invalidate",
 			"location:remove",
 			"location:update",
 		]);

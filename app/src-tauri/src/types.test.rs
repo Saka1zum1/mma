@@ -4,7 +4,7 @@ use super::*;
 type ExtraField = Option<Option<RawExtra>>;
 
 fn extra(json: &str) -> RawExtra {
-    RawExtra(serde_json::value::RawValue::from_string(json.to_owned()).unwrap())
+    RawExtra::wrap(serde_json::value::RawValue::from_string(json.to_owned()).unwrap())
 }
 
 #[test]
@@ -251,7 +251,7 @@ fn arb_location() -> impl Strategy<Value = Location> {
                     heading,
                     pitch,
                     zoom,
-                    pano_id,
+                    pano_id: pano_id.map(Into::into),
                     provider: None,
                     flags,
                     tags,

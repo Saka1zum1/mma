@@ -1,7 +1,9 @@
 /**
- * Pure planning logic for bulk metadata-field operations (rename / merge / delete / set).
- * These compute `extra` merge patches (RFC 7386: null deletes a key) and selection-reference
- * rewrites; the store orchestrates IPC, definitions, and persistence. Side-effect-free.
+ * Pure planning logic for bulk metadata-field operations (set / expressions) and the
+ * selection-reference rewrites that follow a field move. These compute `extra` merge
+ * patches (RFC 7386: null deletes a key); the store orchestrates IPC, definitions, and
+ * persistence. Map-wide rename/merge/delete run in Rust (`store_apply_field_op`).
+ * Side-effect-free.
  */
 
 import { clamp } from "@/types/util";
@@ -17,49 +19,12 @@ import { buildSelection } from "@/store/selections";
 import { isBuiltinField, isWritableField } from "@/lib/data/fieldDefRegistry";
 import { t, msg } from "@/lib/i18n";
 
-/** When a move target already holds a value, which field's value survives. */
-export type MergeWinner = "from" | "to";
-
 /** Shape a single field assignment into a patch: built-in keys patch the top-level
  *  field, every other key nests under `extra`. The one place that knows the difference. */
 export function fieldPatch(key: string, value: unknown): Partial<Location> {
 	return (
 		isWritableField(key) && isBuiltinField(key) ? { [key]: value } : { extra: { [key]: value } }
 	) as Partial<Location>;
-}
-
-/**
- * Rename/merge field `from` into `to`. Rename and merge are the same operation —
- * "rename" is just the case where no location already has `to`. When a location has
- * both keys, `winner` decides which value survives under the `to` key.
- * Returns updates only for locations that actually change.
- */
-export function planFieldMove(
-	locations: Location[],
-	from: string,
-	to: string,
-	winner: MergeWinner,
-): Update<LocationPatch>[] {
-	if (from === to || !to) return [];
-	const updates: Update<LocationPatch>[] = [];
-	for (const loc of locations) {
-		const extra = loc.extra;
-		if (!extra || !(from in extra)) continue;
-		const takeFrom = !(to in extra) || winner === "from";
-		// winner === "to" with existing target: keep the target's value, just drop `from`
-		updates.push({
-			id: loc.id,
-			patch: { extra: takeFrom ? { [from]: null, [to]: extra[from] } : { [from]: null } },
-		});
-	}
-	return updates;
-}
-
-/** Remove field `key` from every location that has it. */
-export function planFieldDelete(locations: Location[], key: string): Update<LocationPatch>[] {
-	return locations
-		.filter((loc) => loc.extra && key in loc.extra)
-		.map((loc) => ({ id: loc.id, patch: { extra: { [key]: null } } }));
 }
 
 /**
@@ -236,25 +201,6 @@ export function parseFieldExpr(src: string): FieldExpr {
  *  everything else reads from `extra`. The read-side mirror of `fieldPatch`. */
 export function fieldValue(loc: Location, key: string): unknown {
 	return isBuiltinField(key) ? (loc as unknown as Record<string, unknown>)[key] : loc.extra?.[key];
-}
-
-/** Distinct values of field `key` across `locs` that are not already in `existing`,
- *  sorted. Non-string scalars are stringified to match enum `values` (always strings);
- *  objects/arrays are skipped. */
-export function collectEnumCandidates(
-	locs: readonly Location[],
-	key: string,
-	existing: readonly string[],
-): string[] {
-	const have = new Set(existing);
-	const found = new Set<string>();
-	for (const loc of locs) {
-		const v = fieldValue(loc, key);
-		if (v == null || typeof v === "object") continue;
-		const s = String(v);
-		if (s !== "" && !have.has(s)) found.add(s);
-	}
-	return [...found].sort();
 }
 
 /** Every `extra` key present on any of `locs`. */

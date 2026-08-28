@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "@/components/primitives/Icon";
-import { mdiArrowTopLeft, mdiMinus, mdiPin, mdiPlus, mdiArrowBottomRight, mdiLayers } from "@mdi/js";
+import {
+	mdiArrowTopLeft,
+	mdiMinus,
+	mdiPin,
+	mdiPlus,
+	mdiArrowBottomRight,
+	mdiLayers,
+} from "@mdi/js";
 import {
 	createMapHost,
 	hostInstance,
@@ -12,8 +19,8 @@ import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import { google } from "@/lib/sv/opensv";
 import type { MapMouseEvent } from "maplibre-gl";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
-import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
-import { cmd } from "@/lib/commands";
+import { MAP_EMBED_PREFS, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
+import { fetchBounds } from "@/store/useMapStore";
 import type { LatLng, MapTypeKey } from "@/types";
 import { useT } from "@/lib/i18n";
 import { createGuessPinLayer } from "./guessMapLayers";
@@ -103,21 +110,23 @@ function useGuessMapHost(
 				// After a kind-switch we restore the saved camera so the user
 				// sees the same area they were just looking at.
 				if (!showResult && !savedCameraRef.current) {
-					cmd.storeBounds(false).then((bounds) => {
-						if (cancelled || !hostRef.current || !bounds) return;
-						hostRef.current.fitBounds(
-							{
-								west: bounds[0],
-								south: bounds[1],
-								east: bounds[2],
-								north: bounds[3],
-							},
-							undefined,
-							{ snap: true },
-						);
-					}).catch(() => {
-						/* fell back to default camera */
-					});
+					fetchBounds({ kind: "all" })
+						.then((bounds) => {
+							if (cancelled || !hostRef.current || !bounds) return;
+							hostRef.current.fitBounds(
+								{
+									west: bounds[0],
+									south: bounds[1],
+									east: bounds[2],
+									north: bounds[3],
+								},
+								undefined,
+								{ snap: true },
+							);
+						})
+						.catch(() => {
+							/* fell back to default camera */
+						});
 				}
 			} catch {
 				if (!cancelled) setReady(false);
@@ -227,8 +236,7 @@ function useGuessMapHost(
 		const host = hostRef.current;
 		if (!host || !ready) return;
 		let cancelled = false;
-		cmd
-			.storeBounds(false)
+		fetchBounds({ kind: "all" })
 			.then((bounds) => {
 				if (cancelled || !hostRef.current) return;
 				if (bounds) {
@@ -294,7 +302,7 @@ export function GuessMap({
 	const { t } = useT();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
-	const [prefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
+	const [prefs] = useLocalStorage(MAP_EMBED_PREFS);
 	const [guessMapType, setGuessMapType] = useState<MapTypeKey>(() => prefs.mapType);
 	const guessPrefs: MapEmbedPrefs = {
 		...prefs,
@@ -616,7 +624,12 @@ export function GuessMap({
 				>
 					{!showResult && (
 						<div className="gg-guess-map__zoom">
-							<button type="button" className="gg-guess-map__zoom-btn" onClick={zoomIn} aria-label={t("Zoom in")}>
+							<button
+								type="button"
+								className="gg-guess-map__zoom-btn"
+								onClick={zoomIn}
+								aria-label={t("Zoom in")}
+							>
 								<Icon path={mdiPlus} />
 							</button>
 							<button

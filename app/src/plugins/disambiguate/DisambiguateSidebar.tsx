@@ -154,29 +154,25 @@ async function analyze(): Promise<Analysis> {
 
 	const colors = sels.map((s) => s.color);
 	const idSets = await Promise.all(
-		sels.map((s) => MMA.cmd.storeResolveSelection(s.props).then((ids: number[]) => new Set(ids))),
+		sels.map((s) => MMA.scopeIds({ kind: "props", props: s.props }).then((ids) => new Set(ids))),
 	);
 
-	const locStore = await MMA.createLocationStore();
-	try {
-		const labeled: Labeled[] = [];
-		let excludedOverlap = 0;
-		for (const loc of locStore.locations.values()) {
-			const g = soleGroup(idSets, loc.id);
-			if (g === "overlap") excludedOverlap++;
-			else if (g !== null) labeled.push({ group: g, loc: loc as Location });
-		}
-
-		const fieldDefs: Record<string, ExtraFieldDef> = MMA.getAllFieldDefs();
-		const tagNames: Record<number, string> = {};
-		for (const [id, t] of Object.entries(MMA.getMapState().tags))
-			tagNames[Number(id)] = (t as { name: string }).name;
-
-		const result = computeDivergence(labeled, sels.length, fieldDefs, tagNames);
-		return { result, colors, excludedOverlap };
-	} finally {
-		locStore.destroy();
+	const labeled: Labeled[] = [];
+	let excludedOverlap = 0;
+	const unionIds = [...new Set(idSets.flatMap((s) => [...s]))];
+	for (const loc of await MMA.fetchLocations({ kind: "ids", ids: unionIds })) {
+		const g = soleGroup(idSets, loc.id);
+		if (g === "overlap") excludedOverlap++;
+		else if (g !== null) labeled.push({ group: g, loc: loc as Location });
 	}
+
+	const fieldDefs: Record<string, ExtraFieldDef> = MMA.getAllFieldDefs();
+	const tagNames: Record<number, string> = {};
+	for (const [id, t] of Object.entries(MMA.getMapState().tags))
+		tagNames[Number(id)] = (t as { name: string }).name;
+
+	const result = computeDivergence(labeled, sels.length, fieldDefs, tagNames);
+	return { result, colors, excludedOverlap };
 }
 
 export function DisambiguateSidebar({ onClose }: { onClose: () => void }) {

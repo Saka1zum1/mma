@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { ScopeController, SourceScope } from "@/store/scope";
+import type { ScopeController, ScopeWithSaved } from "@/store/scope";
 import { getSavedSelections } from "@/store/savedSelections";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Radio } from "@/components/primitives/Radio";
@@ -11,7 +11,7 @@ export function ScopeSelector({
 	ctl,
 	className,
 }: {
-	ctl: ScopeController<SourceScope>;
+	ctl: ScopeController<ScopeWithSaved>;
 	className?: string;
 }) {
 	const { scope, setScope, allCount, selectionCount } = ctl;

@@ -10,7 +10,7 @@
  */
 
 import type { Location, ExtraFieldDef } from "@/bindings.gen";
-import { fetchLocationsByIds, updateLocations } from "@/store/useMapStore";
+import { fetchLocations, updateLocations } from "@/store/useMapStore";
 import { fetchSvMetadataBatched } from "@/lib/sv/svMeta";
 import { resolvePanoIds } from "@/lib/sv/lookup";
 import { getEnrichmentProviders, providerWaves } from "@/lib/data/fieldDefs";
@@ -207,7 +207,7 @@ export async function runResolvers(
 		const enrichFields = (configOf("enrichMeta") as string[] | null | undefined) ?? null;
 		for (const wave of providerWaves(getEnrichmentProviders())) {
 			signal?.throwIfAborted();
-			const pluginLocs = await fetchLocationsByIds(scopeIds);
+			const pluginLocs = await fetchLocations({ kind: "ids", ids: scopeIds });
 			const units = wave.map((p) => p.units?.(pluginLocs, enrichFields, force) ?? 0);
 			const waveTotal = units.reduce((a, b) => a + b, 0);
 			const slow = wave.filter((p, i) => units[i] > 0 && p.label);

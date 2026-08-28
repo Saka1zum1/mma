@@ -27,13 +27,17 @@ import {
 	mergeUserFieldDefs,
 	resetForMapChange,
 } from "@/lib/data/fieldDefRegistry";
-import {
-	planFieldMove,
-	planFieldDelete,
-	rewriteSelectionFields,
-	type MergeWinner,
-} from "@/lib/data/fieldOps";
+import { rewriteSelectionFields } from "@/lib/data/fieldOps";
 import type { LocationPatch_Deserialize as LocationPatch, Update, TagPatch } from "@/bindings.gen";
+import type {
+	Scope,
+	Select,
+	QueryResult,
+	KeySpec,
+	PartitionBucket,
+	FieldOp,
+	MergeWinner,
+} from "@/bindings.gen";
 import { SelectedIds, decodeSelectionBitmask, type ReadonlyIdSet } from "@/lib/render/CellManager";
 import { resetImportState } from "./importStaging";
 import { resetCommitDiffState, resetCommitDiffCounts } from "./commitDiff";
@@ -57,7 +61,6 @@ import {
 	removeFromComposite as removeFromCompositeSel,
 	composeSiblings as composeSiblingsSel,
 	replaceSelection as replaceSel,
-	sampleIds,
 	isolateGhostKeys,
 } from "./selections";
 
@@ -76,9 +79,9 @@ export interface MapState {
 	/** Resolved count per selection node (top-level and nested), keyed by `Selection.key`.
 	 *  The sole source for sidebar counts — refreshed wholesale from Rust on every sync. */
 	selectionCounts: Record<string, number>;
-	/** Extra-field keys known to exist in location data on the current map.
-	 *  Populated from `StoreStatus.knownFieldKeys` on map open, extended
-	 *  incrementally via `MutationResult.newFieldDefs`. */
+	/** Extra-field keys known to exist in location data on the current map. A mirror of
+	 *  Rust's registry: refreshed wholesale from `StoreStatus.knownFieldKeys` on open and
+	 *  on every mutation (plus that mutation's `newFieldDefs`), never maintained JS-side. */
 	knownFieldKeys: ReadonlySet<string>;
 	selections: Selection[];
 	/** Keys of selections that are "ghosted": kept in the list but excluded from the
@@ -336,21 +339,69 @@ export function discardOpenMap() {
 	resetMapState();
 }
 
-/** Fetch every location in the map. */
-export async function fetchAllLocations(): Promise<Location[]> {
-	const path = await cmd.storeGetAllLocations();
-	const res = await fetch(mmaBufUrl(path));
-	return res.json();
+/** Run one scoped read and narrow its result. The only place `QueryResult` is unwrapped. */
+async function query<K extends QueryResult["kind"]>(
+	scope: Scope,
+	select: Select,
+	kind: K,
+): Promise<Extract<QueryResult, { kind: K }>> {
+	const res = await cmd.storeQuery(scope, select);
+	if (res.kind !== kind) throw new Error(`store_query returned ${res.kind}, expected ${kind}`);
+	return res as Extract<QueryResult, { kind: K }>;
 }
 
-/** Fetch one location by id, or null if it doesn't exist. */
-export async function fetchLocation(id: number): Promise<Location | null> {
-	return cmd.storeGetLocation(id);
+/** Ids of every location in scope. */
+export async function scopeIds(scope: Scope): Promise<number[]> {
+	return (await query(scope, { kind: "ids" }, "ids")).ids;
 }
 
-/** Fetch locations by id (missing ids are skipped). Prefer this over per-id fetches. */
-export async function fetchLocationsByIds(ids: number[]): Promise<Location[]> {
-	return cmd.storeGetLocationsByIds(ids);
+/** Bounding box `[west, south, east, north]` of the scope, or null when it's empty.
+ *  The whole-map box is an O(1) cache hit in Rust; scoped boxes scan. */
+export async function fetchBounds(scope: Scope): Promise<[number, number, number, number] | null> {
+	return (await query(scope, { kind: "bounds" }, "bounds")).bounds;
+}
+
+/** `n` ids drawn uniformly at random from the scope, without replacement. */
+export async function sampleScope(scope: Scope, n: number): Promise<number[]> {
+	return (await query(scope, { kind: "sample", n }, "ids")).ids;
+}
+
+/** Distinct values of `field` across the scope, sorted. */
+export async function fieldValues(scope: Scope, field: string): Promise<string[]> {
+	return (await query(scope, { kind: "values", field }, "values")).values;
+}
+
+/** Group the scope by a derived key and count, without shipping member ids. */
+export async function countBy(
+	scope: Scope,
+	field: string,
+	key: KeySpec,
+): Promise<[string, number][]> {
+	return (await query(scope, { kind: "countBy", field, key }, "counts")).counts;
+}
+
+/** How many locations in scope carry each `extra` key, key-sorted. */
+export async function fieldCoverage(scope: Scope): Promise<[string, number][]> {
+	return (await query(scope, { kind: "coverage" }, "counts")).counts;
+}
+
+/** Group the scope by a derived key, with member ids per group. */
+export async function groupBy(
+	scope: Scope,
+	field: string,
+	key: KeySpec,
+): Promise<PartitionBucket[]> {
+	return (await query(scope, { kind: "groupBy", field, key }, "groups")).groups;
+}
+
+/** Materialize a scope's location rows -- by id, by selection, or the whole map.
+ *  Rust picks the transport (inline vs staged file) by size. Missing ids are skipped.
+ *  The heaviest read there is: every other projection answers without shipping rows. */
+export async function fetchLocations(scope: Scope): Promise<Location[]> {
+	const res = await cmd.storeQuery(scope, { kind: "rows" });
+	if (res.kind === "rows") return res.locations;
+	if (res.kind === "rowsFile") return (await fetch(mmaBufUrl(res.path))).json();
+	throw new Error(`store_query returned ${res.kind}, expected rows`);
 }
 
 /** Active (non-ghosted) selections, the default for any operational logic. */
@@ -441,8 +492,7 @@ function applyMutation(r: MutationResult) {
 		canRedo: r.canRedo,
 		tagCounts: r.tagCounts,
 		tags: r.tags,
-		knownFieldKeys:
-			r.newFieldDefs && new Set([...state.knownFieldKeys, ...Object.keys(r.newFieldDefs)]),
+		knownFieldKeys: new Set([...r.knownFieldKeys, ...Object.keys(r.newFieldDefs ?? {})]),
 	});
 	if (r.newFieldDefs) mergeUserFieldDefs(r.newFieldDefs);
 	if (r.tags) removeSelections(deadTagKeys(oldTags, r.tags));
@@ -507,7 +557,7 @@ export async function addLocations(locs: Location[]) {
 /** Clone a location in place and return the new id, or null if it doesn't exist. Undoable. */
 export async function duplicateLocation(id: number): Promise<number | null> {
 	if (!state.map || isVirtualLocation({ id })) return null;
-	const loc = await cmd.storeGetLocation(id);
+	const [loc] = await fetchLocations({ kind: "ids", ids: [id] });
 	if (!loc) return null;
 	const now = nowUnix();
 	const clone: Location = { ...loc, id: 0, createdAt: now, modifiedAt: now };
@@ -556,28 +606,33 @@ export async function updateLocations(
  *  decides the survivor only where a location already holds `to`. */
 export async function renameField(from: string, to: string, winner: MergeWinner = "from") {
 	if (!state.map || from === to || !to) return;
-	const updates = planFieldMove(await fetchAllLocations(), from, to, winner);
-	const nextKeys = new Set(state.knownFieldKeys);
-	if (updates.length) {
-		await updateLocations(updates, { undoable: false });
-		nextKeys.add(to);
-	}
-	nextKeys.delete(from);
-	setState({ knownFieldKeys: nextKeys });
+	await applyFieldOp({ kind: "move", from, to, winner });
 	await migrateFieldReferences(from, to);
 }
 
 /** Delete extra-field `key` from every location, its definition, and references. */
 export async function deleteField(key: string) {
 	if (!state.map) return;
-	const updates = planFieldDelete(await fetchAllLocations(), key);
-	if (updates.length) {
-		await updateLocations(updates, { undoable: false });
-	}
-	const nextKeys = new Set(state.knownFieldKeys);
-	nextKeys.delete(key);
-	setState({ knownFieldKeys: nextKeys });
+	await applyFieldOp({ kind: "delete", keys: [key] });
 	await migrateFieldReferences(key, null);
+}
+
+/** Rewrite an `extra` field across the whole map in Rust. Not undoable. The per-location
+ *  patches never exist in JS -- which is the point -- so instead of `location:update` this
+ *  emits a coarse `location:invalidate` (derived views re-query) and refreshes the open
+ *  editor's location. */
+async function applyFieldOp(op: FieldOp): Promise<MutationResult> {
+	const r = await mutate(() => cmd.storeApplyFieldOp({ kind: "all" }, op, false));
+	emitEvent("location:invalidate");
+	const active = state.activeLocation;
+	if (active && !isVirtualLocation(active)) {
+		const [fresh] = await fetchLocations({ kind: "ids", ids: [active.id] });
+		if (fresh) {
+			setState({ activeLocation: fresh });
+			emitEvent("store:changed");
+		}
+	}
+	return r;
 }
 
 /** Migrate field definition + active selection references after a data move.
@@ -741,12 +796,10 @@ export async function selectRandomFromSelection(
 ): Promise<number> {
 	const buckets = await Promise.all(
 		pickBuckets(perSelection).map((props) =>
-			props
-				? cmd.storeResolveSelection(props)
-				: Promise.resolve(Array.from(state.selectedLocationIds)),
+			sampleScope(props ? { kind: "props", props } : { kind: "selected" }, count),
 		),
 	);
-	const picked = [...new Set(buckets.flatMap((ids) => sampleIds(ids, count)))];
+	const picked = [...new Set(buckets.flat())];
 	if (picked.length === 0) return 0;
 	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: picked }));
 	return picked.length;
@@ -762,7 +815,11 @@ export async function selectSpacedFromSelection(
 ): Promise<{ picked: number; distanceM: number }> {
 	const results = await Promise.all(
 		pickBuckets(perSelection).map((props) =>
-			cmd.storePickSpaced(props, opts.count ?? null, opts.minDistanceM ?? null),
+			query(
+				props ? { kind: "props", props } : { kind: "selected" },
+				{ kind: "spaced", targetCount: opts.count ?? null, minDistanceM: opts.minDistanceM ?? null },
+				"spaced",
+			),
 		),
 	);
 	const ids = [...new Set(results.flatMap((r) => r.ids))];
@@ -790,12 +847,12 @@ export async function mergeDuplicates(distance: number) {
  */
 export async function pruneDuplicates(props: SelectionProps, distance: number): Promise<number> {
 	if (!state.map) return 0;
-	const ids = await cmd.storeResolveSelection(props);
-	if (ids.length === 0) return 0;
 	const keepTagIds = getVisibleTags()
 		.filter((t) => t.name === "keep pano")
 		.map((t) => t.id);
-	const r = await mutate(() => cmd.storePruneDuplicates(ids, distance, keepTagIds));
+	const r = await mutate(() =>
+		cmd.storePruneDuplicates({ kind: "props", props }, distance, keepTagIds),
+	);
 	return r.delta.removed.length;
 }
 
@@ -953,7 +1010,7 @@ function clearActiveLocation(): void {
 
 /** Materialize a `MaybeLocation`. */
 export async function resolveLocation(m: MaybeLocation): Promise<Location | null> {
-	return typeof m === "number" ? await cmd.storeGetLocation(m) : m;
+	return typeof m === "number" ? ((await fetchLocations({ kind: "ids", ids: [m] }))[0] ?? null) : m;
 }
 
 /** Open a location in the editor (null closes it). With `checkDuplicates`, opening a spot
@@ -1069,12 +1126,15 @@ export function exitProvidersMode() {
  *  in subsequent location updates. Idempotent — existing tags are returned
  *  as-is, new names get auto-generated colors.
  *
- *  Pass `locationIds` to assign the tags in the same mutation. Prefer that over a follow-up
- *  `addTagToLocations`: it is one round trip instead of three, and the tag never renders at
- *  count 0 in between. */
-export async function createTags(names: string[], locationIds: number[] = []): Promise<Tag[]> {
+ *  Pass `scope` to assign the tags to those locations in the same mutation. Prefer that
+ *  over a follow-up `addTagToLocations`: it is one round trip instead of three, and the
+ *  tag never renders at count 0 in between. The default assigns nothing. */
+export async function createTags(
+	names: string[],
+	scope: Scope = { kind: "ids", ids: [] },
+): Promise<Tag[]> {
 	if (names.length === 0) return [];
-	await mutate(() => cmd.storeCreateTags(names, locationIds));
+	await mutate(() => cmd.storeCreateTags(names, scope));
 	const lower = new Set(names.map((n) => n.toLowerCase()));
 	const created = Object.values(state.tags).filter((t) => lower.has(t.name.toLowerCase()));
 	emitEvent("tag:add", created);
@@ -1120,7 +1180,7 @@ async function modifyTagOnLocations(
 	transform: (tags: number[], tagId: number) => number[] | null,
 ) {
 	if (locationIds.length === 0) return;
-	const locs = await cmd.storeGetLocationsByIds(locationIds);
+	const locs = await fetchLocations({ kind: "ids", ids: locationIds });
 	const updates: Update<LocationPatch>[] = [];
 	for (const l of locs) {
 		const next = transform(l.tags, tagId);
@@ -1147,7 +1207,7 @@ export function removeTagFromLocations(tagId: number, locationIds: number[]) {
 /** Remove a tag from every location that has it. Undoable. */
 export async function removeTagFromAllLocations(tagId: number) {
 	if (!state.map) return;
-	const allWithTag = await cmd.storeResolveSelection({ type: "Tag", tagId });
+	const allWithTag = await scopeIds({ kind: "props", props: { type: "Tag", tagId } });
 	if (allWithTag.length > 0) await removeTagFromLocations(tagId, allWithTag);
 }
 

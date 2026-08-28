@@ -23,6 +23,7 @@ vi.mock("@/lib/commands", () => {
 		newFieldDefs: null,
 		tags: null,
 		tagCounts: null,
+		knownFieldKeys: [],
 	});
 	const map = {
 		id: "m1",

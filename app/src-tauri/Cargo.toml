@@ -75,6 +75,7 @@ vali-generate = { path = "crates/vali/vali-generate" }
 vali-geo = { path = "crates/vali/vali-geo" }
 mma-geo = { path = "crates/geo" }
 json5 = "0.4"
+compact_str = { version = "0.9", features = ["serde"] }
 
 [profile.dev]
 opt-level = 1

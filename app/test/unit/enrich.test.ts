@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 // filterEnrichPatch (from fieldDefs.add) is kept -- the bug lives in its interaction.
 vi.mock("@/store/useMapStore", () => ({
 	getMapState: () => ({ map: null }),
-	fetchLocationsByIds: async () => [],
+	fetchLocations: async () => [],
 	updateLocations: async () => {},
 }));
 vi.mock("@/lib/sv/svMeta", () => ({ fetchSvMetadata: async () => [] }));

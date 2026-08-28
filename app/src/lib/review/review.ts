@@ -14,6 +14,7 @@ import {
 	addSelections,
 	removeSelections,
 	removeLocations,
+	fetchLocations,
 } from "@/store/useMapStore";
 import { selectionDisplayName } from "@/store/selections";
 
@@ -160,7 +161,7 @@ export async function beginReview(ids: number[], source?: Selection): Promise<vo
 	}
 
 	// Freeze the worklist to ids that still exist, preserving the given order.
-	const live = await cmd.storeGetLocationsByIds(ids);
+	const live = await fetchLocations({ kind: "ids", ids });
 	const liveSet = new Set(live.map((l) => l.id));
 	const order = ids.filter((id) => liveSet.has(id));
 	if (order.length === 0) return;
@@ -370,7 +371,7 @@ function clearProjection(id: string): void {
 async function adopt(s: ReviewSession): Promise<void> {
 	let { order, reviewed, cursorId } = s;
 	try {
-		const live = await cmd.storeGetLocationsByIds(s.order);
+		const live = await fetchLocations({ kind: "ids", ids: s.order });
 		const liveIds = new Set(live.map((l) => l.id));
 		order = s.order.filter((id) => liveIds.has(id));
 		if (order.length === 0) {

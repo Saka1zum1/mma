@@ -3,7 +3,7 @@
 
 import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
 import { hostInstance } from "@/lib/map/host";
-import { getMapState, getActiveSelections } from "@/store/useMapStore";
+import { getMapState, getActiveSelections, fetchLocations } from "@/store/useMapStore";
 import { cmd } from "@/lib/commands";
 
 /** @deprecated v0.8.1. Use `MMA.getMapHost()` and narrow via `hostInstance`. */
@@ -69,4 +69,19 @@ export function getSelections() {
 /** @deprecated v0.8.2. Read `(await MMA.cmd.storeGetSummary()).dirtyCount`. */
 export async function getDirtyCount(): Promise<number> {
 	return (await cmd.storeGetSummary()).dirtyCount;
+}
+
+/** @deprecated v0.8.4. Use `MMA.fetchLocations({ kind: "ids", ids: [id] })`. */
+export async function fetchLocation(id: number) {
+	return (await fetchLocations({ kind: "ids", ids: [id] }))[0] ?? null;
+}
+
+/** @deprecated v0.8.4. Use `MMA.fetchLocations({ kind: "ids", ids })`. */
+export function fetchLocationsByIds(ids: number[]) {
+	return fetchLocations({ kind: "ids", ids });
+}
+
+/** @deprecated v0.8.4. Use `MMA.fetchLocations({ kind: "all" })`. */
+export function fetchAllLocations() {
+	return fetchLocations({ kind: "all" });
 }

@@ -6,6 +6,7 @@ import {
 	closeMap as storeCloseMap,
 	mutate,
 	getMapState,
+	scopeIds,
 } from "@/store/useMapStore";
 import * as mapList from "@/store/mapList";
 import { cmd } from "@/lib/commands";
@@ -25,7 +26,7 @@ export async function syncSelections(): Promise<{ ids: number[] }> {
 			ghosted: ghostedSelections.has(s.key),
 		})),
 	);
-	return { ids: await cmd.storeGetSelectedIdsList() };
+	return { ids: await scopeIds({ kind: "selected" }) };
 }
 
 export async function openMap(id: string) {

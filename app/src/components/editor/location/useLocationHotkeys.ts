@@ -275,7 +275,7 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 			const container = fullscreenContainerRef.current ?? panoContainerRef.current?.parentElement;
 			const t0 = performance.now();
 			cmd
-				.storeCopyLocationsToMap(mapId, [loc.id])
+				.storeCopyLocationsToMap(mapId, { kind: "ids", ids: [loc.id] })
 				.then((res) => {
 					log.debug(`[copyToMap] ipc=${Math.round(performance.now() - t0)}ms`);
 					if (!container) return;

@@ -1,6 +1,6 @@
 import type { Location, SeenEntry } from "@/bindings.gen";
 import { createLocation } from "@/types";
-import { getMapState, setActiveLocation, addLocations, fetchLocation } from "@/store/useMapStore";
+import { getMapState, setActiveLocation, addLocations, fetchLocations } from "@/store/useMapStore";
 import { getSettings, panoDisplayOptions } from "@/store/settings";
 import { google } from "@/lib/sv/opensv";
 import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch";
@@ -87,7 +87,10 @@ export function applyResolved(
 export async function loadSeenPano(entry: SeenEntry) {
 	seenSkipNext(entry.panoId);
 
-	const fetched = entry.locationId != null ? await fetchLocation(entry.locationId) : null;
+	const [fetched] =
+		entry.locationId != null
+			? await fetchLocations({ kind: "ids", ids: [entry.locationId] })
+			: [];
 	const existing = fetched && fetched.panoId === entry.panoId ? fetched : null;
 
 	if (existing) {

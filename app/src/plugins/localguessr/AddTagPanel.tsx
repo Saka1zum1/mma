@@ -8,7 +8,10 @@ import { createTags, getVisibleTags, useMapState } from "@/store/useMapStore";
 import { getRecentTags, rememberRecentTag } from "./recentTagsStore";
 
 function normalizeTagName(name: string): string {
-	return name.trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+	return name
+		.trim()
+		.replace(/^\/+|\/+$/g, "")
+		.replace(/\/{2,}/g, "/");
 }
 
 export function AddTagPanel({
@@ -48,7 +51,7 @@ export function AddTagPanel({
 		if (!tagName || busy || locationIds.length === 0) return;
 		setBusy(true);
 		try {
-			await createTags([tagName], locationIds);
+			await createTags([tagName], { kind: "ids", ids: locationIds });
 			setRecent(rememberRecentTag(tagName));
 			toast(
 				locationIds.length === 1
@@ -75,10 +78,7 @@ export function AddTagPanel({
 				onOpenChange(next);
 			}}
 		>
-			<DialogContent
-				title={title ?? t("Add tag")}
-				className="gg-add-tag-dialog"
-			>
+			<DialogContent title={title ?? t("Add tag")} className="gg-add-tag-dialog">
 				<form
 					className="gg-add-tag-dialog__form"
 					onSubmit={(e) => {
@@ -97,9 +97,7 @@ export function AddTagPanel({
 
 					{filteredRecent.length > 0 && (
 						<div className="gg-add-tag-dialog__section">
-							<div className="gg-add-tag-dialog__label">
-								{t("Recent tags")}
-							</div>
+							<div className="gg-add-tag-dialog__label">{t("Recent tags")}</div>
 							<div className="gg-add-tag-dialog__chips">
 								{filteredRecent.map((tag) => (
 									<button
@@ -118,9 +116,7 @@ export function AddTagPanel({
 
 					{filteredAppTags.length > 0 && (
 						<div className="gg-add-tag-dialog__section">
-							<div className="gg-add-tag-dialog__label">
-								{t("Map tags")}
-							</div>
+							<div className="gg-add-tag-dialog__label">{t("Map tags")}</div>
 							<div className="gg-add-tag-dialog__chips">
 								{filteredAppTags.map((tag) => (
 									<button

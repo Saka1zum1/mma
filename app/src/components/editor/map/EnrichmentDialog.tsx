@@ -16,11 +16,11 @@ import {
 	getMapState,
 	renameField,
 	deleteField,
-	fetchAllLocations,
+	fieldCoverage,
+	fieldValues,
 } from "@/store/useMapStore";
 import { useMapSetting } from "@/store/useMapSetting";
-import type { ExtraFieldDef } from "@/bindings.gen";
-import { collectEnumCandidates, type MergeWinner } from "@/lib/data/fieldOps";
+import type { ExtraFieldDef, MergeWinner } from "@/bindings.gen";
 import { mdiClose, mdiDatabasePlusOutline, mdiInformationOutline } from "@mdi/js";
 import { msg, t } from "@/lib/i18n";
 import { Trans } from "@/components/primitives/Trans";
@@ -200,17 +200,8 @@ function FieldsTable({
 	useEffect(() => {
 		const total = getMapState().locationCount;
 		if (total === 0) return;
-		fetchAllLocations().then((locs) => {
-			const counts = new Map<string, number>();
-			for (const loc of locs) {
-				if (!loc.extra) continue;
-				for (const key of Object.keys(loc.extra)) {
-					counts.set(key, (counts.get(key) ?? 0) + 1);
-				}
-			}
-			const ratios = new Map<string, number>();
-			for (const [key, count] of counts) ratios.set(key, count / total);
-			setCoverage(ratios);
+		fieldCoverage({ kind: "all" }).then((counts) => {
+			setCoverage(new Map(counts.map(([key, n]) => [key, n / total])));
 		});
 	}, [coverageEpoch]);
 
@@ -276,8 +267,9 @@ function FieldsTable({
 		const valueRows = (row.values ?? []).map((v) => ({ value: v, label: row.labels?.[v] ?? "" }));
 		if (valueRows.length === 0) valueRows.push({ value: "", label: "" });
 		setEnumPrompt({ key: row.key, rows: valueRows, candidates: [] });
-		const locs = await fetchAllLocations();
-		const candidates = collectEnumCandidates(locs, row.key, row.values ?? []);
+		const have = new Set(row.values ?? []);
+		const values = await fieldValues({ kind: "all" }, row.key);
+		const candidates = values.filter((v) => !have.has(v));
 		setEnumPrompt((p) => (p && p.key === row.key ? { ...p, candidates } : p));
 	};
 
@@ -327,8 +319,8 @@ function FieldsTable({
 			updateRow(row.key, { draftKey: row.key });
 			return;
 		}
-		const locs = await fetchAllLocations();
-		const affected = locs.filter((l) => l.extra && row.key in l.extra).length;
+		const counts = await fieldCoverage({ kind: "all" });
+		const affected = counts.find(([key]) => key === row.key)?.[1] ?? 0;
 		setRenamePrompt({
 			key: row.key,
 			target,

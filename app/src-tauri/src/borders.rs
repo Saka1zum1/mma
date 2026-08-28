@@ -550,30 +550,33 @@ pub fn check_border_file(level: String) -> AppResult<bool> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn download_border_file(level: String) -> AppResult<()> {
+pub async fn download_border_file(level: String) -> AppResult<()> {
     validate_border_level(&level)?;
     if level == "light" {
         return Ok(());
     }
-    let dir = crate::storage::app_data_dir()?.join("borders");
-    std::fs::create_dir_all(&dir)?;
-    let url = format!(
+    tokio::task::spawn_blocking(move || {
+        let dir = crate::storage::app_data_dir()?.join("borders");
+        std::fs::create_dir_all(&dir)?;
+        let url = format!(
         "https://raw.githubusercontent.com/Saka1zum1/mma/master/data/borders/borders-{level}.rkyv"
     );
-    let client = reqwest::blocking::Client::builder()
-        .use_rustls_tls()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()?;
-    let bytes = client
-        .get(&url)
-        .send()
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("Failed to download borders-{level}.rkyv: {e}"))?
-        .bytes()?;
-    std::fs::write(dir.join(format!("borders-{level}.rkyv")), &bytes)?;
-    // Invalidate cache so next lookup reloads
-    cache().lock().unwrap().remove(&level);
-    Ok(())
+        let client = reqwest::blocking::Client::builder()
+            .use_rustls_tls()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()?;
+        let bytes = client
+            .get(&url)
+            .send()
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| format!("Failed to download borders-{level}.rkyv: {e}"))?
+            .bytes()?;
+        std::fs::write(dir.join(format!("borders-{level}.rkyv")), &bytes)?;
+        // Invalidate cache so next lookup reloads
+        cache().lock().unwrap().remove(&level);
+        Ok(())
+    })
+    .await?
 }
 
 #[tauri::command]

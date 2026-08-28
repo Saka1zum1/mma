@@ -9,7 +9,7 @@ import { Switch } from "@/components/primitives/Switch";
 import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { usePluginState } from "@/plugins/registry";
-import { fetchLocationsByIds, getMapState, useMapState } from "@/store/useMapStore";
+import { fetchLocations, getMapState, useMapState } from "@/store/useMapStore";
 import { getMapHost } from "@/lib/map/mapState";
 import { useT } from "@/lib/i18n";
 import { toast } from "@/lib/util/toast";
@@ -102,8 +102,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 		if (mode === "lookAt") {
 			const center = getMapHost()?.getCenter();
 			const lookAt =
-				settings.lookAt ??
-				(center ? { lat: center.lat, lng: center.lng } : { lat: 0, lng: 0 });
+				settings.lookAt ?? (center ? { lat: center.lat, lng: center.lng } : { lat: 0, lng: 0 });
 			patchSettings({ lookMode: "lookAt", lookAt });
 			return;
 		}
@@ -150,7 +149,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 		setMetas([]);
 		setPath([]);
 		try {
-			const locations = await fetchLocationsByIds(ids);
+			const locations = await fetchLocations({ kind: "ids", ids });
 			const result = await buildSequence({
 				settings,
 				locations,
@@ -235,11 +234,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 
 	return (
 		<>
-			<Sidebar
-				title={t("Road Trip")}
-				onBack={handleClose}
-				className="hyperlapse-sidebar"
-			>
+			<Sidebar title={t("Road Trip")} onBack={handleClose} className="hyperlapse-sidebar">
 				<Section title={t("Parameters")}>
 					<Field label={t("FOV ({n}°)", { n: settings.fov })}>
 						<Slider
@@ -260,9 +255,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 					<Field label={t("Playback mode")}>
 						<NSelect
 							value={settings.playbackMode}
-							onChange={(e) =>
-								patchSettings({ playbackMode: e.target.value as PlaybackMode })
-							}
+							onChange={(e) => patchSettings({ playbackMode: e.target.value as PlaybackMode })}
 						>
 							<option value="once">{t("Once")}</option>
 							<option value="loop">{t("Loop")}</option>
@@ -272,9 +265,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 					<Field label={t("Filter")}>
 						<NSelect
 							value={settings.viewFilter}
-							onChange={(e) =>
-								patchSettings({ viewFilter: e.target.value as ViewFilter })
-							}
+							onChange={(e) => patchSettings({ viewFilter: e.target.value as ViewFilter })}
 						>
 							<option value="none">{t("None")}</option>
 							<option value="vivid">{t("Vivid")}</option>
@@ -298,7 +289,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							value={settings.panoZoom}
 							onChange={(e) => {
 								const n = Math.round(Number(e.target.value));
-								if(!Number.isFinite(n)) return;
+								if (!Number.isFinite(n)) return;
 								patchSettings({ panoZoom: Math.min(n ?? 2, 3) });
 							}}
 						/>
@@ -365,7 +356,9 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 									{t("Pick on map")}
 								</Button>
 							</div>
-							<p className="hyperlapse-sidebar__hint">{t("In look-at mode the viewer locks heading; drag adjusts pitch and roll only.")}</p>
+							<p className="hyperlapse-sidebar__hint">
+								{t("In look-at mode the viewer locks heading; drag adjusts pitch and roll only.")}
+							</p>
 						</>
 					)}
 					{settings.lookMode === "fixed" && (
@@ -415,11 +408,7 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 							{t("Cancel")}
 						</Button>
 					) : (
-						<Button
-							variant="primary"
-							disabled={selectedCount < 2}
-							onClick={() => void generate()}
-						>
+						<Button variant="primary" disabled={selectedCount < 2} onClick={() => void generate()}>
 							{t("Generate")}
 						</Button>
 					)}
@@ -532,7 +521,10 @@ export function HyperlapseSidebar({ onClose }: { onClose: () => void }) {
 				</Section>
 			</Sidebar>
 
-			<Dialog open={deleteConfirmId != null} onOpenChange={(open) => !open && setDeleteConfirmId(null)}>
+			<Dialog
+				open={deleteConfirmId != null}
+				onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+			>
 				<DialogContent title={t("Delete")}>
 					<p>{t("Delete this sequence?")}</p>
 					<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>

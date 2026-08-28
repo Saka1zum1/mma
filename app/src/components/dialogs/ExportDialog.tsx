@@ -36,7 +36,6 @@ export function ExportDialog({ onClose }: Props) {
 	if (!map) return null;
 
 	const baseName = fileName || map.meta.name || "export";
-	const scopeIds = scope.kind === "all" ? undefined : [...selectedIds];
 
 	const tagsJson = () =>
 		serializeTagsForExport(getVisibleTags(), getMapState().tagCounts);
@@ -46,13 +45,13 @@ export function ExportDialog({ onClose }: Props) {
 			exportZoom: saveZoom,
 			exportUnpanned: bypassUnpanned,
 			exportExtras: saveExtras,
-			scope: scopeIds ?? null,
+			scope,
 			mapName: map.meta.name,
 			tagsJson: tagsJson(),
 			extraFieldsJson: JSON.stringify(getAllFieldDefs()),
 		});
-	const csvPath = () => cmd.storeExportCsv(scopeIds ?? null);
-	const geojsonPath = () => cmd.storeExportGeojson(scopeIds ?? null, tagsJson());
+	const csvPath = () => cmd.storeExportCsv(scope);
+	const geojsonPath = () => cmd.storeExportGeojson(scope, tagsJson());
 
 	const saveToFile = (srcPath: string, ext: string) =>
 		saveExportTempFile(srcPath, `${baseName}.${ext}`);

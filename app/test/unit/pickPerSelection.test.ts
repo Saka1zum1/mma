@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // active selections, and their picks union (a location in two selections is picked once).
 
 const h = vi.hoisted(() => ({
-	resolved: [] as unknown[],
+	sampledScopes: [] as unknown[],
 	spacedScopes: [] as unknown[],
 }));
 
@@ -34,6 +34,16 @@ vi.mock("@/lib/commands", () => {
 		2: [4, 5, 6, 7, 8],
 		3: [11, 12, 13, 14, 15],
 	};
+	type TestScope =
+		| { kind: "selected" }
+		| { kind: "props"; props: { type: string; tagId?: number } };
+	// Pool per scope: props resolve against byTag, "selected" against the live JS set.
+	const poolOf = async (scope: TestScope): Promise<number[]> => {
+		if (scope.kind === "props")
+			return scope.props.type === "Tag" ? (byTag[scope.props.tagId ?? 0] ?? []) : [];
+		const { getMapState } = await import("@/store/useMapStore");
+		return [...getMapState().selectedLocationIds];
+	};
 	const handlers: Record<string, (...args: never[]) => unknown> = {
 		storeGetMap: async () => map,
 		storeOpenMap: async () => ({
@@ -43,14 +53,24 @@ vi.mock("@/lib/commands", () => {
 			knownFieldKeys: [],
 		}),
 		storeSyncSelections: async () => ({ counts: {}, bitmask: null, selectedCount: 0 }),
-		storeResolveSelection: async (props: { type: string; tagId?: number }) => {
-			h.resolved.push(props);
-			return props.type === "Tag" ? (byTag[props.tagId ?? 0] ?? []) : [];
-		},
-		storePickSpaced: async (scope: { tagId?: number } | null, count: number | null) => {
-			h.spacedScopes.push(scope);
-			const pool = scope?.tagId ? (byTag[scope.tagId] ?? []) : [1, 2, 3];
-			return { ids: pool.slice(0, count ?? pool.length), distanceM: 100 };
+		storeQuery: async (
+			scope: TestScope,
+			select: { kind: string; n?: number; targetCount?: number | null },
+		) => {
+			const pool = await poolOf(scope);
+			if (select.kind === "sample") {
+				h.sampledScopes.push(scope);
+				return { kind: "ids", ids: pool.slice(0, select.n) };
+			}
+			if (select.kind === "spaced") {
+				h.spacedScopes.push(scope);
+				return {
+					kind: "spaced",
+					ids: pool.slice(0, select.targetCount ?? pool.length),
+					distanceM: 100,
+				};
+			}
+			return { kind: "ids", ids: pool };
 		},
 	};
 	return {
@@ -81,7 +101,7 @@ function pickedIds(): number[] {
 beforeEach(async () => {
 	await openMap("m1");
 	await resetSelections();
-	h.resolved = [];
+	h.sampledScopes = [];
 	h.spacedScopes = [];
 });
 
@@ -120,7 +140,7 @@ describe("random pick, per selection", () => {
 		const picked = await selectRandomFromSelection(2, true);
 
 		expect(picked).toBe(2);
-		expect(h.resolved).toEqual([]);
+		expect(h.sampledScopes).toEqual([{ kind: "selected" }]);
 		expect(pickedIds().every((id) => id >= 90)).toBe(true);
 	});
 
@@ -135,7 +155,7 @@ describe("random pick, per selection", () => {
 		await selectRandomFromSelection(2, true);
 
 		// One live selection left, so the pick runs once over the whole selection.
-		expect(h.resolved).toEqual([]);
+		expect(h.sampledScopes).toEqual([{ kind: "selected" }]);
 	});
 });
 
@@ -149,23 +169,24 @@ describe("spaced pick, per selection", () => {
 		const { picked, distanceM } = await selectSpacedFromSelection({ count: 2 }, true);
 
 		expect(h.spacedScopes).toEqual([
-			{ type: "Tag", tagId: 1 },
-			{ type: "Tag", tagId: 2 },
+			{ kind: "props", props: { type: "Tag", tagId: 1 } },
+			{ kind: "props", props: { type: "Tag", tagId: 2 } },
 		]);
 		expect(picked).toBe(4);
 		// Spacing holds only within a bucket, so a multi-bucket pick claims none.
 		expect(distanceM).toBe(0);
 	});
 
-	it("passes a null scope for a whole-selection pick", async () => {
+	it("passes the selected scope for a whole-selection pick", async () => {
 		await addSelections([
 			{ type: "Tag", tagId: 1 },
 			{ type: "Tag", tagId: 2 },
 		]);
+		setSelectedLocationIds(new Set([1, 2, 3]));
 
 		const { distanceM } = await selectSpacedFromSelection({ count: 3 }, false);
 
-		expect(h.spacedScopes).toEqual([null]);
+		expect(h.spacedScopes).toEqual([{ kind: "selected" }]);
 		expect(distanceM).toBe(100);
 	});
 });

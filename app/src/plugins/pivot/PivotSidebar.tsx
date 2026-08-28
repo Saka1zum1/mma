@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import type { Selection, SelectionProps } from "@/bindings.gen";
+import type { KeySpec, PartitionBucket, Selection, SelectionProps } from "@/bindings.gen";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
@@ -8,10 +8,10 @@ import { savedToSelectionProps, describeRule, type SavedSelection } from "@/stor
 import { Sidebar, Field, EmptyState, SegmentedControl } from "@/components/primitives/Sidebar";
 import type { ExtraFieldDef } from "@/bindings.gen";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
-import { fieldValue } from "@/lib/data/fieldOps";
+import { subscribeMany, LOCATION_DATA_EVENTS } from "@/lib/events";
 import { useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
 import { useMapState } from "@/store/useMapStore";
-import { binNumeric, compareNatural } from "@/lib/util/util";
+import { compareNatural } from "@/lib/util/util";
 import { usePluginState } from "@/plugins/registry";
 import {
 	stripNa,
@@ -26,10 +26,7 @@ import {
 	type PivotData,
 	type ValueMode,
 } from "./pivotMath";
-import type { LocationStore } from "@/api";
 import "./pivot.css";
-
-let locStore: LocationStore | null = null;
 
 type RowSource = "all" | "active" | string; // "all", "active", or saved selection id
 
@@ -47,15 +44,12 @@ async function computePivot(
 	const map = MMA.getMapState().map;
 	if (!map) return null;
 
-	if (!locStore) locStore = await MMA.createLocationStore();
-	const allLocs = [...locStore.locations.values()];
-
 	// Determine rows + resolve ID sets
 	let rowDefs: { label: string; color: [number, number, number] }[];
 	let idSets: Set<number>[];
 
 	if (rowSource === "all") {
-		const allIds = new Set(allLocs.map((l) => l.id));
+		const allIds = new Set(await MMA.scopeIds({ kind: "all" }));
 		rowDefs = [{ label: t("All locations"), color: [140, 140, 140] }];
 		idSets = [allIds];
 	} else if (rowSource === "active") {
@@ -67,7 +61,7 @@ async function computePivot(
 		}));
 		idSets = await Promise.all(
 			sels.map((s: Selection) =>
-				MMA.cmd.storeResolveSelection(s.props).then((ids: number[]) => new Set(ids)),
+				MMA.scopeIds({ kind: "props", props: s.props }).then((ids: number[]) => new Set(ids)),
 			),
 		);
 	} else {
@@ -88,7 +82,7 @@ async function computePivot(
 		rowDefs = resolvedRows.map((r) => ({ label: r.label, color: r.color }));
 		idSets = await Promise.all(
 			resolvedRows.map((r) =>
-				MMA.cmd.storeResolveSelection(r.props).then((ids: number[]) => new Set(ids)),
+				MMA.scopeIds({ kind: "props", props: r.props }).then((ids: number[]) => new Set(ids)),
 			),
 		);
 	}
@@ -97,52 +91,43 @@ async function computePivot(
 	const tagMap = MMA.getMapState().tags;
 	const isNumeric = !isTags && (fieldDef?.type === "number" || fieldDef?.type === "date");
 
-	// Numeric fields explode into one column per distinct value; bucket them into
-	// a fixed histogram of ranges. resolveBucketCount arbitrates between the
-	// user's choice and the field's cardinality.
-	const numericVals = isNumeric
-		? allLocs.flatMap((loc) => {
-				const v = fieldValue(loc, fieldKey);
-				const n = v == null ? NaN : Number(v);
-				return Number.isFinite(n) ? [n] : [];
-			})
-		: null;
-	const numericDistinct = numericVals ? new Set(numericVals).size : undefined;
-	const effectiveBuckets =
-		numericVals && numericDistinct != null
-			? resolveBucketCount(numericDistinct, bucketCount)
-			: null;
-	const buckets =
-		numericVals && effectiveBuckets
-			? binNumeric(numericVals, { by: "count", n: effectiveBuckets })
-			: null;
-
-	// Build field index: locId -> field value(s). Tags are multi-valued.
+	// Field index (locId -> group key(s)) comes from the engine: tags from per-tag
+	// scopes, everything else from one whole-map groupBy. Numeric fields bucket into
+	// a histogram; resolveBucketCount arbitrates between the user's choice and the
+	// field's cardinality.
 	const fieldIndex = new Map<number, string[]>();
-	for (const loc of allLocs) {
-		if (isTags) {
-			if (loc.tags.length > 0) {
-				fieldIndex.set(
-					loc.id,
-					loc.tags.map((t) => String(t)),
-				);
-			}
-		} else {
-			const val = fieldValue(loc, fieldKey);
-			if (val == null) continue;
-			if (buckets) {
-				const n = Number(val);
-				if (Number.isFinite(n)) fieldIndex.set(loc.id, [buckets.labels[buckets.bucketIndex(n)]]);
-			} else {
-				fieldIndex.set(loc.id, [String(val)]);
-			}
-		}
+	let numericDistinct: number | undefined;
+	let buckets: PartitionBucket[] | null = null;
+	if (isTags) {
+		await Promise.all(
+			Object.keys(tagMap).map(async (tid) => {
+				const ids = await MMA.scopeIds({
+					kind: "props",
+					props: { type: "Tag", tagId: Number(tid) },
+				});
+				for (const id of ids) {
+					const vals = fieldIndex.get(id);
+					if (vals) vals.push(tid);
+					else fieldIndex.set(id, [tid]);
+				}
+			}),
+		);
+	} else {
+		if (isNumeric) numericDistinct = (await MMA.fieldValues({ kind: "all" }, fieldKey)).length;
+		const effectiveBuckets =
+			numericDistinct != null ? resolveBucketCount(numericDistinct, bucketCount) : null;
+		const key: KeySpec = effectiveBuckets
+			? { kind: "numericBin", binning: { by: "count", n: effectiveBuckets } }
+			: { kind: "value" };
+		const groups = await MMA.groupBy({ kind: "all" }, fieldKey, key);
+		for (const g of groups) for (const id of g.ids) fieldIndex.set(id, [g.key]);
+		if (effectiveBuckets) buckets = groups;
 	}
 
 	// Discover columns
 	let columns: string[];
 	if (buckets) {
-		columns = [...buckets.labels];
+		columns = buckets.map((g) => g.key);
 	} else if (!isTags && fieldDef?.values && fieldDef.values.length > 0) {
 		columns = [...fieldDef.values];
 	} else {
@@ -200,8 +185,9 @@ async function computePivot(
 		if (col === NA_KEY) return null;
 		if (isTags) return { type: "Tag", tagId: Number(col) };
 		if (buckets) {
-			const [lo, hi] = buckets.bounds[i];
-			return { type: "Filter", field: fieldKey, op: "between", value: lo, value2: hi };
+			const bin = buckets[i]?.bin;
+			if (!bin) return null;
+			return { type: "Filter", field: fieldKey, op: "between", value: bin[0], value2: bin[1] };
 		}
 		return { type: "Filter", field: fieldKey, op: "eq", value: col, value2: null };
 	});
@@ -266,13 +252,11 @@ export function PivotSidebar({ onClose }: { onClose: () => void }) {
 
 	useEffect(() => {
 		recompute();
-		const unsubStore = locStore?.onChange(debouncedRecompute);
+		const unsubLoc = subscribeMany(LOCATION_DATA_EVENTS, debouncedRecompute);
 		const unsubSel = MMA.on("selection:change", debouncedRecompute);
 		return () => {
-			unsubStore?.();
+			unsubLoc();
 			unsubSel();
-			locStore?.destroy();
-			locStore = null;
 		};
 	}, [recompute, debouncedRecompute]);
 

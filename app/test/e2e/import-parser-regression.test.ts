@@ -388,7 +388,7 @@ describe("Import — export/reimport tag round-trip", () => {
 				exportZoom: true,
 				exportUnpanned: true,
 				exportExtras: true,
-				scope: null,
+				scope: { kind: "all" },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
 				extraFieldsJson: null,

@@ -1,20 +1,20 @@
 ﻿import { useState, useSyncExternalStore } from "react";
 import type { Scope, PartitionBucket, KeySpec, Location } from "@/bindings.gen";
-import { cmd } from "@/lib/commands";
 import { compareNatural } from "@/lib/util/util";
 import { compareMonthOrder } from "@/lib/util/date";
 import { resolveSavedSelectionIds } from "./savedSelections";
+import type { ReadonlyIdSet } from "@/lib/render/CellManager";
 
-import { useMapState, getMapState } from "./useMapStore";
+import { useMapState, getMapState, groupBy, scopeIds } from "./useMapStore";
 
 /** The user-facing "which locations" concept: Rust's mechanical Scope widened with
  *  saved selections, which resolve to ids in JS (Rust never sees saved definitions). */
-export type SourceScope = Scope | { kind: "saved"; id: string };
+export type ScopeWithSaved = Scope | { kind: "saved"; id: string };
 
-export interface ScopeController<S extends SourceScope = Scope> {
+export interface ScopeController<S extends ScopeWithSaved = Scope> {
 	scope: S;
 	// Method syntax on purpose: bivariance lets a plain ScopeController flow into
-	// ScopeSelector's wider ScopeController<SourceScope> prop.
+	// ScopeSelector's wider ScopeController<ScopeWithSaved> prop.
 	setScope(s: S): void;
 	allCount: number;
 	selectionCount: number;
@@ -23,22 +23,28 @@ export interface ScopeController<S extends SourceScope = Scope> {
 	saved?: boolean;
 }
 
-/** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side). */
+/** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side).
+ *  `props` scopes carry a predicate only Rust can evaluate -- resolve those via
+ *  `resolveScopeIds`/`fetchLocations` instead. */
 export function applyScope(scope: Scope, pool: Location[]): Location[] {
 	if (scope.kind === "all") return pool;
-	const ids = getMapState().selectedLocationIds;
+	if (scope.kind === "props")
+		throw new Error("applyScope: props scopes resolve in Rust (use resolveScopeIds)");
+	const ids = scope.kind === "ids" ? new Set(scope.ids) : getMapState().selectedLocationIds;
 	return pool.filter((item) => ids.has(item.id));
 }
 
-/** The id-set a scope narrows to, or null for "all". Saved scopes resolve in Rust. */
-export async function resolveScopeIds(
-	scope: SourceScope,
-): Promise<{ has(id: number): boolean; size: number } | null> {
+/** The id-set a scope narrows to, or null for "all". Saved and props scopes resolve async. */
+export async function resolveScopeIds(scope: ScopeWithSaved): Promise<ReadonlyIdSet | null> {
 	switch (scope.kind) {
 		case "all":
 			return null;
 		case "selected":
 			return getMapState().selectedLocationIds;
+		case "ids":
+			return new Set(scope.ids);
+		case "props":
+			return new Set(await scopeIds(scope));
 		case "saved":
 			return resolveSavedSelectionIds(scope.id);
 	}
@@ -51,7 +57,7 @@ export async function partition(
 	key: KeySpec,
 	scope: Scope,
 ): Promise<PartitionBucket[]> {
-	const groups = await cmd.storePartition(field, key, scope);
+	const groups = await groupBy(scope, field, key);
 	if (key.kind !== "numericBin") {
 		const cmp =
 			key.kind === "datePart" && key.part === "monthOfYear" ? compareMonthOrder : compareNatural;
@@ -98,7 +104,8 @@ export function createScope(initial?: Scope): ScopeHandle {
 	const listeners = new Set<() => void>();
 	const get = () => scope;
 	const set = (next: Scope) => {
-		if (next.kind === scope.kind) return;
+		// Structural, not by kind: two `ids` scopes differ by their contents.
+		if (JSON.stringify(next) === JSON.stringify(scope)) return;
 		scope = next;
 		for (const l of listeners) l();
 	};

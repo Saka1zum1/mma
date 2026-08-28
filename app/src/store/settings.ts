@@ -1,5 +1,5 @@
 import { bridgeAcrossWindows, emit as emitEvent, useEventValue } from "@/lib/events";
-import { getLocal, setLocal, reloadLocal } from "@/lib/hooks/useLocalStorage";
+import { getLocal, setLocal, reloadLocal, persisted } from "@/lib/hooks/useLocalStorage";
 import { msg } from "@/lib/i18n";
 import type { SavedSelection } from "./savedSelections";
 import type { TagSortMode } from "@/types";
@@ -236,13 +236,13 @@ export const CSS_VAR_SETTINGS: ReadonlyArray<
 	readonly [cssVar: string, value: (s: AppSettings) => string]
 > = [["--tag-gap", (s) => `${s.tagGap}px`]];
 
-const STORAGE_KEY = "appSettings";
+export const APP_SETTINGS = persisted("appSettings", DEFAULTS);
 
-let settings: AppSettings = { ...getLocal(STORAGE_KEY, DEFAULTS) };
+let settings: AppSettings = { ...getLocal(APP_SETTINGS) };
 
 // Another window changed settings: reread the shared localStorage before re-emitting.
 bridgeAcrossWindows("settings:changed", () => {
-	settings = { ...reloadLocal(STORAGE_KEY, DEFAULTS) };
+	settings = { ...reloadLocal(APP_SETTINGS) };
 });
 
 export function getSettings(): AppSettings {
@@ -268,7 +268,7 @@ export function panoDisplayOptions(s: AppSettings) {
 
 export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {
 	settings = { ...settings, [key]: value };
-	setLocal(STORAGE_KEY, settings);
+	setLocal(APP_SETTINGS, settings);
 	emitEvent("settings:changed");
 	// Tag display labels are memoized on the visible-tags array; bust that cache when
 	// truncation / view mode changes so selection chips and collapsed previews update.

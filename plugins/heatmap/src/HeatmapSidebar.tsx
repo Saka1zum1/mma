@@ -28,7 +28,7 @@ import {
 	type GradientStop,
 	type HeatmapGradient,
 } from "./gradients";
-import type { SourceScope } from "mma-plugin-types";
+import type { ScopeWithSaved } from "mma-plugin-types";
 
 const CSS = `
 .heatmap-sidebar { overflow: auto; }
@@ -245,7 +245,7 @@ function LayerControls({
 			<MMA.ui.ScopeSelector
 				ctl={{
 					scope: l.source,
-					setScope: (s: SourceScope) => set({ source: s }),
+					setScope: (s: ScopeWithSaved) => set({ source: s }),
 					allCount,
 					selectionCount,
 					saved: true,

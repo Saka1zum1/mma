@@ -7,19 +7,20 @@
 //! bitmasks. The bitmasks are then serialized into a per-cell binary format that JS reads
 //! to color the selection overlay.
 
+use crate::types::{Location, LocationFlags};
+use crate::util::{tz_offset_seconds, unix_to_hour_min, unix_to_month_day};
+use arrow_array::{Array, Float64Array, ListArray, RecordBatch, StringArray, UInt32Array};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use mma_geo::equirect_m2;
 pub(crate) use mma_geo::{
     anchor_bbox, extend_bbox_with_ring, haversine_m, in_bbox, polygon_contains, PreparedRing,
 };
 #[cfg(test)]
 pub(crate) use mma_geo::{point_in_ring, unwrap_ring};
-use crate::types::{Location, LocationFlags};
-use crate::util::{tz_offset_seconds, unix_to_hour_min, unix_to_month_day};
-use arrow_array::{Array, Float64Array, ListArray, RecordBatch, StringArray, UInt32Array};
-use chrono::{DateTime, Datelike, Timelike, Utc};
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 /// Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
@@ -281,6 +282,27 @@ impl<'a, 'v> RowRef<'a, 'v> {
             RowInner::Loc(l) => resolve_field_loc(l, field),
         }
     }
+    /// Visit each top-level `extra` key. Byte-scan only: no value parsing, no map alloc.
+    pub fn for_each_extra_key(&self, mut f: impl FnMut(&str)) {
+        match &self.inner {
+            RowInner::Loc(l) => {
+                if let Some(extra) = l.extra.as_ref() {
+                    extra.for_each_field(|k, _| f(k));
+                }
+            }
+            RowInner::Base(v, i) => {
+                let Some(extras) = v.extras else { return };
+                if extras.is_null(*i) {
+                    return;
+                }
+                let s = extras.value(*i);
+                crate::types::scan_fields(s.as_bytes(), |fs| {
+                    f(&s[fs.key.clone()]);
+                    false
+                });
+            }
+        }
+    }
     /// Resolve `field` plus the companion `timezone` with at most one extras-JSON parse.
     /// The tz_local filter path reads both per row; going through `resolve_field` twice
     /// would parse the extras blob twice.
@@ -297,10 +319,7 @@ impl<'a, 'v> RowRef<'a, 'v> {
                 // One byte-scan collects both members; only their value slices parse.
                 let mut fv_extra: Option<serde_json::Value> = None;
                 let mut tz: Option<String> = None;
-                if let Some(s) = v
-                    .extras
-                    .and_then(|c| (!c.is_null(*i)).then(|| c.value(*i)))
-                {
+                if let Some(s) = v.extras.and_then(|c| (!c.is_null(*i)).then(|| c.value(*i))) {
                     let b = s.as_bytes();
                     crate::types::scan_fields(b, |fs| {
                         let k = &b[fs.key.clone()];
@@ -408,7 +427,7 @@ impl<'a> LocView<'a> {
 
     /// Return the overlay patch for batch row `i`, if one exists.
     #[inline]
-    pub fn patch_at(&self, i: usize) -> Option<&Location> {
+    pub fn patch_at(&self, i: usize) -> Option<&'a Location> {
         if !self.has_patches {
             return None;
         }
@@ -430,29 +449,35 @@ impl<'a> LocView<'a> {
         crate::arrow_bridge::row_to_location(self.batch.unwrap(), i)
     }
 
-    /// Visit every alive location once, overlay applied: dead rows skipped, patched
-    /// rows surfaced as `RowRef::Loc`, then the overlay adds. The patch is resolved a
-    /// single time per row. Serial; `f` may accumulate.
-    #[inline]
-    pub fn for_each(&self, mut f: impl FnMut(RowRef)) {
-        for i in 0..self.batch_rows {
-            if !self.is_alive(i) {
-                continue;
-            }
-            match self.patch_at(i) {
-                Some(p) => f(RowRef {
-                    inner: RowInner::Loc(p),
-                }),
-                None => f(RowRef {
+    /// Every alive location once, overlay applied: dead rows skipped, patched rows
+    /// surfaced as `RowRef::Loc`, then the overlay adds. The patch is resolved a
+    /// single time per row.
+    pub fn iter(&self) -> impl Iterator<Item = RowRef<'a, '_>> {
+        (0..self.batch_rows)
+            .filter(move |&i| self.is_alive(i))
+            .map(move |i| match self.patch_at(i) {
+                Some(p) => RowRef::from_loc(p),
+                None => RowRef {
                     inner: RowInner::Base(self, i),
-                }),
-            }
-        }
-        for loc in self.adds {
-            f(RowRef {
-                inner: RowInner::Loc(loc),
-            });
-        }
+                },
+            })
+            .chain(self.adds.iter().map(RowRef::from_loc))
+    }
+
+    /// The scope guard: in-scope rows only, `None` = unscoped. Pairs with
+    /// `Scope::resolve` -- resolution happens once at the command boundary, this is
+    /// the one place the resolved set filters iteration.
+    pub fn scoped<'v>(
+        &'v self,
+        set: Option<&'v RoaringBitmap>,
+    ) -> impl Iterator<Item = RowRef<'a, 'v>> + 'v {
+        self.iter()
+            .filter(move |r| set.is_none_or(|s| s.contains(r.id())))
+    }
+
+    #[inline]
+    pub fn for_each(&self, f: impl FnMut(RowRef)) {
+        self.iter().for_each(f)
     }
 
     /// Build a bool mask over all locations (batch + adds) using a per-row predicate.
@@ -1346,7 +1371,6 @@ fn prune_thinning(locs: &[&Location], distance_m: f64) -> Vec<u32> {
     (0..n).filter(|&i| removed[i]).map(|i| locs[i].id).collect()
 }
 
-
 // --- Filter: field-level comparison predicates ---
 
 /// How a built-in field may be accessed by the field system on the TS side.
@@ -1662,13 +1686,33 @@ pub enum NumericBinning {
     Width { w: f64 },
 }
 
-/// Which locations to operate on: the whole map or the current selection. Resolved in Rust
-/// against the maintained selection set.
+/// Which locations to operate on. The one way to name a row set: resolved in Rust
+/// against the maintained selection set, so callers never materialize rows to narrow them.
+/// `All`/`Selected` reference state Rust already holds; `Ids`/`Props` carry their
+/// definition in the call.
 #[derive(Clone, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Scope {
     All,
     Selected,
+    Ids { ids: Vec<u32> },
+    Props { props: SelectionProps },
+}
+
+impl Scope {
+    /// The id set this scope narrows to, or `None` for the whole map.
+    pub fn resolve<'a>(
+        &'a self,
+        view: &LocView,
+        selected: &'a RoaringBitmap,
+    ) -> Option<Cow<'a, RoaringBitmap>> {
+        match self {
+            Scope::All => None,
+            Scope::Selected => Some(Cow::Borrowed(selected)),
+            Scope::Ids { ids } => Some(Cow::Owned(ids.iter().copied().collect())),
+            Scope::Props { props } => Some(Cow::Owned(resolve_set(view, props))),
+        }
+    }
 }
 
 /// A calendar component to group dates by.
@@ -1707,42 +1751,33 @@ const MONTH_NAMES: [&str; 12] = [
     "December",
 ];
 
-/// Partition `view` into groups by `field`. `scope` (when Some) restricts to that id set.
+/// Partition `view` into groups by `field`. `set` (when Some) restricts to those ids.
 /// Returns groups in a deterministic but unsorted order (numeric: bin order; projection:
 /// first-seen) — the JS caller sorts for display.
 pub fn partition(
     view: &LocView,
     field: &str,
     spec: &KeySpec,
-    scope: Option<&RoaringBitmap>,
+    set: Option<&RoaringBitmap>,
 ) -> Vec<PartitionBucket> {
     match spec {
-        KeySpec::NumericBin { binning } => partition_numeric(view, field, binning, scope),
-        _ => partition_keyed(view, field, spec, scope),
+        KeySpec::NumericBin { binning } => partition_numeric(view, field, binning, set),
+        _ => partition_keyed(view, field, spec, set),
     }
-}
-
-#[inline]
-fn out_of_scope(scope: Option<&RoaringBitmap>, id: u32) -> bool {
-    scope.is_some_and(|s| !s.contains(id))
 }
 
 fn partition_numeric(
     view: &LocView,
     field: &str,
     binning: &NumericBinning,
-    scope: Option<&RoaringBitmap>,
+    set: Option<&RoaringBitmap>,
 ) -> Vec<PartitionBucket> {
     let mut vals: Vec<(u32, f64)> = Vec::new();
-    view.for_each(|row| {
-        let id = row.id();
-        if out_of_scope(scope, id) {
-            return;
-        }
+    for row in view.scoped(set) {
         if let Some(n) = row.resolve_field(field).as_ref().and_then(as_f64) {
-            vals.push((id, n));
+            vals.push((row.id(), n));
         }
-    });
+    }
     let nums: Vec<f64> = vals.iter().map(|(_, n)| *n).collect();
     let buckets = match bin_numeric(&nums, binning) {
         Some(b) => b,
@@ -1768,15 +1803,12 @@ fn partition_keyed(
     view: &LocView,
     field: &str,
     spec: &KeySpec,
-    scope: Option<&RoaringBitmap>,
+    set: Option<&RoaringBitmap>,
 ) -> Vec<PartitionBucket> {
     let mut index: HashMap<String, usize> = HashMap::new();
     let mut groups: Vec<PartitionBucket> = Vec::new();
-    view.for_each(|row| {
+    for row in view.scoped(set) {
         let id = row.id();
-        if out_of_scope(scope, id) {
-            return;
-        }
         let key = match spec {
             KeySpec::Value => row.resolve_field(field).and_then(|v| value_key(&v)),
             KeySpec::DatePart { part, tz_local } => {
@@ -1791,7 +1823,7 @@ fn partition_keyed(
         };
         if let Some(k) = key {
             if k.is_empty() {
-                return;
+                continue;
             }
             match index.get(&k) {
                 Some(&i) => groups[i].ids.push(id),
@@ -1805,8 +1837,74 @@ fn partition_keyed(
                 }
             }
         }
-    });
+    }
     groups
+}
+
+/// Group counts without the member ids. Delegates to `partition` so key derivation
+/// keeps one definition.
+pub fn count_by(
+    view: &LocView,
+    field: &str,
+    spec: &KeySpec,
+    set: Option<&RoaringBitmap>,
+) -> Vec<(String, u32)> {
+    partition(view, field, spec, set)
+        .into_iter()
+        .map(|g| (g.key, g.ids.len() as u32))
+        .collect()
+}
+
+/// How many scoped rows carry each top-level `extra` key, key-sorted. Answers "which
+/// fields does this map actually have, and how covered are they" in one pass.
+pub fn extra_key_coverage(view: &LocView, set: Option<&RoaringBitmap>) -> Vec<(String, u32)> {
+    let mut counts: HashMap<String, u32> = HashMap::new();
+    for row in view.scoped(set) {
+        row.for_each_extra_key(|key| match counts.get_mut(key) {
+            Some(c) => *c += 1,
+            None => {
+                counts.insert(key.to_string(), 1);
+            }
+        });
+    }
+    let mut out: Vec<(String, u32)> = counts.into_iter().collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Ids of every alive location in scope, in view order (batch rows, then overlay adds).
+pub fn scoped_ids(view: &LocView, set: Option<&RoaringBitmap>) -> Vec<u32> {
+    view.scoped(set).map(|row| row.id()).collect()
+}
+
+/// Distinct values of `field` across the scoped set, sorted. Scalars stringify so they
+/// match the string-typed options they populate; null and containers are skipped.
+pub fn distinct_values(view: &LocView, field: &str, set: Option<&RoaringBitmap>) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    for row in view.scoped(set) {
+        match row.resolve_field(field) {
+            Some(serde_json::Value::String(s)) if !s.is_empty() => {
+                seen.insert(s);
+            }
+            Some(v @ (serde_json::Value::Number(_) | serde_json::Value::Bool(_))) => {
+                seen.insert(v.to_string());
+            }
+            _ => {}
+        }
+    }
+    seen.into_iter().collect()
+}
+
+/// `n` distinct ids drawn uniformly at random. Partial Fisher-Yates, so drawing 5 from a
+/// million swaps 5 entries rather than shuffling the pool.
+pub fn sample(mut ids: Vec<u32>, n: usize) -> Vec<u32> {
+    let k = n.min(ids.len());
+    for i in 0..k {
+        let j = i + fastrand::usize(..ids.len() - i);
+        ids.swap(i, j);
+    }
+    ids.truncate(k);
+    ids
 }
 
 /// JS `String(value)` for the key: strings verbatim (empty -> skip), numbers without a

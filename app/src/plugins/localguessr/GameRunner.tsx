@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { fetchAllLocations, getMapState } from "@/store/useMapStore";
+import { fetchLocations, getMapState } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { useT } from "@/lib/i18n";
 import {
@@ -14,13 +14,10 @@ import {
 	type GameConfig,
 	type RoundResult,
 } from "./GameState";
-import type { GameSession } from "./GameState";import { resolveMapMaxError } from "./ScoreUtils";
+import type { GameSession } from "./GameState";
+import { resolveMapMaxError } from "./ScoreUtils";
 import { saveSession } from "./gameSessionStore";
-import {
-	saveOngoingGame,
-	deleteOngoingGame,
-	type OngoingGameRecord,
-} from "./ongoingGameStore";
+import { saveOngoingGame, deleteOngoingGame, type OngoingGameRecord } from "./ongoingGameStore";
 import { RoundPlayer } from "./RoundPlayer";
 import { SummaryView } from "./SummaryView";
 import { AnalyticsPage } from "./analytics/AnalyticsPage";
@@ -55,7 +52,7 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 			toast(t("Open a map to play"));
 			return;
 		}
-		const all = await fetchAllLocations();
+		const all = await fetchLocations({ kind: "all" });
 		if (all.length === 0) {
 			toast(t("This map has no locations"));
 			return;
@@ -104,7 +101,7 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 			nextIndex >= state.active.locations.length
 		) {
 			void (async () => {
-				const all = await fetchAllLocations();
+				const all = await fetchLocations({ kind: "all" });
 				const more = pickRandomLocations(all, INFINITE_BATCH);
 				dispatch({ type: "EXTEND_LOCATIONS", locations: more });
 				dispatch({
@@ -180,13 +177,18 @@ export function useGameController(storedConfig?: Partial<GameConfig>) {
 	};
 }
 
-export function GameOverlay({
-	controller,
-}: {
-	controller: ReturnType<typeof useGameController>;
-}) {
-	const { state, onResult, onNext, onFinish, abort, showAnalytics, showReplay, backToConfig, startGame } =
-		controller;
+export function GameOverlay({ controller }: { controller: ReturnType<typeof useGameController> }) {
+	const {
+		state,
+		onResult,
+		onNext,
+		onFinish,
+		abort,
+		showAnalytics,
+		showReplay,
+		backToConfig,
+		startGame,
+	} = controller;
 
 	if (state.phase === "config") return null;
 

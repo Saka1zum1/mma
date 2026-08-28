@@ -257,7 +257,7 @@ function BulkTagForm() {
 		const name = bulkTagInput.trim();
 		const selected = getMapState().selectedLocationIds;
 		if (!name || selected.size === 0) return;
-		await createTags([name], [...selected]);
+		await createTags([name], { kind: "selected" });
 		setBulkTagInput("");
 	};
 

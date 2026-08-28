@@ -179,7 +179,7 @@ fn parse_csv(text: &str) -> ParsedMap {
             if s.is_empty() {
                 None
             } else {
-                Some(s.to_string())
+                Some(s.into())
             }
         });
         let flags = if pano_id.is_some() {
@@ -572,16 +572,7 @@ fn strip_tags_fast(
         return Err(());
     };
     for name in list {
-        let id = match name_to_local.get(name) {
-            Some(&id) => id,
-            None => {
-                let id = names.len() as u32;
-                names.push(name.to_owned());
-                name_to_local.insert(name.to_owned(), id);
-                id
-            }
-        };
-        tags.push(id);
+        tags.push(intern_tag_name(names, name_to_local, name));
     }
     // Strip `"tags":[...]` plus one adjacent comma.
     let (mut mstart, mut mend) = (kstart, vend);
@@ -604,6 +595,22 @@ fn strip_tags_fast(
     out.push_str(&s[..mstart]);
     out.push_str(&s[mend..]);
     Ok(crate::types::RawExtra::from_string(out))
+}
+
+fn intern_tag_name(
+    names: &mut Vec<String>,
+    name_to_local: &mut rustc_hash::FxHashMap<String, u32>,
+    name: &str,
+) -> u32 {
+    match name_to_local.get(name) {
+        Some(&id) => id,
+        None => {
+            let id = names.len() as u32;
+            names.push(name.to_owned());
+            name_to_local.insert(name.to_owned(), id);
+            id
+        }
+    }
 }
 
 /// Slow path: build a `serde_json::Map` from raw `extra`, fold in non-null top-level
@@ -632,16 +639,7 @@ fn build_extra_via_map(
     if let Some(Value::Array(arr)) = m.remove("tags") {
         for v in arr {
             let Value::String(s) = v else { continue };
-            let id = match name_to_local.get(s.as_str()) {
-                Some(&id) => id,
-                None => {
-                    let id = names.len() as u32;
-                    names.push(s.clone());
-                    name_to_local.insert(s, id);
-                    id
-                }
-            };
-            tags.push(id);
+            tags.push(intern_tag_name(names, name_to_local, &s));
         }
     }
     *out_pano = m.remove("panoId").and_then(|v| match v {
@@ -796,7 +794,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
     fn normalize_import_provider(
         source: Option<&str>,
         provider: Option<&str>,
-        pano_id: &mut Option<String>,
+        pano_id: &mut Option<compact_str::CompactString>,
     ) -> String {
         const PREFIXES: &[(&str, &str)] = &[
             ("APPLE:", "apple"),
@@ -810,7 +808,7 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
             if let Some(id) = pano_id.take() {
                 for (prefix, provider) in PREFIXES {
                     if let Some(raw) = id.strip_prefix(prefix) {
-                        *pano_id = Some(raw.to_string());
+                        *pano_id = Some(raw.into());
                         inferred = Some(provider);
                         break;
                     }
@@ -953,7 +951,10 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
                     None // no extra at all
                 };
 
-                let mut pano_id = top_pano.take().or(extra_pano);
+                let mut pano_id = top_pano
+                    .take()
+                    .or(extra_pano)
+                    .map(compact_str::CompactString::from);
                 let provider = normalize_import_provider(source, provider_raw, &mut pano_id);
                 let flags = if has_top_pano {
                     LocationFlags::LOAD_AS_PANO_ID
@@ -1658,7 +1659,7 @@ fn add_parsed_to_store(
     }
     let t_overlay = _t.elapsed();
 
-    let mut result = store.finish_mutation(location_store::ChangeSet {
+    let mut result = store.finish_mutation(&location_store::ChangeSet {
         full_reset: true,
         ..Default::default()
     });

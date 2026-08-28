@@ -299,7 +299,10 @@ fn list_user_plugins() -> Vec<PluginManifest> {
         if let Ok(content) = std::fs::read_to_string(&manifest_path) {
             match serde_json::from_str::<PluginManifest>(&content) {
                 Ok(mut manifest) => {
-                    let folder_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+                    let folder_name = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown");
                     if manifest.id.is_empty() {
                         manifest.id = folder_name.to_string();
                     }
@@ -680,14 +683,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_update_locations,
             location_store::store_set_active,
             location_store::store_set_marker_color,
-            location_store::store_get_location,
-            location_store::store_get_locations_by_ids,
-            location_store::store_get_all_locations,
+            location_store::store_query,
+            location_store::store_apply_field_op,
             location_store::store_country_distribution,
-            location_store::store_bounds,
             location_store::store_find_nearby,
             location_store::store_near_any,
-            location_store::store_extra_field_values,
             // --- Tag CRUD ---
             location_store::store_create_tags,
             location_store::store_update_tags,
@@ -700,10 +700,6 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_commit_diff,
             // --- Selections ---
             location_store::store_sync_selections,
-            location_store::store_get_selected_ids_list,
-            location_store::store_pick_spaced,
-            location_store::store_resolve_selection,
-            location_store::store_partition,
             location_store::store_duplicate_groups,
             location_store::store_merge_duplicates,
             location_store::store_prune_duplicates,
@@ -1020,6 +1016,7 @@ pub fn run() {
                 log::info!("[startup] swept {swept} orphaned .tmp files");
             }
             log::info!("[startup] migrations: {}ms", t.elapsed().as_millis());
+            std::thread::spawn(geocoder::warm);
 
             #[cfg(desktop)]
             {

@@ -1,11 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-	planFieldMove,
-	planFieldDelete,
 	planFieldSet,
 	planFieldExpr,
 	parseFieldExpr,
-	collectEnumCandidates,
 	evalFieldExpr,
 	fieldValue,
 	fieldPatch,
@@ -36,44 +33,6 @@ function makeLoc(id: number, extra?: Record<string, unknown>): Location {
 		modifiedAt: null,
 	} as Location;
 }
-
-describe("planFieldMove", () => {
-	it("renames a key (target absent): null-deletes source, sets target", () => {
-		const out = planFieldMove([makeLoc(1, { a: 5 })], "a", "b", "from");
-		expect(out).toEqual([{ id: 1, patch: { extra: { a: null, b: 5 } } }]);
-	});
-
-	it("merge: winner 'from' takes the moved value", () => {
-		const out = planFieldMove([makeLoc(1, { a: 5, b: 9 })], "a", "b", "from");
-		expect(out).toEqual([{ id: 1, patch: { extra: { a: null, b: 5 } } }]);
-	});
-
-	it("merge: winner 'to' keeps the existing target value (only deletes source)", () => {
-		const out = planFieldMove([makeLoc(1, { a: 5, b: 9 })], "a", "b", "to");
-		expect(out).toEqual([{ id: 1, patch: { extra: { a: null } } }]);
-	});
-
-	it("skips locations without the source key", () => {
-		expect(planFieldMove([makeLoc(1, { x: 1 })], "a", "b", "from")).toEqual([]);
-	});
-
-	it("does not touch unrelated keys (merge patch carries only moved keys)", () => {
-		const out = planFieldMove([makeLoc(1, { a: 5, keep: 1 })], "a", "b", "from");
-		expect(out[0].patch.extra).toEqual({ a: null, b: 5 });
-	});
-
-	it("is a no-op when from === to or to is empty", () => {
-		expect(planFieldMove([makeLoc(1, { a: 5 })], "a", "a", "from")).toEqual([]);
-		expect(planFieldMove([makeLoc(1, { a: 5 })], "a", "", "from")).toEqual([]);
-	});
-});
-
-describe("planFieldDelete", () => {
-	it("null-deletes the key on locations that have it", () => {
-		const out = planFieldDelete([makeLoc(1, { a: 5, b: 9 }), makeLoc(2, { b: 1 })], "a");
-		expect(out).toEqual([{ id: 1, patch: { extra: { a: null } } }]);
-	});
-});
 
 describe("planFieldSet", () => {
 	it("sets an extra value, creating extra when absent", () => {
@@ -390,36 +349,5 @@ describe("stepFilterWindow", () => {
 		expect(stepFilterWindow("enum", "eq", "US", undefined, 1)).toBeNull();
 		expect(stepFilterWindow("date", "between_anyyear", "06-01", "06-03", 1)).toBeNull();
 		expect(stepFilterWindow("string", "between", "a", "b", 1)).toBeNull();
-	});
-});
-
-describe("collectEnumCandidates", () => {
-	it("returns distinct sorted values not already in the def", () => {
-		const locs = [
-			makeLoc(1, { tz: "UTC" }),
-			makeLoc(2, { tz: "Asia/Tokyo" }),
-			makeLoc(3, { tz: "UTC" }),
-			makeLoc(4, {}),
-		];
-		expect(collectEnumCandidates(locs, "tz", ["UTC"])).toEqual(["Asia/Tokyo"]);
-	});
-
-	it("stringifies non-string scalars and skips objects, arrays, nulls, empties", () => {
-		const locs = [
-			makeLoc(1, { panoType: 2 }),
-			makeLoc(2, { panoType: "10" }),
-			makeLoc(3, { panoType: null }),
-			makeLoc(4, { panoType: { a: 1 } }),
-			makeLoc(5, { panoType: [3] }),
-			makeLoc(6, { panoType: "" }),
-			makeLoc(7, { panoType: true }),
-		];
-		expect(collectEnumCandidates(locs, "panoType", [])).toEqual(["10", "2", "true"]);
-	});
-
-	it("reads built-in fields via fieldValue", () => {
-		const loc = makeLoc(1);
-		(loc as unknown as { heading: number }).heading = 90;
-		expect(collectEnumCandidates([loc], "heading", [])).toEqual(["90"]);
 	});
 });

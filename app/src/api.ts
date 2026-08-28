@@ -12,9 +12,9 @@ import * as commitDiff from "@/store/commitDiff";
 import * as scope from "@/store/scope";
 import * as mapList from "@/store/mapList";
 import * as review from "@/lib/review/review";
-import { events, type Scope, type Location } from "@/bindings.gen";
+import { events } from "@/bindings.gen";
 import { cmd as commands, type Cmd } from "@/lib/commands";
-import { createLocation, applyLocationPatch } from "@/types";
+import { createLocation } from "@/types";
 import { registerPlugin, createPluginStorage, usePluginState } from "@/plugins/registry";
 import { trackDisposable } from "@/plugins/scope";
 import {
@@ -46,62 +46,6 @@ import { mmaBufUrl } from "@/lib/util/util";
 import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
 import * as legacy from "@/legacy";
 import * as testApi from "@/testApi";
-
-export interface LocationStore {
-	locations: Map<number, Location>;
-	/** The materialized locations narrowed to a scope (defaults to all). */
-	get(scope?: Scope): Location[];
-	onChange(cb: () => void): () => void;
-	destroy(): void;
-}
-
-/** A live id-to-Location map of the whole map, kept in sync via store events.
- *  Call `destroy()` when done. */
-async function createLocationStore(): Promise<LocationStore> {
-	const locs = new Map<number, Location>();
-	for (const l of await store.fetchAllLocations()) locs.set(l.id, l);
-
-	const listeners = new Set<() => void>();
-	const notify = () => {
-		for (const cb of listeners) cb();
-	};
-
-	const unsubs = [
-		subscribe("location:add", (added) => {
-			for (const l of added) locs.set(l.id, l);
-			notify();
-		}),
-		subscribe("location:remove", (ids) => {
-			for (const id of ids) locs.delete(id);
-			notify();
-		}),
-		subscribe("location:update", (updates) => {
-			for (const u of updates) {
-				const existing = locs.get(u.id);
-				if (existing) locs.set(u.id, applyLocationPatch(existing, u.patch));
-			}
-			notify();
-		}),
-	];
-
-	return {
-		locations: locs,
-		get(s = { kind: "all" }) {
-			return scope.applyScope(s, [...locs.values()]);
-		},
-		onChange(cb) {
-			listeners.add(cb);
-			return () => {
-				listeners.delete(cb);
-			};
-		},
-		destroy() {
-			unsubs.forEach((fn) => fn());
-			listeners.clear();
-			locs.clear();
-		},
-	};
-}
 
 // --- Sidecar requests ---
 // One set of listeners for every request, demultiplexed by request id. Events can
@@ -316,7 +260,6 @@ const surface = {
 	registerEnrichmentProvider,
 	preloadModules,
 	getAvailableExternals,
-	createLocationStore,
 
 	// --- UI primitives (for plugins) ---
 	ui: { Sidebar, Section, Field, EmptyState, SegmentedControl, ScopeSelector },

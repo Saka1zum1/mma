@@ -1,8 +1,7 @@
 import type { Selection, SelectionProps } from "@/bindings.gen";
 import { buildSelection } from "./selections";
 import { getSettings, setSetting } from "./settings";
-import { addSelections, getTag, getVisibleTags } from "./useMapStore";
-import { cmd } from "@/lib/commands";
+import { addSelections, getTag, getVisibleTags, scopeIds } from "./useMapStore";
 import { t } from "@/lib/i18n";
 
 export interface SavedSelectionItem {
@@ -113,7 +112,7 @@ export async function resolveSavedSelectionIds(id: string): Promise<Set<number>>
 		const propsList = saved.items
 			.map((item) => savedToSelectionProps(item.props))
 			.filter((p): p is SelectionProps => p !== null);
-		const resolved = await Promise.all(propsList.map((p) => cmd.storeResolveSelection(p)));
+		const resolved = await Promise.all(propsList.map((p) => scopeIds({ kind: "props", props: p })));
 		for (const arr of resolved) for (const locId of arr) ids.add(locId);
 	}
 	return ids;

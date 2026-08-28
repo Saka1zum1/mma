@@ -5,7 +5,6 @@ import {
 	setPolygonName,
 	setSelectionColors,
 	createTags,
-	fetchLocationsByIds,
 	reorderSelection,
 	composeSelections,
 	decomposeChild,
@@ -16,11 +15,12 @@ import {
 	updateFilterSelection,
 	pruneDuplicates,
 	getVisibleTags,
+	scopeIds,
+	fetchBounds,
 } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { downloadBlob } from "@/lib/util/util";
 import { stepFilterWindow } from "@/lib/data/fieldOps";
-import { cmd } from "@/lib/commands";
 import { RgbColorPicker } from "react-colorful";
 import { useDebouncedCallback } from "@/lib/hooks/useDebouncedCallback";
 import type { RGB } from "@/lib/util/color";
@@ -58,11 +58,8 @@ async function fitSelectionBounds(host: MapHost, selection: Selection) {
 		if (bounds) host.fitBounds(bounds, 100);
 		return;
 	}
-	const ids = await cmd.storeResolveSelection(selection.props);
-	if (ids.length === 0) return;
-	const locs = await fetchLocationsByIds(ids);
-	const bounds = boundsOfCoords(locs);
-	if (bounds) host.fitBounds(bounds, 100);
+	const box = await fetchBounds({ kind: "props", props: selection.props });
+	if (box) host.fitBounds({ west: box[0], south: box[1], east: box[2], north: box[3] }, 100);
 }
 
 function uniqueTagName(base: string, existing: Set<string>): string {
@@ -196,10 +193,8 @@ export const SelectionRow = memo(function SelectionRow({
 
 	const handleSaveAsTag = async () => {
 		const name = tagName.trim();
-		if (!name) return;
-		const ids = await cmd.storeResolveSelection(selection.props);
-		if (ids.length === 0) return;
-		await createTags([name], ids);
+		if (!name || count === 0) return;
+		await createTags([name], { kind: "props", props: selection.props });
 		setSavingTag(false);
 		setTagName("");
 	};
@@ -394,7 +389,7 @@ export const SelectionRow = memo(function SelectionRow({
 												className="context-menu__item"
 												disabled={count === 0}
 												onClick={async () => {
-													const ids = await cmd.storeResolveSelection(selection.props);
+													const ids = await scopeIds({ kind: "props", props: selection.props });
 													beginReview(ids, selection);
 												}}
 											>

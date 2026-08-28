@@ -3,6 +3,7 @@
 //! triggers a native save dialog to move the file to its final destination.
 
 use crate::location_store::StoreState;
+use crate::selections::Scope;
 use crate::storage;
 use crate::types::LocationFlags;
 use crate::types::{AppError, AppResult};
@@ -17,8 +18,8 @@ pub struct ExportOpts {
     pub export_zoom: bool,
     pub export_unpanned: bool,
     pub export_extras: bool,
-    /// When `Some`, restricts export to these location IDs (e.g. current selection).
-    pub scope: Option<Vec<u32>>,
+    /// Which locations to export.
+    pub scope: Scope,
     pub map_name: String,
     /// Serialized `{id: {name, color}}` tag definitions from the store, used to
     /// convert numeric tag IDs back to human-readable names in the output.
@@ -241,7 +242,7 @@ pub fn store_export_json(
 ) -> AppResult<String> {
     with_store!(webview, state, |store| {
         let (tag_defs, id_to_name) = parse_tag_defs(&opts.tags_json);
-        let locs = store.collect_scoped(opts.scope.as_deref());
+        let locs = store.collect(&opts.scope);
 
         let co = CoordOpts {
             export_zoom: opts.export_zoom,
@@ -291,10 +292,10 @@ pub fn store_export_json(
 pub fn store_export_csv(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
-    scope: Option<Vec<u32>>,
+    scope: Scope,
 ) -> AppResult<String> {
     with_store!(webview, state, |store| {
-        let locs = store.collect_scoped(scope.as_deref());
+        let locs = store.collect(&scope);
 
         let mut buf = String::with_capacity(locs.len() * 30);
         buf.push_str("lat,lng\n");
@@ -315,12 +316,12 @@ pub fn store_export_csv(
 pub fn store_export_geojson(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
-    scope: Option<Vec<u32>>,
+    scope: Scope,
     tags_json: String,
 ) -> AppResult<String> {
     with_store!(webview, state, |store| {
         let (_, id_to_name) = parse_tag_defs(&tags_json);
-        let locs = store.collect_scoped(scope.as_deref());
+        let locs = store.collect(&scope);
 
         let features: Vec<serde_json::Value> = locs
             .iter()

@@ -8,7 +8,7 @@ import { TextInput } from "@/components/primitives/TextInput";
 import {
 	getMapState,
 	addSelections,
-	fetchAllLocations,
+	fetchLocations,
 	updateLocations,
 } from "@/store/useMapStore";
 import { useScope, applyScope, type ScopeController } from "@/store/scope";
@@ -799,7 +799,7 @@ function BulkProgress({
 		const controller = new AbortController();
 		controllerRef.current = controller;
 
-		const locations = applyScope(scope, await fetchAllLocations());
+		const locations = await fetchLocations(scope);
 		const runStart = performance.now();
 		rateRef.current = { t: runStart, done: 0, ema: null };
 		setRate(null);
@@ -923,7 +923,7 @@ const SETUPS: Record<BulkOperation, React.ComponentType<SetupProps>> = {
 export function BulkOperationModal({ operation, onClose }: Props) {
 	const [runner, setRunner] = useState<BulkRunner | null>(null);
 	const scopeCtl = useScope();
-	const { data: locs } = useAsync(fetchAllLocations, []);
+	const { data: locs } = useAsync(() => fetchLocations({ kind: "all" }), []);
 
 	if (locs === null) return null;
 

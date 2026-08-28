@@ -789,7 +789,7 @@ fn add_copied_reconciles_tags_and_reports_counts() {
 
     // Both copies landed in the target store.
     assert_eq!(r.status.location_count, 2);
-    let stored = store.collect_scoped(None);
+    let stored = store.collect(&crate::selections::Scope::All);
     assert_eq!(stored.len(), 2);
 
     // "Shared" reconciled to the target's existing id 5 (no duplicate tag created).
@@ -823,7 +823,6 @@ fn add_copied_reconciles_tags_and_reports_counts() {
     // The new tag def is shipped on the result (the receiver needs it to render).
     assert!(r.tags.as_ref().and_then(|m| m.get(&unique.id)).is_some());
 }
-
 
 #[test]
 fn parse_source_field_maps_to_internal_provider() {

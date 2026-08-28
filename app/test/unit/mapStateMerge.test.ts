@@ -69,7 +69,6 @@ describe("applyMutation merge semantics", () => {
 		expect(after.tagCounts).toBe(before.tagCounts);
 		expect(after.tags).toBe(before.tags);
 		expect(after.map).toBe(before.map);
-		expect(after.knownFieldKeys).toBe(before.knownFieldKeys);
 	});
 
 	it("scalars always track the result", async () => {
@@ -95,10 +94,20 @@ describe("applyMutation merge semantics", () => {
 		expect(s.map).toBe(mapBefore);
 	});
 
-	it("newFieldDefs extend knownFieldKeys incrementally", async () => {
+	// knownFieldKeys is a wholesale mirror of the status snapshot (Rust forgets erased
+	// keys), extended by the same mutation's newFieldDefs (registered after the snapshot).
+	it("knownFieldKeys mirrors the status snapshot plus newFieldDefs", async () => {
 		expect([...getMapState().knownFieldKeys]).toEqual(["alt"]);
-		await mutate(() => Promise.resolve(result({ newFieldDefs: { foo: { type: "string" } } })));
+		await mutate(() =>
+			Promise.resolve(
+				result({ knownFieldKeys: ["alt"], newFieldDefs: { foo: { type: "string" } } }),
+			),
+		);
 		expect([...getMapState().knownFieldKeys].sort()).toEqual(["alt", "foo"]);
+
+		// A snapshot that no longer lists a key drops it from the mirror.
+		await mutate(() => Promise.resolve(result({ knownFieldKeys: ["foo"] })));
+		expect([...getMapState().knownFieldKeys]).toEqual(["foo"]);
 	});
 
 	it("selectionSync refreshes selectionCounts", async () => {

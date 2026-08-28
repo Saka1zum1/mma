@@ -16,7 +16,11 @@ vi.mock("@/lib/commands", () => ({
 			h.setActiveCalls.push(id);
 			return Promise.resolve(null);
 		},
-		storeGetLocation: (id: number) => Promise.resolve({ id, lat: 0, lng: 0, tags: [] }),
+		storeQuery: (scope: { kind: string; ids?: number[] }) =>
+			Promise.resolve({
+				kind: "rows",
+				locations: (scope.ids ?? []).map((id) => ({ id, lat: 0, lng: 0, tags: [] })),
+			}),
 		storeFindNearby: () => Promise.resolve(h.nearby),
 	},
 }));

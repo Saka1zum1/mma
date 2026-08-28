@@ -3,10 +3,9 @@
 // import preview — so picking, hover cursor, and clicks flow through the one deck pass with
 // no second overlay or interceptors. This module just owns the toggle + data + reactivity.
 
-import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 import { emit as emitEvent, subscribe as onEvent } from "@/lib/events";
-import { fetchLocation, setActiveLocation, previewVirtualLocation } from "@/store/useMapStore";
+import { fetchLocations, setActiveLocation, previewVirtualLocation } from "@/store/useMapStore";
 import { createLocation, LocationFlag } from "@/types";
 import { getSeenCount, getSeenEntries, seenSkipNext } from "./seen";
 import type { SeenEntry } from "@/bindings.gen";
@@ -44,7 +43,8 @@ export function getSeenOnMapIds(): ReadonlySet<number> {
 async function computeOnMap(list: SeenEntry[]): Promise<Set<number>> {
 	const locIds = [...new Set(list.map((e) => e.locationId).filter((x): x is number => x != null))];
 	if (locIds.length === 0) return new Set();
-	const panoById = new Map((await cmd.storeGetLocationsByIds(locIds)).map((l) => [l.id, l.panoId]));
+	const onMap = await fetchLocations({ kind: "ids", ids: locIds });
+	const panoById = new Map(onMap.map((l) => [l.id, l.panoId]));
 	const out = new Set<number>();
 	for (const e of list) {
 		if (e.locationId != null && panoById.get(e.locationId) === e.panoId) out.add(e.id);
@@ -82,7 +82,7 @@ export async function openSeenEntry(index: number): Promise<void> {
 	if (!entry) return;
 	seenSkipNext(entry.panoId);
 	if (entry.locationId != null) {
-		const existing = await fetchLocation(entry.locationId);
+		const [existing] = await fetchLocations({ kind: "ids", ids: [entry.locationId] });
 		if (existing && existing.panoId === entry.panoId) {
 			void setActiveLocation(existing.id);
 			return;

@@ -45,7 +45,7 @@ export function QuickCopyToMapDialog({
 			return;
 		}
 		cmd
-			.storeCopyLocationsToMap(targetMapId, [locationId])
+			.storeCopyLocationsToMap(targetMapId, { kind: "ids", ids: [locationId] })
 			.then((res) => {
 				const container = contentRef.current;
 				if (container)

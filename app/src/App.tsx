@@ -23,7 +23,7 @@ import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useSetting, useSettings, setSetting, CSS_VAR_SETTINGS } from "@/store/settings";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
-import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
+import { MAP_EMBED_PREFS } from "@/store/mapEmbedPrefs";
 import "@/lib/render/renderStats"; // installs the window.__mmaPerf harness bridge
 import { applyAccentColor, resolveSvColorHex } from "@/lib/util/color";
 import { Icon, mdiDiscord } from "@/components/primitives/Icon";
@@ -269,7 +269,7 @@ function useCssVarSettings() {
  *  the mapEmbedPrefs subscription so pref churn (opacity slider drags write prefs
  *  per tick) re-renders only this component, never the App tree. */
 function AccentSync() {
-	const [prefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
+	const [prefs] = useLocalStorage(MAP_EMBED_PREFS);
 	useEffect(() => {
 		applyAccentColor(resolveSvColorHex(prefs.svColor));
 	}, [prefs.svColor]);

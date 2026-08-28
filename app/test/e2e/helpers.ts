@@ -205,7 +205,7 @@ export async function refreshSelections(): Promise<number[]> {
 			.map((s) => ({ key: s.key, props: s.props, color: s.color }));
 		if (sels.length === 0) return [] as number[];
 		await api.cmd.storeSyncSelections(sels);
-		return api.cmd.storeGetSelectedIdsList();
+		return api.scopeIds({ kind: "selected" });
 	});
 }
 

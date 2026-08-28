@@ -1,5 +1,5 @@
 import { HeatmapLayer } from "@deck.gl/aggregation-layers";
-import type { DeckOverlayHandle, LatLng, LocationStore, SourceScope } from "mma-plugin-types";
+import type { DeckOverlayHandle, LatLng, ScopeWithSaved } from "mma-plugin-types";
 import {
 	DEFAULT_GRADIENT_ID,
 	gradientIdFromLegacyIndex,
@@ -19,7 +19,7 @@ export interface HeatmapLayerSettings {
 	opacity: number;
 	threshold: number;
 	gradientId: string;
-	source: SourceScope;
+	source: ScopeWithSaved;
 }
 
 export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
@@ -33,7 +33,7 @@ export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
 
 const store = MMA.storage("heatmap");
 
-function defaultSource(): SourceScope {
+function defaultSource(): ScopeWithSaved {
 	return MMA.getMapState().selectedLocationIds.size > 0 ? { kind: "selected" } : { kind: "all" };
 }
 
@@ -63,7 +63,6 @@ function loadGradients(): HeatmapGradient[] {
 }
 
 let overlay: DeckOverlayHandle | null = null;
-let locStore: LocationStore | null = null;
 let layers: HeatmapLayerSettings[] = loadLayers();
 let customGradients: HeatmapGradient[] = loadGradients();
 let onSettingsChange: (() => void) | null = null;
@@ -134,12 +133,10 @@ export function removeCustomGradient(id: string) {
 	commitGradients();
 }
 
-async function sourceData(source: SourceScope): Promise<LatLng[]> {
-	if (!locStore) return [];
-	const pool = locStore.get();
+async function sourceData(source: ScopeWithSaved): Promise<LatLng[]> {
 	const ids = await MMA.resolveScopeIds(source);
-	const subset = ids ? pool.filter((l) => ids.has(l.id)) : pool;
-	return subset.map((l) => ({ lat: l.lat, lng: l.lng }));
+	const locs = await MMA.fetchLocations(ids ? { kind: "ids", ids: [...ids] } : { kind: "all" });
+	return locs.map((l) => ({ lat: l.lat, lng: l.lng }));
 }
 
 let rebuildToken = 0;
@@ -175,8 +172,6 @@ export async function init(): Promise<() => void> {
 	const host = MMA.getMapHost();
 	if (!host) throw new Error("No map instance");
 
-	locStore = await MMA.createLocationStore();
-
 	overlay = host.createDeckOverlay();
 	void rebuild();
 
@@ -184,14 +179,17 @@ export async function init(): Promise<() => void> {
 		void rebuild();
 		onSettingsChange?.();
 	};
-	const unsubStore = locStore.onChange(onChange);
-	const unsubSel = MMA.on("selection:change", onChange);
+	const events = [
+		"location:add",
+		"location:remove",
+		"location:update",
+		"location:invalidate",
+		"selection:change",
+	] as const;
+	const unsubs = events.map((e) => MMA.on(e, onChange));
 
 	return () => {
-		unsubStore();
-		unsubSel();
-		locStore?.destroy();
-		locStore = null;
+		unsubs.forEach((u) => u());
 		if (overlay) {
 			overlay.finalize();
 			overlay = null;

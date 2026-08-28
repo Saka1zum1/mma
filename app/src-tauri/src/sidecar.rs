@@ -137,8 +137,9 @@ fn fetch_expected_sha(
 fn install_blocking(plugin_id: String, name: String, version: String) -> AppResult<()> {
     let platform = platform_tag()?;
     let asset = format!("{name}-{platform}.zip");
-    let url =
-        format!("https://github.com/Saka1zum1/mma/releases/download/{plugin_id}-v{version}/{asset}");
+    let url = format!(
+        "https://github.com/Saka1zum1/mma/releases/download/{plugin_id}-v{version}/{asset}"
+    );
     log::info!("[sidecar] downloading {url}");
 
     let final_dir = sidecar_dir(&plugin_id)?;
@@ -546,7 +547,10 @@ fn spawn_resident(plugin_id: &str, spec: &SidecarSpec, epoch: u64) -> AppResult<
         )));
     };
 
-    log::info!("[sidecar] resident {} for {plugin_id} on port {port}", spec.name);
+    log::info!(
+        "[sidecar] resident {} for {plugin_id} on port {port}",
+        spec.name
+    );
     Ok(Resident { child, port, epoch })
 }
 
@@ -559,14 +563,21 @@ struct ResidentAddr {
 /// epoch of a resident that just failed a request: it is killed and replaced only if
 /// it still occupies the slot, so concurrent failures cannot kill each other's
 /// fresh process.
-fn resident_port(plugin_id: &str, spec: &SidecarSpec, stale: Option<u64>) -> AppResult<ResidentAddr> {
+fn resident_port(
+    plugin_id: &str,
+    spec: &SidecarSpec,
+    stale: Option<u64>,
+) -> AppResult<ResidentAddr> {
     let slot = plugin_slot(plugin_id);
     let mut procs = lock(&slot);
     if let Some(r) = procs.resident.take() {
         // try_wait also reaps a process that exited on its own (idle timeout).
         let alive = matches!(lock(&r.child).try_wait(), Ok(None));
         if alive && stale != Some(r.epoch) {
-            let addr = ResidentAddr { port: r.port, epoch: r.epoch };
+            let addr = ResidentAddr {
+                port: r.port,
+                epoch: r.epoch,
+            };
             procs.resident = Some(r);
             return Ok(addr);
         }
@@ -576,7 +587,10 @@ fn resident_port(plugin_id: &str, spec: &SidecarSpec, stale: Option<u64>) -> App
     }
     procs.epoch += 1;
     let resident = spawn_resident(plugin_id, spec, procs.epoch)?;
-    let addr = ResidentAddr { port: resident.port, epoch: resident.epoch };
+    let addr = ResidentAddr {
+        port: resident.port,
+        epoch: resident.epoch,
+    };
     procs.resident = Some(resident);
     Ok(addr)
 }
@@ -673,7 +687,10 @@ fn run_oneshot_inner(
     let mut child = build_command(plugin_id, spec, command, input)?
         .spawn()
         .map_err(|e| AppError(format!("Failed to spawn {} {command}: {e}", spec.name)))?;
-    log::info!("[sidecar] {} {command} for {plugin_id} (req_id={req_id})", spec.name);
+    log::info!(
+        "[sidecar] {} {command} for {plugin_id} (req_id={req_id})",
+        spec.name
+    );
 
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
@@ -718,7 +735,9 @@ fn run_oneshot_inner(
     lock(&slot).children.remove(&req_id);
 
     if !status.success() {
-        let code = status.code().map_or("signal".to_string(), |c| c.to_string());
+        let code = status
+            .code()
+            .map_or("signal".to_string(), |c| c.to_string());
         return Err(AppError(format!("{} {command} exited ({code})", spec.name)));
     }
     Ok(())
@@ -742,7 +761,9 @@ pub fn sidecar_request(
     // The app starts residents itself; a requested `serve` would sit as a
     // never-finishing one-shot.
     if command == SERVE_COMMAND {
-        return Err(AppError("serve is app-managed and cannot be requested".into()));
+        return Err(AppError(
+            "serve is app-managed and cannot be requested".into(),
+        ));
     }
     let spec = read_spec(&plugin_id)?;
     let req_id = REQ_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -767,9 +788,9 @@ pub fn sidecar_request(
 /// uninstalled, so a resident process never outlives the plugin that wanted it.
 #[tauri::command]
 #[specta::specta]
-pub fn sidecar_stop(plugin_id: String) -> AppResult<()> {
+pub async fn sidecar_stop(plugin_id: String) -> AppResult<()> {
     validate_plugin_id(&plugin_id)?;
-    kill_plugin(&plugin_id);
+    tokio::task::spawn_blocking(move || kill_plugin(&plugin_id)).await?;
     Ok(())
 }
 
@@ -777,8 +798,9 @@ pub fn sidecar_stop(plugin_id: String) -> AppResult<()> {
 /// down at once (map close), where nothing should still be running afterwards.
 #[tauri::command]
 #[specta::specta]
-pub fn sidecar_stop_all() {
-    kill_all_sidecars();
+pub async fn sidecar_stop_all() -> AppResult<()> {
+    tokio::task::spawn_blocking(kill_all_sidecars).await?;
+    Ok(())
 }
 
 /// Kill the process behind a one-shot request (no-op if it already finished).
@@ -786,14 +808,17 @@ pub fn sidecar_stop_all() {
 /// interrupt them -- the caller simply stops listening.
 #[tauri::command]
 #[specta::specta]
-pub fn sidecar_cancel(req_id: u32) -> AppResult<()> {
-    let slots: Vec<PluginSlot> = lock(registry()).values().cloned().collect();
-    for slot in slots {
-        if let Some(child) = lock(&slot).children.get(&req_id) {
-            let _ = lock(child).kill();
-            return Ok(());
+pub async fn sidecar_cancel(req_id: u32) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let slots: Vec<PluginSlot> = lock(registry()).values().cloned().collect();
+        for slot in slots {
+            if let Some(child) = lock(&slot).children.get(&req_id) {
+                let _ = lock(child).kill();
+                return;
+            }
         }
-    }
+    })
+    .await?;
     Ok(())
 }
 

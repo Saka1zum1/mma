@@ -9,7 +9,7 @@ import type {
 import { getProviderForField } from "@/lib/data/fieldDefs";
 import { projectionsForType, partitionKeyOptions, RANGE_ID } from "@/lib/data/fieldOps";
 import { useExtraFieldKeys } from "@/components/editor/map/FilterBuilder";
-import { fetchLocationsByIds, createTags, updateLocations } from "@/store/useMapStore";
+import { fetchLocations, createTags, updateLocations } from "@/store/useMapStore";
 import { partition, useScope } from "@/store/scope";
 import { ScopeSelector } from "@/components/primitives/ScopeSelector";
 import { useSetting } from "@/store/settings";
@@ -58,7 +58,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 		if (groups.length === 0) return;
 
 		const transform = getProviderForField(field)?.transform;
-		const locs = await fetchLocationsByIds(groups.flatMap((g) => g.ids));
+		const locs = await fetchLocations({ kind: "ids", ids: groups.flatMap((g) => g.ids) });
 		const locById = new Map(locs.map((l) => [l.id, l]));
 
 		const tagNames = new Set<string>();

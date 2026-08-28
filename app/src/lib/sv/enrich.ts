@@ -2,7 +2,7 @@ import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { resolveExactTimestamp } from "@/lib/sv/exactDate";
 import { resolveTimezone } from "@/lib/util/timezone";
 import { ymFromDate } from "@/lib/util/date";
-import { getMapState, updateLocations, fetchLocationsByIds } from "@/store/useMapStore";
+import { getMapState, updateLocations, fetchLocations } from "@/store/useMapStore";
 import {
 	filterEnrichPatch,
 	isFieldEnabled,
@@ -77,7 +77,7 @@ export async function enrich(
 	// path: core fields (imageDate) are in place before wave 1, and a provider that
 	// `requires` another provider's field sees it written before its wave runs.
 	for (const wave of providerWaves(getEnrichmentProviders())) {
-		const [fresh] = await fetchLocationsByIds([loc.id]);
+		const [fresh] = await fetchLocations({ kind: "ids", ids: [loc.id] });
 		if (!fresh) break;
 		const results = await Promise.all(
 			wave.map((provider) => provider.enrich([fresh], enrichFields).then((m) => m.get(loc.id))),

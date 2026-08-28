@@ -7,7 +7,7 @@ import { useMapSurface } from "@/lib/render/useMapSurface";
 import { useSetting, setSetting } from "@/store/settings";
 import { range, clamp } from "@/types/util";
 import { useLocalStorage, getLocal } from "@/lib/hooks/useLocalStorage";
-import { type MapEmbedPrefs, DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
+import { MAP_EMBED_PREFS, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import {
 	createMapHost,
 	hostKindForMapType,
@@ -71,7 +71,7 @@ export function FullscreenMiniMap() {
 	const scale = useSetting("fullscreenMinimapScale");
 	const closeDelay = useSetting("fullscreenMinimapCloseDelay");
 	const { expanded, hoverProps } = useHoverExpand(rootRef, closeDelay);
-	const [prefs] = useLocalStorage<MapEmbedPrefs>("mapEmbedPrefs", DEFAULT_PREFS);
+	const [prefs] = useLocalStorage(MAP_EMBED_PREFS);
 	const [surface, setSurface] = useState<{
 		host: MapHost;
 		div: HTMLDivElement;

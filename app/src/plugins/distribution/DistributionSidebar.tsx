@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Location } from "@/bindings.gen";
 import { Sidebar, SegmentedControl } from "@/components/primitives/Sidebar";
 import { cmd } from "@/lib/commands";
 import { getSettings } from "@/store/settings";
-import { fetchAllLocations } from "@/store/useMapStore";
+import { countBy } from "@/store/useMapStore";
 import { subscribeMany, LOCATION_DATA_EVENTS } from "@/lib/events";
 import { usePluginState, createPluginStorage } from "@/plugins/registry";
 import "./distribution.css";
@@ -30,26 +29,17 @@ interface CountryEntry {
 	count: number;
 }
 
-function computeDistribution(locations: Location[]): { entries: CountryEntry[]; unknown: number } {
-	const counts = new Map<string, number>();
-	let unknown = 0;
-
-	for (const loc of locations) {
-		const code = loc.extra?.countryCode as string | undefined;
-		if (code) {
-			counts.set(code, (counts.get(code) ?? 0) + 1);
-		} else {
-			unknown++;
-		}
-	}
-
-	const entries: CountryEntry[] = [];
-	for (const [code, count] of counts) {
-		entries.push({ code, name: getCountryName(code), count });
-	}
-	entries.sort((a, b) => b.count - a.count);
-
-	return { entries, unknown };
+/** Country counts from the enriched `countryCode` field, grouped in Rust. `unknown` is
+ *  whatever the grouping didn't account for. */
+function toDistribution(
+	counts: [string, number][],
+	total: number,
+): { entries: CountryEntry[]; unknown: number } {
+	const entries = counts
+		.map(([code, count]) => ({ code, name: getCountryName(code), count }))
+		.sort((a, b) => b.count - a.count);
+	const known = entries.reduce((sum, e) => sum + e.count, 0);
+	return { entries, unknown: total - known };
 }
 
 export function DistributionSidebar({ onClose }: { onClose: () => void }) {
@@ -64,11 +54,11 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 	const refresh = useCallback(async () => {
 		const map = MMA.getMapState().map;
 		if (!map) return;
-		const locs = await fetchAllLocations();
-		setTotal(locs.length);
+		const count = MMA.getMapState().locationCount;
+		setTotal(count);
 
-		const meta = computeDistribution(locs);
-		const hasMeta = locs.length > 0 && meta.unknown < locs.length;
+		const meta = toDistribution(await countBy({ kind: "all" }, "countryCode", { kind: "value" }), count);
+		const hasMeta = count > 0 && meta.unknown < count;
 		setMetaAvailable(hasMeta);
 
 		// One-time: prefer enriched metadata when it's actually present, else stay on
@@ -87,7 +77,7 @@ export function DistributionSidebar({ onClose }: { onClose: () => void }) {
 			setEntries(meta.entries);
 			setUnknown(meta.unknown);
 		} else {
-			const counts = await cmd.storeCountryDistribution(getSettings().borderDetail);
+			const counts = await cmd.storeCountryDistribution({ kind: "all" }, getSettings().borderDetail);
 			setEntries(
 				counts
 					.map(([code, count]) => ({ code, name: getCountryName(code), count }))

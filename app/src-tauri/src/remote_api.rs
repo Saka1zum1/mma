@@ -49,20 +49,24 @@ fn addr() -> String {
 /// picks up the new key. Returns the base URL.
 #[tauri::command]
 #[specta::specta]
-pub fn remote_api_start(key: String) -> AppResult<String> {
-    let s = state();
-    *s.key.lock().unwrap() = key;
-    let mut server = s.server.lock().unwrap();
-    if server.is_none() {
-        let addr = addr();
-        let srv = Arc::new(
-            tiny_http::Server::http(&addr).map_err(|e| format!("remote api bind {addr}: {e}"))?,
-        );
-        *server = Some(srv.clone());
-        std::thread::spawn(move || accept_loop(srv));
-        log::info!("[remote-api] listening on http://{addr}");
-    }
-    Ok(format!("http://{}", addr()))
+pub async fn remote_api_start(key: String) -> AppResult<String> {
+    tokio::task::spawn_blocking(move || {
+        let state = state();
+        *state.key.lock().unwrap() = key;
+        let mut server = state.server.lock().unwrap();
+        if server.is_none() {
+            let addr = addr();
+            let instance = Arc::new(
+                tiny_http::Server::http(&addr)
+                    .map_err(|error| format!("remote api bind {addr}: {error}"))?,
+            );
+            *server = Some(instance.clone());
+            std::thread::spawn(move || accept_loop(instance));
+            log::info!("[remote-api] listening on http://{addr}");
+        }
+        Ok(format!("http://{}", addr()))
+    })
+    .await?
 }
 
 #[tauri::command]

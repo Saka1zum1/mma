@@ -174,10 +174,36 @@ fn overlay_update_stamps_modified_at_on_base_row() {
 }
 
 #[test]
-fn collect_all_locations() {
+fn overlay_update_returns_the_location_as_stored() {
+    // The pair's `new` half feeds undo entries and selection membership re-tests, so it
+    // must be exactly what the store now holds -- including the modified_at stamp.
+    let l = loc(1, 10.0, 20.0);
+    let mut store = setup_store_with(&[l]);
+    store.bake_overlay();
+    let (_, new_loc) = store.overlay_update(1, &patch!(lat: 50.0)).unwrap();
+    assert!(new_loc.modified_at.is_some());
+    assert_eq!(new_loc, store.get_loc_by_id(1).unwrap());
+}
+
+#[test]
+fn overlay_update_noop_on_patched_row_stays_a_noop() {
+    let l = loc(1, 10.0, 20.0);
+    let mut store = setup_store_with(&[l]);
+    store.bake_overlay();
+    store.overlay_update(1, &patch!(lat: 50.0));
+    // Re-applying the identical patch must return an equal pair (no undo entry) and leave
+    // the stored row untouched.
+    let stored = store.get_loc_by_id(1).unwrap();
+    let (old, new_loc) = store.overlay_update(1, &patch!(lat: 50.0)).unwrap();
+    assert_eq!(old, new_loc);
+    assert_eq!(store.get_loc_by_id(1).unwrap(), stored);
+}
+
+#[test]
+fn collect_all_scope() {
     let locs = vec![loc(1, 10.0, 20.0), loc(2, 30.0, 40.0)];
     let store = setup_store_with(&locs);
-    let all = store.collect_all_locations();
+    let all = store.collect(&Scope::All);
     assert_eq!(all.len(), 2);
 }
 
@@ -659,7 +685,7 @@ fn finish_mutation_reports_correct_state() {
         removed: vec![],
     });
 
-    let result = store.finish_mutation(ChangeSet::default());
+    let result = store.finish_mutation(&ChangeSet::default());
     assert_eq!(result.status.location_count, 1);
     assert!(result.status.can_undo);
     assert!(!result.status.can_redo);
@@ -677,16 +703,16 @@ fn tag_counts_shipped_only_when_changed() {
     let mut store = setup_store_with(&[l.clone()]);
 
     // Setup's add_tag_counts left counts dirty: first mutation ships them once.
-    let result = store.finish_mutation(ChangeSet::default());
+    let result = store.finish_mutation(&ChangeSet::default());
     assert!(result.status.tag_counts.is_some());
 
     // A mutation that touches no tags must not ship counts.
-    let result = store.finish_mutation(ChangeSet::default());
+    let result = store.finish_mutation(&ChangeSet::default());
     assert!(result.status.tag_counts.is_none());
 
     // A tag-touching edit ships fresh counts again.
     let changes = store.apply_edit(std::slice::from_ref(&l), &[]);
-    let result = store.finish_mutation(changes);
+    let result = store.finish_mutation(&changes);
     assert_eq!(
         result.status.tag_counts.as_ref().unwrap().get(&10),
         Some(&0)
@@ -1116,7 +1142,7 @@ fn overlay_update_on_overlay_add_item() {
 }
 
 // -----------------------------------------------------------------------
-// collect_all_locations with mixed states
+// whole-map collect with mixed states
 // -----------------------------------------------------------------------
 
 #[test]
@@ -1135,7 +1161,7 @@ fn collect_all_with_dead_patches_and_adds() {
     store.overlay_add(l4);
     store.alive_count = 3; // l2, l3, l4
 
-    let all = store.collect_all_locations();
+    let all = store.collect(&Scope::All);
     assert_eq!(all.len(), 3);
     let ids: Vec<u32> = all.iter().map(|l| l.id).collect();
     assert!(!ids.contains(&1), "dead location should be excluded");
@@ -1919,7 +1945,11 @@ fn render_buffer_ships_selection_index_per_entry() {
     let sel: Vec<u32> = (0..n).map(|i| read(sel_at, i)).collect();
     let ids: Vec<u32> = (0..n).map(|i| read(ids_at, i)).collect();
     assert_eq!(ids, vec![1, 2, 3, 4], "emission order");
-    assert_eq!(sel, vec![0, 1, 0, 1], "each entry tagged with its drawing selection");
+    assert_eq!(
+        sel,
+        vec![0, 1, 0, 1],
+        "each entry tagged with its drawing selection"
+    );
 }
 
 #[test]
@@ -2287,7 +2317,7 @@ fn an_empty_tag_survives_an_unrelated_mutation() {
         lat: 31.0,
         ..old.clone()
     };
-    store.finish_mutation(ChangeSet {
+    store.finish_mutation(&ChangeSet {
         updated: vec![(old, moved)],
         ..Default::default()
     });
@@ -2319,7 +2349,7 @@ fn losing_its_last_location_still_hides_a_tag() {
     };
     store.remove_tag_counts(&[old.clone()]);
     store.add_tag_counts(&[untagged.clone()]);
-    store.finish_mutation(ChangeSet {
+    store.finish_mutation(&ChangeSet {
         updated: vec![(old, untagged)],
         ..Default::default()
     });
@@ -2517,7 +2547,7 @@ fn incremental_membership_change_ships_no_bitmask() {
     insert_tag(&mut store, 1, 0);
     add_tag_selection(&mut store, 1, [255, 0, 0]);
 
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         updated: vec![(l1, loc_with_tags(1, 10.0, 20.0, vec![1]))],
         ..Default::default()
     });
@@ -2557,7 +2587,7 @@ fn full_resolve_ships_a_bitmask_for_every_cell() {
     add_tag_selection(&mut store, 1, [255, 0, 0]);
 
     // `full_reset` forces the full-resolve branch.
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         full_reset: true,
         ..Default::default()
     });
@@ -2594,7 +2624,7 @@ fn membership_delta_reports_gained_on_tag_add() {
 
     // Add tag 1 to location 1
     let with_tag = loc_with_tags(1, 10.0, 20.0, vec![1]);
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         updated: vec![(l1, with_tag)],
         ..Default::default()
     });
@@ -2631,7 +2661,7 @@ fn membership_delta_reports_lost_on_tag_remove() {
     assert!(store.selections.ids.contains(1), "starts selected");
 
     let untagged = loc_with_tags(1, 10.0, 20.0, vec![]);
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         updated: vec![(tagged, untagged)],
         ..Default::default()
     });
@@ -2659,7 +2689,7 @@ fn removed_selected_location_leaves_no_patch() {
     add_tag_selection(&mut store, 1, [255, 0, 0]);
     store.resolve_selection_membership();
 
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         removed: vec![1],
         ..Default::default()
     });
@@ -2698,7 +2728,7 @@ fn leaving_winning_selection_restates_survivors_paint() {
     );
 
     let only_first = loc_with_tags(1, 10.0, 20.0, vec![1]);
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         updated: vec![(both, only_first)],
         ..Default::default()
     });
@@ -2749,7 +2779,7 @@ fn membership_delta_no_patch_when_nothing_changed() {
         heading: 90.0,
         ..l1.clone()
     };
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         updated: vec![(l1, updated)],
         ..Default::default()
     });
@@ -2787,7 +2817,7 @@ fn selected_row_moving_across_cells_ships_as_one_move() {
         render_cell_idx(-30.0, -40.0),
         "test requires a cross-cell move"
     );
-    let result = store.finish_mutation(ChangeSet {
+    let result = store.finish_mutation(&ChangeSet {
         updated: vec![(l1, moved)],
         ..Default::default()
     });
@@ -2823,7 +2853,7 @@ fn touched_zero_member_tag_is_hidden_by_finish_mutation() {
     insert_tag(&mut store, 1, 0);
     store.tags.touched.insert(1);
 
-    let result = store.finish_mutation(ChangeSet::default());
+    let result = store.finish_mutation(&ChangeSet::default());
 
     assert!(
         !store.tags.all[&1].visible,
@@ -3127,7 +3157,7 @@ fn overlay_add_duplicate_id_asserts_in_debug() {
 
 fn loc_with_pano(id: u32, lat: f64, lng: f64, pano: &str) -> Location {
     Location {
-        pano_id: Some(pano.to_string()),
+        pano_id: Some(pano.into()),
         ..loc(id, lat, lng)
     }
 }
@@ -3165,11 +3195,11 @@ fn copy_dedup_panoless_falls_back_to_exact_coords() {
 #[test]
 fn copy_dedup_empty_pano_treated_as_panoless() {
     let existing = vec![Location {
-        pano_id: Some(String::new()),
+        pano_id: Some(compact_str::CompactString::new("")),
         ..loc(1, 10.0, 20.0)
     }];
     let sources = vec![Location {
-        pano_id: Some(String::new()),
+        pano_id: Some(compact_str::CompactString::new("")),
         ..loc(7, 10.0, 20.0)
     }];
     let (_, skipped) = split_new_locations(sources, &existing);
@@ -3333,7 +3363,7 @@ fn overlay_update_back_to_base_clears_patch() {
 /// Brute-force reference: ids of alive locations within radius, sorted.
 fn brute_nearby(store: &Store, lat: f64, lng: f64, r: f64) -> Vec<u32> {
     let mut out: Vec<u32> = store
-        .collect_all_locations()
+        .collect(&Scope::All)
         .iter()
         .filter(|l| selections::haversine_m(lat, lng, l.lat, l.lng) <= r)
         .map(|l| l.id)
@@ -3471,7 +3501,9 @@ fn min_pairwise(ids: &[u32], coords: &std::collections::HashMap<u32, (f64, f64)>
 #[test]
 fn pick_spaced_count_returns_exactly_n_subset() {
     let store = spaced_grid_store();
-    let res = store.pick_spaced(None, Some(8), None).unwrap();
+    let res = store
+        .pick_spaced(Some(&store.selections.ids), Some(8), None)
+        .unwrap();
     assert_eq!(res.ids.len(), 8);
     let uniq: std::collections::HashSet<u32> = res.ids.iter().copied().collect();
     assert_eq!(uniq.len(), 8, "no duplicates");
@@ -3487,7 +3519,9 @@ fn pick_spaced_count_returns_exactly_n_subset() {
 #[test]
 fn pick_spaced_count_ge_size_returns_all() {
     let store = spaced_grid_store();
-    let res = store.pick_spaced(None, Some(50), None).unwrap();
+    let res = store
+        .pick_spaced(Some(&store.selections.ids), Some(50), None)
+        .unwrap();
     assert_eq!(res.ids.len(), 20);
     assert_eq!(res.distance_m, 0);
     let uniq: std::collections::HashSet<u32> = res.ids.iter().copied().collect();
@@ -3498,7 +3532,9 @@ fn pick_spaced_count_ge_size_returns_all() {
 fn pick_spaced_count_pairwise_spacing_meets_returned_distance() {
     let store = spaced_grid_store();
     let coords = coord_lookup(&store);
-    let res = store.pick_spaced(None, Some(6), None).unwrap();
+    let res = store
+        .pick_spaced(Some(&store.selections.ids), Some(6), None)
+        .unwrap();
     let min = min_pairwise(&res.ids, &coords);
     assert!(
         min >= res.distance_m as f64 - 1e-6,
@@ -3512,7 +3548,9 @@ fn pick_spaced_count_pairwise_spacing_meets_returned_distance() {
 fn pick_spaced_distance_enforces_threshold() {
     let store = spaced_grid_store();
     let coords = coord_lookup(&store);
-    let res = store.pick_spaced(None, None, Some(250)).unwrap();
+    let res = store
+        .pick_spaced(Some(&store.selections.ids), None, Some(250))
+        .unwrap();
     assert_eq!(res.distance_m, 250);
     assert!(!res.ids.is_empty());
     let min = min_pairwise(&res.ids, &coords);
@@ -3540,10 +3578,14 @@ fn pick_spaced_arg_validation() {
 #[test]
 fn pick_spaced_empty_selection() {
     let store = setup_store_with(&[]);
-    let count = store.pick_spaced(None, Some(5), None).unwrap();
+    let count = store
+        .pick_spaced(Some(&store.selections.ids), Some(5), None)
+        .unwrap();
     assert!(count.ids.is_empty());
     assert_eq!(count.distance_m, 0);
-    let dist = store.pick_spaced(None, None, Some(100)).unwrap();
+    let dist = store
+        .pick_spaced(Some(&store.selections.ids), None, Some(100))
+        .unwrap();
     assert!(dist.ids.is_empty());
     assert_eq!(dist.distance_m, 0);
 }
@@ -3552,9 +3594,12 @@ fn pick_spaced_empty_selection() {
 fn pick_spaced_scope_overrides_selection() {
     let mut store = spaced_grid_store();
     // Selection is the whole grid; scope to ids 1..=5 (one row).
-    let scope = SelectionProps::Manual {
-        locations: vec![1, 2, 3, 4, 5],
-    };
+    let scope = selections::resolve_set(
+        &store.loc_view(),
+        &SelectionProps::Manual {
+            locations: vec![1, 2, 3, 4, 5],
+        },
+    );
     let res = store.pick_spaced(Some(&scope), Some(3), None).unwrap();
     assert_eq!(res.ids.len(), 3);
     for id in &res.ids {
@@ -3628,8 +3673,14 @@ fn delta_bytes_roundtrip_exact() {
     let parsed: Overlay = rmp_serde::from_slice(&bytes).unwrap();
 
     assert_eq!(parsed.adds, store.overlay.adds, "adds preserved exactly");
-    assert_eq!(parsed.dead, store.overlay.dead, "dead ids preserved exactly");
-    assert_eq!(parsed.patches, store.overlay.patches, "patches preserved exactly");
+    assert_eq!(
+        parsed.dead, store.overlay.dead,
+        "dead ids preserved exactly"
+    );
+    assert_eq!(
+        parsed.patches, store.overlay.patches,
+        "patches preserved exactly"
+    );
 }
 
 #[test]
@@ -3694,8 +3745,8 @@ fn crash_window_stale_delta_double_applies_baked_locations() {
         "stale delta double-counts ids already in the baked base"
     );
 
-    let all = store.collect_all_locations();
-    assert_eq!(all.len(), 4, "collect_all_locations also yields duplicates");
+    let all = store.collect(&Scope::All);
+    assert_eq!(all.len(), 4, "whole-map collect also yields duplicates");
     let ids: Vec<u32> = all.iter().map(|l| l.id).collect();
     assert_eq!(
         ids.iter().filter(|&&id| id == 5).count(),
@@ -3710,7 +3761,7 @@ fn crash_window_stale_delta_double_applies_baked_locations() {
 
     // get_loc_by_id resolves via overlay.adds (binary search) before ever touching
     // the batch, so single-id lookups don't see the duplicate -- only bulk
-    // enumeration (alive_count, collect_all_locations, tag counts, render) is corrupted.
+    // enumeration (alive_count, collect, tag counts, render) is corrupted.
     assert_eq!(store.get_loc_by_id(5), Some(loc(5, 5.0, 5.0)));
 }
 
@@ -3815,7 +3866,7 @@ fn apply_model_op(
             let updated = vec![(old.clone(), new_loc.clone())];
             store.remove_tag_counts(std::slice::from_ref(&old));
             store.add_tag_counts(std::slice::from_ref(&new_loc));
-            store.record_update_undo(&updated);
+            store.record_update_undo(updated);
             model.insert(id, new_loc);
         }
     }
@@ -3834,7 +3885,7 @@ fn model_snapshot(model: &std::collections::BTreeMap<u32, Location>) -> Vec<Loca
 }
 
 fn store_snapshot(store: &Store) -> Vec<Location> {
-    let mut v = store.collect_all_locations();
+    let mut v = store.collect(&Scope::All);
     v.sort_by_key(|l| l.id);
     for l in &mut v {
         l.modified_at = None;
@@ -3894,4 +3945,241 @@ proptest::proptest! {
         proptest::prop_assert_eq!(store_snapshot(&store), final_snapshot, "interleaved undo/redo(k) did not land on final state");
         proptest::prop_assert_eq!(store.alive_count, model.len());
     }
+}
+
+// ---------------------------------------------------------------------------
+// plan_field_op: the map-wide `extra` rewrites, previously planned in JS
+// ---------------------------------------------------------------------------
+
+fn loc_with_extra(id: u32, json: &str) -> Location {
+    Location {
+        extra: crate::types::RawExtra::from_string(json.to_string()),
+        ..loc(id, 1.0, 1.0)
+    }
+}
+
+fn planned_extra(u: &Update<LocationPatch>) -> serde_json::Value {
+    serde_json::from_str(u.patch.extra.as_ref().unwrap().as_ref().unwrap().as_str()).unwrap()
+}
+
+fn plan(locs: &[Location], op: &FieldOp) -> Vec<Update<LocationPatch>> {
+    let fx = crate::test_util::Fx::base(locs);
+    plan_field_op(&fx.view(), None, op).0
+}
+
+fn move_op(from: &str, to: &str, winner: MergeWinner) -> FieldOp {
+    FieldOp::Move {
+        from: from.into(),
+        to: to.into(),
+        winner,
+    }
+}
+
+#[test]
+fn field_move_renames_when_the_target_is_absent() {
+    let out = plan(
+        &[loc_with_extra(1, r#"{"a":5}"#)],
+        &move_op("a", "b", MergeWinner::From),
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].id, 1);
+    assert_eq!(
+        planned_extra(&out[0]),
+        serde_json::json!({"a": null, "b": 5})
+    );
+}
+
+#[test]
+fn field_move_winner_from_overwrites_an_existing_target() {
+    let out = plan(
+        &[loc_with_extra(1, r#"{"a":5,"b":9}"#)],
+        &move_op("a", "b", MergeWinner::From),
+    );
+    assert_eq!(
+        planned_extra(&out[0]),
+        serde_json::json!({"a": null, "b": 5})
+    );
+}
+
+#[test]
+fn field_move_winner_to_keeps_the_target_and_only_drops_the_source() {
+    let out = plan(
+        &[loc_with_extra(1, r#"{"a":5,"b":9}"#)],
+        &move_op("a", "b", MergeWinner::To),
+    );
+    assert_eq!(planned_extra(&out[0]), serde_json::json!({"a": null}));
+}
+
+#[test]
+fn field_move_skips_rows_without_the_source_and_leaves_other_keys_alone() {
+    let out = plan(
+        &[
+            loc_with_extra(1, r#"{"x":1}"#),
+            loc_with_extra(2, r#"{"a":5,"keep":1}"#),
+        ],
+        &move_op("a", "b", MergeWinner::From),
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].id, 2);
+    // Merge patch carries only the moved keys -- `keep` is untouched.
+    assert_eq!(
+        planned_extra(&out[0]),
+        serde_json::json!({"a": null, "b": 5})
+    );
+}
+
+#[test]
+fn field_move_is_a_noop_when_source_equals_target_or_target_is_empty() {
+    let locs = [loc_with_extra(1, r#"{"a":5}"#)];
+    assert!(plan(&locs, &move_op("a", "a", MergeWinner::From)).is_empty());
+    assert!(plan(&locs, &move_op("a", "", MergeWinner::From)).is_empty());
+}
+
+#[test]
+fn field_delete_null_deletes_only_where_the_key_exists() {
+    let out = plan(
+        &[
+            loc_with_extra(1, r#"{"a":5,"b":9}"#),
+            loc_with_extra(2, r#"{"b":1}"#),
+        ],
+        &FieldOp::Delete {
+            keys: vec!["a".into()],
+        },
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].id, 1);
+    assert_eq!(planned_extra(&out[0]), serde_json::json!({"a": null}));
+}
+
+#[test]
+fn field_delete_takes_several_keys_at_once() {
+    let out = plan(
+        &[loc_with_extra(1, r#"{"a":5,"b":9,"c":1}"#)],
+        &FieldOp::Delete {
+            keys: vec!["a".into(), "c".into(), "missing".into()],
+        },
+    );
+    assert_eq!(
+        planned_extra(&out[0]),
+        serde_json::json!({"a": null, "c": null})
+    );
+}
+
+#[test]
+fn field_op_honours_the_scope() {
+    let locs = [
+        loc_with_extra(1, r#"{"a":5}"#),
+        loc_with_extra(2, r#"{"a":6}"#),
+    ];
+    let fx = crate::test_util::Fx::base(&locs);
+    let scope: roaring::RoaringBitmap = [2u32].into_iter().collect();
+    let (out, forget) = plan_field_op(
+        &fx.view(),
+        Some(&scope),
+        &move_op("a", "b", MergeWinner::From),
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].id, 2);
+    // Row 1 still holds `a`, so the key must not be forgotten.
+    assert!(forget.is_empty());
+}
+
+#[test]
+fn field_op_forgets_a_key_only_when_no_row_retains_it() {
+    let locs = [
+        loc_with_extra(1, r#"{"a":5}"#),
+        loc_with_extra(2, r#"{"a":6,"x":1}"#),
+    ];
+    let fx = crate::test_util::Fx::base(&locs);
+
+    // Whole-map move erases `a` everywhere.
+    let (_, forget) = plan_field_op(&fx.view(), None, &move_op("a", "b", MergeWinner::From));
+    assert_eq!(forget, vec!["a".to_string()]);
+
+    // Whole-map delete of `x` erases it; `a` is untouched.
+    let (_, forget) = plan_field_op(
+        &fx.view(),
+        None,
+        &FieldOp::Delete {
+            keys: vec!["x".into()],
+        },
+    );
+    assert_eq!(forget, vec!["x".to_string()]);
+
+    // Invalid move plans nothing and forgets nothing.
+    let (out, forget) = plan_field_op(&fx.view(), None, &move_op("a", "a", MergeWinner::From));
+    assert!(out.is_empty());
+    assert!(forget.is_empty());
+}
+
+// The round-trip rename invariant: a->b then b->a. The render delta never carries
+// extra-only rewrites, so knownness must flow through the registry channel: the store
+// forgets `a` when the move erases it, and re-announces it via new_field_defs when
+// the reverse move brings it back.
+#[test]
+fn field_op_round_trip_rename_reannounces_the_key() {
+    let mut store = setup_store_with(&[
+        loc_with_extra(1, r#"{"a":5}"#),
+        loc_with_extra(2, r#"{"a":6}"#),
+    ]);
+    store.known_field_keys.insert("a".into());
+
+    let r1 = apply_field_op(
+        &mut store,
+        &Scope::All,
+        &move_op("a", "b", MergeWinner::From),
+        false,
+    )
+    .unwrap();
+    assert!(r1.delta.updated.is_empty(), "extra-only: no render delta");
+    assert!(!store.known_field_keys.contains("a"), "a erased, forgotten");
+    assert!(store.known_field_keys.contains("b"), "b auto-registered");
+    assert!(!r1.status.known_field_keys.contains(&"a".to_string()));
+
+    let r2 = apply_field_op(
+        &mut store,
+        &Scope::All,
+        &move_op("b", "a", MergeWinner::From),
+        false,
+    )
+    .unwrap();
+    assert!(store.known_field_keys.contains("a"));
+    assert!(!store.known_field_keys.contains("b"));
+    assert!(
+        r2.new_field_defs.is_some_and(|d| d.contains_key("a")),
+        "reappearing key is re-announced"
+    );
+}
+
+#[test]
+fn collect_honours_each_scope_variant() {
+    let mut store = setup_store_with(&[loc(1, 1.0, 1.0), loc(2, 2.0, 2.0), loc(3, 3.0, 3.0)]);
+    store.selections.ids = [2u32].into_iter().collect();
+    let ids = |locs: Vec<Location>| locs.iter().map(|l| l.id).collect::<Vec<u32>>();
+
+    assert_eq!(ids(store.collect(&Scope::All)), vec![1, 2, 3]);
+    assert_eq!(ids(store.collect(&Scope::Selected)), vec![2]);
+    // The ids fast-path keeps request order and skips dead ids.
+    assert_eq!(
+        ids(store.collect(&Scope::Ids { ids: vec![3, 1, 9] })),
+        vec![3, 1]
+    );
+    assert_eq!(
+        ids(store.collect(&Scope::Props {
+            props: SelectionProps::Manual {
+                locations: vec![1, 3]
+            }
+        })),
+        vec![1, 3]
+    );
+}
+
+#[test]
+fn concurrent_rows_file_queries_get_distinct_paths() {
+    // The rows file is fetched after the store lock is released; queries in flight at the
+    // same time must never stage into the same path.
+    let temp = std::env::temp_dir();
+    let a = rows_file_path(&temp, "m");
+    let b = rows_file_path(&temp, "m");
+    assert_ne!(a, b);
 }

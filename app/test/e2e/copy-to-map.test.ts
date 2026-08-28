@@ -33,7 +33,7 @@ import {
 } from "./helpers";
 
 const copy = (targetMapId: string, ids: number[]) =>
-	withApi((api, t, i) => api.cmd.storeCopyLocationsToMap(t, i), targetMapId, ids);
+	withApi((api, t, i) => api.cmd.storeCopyLocationsToMap(t, { kind: "ids", ids: i }), targetMapId, ids);
 
 // Seed + persist a map, then close it (store evicted) so copies hit the closed-target branch.
 async function makeClosedMap(name: string, locs: any[] = []): Promise<string> {
@@ -196,7 +196,7 @@ describe("Copy to a closed map", () => {
 		const err = await withApi(async (api, i) => {
 			const selfId = api.getMapState().mapId!;
 			try {
-				await api.cmd.storeCopyLocationsToMap(selfId, i);
+				await api.cmd.storeCopyLocationsToMap(selfId, { kind: "ids", ids: i });
 				return null;
 			} catch (e) {
 				return (e && (e as Error).message) || String(e);

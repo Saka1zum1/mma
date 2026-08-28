@@ -67,7 +67,7 @@ declare const commands: {
      *  Stop every plugin's sidecar processes. Used when the editor tears all plugins
      *  down at once (map close), where nothing should still be running afterwards.
      */
-    sidecarStopAll: () => Promise<void>;
+    sidecarStopAll: () => Promise<null>;
     /**
      *  Kill the process behind a one-shot request (no-op if it already finished).
      *  Resident-served requests have no process of their own, so this does not
@@ -118,7 +118,7 @@ declare const commands: {
      *  Copy locations into another map, skipping ones the target already has. Tags and extra
      *  fields carry over.
      */
-    storeCopyLocationsToMap: (targetMapId: string, ids: number[]) => Promise<CopyToMapResult>;
+    storeCopyLocationsToMap: (targetMapId: string, scope: Scope) => Promise<CopyToMapResult>;
     /**  Lightweight status query: location count, version, and dirty flag. */
     storeGetSummary: () => Promise<SummaryResult>;
     /**  Return metadata for every map in the database. */
@@ -168,25 +168,17 @@ declare const commands: {
      *  the JS side recolors its cell buffers in place (no full rebuild).
      */
     storeSetMarkerColor: (color: [number, number, number]) => Promise<null>;
-    /**  Fetch a single location by ID. Returns `None` if the ID is dead or doesn't exist. */
-    storeGetLocation: (id: number) => Promise<Location | null>;
-    /**  Fetch multiple locations by ID. Silently skips IDs that don't exist. */
-    storeGetLocationsByIds: (ids: number[]) => Promise<Location[]>;
     /**
-     *  Dump every alive location to a temp JSON file. Returns the file path.
-     *  Used by export and plugins that need the full dataset.
+     *  Read the scoped location set through one projection. The single read primitive:
+     *  `scope` says which locations, `select` says what to bring back.
      */
-    storeGetAllLocations: () => Promise<string>;
+    storeQuery: (scope: Scope, select: Select) => Promise<QueryResult>;
+    storeApplyFieldOp: (scope: Scope, op: FieldOp, recordUndo: boolean | null) => Promise<MutationResult>;
     /**
      *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
      *  `level` selects border precision, falling back to "light" if unavailable.
      */
-    storeCountryDistribution: (level: string) => Promise<[string, number][]>;
-    /**
-     *  Compute the bounding box [west, south, east, north]. O(N).
-     *  When `selected_only` is true, restricts to the current selection.
-     */
-    storeBounds: (selectedOnly: boolean) => Promise<[number, number, number, number] | null>;
+    storeCountryDistribution: (scope: Scope, level: string) => Promise<[string, number][]>;
     /**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
     storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location[]>;
     /**
@@ -196,11 +188,6 @@ declare const commands: {
      */
     storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
     /**
-     *  Collect all distinct values for an `extra` field across all alive locations. O(N).
-     *  Used by the filter UI to populate dropdown options.
-     */
-    storeExtraFieldValues: (field: string) => Promise<string[]>;
-    /**
      *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
      *  already exists, it is made visible instead of creating a duplicate.
      *
@@ -209,7 +196,7 @@ declare const commands: {
      *  tag visible at count 0 for the round trip in between, and makes the caller fetch every
      *  location into JS just to append an id Rust already has.
      */
-    storeCreateTags: (names: string[], locationIds: number[]) => Promise<MutationResult>;
+    storeCreateTags: (names: string[], scope: Scope) => Promise<MutationResult>;
     /**
      *  Rename and/or recolor tags in one batch. Renaming onto an existing name (case-insensitive)
      *  merges the two tags.
@@ -238,24 +225,6 @@ declare const commands: {
      *  patch file for JS to apply to the render overlay. Returns per-selection counts.
      */
     storeSyncSelections: (sels: SelectionInput[]) => Promise<SelectionSync>;
-    /**  Return the union of all currently selected location IDs. */
-    storeGetSelectedIdsList: () => Promise<number[]>;
-    /**
-     *  Pick an evenly spaced subset of `scope`, or of the current selection when `scope` is
-     *  null. Exactly one of `target_count` (thin to N, maximizing spacing) or `min_distance_m`
-     *  (keep as many as fit at that spacing) must be provided.
-     */
-    storePickSpaced: (scope: SelectionProps | null, targetCount: number | null, minDistanceM: number | null) => Promise<SpacedPickResult>;
-    /**
-     *  Resolve a single selection to its matching location IDs without persisting it.
-     *  Used by plugins and one-off queries (e.g., tag merge, export filtered).
-     */
-    storeResolveSelection: (props: SelectionProps) => Promise<number[]>;
-    /**
-     *  Group locations by a derived key, returning `{ key, ids, bin }` per group.
-     *  `scope` restricts to a selection; `None` partitions the whole map.
-     */
-    storePartition: (field: string, key: KeySpec, scope: Scope) => Promise<PartitionBucket[]>;
     /**
      *  Transitive spatial duplicate groups (connected components, size >= 2) within `distance`
      *  metres. Read-only; used to preview a merge. Returns groups of location IDs.
@@ -270,7 +239,7 @@ declare const commands: {
      *  Thin duplicates among `ids` within `distance` metres, keeping the best location per
      *  cluster. Informational locations are never pruned. One undoable edit.
      */
-    storePruneDuplicates: (ids: number[], distance: number, keepTagIds: number[]) => Promise<MutationResult>;
+    storePruneDuplicates: (scope: Scope, distance: number, keepTagIds: number[]) => Promise<MutationResult>;
     /**
      *  Full render rebuild: single-pass over all alive locations, writes binary to a temp file.
      *  Returns the file path for JS to fetch via `mma-buf://`. Only called on map open or full reset.
@@ -319,12 +288,12 @@ declare const commands: {
     /**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
     storeExportJson: (opts: ExportOpts) => Promise<string>;
     /**  Export locations as a minimal lat/lng CSV file. */
-    storeExportCsv: (scope: number[] | null) => Promise<string>;
+    storeExportCsv: (scope: Scope) => Promise<string>;
     /**
      *  Export locations as a GeoJSON FeatureCollection of Point features.
      *  Each feature carries its tag names in `properties.tags`.
      */
-    storeExportGeojson: (scope: number[] | null, tagsJson: string) => Promise<string>;
+    storeExportGeojson: (scope: Scope, tagsJson: string) => Promise<string>;
     /**
      *  Copy a temp export file to the destination chosen via the native save dialog,
      *  then remove the temp source. `dest_path` comes from the frontend save dialog.
@@ -840,8 +809,8 @@ type ExportOpts = {
     exportZoom: boolean;
     exportUnpanned: boolean;
     exportExtras: boolean;
-    /**  When `Some`, restricts export to these location IDs (e.g. current selection). */
-    scope: number[] | null;
+    /**  Which locations to export. */
+    scope: Scope;
     mapName: string;
     /**
      *  Serialized `{id: {name, color}}` tag definitions from the store, used to
@@ -893,6 +862,26 @@ type ExtraFieldType = "string" | "number" | "date" | "month" | "enum" | "array";
 type FieldCount = {
     key: string;
     count: number;
+};
+/**
+ *  A field-wide rewrite of the `extra` map. Patches are derived *per row*, which is what
+ *  separates these from `store_update_locations`' explicit patch list.
+ */
+type FieldOp =
+/**
+ *  Rename `from` into `to`. Merge is the same operation -- rename is just the case
+ *  where nothing holds `to` -- so `winner` decides only where a row holds both.
+ */
+{
+    kind: "move";
+    from: string;
+    to: string;
+    winner: MergeWinner;
+} |
+/**  Drop `keys` from every row that has them. */
+{
+    kind: "delete";
+    keys: string[];
 };
 /**
  *  Filter comparison operator. Single source of truth: specta renders the literal
@@ -952,12 +941,12 @@ type KeySpec =
 /**  String value of the field (enum/string/month "YYYY-MM"/number). */
 {
     kind: "value";
-} | 
+} |
 /**  Equal-width numeric bins. */
 {
     kind: "numericBin";
     binning: NumericBinning;
-} | 
+} |
 /**  Calendar component of a date (epoch seconds) or month ("YYYY-MM") field. */
 {
     kind: "datePart";
@@ -1229,6 +1218,8 @@ type MapSettings = {
     /**  Alternate Street View providers (Apple Look Around, …). */
     providers: ProvidersSettings;
 };
+/**  When a move target already holds a value, which side survives. */
+type MergeWinner = "from" | "to";
 /**
  *  Unified response for every mutation IPC. Bundles the store status, render delta,
  *  optional selection sync, optional newly-discovered extra-field keys, and optional
@@ -1386,6 +1377,39 @@ type PullUpdate = {
     localId: number;
     patch: SyncPatch;
 };
+type QueryResult = {
+    kind: "ids";
+    ids: number[];
+} | {
+    kind: "rows";
+    locations: Location[];
+} |
+/**
+ *  Rows too large for the IPC channel, staged for `mma-buf://`. Same answer as
+ *  `Rows`; the transport is chosen by size and callers shouldn't care which arrives.
+ */
+{
+    kind: "rowsFile";
+    path: string;
+} |
+/**  `Spaced` ids plus the spacing achieved (count mode) or enforced (distance mode). */
+{
+    kind: "spaced";
+    ids: number[];
+    distanceM: number;
+} | {
+    kind: "groups";
+    groups: PartitionBucket[];
+} | {
+    kind: "counts";
+    counts: ([string, number])[];
+} | {
+    kind: "values";
+    values: string[];
+} | {
+    kind: "bounds";
+    bounds: [number, number, number, number] | null;
+};
 /**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
 type RemoteMappingRow = {
     localId: number;
@@ -1495,13 +1519,21 @@ type SaveResult = {
     savedBytes: number;
 };
 /**
- *  Which locations to operate on: the whole map or the current selection. Resolved in Rust
- *  against the maintained selection set.
+ *  Which locations to operate on. The one way to name a row set: resolved in Rust
+ *  against the maintained selection set, so callers never materialize rows to narrow them.
+ *  `All`/`Selected` reference state Rust already holds; `Ids`/`Props` carry their
+ *  definition in the call.
  */
 type Scope = {
     kind: "all";
 } | {
     kind: "selected";
+} | {
+    kind: "ids";
+    ids: number[];
+} | {
+    kind: "props";
+    props: SelectionProps;
 };
 /**
  *  Score bounding box: either `"auto"` (computed from locations) or an
@@ -1568,6 +1600,58 @@ type SeenWriteEntry = {
 type SelPaint = {
     idx: number;
     color: [number, number, number];
+};
+/**
+ *  What one scoped traversal accumulates. Every variant is a projection of the same
+ *  pass over the location view, so a new question is a variant, not a new command.
+ */
+type Select =
+/**  Ids of everything in scope. */
+{
+    kind: "ids";
+} |
+/**  Full rows, dumped to a temp JSON file. The last resort -- prefer a projection. */
+{
+    kind: "rows";
+} |
+/**  `n` ids drawn uniformly at random, without replacement. */
+{
+    kind: "sample";
+    n: number;
+} |
+/**
+ *  An evenly spaced subset: exactly one of `target_count` (thin to N, maximizing
+ *  spacing) or `min_distance_m` (keep as many as fit at that spacing).
+ */
+{
+    kind: "spaced";
+    targetCount: number | null;
+    minDistanceM: number | null;
+} |
+/**  Group by a derived key, returning `{ key, ids, bin }` per group. */
+{
+    kind: "groupBy";
+    field: string;
+    key: KeySpec;
+} |
+/**  Group by a derived key, returning counts only. */
+{
+    kind: "countBy";
+    field: string;
+    key: KeySpec;
+} |
+/**  Distinct values of a field. */
+{
+    kind: "values";
+    field: string;
+} |
+/**  How many rows carry each top-level `extra` key. */
+{
+    kind: "coverage";
+} |
+/**  Bounding box `[west, south, east, north]` of the scope. */
+{
+    kind: "bounds";
 };
 /**
  *  A named, colored selection. `key` is deterministic (e.g., `"tag:5"`, `"polygon:abc"`)
@@ -1688,10 +1772,6 @@ type SidecarProgress = {
     pluginId: string;
     downloaded: number;
     total: number;
-};
-type SpacedPickResult = {
-    ids: number[];
-    distanceM: number;
 };
 /**
  *  Metadata snapshot returned to JS after every mutation. JS uses `version` to
@@ -1871,15 +1951,6 @@ export type SvCoverageType = "official" | "unofficial" | "default";
 export type SvThickness = "default" | "high";
 export type MarkerStyle = "pin" | "circle" | "arrow";
 
-/**
- * Pure planning logic for bulk metadata-field operations (rename / merge / delete / set).
- * These compute `extra` merge patches (RFC 7386: null deletes a key) and selection-reference
- * rewrites; the store orchestrates IPC, definitions, and persistence. Side-effect-free.
- */
-
-/** When a move target already holds a value, which field's value survives. */
-export type MergeWinner = "from" | "to";
-
 /** Per-cell, per-selection membership: a dense bitmask or a sparse selected-index list. */
 export type SelEntry = {
     kind: "mask";
@@ -1957,9 +2028,9 @@ export interface MapState {
     /** Resolved count per selection node (top-level and nested), keyed by `Selection.key`.
      *  The sole source for sidebar counts — refreshed wholesale from Rust on every sync. */
     selectionCounts: Record<string, number>;
-    /** Extra-field keys known to exist in location data on the current map.
-     *  Populated from `StoreStatus.knownFieldKeys` on map open, extended
-     *  incrementally via `MutationResult.newFieldDefs`. */
+    /** Extra-field keys known to exist in location data on the current map. A mirror of
+     *  Rust's registry: refreshed wholesale from `StoreStatus.knownFieldKeys` on open and
+     *  on every mutation (plus that mutation's `newFieldDefs`), never maintained JS-side. */
     knownFieldKeys: ReadonlySet<string>;
     selections: Selection[];
     /** Keys of selections that are "ghosted": kept in the list but excluded from the
@@ -2008,12 +2079,25 @@ declare function openMap$1(id: string): Promise<void>;
 declare function closeMap$1(): Promise<void>;
 /** Drop the open map without persisting anything */
 declare function discardOpenMap(): void;
-/** Fetch every location in the map. */
-declare function fetchAllLocations(): Promise<Location[]>;
-/** Fetch one location by id, or null if it doesn't exist. */
-declare function fetchLocation(id: number): Promise<Location | null>;
-/** Fetch locations by id (missing ids are skipped). Prefer this over per-id fetches. */
-declare function fetchLocationsByIds(ids: number[]): Promise<Location[]>;
+/** Ids of every location in scope. */
+declare function scopeIds(scope: Scope): Promise<number[]>;
+/** Bounding box `[west, south, east, north]` of the scope, or null when it's empty.
+ *  The whole-map box is an O(1) cache hit in Rust; scoped boxes scan. */
+declare function fetchBounds(scope: Scope): Promise<[number, number, number, number] | null>;
+/** `n` ids drawn uniformly at random from the scope, without replacement. */
+declare function sampleScope(scope: Scope, n: number): Promise<number[]>;
+/** Distinct values of `field` across the scope, sorted. */
+declare function fieldValues(scope: Scope, field: string): Promise<string[]>;
+/** Group the scope by a derived key and count, without shipping member ids. */
+declare function countBy(scope: Scope, field: string, key: KeySpec): Promise<[string, number][]>;
+/** How many locations in scope carry each `extra` key, key-sorted. */
+declare function fieldCoverage(scope: Scope): Promise<[string, number][]>;
+/** Group the scope by a derived key, with member ids per group. */
+declare function groupBy(scope: Scope, field: string, key: KeySpec): Promise<PartitionBucket[]>;
+/** Materialize a scope's location rows -- by id, by selection, or the whole map.
+ *  Rust picks the transport (inline vs staged file) by size. Missing ids are skipped.
+ *  The heaviest read there is: every other projection answers without shipping rows. */
+declare function fetchLocations(scope: Scope): Promise<Location[]>;
 /** Active (non-ghosted) selections, the default for any operational logic. */
 declare const getActiveSelections: () => Selection[];
 /** Overwrite the selected-id set directly, bypassing selection resolution. Rarely what you want -- prefer `addSelections`. */
@@ -2146,10 +2230,10 @@ declare function exitProvidersMode(): void;
  *  in subsequent location updates. Idempotent — existing tags are returned
  *  as-is, new names get auto-generated colors.
  *
- *  Pass `locationIds` to assign the tags in the same mutation. Prefer that over a follow-up
- *  `addTagToLocations`: it is one round trip instead of three, and the tag never renders at
- *  count 0 in between. */
-declare function createTags(names: string[], locationIds?: number[]): Promise<Tag[]>;
+ *  Pass `scope` to assign the tags to those locations in the same mutation. Prefer that
+ *  over a follow-up `addTagToLocations`: it is one round trip instead of three, and the
+ *  tag never renders at count 0 in between. The default assigns nothing. */
+declare function createTags(names: string[], scope?: Scope): Promise<Tag[]>;
 /** Rename or recolor tags. If a rename collides with an existing tag name
  *  (case-insensitive), the two tags are merged — all locations are remapped
  *  to the survivor. */
@@ -2183,6 +2267,7 @@ declare const store_checkoutCommit: typeof checkoutCommit;
 declare const store_closeDuplicates: typeof closeDuplicates;
 declare const store_commitMap: typeof commitMap;
 declare const store_composeSelections: typeof composeSelections;
+declare const store_countBy: typeof countBy;
 declare const store_createTags: typeof createTags;
 declare const store_decomposeChild: typeof decomposeChild;
 declare const store_deleteField: typeof deleteField;
@@ -2192,15 +2277,17 @@ declare const store_duplicateLocation: typeof duplicateLocation;
 declare const store_emitBitmask: typeof emitBitmask;
 declare const store_exitPluginMode: typeof exitPluginMode;
 declare const store_exitProvidersMode: typeof exitProvidersMode;
-declare const store_fetchAllLocations: typeof fetchAllLocations;
-declare const store_fetchLocation: typeof fetchLocation;
-declare const store_fetchLocationsByIds: typeof fetchLocationsByIds;
+declare const store_fetchBounds: typeof fetchBounds;
+declare const store_fetchLocations: typeof fetchLocations;
+declare const store_fieldCoverage: typeof fieldCoverage;
+declare const store_fieldValues: typeof fieldValues;
 declare const store_flushSave: typeof flushSave;
 declare const store_getActiveSelections: typeof getActiveSelections;
 declare const store_getMapState: typeof getMapState;
 declare const store_getSelectedTagIds: typeof getSelectedTagIds;
 declare const store_getTag: typeof getTag;
 declare const store_getVisibleTags: typeof getVisibleTags;
+declare const store_groupBy: typeof groupBy;
 declare const store_initStore: typeof initStore;
 declare const store_isolateSelection: typeof isolateSelection;
 declare const store_mapOpen: typeof mapOpen;
@@ -2224,8 +2311,10 @@ declare const store_reorderSelection: typeof reorderSelection;
 declare const store_reorderTags: typeof reorderTags;
 declare const store_resetSelections: typeof resetSelections;
 declare const store_resolveLocation: typeof resolveLocation;
+declare const store_sampleScope: typeof sampleScope;
 declare const store_scheduleAutoCommit: typeof scheduleAutoCommit;
 declare const store_scheduleSave: typeof scheduleSave;
+declare const store_scopeIds: typeof scopeIds;
 declare const store_selectIntersection: typeof selectIntersection;
 declare const store_selectInverse: typeof selectInverse;
 declare const store_selectRandomFromSelection: typeof selectRandomFromSelection;
@@ -2252,7 +2341,7 @@ declare const store_updateTags: typeof updateTags;
 declare const store_useMapState: typeof useMapState;
 declare const store_waitForInflightPersist: typeof waitForInflightPersist;
 declare namespace store {
-  export { store_addLocations as addLocations, store_addSelections as addSelections, store_addTagToLocations as addTagToLocations, store_cancelAutosave as cancelAutosave, store_checkoutCommit as checkoutCommit, store_closeDuplicates as closeDuplicates, closeMap$1 as closeMap, store_commitMap as commitMap, store_composeSelections as composeSelections, store_createTags as createTags, store_decomposeChild as decomposeChild, store_deleteField as deleteField, store_deleteTags as deleteTags, store_discardOpenMap as discardOpenMap, store_duplicateLocation as duplicateLocation, store_emitBitmask as emitBitmask, store_exitPluginMode as exitPluginMode, store_exitProvidersMode as exitProvidersMode, store_fetchAllLocations as fetchAllLocations, store_fetchLocation as fetchLocation, store_fetchLocationsByIds as fetchLocationsByIds, store_flushSave as flushSave, store_getActiveSelections as getActiveSelections, store_getMapState as getMapState, store_getSelectedTagIds as getSelectedTagIds, store_getTag as getTag, store_getVisibleTags as getVisibleTags, store_initStore as initStore, store_isolateSelection as isolateSelection, store_mapOpen as mapOpen, store_mergeDuplicates as mergeDuplicates, store_mutate as mutate, store_openDuplicateLocation as openDuplicateLocation, openMap$1 as openMap, store_openStagedLocation as openStagedLocation, store_previewDuplicateGroups as previewDuplicateGroups, store_previewVirtualLocation as previewVirtualLocation, store_pruneDuplicates as pruneDuplicates, store_redo as redo, store_removeChildFromSelection as removeChildFromSelection, store_removeDuplicate as removeDuplicate, store_removeLocations as removeLocations, store_removeSelections as removeSelections, store_removeTagFromAllLocations as removeTagFromAllLocations, store_removeTagFromLocations as removeTagFromLocations, store_renameField as renameField, store_renameMap as renameMap, store_reorderSelection as reorderSelection, store_reorderTags as reorderTags, store_resetSelections as resetSelections, store_resolveLocation as resolveLocation, store_scheduleAutoCommit as scheduleAutoCommit, store_scheduleSave as scheduleSave, store_selectIntersection as selectIntersection, store_selectInverse as selectInverse, store_selectRandomFromSelection as selectRandomFromSelection, store_selectSpacedFromSelection as selectSpacedFromSelection, store_selectUnion as selectUnion, store_setActiveLocation as setActiveLocation, store_setMapExtraFields as setMapExtraFields, store_setPluginMode as setPluginMode, store_setPolygonName as setPolygonName, store_setSelectedLocationIds as setSelectedLocationIds, store_setSelectionColors as setSelectionColors, store_setWorkArea as setWorkArea, store_toggleGhostAllSelections as toggleGhostAllSelections, store_toggleGhostSelection as toggleGhostSelection, store_toggleManualSelection as toggleManualSelection, store_toggleProvidersMode as toggleProvidersMode, store_toggleTagSelections as toggleTagSelections, store_undo as undo, store_updateFilterSelection as updateFilterSelection, store_updateLocations as updateLocations, store_updateMapLabels as updateMapLabels, store_updateMapMeta as updateMapMeta, store_updateTags as updateTags, store_useMapState as useMapState, store_waitForInflightPersist as waitForInflightPersist };
+  export { store_addLocations as addLocations, store_addSelections as addSelections, store_addTagToLocations as addTagToLocations, store_cancelAutosave as cancelAutosave, store_checkoutCommit as checkoutCommit, store_closeDuplicates as closeDuplicates, closeMap$1 as closeMap, store_commitMap as commitMap, store_composeSelections as composeSelections, store_countBy as countBy, store_createTags as createTags, store_decomposeChild as decomposeChild, store_deleteField as deleteField, store_deleteTags as deleteTags, store_discardOpenMap as discardOpenMap, store_duplicateLocation as duplicateLocation, store_emitBitmask as emitBitmask, store_exitPluginMode as exitPluginMode, store_exitProvidersMode as exitProvidersMode, store_fetchBounds as fetchBounds, store_fetchLocations as fetchLocations, store_fieldCoverage as fieldCoverage, store_fieldValues as fieldValues, store_flushSave as flushSave, store_getActiveSelections as getActiveSelections, store_getMapState as getMapState, store_getSelectedTagIds as getSelectedTagIds, store_getTag as getTag, store_getVisibleTags as getVisibleTags, store_groupBy as groupBy, store_initStore as initStore, store_isolateSelection as isolateSelection, store_mapOpen as mapOpen, store_mergeDuplicates as mergeDuplicates, store_mutate as mutate, store_openDuplicateLocation as openDuplicateLocation, openMap$1 as openMap, store_openStagedLocation as openStagedLocation, store_previewDuplicateGroups as previewDuplicateGroups, store_previewVirtualLocation as previewVirtualLocation, store_pruneDuplicates as pruneDuplicates, store_redo as redo, store_removeChildFromSelection as removeChildFromSelection, store_removeDuplicate as removeDuplicate, store_removeLocations as removeLocations, store_removeSelections as removeSelections, store_removeTagFromAllLocations as removeTagFromAllLocations, store_removeTagFromLocations as removeTagFromLocations, store_renameField as renameField, store_renameMap as renameMap, store_reorderSelection as reorderSelection, store_reorderTags as reorderTags, store_resetSelections as resetSelections, store_resolveLocation as resolveLocation, store_sampleScope as sampleScope, store_scheduleAutoCommit as scheduleAutoCommit, store_scheduleSave as scheduleSave, store_scopeIds as scopeIds, store_selectIntersection as selectIntersection, store_selectInverse as selectInverse, store_selectRandomFromSelection as selectRandomFromSelection, store_selectSpacedFromSelection as selectSpacedFromSelection, store_selectUnion as selectUnion, store_setActiveLocation as setActiveLocation, store_setMapExtraFields as setMapExtraFields, store_setPluginMode as setPluginMode, store_setPolygonName as setPolygonName, store_setSelectedLocationIds as setSelectedLocationIds, store_setSelectionColors as setSelectionColors, store_setWorkArea as setWorkArea, store_toggleGhostAllSelections as toggleGhostAllSelections, store_toggleGhostSelection as toggleGhostSelection, store_toggleManualSelection as toggleManualSelection, store_toggleProvidersMode as toggleProvidersMode, store_toggleTagSelections as toggleTagSelections, store_undo as undo, store_updateFilterSelection as updateFilterSelection, store_updateLocations as updateLocations, store_updateMapLabels as updateMapLabels, store_updateMapMeta as updateMapMeta, store_updateTags as updateTags, store_useMapState as useMapState, store_waitForInflightPersist as waitForInflightPersist };
   export type { store_MapState as MapState };
 }
 
@@ -2942,11 +3031,11 @@ declare namespace commitDiff {
 
 /** The user-facing "which locations" concept: Rust's mechanical Scope widened with
  *  saved selections, which resolve to ids in JS (Rust never sees saved definitions). */
-export type SourceScope = Scope | {
+export type ScopeWithSaved = Scope | {
     kind: "saved";
     id: string;
 };
-export interface ScopeController<S extends SourceScope = Scope> {
+export interface ScopeController<S extends ScopeWithSaved = Scope> {
     scope: S;
     setScope(s: S): void;
     allCount: number;
@@ -2955,13 +3044,12 @@ export interface ScopeController<S extends SourceScope = Scope> {
      *  narrow via resolveScopeIds rather than passing the scope to Rust. */
     saved?: boolean;
 }
-/** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side). */
+/** Narrow a materialized pool of id-bearing records to the scope's subset (JS-side).
+ *  `props` scopes carry a predicate only Rust can evaluate -- resolve those via
+ *  `resolveScopeIds`/`fetchLocations` instead. */
 declare function applyScope(scope: Scope, pool: Location[]): Location[];
-/** The id-set a scope narrows to, or null for "all". Saved scopes resolve in Rust. */
-declare function resolveScopeIds(scope: SourceScope): Promise<{
-    has(id: number): boolean;
-    size: number;
-} | null>;
+/** The id-set a scope narrows to, or null for "all". Saved and props scopes resolve async. */
+declare function resolveScopeIds(scope: ScopeWithSaved): Promise<ReadonlyIdSet | null>;
 /** Group the scoped location set by a derived key - entirely in Rust, no locations fetched.
  *  Numeric bins arrive in bound order; projection keys are sorted naturally for display. */
 declare function partition(field: string, key: KeySpec, scope: Scope): Promise<PartitionBucket[]>;
@@ -2984,9 +3072,9 @@ export interface ScopeHandle {
 /** A standalone "all locations vs current selection" switch, for features that operate on a subset. */
 declare function createScope(initial?: Scope): ScopeHandle;
 
-export type scope_ScopeController<S extends SourceScope = Scope> = ScopeController<S>;
+export type scope_ScopeController<S extends ScopeWithSaved = Scope> = ScopeController<S>;
 export type scope_ScopeHandle = ScopeHandle;
-export type scope_SourceScope = SourceScope;
+export type scope_ScopeWithSaved = ScopeWithSaved;
 declare const scope_applyScope: typeof applyScope;
 declare const scope_createScope: typeof createScope;
 declare const scope_partition: typeof partition;
@@ -2994,7 +3082,7 @@ declare const scope_resolveScopeIds: typeof resolveScopeIds;
 declare const scope_useScope: typeof useScope;
 declare namespace scope {
   export { scope_applyScope as applyScope, scope_createScope as createScope, scope_partition as partition, scope_resolveScopeIds as resolveScopeIds, scope_useScope as useScope };
-  export type { scope_ScopeController as ScopeController, scope_ScopeHandle as ScopeHandle, scope_SourceScope as SourceScope };
+  export type { scope_ScopeController as ScopeController, scope_ScopeHandle as ScopeHandle, scope_ScopeWithSaved as ScopeWithSaved };
 }
 
 /** Reactive list of all maps (metadata only). */
@@ -3214,7 +3302,7 @@ declare function SegmentedControl<T extends string | number>({ options, value, o
 }): react.JSX.Element;
 
 declare function ScopeSelector({ ctl, className, }: {
-    ctl: ScopeController<SourceScope>;
+    ctl: ScopeController<ScopeWithSaved>;
     className?: string;
 }): react.JSX.Element;
 
@@ -3280,6 +3368,9 @@ declare const EVENT_DEFS: {
     "location:add": Location[];
     "location:remove": number[];
     "location:update": Update<LocationPatch_Deserialize>[];
+    /** Location data changed in bulk without per-location patches (e.g. a Rust-side
+     *  field op). Anything derived from location data must re-query. */
+    "location:invalidate": void;
     "tag:add": Tag[];
     "tag:remove": number[];
     "tag:update": Update<TagPatch>[];
@@ -3520,7 +3611,16 @@ declare function getGhostedSelections(): ReadonlySet<string>;
 declare function getSelections(): Selection[];
 /** @deprecated v0.8.2. Read `(await MMA.cmd.storeGetSummary()).dirtyCount`. */
 declare function getDirtyCount(): Promise<number>;
+/** @deprecated v0.8.4. Use `MMA.fetchLocations({ kind: "ids", ids: [id] })`. */
+declare function fetchLocation(id: number): Promise<Location>;
+/** @deprecated v0.8.4. Use `MMA.fetchLocations({ kind: "ids", ids })`. */
+declare function fetchLocationsByIds(ids: number[]): Promise<Location[]>;
+/** @deprecated v0.8.4. Use `MMA.fetchLocations({ kind: "all" })`. */
+declare function fetchAllLocations(): Promise<Location[]>;
 
+declare const legacy_fetchAllLocations: typeof fetchAllLocations;
+declare const legacy_fetchLocation: typeof fetchLocation;
+declare const legacy_fetchLocationsByIds: typeof fetchLocationsByIds;
 declare const legacy_getActiveLocation: typeof getActiveLocation;
 declare const legacy_getAllSelections: typeof getAllSelections;
 declare const legacy_getCurrentMap: typeof getCurrentMap;
@@ -3536,6 +3636,9 @@ declare const legacy_getWorkArea: typeof getWorkArea;
 declare const legacy_waitForGoogleMap: typeof waitForGoogleMap;
 declare namespace legacy {
   export {
+    legacy_fetchAllLocations as fetchAllLocations,
+    legacy_fetchLocation as fetchLocation,
+    legacy_fetchLocationsByIds as fetchLocationsByIds,
     legacy_getActiveLocation as getActiveLocation,
     legacy_getAllSelections as getAllSelections,
     legacy_getCurrentMap as getCurrentMap,
@@ -3581,16 +3684,6 @@ declare namespace testApi {
   };
 }
 
-export interface LocationStore {
-    locations: Map<number, Location>;
-    /** The materialized locations narrowed to a scope (defaults to all). */
-    get(scope?: Scope): Location[];
-    onChange(cb: () => void): () => void;
-    destroy(): void;
-}
-/** A live id-to-Location map of the whole map, kept in sync via store events.
- *  Call `destroy()` when done. */
-declare function createLocationStore(): Promise<LocationStore>;
 export interface SidecarOptions<T> {
     /** Fires once per JSON object the sidecar emits, in order. */
     onLine?(item: T): void;
@@ -3641,7 +3734,6 @@ declare const surface: {
     registerEnrichmentProvider: typeof registerEnrichmentProvider;
     preloadModules: typeof preloadModules;
     getAvailableExternals: typeof getAvailableExternals;
-    createLocationStore: typeof createLocationStore;
     ui: {
         Sidebar: typeof Sidebar;
         Section: typeof Section;
@@ -3786,4 +3878,4 @@ declare global {
 }
 
 export { BUILTIN_FIELDS, KNOWN_FIELDS, MMA as MMAApi, PanoType, commands, events };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CameraType, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, CameraType, CellRemoval, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryResult, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ReviewCreate, ReviewSession, ReviewUpdate, SaveResult, Scope, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Select, Selection, SelectionInput, SelectionProps, SelectionSync, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };

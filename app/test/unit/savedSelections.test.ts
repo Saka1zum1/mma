@@ -12,13 +12,11 @@ vi.mock("@/store/useMapStore", () => ({
 	addSelections: vi.fn(),
 	getTag: (id: number) => h.tags[id],
 	getVisibleTags: () => Object.values(h.tags).filter((t) => t.visible !== false),
+	scopeIds: (scope: { kind: string; props: unknown }) => h.resolve(scope.props),
 }));
 vi.mock("@/store/settings", () => ({
 	getSettings: () => ({ savedSelections: h.saved }),
 	setSetting: vi.fn(),
-}));
-vi.mock("@/lib/commands", () => ({
-	cmd: { storeResolveSelection: (props: unknown) => h.resolve(props) },
 }));
 
 import {

@@ -1,12 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState, useEffect, useMemo } from "react";
 import type { Selection, FilterOp, ExtraFieldDef } from "@/bindings.gen";
-import { cmd } from "@/lib/commands";
 import { NSelect } from "@/components/primitives/NSelect";
 import { fieldLabel, getAllFieldDefs, isListableField } from "@/lib/data/fieldDefRegistry";
 import { useEvent } from "@/lib/events";
 import { pickPeriodEnd, hasTimeOfDay, dateParts, partsToEpoch } from "@/lib/data/fieldOps";
-import { useMapState, addSelections } from "@/store/useMapStore";
+import { useMapState, addSelections, fieldValues } from "@/store/useMapStore";
 import { useSetting } from "@/store/settings";
 import { OP_LABELS } from "@/store/selections";
 import { DatePicker } from "@/components/primitives/DatePicker";
@@ -108,7 +107,7 @@ function useEnumValues(fieldKey: string | undefined, def: ExtraFieldDef | undefi
 			setValues([]);
 			return;
 		}
-		cmd.storeExtraFieldValues(fieldKey).then(setValues);
+		fieldValues({ kind: "all" }, fieldKey).then(setValues);
 	}, [fieldKey, def]);
 	return values;
 }
