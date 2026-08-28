@@ -13,6 +13,7 @@ export { Checkbox } from "./Checkbox";
 export { ColorPicker } from "./ColorPicker";
 export { DatePicker } from "./DatePicker";
 export { Dialog, DialogContent, DialogTrigger, useCloseDialog, type DialogProps } from "./Dialog";
+export { Flag } from "./Flag";
 export { HotkeyInput } from "./HotkeyInput";
 export { Icon } from "./Icon";
 export { NSelect } from "./NSelect";

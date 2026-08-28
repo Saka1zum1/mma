@@ -9,18 +9,19 @@ import {
 	mdiBookOpenVariant,
 	mdiBookOpenOutline,
 } from "@mdi/js";
-import type { Selection, Tag } from "@/bindings.gen";
-import { useMapState, getActiveSelections } from "@/store/useMapStore";
+import type { Tag } from "@/bindings.gen";
+import { useMapState, getSelectedTagIdsDeep } from "@/store/useMapStore";
 import {
 	parseDoclink,
 	loadSection,
 	evictDoc,
 	doclinkedTags,
-	openDocHref,
 	preloadSectionImages,
+	openDocHref,
 	type DocSection,
 } from "@/lib/doclink";
 import { useAsync } from "@/lib/hooks/useAsync";
+import { usePointerDrag } from "@/lib/hooks/usePointerDrag";
 import { Icon } from "@/components/primitives/Icon";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { clamp, range } from "@/types/util";
@@ -69,18 +70,9 @@ export interface DoclinkPanelProps {
 	onClose: () => void;
 }
 
-/** Tag ids of every Tag leaf in the selection tree, in list order (composites included). */
-function collectSelectedTagIds(sels: Selection[], out: number[] = []): number[] {
-	for (const s of sels) {
-		if (s.selector.type === "Tag") out.push(s.selector.tagId);
-		if ("selections" in s.selector) collectSelectedTagIds(s.selector.selections, out);
-	}
-	return out;
-}
-
 export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProps) {
 	const tagMap = useMapState((s) => s.tags);
-	const selections = useMapState(getActiveSelections);
+	const selectedTagIds = useMapState(getSelectedTagIdsDeep);
 	const tags: Tag[] = doclinkedTags(tagMap);
 	const [pinned, setPinned] = useState(false);
 	const [sel, setSel] = useState<{ tagId: number; idx: number } | null>(null);
@@ -88,9 +80,7 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 
 	// Follow tag selections: the newest selected tag with doclinks wins; keep the
 	// current one while it stays selected.
-	const candidates = collectSelectedTagIds(selections).filter(
-		(id) => (tagMap[id]?.doclinks?.length ?? 0) > 0,
-	);
+	const candidates = selectedTagIds.filter((id) => (tagMap[id]?.doclinks?.length ?? 0) > 0);
 	const candidateKey = candidates.join(",");
 	useEffect(() => {
 		if (pinned || candidates.length === 0) return;
@@ -146,23 +136,12 @@ export function DoclinkPanel({ width, onWidthChange, onClose }: DoclinkPanelProp
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [section]);
 
-	const onResizeDown = useCallback(
-		(e: React.PointerEvent) => {
-			e.preventDefault();
-			const el = e.currentTarget as HTMLElement;
-			el.setPointerCapture(e.pointerId);
-			const onMove = (ev: PointerEvent) => {
-				const rect = panelRef.current?.getBoundingClientRect();
-				if (!rect) return;
-				onWidthChange(Math.round(clamp(rect.right - ev.clientX, WIDTH_RANGE)));
-			};
-			const ac = new AbortController();
-			const onUp = () => ac.abort();
-			el.addEventListener("pointermove", onMove, { signal: ac.signal });
-			el.addEventListener("pointerup", onUp, { signal: ac.signal });
+	const onResizeDown = usePointerDrag(() => ({
+		onMove: (ev) => {
+			const rect = panelRef.current?.getBoundingClientRect();
+			if (rect) onWidthChange(Math.round(clamp(rect.right - ev.clientX, WIDTH_RANGE)));
 		},
-		[onWidthChange],
-	);
+	}));
 
 	const title = shown?.docTitle ?? selTag?.name ?? t("Doclink");
 

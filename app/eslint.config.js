@@ -9,6 +9,10 @@ import noIpcInLoop from "./eslint-rules/no-ipc-in-loop.js";
 import noRedundantMutateGuard from "./eslint-rules/no-redundant-mutate-guard.js";
 import noSelectionAlias from "./eslint-rules/no-selection-alias.js";
 import noUnsupportedBuiltins from "./eslint-rules/no-unsupported-builtins.js";
+import noPrimitiveClass from "./eslint-rules/no-primitive-class.js";
+import noEffectEventInMemo from "./eslint-rules/no-effect-event-in-memo.js";
+import noNativeDialog from "./eslint-rules/no-native-dialog.js";
+import noUndefinedCssClass from "./eslint-rules/no-undefined-css-class.js";
 
 const RESTRICTED_IMPORT_PATHS = [
 	{
@@ -23,6 +27,17 @@ const USE_SYNC_EXTERNAL_STORE_BAN = {
 		"ImportDeclaration[source.value='react'] > ImportSpecifier[imported.name='useSyncExternalStore']",
 	message:
 		"Use useEvent/useEventValue from @/lib/events instead of raw useSyncExternalStore. The event system handles subscribe + versioning centrally.",
+};
+
+const QUERY_COMMANDS =
+	"/^store(Resolve|Count|CountBy|Bounds|Sample|Spaced|Values|Coverage|Columns|GroupBy|Collect)$/";
+
+/** The store's query surface is named vocabulary, not raw IPC: `fieldCoverage`, not
+ *  `cmd.storeCoverage`. Only useMapStore may reach past the wrappers. */
+const QUERY_CMD_BAN = {
+	selector: `MemberExpression[property.name=${QUERY_COMMANDS}]:matches([object.name='cmd'], [object.property.name='cmd'])`,
+	message:
+		"Query commands go through their named wrapper in store/useMapStore (resolveIds, countIn, fetchBounds, sampleFrom, fieldValues, countBy, fieldCoverage, fetchColumns, partition, fetchLocations), not raw cmd.",
 };
 
 const RESTRICTED_SYNTAX = [
@@ -42,10 +57,6 @@ const RESTRICTED_SYNTAX = [
 			'Use <Checkbox> (@/components/primitives/Checkbox) instead of a raw <input type="checkbox">.',
 	},
 	{
-		selector: "CallExpression[callee.name=/^(confirm|alert|prompt)$/]",
-		message: "Native confirm()/alert()/prompt() hang in WebView2 - use a Radix dialog instead.",
-	},
-	{
 		selector: "AssignmentExpression[left.property.name='innerHTML']",
 		message: "No raw innerHTML - use React or textContent.",
 	},
@@ -56,7 +67,16 @@ const RESTRICTED_SYNTAX = [
 ];
 
 export default defineConfig([
-	globalIgnores(["dist", "src/bindings.gen.ts", "src/components/manual/manual-img-dims.gen.ts"]),
+	globalIgnores([
+		"dist",
+		"src/bindings.gen.ts",
+		"src/components/manual/manual-img-dims.gen.ts",
+		"vitest.config.ts",
+		"vitest.integration.config.ts",
+		"wdio.conf.ts",
+		"wdio.perf.conf.ts",
+		"wdio.web.conf.ts",
+	]),
 	{
 		files: ["**/*.{ts,tsx}"],
 		extends: [
@@ -73,6 +93,10 @@ export default defineConfig([
 					"no-redundant-mutate-guard": noRedundantMutateGuard,
 					"no-selection-alias": noSelectionAlias,
 					"no-unsupported-builtins": noUnsupportedBuiltins,
+					"no-primitive-class": noPrimitiveClass,
+					"no-effect-event-in-memo": noEffectEventInMemo,
+					"no-native-dialog": noNativeDialog,
+					"no-undefined-css-class": noUndefinedCssClass,
 				},
 			},
 		},
@@ -93,13 +117,22 @@ export default defineConfig([
 			"local/no-ipc-in-loop": "warn",
 			"local/no-redundant-mutate-guard": "warn",
 			"local/no-selection-alias": "warn",
+			"local/no-primitive-class": "warn",
+			"local/no-effect-event-in-memo": "error",
+			"local/no-native-dialog": "error",
+			"local/no-undefined-css-class": "warn",
 			"no-restricted-imports": [
 				"error",
 				{
 					paths: RESTRICTED_IMPORT_PATHS,
 				},
 			],
-			"no-restricted-syntax": ["error", ...RESTRICTED_SYNTAX, USE_SYNC_EXTERNAL_STORE_BAN],
+			"no-restricted-syntax": [
+				"error",
+				...RESTRICTED_SYNTAX,
+				USE_SYNC_EXTERNAL_STORE_BAN,
+				QUERY_CMD_BAN,
+			],
 			"@typescript-eslint/no-unused-vars": [
 				"error",
 				{
@@ -134,12 +167,19 @@ export default defineConfig([
 		// Legitimate low-level users of useSyncExternalStore: exempt from that one ban.
 		files: [
 			"src/lib/events.ts",
-			"src/store/scope.ts",
+			"src/store/selectorPick.ts",
 			"src/lib/hooks/useLocalStorage.ts",
 			"src/plugins/generator/ui/progressSignal.ts",
 		],
 		rules: {
 			"no-restricted-syntax": ["error", ...RESTRICTED_SYNTAX],
+		},
+	},
+	{
+		// The store owns the query wrappers, so it is the one file that calls them raw.
+		files: ["src/store/useMapStore.ts"],
+		rules: {
+			"no-restricted-syntax": ["error", ...RESTRICTED_SYNTAX, USE_SYNC_EXTERNAL_STORE_BAN],
 		},
 	},
 	{
@@ -174,6 +214,13 @@ export default defineConfig([
 			"test/e2e/speed-matrix.test.ts",
 		],
 		rules: { "no-console": "off" },
+	},
+	{
+		files: ["test/**/*.{ts,tsx}"],
+		rules: {
+			"local/no-undefined-css-class": "off",
+			"local/no-primitive-class": "off",
+		},
 	},
 	{
 		files: ["test/e2e/**/*.ts"],

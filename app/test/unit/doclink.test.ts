@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseDoclink, doclinkedTags, openDocHref } from "@/lib/doclink";
+import { parseDoclink, doclinkedTags, openDocHref, matchTagsToHeadings } from "@/lib/doclink";
 import { gdocProvider } from "@/lib/doclink/gdoc";
 import type { Tag } from "@/bindings.gen";
 
@@ -335,5 +335,49 @@ describe("openDocHref", () => {
 		expect(findNearby).toHaveBeenCalledWith(parsed.lat, parsed.lng, 2.0);
 		expect(setActive).not.toHaveBeenCalled();
 		expect(addParsed).toHaveBeenCalledWith([parsed]);
+	});
+});
+
+describe("matchTagsToHeadings", () => {
+	const tag = (id: number, name: string, doclinks: string[] = []): Tag => ({
+		id,
+		name,
+		color: "#fff",
+		visible: true,
+		order: null,
+		count: 0,
+		doclinks,
+	});
+	const h = (anchor: string, text: string) => ({ anchor, text, level: 2 });
+	const pairs = (tags: Tag[], headings: { anchor: string; text: string; level: number }[]) =>
+		matchTagsToHeadings(tags, headings, "d1").map((m) => `${m.tag.name}->${m.heading.anchor}`);
+
+	it("proposes exact name matches, normalized for case, spacing, and diacritics", () => {
+		const tags = [tag(1, "A-type antennas"), tag(2, "Śląsk"), tag(3, "Unrelated")];
+		const headings = [h("h.a", "  a-type  ANTENNAS "), h("h.b", "Slask"), h("h.c", "Nothing")];
+		expect(pairs(tags, headings)).toEqual(["A-type antennas->h.a", "Śląsk->h.b"]);
+	});
+
+	it("matches the leaf segment of hierarchical tag names", () => {
+		expect(pairs([tag(1, "Poland/Bollard")], [h("h.a", "Bollard")])).toEqual([
+			"Poland/Bollard->h.a",
+		]);
+	});
+
+	it("skips ambiguous leaves and prefers a full-name match over leaves", () => {
+		const ambiguous = [tag(1, "Poland/Bollard"), tag(2, "Czechia/Bollard")];
+		expect(pairs(ambiguous, [h("h.a", "Bollard")])).toEqual([]);
+		const withFull = [tag(1, "Bollard"), tag(2, "Poland/Bollard")];
+		expect(pairs(withFull, [h("h.a", "Bollard")])).toEqual(["Bollard->h.a"]);
+	});
+
+	it("skips pairs already assigned in this doc", () => {
+		const linked = tag(1, "Antenna", ["https://docs.google.com/document/d/d1/edit#heading=h.a"]);
+		expect(pairs([linked], [h("h.a", "Antenna"), h("h.b", "Antenna")])).toEqual(["Antenna->h.b"]);
+	});
+
+	it("ignores links to other docs when deciding what is assigned", () => {
+		const linked = tag(1, "Antenna", ["https://docs.google.com/document/d/OTHER/edit#heading=h.a"]);
+		expect(pairs([linked], [h("h.a", "Antenna")])).toEqual(["Antenna->h.a"]);
 	});
 });

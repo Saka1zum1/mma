@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { TagPill, TagPillButton } from "@/components/primitives/TagPill";
+import { Button } from "@/components/primitives/Button";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiChevronDown, mdiChevronRight, mdiPencil, mdiFolder } from "@mdi/js";
 import { textColorFor, rgbToHex } from "@/lib/util/color";
@@ -36,6 +37,8 @@ import {
 	buildTreePathLabels,
 	treeNodeDisplayLabel,
 	aliasedTagIds,
+	loadExpanded,
+	saveExpanded,
 	type TagTreeNode,
 	type TagMoveResult,
 } from "./tagTreeRange";
@@ -75,22 +78,6 @@ interface TagTreeCallbacks {
 }
 
 const TagTreeCtx = createContext<TagTreeCallbacks>(null!);
-
-const EXPANDED_KEY = "tagTreeExpanded";
-
-function loadExpanded(): Set<string> {
-	try {
-		const raw = localStorage.getItem(EXPANDED_KEY);
-		if (raw) return new Set(JSON.parse(raw));
-	} catch {
-		/* ignored */
-	}
-	return new Set();
-}
-
-function saveExpanded(set: Set<string>) {
-	localStorage.setItem(EXPANDED_KEY, JSON.stringify([...set]));
-}
 
 export interface TagTreeHandle {
 	/** Rewrite expanded-folder paths after a cascade rename so the renamed folder stays open. */
@@ -732,8 +719,8 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 								/>
 							)}
 							<small className="tag-tree__count mono">{fmt.format(count)}</small>
-							<button
-								className="button tag-tree__edit"
+							<Button
+								className="tag-tree__edit"
 								onClick={(e) => {
 									e.stopPropagation();
 									if (node.tag) onEditTag(node);
@@ -743,7 +730,7 @@ const TagTreeNodeRow = memo(function TagTreeNodeRow({
 								style={{ color: fg }}
 							>
 								<Icon path={mdiPencil} size={14} />
-							</button>
+							</Button>
 						</div>
 					}
 				/>
