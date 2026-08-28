@@ -49,6 +49,8 @@ mod types;
 mod util;
 #[macro_use]
 mod location_store;
+mod field_expr;
+mod procedure;
 mod borders;
 mod export;
 mod gdoc;
@@ -86,6 +88,11 @@ static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::
 /// The app handle, available once `setup()` has run.
 pub(crate) fn app_handle() -> Option<&'static tauri::AppHandle> {
     APP_HANDLE.get()
+}
+
+/// Emit a typed specta event. The event name comes from the `Event` derive.
+pub(crate) fn emit_typed<E: tauri_specta::Event + serde::Serialize + Clone>(payload: E) {
+    emit_event(E::NAME, payload);
 }
 
 /// Emit an app-wide event to all windows. No-op before setup completes.
@@ -695,7 +702,13 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_coverage,
             location_store::store_bounds,
             location_store::store_collect,
+            location_store::store_columns,
             location_store::store_apply_field_op,
+            field_expr::field_expr_error,
+            procedure::engine::procedure_run,
+            procedure::engine::procedure_cancel,
+            procedure::engine::procedure_query,
+            procedure::engine::procedure_query_cancel,
             location_store::store_country_distribution,
             location_store::store_find_nearby,
             location_store::store_near_any,
@@ -780,6 +793,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             export::ExportProgress,
             location_store::ExternalMutation,
             plugins::ValiProgress,
+            procedure::engine::ProcedureProgress,
+            procedure::engine::ProcedureResult,
         ])
 }
 

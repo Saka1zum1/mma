@@ -319,7 +319,7 @@ const surface = {
 	// --- Enrichment ---
 	// Rows are accepted only here, normalized by the legacy adapter; internals take a Selector.
 	enrichAll: async (target: legacy.SelectorOrLocations, opts?: Parameters<typeof enrichAll>[1]) =>
-		enrichAll(await store.fetchLocations(legacy.asSelector(target)), opts),
+		enrichAll(legacy.asSelector(target), opts),
 	bulkPinToPano: async (
 		target: legacy.SelectorOrLocations,
 		opts?: Parameters<typeof bulkPinToPano>[1],

@@ -15,6 +15,8 @@ import { shortestUniqueSuffixes } from "@/components/editor/tags/tagTreeRange";
 import { subscribe } from "@/lib/events";
 
 import type { Selection, Selector } from "@/bindings.gen";
+import { ValidationState } from "@/types";
+export { ValidationState };
 
 /** Variants that wrap children — derived as exactly those carrying a `selections` array. */
 export type CompositeType = Extract<Selector, { selections: Selection[] }>["type"];
@@ -27,16 +29,6 @@ export type GroupType = Exclude<CompositeType, UnaryType>;
 const COMPOSITE_TYPES = unionTuple<CompositeType>()(["Intersection", "Union", "Invert"]);
 const GROUP_TYPES = unionTuple<GroupType>()(["Intersection", "Union"]);
 export const UNARY_TYPES = unionTuple<UnaryType>()(["Invert"]);
-
-export enum ValidationState {
-	Ok = 0,
-	UpdateAvailable = 1,
-	UpdateApplied = 2,
-	NotFound = 3,
-	PanoIdBroke = 4,
-	Unofficial = 5,
-	GoodcamAvailable = 6,
-}
 
 /** Display symbol/word for each filter operator. Symbols are language-neutral; only the worded
  *  operators are marked for translation. */

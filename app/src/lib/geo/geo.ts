@@ -1,11 +1,24 @@
 import type { Bounds, LatLng } from "@/types";
 
-/** Shortest signed longitude delta from `from` to `to`, in [-180, 180]. */
+/** Shift `deg` by whole turns into `[min, min + 360)`. The one circular primitive: every
+ *  heading and longitude wrap below is a window on it. */
+export function wrapDeg(deg: number, min: number): number {
+	return min + ((((deg - min) % 360) + 360) % 360);
+}
+
+/** Shortest signed longitude delta from `from` to `to`, in [-180, 180). */
 function lngDelta(from: number, to: number): number {
-	const d = (to - from) % 360;
-	if (d > 180) return d - 360;
-	if (d < -180) return d + 360;
-	return d;
+	return wrapDeg(to - from, -180);
+}
+
+/** A heading in [-180, 180). */
+export function normalizeHeading(h: number): number {
+	return wrapDeg(h, -180);
+}
+
+/** The opposite bearing, in [-180, 180). */
+export function reverseHeading(h: number): number {
+	return wrapDeg(h + 180, -180);
 }
 
 /** Continue a path at `lng` in the frame of `prevLng`. */

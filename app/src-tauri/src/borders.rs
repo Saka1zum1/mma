@@ -649,6 +649,13 @@ pub fn border_classify(level: String, points: Vec<(f64, f64)>) -> AppResult<Vec<
     })
 }
 
+pub(crate) fn classify_points(
+    dataset: &str,
+    points: &[(f64, f64)],
+) -> AppResult<Vec<Option<String>>> {
+    border_classify(dataset.to_string(), points.to_vec())
+}
+
 /// Pair features with their load-time bboxes, dropping empty-geometry features.
 fn zip_bboxes<'a, T>(
     features: impl Iterator<Item = &'a T>,

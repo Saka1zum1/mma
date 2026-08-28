@@ -158,8 +158,28 @@ let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let inflightPersist: Promise<void> | null = null;
 const AUTOSAVE_DELAY_MS = 2000;
 
+let autosaveHolds = 0;
+let saveDeferred = false;
+
+/** Defer autosave until the returned release runs. A bulk run that lands many mutations
+ *  would otherwise re-serialize the whole overlay on each one; one save at the end is enough. */
+export function holdAutosave(): () => void {
+	autosaveHolds++;
+	return () => {
+		autosaveHolds--;
+		if (autosaveHolds === 0 && saveDeferred) {
+			saveDeferred = false;
+			scheduleSave();
+		}
+	};
+}
+
 /** Schedule an autosave shortly. Mutations call this automatically; debounced. */
 export function scheduleSave() {
+	if (autosaveHolds > 0) {
+		saveDeferred = true;
+		return;
+	}
 	if (autosaveTimer) clearTimeout(autosaveTimer);
 	autosaveTimer = setTimeout(() => {
 		autosaveTimer = null;
@@ -626,7 +646,10 @@ export async function deleteField(key: string) {
  *  emits a coarse `location:invalidate` (derived views re-query) and refreshes the open
  *  editor's location. */
 async function applyFieldOp(op: FieldOp): Promise<MutationResult> {
-	const r = await mutate(() => cmd.storeApplyFieldOp({ type: "Everything" }, op, false));
+	const r = await mutate(async () => {
+		const result = await cmd.storeApplyFieldOp({ type: "Everything" }, op, false);
+		return result.mutation;
+	});
 	emitEvent("location:invalidate");
 	const active = state.activeLocation;
 	if (active && !isVirtualLocation(active)) {

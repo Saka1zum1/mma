@@ -3981,7 +3981,7 @@ fn planned_extra(u: &Update<LocationPatch>) -> serde_json::Value {
 
 fn plan(locs: &[Location], op: &FieldOp) -> Vec<Update<LocationPatch>> {
     let fx = crate::test_util::Fx::base(locs);
-    plan_field_op(&fx.view(), None, op).0
+    plan_field_op(&fx.view(), None, op).unwrap().updates
 }
 
 fn move_op(from: &str, to: &str, winner: MergeWinner) -> FieldOp {
@@ -4090,15 +4090,16 @@ fn field_op_honours_the_selector() {
     ];
     let fx = crate::test_util::Fx::base(&locs);
     let set: roaring::RoaringBitmap = [2u32].into_iter().collect();
-    let (out, forget) = plan_field_op(
+    let plan = plan_field_op(
         &fx.view(),
         Some(&set),
         &move_op("a", "b", MergeWinner::From),
-    );
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].id, 2);
+    )
+    .unwrap();
+    assert_eq!(plan.updates.len(), 1);
+    assert_eq!(plan.updates[0].id, 2);
     // Row 1 still holds `a`, so the key must not be forgotten.
-    assert!(forget.is_empty());
+    assert!(plan.forget.is_empty());
 }
 
 #[test]
@@ -4110,23 +4111,24 @@ fn field_op_forgets_a_key_only_when_no_row_retains_it() {
     let fx = crate::test_util::Fx::base(&locs);
 
     // Whole-map move erases `a` everywhere.
-    let (_, forget) = plan_field_op(&fx.view(), None, &move_op("a", "b", MergeWinner::From));
-    assert_eq!(forget, vec!["a".to_string()]);
+    let plan = plan_field_op(&fx.view(), None, &move_op("a", "b", MergeWinner::From)).unwrap();
+    assert_eq!(plan.forget, vec!["a".to_string()]);
 
     // Whole-map delete of `x` erases it; `a` is untouched.
-    let (_, forget) = plan_field_op(
+    let plan = plan_field_op(
         &fx.view(),
         None,
         &FieldOp::Delete {
             keys: vec!["x".into()],
         },
-    );
-    assert_eq!(forget, vec!["x".to_string()]);
+    )
+    .unwrap();
+    assert_eq!(plan.forget, vec!["x".to_string()]);
 
     // Invalid move plans nothing and forgets nothing.
-    let (out, forget) = plan_field_op(&fx.view(), None, &move_op("a", "a", MergeWinner::From));
-    assert!(out.is_empty());
-    assert!(forget.is_empty());
+    let plan = plan_field_op(&fx.view(), None, &move_op("a", "a", MergeWinner::From)).unwrap();
+    assert!(plan.updates.is_empty());
+    assert!(plan.forget.is_empty());
 }
 
 // The round-trip rename invariant: a->b then b->a. The render delta never carries
@@ -4148,10 +4150,10 @@ fn field_op_round_trip_rename_reannounces_the_key() {
         false,
     )
     .unwrap();
-    assert!(r1.delta.updated.is_empty(), "extra-only: no render delta");
+    assert!(r1.mutation.delta.updated.is_empty(), "extra-only: no render delta");
     assert!(!store.known_field_keys.contains("a"), "a erased, forgotten");
     assert!(store.known_field_keys.contains("b"), "b auto-registered");
-    assert!(!r1.status.known_field_keys.contains(&"a".to_string()));
+    assert!(!r1.mutation.status.known_field_keys.contains(&"a".to_string()));
 
     let r2 = apply_field_op(
         &mut store,
@@ -4163,7 +4165,7 @@ fn field_op_round_trip_rename_reannounces_the_key() {
     assert!(store.known_field_keys.contains("a"));
     assert!(!store.known_field_keys.contains("b"));
     assert!(
-        r2.new_field_defs.is_some_and(|d| d.contains_key("a")),
+        r2.mutation.new_field_defs.is_some_and(|d| d.contains_key("a")),
         "reappearing key is re-announced"
     );
 }

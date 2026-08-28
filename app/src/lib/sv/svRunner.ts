@@ -222,12 +222,14 @@ export async function runResolvers(
 			const outcomeOf = (id: string) => (result[id] ??= { success: [], failed: [] });
 			const results = await Promise.all(
 				wave.map((p) =>
-					p.enrich(pluginLocs, enrichFields, {
-						signal,
-						force,
-						onUnit: () => onProgress?.(++waveDone, waveTotal, label),
-						onFail: (id) => outcomeOf(p.id).failed.push(id),
-					}),
+					p.enrich
+						? p.enrich(pluginLocs, enrichFields, {
+								signal,
+								force,
+								onUnit: () => onProgress?.(++waveDone, waveTotal, label),
+								onFail: (id) => outcomeOf(p.id).failed.push(id),
+							})
+						: Promise.resolve(new Map<number, Record<string, unknown>>()),
 				),
 			);
 			const mergedById = new Map<number, Record<string, unknown>>();

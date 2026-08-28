@@ -835,7 +835,7 @@ export function LocationPreview() {
 				countryCode: data.extra?.countryCode?.toUpperCase() ?? null,
 			});
 		const active = getMapState().activeLocation;
-		if (active) enrich(active, data);
+		if (active) void enrich(active);
 	});
 
 	return () => {

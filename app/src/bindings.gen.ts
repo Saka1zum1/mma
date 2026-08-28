@@ -186,7 +186,28 @@ export const commands = {
 	 *  rather than pushed through the IPC channel.
 	 */
 	storeCollect: (selector: Selector) => __TAURI_INVOKE<Rows>("store_collect", { selector }),
-	storeApplyFieldOp: (selector: Selector, op: FieldOp, recordUndo: boolean | null) => __TAURI_INVOKE<MutationResult>("store_apply_field_op", { selector, op, recordUndo }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeColumns: (selector: Selector, fields: string[]) => __TAURI_INVOKE<Columns>("store_columns", { selector, fields }),
+	storeApplyFieldOp: (selector: Selector, op: FieldOp, recordUndo: boolean | null) => __TAURI_INVOKE<FieldOpResult>("store_apply_field_op", { selector, op, recordUndo }).then((v) => (({...v,mutation:({...v.mutation,delta:({...v.mutation.delta,added:v.mutation.delta.added.map(i=>i),updated:v.mutation.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.mutation.newFieldDefs==null?v.mutation.newFieldDefs:Object.fromEntries(Object.entries(v.mutation.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})}) as typeof v)),
+	/**  The parse error for `src`, or nothing when it parses. For the dialog's live check. */
+	fieldExprError: (src: string) => __TAURI_INVOKE<string | null>("field_expr_error", { src }),
+	/**
+	 *  Start a procedure run. Returns immediately with the run id; the work continues
+	 *  on a background thread and reports through `procedure-progress`.
+	 */
+	procedureRun: (providers: ProviderDecl[], force: boolean) => __TAURI_INVOKE<number>("procedure_run", { providers, force }),
+	/**  Stop a run before its next batch. Already-applied patches stay applied. */
+	procedureCancel: (runId: number) => __TAURI_INVOKE<null>("procedure_cancel", { runId }),
+	/**
+	 *  Ask a procedure a read-only question. `input` and the result are whatever the
+	 *  module's `query` export agrees with its caller; the engine only carries the bytes.
+	 *  `cancel` is a token the caller may later hand to `procedure_query_cancel`.
+	 */
+	procedureQuery: (entry: string, input: string, config: string | null, cancel: number | null) => __TAURI_INVOKE<string>("procedure_query", { entry, input, config, cancel }),
+	/**
+	 *  Decline every request a query still has to make. The query then answers whatever
+	 *  its module answers for declined requests, which the caller discards.
+	 */
+	procedureQueryCancel: (cancel: number) => __TAURI_INVOKE<null>("procedure_query_cancel", { cancel }),
 	/**
 	 *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
 	 *  `level` selects border precision, falling back to "light" if unavailable.
@@ -416,6 +437,8 @@ export const commands = {
 export const events = {
 	bulkExportProgress: makeEvent<ExportProgress>("bulk-export-progress"),
 	bulkImportProgress: makeEvent<ImportProgress>("bulk-import-progress"),
+	procedureProgress: makeEvent<ProcedureProgress>("procedure-progress"),
+	procedureResult: makeEvent<ProcedureResult>("procedure-result"),
 	sidecarDone: makeEvent<SidecarDone>("sidecar-done"),
 	sidecarInstallProgress: makeEvent<SidecarProgress>("sidecar-install-progress"),
 	sidecarLine: makeEvent<SidecarLine>("sidecar-line"),
@@ -497,6 +520,14 @@ export type AltProviderSettings = {
 	pointSizeScale: number,
 };
 
+/**  How a page of rows is cut into procedure calls. */
+export type BatchMode = { mode: "chunk"; size: number } | { mode: "perRow" } | 
+/**
+ *  Group rows by a row field; the procedure sees one representative per distinct
+ *  value and its patch fans back out to every row sharing it. v1 key: `panoId`.
+ */
+{ mode: "dedupeBy"; key: string };
+
 export type CameraType = "gen1" | "gen2" | "gen4" | "badcam" | "tripod" | "trekker";
 
 /**
@@ -508,6 +539,9 @@ export type CellRemoval = {
 	cellIndex: number,
 	id: number,
 };
+
+/**  Values, never rows: the projection for a scan that reads fields across a set. */
+export type Columns = unknown[][];
 
 /**
  *  A commit's delta, returned to the frontend for the per-commit diff viewer.
@@ -706,7 +740,26 @@ export type FieldOp =
  */
 { kind: "move"; from: string; to: string; winner: MergeWinner } | 
 /**  Drop `keys` from every row that has them. */
-{ kind: "delete"; keys: string[] };
+{ kind: "delete"; keys: string[] } | 
+/**
+ *  Assign `value` to `key` on every row where it differs. A writable built-in key
+ *  (`heading`, `pitch`, `zoom`) patches its column; anything else writes `extra`.
+ */
+{ kind: "set"; key: string; value: unknown } | 
+/**
+ *  Assign `key = expr(row)` per row. A row where the expression cannot evaluate (a
+ *  missing or non-numeric field, a non-finite result) is skipped and counted.
+ */
+{ kind: "expr"; key: string; expr: string };
+
+/**  The op's outcome for the caller: the mutation plus the counts its message needs. */
+export type FieldOpResult = {
+	mutation: MutationResult,
+	/**  Rows the op patched. */
+	changed: number,
+	/**  Rows an expression could not evaluate. */
+	skipped: number,
+};
 
 /**
  *  Filter comparison operator. Single source of truth: specta renders the literal
@@ -1154,6 +1207,69 @@ export type PresenceActivity = {
 	start: number | null,
 };
 
+export type ProcedureProgress = {
+	runId: number,
+	providerId: string,
+	done: number,
+	total: number,
+	failed: number,
+	/**
+	 *  Rows counted as done without being worked, because they already held every field
+	 *  the provider produces. Callers subtract these to report what a run actually did.
+	 */
+	skipped: number,
+	finished: boolean,
+};
+
+/**
+ *  What one page hands back to the caller: a `Collect` provider's answers, delivered
+ *  instead of being written, and for every sink the rows that failed. Emitted only when
+ *  there is something in it.
+ */
+export type ProcedureResult = {
+	runId: number,
+	providerId: string,
+	entries: ResultEntry[],
+	/**  Rows the procedure failed, or every row of a batch whose call failed. */
+	failed: number[],
+};
+
+/**
+ *  One provider as declared by the frontend. `fields` are the extra keys it produces
+ *  and `requires` the keys it consumes; together they schedule dependency waves.
+ */
+export type ProviderDecl = {
+	id: string,
+	label?: string | null,
+	/**  The procedure module: an absolute path, or `res://<rel>` for one bundled with the app. */
+	entry?: string | null,
+	fields?: string[],
+	requires?: string[],
+	select: Selector,
+	batch: BatchMode,
+	sink?: Sink,
+	rate?: RateSpec | null,
+	retry?: RetrySpec | null,
+	/**
+	 *  Re-derive this provider's fields even on a run that is not forced. For an
+	 *  operation whose whole point is to recompute one provider (pinning re-resolves the
+	 *  panorama) rather than to fill in what is missing.
+	 */
+	force?: boolean | null,
+	/**  Requests this provider may have in flight at once, summed over its instances. */
+	inflight?: number | null,
+	/**
+	 *  Instances this provider may run at once. Declared only when the procedure
+	 *  cannot run beside itself; throughput comes from `inflight`.
+	 */
+	instances?: number | null,
+	/**
+	 *  Provider-specific configuration, a JSON value as text. Passed through verbatim
+	 *  inside the object the procedure's `configure` receives.
+	 */
+	config?: string | null,
+};
+
 /**
  *  Alternate Street View provider settings bag on a map.
  *  Google is the host default and is not configured here. Each key is optional so
@@ -1202,6 +1318,19 @@ export type PullCreate = {
 export type PullUpdate = {
 	localId: number,
 	patch: SyncPatch,
+};
+
+/**
+ *  What one attempt charges the bucket: the call itself, or one per row in its batch
+ *  (for APIs that bill multi-row requests per row).
+ */
+export type RateCost = "request" | "row";
+
+/**  Token bucket: `units` calls per `per_ms` milliseconds, refilled continuously. */
+export type RateSpec = {
+	units: number,
+	perMs: number,
+	cost?: RateCost,
 };
 
 /**  One mapping row. `hash` is the plugin's content fingerprint (opaque text to us). */
@@ -1273,6 +1402,21 @@ export type RenderRequest = {
 
 /**  Which side won a resolved conflict; serialized as "local"/"remote". */
 export type ResolutionSide = "local" | "remote";
+
+/**
+ *  One location's answer from a `Collect` provider: whatever its module emitted for
+ *  that row, carried as text exactly as a patch would be.
+ */
+export type ResultEntry = {
+	id: number,
+	json: string,
+};
+
+/**  Retry only the listed HTTP statuses, up to `attempts` total tries. */
+export type RetrySpec = {
+	attempts: number,
+	on: number[],
+};
 
 /**
  *  Inbound payload for creating a session. `order` is the frozen worklist (must be non-empty);
@@ -1485,6 +1629,13 @@ export type SidecarProgress = {
 	downloaded: number,
 	total: number,
 };
+
+/**
+ *  Where a provider's results go. `Patch` applies them to the locations they name;
+ *  `Collect` delivers them to the caller and writes nothing. The declaration decides
+ *  this, never the contents of a result.
+ */
+export type Sink = "patch" | "collect";
 
 /**
  *  `pick_spaced`'s answer: the picked ids plus the spacing achieved (count mode) or

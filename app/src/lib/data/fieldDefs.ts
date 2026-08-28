@@ -1,6 +1,8 @@
 import { KNOWN_FIELDS, type ExtraFieldDef, type Location } from "@/bindings.gen";
+import type { BatchMode, RateSpec, Selector, Sink } from "@/bindings.gen";
 import { registerPluginFieldDefs, unregisterPluginFieldDefs } from "@/lib/data/fieldDefRegistry";
-import { trackDisposable } from "@/plugins/scope";
+import { resolvePluginPath, trackDisposable } from "@/plugins/scope";
+import { log } from "@/lib/util/log";
 
 export interface EnrichFieldOption {
 	key: string;
@@ -62,6 +64,21 @@ export function getDefaultEnrichKeys(): string[] {
 		.map((f) => f.key);
 }
 
+/** A unit of work for the procedure engine: which module, and how to drive it. */
+export interface ProcedureSpec<TCollected = unknown> {
+	readonly collects?: TCollected;
+	entry: string;
+	select?: Selector;
+	batch: BatchMode;
+	sink?: Sink;
+	rate?: RateSpec;
+	retry?: { attempts: number; on: number[] };
+	inflight?: number;
+	instances?: number;
+	config?: unknown;
+	prepare?: () => Promise<boolean>;
+}
+
 /** Optional context passed by the bulk runner. Cheap providers can ignore it. */
 export interface EnrichCtx {
 	signal?: AbortSignal;
@@ -76,18 +93,19 @@ export interface EnrichmentProvider {
 	id: string;
 	/** Bulk progress label for slow providers; omit for instant ones. */
 	label?: string;
-	enrich(
+	/** Rust procedure engine path. Google SV ops use this; alt-provider plugins keep `enrich`. */
+	procedure?: ProcedureSpec;
+	/** JS-side enrich for fork providers (baidu/tencent/yandex/apple) and plugins not yet
+	 *  converted to procedure.js. */
+	enrich?(
 		locations: Location[],
 		enrichFields: string[] | null,
 		ctx?: EnrichCtx,
 	): Promise<Map<number, Record<string, unknown>>>;
-	fieldDefs: Record<string, ExtraFieldDef>;
-	/** Fields this provider reads: schedules it into a later dependency wave than any
-	 *  provider producing them (core-written fields like imageDate precede wave 1). */
+	fieldDefs?: Record<string, ExtraFieldDef>;
+	provides?: string[];
 	requires?: string[];
-	/** Progress units this provider would contribute in bulk (absent = instant). */
 	units?(locations: Location[], enrichFields: string[] | null, force?: boolean): number;
-	/** Transform a raw partition value per-location. Return null to skip. */
 	transform?(field: string, value: string, location: Location): string | null;
 }
 
@@ -99,7 +117,7 @@ export function providerWaves(list: EnrichmentProvider[]): EnrichmentProvider[][
 	let remaining = [...list];
 	while (remaining.length > 0) {
 		let wave = remaining.filter(
-			(p) => !p.requires?.some((r) => remaining.some((q) => q !== p && r in q.fieldDefs)),
+			(p) => !p.requires?.some((r) => remaining.some((q) => q !== p && r in (q.fieldDefs ?? {}))),
 		);
 		if (wave.length === 0) wave = remaining;
 		waves.push(wave);
@@ -113,10 +131,17 @@ const providers: EnrichmentProvider[] = [];
 /** Register a provider that computes extra fields during enrichment (e.g. sun position).
  *  Unregistered when the plugin deactivates. */
 export function registerEnrichmentProvider(provider: EnrichmentProvider) {
+	if (!provider.procedure && !provider.enrich) {
+		log.error(`[procedure] provider "${provider.id}" declares neither procedure nor enrich; ignored`);
+		return;
+	}
+	if (provider.procedure) {
+		provider.procedure.entry = resolvePluginPath(provider.procedure.entry);
+	}
 	if (!providers.some((p) => p.id === provider.id)) {
 		providers.push(provider);
-		registerPluginFieldDefs(provider.fieldDefs);
-		const defKeys = Object.keys(provider.fieldDefs);
+		registerPluginFieldDefs(provider.fieldDefs ?? {});
+		const defKeys = Object.keys(provider.fieldDefs ?? {});
 		trackDisposable(() => {
 			const i = providers.findIndex((p) => p.id === provider.id);
 			if (i >= 0) providers.splice(i, 1);
@@ -130,7 +155,7 @@ export function getEnrichmentProviders(): EnrichmentProvider[] {
 }
 
 export function getProviderForField(field: string): EnrichmentProvider | undefined {
-	return providers.find((p) => field in p.fieldDefs);
+	return providers.find((p) => p.fieldDefs != null && field in p.fieldDefs);
 }
 
 export function isFieldEnabled(enrichFields: string[] | null, key: string): boolean {

@@ -1,6 +1,5 @@
-import type { Location, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
+import type { CameraType, Location, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
 import { normalizeLocationStorageFields } from "@/lib/sv/providers/panoIdStorage";
-import { nowUnix } from "@/lib/util/format";
 
 /** Street View camera orientation (POV). */
 export type LocationPOV = Pick<Location, "heading" | "pitch" | "zoom">;
@@ -43,6 +42,67 @@ export const enum PanoType {
 	Official = 2,
 	Unknown = 3,
 	UserUploaded = 10,
+}
+
+/** Outcome of a Street View coverage check, as `validate` answers it per row. */
+export enum ValidationState {
+	Ok = 0,
+	UpdateAvailable = 1,
+	UpdateApplied = 2,
+	NotFound = 3,
+	PanoIdBroke = 4,
+	Unofficial = 5,
+	GoodcamAvailable = 6,
+}
+
+/** The `extra` fields an enrichment run derives for a pano, from `panoFields`. */
+export interface PanoExtra {
+	altitude: number;
+	panoType: PanoType;
+	/** Null when the tile height matches no known generation. */
+	cameraType: CameraType | null;
+	countryCode: string | null;
+	uploaderName: string | null;
+	/** Capture-time driving direction in degrees (0-360), per Google. */
+	drivingDirection: number | null;
+	/** Capture month as `YYYY-MM`; null when the pano carries no date. */
+	imageDate: string | null;
+	/** Every capture month in the pano's timeline, ascending. */
+	coverageDates: string[];
+}
+
+/** One decoded GetMetadata image: flat, plain JSON, no live objects. This is the app's
+ *  panorama, not a transcription of the Maps JS API's. Anything derivable from these
+ *  fields is a function in `@/lib/sv/getMetadata`, not a field here. */
+export interface Pano {
+	/** This image's own pano id, "" when the response carries no key. */
+	pano: string;
+	/** Which imagery collection the id belongs to; also what `extra.panoType` stores. */
+	panoFrontend: PanoType;
+	lat: number;
+	lng: number;
+	altitude: number;
+	/** The camera's orientation. The Maps JS API builds its whole tile frame out of this. */
+	pov: { heading: number; tilt: number; roll: number } | null;
+	worldSize: { width: number; height: number };
+	tileSize: { width: number; height: number };
+	copyright: string;
+	/** `description.description[].text`, joined with ", ". */
+	description: string;
+	/** The first of those parts alone, which is what the Maps JS API calls the short description. */
+	shortDescription: string;
+	uploaderName: string | null;
+	countryCode: string | null;
+	/** Non-null marks an indoor/tripod pano; a level carrying no id still counts. */
+	levelId: number | null;
+	/** Neighbouring panos, resolved to ids. */
+	links: { pano: string; heading: number }[];
+	/** Capture timeline, ascending. `date` is the civil day, `YYYY-MM-DD`. */
+	time: { pano: string; date: string }[];
+	/** This image's own capture date; month and day are 0 when absent. */
+	date: { year: number; month: number; day: number } | null;
+	/** "launch" = car, "scout" = the special-collects pipeline. */
+	source: string | null;
 }
 
 export function hasLoadAsPanoId(loc: Location): boolean {
@@ -96,7 +156,7 @@ export function createLocation(partial: Partial<Location> & LatLng): Location {
 		flags: LocationFlag.None,
 		tags: [],
 		extra: null,
-		createdAt: nowUnix(),
+		createdAt: Math.floor(Date.now() / 1000),
 		modifiedAt: null,
 		...normalized,
 	};

@@ -625,6 +625,28 @@ fn post(port: u16, command: &str, body: &str) -> Result<String, PostError> {
     Ok(text)
 }
 
+fn post_resident(
+    plugin_id: &str,
+    spec: &SidecarSpec,
+    command: &str,
+    payload: Option<&str>,
+) -> AppResult<String> {
+    let body = payload.unwrap_or("{}");
+    let addr = resident_port(plugin_id, spec, None)?;
+    match post(addr.port, command, body) {
+        Ok(text) => Ok(text),
+        // An HTTP error status is the resident answering; only a transport failure
+        // (idled out or crashed between the liveness check and the send) warrants
+        // one restart and retry.
+        Err(e @ PostError::Http(_)) => Err(e.into_app(command)),
+        Err(PostError::Transport(e)) => {
+            log::warn!("[sidecar] resident {command} unreachable ({e}), restarting");
+            let addr = resident_port(plugin_id, spec, Some(addr.epoch))?;
+            post(addr.port, command, body).map_err(|e| e.into_app(command))
+        }
+    }
+}
+
 fn run_resident(
     plugin_id: &str,
     spec: &SidecarSpec,
@@ -632,20 +654,7 @@ fn run_resident(
     payload: Option<&str>,
     req_id: u32,
 ) -> AppResult<()> {
-    let body = payload.unwrap_or("{}");
-    let addr = resident_port(plugin_id, spec, None)?;
-    let text = match post(addr.port, command, body) {
-        Ok(text) => text,
-        // An HTTP error status is the resident answering; only a transport failure
-        // (idled out or crashed between the liveness check and the send) warrants
-        // one restart and retry.
-        Err(e @ PostError::Http(_)) => return Err(e.into_app(command)),
-        Err(PostError::Transport(e)) => {
-            log::warn!("[sidecar] resident {command} unreachable ({e}), restarting");
-            let addr = resident_port(plugin_id, spec, Some(addr.epoch))?;
-            post(addr.port, command, body).map_err(|e| e.into_app(command))?
-        }
-    };
+    let text = post_resident(plugin_id, spec, command, payload)?;
     emit_event("sidecar-line", SidecarLine { req_id, line: text });
     Ok(())
 }
@@ -664,9 +673,17 @@ fn run_oneshot(
     command: &str,
     payload: Option<&str>,
     req_id: u32,
+    on_line: &mut dyn FnMut(String),
 ) -> AppResult<()> {
     let input = payload.map(|p| write_input(req_id, p)).transpose()?;
-    let result = run_oneshot_inner(plugin_id, spec, command, input.as_deref(), req_id);
+    let result = run_oneshot_inner(
+        plugin_id,
+        spec,
+        command,
+        input.as_deref(),
+        req_id,
+        on_line,
+    );
     if let Some(path) = input {
         let _ = std::fs::remove_file(path);
     }
@@ -679,6 +696,7 @@ fn run_oneshot_inner(
     command: &str,
     input: Option<&Path>,
     req_id: u32,
+    on_line: &mut dyn FnMut(String),
 ) -> AppResult<()> {
     let slot = plugin_slot(plugin_id);
     // Spawn and register under the plugin lock: a concurrent stop or install either
@@ -714,7 +732,7 @@ fn run_oneshot_inner(
 
     // No lock held while streaming, so sidecar_cancel can reach the child mid-run.
     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-        emit_event("sidecar-line", SidecarLine { req_id, line });
+        on_line(line);
     }
     if let Some(handle) = errors {
         let _ = handle.join();
@@ -772,7 +790,16 @@ pub fn sidecar_request(
         let result = if spec.is_resident(&command) {
             run_resident(&plugin_id, &spec, &command, payload.as_deref(), req_id)
         } else {
-            run_oneshot(&plugin_id, &spec, &command, payload.as_deref(), req_id)
+            run_oneshot(
+                &plugin_id,
+                &spec,
+                &command,
+                payload.as_deref(),
+                req_id,
+                &mut |line| {
+                    emit_event("sidecar-line", SidecarLine { req_id, line });
+                },
+            )
         };
         let error = result.err().map(|e| e.0);
         if let Some(ref message) = error {
@@ -782,6 +809,55 @@ pub fn sidecar_request(
     });
 
     Ok(req_id)
+}
+
+pub(crate) type SidecarStream = Box<dyn Iterator<Item = AppResult<String>> + Send>;
+
+/// Run one command on its own thread and hand its lines over as they arrive, so an
+/// in-process caller such as the procedure engine can report progress mid-run. A
+/// resident command answers with a single line.
+pub(crate) fn sidecar_call_stream(
+    plugin_id: &str,
+    command: &str,
+    payload: &str,
+) -> AppResult<SidecarStream> {
+    validate_plugin_id(plugin_id)?;
+    validate_sidecar_command(command)?;
+    if command == SERVE_COMMAND {
+        return Err(AppError(
+            "serve is app-managed and cannot be requested".into(),
+        ));
+    }
+    let spec = read_spec(plugin_id)?;
+    let (tx, rx) = std::sync::mpsc::channel::<AppResult<String>>();
+    let (plugin_id, command, payload) = (
+        plugin_id.to_string(),
+        command.to_string(),
+        payload.to_string(),
+    );
+    std::thread::spawn(move || {
+        let result = if spec.is_resident(&command) {
+            post_resident(&plugin_id, &spec, &command, Some(&payload)).map(|text| {
+                let _ = tx.send(Ok(text));
+            })
+        } else {
+            let req_id = REQ_COUNTER.fetch_add(1, Ordering::SeqCst);
+            run_oneshot(
+                &plugin_id,
+                &spec,
+                &command,
+                Some(&payload),
+                req_id,
+                &mut |l| {
+                    let _ = tx.send(Ok(l));
+                },
+            )
+        };
+        if let Err(e) = result {
+            let _ = tx.send(Err(e));
+        }
+    });
+    Ok(Box::new(rx.into_iter()))
 }
 
 /// Stop everything a plugin has running. Called when the plugin is disabled or

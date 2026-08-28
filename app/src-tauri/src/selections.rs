@@ -1421,6 +1421,15 @@ macro_rules! builtin_fields {
             matches!(field, $($key)|*)
         }
 
+        /// True for bulk-editable top-level columns (`heading`, `pitch`, `zoom`).
+        pub fn is_writable_builtin(field: &str) -> bool {
+            matches!(field, $($key)|*) && {
+                BUILTIN_FIELDS.iter().any(|f| {
+                    f.key == field && matches!(f.kind, Some(BuiltinFieldKind::Writable))
+                })
+            }
+        }
+
         /// Resolve a field name to its JSON value from a `Location` struct.
         /// Unknown fields fall through to `loc.extra`.
         fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
@@ -1907,6 +1916,27 @@ pub fn extra_key_coverage(view: &LocView, set: Option<&RoaringBitmap>) -> Vec<(S
     }
     let mut out: Vec<(String, u32)> = counts.into_iter().collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Values, never rows: one column per requested field, in view order.
+pub fn columns_within(
+    view: &LocView,
+    set: Option<&RoaringBitmap>,
+    fields: &[String],
+) -> Vec<Vec<serde_json::Value>> {
+    let mut out: Vec<Vec<serde_json::Value>> = fields.iter().map(|_| Vec::new()).collect();
+    for row in view.within(set) {
+        for (col, field) in out.iter_mut().zip(fields) {
+            col.push(if field == "tags" {
+                let mut tags = Vec::new();
+                row.for_each_tag(|t| tags.push(serde_json::Value::from(t)));
+                serde_json::Value::Array(tags)
+            } else {
+                row.resolve_field(field).unwrap_or(serde_json::Value::Null)
+            });
+        }
+    }
     out
 }
 

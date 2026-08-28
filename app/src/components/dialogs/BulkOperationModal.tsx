@@ -66,6 +66,7 @@ type ProgressFn = (done: number, total: number, label?: string) => void;
 
 interface BulkRunContext {
 	locations: Location[];
+	selector: Selector;
 	signal: AbortSignal;
 	onProgress: ProgressFn;
 }
@@ -215,8 +216,8 @@ function EnrichSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 				<Button
 					variant="primary"
 					onClick={() =>
-						onReady(async ({ locations, signal, onProgress }) => {
-							const er = await enrichAll(locations, { signal, force, onProgress });
+						onReady(async ({ selector, signal, onProgress }) => {
+							const er = await enrichAll(selector, { signal, force, onProgress });
 							return {
 								doneContent: (
 									<EnrichSummary
@@ -747,7 +748,7 @@ function EnrichSummary({
 			{result.map((r) => (
 				<div key={r.id}>
 					{t(r.label)}
-					{t(":")} {t({ one: "{n} updated", other: "{n} updated" }, { n: r.success.length })}
+					{t(":")} {t({ one: "{n} updated", other: "{n} updated" }, { n: r.success })}
 					{r.failed.length > 0 && (
 						<>{t({ one: ", {n} failed", other: ", {n} failed" }, { n: r.failed.length })}</>
 					)}
@@ -827,7 +828,7 @@ function BulkProgress({
 		};
 
 		try {
-			const r = await runner({ locations, signal: controller.signal, onProgress });
+			const r = await runner({ locations, selector: scope, signal: controller.signal, onProgress });
 			setResult(r);
 			setProgress(1);
 			setElapsed((performance.now() - runStart) / 1000);

@@ -19,6 +19,7 @@ tauri-build = { version = "2.5.6", features = [] }
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3"
 
 [dependencies]
 anyhow = "1"
@@ -76,6 +77,8 @@ vali-geo = { path = "crates/vali/vali-geo" }
 mma-geo = { path = "crates/geo" }
 json5 = "0.4"
 compact_str = { version = "0.9", features = ["serde"] }
+rquickjs = { version = "0.9", features = ["parallel"] }
+futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
 
 [profile.dev]
 opt-level = 1

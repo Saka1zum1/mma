@@ -6,7 +6,7 @@
 	"build": {
 		"frontendDist": "../dist",
 		"devUrl": "http://localhost:5173",
-		"beforeDevCommand": "npm run gen:plugin-types && npm run dev",
+		"beforeDevCommand": "npm run gen:plugin-types && npm run build:procedures && npm run dev",
 		"beforeBuildCommand": "npm run build"
 	},
 	"app": {
@@ -36,6 +36,7 @@
 		"active": true,
 		"targets": "all",
 		"createUpdaterArtifacts": true,
+		"resources": ["procedures/*.js"],
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
