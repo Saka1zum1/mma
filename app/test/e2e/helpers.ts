@@ -5,7 +5,7 @@
 
 import type { MMA } from "@/api";
 import { createLocation } from "../../src/types";
-import type { Location, SelectionProps } from "@/bindings.gen";
+import type { Location, Selector } from "@/bindings.gen";
 
 /**
  * Run an async function in the browser with the MMA API injected as `api`.
@@ -42,7 +42,7 @@ export async function waitForReady() {
  * Clear a controlled (React) input reliably. WebdriverIO's clearValue() only mutates the
  * DOM value without firing input/change events, so a React-controlled field (e.g. a tag
  * filter or map search) keeps its old state and stays applied. Select-all + Backspace sends
- * real keystrokes that fire onChange â€?what a user actually does to empty a field.
+ * real keystrokes that fire onChange ï¿½?what a user actually does to empty a field.
  */
 export async function clearInput(selector: string) {
 	const el = await browser.$(selector);
@@ -172,7 +172,7 @@ export async function getLoc(id: number): Promise<Location> {
 	return loc;
 }
 
-/** Like getLoc but returns null instead of throwing â€?for asserting a location was removed. */
+/** Like getLoc but returns null instead of throwing ï¿½?for asserting a location was removed. */
 export async function getLocOrNull(id: number): Promise<Location | null> {
 	return withApi(async (api, locId) => api.fetchLocation(locId), id);
 }
@@ -186,23 +186,23 @@ export async function getLocCount(): Promise<number> {
 }
 
 /** Add selections to the live map. */
-export async function select(...props: SelectionProps[]) {
-	await withApi(async (api, p) => api.addSelections(p), props);
+export async function select(...selector: Selector[]) {
+	await withApi(async (api, p) => api.addSelections(p), selector);
 }
 
 /** Add selections and return how many locations they resolve to. */
-export async function selectCount(...props: SelectionProps[]): Promise<number> {
+export async function selectCount(...selector: Selector[]): Promise<number> {
 	return withApi(async (api, p) => {
 		await api.addSelections(p);
 		return api.getMapState().selectedLocationIds.size;
-	}, props);
+	}, selector);
 }
 
 export async function refreshSelections(): Promise<number[]> {
 	return withApi(async (api) => {
 		const sels = api
 			.getActiveSelections()
-			.map((s) => ({ key: s.key, props: s.props, color: s.color }));
+			.map((s) => ({ key: s.key, selector: s.selector, color: s.color }));
 		if (sels.length === 0) return [] as number[];
 		await api.cmd.storeSyncSelections(sels);
 		return api.resolveIds(api.currentSelection());

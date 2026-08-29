@@ -15,6 +15,11 @@ export MMA_TEST_DB=1
 export CHROMEDRIVER_PATH="${CHROMEDRIVER_PATH:-/usr/local/bin/chromedriver}"
 export MMA_E2E_LOG_TAG=web
 
+# Same stub as the native runner: the procedure engine's fetches are Rust-side either way.
+if [ -n "${MMA_TEST_MOCK_SV:-}" ]; then
+    export MMA_E2E_SV_ORIGIN="http://127.0.0.1:${MMA_E2E_SV_PORT:-4599}"
+fi
+
 map-making-app --serve &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT

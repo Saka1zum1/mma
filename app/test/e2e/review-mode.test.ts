@@ -382,7 +382,11 @@ describe("Review mode - resume", () => {
 				api.cancelReview(); // flushes to disk, exits the UI
 				await new Promise((res) => setTimeout(res, settle));
 				const afterCancel = api.getReviewSession();
-				const sessions = await api.listSessions("active");
+				let sessions = await api.listSessions("active");
+				for (let i = 0; i < 20 && sessions[0]?.cursorId !== ids[1]; i++) {
+					await new Promise((res) => setTimeout(res, 50));
+					sessions = await api.listSessions("active");
+				}
 				if (sessions[0]) await api.resumeReview(sessions[0]);
 				await new Promise((res) => setTimeout(res, settle));
 				const resumed = api.getReviewSession();

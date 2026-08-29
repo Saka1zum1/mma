@@ -1,21 +1,23 @@
 import path from "path";
 import fs from "fs";
 import { installSvMock } from "./test/e2e/svMock";
+import { svMockCore } from "./test/e2e/svMockCore";
+import { startSvStub, svStubLatencyMs, type SvStub } from "./test/e2e/svStubServer";
 
 process.env.MMA_TEST_DB = "1";
 process.env.TSX_TSCONFIG_PATH = path.resolve("tsconfig.app.json");
 
 const isWorker = !!process.env.WDIO_WORKER_ID;
 let logStream: fs.WriteStream | undefined;
+let logPath: string | undefined;
+let svStub: SvStub | undefined;
 
-if (!isWorker) {
+if (!isWorker && !process.env.MMA_E2E_LOG_PATH) {
 	const logDir = path.resolve("./test/logs");
 	fs.mkdirSync(logDir, { recursive: true });
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-	// Random suffix keeps parallel shards (separate containers, shared logs mount)
-	// from clobbering one another's log file.
 	const suffix = Math.random().toString(36).slice(2, 7);
-	const logPath = path.join(
+	logPath = path.join(
 		logDir,
 		`e2e-${process.env.MMA_E2E_LOG_TAG ?? "native"}-${timestamp}-${suffix}.txt`,
 	);
@@ -44,7 +46,6 @@ export const SHARED_EXCLUDES = [
 export const config: WebdriverIO.Config = {
 	runner: "local",
 	specs: ["./test/e2e/**/*.test.ts"],
-	// web-bridge asserts on the HTTP bridge, which only exists under --web.
 	exclude: [...SHARED_EXCLUDES, "./test/e2e/web-bridge.test.ts"],
 	maxInstances: 1,
 	capabilities: [
@@ -66,7 +67,7 @@ export const config: WebdriverIO.Config = {
 	path: "/",
 	logLevel: "warn",
 	waitforTimeout: 10000,
-	connectionRetryTimeout: 20000,
+	connectionRetryTimeout: 900000,
 	connectionRetryCount: 2,
 	framework: "mocha",
 	reporters: ["spec"],
@@ -74,19 +75,21 @@ export const config: WebdriverIO.Config = {
 		ui: "bdd",
 		timeout: 300000,
 	},
-	// Monkey-patch Street View (window.fetch + google.maps) from the test side when
-	// --mock is on, so the network-bound specs run deterministically with no network.
-	// Per-suite + idempotent so it survives any per-spec session reset.
 	beforeSuite: async () => {
 		if (process.env.MMA_TEST_MOCK_SV) {
 			try {
-				await browser.execute(installSvMock);
+				await browser.execute(installSvMock, svMockCore.toString(), svStubLatencyMs());
 			} catch (e) {
 				console.log("[sv-mock] install failed:", (e as Error).message);
 			}
 		}
 	},
-	onComplete: () => {
+	onPrepare: async () => {
+		if (!process.env.MMA_TEST_MOCK_SV) return;
+		svStub = await startSvStub();
+	},
+	onComplete: async () => {
+		await svStub?.close();
 		if (logStream) {
 			const p = process.env.MMA_E2E_LOG_PATH;
 			logStream.end();

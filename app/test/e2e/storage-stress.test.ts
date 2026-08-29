@@ -581,7 +581,7 @@ describe("Export with scope", () => {
 				exportZoom: true,
 				exportUnpanned: true,
 				exportExtras: true,
-				scope: { type: "Locations", locations: ids, name: null },
+				selector: { type: "Locations", locations: ids, name: null },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
 				extraFieldsJson: null,

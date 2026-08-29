@@ -7,7 +7,7 @@ import {
 	flushAndWait,
 	withApi,
 } from "./helpers";
-import type { Location, SelectionProps } from "@/bindings.gen";
+import type { Location, Selector } from "@/bindings.gen";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -145,7 +145,7 @@ function timeSelection(selType: NullarySelection | "Tag", tagId: number): Promis
 			api.resetSelections();
 			const t0 = performance.now();
 			const result = api.addSelections([
-				type === "Tag" ? { type: "Tag", tagId: tid } : ({ type } as SelectionProps),
+				type === "Tag" ? { type: "Tag", tagId: tid } : ({ type } as Selector),
 			]);
 			if (result && typeof result.then === "function") {
 				await result;

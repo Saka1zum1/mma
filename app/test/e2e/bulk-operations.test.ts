@@ -41,7 +41,7 @@ describe("Bulk operations -- enrichAll", () => {
 			return await api.enrichAll(await api.fetchAllLocations());
 		});
 
-		const meta = result.find((r: EnrichOutcome) => r.id === "enrichMeta");
+		const meta = result.find((r: EnrichOutcome) => r.id === "svMeta");
 		expect(meta!.success.length).toBeGreaterThanOrEqual(2);
 
 		const l = await getLoc(locIds[0]);
