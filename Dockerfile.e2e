@@ -44,6 +44,7 @@ RUN cd app && npm ci
 # Copy source (repo root -- needed for plugins/ dir referenced by build scripts)
 COPY app/ ./app/
 COPY plugins/ ./plugins/
+COPY CHANGELOG.md ./CHANGELOG.md
 COPY scripts/internal/ ./scripts/internal/
 RUN chmod +x ./scripts/internal/*.sh
 
