@@ -441,7 +441,11 @@ export function RoundPlayer({
 				<div className="gg-controls">
 					{panorama && showCompass && (
 						<div className="gg-controls__compass gg-compass-control-host">
-							<CompassControl panorama={panorama} />
+							<CompassControl
+								panorama={panorama}
+								disablePointNorth={movementMode === "nmpz"}
+								disableLinks={movementMode === "nmpz"}
+							/>
 						</div>
 					)}
 					<div className="gg-controls__col">

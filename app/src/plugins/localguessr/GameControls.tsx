@@ -24,13 +24,18 @@ export function GameControls({
 }) {
 	const { t } = useT();
 	const canMove = movementMode === "moving";
+	const nmpz = movementMode === "nmpz";
 	const { showCompass, showCompassTape } = useSettings();
 
 	return (
 		<div className="gg-controls">
 			{panorama && showCompass && (
 				<div className="gg-controls__compass gg-compass-control-host">
-					<CompassControl panorama={panorama} />
+					<CompassControl
+						panorama={panorama}
+						disablePointNorth={nmpz}
+						disableLinks={nmpz}
+					/>
 				</div>
 			)}
 			{panorama && showCompassTape && (

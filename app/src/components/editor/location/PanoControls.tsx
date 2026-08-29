@@ -246,7 +246,17 @@ export function sendHideCar(hide: boolean) {
 
 // --- Pano control subcomponents ---
 
-export function CompassControl({ panorama }: { panorama: google.maps.StreetViewPanorama }) {
+export function CompassControl({
+	panorama,
+	disablePointNorth = false,
+	disableLinks = false,
+}: {
+	panorama: google.maps.StreetViewPanorama;
+	/** When true, the north button is display-only (no click / ctrl+click navigation). */
+	disablePointNorth?: boolean;
+	/** When true, linked-pano chevrons are hidden. */
+	disableLinks?: boolean;
+}) {
 	const { t } = useT();
 	const [links, setLinks] = useState<google.maps.StreetViewLink[]>([]);
 	const controlRef = useRef<HTMLDivElement>(null);
@@ -335,16 +345,23 @@ export function CompassControl({ panorama }: { panorama: google.maps.StreetViewP
 		>
 			<div className="map-control map-control--transparent">
 				<div className="compass-control" ref={controlRef}>
-					<Tooltip content={t("Click to point north (N). Ctrl+click to cycle through linked panoramas.")} side="right">
-						<button
-							className="compass-control__button"
-							onClick={pointNorth}
-							aria-label={t("Point north")}
-						>
+					{disablePointNorth ? (
+						<div className="compass-control__button compass-control__button--disabled" aria-hidden="true">
 							<Compass panorama={panorama} />
-						</button>
-					</Tooltip>
-					{links.map((link) => (
+						</div>
+					) : (
+						<Tooltip content={t("Click to point north (N). Ctrl+click to cycle through linked panoramas.")} side="right">
+							<button
+								className="compass-control__button"
+								onClick={pointNorth}
+								aria-label={t("Point north")}
+							>
+								<Compass panorama={panorama} />
+							</button>
+						</Tooltip>
+					)}
+					{!disableLinks &&
+						links.map((link) => (
 						<button
 							key={link.pano}
 							className="compass-control__link"
@@ -354,7 +371,7 @@ export function CompassControl({ panorama }: { panorama: google.maps.StreetViewP
 						>
 							<Icon path={mdiChevronUp} />
 						</button>
-					))}
+						))}
 				</div>
 			</div>
 		</div>

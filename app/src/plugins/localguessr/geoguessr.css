@@ -345,6 +345,10 @@
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 	padding: 0;
 }
+.gg-compass-control-host .compass-control__button--disabled {
+	cursor: default;
+	pointer-events: none;
+}
 .gg-compass-control-host .compass-control__link {
 	display: none;
 }
