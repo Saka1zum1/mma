@@ -1,3 +1,20 @@
+## v0.10.0 - 2026-08-29
+- **App UI is now available in seven languages** (English, German, French, Russian, Simplified Chinese, Spanish, Japanese, and Polish), with clearer settings layout and a refreshed welcome screen
+- **Saved selections** can be stored and reused from the map sidebar; selection and filter tools share one consistent way to pick locations
+- **Bulk enrichment and field tools** run faster and more reliably, with a clearer progress experience in long jobs
+- **Vali** can download coverage data from the app; optional **pre-release updates** appear in the updater when enabled
+- **Heatmap** plugin: custom gradient editor, smoother overlay on large maps, and saved-selection sources
+- **Vision**, **iNaturalist**, and **Copyright** plugins updated for the new plugin UI helpers; Copyright runs as a background procedure
+- **Doclinks** assign dialog and tag tree improvements; easier keyboard reordering and tagging of empty fields
+- **Copy diagnostics** from Settings for troubleshooting; screenshots copy to the clipboard by default
+- **LocalGuessr**: open Street View from answer pins on the result map; compass navigation disabled in NMPZ mode
+- **Alternative Street View providers** (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported alongside Google
+- Faster map editing and selections on large projects; smoother Street View rendering and pano loading
+- Fixed map data recovery after unexpected shutdowns; fixed selections and tags getting out of sync after some edits
+- Fixed enrichment and Street View fetches continuing after you cancel or switch locations
+- Fixed hotkeys and settings not updating in other open windows; fixed layer and coverage display glitches on some basemaps
+- Fixed duplicate markers when selections overlap; fixed import and tag edge cases around folders and renamed fields
+
 ## v0.9.1 - 2026-08-08
 - Location actions in the map right-click menu; select country/subdivision under cursor
 - Rebuilt measure tool on every map style; Street View screenshot button
