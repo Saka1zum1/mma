@@ -46,7 +46,7 @@ import {
 	isAtStart,
 } from "@/lib/review/review";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
-import { fetchSvMetadata } from "@/lib/sv/svMeta";
+import { svMetadata } from "@/lib/sv/query";
 
 import {
 	useSettings,
@@ -827,16 +827,16 @@ export function LocationPreview() {
 			}
 		});
 
-		fetchSvMetadata([loc.pano]).then(([data]) => {
+		void svMetadata([loc.pano]).then(([data]) => {
 			if (cancelled || !data) return;
-			setPanoAltitude(data.extra?.altitude ?? null);
+			setPanoAltitude(data.altitude);
 			setPanoGeo({
-				address: data.location.description || "",
-				countryCode: data.extra?.countryCode?.toUpperCase() ?? null,
+				address: data.description || "",
+				countryCode: data.countryCode?.toUpperCase() ?? null,
 			});
-		const active = getMapState().activeLocation;
-		if (active) void enrich(active);
-	});
+			const active = getMapState().activeLocation;
+			if (active) void enrich(active, data);
+		});
 
 	return () => {
 		cancelled = true;

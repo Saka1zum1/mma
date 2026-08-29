@@ -259,9 +259,22 @@ fn rewrite_origin(url: &str, origin: &str) -> String {
 fn e2e_origin() -> Option<&'static str> {
     static O: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     O.get_or_init(|| {
-        std::env::var("MMA_E2E_SV_ORIGIN")
-            .ok()
-            .filter(|s| !s.is_empty())
+        if let Ok(s) = std::env::var("MMA_E2E_SV_ORIGIN") {
+            if !s.is_empty() {
+                return Some(s);
+            }
+        }
+        // The harness always serves the stub on 4599 under --mock, but env forwarding
+        // through the WebDriver spawn chain is unreliable. E2E apps are launched with
+        // --test-db, so fall back to the conventional port when the origin is missing.
+        if std::env::args().any(|a| a == "--test-db") {
+            let port = std::env::var("MMA_E2E_SV_PORT")
+                .ok()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(4599);
+            return Some(format!("http://127.0.0.1:{port}"));
+        }
+        None
     })
     .as_deref()
 }
