@@ -921,20 +921,144 @@ function evenStops(colors) {
 }
 var BUILTIN_COLORS = [
   // deck.gl's built-in default colorRange (6-step ColorBrewer YlOrRd) — the original look.
-  { id: "classic", name: "Classic", colors: [[255, 255, 178], [254, 217, 118], [254, 178, 76], [253, 141, 60], [240, 59, 32], [189, 0, 38]] },
-  { id: "viridis", name: "Viridis", colors: [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]] },
-  { id: "inferno", name: "Inferno", colors: [[0, 0, 4], [87, 16, 110], [188, 55, 84], [249, 142, 9], [252, 255, 164]] },
-  { id: "plasma", name: "Plasma", colors: [[13, 8, 135], [126, 3, 168], [204, 71, 120], [248, 149, 64], [240, 249, 33]] },
-  { id: "magma", name: "Magma", colors: [[0, 0, 4], [81, 18, 124], [183, 55, 121], [252, 137, 97], [252, 253, 191]] },
-  { id: "cividis", name: "Cividis", colors: [[0, 32, 76], [87, 92, 109], [170, 156, 116], [255, 234, 70]] },
-  { id: "heat", name: "Heat", colors: [[0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 255, 0], [255, 0, 0]] },
-  { id: "blue-red", name: "Blue-Red", colors: [[66, 133, 244], [234, 67, 53]] },
-  { id: "green-yellow-red", name: "Green-Yellow-Red", colors: [[52, 168, 83], [251, 188, 4], [234, 67, 53]] },
-  { id: "purple-orange", name: "Purple-Orange", colors: [[136, 84, 208], [255, 152, 0]] },
-  { id: "blues", name: "Blues", colors: [[222, 235, 247], [158, 202, 225], [49, 130, 189]] },
-  { id: "reds", name: "Reds", colors: [[254, 224, 210], [252, 146, 114], [222, 45, 38]] },
-  { id: "greens", name: "Greens", colors: [[229, 245, 224], [161, 217, 155], [49, 163, 84]] },
-  { id: "purples", name: "Purples", colors: [[239, 237, 245], [188, 189, 220], [117, 107, 177]] }
+  {
+    id: "classic",
+    name: "Classic",
+    colors: [
+      [255, 255, 178],
+      [254, 217, 118],
+      [254, 178, 76],
+      [253, 141, 60],
+      [240, 59, 32],
+      [189, 0, 38]
+    ]
+  },
+  {
+    id: "viridis",
+    name: "Viridis",
+    colors: [
+      [68, 1, 84],
+      [59, 82, 139],
+      [33, 145, 140],
+      [94, 201, 98],
+      [253, 231, 37]
+    ]
+  },
+  {
+    id: "inferno",
+    name: "Inferno",
+    colors: [
+      [0, 0, 4],
+      [87, 16, 110],
+      [188, 55, 84],
+      [249, 142, 9],
+      [252, 255, 164]
+    ]
+  },
+  {
+    id: "plasma",
+    name: "Plasma",
+    colors: [
+      [13, 8, 135],
+      [126, 3, 168],
+      [204, 71, 120],
+      [248, 149, 64],
+      [240, 249, 33]
+    ]
+  },
+  {
+    id: "magma",
+    name: "Magma",
+    colors: [
+      [0, 0, 4],
+      [81, 18, 124],
+      [183, 55, 121],
+      [252, 137, 97],
+      [252, 253, 191]
+    ]
+  },
+  {
+    id: "cividis",
+    name: "Cividis",
+    colors: [
+      [0, 32, 76],
+      [87, 92, 109],
+      [170, 156, 116],
+      [255, 234, 70]
+    ]
+  },
+  {
+    id: "heat",
+    name: "Heat",
+    colors: [
+      [0, 0, 255],
+      [0, 255, 255],
+      [0, 255, 0],
+      [255, 255, 0],
+      [255, 0, 0]
+    ]
+  },
+  {
+    id: "blue-red",
+    name: "Blue-Red",
+    colors: [
+      [66, 133, 244],
+      [234, 67, 53]
+    ]
+  },
+  {
+    id: "green-yellow-red",
+    name: "Green-Yellow-Red",
+    colors: [
+      [52, 168, 83],
+      [251, 188, 4],
+      [234, 67, 53]
+    ]
+  },
+  {
+    id: "purple-orange",
+    name: "Purple-Orange",
+    colors: [
+      [136, 84, 208],
+      [255, 152, 0]
+    ]
+  },
+  {
+    id: "blues",
+    name: "Blues",
+    colors: [
+      [222, 235, 247],
+      [158, 202, 225],
+      [49, 130, 189]
+    ]
+  },
+  {
+    id: "reds",
+    name: "Reds",
+    colors: [
+      [254, 224, 210],
+      [252, 146, 114],
+      [222, 45, 38]
+    ]
+  },
+  {
+    id: "greens",
+    name: "Greens",
+    colors: [
+      [229, 245, 224],
+      [161, 217, 155],
+      [49, 163, 84]
+    ]
+  },
+  {
+    id: "purples",
+    name: "Purples",
+    colors: [
+      [239, 237, 245],
+      [188, 189, 220],
+      [117, 107, 177]
+    ]
+  }
 ];
 var BUILTIN_GRADIENTS = BUILTIN_COLORS.map((g) => ({
   id: g.id,
@@ -953,7 +1077,10 @@ function gradientIdFromLegacyIndex(index) {
 function normalizeStops(raw) {
   if (!Array.isArray(raw) || raw.length === 0) return [];
   if (Array.isArray(raw[0])) return evenStops(raw);
-  return raw.filter((s) => s && Array.isArray(s.color)).map((s) => ({ color: [...s.color], pos: clamp01(Number(s.pos) || 0) })).sort((a, b) => a.pos - b.pos);
+  return raw.filter((s) => s && Array.isArray(s.color)).map((s) => ({
+    color: [...s.color],
+    pos: clamp01(Number(s.pos) || 0)
+  })).sort((a, b) => a.pos - b.pos);
 }
 function normalizeGradient(g) {
   return { ...g, stops: normalizeStops(g.stops) };
@@ -989,7 +1116,8 @@ function colorAt(stops, t) {
   return last.color;
 }
 function sampleColorRange(stops, n = 32) {
-  if (stops.length === 0) return sampleColorRange(BUILTIN_GRADIENTS[0].stops, n);
+  if (stops.length === 0)
+    return sampleColorRange(BUILTIN_GRADIENTS[0].stops, n);
   if (n === 1) return [colorAt(stops, 0)];
   return Array.from({ length: n }, (_, i) => colorAt(stops, i / (n - 1)));
 }
@@ -997,13 +1125,18 @@ function gradientCss(stops) {
   if (stops.length === 0) return "transparent";
   const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
   if (stops.length === 1) return rgb(stops[0].color);
-  const parts = stops.map((s) => `${rgb(s.color)} ${+(s.pos * 100).toFixed(2)}%`);
+  const parts = stops.map(
+    (s) => `${rgb(s.color)} ${+(s.pos * 100).toFixed(2)}%`
+  );
   return `linear-gradient(to right, ${parts.join(", ")})`;
 }
 function moveStop(stops, index, pos) {
   const target = stops[index];
   if (!target) return { stops, index };
-  const moved = { color: [...target.color], pos: clamp01(pos) };
+  const moved = {
+    color: [...target.color],
+    pos: clamp01(pos)
+  };
   const next = stops.map((s, i) => i === index ? moved : s).sort((a, b) => a.pos - b.pos);
   return { stops: next, index: next.indexOf(moved) };
 }
@@ -1024,7 +1157,9 @@ function reverseStops(stops) {
   return stops.map((s) => ({ ...s, pos: 1 - s.pos })).reverse();
 }
 function rgbToHex(c) {
-  return `#${c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("")}`;
+  return `#${c.map(
+    (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")
+  ).join("")}`;
 }
 function hexToRgb(hex) {
   const h = hex.replace("#", "");
@@ -1047,15 +1182,30 @@ var LAYER_DEFAULTS = {
 };
 var store = MMA.storage("heatmap");
 function defaultSource() {
-  return MMA.getMapState().selectedLocationIds.size > 0 ? { kind: "selected" } : { kind: "all" };
+  return MMA.getMapState().selectedLocationIds.size > 0 ? { pick: "selection" } : { pick: "all" };
 }
 function newLayer() {
-  return { id: crypto.randomUUID(), source: defaultSource(), ...LAYER_DEFAULTS };
+  return {
+    id: crypto.randomUUID(),
+    source: defaultSource(),
+    ...LAYER_DEFAULTS
+  };
+}
+function migrateSource(source) {
+  if (!source || typeof source !== "object" || !("kind" in source))
+    return void 0;
+  const { kind, id } = source;
+  if (kind === "selected") return { pick: "selection" };
+  if (kind === "saved" && id) return { pick: "saved", id };
+  return { pick: "all" };
 }
 function migrateLayer(stored) {
   const { gradientIndex, ...rest } = stored;
   const layer = { ...newLayer(), ...rest };
-  if (rest.gradientId === void 0) layer.gradientId = gradientIdFromLegacyIndex(gradientIndex);
+  if (rest.gradientId === void 0)
+    layer.gradientId = gradientIdFromLegacyIndex(gradientIndex);
+  const source = migrateSource(rest.source);
+  if (source) layer.source = source;
   return layer;
 }
 function loadLayers() {
@@ -1065,10 +1215,11 @@ function loadLayers() {
   return [migrateLayer(legacy ?? {})];
 }
 function loadGradients() {
-  return (store.get("gradients") ?? []).map(normalizeGradient);
+  return (store.get("gradients") ?? []).map(
+    normalizeGradient
+  );
 }
 var overlay = null;
-var locStore = null;
 var layers = loadLayers();
 var customGradients = loadGradients();
 var onSettingsChange = null;
@@ -1109,26 +1260,35 @@ function commitGradients() {
 function addCustomGradient(layerId, from) {
   const gradient = newCustomGradient(from);
   customGradients = [...customGradients, gradient];
-  layers = layers.map((l) => l.id === layerId ? { ...l, gradientId: gradient.id } : l);
+  layers = layers.map(
+    (l) => l.id === layerId ? { ...l, gradientId: gradient.id } : l
+  );
   commitGradients();
   return gradient;
 }
 function updateCustomGradient(id, patch) {
   if (isBuiltinGradient(id)) return;
-  customGradients = customGradients.map((g) => g.id === id ? { ...g, ...patch } : g);
+  customGradients = customGradients.map(
+    (g) => g.id === id ? { ...g, ...patch } : g
+  );
   commitGradients();
 }
 function removeCustomGradient(id) {
   customGradients = customGradients.filter((g) => g.id !== id);
-  layers = layers.map((l) => l.gradientId === id ? { ...l, gradientId: DEFAULT_GRADIENT_ID } : l);
+  layers = layers.map(
+    (l) => l.gradientId === id ? { ...l, gradientId: DEFAULT_GRADIENT_ID } : l
+  );
   commitGradients();
 }
 async function sourceData(source) {
-  if (!locStore) return [];
-  const pool = locStore.get();
-  const ids = await MMA.resolveScopeIds(source);
-  const subset = ids ? pool.filter((l) => ids.has(l.id)) : pool;
-  return subset.map((l) => ({ lat: l.lat, lng: l.lng }));
+  const ids = source.pick === "all" ? null : new Set(await MMA.resolveIds(MMA.selectorForPick(source)));
+  const scene = MMA.getScenePositions();
+  const out = [];
+  for (let i = 0; i < scene.ids.length; i++) {
+    if (ids && !ids.has(scene.ids[i])) continue;
+    out.push({ lng: scene.positions[i * 2], lat: scene.positions[i * 2 + 1] });
+  }
+  return out;
 }
 var rebuildToken = 0;
 async function rebuild() {
@@ -1147,7 +1307,9 @@ async function rebuild() {
       intensity: l.intensity,
       threshold: l.threshold,
       opacity: l.opacity,
-      colorRange: sampleColorRange(resolveGradient(l.gradientId, customGradients).stops),
+      colorRange: sampleColorRange(
+        resolveGradient(l.gradientId, customGradients).stops
+      ),
       debounceTimeout: 100
     })
   );
@@ -1156,20 +1318,23 @@ async function rebuild() {
 async function init() {
   const host = MMA.getMapHost();
   if (!host) throw new Error("No map instance");
-  locStore = await MMA.createLocationStore();
   overlay = host.createDeckOverlay();
   void rebuild();
   const onChange = () => {
     void rebuild();
     onSettingsChange?.();
   };
-  const unsubStore = locStore.onChange(onChange);
-  const unsubSel = MMA.on("selection:change", onChange);
+  const events = [
+    "location:add",
+    "location:remove",
+    "location:update",
+    "location:invalidate",
+    "selection:change",
+    "scene:changed"
+  ];
+  const unsubs = events.map((e) => MMA.on(e, onChange));
   return () => {
-    unsubStore();
-    unsubSel();
-    locStore?.destroy();
-    locStore = null;
+    unsubs.forEach((u) => u());
     if (overlay) {
       overlay.finalize();
       overlay = null;
@@ -1234,7 +1399,7 @@ var CSS = `
   color: var(--text-primary, #fff);
   border-color: var(--text-secondary, #999);
 }
-.heatmap-sidebar .scope-selector { padding: 2px 0 6px; font-size: 13px; }
+.heatmap-sidebar .selector-picker { padding: 2px 0 6px; font-size: 13px; }
 .heatmap-sidebar__gradients {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
 }
@@ -1366,11 +1531,12 @@ function LayerControls({
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: () => removeLayer(l.id), children: MMA.t("Remove") })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-      MMA.ui.ScopeSelector,
+      MMA.ui.SelectorPicker,
       {
         ctl: {
-          scope: l.source,
-          setScope: (s) => set({ source: s }),
+          selector: MMA.selectorForPick(l.source),
+          choice: l.source,
+          setChoice: (c) => set({ source: c }),
           allCount,
           selectionCount,
           saved: true
@@ -1422,7 +1588,14 @@ function LayerControls({
         onChange: (v) => set({ threshold: v })
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GradientPicker, { layerId: l.id, gradientId: l.gradientId, onSelect: (id) => set({ gradientId: id }) })
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      GradientPicker,
+      {
+        layerId: l.id,
+        gradientId: l.gradientId,
+        onSelect: (id) => set({ gradientId: id })
+      }
+    )
   ] });
 }
 function GradientPicker({

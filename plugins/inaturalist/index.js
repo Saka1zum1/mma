@@ -509,52 +509,29 @@ function Label({ children, info }) {
     )
   ] });
 }
-var { Section, Field, SegmentedControl } = MMA.ui;
+var { Section, Field, SegmentedControl, Button } = MMA.ui;
 function TaxonomySorter() {
   const storage = MMA.storage("inaturalist");
   const [lang, setLang] = (0, import_react.useState)(() => storage.get("taxo_lang", "en"));
   const [deep, setDeep] = (0, import_react.useState)(true);
   const [commonNames, setCommonNames] = (0, import_react.useState)(true);
-  const [running, setRunning] = (0, import_react.useState)(false);
-  const [progress, setProgress] = (0, import_react.useState)(null);
-  const [result, setResult] = (0, import_react.useState)(null);
-  const [abortCtl, setAbortCtl] = (0, import_react.useState)(null);
   const handleLangChange = (0, import_react.useCallback)((code) => {
     setLang(code);
     storage.set("taxo_lang", code);
   }, [storage]);
-  const handleSort = (0, import_react.useCallback)(async () => {
-    setRunning(true);
-    setResult(null);
-    setProgress(null);
-    const ctl = new AbortController();
-    setAbortCtl(ctl);
-    try {
-      const opts = { lang, deep, commonNames };
-      const r = await sortTagsByTaxonomy(opts, setProgress, ctl.signal);
-      setResult(r);
-      if (r.sorted > 0) {
-        MMA.toast(MMA.t(
-          { one: "Sorted {n} tag into taxonomy folders", other: "Sorted {n} tags into taxonomy folders" },
-          { n: r.sorted }
-        ));
-      } else {
-        MMA.toast(MMA.t("No tags needed sorting"));
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        MMA.toast(MMA.t("Taxonomy sort cancelled"));
-      } else {
-        MMA.toast(MMA.t("Taxonomy sort failed"));
-      }
+  const job = MMA.useJob(async ({ signal, report }) => {
+    const opts = { lang, deep, commonNames };
+    const r = await sortTagsByTaxonomy(opts, report, signal);
+    if (r.sorted > 0) {
+      MMA.toast(MMA.t(
+        { one: "Sorted {n} tag into taxonomy folders", other: "Sorted {n} tags into taxonomy folders" },
+        { n: r.sorted }
+      ));
+    } else {
+      MMA.toast(MMA.t("No tags needed sorting"));
     }
-    setRunning(false);
-    setAbortCtl(null);
-    setProgress(null);
-  }, [lang, deep, commonNames]);
-  const handleCancel = (0, import_react.useCallback)(() => {
-    abortCtl?.abort();
-  }, [abortCtl]);
+    return r;
+  });
   const handleClearCache = (0, import_react.useCallback)(() => {
     clearTaxonomyCache();
     MMA.toast(MMA.t("Taxonomy cache cleared"));
@@ -602,30 +579,30 @@ function TaxonomySorter() {
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { display: "flex", gap: 6, marginTop: 4 }, children: [
-      running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--danger", onClick: handleCancel, style: { flex: 1 }, children: MMA.t("Cancel") }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "button button--primary", onClick: handleSort, style: { flex: 1 }, children: MMA.t("Sort Tags") }),
+      job.running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, { variant: "destructive", onClick: job.cancel, style: { flex: 1 }, children: MMA.t("Cancel") }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, { variant: "primary", onClick: job.run, style: { flex: 1 }, children: MMA.t("Sort Tags") }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        "button",
+        Button,
         {
-          className: "button",
           onClick: handleClearCache,
-          disabled: running,
+          disabled: job.running,
           title: MMA.t("Clear cached API results"),
           children: MMA.t("Clear Cache")
         }
       )
     ] }),
-    progress && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }, children: [
-      progress.phase,
+    job.progress && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: { fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }, children: [
+      job.progress.phase,
       " (",
-      progress.current,
+      job.progress.current,
       "/",
-      progress.total,
+      job.progress.total,
       ")",
-      progress.detail && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.7 }, children: progress.detail })
+      job.progress.detail && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { opacity: 0.7 }, children: job.progress.detail })
     ] }),
-    result && !running && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }, children: MMA.t("{sorted} sorted, {skipped} skipped", {
-      sorted: result.sorted,
-      skipped: result.skipped
+    job.error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: "#e55", marginTop: 6 }, children: job.error }),
+    job.result && !job.running && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { fontSize: 11, color: "var(--text-secondary, #999)", marginTop: 6 }, children: MMA.t("{sorted} sorted, {skipped} skipped", {
+      sorted: job.result.sorted,
+      skipped: job.result.skipped
     }) })
   ] });
 }
@@ -678,7 +655,7 @@ function removeCSS() {
     styleEl = null;
   }
 }
-var { Sidebar, Section: Section2 } = MMA.ui;
+var { Sidebar, Section: Section2, TextInput, Button: Button2 } = MMA.ui;
 function INatSidebar({ onClose }) {
   const [query, setQuery] = (0, import_react2.useState)("");
   const [results, setResults] = (0, import_react2.useState)([]);
@@ -721,9 +698,8 @@ function INatSidebar({ onClose }) {
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(Section2, { title: MMA.t("Observations"), children: [
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__search", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-          "input",
+          TextInput,
           {
-            className: "input",
             placeholder: MMA.t("Search species..."),
             value: query,
             onChange: (e) => setQuery(e.target.value),
@@ -734,7 +710,7 @@ function INatSidebar({ onClose }) {
             style: { flex: 1 }
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button", onClick: doSearch, disabled: searching || !query.trim(), children: searching ? "..." : MMA.t("Search") })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button2, { onClick: doSearch, disabled: searching || !query.trim(), children: searching ? "..." : MMA.t("Search") })
       ] }),
       results.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__results", children: results.map((t) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__taxon", onClick: () => handleSelect(t), children: [
         t.photoUrl && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("img", { className: "inat-sidebar__taxon-photo", src: t.photoUrl }),
@@ -753,9 +729,9 @@ function INatSidebar({ onClose }) {
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__active-count", children: MMA.t("{n} observations loaded", { n: count.toLocaleString() }) })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "inat-sidebar__actions", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button", onClick: toggleVisibility, disabled: !taxon, children: vis ? MMA.t("Hide") : MMA.t("Show") }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button button--primary", onClick: handleImport, disabled: count === 0, children: count > 0 ? MMA.t("Import ({n})", { n: count }) : MMA.t("Import") }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "button button--danger", onClick: clearData, disabled: !taxon, children: MMA.t("Clear") })
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button2, { onClick: toggleVisibility, disabled: !taxon, children: vis ? MMA.t("Hide") : MMA.t("Show") }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button2, { variant: "primary", onClick: handleImport, disabled: count === 0, children: count > 0 ? MMA.t("Import ({n})", { n: count }) : MMA.t("Import") }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Button2, { variant: "destructive", onClick: clearData, disabled: !taxon, children: MMA.t("Clear") })
       ] }),
       !taxon && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "inat-sidebar__hint", children: MMA.t("Search for a species to visualize observations on the map.") })
     ] }),
