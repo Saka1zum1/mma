@@ -9,7 +9,7 @@ import { enrichAll as enrichAllRows } from "@/lib/sv/enrich";
 import { bulkPinToPano as pinRows } from "@/lib/sv/pinPano";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 
-export let ready = false;
+export const ready = false;
 
 export { t, tp, getLocale, LOCALES, setSetting, fetchSvMetadata };
 

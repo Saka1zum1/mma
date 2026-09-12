@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { act, useRef } from "react";
+import { act, useRef, type PointerEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { useHoverExpand } from "@/lib/hooks/useHoverExpand";
 
@@ -35,9 +35,9 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-const enter = () => act(() => api.hoverProps.onPointerEnter());
-const leave = () => act(() => api.hoverProps.onPointerLeave());
-const pointerDown = () => act(() => api.hoverProps.onPointerDown());
+const enter = () => act(() => api.hoverProps.onPointerEnter({ buttons: 0 } as PointerEvent));
+const leave = () => act(() => api.hoverProps.onPointerLeave({} as PointerEvent));
+const pointerDown = () => act(() => api.hoverProps.onPointerDown({} as PointerEvent));
 const pointerUpAt = (clientX: number, clientY: number) =>
 	act(() => {
 		document.dispatchEvent(new MouseEvent("pointerup", { clientX, clientY }));
