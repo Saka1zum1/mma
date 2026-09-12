@@ -185,7 +185,8 @@ export default defineConfig([
 		},
 	},
 	{
-		files: ["src/api.ts", "src/App.tsx"],
+		// api/App talk to Tauri plugins directly; tauri.ts re-exports invoke for the plugin SDK.
+		files: ["src/api.ts", "src/App.tsx", "src/lib/tauri.ts"],
 		rules: { "no-restricted-imports": "off" },
 	},
 	{

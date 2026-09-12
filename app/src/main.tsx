@@ -24,6 +24,7 @@ import { cmd } from "@/lib/commands";
 import { checkForUpdate } from "@/lib/util/updateCheck";
 import { blockBrowserAccelerators } from "@/lib/hooks/useHotkey";
 import "@/api";
+import { markReady } from "@/plugins/host";
 import "@/store/commandDefs";
 
 async function boot() {
@@ -52,7 +53,7 @@ async function boot() {
 	initRouter();
 	mark("initRouter");
 
-	if (window.MMA) window.MMA.ready = true;
+	markReady();
 	log.info("App booted");
 
 	const isMainWindow = getCurrentWindow().label === "main";

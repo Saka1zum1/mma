@@ -9,9 +9,16 @@ import { enrichAll as enrichAllRows } from "@/lib/sv/enrich";
 import { bulkPinToPano as pinRows } from "@/lib/sv/pinPano";
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 
-export const ready = false;
+export let ready = false;
 
 export { t, tp, getLocale, LOCALES, setSetting, fetchSvMetadata };
+
+/** Flip after boot. The write lives here so `ready` stays a `let` (MMA.ready is assignable)
+ *  without tripping prefer-const. */
+export function markReady() {
+	ready = true;
+	if (typeof window !== "undefined" && window.MMA) window.MMA.ready = true;
+}
 
 /** Snapshot so a plugin cannot mutate the live settings object. */
 export function getSettings() {
