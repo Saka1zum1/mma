@@ -13,6 +13,39 @@ fn query(ix: &SpatialIndex, lat: f64, lng: f64, r: f64) -> Vec<u32> {
 }
 
 #[test]
+fn any_candidate_stops_after_the_first_match() {
+    let mut ix = SpatialIndex::new();
+    ix.insert(1, 10.0, 10.0);
+    ix.insert(2, 10.0, 10.0);
+    ix.insert(3, 10.0, 10.0);
+    let mut visited = Vec::new();
+
+    let found = ix.any_candidate(10.0, 10.0, 1.0, |id| {
+        visited.push(id);
+        id == 2
+    });
+
+    assert!(found);
+    assert_eq!(visited, vec![1, 2]);
+}
+
+#[test]
+fn any_candidate_visits_every_candidate_on_a_miss() {
+    let mut ix = SpatialIndex::new();
+    ix.insert(1, 10.0, 10.0);
+    ix.insert(2, 10.0, 10.0);
+    let mut visited = Vec::new();
+
+    let found = ix.any_candidate(10.0, 10.0, 1.0, |id| {
+        visited.push(id);
+        false
+    });
+
+    assert!(!found);
+    assert_eq!(visited, vec![1, 2]);
+}
+
+#[test]
 fn insert_then_query_finds_point() {
     let mut ix = SpatialIndex::new();
     ix.insert(1, 51.5074, -0.1278);

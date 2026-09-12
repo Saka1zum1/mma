@@ -231,6 +231,12 @@ pub struct MapSettings {
     /// Tag aliases: a second tree location (full slash path) -> the real tag id shown
     /// there. Tree-view only; clicking the alias leaf toggles the real tag.
     pub aliases: HashMap<String, u32>,
+    /// Which member of a duplicate group survives a merge: a `field_expr` scoring the
+    /// location, highest wins. `None` (or blank) uses the built-in ranking.
+    pub duplicate_score: Option<String>,
+    /// Scores every location; a review pass walks them highest first. `None` (or blank)
+    /// reviews them in the order the selection resolved.
+    pub review_order: Option<String>,
     /// Alternate Street View providers (Apple Look Around, …).
     pub providers: ProvidersSettings,
 }
@@ -255,6 +261,8 @@ impl Default for MapSettings {
             key_bindings: Vec::new(),
             virtual_tags: HashMap::new(),
             aliases: HashMap::new(),
+            duplicate_score: None,
+            review_order: None,
             providers: ProvidersSettings::default(),
         }
     }
@@ -1063,6 +1071,33 @@ mod tests {
         let json = r#"{"aliases":{"d/e/c":42}}"#;
         let settings: MapSettings = serde_json::from_str(json).unwrap();
         assert_eq!(settings.aliases["d/e/c"], 42);
+    }
+
+    #[test]
+    fn map_settings_duplicate_score_defaults_unset() {
+        let old_json = r#"{"pointAlongRoad":true}"#;
+        let settings: MapSettings = serde_json::from_str(old_json).unwrap();
+        assert!(settings.duplicate_score.is_none());
+        assert!(MapSettings::default().duplicate_score.is_none());
+
+        let json = r#"{"duplicateScore":"tagCount + 2 * zoom"}"#;
+        let settings: MapSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            settings.duplicate_score.as_deref(),
+            Some("tagCount + 2 * zoom")
+        );
+    }
+
+    #[test]
+    fn map_settings_review_order_defaults_unset() {
+        let old_json = r#"{"pointAlongRoad":true}"#;
+        let settings: MapSettings = serde_json::from_str(old_json).unwrap();
+        assert!(settings.review_order.is_none());
+        assert!(MapSettings::default().review_order.is_none());
+
+        let json = r#"{"reviewOrder":"createdAt"}"#;
+        let settings: MapSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.review_order.as_deref(), Some("createdAt"));
     }
 
     #[test]

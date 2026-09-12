@@ -160,8 +160,24 @@ fn overlay_update_noop_does_not_stamp_session_added_row() {
     // A patch that changes nothing must not stamp (or it fabricates undo entries).
     let l = loc(1, 10.0, 20.0);
     let mut store = setup_store_with(&[l]);
+    let rev = store.overlay.rev;
     store.overlay_update(1, &patch!(lat: 10.0));
     assert!(store.get_loc_by_id(1).unwrap().modified_at.is_none());
+    assert_eq!(store.overlay.rev, rev);
+}
+
+#[test]
+fn overlay_update_noop_on_base_row_does_not_touch_overlay() {
+    let l = loc(1, 10.0, 20.0);
+    let mut store = setup_store_with(&[l]);
+    store.bake_overlay();
+    let rev = store.overlay.rev;
+    assert!(!store.overlay.dirty);
+
+    store.overlay_update(1, &patch!(lat: 10.0));
+
+    assert_eq!(store.overlay.rev, rev);
+    assert!(!store.overlay.dirty);
 }
 
 #[test]
@@ -194,9 +210,11 @@ fn overlay_update_noop_on_patched_row_stays_a_noop() {
     // Re-applying the identical patch must return an equal pair (no undo entry) and leave
     // the stored row untouched.
     let stored = store.get_loc_by_id(1).unwrap();
+    let rev = store.overlay.rev;
     let (old, new_loc) = store.overlay_update(1, &patch!(lat: 50.0)).unwrap();
     assert_eq!(old, new_loc);
     assert_eq!(store.get_loc_by_id(1).unwrap(), stored);
+    assert_eq!(store.overlay.rev, rev);
 }
 
 #[test]
@@ -939,6 +957,34 @@ fn batch_update_mixed_changed_unchanged() {
     assert_eq!(changed_old.len(), 1, "only l1 should be in undo");
     assert_eq!(changed_old[0].id, 1);
     assert_eq!(changed_new[0].heading, 180.0);
+}
+
+#[test]
+fn noop_batch_is_removed_before_selection_and_render_work() {
+    let rows: Vec<Location> = (1..=101)
+        .map(|id| loc_with_heading(id, id as f64 / 10.0, 0.0, 45.0))
+        .collect();
+    let mut store = setup_store_with(&rows);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    store.resolve_selection_membership();
+    let rev = store.overlay.rev;
+    let undo_len = store.edits.undo.len();
+    let updates: Vec<Update<LocationPatch>> = rows
+        .iter()
+        .map(|row| Update {
+            id: row.id,
+            patch: patch!(heading: row.heading),
+        })
+        .collect();
+
+    let result = apply_updates(&mut store, &updates, true);
+
+    assert_eq!(store.overlay.rev, rev);
+    assert_eq!(store.edits.undo.len(), undo_len);
+    assert!(result.delta.added.is_empty());
+    assert!(result.delta.updated.is_empty());
+    assert!(result.delta.removed.is_empty());
+    assert!(result.selection_sync.is_none());
 }
 
 // -----------------------------------------------------------------------
@@ -1845,6 +1891,7 @@ fn push_resolved(store: &mut Store, key: &str, color: [u8; 3], members: &[u32]) 
             },
         },
         set,
+        ghosted: false,
     });
 }
 
@@ -2407,6 +2454,7 @@ fn add_tag_selection(store: &mut Store, tag_id: u32, color: [u8; 3]) {
             selector: selections::Selector::Tag { tag_id },
         },
         set: RoaringBitmap::new(),
+        ghosted: false,
     });
 }
 
@@ -2586,6 +2634,67 @@ fn incremental_membership_change_ships_no_bitmask() {
             idx: 0,
             color: [255, 0, 0]
         })
+    );
+}
+
+#[test]
+fn a_ghosted_selection_is_recounted_by_a_mutation_but_never_selected_or_drawn() {
+    let l1 = loc_with_tags(1, 10.0, 20.0, vec![]);
+    let mut store = setup_store_with(std::slice::from_ref(&l1));
+    insert_tag(&mut store, 1, 0);
+    insert_tag(&mut store, 2, 0);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    store.selections.resolved[0].ghosted = true;
+    add_tag_selection(&mut store, 2, [0, 255, 0]);
+
+    let after = loc_with_tags(1, 10.0, 20.0, vec![1, 2]);
+    let result = store.finish_mutation(&ChangeSet {
+        updated: vec![(l1, after)],
+        ..Default::default()
+    });
+
+    let sync = result.selection_sync.expect("a mutation recounts");
+    assert_eq!(sync.counts["tag:1"], 1, "the ghosted selection is counted");
+    assert_eq!(sync.counts["tag:2"], 1);
+    assert_eq!(sync.selected_count, 1, "only the live selection selects");
+    assert_eq!(
+        result.delta.updated[0].sel,
+        Some(SelPaint {
+            idx: 0,
+            color: [0, 255, 0]
+        }),
+        "the paint index counts live selections only"
+    );
+}
+
+#[test]
+fn a_full_resolve_counts_a_ghosted_selection_and_keeps_it_out_of_the_selected_set() {
+    let mut store = setup_store_with(&[loc_with_tags(1, 10.0, 20.0, vec![1, 2])]);
+    insert_tag(&mut store, 1, 1);
+    insert_tag(&mut store, 2, 1);
+    add_tag_selection(&mut store, 1, [255, 0, 0]);
+    store.selections.resolved[0].ghosted = true;
+    add_tag_selection(&mut store, 2, [0, 255, 0]);
+
+    store.resolve_selection_membership();
+
+    assert_eq!(store.selections.node_counts["tag:1"], 1);
+    assert_eq!(store.selections.node_counts["tag:2"], 1);
+    assert!(
+        store.selections.resolved[0].ghosted,
+        "a full resolve keeps the flag"
+    );
+    assert_eq!(
+        store.selections.ids.len(),
+        1,
+        "only the live selection selects"
+    );
+    let sync = store.build_selection_bitmask();
+    assert_eq!(sync.selected_count, 1);
+    assert_eq!(
+        u32::from_le_bytes(sync.bitmask.unwrap()[0..4].try_into().unwrap()),
+        1,
+        "the bitmask carries live selections only"
     );
 }
 
@@ -2886,6 +2995,10 @@ fn touched_zero_member_tag_is_hidden_by_finish_mutation() {
 // merge_group (duplicate merge policy)
 // -----------------------------------------------------------------------
 
+fn default_dup_score() -> crate::field_expr::Expr {
+    crate::selections::parse_duplicate_score(None).expect("default expression parses")
+}
+
 fn loc_full(id: u32, tags: Vec<u32>, created_at: u32) -> Location {
     Location {
         tags,
@@ -2898,7 +3011,7 @@ fn loc_full(id: u32, tags: Vec<u32>, created_at: u32) -> Location {
 fn merge_group_survivor_is_most_tags() {
     let a = loc_full(1, vec![1], 2020);
     let b = loc_full(2, vec![1, 2, 3], 2021);
-    let s = merge_group(&[a, b]);
+    let s = merge_group(&[a, b], &default_dup_score());
     assert_eq!(s.id, 2);
     assert_eq!(s.tags, vec![1, 2, 3]);
 }
@@ -2907,7 +3020,7 @@ fn merge_group_survivor_is_most_tags() {
 fn merge_group_tie_breaks_on_earliest_created() {
     let a = loc_full(1, vec![1], 2021);
     let b = loc_full(2, vec![9], 2019); // fewer-tag tie, but earlier
-    let s = merge_group(&[a, b]);
+    let s = merge_group(&[a, b], &default_dup_score());
     assert_eq!(s.id, 2);
 }
 
@@ -2915,7 +3028,7 @@ fn merge_group_tie_breaks_on_earliest_created() {
 fn merge_group_tie_breaks_on_lowest_id() {
     let a = loc_full(5, vec![1], 2020);
     let b = loc_full(2, vec![9], 2020); // same tags+created, lower id
-    let s = merge_group(&[a, b]);
+    let s = merge_group(&[a, b], &default_dup_score());
     assert_eq!(s.id, 2);
 }
 
@@ -2923,7 +3036,7 @@ fn merge_group_tie_breaks_on_lowest_id() {
 fn merge_group_unions_and_dedupes_tags() {
     let a = loc_full(1, vec![1, 2], 2020);
     let b = loc_full(2, vec![2, 3], 2020);
-    let s = merge_group(&[a, b]);
+    let s = merge_group(&[a, b], &default_dup_score());
     assert_eq!(s.tags, vec![1, 2, 3]);
 }
 
@@ -2933,7 +3046,7 @@ fn merge_group_extra_survivor_wins_and_unions_keys() {
     a.extra = Some(serde_json::from_str(r#"{"k":"survivor"}"#).unwrap());
     let mut b = loc_full(2, vec![3], 2020);
     b.extra = Some(serde_json::from_str(r#"{"k":"other","x":"y"}"#).unwrap());
-    let s = merge_group(&[a, b]);
+    let s = merge_group(&[a, b], &default_dup_score());
     let extra = s.extra.unwrap();
     assert_eq!(extra.get("k").unwrap(), "survivor"); // conflict -> survivor wins
     assert_eq!(extra.get("x").unwrap(), "y"); // non-conflicting key from other is kept
@@ -2947,7 +3060,7 @@ fn merge_group_applies_and_undo_restores() {
     assert_eq!(store.alive_count, 2);
 
     let members = vec![a.clone(), b.clone()];
-    let survivor = merge_group(&members);
+    let survivor = merge_group(&members, &default_dup_score());
     assert_eq!(survivor.id, 1); // tie on tags+created -> lowest id survives
     let entry = EditEntry {
         created: vec![survivor],
@@ -3780,6 +3893,35 @@ fn crash_window_stale_delta_double_applies_baked_locations() {
     // the batch, so single-id lookups don't see the duplicate -- only bulk
     // enumeration (alive_count, collect, tag counts, render) is corrupted.
     assert_eq!(store.get_loc_by_id(5), Some(loc(5, 5.0, 5.0)));
+}
+
+#[test]
+fn location_aggregates_include_effective_tag_membership() {
+    let base = vec![
+        loc_with_tags(1, 10.0, 20.0, vec![1]),
+        loc_with_tags(2, 30.0, 40.0, vec![2]),
+    ];
+    let mut store = setup_store_with(&base);
+    store.bake_overlay();
+    store.overlay_update(1, &patch!(tags: vec![2]));
+    store.overlay_remove(&[base[1].clone()]);
+    store.overlay_add(loc_with_tags(3, -5.0, -10.0, vec![1, 2]));
+
+    let LocationAggregates {
+        alive,
+        tag_counts,
+        tag_sets,
+        bounds,
+    } = store.scan_locations();
+
+    assert_eq!(alive, 2);
+    assert_eq!(tag_counts, HashMap::from([(1, 1), (2, 2)]));
+    assert_eq!(tag_sets[&1].iter().collect::<Vec<_>>(), vec![3]);
+    assert_eq!(tag_sets[&2].iter().collect::<Vec<_>>(), vec![1, 3]);
+    assert_eq!(
+        bounds.map(BoundsAcc::resolve),
+        Some([-10.0, -5.0, 20.0, 10.0])
+    );
 }
 
 // -----------------------------------------------------------------------

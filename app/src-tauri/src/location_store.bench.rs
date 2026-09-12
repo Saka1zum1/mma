@@ -316,20 +316,13 @@ impl BenchApp {
             let view = store.loc_view();
             let (sel_sets, counts) = selections::resolve_forest(&view, &sels_full);
             drop(view);
-            let live: Vec<ResolvedSelection> = pair_selections(sels_full, sel_sets)
-                .into_iter()
-                .zip(&sels)
-                .filter(|(_, si)| !si.ghosted)
-                .map(|(r, _)| r)
-                .collect();
-            let mut all_selected = RoaringBitmap::new();
-            for r in &live {
-                all_selected |= &r.set;
-            }
+            store.selections.resolved =
+                pair_selections(sels_full, sel_sets, sels.iter().map(|si| si.ghosted));
+            let all_selected = store.selections.live_ids();
             let selected_count = all_selected.len() as usize;
+            let live: Vec<&ResolvedSelection> = store.selections.live().collect();
             let (_buf, _num_cells) = build_selection_buf(&store.render, &live);
             store.selections.ids = all_selected;
-            store.selections.resolved = live;
             store.selections.node_counts = counts;
             store.selections.version += 1;
             selected_count
@@ -462,6 +455,6 @@ pub fn open_from_arrow(path: &std::path::Path, tags: &HashMap<u32, Tag>) -> Stor
     store.bounds_dirty = false;
     store.tags.all = tags.clone();
     store.tags.next_id = TAG_COUNT + 1;
-    store.rebuild_tag_sets();
+    store.tags.sets = agg.tag_sets;
     store
 }

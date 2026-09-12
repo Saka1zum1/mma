@@ -167,7 +167,7 @@ fn serialize_cell_segment(ci: usize, cr: &CellRender, per_sel: &[[Vec<u32>; 32]]
 /// route each selection to per-cell local indices, serialize the cells, assemble. Returns
 /// the buffer and the number of cells it covers. The only place those steps are sequenced.
 /// Cells and selections are independent, so both passes go parallel.
-fn build_selection_buf(render: &RenderState, sels: &[ResolvedSelection]) -> (Vec<u8>, usize) {
+fn build_selection_buf(render: &RenderState, sels: &[&ResolvedSelection]) -> (Vec<u8>, usize) {
     let render_total = render.total_len();
     let routed: Vec<[Vec<u32>; 32]> = sels
         .par_iter()
@@ -320,11 +320,17 @@ pub(crate) struct ResolvedSelection {
     pub sel: Selection,
     /// Member location ids.
     pub set: RoaringBitmap,
+    /// Counted, but kept out of the overlay and the selected set.
+    pub ghosted: bool,
 }
 
 /// Zip selections with the member sets `resolve_forest` returned for them. The only place
 /// the two are joined, so the pairing is stated once.
-fn pair_selections(sels: Vec<Selection>, sets: Vec<RoaringBitmap>) -> Vec<ResolvedSelection> {
+fn pair_selections(
+    sels: Vec<Selection>,
+    sets: Vec<RoaringBitmap>,
+    ghosted: impl IntoIterator<Item = bool>,
+) -> Vec<ResolvedSelection> {
     debug_assert_eq!(
         sels.len(),
         sets.len(),
@@ -332,7 +338,8 @@ fn pair_selections(sels: Vec<Selection>, sets: Vec<RoaringBitmap>) -> Vec<Resolv
     );
     sels.into_iter()
         .zip(sets)
-        .map(|(sel, set)| ResolvedSelection { sel, set })
+        .zip(ghosted)
+        .map(|((sel, set), ghosted)| ResolvedSelection { sel, set, ghosted })
         .collect()
 }
 
@@ -348,13 +355,24 @@ pub(crate) struct SelectionState {
 }
 
 impl SelectionState {
+    /// The selections that draw and select, in order: every one but the ghosted. Their
+    /// position here is the selection index the overlay and the bitmask speak.
+    pub(crate) fn live(&self) -> impl Iterator<Item = &ResolvedSelection> {
+        self.resolved.iter().filter(|r| !r.ghosted)
+    }
+
+    /// Every id some live selection holds: the selected set.
+    pub(crate) fn live_ids(&self) -> RoaringBitmap {
+        self.live().fold(RoaringBitmap::new(), |acc, r| acc | &r.set)
+    }
+
     /// Paint of a selected id = the last selection containing it. None if unselected.
     fn paint_for(&self, id: u32) -> Option<SelPaint> {
         if !self.ids.contains(id) {
             return None;
         }
         let mut paint = None;
-        for (i, r) in self.resolved.iter().enumerate() {
+        for (i, r) in self.live().enumerate() {
             if r.set.contains(id) {
                 paint = Some(SelPaint {
                     idx: i as u32,
@@ -369,7 +387,7 @@ impl SelectionState {
     /// up with the same paint the per-id lookup would return.
     fn paint_map(&self) -> HashMap<u32, SelPaint> {
         let mut map = HashMap::with_capacity(self.ids.len() as usize);
-        for (i, r) in self.resolved.iter().enumerate() {
+        for (i, r) in self.live().enumerate() {
             let paint = SelPaint {
                 idx: i as u32,
                 color: r.sel.color,
@@ -393,9 +411,8 @@ pub(crate) struct TagState {
     pub next_id: u32,
     /// `tag_id -> set of member location ids`. Lets a `Tag` selection resolve by
     /// cloning a set instead of scanning every row's tag list. Maintained
-    /// incrementally in `update_tag_counts` (the single choke point for tag
-    /// membership changes) and rebuilt from the batch on map open. Covers committed
-    /// base rows + overlay adds; patched/dead rows are reconciled at resolve time.
+    /// incrementally in `update_tag_counts`; map open fills it from the same pass
+    /// that counts tags.
     pub sets: HashMap<u32, RoaringBitmap>,
 }
 
@@ -452,7 +469,13 @@ struct MembershipDelta {
 struct LocationAggregates {
     alive: usize,
     tag_counts: HashMap<u32, usize>,
+    tag_sets: HashMap<u32, RoaringBitmap>,
     bounds: Option<BoundsAcc>,
+}
+
+struct TagAggregate {
+    count: usize,
+    ids: RoaringBitmap,
 }
 
 /// Incremental bounding-box accumulator. Tracks latitude min/max plus longitude
@@ -695,7 +718,7 @@ impl Store {
             matches!(
                 r.sel.selector,
                 Selector::Duplicates { .. }
-                    | Selector::TopK { .. }
+                    | Selector::Ranked { .. }
                     | Selector::Uncommitted
                     | Selector::Intersection { .. }
                     | Selector::Union { .. }
@@ -725,8 +748,10 @@ impl Store {
         membership_changed: &HashSet<u32>,
     ) -> RenderDelta {
         let mut delta = RenderDelta {
+            added: Vec::with_capacity(changes.added.len()),
+            updated: Vec::with_capacity(changes.updated.len()),
+            removed: Vec::with_capacity(changes.removed.len()),
             full_reset: changes.full_reset,
-            ..Default::default()
         };
 
         for &id in &changes.removed {
@@ -833,7 +858,9 @@ impl Store {
             for loc in &test_locs {
                 if selections::RowRef::from_loc(loc).matches(&r.sel.selector) {
                     r.set.insert(loc.id);
-                    ids.insert(loc.id);
+                    if !r.ghosted {
+                        ids.insert(loc.id);
+                    }
                 }
             }
         }
@@ -872,18 +899,15 @@ impl Store {
             .iter()
             .map(|r| r.sel.clone())
             .collect();
+        let ghosted: Vec<bool> = self.selections.resolved.iter().map(|r| r.ghosted).collect();
         let (loc_sets, node_counts) = {
             let view = self.loc_view();
             selections::resolve_forest(&view, &sels)
         };
         self.selections.node_counts = node_counts;
-        self.selections.resolved = pair_selections(sels, loc_sets);
+        self.selections.resolved = pair_selections(sels, loc_sets, ghosted);
 
-        let mut all_selected = RoaringBitmap::new();
-        for r in &self.selections.resolved {
-            all_selected |= &r.set;
-        }
-        self.selections.ids = all_selected;
+        self.selections.ids = self.selections.live_ids();
         self.selections.version += 1;
     }
 
@@ -895,8 +919,9 @@ impl Store {
         let selected_count = self.selections.ids.len() as usize;
 
         let t0 = std::time::Instant::now();
-        let num_sels = self.selections.resolved.len();
-        let (buf, num_cells) = build_selection_buf(&self.render, &self.selections.resolved);
+        let live: Vec<&ResolvedSelection> = self.selections.live().collect();
+        let num_sels = live.len();
+        let (buf, num_cells) = build_selection_buf(&self.render, &live);
         let bitmask = if num_cells > 0 { Some(buf) } else { None };
 
         log::debug!(
@@ -962,8 +987,9 @@ impl Store {
     }
 
     /// Rebuild the `tag_id -> member ids` index from scratch over the live data
-    /// (alive base rows + overlay adds, with patches applied). O(N * tags/loc). Called
-    /// on map open; incremental edits maintain it via `update_tag_counts`.
+    /// (alive base rows + overlay adds, with patches applied). O(N * tags/loc).
+    /// Map open uses [`scan_locations`] instead; this remains for benches and recovery.
+    #[cfg_attr(not(feature = "bench"), allow(dead_code))]
     pub(crate) fn rebuild_tag_sets(&mut self) {
         let view = self.loc_view();
         let mut sets: HashMap<u32, RoaringBitmap> = HashMap::new();
@@ -1032,9 +1058,7 @@ impl Store {
         self.remove_tag_counts(remove);
         self.overlay_remove(remove);
         self.add_tag_counts(create);
-        for loc in create {
-            self.overlay_add(loc.clone());
-        }
+        self.overlay_add_many(create.to_vec());
 
         // Categorize: same-id remove+create is an update; the rest are pure add/remove.
         let mut changes = ChangeSet::default();
@@ -1250,18 +1274,24 @@ impl Store {
     }
 
     /// Current coordinates of an alive location, without cloning the full Location.
+    #[inline]
     fn coords_of(&self, id: u32) -> Option<(f64, f64)> {
-        if self.overlay.dead.contains(&id) {
+        Self::coords_from(&self.overlay, self.batch.as_ref(), id)
+    }
+
+    #[inline]
+    fn coords_from(overlay: &Overlay, batch: Option<&RecordBatch>, id: u32) -> Option<(f64, f64)> {
+        if overlay.dead.contains(&id) {
             return None;
         }
-        if let Some(p) = self.overlay.patches.get(&id) {
+        if let Some(p) = overlay.patches.get(&id) {
             return Some((p.lat, p.lng));
         }
-        if let Ok(i) = self.overlay.adds.binary_search_by_key(&id, |l| l.id) {
-            let l = &self.overlay.adds[i];
+        if let Ok(i) = overlay.adds.binary_search_by_key(&id, |l| l.id) {
+            let l = &overlay.adds[i];
             return Some((l.lat, l.lng));
         }
-        if let Some(ref b) = self.batch {
+        if let Some(b) = batch {
             if let Some(idx) = batch_row_for_id(b, id) {
                 return Some((col_lat(b).value(idx), col_lng(b).value(idx)));
             }
@@ -1313,15 +1343,15 @@ impl Store {
     /// Whether any alive location lies within `radius_m` metres of the point.
     pub(crate) fn any_within(&mut self, lat: f64, lng: f64, radius_m: f64) -> bool {
         self.ensure_spatial();
-        let mut cand = Vec::new();
+        let overlay = &self.overlay;
+        let batch = self.batch.as_ref();
         self.spatial
             .as_ref()
             .unwrap()
-            .candidates(lat, lng, radius_m, &mut cand);
-        cand.iter().any(|&id| {
-            self.coords_of(id)
-                .is_some_and(|(la, ln)| selections::haversine_m(lat, lng, la, ln) <= radius_m)
-        })
+            .any_candidate(lat, lng, radius_m, |id| {
+                Self::coords_from(overlay, batch, id)
+                    .is_some_and(|(la, ln)| selections::haversine_m(lat, lng, la, ln) <= radius_m)
+            })
     }
 
     /// Evenly spaced subset of `set` (`None` = whole map): `target_count` thins to
@@ -1409,16 +1439,18 @@ impl Store {
         let view = self.loc_view();
         let resolved = selections::narrow(&view, selector);
         let mut locs = Vec::with_capacity(self.alive_count);
-        locs.extend(view.within(resolved.as_ref()).map(|row| row.to_location()));
+        view.for_each_within(resolved.as_ref(), |row| locs.push(row.to_location()));
         locs
     }
 
     /// Full O(N) bounds scan, optionally narrowed to an id set. Returns the raw
     /// accumulator; callers `.resolve()` it to `[w,s,e,n]`.
     fn scan_bounds(&self, set: Option<&RoaringBitmap>) -> Option<BoundsAcc> {
-        self.loc_view().within(set).fold(None, |acc, row| {
-            Some(BoundsAcc::fold(acc, row.lat(), row.lng()))
-        })
+        let mut acc = None;
+        self.loc_view().for_each_within(set, |row| {
+            acc = Some(BoundsAcc::fold(acc, row.lat(), row.lng()));
+        });
+        acc
     }
 
     fn compute_bounds(&self, set: Option<&RoaringBitmap>) -> Option<[f64; 4]> {
@@ -1470,24 +1502,37 @@ impl Store {
     }
 
     /// Single O(N) pass over all alive locations deriving every open-time
-    /// aggregate: alive count, tag counts, and the bounding box. Seeding the
+    /// aggregate: alive count, tag counts and sets, and the bounding box. Seeding the
     /// bbox here means the first `store_bounds` after open is an O(1) cache hit
     /// instead of a second full scan.
     fn scan_locations(&self) -> LocationAggregates {
         let view = self.loc_view();
-        let mut tag_counts: HashMap<u32, usize> = HashMap::new();
+        let mut tags: HashMap<u32, TagAggregate> = HashMap::new();
         let mut alive = 0usize;
         let mut bounds: Option<BoundsAcc> = None;
         view.for_each(|row| {
             alive += 1;
             bounds = Some(BoundsAcc::fold(bounds, row.lat(), row.lng()));
+            let id = row.id();
             row.for_each_tag(|tid| {
-                *tag_counts.entry(tid).or_default() += 1;
+                let tag = tags.entry(tid).or_insert_with(|| TagAggregate {
+                    count: 0,
+                    ids: RoaringBitmap::new(),
+                });
+                tag.count += 1;
+                tag.ids.insert(id);
             });
         });
+        let mut tag_counts = HashMap::with_capacity(tags.len());
+        let mut tag_sets = HashMap::with_capacity(tags.len());
+        for (id, tag) in tags {
+            tag_counts.insert(id, tag.count);
+            tag_sets.insert(id, tag.ids);
+        }
         LocationAggregates {
             alive,
             tag_counts,
+            tag_sets,
             bounds,
         }
     }
@@ -1569,38 +1614,81 @@ impl Store {
         )
     }
 
-    /// Insert or restore a location in the overlay. O(1) amortized.
+    /// Insert or restore locations in the overlay. One touch and a merge of sorted
+    /// adds rather than a partition_point per row.
     pub(crate) fn overlay_add(&mut self, loc: Location) {
+        self.overlay_add_many(vec![loc]);
+    }
+
+    pub(crate) fn overlay_add_many(&mut self, locs: Vec<Location>) {
+        if locs.is_empty() {
+            return;
+        }
         self.overlay.touch();
-        self.alive_count += 1;
+        self.alive_count += locs.len();
         if let Some(ix) = self.spatial.as_mut() {
-            ix.insert(loc.id, loc.lat, loc.lng);
-        }
-        let in_batch = self
-            .batch
-            .as_ref()
-            .and_then(|b| batch_row_for_id(b, loc.id))
-            .is_some();
-        if in_batch {
-            self.overlay.dead.remove(&loc.id);
-            if self.base_loc_by_id(loc.id).as_ref() == Some(&loc) {
-                self.overlay.patches.remove(&loc.id);
-            } else {
-                self.overlay.patches.insert(loc.id, loc);
+            for loc in &locs {
+                ix.insert(loc.id, loc.lat, loc.lng);
             }
-        } else {
-            self.overlay.dead.remove(&loc.id);
-            // Keep overlay_adds sorted by id (invariant asserted in bake_overlay). A normal add has a
-            // monotonic new id so this inserts at the end (cheap, like push); undo re-adds an old id,
-            // which a plain push would append out of order — partition_point puts it in its sorted slot.
-            let pos = self.overlay.adds.partition_point(|l| l.id < loc.id);
-            debug_assert!(
-                self.overlay.adds.get(pos).is_none_or(|l| l.id != loc.id),
-                "overlay_add duplicate id {} — next_id allocation bug",
-                loc.id
-            );
-            self.overlay.adds.insert(pos, loc);
         }
+        let mut news = Vec::new();
+        for loc in locs {
+            let in_batch = self
+                .batch
+                .as_ref()
+                .and_then(|b| batch_row_for_id(b, loc.id))
+                .is_some();
+            if in_batch {
+                self.overlay.dead.remove(&loc.id);
+                if self.base_loc_by_id(loc.id).as_ref() == Some(&loc) {
+                    self.overlay.patches.remove(&loc.id);
+                } else {
+                    self.overlay.patches.insert(loc.id, loc);
+                }
+            } else {
+                self.overlay.dead.remove(&loc.id);
+                news.push(loc);
+            }
+        }
+        if news.is_empty() {
+            return;
+        }
+        news.sort_unstable_by_key(|l| l.id);
+        debug_assert!(
+            news.windows(2).all(|w| w[0].id != w[1].id),
+            "overlay_add duplicate id {} — next_id allocation bug",
+            news.windows(2)
+                .find(|w| w[0].id == w[1].id)
+                .map(|w| w[0].id)
+                .unwrap_or(0)
+        );
+        let existing = std::mem::take(&mut self.overlay.adds);
+        let mut merged = Vec::with_capacity(existing.len() + news.len());
+        let mut ei = existing.into_iter().peekable();
+        let mut ni = news.into_iter().peekable();
+        loop {
+            match (ei.peek(), ni.peek()) {
+                (Some(e), Some(n)) if e.id < n.id => merged.push(ei.next().unwrap()),
+                (Some(e), Some(n)) => {
+                    debug_assert!(
+                        e.id != n.id,
+                        "overlay_add duplicate id {} — next_id allocation bug",
+                        e.id
+                    );
+                    merged.push(ni.next().unwrap());
+                }
+                (Some(_), None) => {
+                    merged.extend(ei);
+                    break;
+                }
+                (None, Some(_)) => {
+                    merged.extend(ni);
+                    break;
+                }
+                (None, None) => break,
+            }
+        }
+        self.overlay.adds = merged;
     }
 
     /// Mark locations as dead in the overlay. O(L) for L locations removed.
@@ -1667,25 +1755,32 @@ impl Store {
             }
         }
         // Stamp only on a real change in every branch
+        let mut changed = false;
         if let Ok(pos) = self.overlay.adds.binary_search_by_key(&id, |l| l.id) {
             if self.overlay.adds[pos] != loc {
                 loc.modified_at = Some(crate::util::now_unix());
                 self.overlay.adds[pos] = loc.clone();
+                changed = true;
             }
         } else if self.overlay.patches.contains_key(&id) {
             // A patched row: `old` is the patched state, so reverting to the base row
             // exactly is the one case that still has to materialize it.
             if self.base_loc_by_id(id).as_ref() == Some(&loc) {
                 self.overlay.patches.remove(&id);
+                changed = true;
             } else if self.overlay.patches.get(&id) != Some(&loc) {
                 loc.modified_at = Some(crate::util::now_unix());
                 self.overlay.patches.insert(id, loc.clone());
+                changed = true;
             }
         } else if loc != *old {
             loc.modified_at = Some(crate::util::now_unix());
             self.overlay.patches.insert(id, loc.clone());
+            changed = true;
         }
-        self.overlay.touch();
+        if changed {
+            self.overlay.touch();
+        }
         loc
     }
 
@@ -2158,6 +2253,7 @@ pub async fn store_open_map(
     let LocationAggregates {
         alive,
         tag_counts,
+        tag_sets,
         bounds,
     } = store.scan_locations();
     store.alive_count = alive;
@@ -2171,7 +2267,7 @@ pub async fn store_open_map(
         store.tags.all = tags;
         store.tags.dirty = healed;
         store.tags.next_id = max_tag_id + 1;
-        store.rebuild_tag_sets();
+        store.tags.sets = tag_sets;
         let extra_str: String = conn
             .query_row(
                 "SELECT extra FROM maps WHERE id = ?1",
@@ -2309,9 +2405,7 @@ pub fn store_add_locations(
         store.edits.redo.clear();
         store.add_tag_counts(&locations);
         let added = locations.clone();
-        for loc in locations {
-            store.overlay_add(loc);
-        }
+        store.overlay_add_many(locations);
         let mut result = store.finish_mutation(&ChangeSet {
             added: added.clone(),
             ..Default::default()
@@ -2403,8 +2497,10 @@ pub(crate) fn apply_updates(
     let any_tags = updates.iter().any(|u| u.patch.tags.is_some());
     let any_extras = updates.iter().any(|u| u.patch.extra.is_some());
     for u in updates {
-        if let Some(pair) = store.overlay_update(u.id, &u.patch) {
-            updated.push(pair);
+        if let Some((old, new)) = store.overlay_update(u.id, &u.patch) {
+            if old != new {
+                updated.push((old, new));
+            }
         }
     }
     if any_tags {
@@ -2560,7 +2656,7 @@ fn plan_field_op(
                 }
                 FieldOp::Expr { key, .. } => {
                     let expr = expr.as_ref().expect("parsed above");
-                    let field = |name: &str| row.resolve_field(name).and_then(|v| v.as_f64());
+                    let field = |name: &str| row.resolve_field(name);
                     match crate::field_expr::eval(expr, &field) {
                         None => plan.skipped += 1,
                         Some(v) => {
@@ -2888,9 +2984,9 @@ pub async fn store_country_distribution(
     let coords: Vec<(f64, f64)> = with_store!(webview, state, |store| {
         let view = store.loc_view();
         let resolved = selections::narrow(&view, &selector);
-        view.within(resolved.as_ref())
-            .map(|row| (row.lat(), row.lng()))
-            .collect()
+        let mut coords = Vec::new();
+        view.for_each_within(resolved.as_ref(), |row| coords.push((row.lat(), row.lng())));
+        coords
     });
     crate::borders::tally_countries(&level, &coords)
 }
@@ -3049,10 +3145,7 @@ pub(crate) fn reconcile_tags_by_name(
     (remap, changed)
 }
 
-/// Copy locations into another map, skipping ones the target already has. Tags and extra
-/// fields carry over.
-// If the target is open in any window its live store is mutated and `store-external-mutation`
-// tells its windows to resync; either way the result is persisted immediately.
+/// Copy locations already stored in this map into another map.
 #[tauri::command]
 #[specta::specta]
 pub fn store_copy_locations_to_map(
@@ -3060,6 +3153,33 @@ pub fn store_copy_locations_to_map(
     state: tauri::State<'_, StoreState>,
     target_map_id: String,
     selector: Selector,
+) -> AppResult<CopyToMapResult> {
+    copy_to_map(webview, state, target_map_id, |src| src.collect(&selector))
+}
+
+/// Copy caller-supplied location data into another map. Tag ids are read against this
+/// map's tag table, so the values may differ from any row it holds -- that is how the
+/// editor sends the pano you are currently looking at rather than the one on disk.
+#[tauri::command]
+#[specta::specta]
+pub fn store_add_locations_to_map(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    target_map_id: String,
+    locations: Vec<Location>,
+) -> AppResult<CopyToMapResult> {
+    copy_to_map(webview, state, target_map_id, |_| locations)
+}
+
+/// Insert `collect`'s locations into another map, skipping ones the target already has.
+/// Tags and extra fields carry over.
+// If the target is open in any window its live store is mutated and `store-external-mutation`
+// tells its windows to resync; either way the result is persisted immediately.
+fn copy_to_map(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    target_map_id: String,
+    collect: impl FnOnce(&mut Store) -> Vec<Location>,
 ) -> AppResult<CopyToMapResult> {
     let _t = std::time::Instant::now();
     let conn = storage::open_db()?;
@@ -3082,7 +3202,7 @@ pub fn store_copy_locations_to_map(
     let mut source_tags: HashMap<u32, Tag> = HashMap::new();
     {
         let src = mgr.store_for_map(&source_map_id)?;
-        for mut loc in src.collect(&selector) {
+        for mut loc in collect(src) {
             loc.created_at = now;
             loc.modified_at = Some(now);
             for &t in &loc.tags {
@@ -3127,7 +3247,7 @@ pub fn store_copy_locations_to_map(
             // counts even when no new tag was created.
             target.tags.dirty = true;
             log::debug!(
-                "[cmd] store_copy_locations_to_map open-target scan={}ms add={}ms total={}ms",
+                "[cmd] copy_to_map open-target scan={}ms add={}ms total={}ms",
                 scan_ms,
                 t_add.elapsed().as_millis(),
                 _t.elapsed().as_millis()
@@ -3207,7 +3327,7 @@ pub fn store_copy_locations_to_map(
             alive,
             Some(serialize_tags_json(&target_tags)),
         )?;
-        log::debug!("[cmd] store_copy_locations_to_map closed-target read={}ms history={}ms save={}ms total={}ms",
+        log::debug!("[cmd] copy_to_map closed-target read={}ms history={}ms save={}ms total={}ms",
             read_ms, hist_ms, t_save.elapsed().as_millis(), _t.elapsed().as_millis());
     }
     Ok(CopyToMapResult {
@@ -3818,22 +3938,15 @@ pub fn store_reset_undo(
     })
 }
 
-/// Fold a duplicate group into one survivor. Survivor = most tags, then earliest
-/// `created_at`, then lowest id (`max_by` picks the greatest, so created_at/id are
-/// reversed to favour smaller). Tags are set-unioned; `extra` is merged with the
-/// survivor winning key conflicts; all other survivor fields are kept. `members` must
-/// be non-empty. The returned survivor keeps its original id (so callers represent the
-/// merge as an update of the survivor plus removal of the rest).
-fn merge_group(members: &[Location]) -> Location {
+/// Fold a duplicate group into one survivor, picked by [`selections::better`]. Tags are
+/// set-unioned; `extra` is merged with the survivor winning key conflicts; all other
+/// survivor fields are kept. `members` must be non-empty. The returned survivor keeps
+/// its original id (so callers represent the merge as an update of the survivor plus
+/// removal of the rest).
+fn merge_group(members: &[Location], score: &crate::field_expr::Expr) -> Location {
     let survivor = members
         .iter()
-        .max_by(|a, b| {
-            a.tags
-                .len()
-                .cmp(&b.tags.len())
-                .then_with(|| b.created_at.cmp(&a.created_at))
-                .then_with(|| b.id.cmp(&a.id))
-        })
+        .max_by(|a, b| selections::better(a, b, score))
         .expect("merge_group requires a non-empty group");
 
     let mut tagset: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
@@ -4029,28 +4142,22 @@ pub async fn store_sync_selections(
         let (sel_sets, counts) = selections::resolve_forest(&view, &sels_full);
         drop(view);
 
-        // 2. Drop the ghosted ones once, here. Everything downstream reads `live`, so the
-        //    selections and their member sets can never be filtered by two different rules.
-        let live: Vec<ResolvedSelection> = pair_selections(sels_full, sel_sets)
-            .into_iter()
-            .zip(&sels)
-            .filter(|(_, si)| !si.ghosted)
-            .map(|(r, _)| r)
-            .collect();
+        // 2. Keep every selection, ghosted flagged: a mutation recounts all of them, and
+        //    `SelectionState::live` is the one rule that keeps ghosted out of the overlay
+        //    and the selected set.
+        store.selections.resolved =
+            pair_selections(sels_full, sel_sets, sels.iter().map(|si| si.ghosted));
 
-        let mut all_selected = RoaringBitmap::new();
-        for r in &live {
-            all_selected |= &r.set;
-        }
+        let all_selected = store.selections.live_ids();
         let selected_count = all_selected.len() as usize;
 
         // 3. Route selections to per-cell indices (O(selected), not O(S*N)), then
         //    serialize the per-cell bitmask binary.
         let render_total = store.render.total_len();
+        let live: Vec<&ResolvedSelection> = store.selections.live().collect();
         let (buf, num_cells) = build_selection_buf(&store.render, &live);
 
         store.selections.ids = all_selected;
-        store.selections.resolved = live;
         store.selections.node_counts = counts.clone();
         store.selections.version += 1;
 
@@ -4132,7 +4239,8 @@ macro_rules! selector_read {
     };
 }
 
-/// Ids of every location the selector resolves to, ascending.
+/// Ids of every location the selector resolves to. Ranked roots emit rank order;
+/// every other selector answers ascending.
 #[tauri::command]
 #[specta::specta]
 pub fn store_resolve(
@@ -4140,12 +4248,12 @@ pub fn store_resolve(
     state: tauri::State<'_, StoreState>,
     selector: Selector,
 ) -> AppResult<Vec<u32>> {
-    selector_read!(
-        webview,
-        state,
-        selector,
-        |view, set| selections::ids_within(&view, set)
-    )
+    selector_read!(webview, state, selector, |view, set| match &selector {
+        Selector::Ranked {
+            expr, ascending, ..
+        } => selections::ranked_within(&view, set, expr, None, *ascending),
+        _ => selections::ids_within(&view, set),
+    })
 }
 
 /// How many locations the selector resolves to. Counts rows, never materializes them.
@@ -4326,16 +4434,18 @@ pub fn store_duplicate_groups(
 }
 
 /// Merge each duplicate group within `distance` metres into one survivor location, unioning
-/// tags and extra fields. One undoable edit.
-// Survivor = most tags, then earliest created_at, then lowest id; extra merges survivor-wins.
+/// tags and extra fields. `score` is the map's duplicate preference expression; blank or
+/// absent uses the built-in ranking. One undoable edit.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_merge_duplicates(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     distance: f64,
+    score: Option<String>,
 ) -> AppResult<MutationResult> {
     let _t = std::time::Instant::now();
+    let score = selections::parse_duplicate_score(score.as_deref())?;
     with_store!(webview, state, |store| {
         let groups = {
             let view = store.loc_view();
@@ -4353,7 +4463,7 @@ pub async fn store_merge_duplicates(
             if members.len() < 2 {
                 continue;
             }
-            create.push(merge_group(&members));
+            create.push(merge_group(&members, &score));
             for m in members {
                 remove.push(m);
             }
@@ -4371,7 +4481,7 @@ pub async fn store_merge_duplicates(
 
 /// Thin duplicates among `ids` within `distance` metres, keeping the best location per
 /// cluster. Informational locations are never pruned. One undoable edit.
-// <= 25m: best-scored per cluster (keep_tag_ids +5, see selections::prune_score);
+// <= 25m: best-scored per cluster (see selections::better);
 // > 25m: greedy thinning so no two survivors remain in range.
 #[tauri::command]
 #[specta::specta]
@@ -4380,13 +4490,13 @@ pub async fn store_prune_duplicates(
     state: tauri::State<'_, StoreState>,
     selector: Selector,
     distance: f64,
-    keep_tag_ids: Vec<u32>,
+    score: Option<String>,
 ) -> AppResult<MutationResult> {
     let _t = std::time::Instant::now();
+    let score = selections::parse_duplicate_score(score.as_deref())?;
     with_store!(webview, state, |store| {
         let locs: Vec<Location> = store.collect(&selector);
-        let keep: HashSet<u32> = keep_tag_ids.into_iter().collect();
-        let prune_ids: HashSet<u32> = selections::prune_duplicates(&locs, distance, &keep)
+        let prune_ids: HashSet<u32> = selections::prune_duplicates(&locs, distance, &score)
             .into_iter()
             .collect();
         let total = locs.len();
