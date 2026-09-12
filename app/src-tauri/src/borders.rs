@@ -1,8 +1,8 @@
 //! Country border lookup -- loads GeoJSON border datasets and performs
 //! point-in-polygon tests to identify which country a coordinate falls in.
 //!
-//! Three dataset levels: "light" (bundled, sub-country splits), "medium" (~10MB,
-//! country-level), "heavy" (~46MB, country-level). The bundled "light" set is parsed
+//! Three dataset levels: "light" (bundled, sub-country splits), "medium" (~7MB,
+//! country-level High), "heavy" (~21MB, country-level Ultra). The bundled "light" set is parsed
 //! from GeoJSON on first use; the larger downloaded sets ship as rkyv archives
 //! (`borders-{level}.rkyv` in `app_data_dir/borders/`) that are memory-mapped and read
 //! zero-copy -- no JSON parse, no per-coordinate allocation. Generate the archives with
