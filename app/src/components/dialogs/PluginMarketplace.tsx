@@ -3,6 +3,7 @@ import { Dialog, DialogContent, type DialogProps } from "@/components/primitives
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
+import { SegmentedControl } from "@/components/primitives/Sidebar";
 import {
 	getPlugin,
 	getPlugins,
@@ -16,13 +17,13 @@ import {
 	needsUpdate,
 	isPluginCompatible,
 	isBackgroundPlugin,
+	PLUGIN_REGISTRY_URL,
 } from "@/plugins/registry";
 import { events, type PluginManifest } from "@/bindings.gen";
 import { loadAndActivatePlugin, loadUserPlugin } from "@/plugins/index";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-
-const REGISTRY_URL = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins/registry.json";
+import { toast } from "@/lib/util/toast";
 
 declare const __APP_VERSION__: string;
 
@@ -291,7 +292,7 @@ export function PluginMarketplace({ open, onOpenChange }: DialogProps) {
 
 	const fetchRegistry = useCallback(() => {
 		setFetchError(null);
-		fetch(REGISTRY_URL)
+		fetch(PLUGIN_REGISTRY_URL)
 			.then((r) => {
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
 				return r.json();
@@ -419,22 +420,22 @@ export function PluginMarketplace({ open, onOpenChange }: DialogProps) {
 		async (id: string) => {
 			const wasEnabled = isPluginEnabled(id);
 			try {
-				// Tear down the running plugin, re-download (install overwrites the files),
-				// then re-register the fresh code — preserving enabled/disabled state.
-				if (wasEnabled) deactivatePlugin(id);
-				unregisterPlugin(id);
+				// Download first so a failed fetch leaves the running plugin registered.
 				const manifest = await cmd.installPlugin(id);
 				try {
 					await installSidecar(manifest, (pct) => setProgress(id, pct));
 				} finally {
 					setProgress(id, null);
 				}
+				if (wasEnabled) deactivatePlugin(id);
+				unregisterPlugin(id);
 				await loadUserPlugin(manifest);
 				if (wasEnabled) activatePlugin(id);
 				await refreshInstalled();
 				rerender((n) => n + 1);
 			} catch (e) {
 				log.error(`[marketplace] update failed for "${id}":`, e);
+				toast(t("Plugin update failed"));
 			}
 		},
 		[refreshInstalled, setProgress],
@@ -451,20 +452,15 @@ export function PluginMarketplace({ open, onOpenChange }: DialogProps) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent title={t("Plugins")} className="plugin-marketplace">
-				<div className="plugin-marketplace__tabs">
-					<button
-						className={`plugin-marketplace__tab ${tab === "core" ? "plugin-marketplace__tab--active" : ""}`}
-						onClick={() => setTab("core")}
-					>
-						{t("Core")}
-					</button>
-					<button
-						className={`plugin-marketplace__tab ${tab === "additional" ? "plugin-marketplace__tab--active" : ""}`}
-						onClick={() => setTab("additional")}
-					>
-						{t("Additional")}
-					</button>
-				</div>
+				<SegmentedControl
+					className="segmented--fill plugin-marketplace__tabs"
+					options={[
+						{ value: "core", label: t("Core") },
+						{ value: "additional", label: t("Additional") },
+					]}
+					value={tab}
+					onChange={setTab}
+				/>
 
 				{tab === "core" && (
 					<div className="plugin-marketplace__grid">

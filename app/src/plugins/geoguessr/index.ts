@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { mdiMapMarker } from "@mdi/js";
 import { GeoGuessrSidebar } from "./GeoGuessrSidebar";
 import { controller } from "./provider";

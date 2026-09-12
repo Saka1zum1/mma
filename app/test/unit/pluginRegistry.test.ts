@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("@/lib/util/log", () => ({
+	log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 import type { Plugin } from "@/plugins/registry";
 import {
 	registerPlugin,
@@ -27,7 +32,7 @@ import {
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 
 function makePlugin(id: string, name: string, activate = vi.fn()): Plugin {
-	return { id, name, icon: "test", activate };
+	return { id, name, description: "", icon: "test", activate };
 }
 
 beforeEach(() => {
@@ -219,6 +224,34 @@ describe("deactivatePlugins", () => {
 		expect(cleanupB).toHaveBeenCalledOnce();
 		deactivatePlugin("a");
 		expect(cleanupA).toHaveBeenCalledOnce();
+	});
+
+	it("a cleanup that throws does not stop the plugins after it", () => {
+		const cleanupB = vi.fn();
+		registerPlugin(
+			makePlugin("a", "A", () => () => {
+				throw new Error("boom");
+			}),
+		);
+		registerPlugin(makePlugin("b", "B", () => cleanupB));
+		activatePlugin("a");
+		activatePlugin("b");
+		expect(() => deactivatePlugins()).not.toThrow();
+		expect(cleanupB).toHaveBeenCalledOnce();
+	});
+
+	it("reverses the registrations a plugin made during activate, cleanup or not", () => {
+		const sfx = Math.random().toString(36).slice(2);
+		const fieldKey = "wx_" + sfx;
+		registerPlugin(
+			makePlugin("listener", "L", () => {
+				registerEnrichFields([{ key: fieldKey, label: "WX", defaultOff: true }]);
+			}),
+		);
+		activatePlugin("listener");
+		expect(getEnrichFieldOptions().some((o) => o.key === fieldKey)).toBe(true);
+		deactivatePlugins();
+		expect(getEnrichFieldOptions().some((o) => o.key === fieldKey)).toBe(false);
 	});
 });
 

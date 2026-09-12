@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { GameSidebar } from "./GameSidebar";
 import { mdiGamepadVariantOutline } from "@mdi/js";
 

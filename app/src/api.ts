@@ -2,382 +2,165 @@
 /// <reference path="./types/google-maps.d.ts" />
 
 /**
- * Unified MMA API — the single public surface for plugins, tests, and app code.
+ * Unified MMA API -- the single public surface for plugins, tests, and app code.
  * Exposed as `window.MMA` (and the global `MMA`).
+ * The module is the API unit: this file only spreads modules.
  */
 
+export type * from "@/bindings.gen";
+
 import * as store from "@/store/useMapStore";
+import * as savedSelections from "@/store/savedSelections";
+import * as settings from "@/store/settings";
 import * as importStaging from "@/store/importStaging";
 import * as commitDiff from "@/store/commitDiff";
 import * as picker from "@/store/selectorPick";
 import * as mapList from "@/store/mapList";
 import * as review from "@/lib/review/review";
-import { events } from "@/bindings.gen";
-import { cmd as commands, type Cmd } from "@/lib/commands";
-import { createLocation } from "@/types";
-import { registerPlugin, createPluginStorage, usePluginState } from "@/plugins/registry";
-import { useJob } from "@/lib/hooks/useJob";
-import { trackDisposable } from "@/plugins/scope";
-import * as ui from "@/components/primitives";
-import { toast } from "@/lib/util/toast";
-import { preloadModules, getAvailableExternals } from "@/plugins/externals";
-import { registerEnrichFields, registerEnrichmentProvider } from "@/lib/data/fieldDefs";
-import { getFieldDef, getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
-import { invoke } from "@tauri-apps/api/core";
-import { Command } from "@tauri-apps/plugin-shell";
-import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
-import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
-import { setSetting, getSettings } from "@/store/settings";
-import { t, tp, getLocale, LOCALES } from "@/lib/i18n";
-import {
-	getSavedSelectionIndex,
-	loadSavedSelections,
-	savedParts,
-	savedSelector,
-} from "@/store/savedSelections";
-import { getSeenEntries, getSeenCount, clearSeen } from "@/lib/seen/seen";
-import { loadSeenPano } from "@/lib/sv/panoSingleton";
-import { enrichAll, needsEnrichment } from "@/lib/sv/enrich";
-import { bulkPinToPano } from "@/lib/sv/pinPano";
-import { validateLocations } from "@/lib/sv/validate";
-import { fetchSvMetadata } from "@/lib/sv/svMeta";
-import { mmaBufUrl } from "@/lib/util/util";
-import { getScene } from "@/lib/render/sceneStore";
-import { getMapHost, waitForMapHost } from "@/lib/map/mapState";
+import * as commands from "@/lib/commands";
+import * as tauri from "@/lib/tauri";
+import * as registry from "@/plugins/registry";
+import * as scope from "@/plugins/scope";
+import * as externals from "@/plugins/externals";
+import * as sidecar from "@/plugins/sidecar";
+import * as uiSurface from "@/components/primitives/ui";
+import * as fieldDefs from "@/lib/data/fieldDefs";
+import * as fieldDefRegistry from "@/lib/data/fieldDefRegistry";
+import * as procedures from "@/lib/data/procedures";
+import * as seen from "@/lib/seen/seen";
+import * as panoSingleton from "@/lib/sv/panoSingleton";
+import * as enrich from "@/lib/sv/enrich";
+import * as pinPano from "@/lib/sv/pinPano";
+import * as validate from "@/lib/sv/validate";
+import * as query from "@/lib/sv/query";
+import * as mapState from "@/lib/map/mapState";
+import * as sceneStore from "@/lib/render/sceneStore";
+import * as colorUtils from "@/lib/util/color";
+import * as toast from "@/lib/util/toast";
+import * as useJob from "@/lib/hooks/useJob";
 import * as legacy from "@/legacy";
-import * as testApi from "@/testApi";
-
-// --- Sidecar requests ---
-// One set of listeners for every request, demultiplexed by request id. Events can
-// land before `sidecarRequest` learns its id (a resident-served request finishes in
-// a millisecond), so unclaimed events are buffered until their caller arrives.
-
-type SidecarEvent =
-	| { kind: "line"; line: string }
-	| { kind: "log"; line: string }
-	| { kind: "done"; error: string | null };
-
-const sidecarHandlers = new Map<number, (ev: SidecarEvent) => void>();
-const sidecarPending = new Map<number, SidecarEvent[]>();
-let sidecarListeners: Promise<void> | null = null;
-
-function routeSidecarEvent(reqId: number, ev: SidecarEvent) {
-	const handler = sidecarHandlers.get(reqId);
-	if (handler) {
-		handler(ev);
-		return;
-	}
-	const buffered = sidecarPending.get(reqId);
-	if (buffered) buffered.push(ev);
-	else sidecarPending.set(reqId, [ev]);
-}
-
-function listenForSidecarEvents(): Promise<void> {
-	sidecarListeners ??= (async () => {
-		await events.sidecarLine.listen((ev) =>
-			routeSidecarEvent(ev.payload.reqId, { kind: "line", line: ev.payload.line }),
-		);
-		await events.sidecarLog.listen((ev) =>
-			routeSidecarEvent(ev.payload.reqId, { kind: "log", line: ev.payload.line }),
-		);
-		await events.sidecarDone.listen((ev) =>
-			routeSidecarEvent(ev.payload.reqId, { kind: "done", error: ev.payload.error }),
-		);
-	})();
-	return sidecarListeners;
-}
-
-export interface SidecarOptions<T> {
-	/** Fires once per JSON object the sidecar emits, in order. */
-	onLine?(item: T): void;
-	/** Sidecar diagnostics (stderr), one-shot runs only. Resident-served commands
-	 *  write theirs to the app log instead. */
-	onLog?(line: string): void;
-	signal?: AbortSignal;
-}
-
-/** Legacy handle returned by {@link spawnSidecarCompat}. Prefer {@link sidecarRequest}. */
-export interface SidecarRun {
-	runId: number;
-	onLine(cb: (line: string) => void): void;
-	onStderr(cb: (line: string) => void): void;
-	onExit(cb: (code: number | null) => void): void;
-	kill(): void;
-}
-
-/** Run one unit of work on a plugin's sidecar and resolve with its last emitted
- *  object (null if it emitted none). The app owns the process: commands the manifest
- *  lists under `serve` are answered by the plugin's resident sidecar, the rest by a
- *  one-shot run. `payload` is handed to the sidecar as JSON. */
-async function sidecarRequest<T>(
-	pluginId: string,
-	command: string,
-	payload?: unknown,
-	opts?: SidecarOptions<T>,
-): Promise<T | null> {
-	await listenForSidecarEvents();
-	const reqId = await commands.sidecarRequest(
-		pluginId,
-		command,
-		payload === undefined ? null : JSON.stringify(payload),
-	);
-
-	return new Promise<T | null>((resolve, reject) => {
-		let last: T | null = null;
-		// Abort kills the run but leaves the handler installed, so the `done` that
-		// follows still cleans up. Resident-served work has no process to kill.
-		const onAbort = () => {
-			commands.sidecarCancel(reqId).catch(() => {});
-			reject(new DOMException(`Sidecar ${command} aborted`, "AbortError"));
-		};
-		sidecarHandlers.set(reqId, (ev) => {
-			if (ev.kind === "line") {
-				let item: T;
-				try {
-					item = JSON.parse(ev.line) as T;
-				} catch {
-					return;
-				}
-				last = item;
-				opts?.onLine?.(item);
-			} else if (ev.kind === "log") {
-				opts?.onLog?.(ev.line);
-			} else {
-				sidecarHandlers.delete(reqId);
-				opts?.signal?.removeEventListener("abort", onAbort);
-				if (ev.error) reject(new Error(ev.error));
-				else resolve(last);
-			}
-		});
-
-		const buffered = sidecarPending.get(reqId);
-		if (buffered) {
-			sidecarPending.delete(reqId);
-			for (const ev of buffered) sidecarHandlers.get(reqId)?.(ev);
-		}
-
-		if (opts?.signal?.aborted) onAbort();
-		else opts?.signal?.addEventListener("abort", onAbort);
-	});
-}
-
-/**
- * Compatibility shim for plugins still calling `MMA.sidecar.spawn` (pre app-owned
- * sidecar API). Translates CLI-style args (`detect --input path.json`) into
- * {@link sidecarRequest}. New plugins should use `request` directly.
- */
-async function spawnSidecarCompat(
-	pluginId: string,
-	_binaryName: string,
-	args: string[],
-): Promise<SidecarRun> {
-	const command = args[0];
-	if (!command) throw new Error("MMA.sidecar.spawn: missing command");
-	if (command === "serve") {
-		throw new Error(
-			"MMA.sidecar.spawn('serve') is no longer supported — update the plugin; the app manages resident sidecars",
-		);
-	}
-
-	let inputPath: string | undefined;
-	for (let i = 1; i < args.length; i++) {
-		if (args[i] === "--input" && args[i + 1]) {
-			inputPath = args[i + 1];
-			break;
-		}
-	}
-
-	let payload: unknown;
-	if (inputPath) {
-		payload = JSON.parse(await commands.readFile(inputPath));
-	}
-
-	const lineCbs: ((line: string) => void)[] = [];
-	const errCbs: ((line: string) => void)[] = [];
-	const exitCbs: ((code: number | null) => void)[] = [];
-	const ac = new AbortController();
-	let exited = false;
-	const finish = (code: number | null) => {
-		if (exited) return;
-		exited = true;
-		for (const cb of exitCbs) cb(code);
-	};
-
-	const run: SidecarRun = {
-		runId: -1,
-		onLine: (cb) => lineCbs.push(cb),
-		onStderr: (cb) => errCbs.push(cb),
-		onExit: (cb) => exitCbs.push(cb),
-		kill: () => ac.abort(),
-	};
-
-	// Defer so callers can register onLine/onExit synchronously after `await spawn()`.
-	queueMicrotask(() => {
-		void sidecarRequest(pluginId, command, payload, {
-			signal: ac.signal,
-			onLine: (item) => {
-				const line = typeof item === "string" ? item : JSON.stringify(item);
-				for (const cb of lineCbs) cb(line);
-			},
-			onLog: (line) => {
-				for (const cb of errCbs) cb(line);
-			},
-		}).then(
-			() => finish(0),
-			(err: unknown) => {
-				if (err instanceof DOMException && err.name === "AbortError") finish(null);
-				else finish(1);
-			},
-		);
-	});
-
-	return run;
-}
-
-/** Explicitly exposed functions not in other APIs. */
-const surface = {
-	ready: false,
-
-	// --- Rust IPC commands ---
-	cmd: commands as Cmd,
-
-	// --- Tauri primitives (for plugins) ---
-	invoke,
-	shell: { Command },
-	dialog: { open: dialogOpen, save: dialogSave },
-
-	// --- Sidecar binaries (distributed via GitHub Releases on install) ---
-	sidecar: {
-		installedVersion: (pluginId: string) => commands.sidecarInstalledVersion(pluginId),
-		request: sidecarRequest,
-		/** @deprecated Use `request`. Kept for installed plugins built against the old spawn API. */
-		spawn: spawnSidecarCompat,
-	},
-
-	// --- Bootstrap (for plugins) ---
-	registerPlugin,
-	registerEnrichFields,
-	registerEnrichmentProvider,
-	preloadModules,
-	getAvailableExternals,
-
-	// --- UI primitives (for plugins) ---
-	ui,
-
-	// --- Notifications ---
-	toast,
-
-	// --- Namespaced per-plugin storage ---
-	storage: createPluginStorage,
-	usePluginState,
-	useJob,
-
-	// --- Field definitions ---
-	getFieldDef,
-	getAllFieldDefs,
-
-	// --- Types ---
-	createLocation,
-
-	// --- Map host ---
-	getMapHost,
-	waitForMapHost,
-
-	/** Packed scene positions the heatmap (and similar overlays) can sample without a
-	 *  store round trip. Refresh on `scene:changed`. */
-	getScenePositions(): { ids: Uint32Array; positions: Float32Array } {
-		const scene = getScene();
-		const ids = new Uint32Array(scene.totalCount);
-		const positions = new Float32Array(scene.totalCount * 2);
-		let n = 0;
-		scene.forEachPosition((id, lng, lat) => {
-			ids[n] = id;
-			positions[n * 2] = lng;
-			positions[n * 2 + 1] = lat;
-			n++;
-		});
-		return { ids: ids.subarray(0, n), positions: positions.subarray(0, n * 2) };
-	},
-
-	// --- Settings ---
-	setSetting,
-	getSettings: () => ({ ...getSettings() }),
-
-	// --- i18n ---
-	t,
-	tp,
-	getLocale,
-	LOCALES,
-
-	// --- Saved selections ---
-	getSavedSelectionIndex,
-	loadSavedSelections,
-	savedParts,
-	savedSelector,
-
-	// --- Events (for plugins) ---
-	on<E extends EditorEvent>(event: E, handler: EventHandler<E>) {
-		const unsub = subscribe(event, handler);
-		trackDisposable(unsub); // auto-removed on plugin deactivation
-		return unsub;
-	},
-
-	// --- Seen ---
-	getSeenEntries,
-	getSeenCount,
-	clearSeen,
-	loadSeenPano,
-
-	// --- Enrichment ---
-	// Rows are accepted only here, normalized by the legacy adapter; internals take a Selector.
-	enrichAll: async (target: legacy.SelectorOrLocations, opts?: Parameters<typeof enrichAll>[1]) =>
-		enrichAll(legacy.asSelector(target), opts),
-	bulkPinToPano: async (
-		target: legacy.SelectorOrLocations,
-		opts?: Parameters<typeof bulkPinToPano>[1],
-	) => bulkPinToPano(await store.fetchLocations(legacy.asSelector(target)), opts),
-	validateLocations,
-	needsEnrichment,
-
-	// --- SV metadata ---
-	fetchSvMetadata,
-
-	// --- Util ---
-	mmaBufUrl,
-
-	// --- Test-only convenience ---
-	_test: testApi,
-};
+import * as testSurface from "@/testSurface";
+import * as types from "@/types";
+import * as util from "@/lib/util/util";
+import * as host from "@/plugins/host";
 
 type StoreApi = typeof store;
+type SavedSelectionsApi = typeof savedSelections;
+/** App settings and their option tables; the shape moves with every setting added. @unstable */
+type SettingsApi = Omit<typeof settings, "getSettings">;
+/** Import dialog internals. @unstable */
 type ImportStagingApi = typeof importStaging;
+/** Commit diff internals. @unstable */
 type CommitDiffApi = typeof commitDiff;
 type SelectorPickApi = typeof picker;
 type MapListApi = typeof mapList;
+/** Review screen internals. @unstable */
 type ReviewApi = typeof review;
-type SurfaceApi = typeof surface;
+/** The raw command layer under the app-level API; any of them can change in a release. @unstable */
+type CommandsApi = typeof commands;
+type TauriApi = typeof tauri;
+type RegistryApi = typeof registry;
+type ScopeApi = typeof scope;
+type ExternalsApi = typeof externals;
+type SidecarApi = typeof sidecar;
+type UiApi = typeof uiSurface;
+type FieldDefsApi = typeof fieldDefs;
+type FieldDefRegistryApi = typeof fieldDefRegistry;
+type ProceduresApi = typeof procedures;
+type SeenApi = typeof seen;
+/** The shared panorama viewer's internals. @unstable */
+type PanoSingletonApi = typeof panoSingleton;
+type EnrichApi = Omit<typeof enrich, "enrichAll">;
+type PinPanoApi = Omit<typeof pinPano, "bulkPinToPano">;
+type ValidateApi = typeof validate;
+type QueryApi = typeof query;
+type MapStateApi = typeof mapState;
+type SceneStoreApi = typeof sceneStore;
+type ColorApi = typeof colorUtils;
+type ToastApi = typeof toast;
+type UseJobApi = typeof useJob;
+/** Shims for removed APIs. @unstable */
 type LegacyApi = typeof legacy;
+/** @unstable */
+type TestApi = typeof testSurface;
+type TypesApi = typeof types;
+type UtilApi = typeof util;
+type HostApi = typeof host;
 
 export interface MMA
 	extends
 		StoreApi,
+		SavedSelectionsApi,
+		SettingsApi,
 		ImportStagingApi,
 		CommitDiffApi,
 		SelectorPickApi,
 		MapListApi,
 		ReviewApi,
-		SurfaceApi,
-		LegacyApi {}
+		CommandsApi,
+		TauriApi,
+		RegistryApi,
+		ScopeApi,
+		ExternalsApi,
+		SidecarApi,
+		UiApi,
+		FieldDefsApi,
+		FieldDefRegistryApi,
+		ProceduresApi,
+		SeenApi,
+		PanoSingletonApi,
+		EnrichApi,
+		PinPanoApi,
+		ValidateApi,
+		QueryApi,
+		MapStateApi,
+		SceneStoreApi,
+		ColorApi,
+		ToastApi,
+		UseJobApi,
+		TestApi,
+		TypesApi,
+		UtilApi,
+		LegacyApi,
+		HostApi {}
+
+export type { MMA as MMAApi };
 
 const mma: MMA = {
 	...store,
+	...savedSelections,
+	...settings,
 	...importStaging,
 	...commitDiff,
 	...picker,
 	...mapList,
 	...review,
-	...surface,
+	...commands,
+	...tauri,
+	...registry,
+	...scope,
+	...externals,
+	...sidecar,
+	...uiSurface,
+	...fieldDefs,
+	...fieldDefRegistry,
+	...procedures,
+	...seen,
+	...panoSingleton,
+	...enrich,
+	...pinPano,
+	...validate,
+	...query,
+	...mapState,
+	...sceneStore,
+	...colorUtils,
+	...toast,
+	...useJob,
+	...testSurface,
+	...types,
+	...util,
 	...legacy,
+	...host,
 };
 
 declare global {

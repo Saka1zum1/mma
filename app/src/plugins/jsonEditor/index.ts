@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { JsonEditorPanel } from "./JsonEditorPanel";
 import { mdiCodeBraces } from "@mdi/js";
 import { msg } from "@/lib/i18n";

@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { mapMakingApp } from "@/components/primitives/Icon";
 import { SyncSidebar } from "./SyncSidebar";
 import { controller } from "./controller";

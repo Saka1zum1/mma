@@ -11,6 +11,7 @@
  * or in a later callback (outside the activate window) are not attributed.
  */
 import { log } from "@/lib/util/log";
+import { subscribe, type EditorEvent, type EventHandler } from "@/lib/events";
 
 type Disposable = () => void;
 
@@ -27,6 +28,13 @@ export function runAsPlugin<T>(id: string, fn: () => T): T {
 	} finally {
 		currentOwner = prev;
 	}
+}
+
+/** Subscribe to an editor event and enroll the unsubscribe under the activating plugin. */
+export function on<E extends EditorEvent>(event: E, handler: EventHandler<E>) {
+	const unsub = subscribe(event, handler);
+	trackDisposable(unsub);
+	return unsub;
 }
 
 /** Enroll a teardown callback under the currently-activating plugin. No-op outside activation. */

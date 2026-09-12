@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { ValiSidebar } from "./ui/ValiSidebar";
 import { mdiEarth } from "@mdi/js";
 import { msg } from "@/lib/i18n";

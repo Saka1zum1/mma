@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { DistributionSidebar } from "./DistributionSidebar";
 import { mdiChartBar } from "@mdi/js";
 import { msg } from "@/lib/i18n";

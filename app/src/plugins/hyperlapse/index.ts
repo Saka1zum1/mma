@@ -1,4 +1,4 @@
-const { registerPlugin } = window.MMA;
+import { registerPlugin } from "@/plugins/registry";
 import { HyperlapseSidebar } from "./HyperlapseSidebar";
 import { mountRouteOverlay } from "./routeOverlay";
 import { mdiVideoMarker } from "@mdi/js";

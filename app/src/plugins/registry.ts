@@ -3,8 +3,20 @@ import { emit as emitEvent } from "@/lib/events";
 import { runAsPlugin, disposePlugin } from "@/plugins/scope";
 import { cmpVersion } from "@/lib/util/util";
 import { cmd } from "@/lib/commands";
+import { log } from "@/lib/util/log";
 import type { PluginManifest } from "@/bindings.gen";
 import { getLocal, setLocal } from "@/lib/hooks/useLocalStorage";
+import { toast } from "@/lib/util/toast";
+import { t } from "@/lib/i18n";
+
+/** Saka1zum1 marketplace catalog. Do not point this at the upstream ccmid registry. */
+export const PLUGIN_REGISTRY_URL =
+	"https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins/registry.json";
+
+export type PluginIdentity = Pick<
+	PluginManifest,
+	"id" | "name" | "description" | "icon" | "comingSoon" | "experimental"
+>;
 
 export interface PluginSettingDef {
 	key: string;
@@ -13,14 +25,8 @@ export interface PluginSettingDef {
 	default: unknown;
 }
 
-export interface Plugin {
-	id: string;
-	name: string;
-	description?: string;
-	icon: string;
-	comingSoon?: boolean;
+export interface Plugin extends PluginIdentity {
 	core?: boolean;
-	experimental?: boolean;
 	settings?: PluginSettingDef[];
 	/** Keep the sidebar mounted (hidden) when the user leaves plugin mode.
 	 *  Only for plugins whose state can't be serialized (e.g. an iframe). */
@@ -68,6 +74,77 @@ export function needsUpdate(
 	return !!latestSidecarVersion && installedSidecarVersion !== latestSidecarVersion;
 }
 
+export type ResolvedBuild = {
+	version: string;
+	ref: string | null;
+	minAppVersion: string | null;
+};
+
+/** The newest build of a plugin this app version can run. The Saka1zum1 catalog
+ *  publishes one current build per id (no pinned older refs), so an incompatible
+ *  latest simply means keep what is installed. @unstable */
+export function resolveBuild(entry: PluginManifest, appVersion: string): ResolvedBuild | null {
+	if (isPluginCompatible(entry.minAppVersion, appVersion)) {
+		return { version: entry.version, ref: null, minAppVersion: entry.minAppVersion ?? null };
+	}
+	return null;
+}
+
+/** True when the installed plugin should be refreshed to `target`. @unstable */
+export function needsBuildUpdate(
+	installedVersion: string | undefined,
+	target: ResolvedBuild,
+	installedSidecarVersion: string | null | undefined,
+	latestSidecarVersion: string | undefined,
+): boolean {
+	if (target.ref) return isPluginUpdatable(installedVersion, target.version);
+	return needsUpdate(installedVersion, target.version, installedSidecarVersion, latestSidecarVersion);
+}
+
+let registryPromise: Promise<PluginManifest[]> | null = null;
+
+export function fetchPluginRegistry(): Promise<PluginManifest[]> {
+	if (!registryPromise) {
+		registryPromise = fetch(PLUGIN_REGISTRY_URL, { signal: AbortSignal.timeout(5000) }).then(
+			(r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			},
+		);
+		registryPromise.catch(() => {
+			registryPromise = null;
+		});
+	}
+	return registryPromise;
+}
+
+/** Auto-update a plugin to the newest compatible catalog build before loading it.
+ *  Falls back to what is on disk on failure. @unstable */
+export async function autoUpdatePlugin(
+	m: PluginManifest,
+	latest: PluginManifest | undefined,
+	appVersion: string,
+): Promise<PluginManifest> {
+	if (!latest) return m;
+	const target = resolveBuild(latest, appVersion);
+	if (!target) return m;
+	const sidecarVersion = latest.sidecar
+		? await cmd.sidecarInstalledVersion(m.id).catch(() => null)
+		: null;
+	if (!needsBuildUpdate(m.version, target, sidecarVersion, latest.sidecar?.version)) return m;
+	try {
+		const fresh = await cmd.installPlugin(m.id);
+		if (fresh.sidecar) {
+			await cmd.sidecarInstall(fresh.id, fresh.sidecar.name, fresh.sidecar.version);
+		}
+		toast(t("{name} updated to v{version}", { name: fresh.name, version: fresh.version }));
+		return fresh;
+	} catch (e) {
+		log.warn(`[plugin] auto-update failed for "${m.id}":`, e);
+		return m;
+	}
+}
+
 // --- Registry ---
 
 const plugins = new Map<string, Plugin>();
@@ -91,7 +168,7 @@ export function registerPlugin(plugin: Plugin | PluginBehavior) {
 		const merged: Plugin = {
 			id: pendingManifest.id,
 			name: pendingManifest.name,
-			description: pendingManifest.description || undefined,
+			description: pendingManifest.description,
 			icon: pendingManifest.icon,
 			experimental: pendingManifest.experimental,
 			...plugin,
@@ -184,6 +261,9 @@ export function createPluginStorage(id: string): PluginStorage {
 	};
 }
 
+/** Alias used by plugins as `MMA.storage`. */
+export const storage = createPluginStorage;
+
 /** useState persisted through the plugin's namespaced store. UI state saved this
  *  way survives sidebar unmount and app restart. Values are global, not per-map —
  *  callers must fall back gracefully when a stored value doesn't resolve against
@@ -233,10 +313,7 @@ export function activatePlugins() {
 }
 
 export function deactivatePlugins() {
-	for (const [_id, cleanup] of cleanups) {
-		cleanup();
-	}
-	cleanups.clear();
+	for (const id of new Set([...plugins.keys(), ...cleanups.keys()])) teardown(id);
 	// Nothing is active any more, so nothing should still be running. Covers plugins
 	// that registered no cleanup of their own.
 	cmd.sidecarStopAll().catch(() => {});
@@ -250,14 +327,21 @@ export function activatePlugin(id: string) {
 }
 
 export function deactivatePlugin(id: string) {
-	const cleanup = cleanups.get(id);
-	if (cleanup) {
-		cleanup();
-		cleanups.delete(id);
-	}
+	teardown(id);
 	// A disabled plugin keeps no processes, whether or not it cleaned up after itself.
 	cmd.sidecarStop(id).catch(() => {});
-	// Reverse every host registration the plugin made during activation, even when it
-	// returned no cleanup — so a disabled plugin's providers/fields/listeners stop.
+}
+
+/** Run the plugin's own cleanup, then reverse every host registration it made during
+ *  activation, so its providers, fields and listeners stop even when it returned no
+ *  cleanup. One plugin's failing cleanup is its own problem, not the next plugin's. */
+function teardown(id: string) {
+	const cleanup = cleanups.get(id);
+	cleanups.delete(id);
+	try {
+		cleanup?.();
+	} catch (e) {
+		log.error(`[plugin] cleanup failed for "${id}":`, e);
+	}
 	disposePlugin(id);
 }
