@@ -1,8 +1,7 @@
 import { useState, useCallback, useMemo, createContext, useContext } from "react";
-import { useDialog, useDialogState } from "@/store/dialogBus";
+import { useDialog, useDialogState, openDialog } from "@/store/dialogBus";
 import { Command } from "cmdk";
-import * as RadixDialog from "@radix-ui/react-dialog";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
+import { Dialog as BaseDialog } from "@base-ui-components/react/dialog";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiUndo, mdiPin, mdiPinOutline } from "@mdi/js";
 import { BulkOperationModal, type BulkOperation } from "@/components/dialogs/BulkOperationModal";
@@ -10,7 +9,9 @@ import { getCommands, togglePinnedCommand, type CommandGroup } from "@/store/com
 import { useSetting } from "@/store/settings";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { getBinding, useBinding } from "@/lib/util/hotkeys";
-import { getMapState, closeMap } from "@/store/useMapStore";
+import { getMapState, closeMap, setPluginMode } from "@/store/useMapStore";
+import { getEnabledPlugins } from "@/plugins/registry";
+import { score } from "@/lib/search";
 import { useMapList } from "@/store/mapList";
 import { goToMap } from "@/store/router";
 import { t, msg } from "@/lib/i18n";
@@ -117,6 +118,7 @@ function MainCommands() {
 
 	return (
 		<>
+			<Command.Empty>{t("No results.")}</Command.Empty>
 			{COMMAND_GROUPS.map((group) => {
 				const groupCmds = commands.filter((c) => c.group === group);
 				if (groupCmds.length === 0) return null;
@@ -145,7 +147,30 @@ function MainCommands() {
 					</Command.Group>
 				);
 			})}
+			<PluginCommands />
 		</>
+	);
+}
+
+/** Every openable plugin (the plugin-toolbar set), reachable from the palette too:
+ *  selecting one does exactly what its toolbar button does. */
+function PluginCommands() {
+	const plugins = getEnabledPlugins()
+		.filter((p) => p.sidebar || p.modal)
+		.sort((a, b) => a.name.localeCompare(b.name));
+	if (plugins.length === 0) return null;
+
+	return (
+		<Command.Group heading={t("Plugins")}>
+			{plugins.map((p) => (
+				<PaletteItem
+					key={p.id}
+					label={p.name}
+					icon={<Icon path={p.icon} size={18} />}
+					onSelect={() => (p.sidebar ? setPluginMode(p.id) : openDialog("plugin-modal", p.id))}
+				/>
+			))}
+		</Command.Group>
 	);
 }
 
@@ -196,6 +221,7 @@ function PaletteContent({ onChangeOpen }: { onChangeOpen: (v: boolean) => void }
 	return (
 		<Ctx.Provider value={ctx}>
 			<Command
+				filter={(value, query, keywords) => score(query, [value, ...(keywords ?? [])])}
 				onKeyDown={(e) => {
 					if (e.key === "Escape" && page !== null) {
 						e.preventDefault();
@@ -231,17 +257,14 @@ export function CommandPalette() {
 
 	return (
 		<>
-			<RadixDialog.Root open={open} onOpenChange={setOpen}>
-				<RadixDialog.Portal>
-					<RadixDialog.Overlay className="modal__backdrop" />
-					<RadixDialog.Content className="modal command-palette" aria-describedby={undefined}>
-						<VisuallyHidden.Root>
-							<RadixDialog.Title>{t("Command Palette")}</RadixDialog.Title>
-						</VisuallyHidden.Root>
+			<BaseDialog.Root open={open} onOpenChange={setOpen}>
+				<BaseDialog.Portal>
+					<BaseDialog.Backdrop className="modal__backdrop" />
+					<BaseDialog.Popup className="modal command-palette" aria-label={t("Command Palette")}>
 						<PaletteContent onChangeOpen={setOpen} />
-					</RadixDialog.Content>
-				</RadixDialog.Portal>
-			</RadixDialog.Root>
+					</BaseDialog.Popup>
+				</BaseDialog.Portal>
+			</BaseDialog.Root>
 			{bulkOp && <BulkOperationModal operation={bulkOp} onClose={() => setBulkOp(null)} />}
 		</>
 	);
