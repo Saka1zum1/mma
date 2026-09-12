@@ -46,13 +46,13 @@ import { Menu } from "@base-ui-components/react/menu";
 import { fmt } from "@/lib/util/format";
 import { rgbCss } from "@/lib/util/color";
 import { getMapHost } from "@/lib/map/mapState";
-import { boundsOfCoords, type MapHost } from "@/lib/map/host";
+import type { MapHost } from "@/lib/map/host";
+import { polygonBbox } from "@/lib/geo/geo";
 import { t } from "@/lib/i18n";
 
 async function fitSelectionBounds(host: MapHost, selection: Selection) {
 	if (selection.selector.type === "Polygon") {
-		const coords = selection.selector.polygon.coordinates.flat();
-		const bounds = boundsOfCoords(coords.map(([lng, lat]) => ({ lat, lng })));
+		const bounds = polygonBbox(selection.selector.polygon);
 		if (bounds) host.fitBounds(bounds, 100);
 		return;
 	}
@@ -347,7 +347,7 @@ export const SelectionRow = memo(function SelectionRow({
 							</button>
 						</>
 					)}
-					<Menu.Root onOpenChange={(open) => !open && setView("contextmenu")}>
+					<Menu.Root modal={false} onOpenChange={(open) => !open && setView("contextmenu")}>
 						<Menu.Trigger
 							render={
 								<button className="icon-button" type="button" aria-label={t("Selection options")}>

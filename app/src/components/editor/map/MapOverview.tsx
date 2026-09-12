@@ -12,6 +12,7 @@ import {
 	selectSpacedFromSelection,
 	currentSelection,
 } from "@/store/useMapStore";
+import { buildSelection } from "@/store/selections";
 import { toast } from "@/lib/util/toast";
 import { sortTagsByMode } from "@/lib/util/util";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
@@ -30,13 +31,14 @@ import { Button } from "@/components/primitives/Button";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { TextInput } from "@/components/primitives/TextInput";
 import { PluginToolbar } from "@/plugins/PluginPanels";
-import { fmt } from "@/lib/util/format";
+import { fmt, formatDistance, distanceUnit } from "@/lib/util/format";
 import { useDialog, useDialogState, openDialog } from "@/store/dialogBus";
 import { SelectionRow } from "./SelectionRow";
 import { PinnedToolbar } from "./PinnedToolbar";
 import { ExpandSvLinksButton } from "./ExpandSvLinksButton";
 import { SaveSelectionsDialog, ApplySavedSelectionDialog } from "./SavedSelectionDialogs";
 import { t } from "@/lib/i18n";
+import { search } from "@/lib/search";
 import { Trans } from "@/components/primitives/Trans";
 
 /** Opt-in "run this pick once per active selection" switch, shown only when there are
@@ -117,14 +119,17 @@ function SpacedPickPanel() {
 	const [value, setValue] = useState("");
 	const [perSelection, setPerSelection] = useState(false);
 	const total = useMapState((s) => s.selectedLocationIds).size;
-	const parsed = Math.floor(Number(value));
+	useSetting("units");
+	const unit = distanceUnit("m");
+	const parsed = Number(value);
 	const valid = value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
+	const stored = mode === "distance" ? unit.fromDisplay(parsed) : Math.floor(parsed);
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!valid) return;
-		const count = perSelection ? parsed : Math.min(parsed, total);
-		const opts = mode === "count" ? { count } : { minDistanceM: parsed };
+		const count = perSelection ? Math.floor(stored) : Math.min(Math.floor(stored), total);
+		const opts = mode === "count" ? { count } : { minDistanceM: stored };
 		selectSpacedFromSelection(opts, perSelection)
 			.then(({ picked, distanceM }) => {
 				if (picked === 0) return;
@@ -139,7 +144,7 @@ function SpacedPickPanel() {
 					: t({ one: "Selected {n} location", other: "Selected {n} locations" }, { n: picked });
 				const spacing =
 					distanceM > 0
-						? t(", at least {distance}m apart", { distance: fmt.format(distanceM) })
+						? t(", at least {distance} apart", { distance: formatDistance(distanceM) })
 						: "";
 				toast(base + spacing);
 			})
@@ -150,13 +155,13 @@ function SpacedPickPanel() {
 		<form className="selection-manager__inline-form" onSubmit={handleSubmit}>
 			<NSelect value={mode} onChange={(e) => setMode(e.target.value as "count" | "distance")}>
 				<option value="count">{t("Count")}</option>
-				<option value="distance">{t("Min distance (m)")}</option>
+				<option value="distance">{t("Min distance ({unit})", { unit: unit.label })}</option>
 			</NSelect>
 			<TextInput
 				type="number"
 				min={1}
 				style={{ width: "7rem" }}
-				placeholder={mode === "count" ? t("Count") : t("Meters")}
+				placeholder={mode === "count" ? t("Count") : unit.label}
 				value={value}
 				onChange={(e) => setValue(e.target.value)}
 			/>
@@ -171,7 +176,7 @@ function SpacedPickPanel() {
 	);
 }
 
-function TopKPanel({
+function RankedPanel({
 	field: fieldProp,
 	setField,
 	count,
@@ -194,7 +199,15 @@ function TopKPanel({
 			onSubmit={(e) => {
 				e.preventDefault();
 				if (!field || count < 1) return;
-				addSelections([{ type: "TopK", field, k: count, ascending }]);
+				addSelections([
+					{
+						type: "Ranked",
+						selection: buildSelection({ type: "Filter", field, op: "has", value: true }),
+						expr: field,
+						k: count,
+						ascending,
+					},
+				]);
 			}}
 		>
 			<NSelect value={field} onChange={(e) => setField(e.target.value)}>
@@ -262,11 +275,11 @@ function BulkTagForm() {
 		setBulkTagInput("");
 	};
 
-	const bulkSuggestions = (() => {
-		const all = sortTagsByMode(visibleTags, tagSortMode, tagCounts);
-		const q = bulkTagInput.trim().toLowerCase();
-		return (q ? all.filter((t) => t.name.toLowerCase().includes(q)) : all).slice(0, 15);
-	})();
+	const bulkSuggestions = search(
+		sortTagsByMode(visibleTags, tagSortMode, tagCounts),
+		bulkTagInput,
+		(t) => [t.name],
+	).slice(0, 15);
 
 	const handleBulkPick = (t: Tag) => {
 		const selected = getMapState().selectedLocationIds;
@@ -304,9 +317,9 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	const map = useMapState((s) => s.map);
 	const [selectionsCollapsed, setSelectionsCollapsed] = useState(false);
 	const [dupDistance, setDupDistance] = useState(1);
-	const [topKField, setTopKField] = useState("");
-	const [topKCount, setTopKCount] = useState(10);
-	const [topKAscending, setTopKAscending] = useState(false);
+	const [rankField, setRankField] = useState("");
+	const [rankCount, setRankCount] = useState(10);
+	const [rankAscending, setRankAscending] = useState(false);
 	const [showTagFindReplace, setShowTagFindReplace] = useDialogState("tag-find-replace");
 	const [showMergeDuplicates, setShowMergeDuplicates] = useDialogState("merge-duplicates");
 	const [showReviews, setShowReviews] = useDialogState("review-sessions");
@@ -392,13 +405,13 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 						},
 						"top-k": {
 							render: () => (
-								<TopKPanel
-									field={topKField}
-									setField={setTopKField}
-									count={topKCount}
-									setCount={setTopKCount}
-									ascending={topKAscending}
-									setAscending={setTopKAscending}
+								<RankedPanel
+									field={rankField}
+									setField={setRankField}
+									count={rankCount}
+									setCount={setRankCount}
+									ascending={rankAscending}
+									setAscending={setRankAscending}
 								/>
 							),
 						},

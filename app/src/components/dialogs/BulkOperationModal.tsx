@@ -24,6 +24,7 @@ import { isPinnedToPano } from "@/types";
 import {
 	getFieldDef,
 	fieldLabel,
+	fieldValueLabel,
 	getAllFieldDefs,
 	isWritableField,
 } from "@/lib/data/fieldDefRegistry";
@@ -48,6 +49,8 @@ import {
 import { useAsync } from "@/lib/hooks/useAsync";
 import { saveExportTempFile } from "@/lib/util/util";
 import { fmt } from "@/lib/util/format";
+import { waveRate, type WaveRate } from "@/lib/util/util";
+import type { BatchOutcome, ProviderPart } from "@/lib/data/procedures";
 import { toast } from "@/lib/util/toast";
 import { t, msg } from "@/lib/i18n";
 
@@ -62,7 +65,7 @@ const TITLES = {
 } as const;
 export type BulkOperation = keyof typeof TITLES;
 
-type ProgressFn = (done: number, total: number, label?: string) => void;
+type ProgressFn = (done: number, total: number, label?: string, parts?: ProviderPart[]) => void;
 
 interface BulkRunContext {
 	locations: Location[];
@@ -73,6 +76,8 @@ interface BulkRunContext {
 
 interface BulkRunResult {
 	doneMessage?: string;
+	/** What the run did, so one button can offer back the rows it could not work. */
+	outcome?: BatchOutcome;
 	doneContent?: React.ReactNode;
 	/** Extra buttons rendered in the actions row next to Close when done. */
 	doneActions?: React.ReactNode;
@@ -127,7 +132,12 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 									state,
 								}));
 							if (batch.length > 0) addSelections(batch);
+							const failed = [
+								...(results.get(ValidationState.NotFound) ?? []),
+								...(results.get(ValidationState.PanoIdBroke) ?? []),
+							].map((l) => l.id);
 							return {
+								outcome: { succeeded: locations.length - failed.length, failed },
 								doneMessage: t(
 									{
 										one: "Done -- {n} location validated.",
@@ -269,16 +279,17 @@ function PinPanoSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 					variant="primary"
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
-							const count = await bulkPinToPano(locations, {
+							const outcome = await bulkPinToPano(locations, {
 								signal,
 								force: force || useLatest,
 								useLatest,
 								onProgress,
 							});
 							return {
+								outcome,
 								doneMessage: t(
 									{ one: "Done -- {n} location pinned.", other: "Done -- {n} locations pinned." },
-									{ n: count },
+									{ n: outcome.succeeded },
 								),
 							};
 						})
@@ -445,7 +456,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 						<option value="" />
 						{def!.values!.map((v) => (
 							<option key={v} value={v}>
-								{def!.labels?.[v] ?? v}
+								{fieldValueLabel(def, v)}
 							</option>
 						))}
 					</NSelect>
@@ -482,10 +493,14 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 										{ one: "Set field on {n} location.", other: "Set field on {n} locations." },
 										{ n: updates.length },
 									) +
-									(skipped > 0
-										? " " + t("{n} skipped (missing source fields).", { n: skipped })
+									(skipped.length > 0
+										? " " +
+											t("{n} skipped (missing source fields).", { n: skipped.length })
 										: "");
-								return { doneMessage: message };
+								return {
+									outcome: { succeeded: updates.length, failed: skipped },
+									doneMessage: message,
+								};
 							}
 							const updates = planFieldSet(locations, fieldPatch(ek, rv));
 							if (updates.length > 0) await updateLocations(updates);
@@ -536,11 +551,12 @@ function HeadingRoadSetup({ scopeCtl, onReady }: SetupProps) {
 					variant="primary"
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
-							const count = await bulkPanHeading(locations, direction, { signal, onProgress });
+							const outcome = await bulkPanHeading(locations, direction, { signal, onProgress });
 							return {
+								outcome,
 								doneMessage: t(
 									{ one: "Panned {n} heading.", other: "Panned {n} headings." },
-									{ n: count },
+									{ n: outcome.succeeded },
 								),
 							};
 						})
@@ -644,6 +660,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 								toast(t("Save failed"));
 							}
 							return {
+								outcome: { succeeded: result.succeeded.length, failed: result.failed },
 								doneMessage:
 									t("Done -- {n} downloaded", { n: result.succeeded.length }) +
 									(result.failed.length > 0
@@ -668,7 +685,7 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 /** Prompt for a destination and move the packaged download there. False = cancelled. */
 async function saveDownloadResult(result: BulkDownloadResult): Promise<boolean> {
 	if (!result.outputPath || !result.suggestedName) return false;
-	const ok = await saveExportTempFile(result.outputPath, result.suggestedName);
+	const ok = (await saveExportTempFile(result.outputPath, result.suggestedName)) !== null;
 	if (ok) {
 		toast(
 			result.fileCount === 1
@@ -707,25 +724,29 @@ function DownloadDoneActions({
 					{result.fileCount === 1 ? t("Save image") : t("Save ZIP")}
 				</Button>
 			)}
-			{result.failed.length > 0 && (
-				<Button
-					onClick={() => {
-						addSelections([{ type: "Manual", locations: result.failed }]);
-						toast(
-							t(
-								{
-									one: "Selected {n} failed location",
-									other: "Selected {n} failed locations",
-								},
-								{ n: result.failed.length },
-							),
-						);
-					}}
-				>
-					{t("Select failed")}
-				</Button>
-			)}
 		</>
+	);
+}
+
+function SelectFailedButton({ outcome }: { outcome: BatchOutcome }) {
+	if (outcome.failed.length === 0) return null;
+	return (
+		<Button
+			onClick={() => {
+				addSelections([{ type: "Manual", locations: outcome.failed }]);
+				toast(
+					t(
+						{
+							one: "Selected {n} failed location",
+							other: "Selected {n} failed locations",
+						},
+						{ n: outcome.failed.length },
+					),
+				);
+			}}
+		>
+			{t("Select failed")}
+		</Button>
 	);
 }
 
@@ -784,16 +805,16 @@ function BulkProgress({
 	const [done, setDone] = useState(0);
 	const [rate, setRate] = useState<number | null>(null);
 	const [elapsed, setElapsed] = useState<number | null>(null);
-	const [phaseLabel, setPhaseLabel] = useState<string | null>(null);
+	const [parts, setParts] = useState<ProviderPart[]>([]);
 	const [status, setStatus] = useState<"running" | "done" | "cancelled" | "error">("running");
 	const [error, setError] = useState<string | null>(null);
 	const [result, setResult] = useState<BulkRunResult>({});
 	const controllerRef = useRef<AbortController | null>(null);
-	const rateRef = useRef<{ t: number; done: number; ema: number | null }>({
-		t: 0,
-		done: 0,
-		ema: null,
-	});
+	const rateRef = useRef<WaveRate | null>(null);
+	const providerRateRef = useRef(new Map<string, WaveRate>());
+	const [providerRates, setProviderRates] = useState<ReadonlyMap<string, number | null>>(
+		new Map(),
+	);
 
 	const run = useCallback(async () => {
 		const controller = new AbortController();
@@ -801,30 +822,27 @@ function BulkProgress({
 
 		const locations = await fetchLocations(scope);
 		const runStart = performance.now();
-		rateRef.current = { t: runStart, done: 0, ema: null };
+		rateRef.current = null;
 		setRate(null);
 		setElapsed(null);
 
-		const onProgress: ProgressFn = (d, t, label) => {
-			setPhaseLabel(label ?? null);
-			setTotal(t);
+		const onProgress: ProgressFn = (d, tot, _label, providerParts) => {
+			setParts(providerParts ?? []);
+			setTotal(tot);
 			setDone(d);
-			setProgress(t > 0 ? d / t : 1);
+			setProgress(tot > 0 ? d / tot : 1);
 
-			// Smoothed items/s. `d` resets between enrich waves; on a reset just
-			// re-anchor rather than emit a negative spike.
 			const now = performance.now();
-			const prev = rateRef.current;
-			const dd = d - prev.done;
-			const dt = (now - prev.t) / 1000;
-			if (dd < 0) {
-				rateRef.current = { ...prev, t: now, done: d };
-			} else if (dt >= 0.25 && dd > 0) {
-				const inst = dd / dt;
-				const ema = prev.ema == null ? inst : prev.ema * 0.7 + inst * 0.3;
-				rateRef.current = { t: now, done: d, ema };
-				setRate(ema);
+			const { state, rate: next } = waveRate(rateRef.current, d, tot, now);
+			rateRef.current = state;
+			setRate(next);
+			const rates = new Map<string, number | null>();
+			for (const p of providerParts ?? []) {
+				const r = waveRate(providerRateRef.current.get(p.label) ?? null, p.done, p.total, now);
+				providerRateRef.current.set(p.label, r.state);
+				rates.set(p.label, r.rate);
 			}
+			setProviderRates(rates);
 		};
 
 		try {
@@ -855,14 +873,42 @@ function BulkProgress({
 	return (
 		<div className="bulk-operation">
 			<div className="bulk-operation__status">
-				{status === "running" &&
-					(phaseLabel ? `${t(phaseLabel)}${t(":")} ` : "") +
-						t("{done} / {total} ({pct}%)", {
-							done: fmt.format(done),
-							total: fmt.format(total),
-							pct,
-						}) +
-						(rate != null ? t(" -- {rate}/s", { rate: fmt.format(Math.round(rate)) }) : "")}
+				{status === "running" && parts.length > 0 && (
+					<div className="bulk-operation__providers">
+						{parts.map((p) => {
+							const waiting = !p.finished && p.done === 0 && p.total === 0;
+							const running = !p.finished && !waiting;
+							const provRate = providerRates.get(p.label);
+							return (
+								<div key={p.label} className="bulk-operation__provider">
+									<span className="bulk-operation__provider-label">
+										{t(p.label)}
+										{running && provRate != null && (
+											<span className="bulk-operation__provider-rate">
+												{t("{rate}/s", { rate: fmt.format(Math.round(provRate)) })}
+											</span>
+										)}
+									</span>
+									<span className="bulk-operation__provider-count">
+										{waiting && t("Waiting")}
+										{running && `${fmt.format(p.done)}/${fmt.format(p.total)}`}
+										{p.finished && t("Done")}
+										{p.failed > 0 && (
+											<span className="bulk-operation__provider-failed">
+												{t({ one: ", {n} failed", other: ", {n} failed" }, { n: p.failed })}
+											</span>
+										)}
+									</span>
+									<progress
+										className="bulk-operation__provider-bar"
+										value={p.total > 0 ? p.done / p.total : p.finished ? 1 : 0}
+										max={1}
+									/>
+								</div>
+							);
+						})}
+					</div>
+				)}
 				{status === "done" &&
 					(result.doneContent ??
 						result.doneMessage ??
@@ -890,12 +936,25 @@ function BulkProgress({
 			<progress className="bulk-operation__bar" value={progress} max={1} />
 			<div className="bulk-operation__actions">
 				{status === "running" ? (
-					<Button variant="destructive" onClick={() => controllerRef.current?.abort()}>
-						{t("Cancel")}
-					</Button>
+					<>
+						<span className="bulk-operation__meter">
+							{t("{done} / {total} ({pct}%)", {
+								done: fmt.format(done),
+								total: fmt.format(total),
+								pct,
+							}) +
+								(rate != null ? t(" -- {rate}/s", { rate: fmt.format(Math.round(rate)) }) : "")}
+						</span>
+						<Button variant="destructive" onClick={() => controllerRef.current?.abort()}>
+							{t("Cancel")}
+						</Button>
+					</>
 				) : (
 					<>
 						{status === "done" && result.doneActions}
+						{status === "done" && result.outcome != null && (
+							<SelectFailedButton outcome={result.outcome} />
+						)}
 						<Button variant="primary" onClick={onClose}>
 							{t("Close")}
 						</Button>

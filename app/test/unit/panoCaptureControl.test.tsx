@@ -37,7 +37,10 @@ vi.mock("@/lib/util/util", () => ({
 }));
 vi.mock("@/lib/util/toast", () => ({ toast: mocks.toast }));
 vi.mock("@/lib/util/log", () => ({ log: { warn: vi.fn() } }));
-vi.mock("@/store/settings", () => ({ useSettings: () => mocks.settings }));
+vi.mock("@/store/settings", () => ({
+	useSettings: () => mocks.settings,
+	getSettings: () => ({ units: "metric" }),
+}));
 vi.mock("@/lib/util/hotkeys", () => ({ useBinding: () => "f" }));
 vi.mock("@/lib/hooks/useHotkey", () => ({ useHotkeyRef: () => ({ current: null }) }));
 vi.mock("@/lib/hooks/usePanoEvent", () => ({ usePanoEvent: vi.fn() }));
@@ -45,6 +48,7 @@ vi.mock("@/lib/sv/opensv", () => ({ google: { maps: {} } }));
 vi.mock("@/lib/i18n", () => ({
 	t: (s: string) => s,
 	msg: (s: string) => s,
+	getLocale: () => "en",
 	useT: () => ({ t: (s: string) => s, locale: "en" }),
 }));
 vi.mock("@/store/useMapStore", () => ({

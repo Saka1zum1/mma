@@ -113,4 +113,16 @@ describe("settings search", () => {
 		expect(titles.length).toBeGreaterThan(0);
 		for (const title of titles) expect(title).toContain("crosshair");
 	});
+
+	it("matches a select's option labels", async () => {
+		await mount();
+		search("tree");
+		const titles = qa(".setting-row__title").map((n) => n.textContent ?? "");
+		expect(titles.some((t) => t.includes("View mode"))).toBe(true);
+	});
+
+	it("opens with the search box focused", async () => {
+		await mount();
+		expect(document.activeElement).toBe(q(".settings-rail__search"));
+	});
 });

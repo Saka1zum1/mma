@@ -27,7 +27,7 @@ import {
 	getMeasureSegments,
 	MEASURE_NODE_PX,
 } from "@/lib/sv/measure";
-import type { RGB } from "@/lib/util/color";
+import { asRgb, type RGB } from "@/lib/util/color";
 import { unwrapRing } from "@/lib/geo/geo";
 
 export const LOCATION_LAYER_ID = "locations";
@@ -62,6 +62,10 @@ interface SceneContext {
 // (single owner of the shared CellManager), applied before consumers rebuild their layers.
 export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 	if (!getMapState().map) return [];
+
+	const panoDot = asRgb(ctx.panoDotColor) ?? { r: 255, g: 0, b: 0 };
+	const importPreview = asRgb(ctx.importPreviewColor) ?? { r: 217, g: 70, b: 239 };
+	const activeLocation = asRgb(ctx.activeLocationColor) ?? { r: 200, g: 0, b: 0 };
 
 	const layers: Layer[] = [];
 
@@ -139,7 +143,7 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		layers.push(
 			new PanoCoverageLayer({
 				id: "pano-coverage",
-				color: [ctx.panoDotColor.r, ctx.panoDotColor.g, ctx.panoDotColor.b],
+				color: [panoDot.r, panoDot.g, panoDot.b],
 				scaled: ctx.panoDotScaled,
 			}),
 		);
@@ -225,12 +229,7 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 					getRadius: 6,
 					radiusUnits: "pixels",
 					radiusMinPixels: 3,
-					getFillColor: [
-						ctx.importPreviewColor.r,
-						ctx.importPreviewColor.g,
-						ctx.importPreviewColor.b,
-						200,
-					],
+					getFillColor: [importPreview.r, importPreview.g, importPreview.b, 200],
 					stroked: false,
 					pickable: true,
 				}),
@@ -243,9 +242,9 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 	const activeLoc = getMapState().activeLocation;
 	if (activeLoc) {
 		const activeColor: [number, number, number, number] = [
-			ctx.activeLocationColor.r,
-			ctx.activeLocationColor.g,
-			ctx.activeLocationColor.b,
+			activeLocation.r,
+			activeLocation.g,
+			activeLocation.b,
 			255,
 		];
 		const s = MARKER_STYLE[ctx.markerStyle];

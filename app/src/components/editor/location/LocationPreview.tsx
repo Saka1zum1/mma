@@ -20,7 +20,7 @@ import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { mdiChevronLeft, mdiChevronRight } from "@mdi/js";
-import { SV_SEARCH_RADIUS, storedZoom } from "@/lib/sv/constants";
+import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
 import type { Tag } from "@/bindings.gen";
 import {
 	useMapState,
@@ -79,7 +79,14 @@ import {
 	getViewportLockInfo,
 } from "@/lib/sv/viewportLock";
 import { resetTrail, pushTrail, clearTrail } from "@/lib/sv/svTrail";
-import { singletonPano, singletonDiv, getPanorama, applyResolved } from "@/lib/sv/panoSingleton";
+import {
+	singletonPano,
+	singletonDiv,
+	getPanorama,
+	applyResolved,
+	capturePano,
+	capturePov,
+} from "@/lib/sv/panoSingleton";
 import {
 	findPanoProvider,
 	subscribePanoProviders,
@@ -118,6 +125,8 @@ import { PanoDatePicker } from "./PanoDatePicker";
 import { usePanoNavigation } from "./usePanoNavigation";
 import { useLocationHotkeys } from "./useLocationHotkeys";
 import { useT } from "@/lib/i18n";
+import { search } from "@/lib/search";
+import { withoutDerivedFrom } from "@/lib/data/fieldDefs";
 
 /** Tags are staged by name, not ID, because some tags do not exist yet. */
 function idsToNames(ids: number[]): string[] {
@@ -149,13 +158,10 @@ const TagEditor = memo(function TagEditor({
 	);
 	const suggestions = useMemo(() => {
 		const pendingLower = new Set(pendingTags.map((n) => n.toLowerCase()));
-		const available = allTags.filter((t) => !pendingLower.has(t.name.toLowerCase()));
-		const cap = suggestionLimit || available.length;
-		if (tagInput.trim()) {
-			const lower = tagInput.toLowerCase();
-			return available.filter((t) => t.name.toLowerCase().includes(lower)).slice(0, cap);
-		}
-		return available.slice(0, cap);
+		const available = search(allTags, tagInput, (t) => [t.name]).filter(
+			(t) => !pendingLower.has(t.name.toLowerCase()),
+		);
+		return available.slice(0, suggestionLimit || available.length);
 	}, [allTags, pendingTags, tagInput, suggestionLimit]);
 
 	const addPendingTag = (name: string) =>
@@ -291,6 +297,7 @@ export function LocationPreview() {
 	const [panoGeo, setPanoGeo] = useState<GeoDisplay | null>(null);
 	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0, panoGeo);
 	const cancelTweenRef = useRef<(() => void) | null>(null);
+	const enrichAbortRef = useRef<AbortController | null>(null);
 	const getGeoResult = useEffectEvent(() => geoResult);
 	useEffect(() => {
 		document.body.classList.toggle("pano-fullscreen", isFullscreen);
@@ -508,11 +515,7 @@ export function LocationPreview() {
 								address: geo.address,
 								countryCode: activeForSeen?.extra?.countryCode ?? geo.countryCode,
 							},
-							() => ({
-								heading: pano.getPov().heading,
-								pitch: pano.getPov().pitch,
-								zoom: pano.getZoom(),
-							}),
+							() => capturePov(pano),
 						);
 					});
 					setPanoReady(true);
@@ -592,11 +595,7 @@ export function LocationPreview() {
 							address: geo.address,
 							countryCode: activeForSeen?.extra?.countryCode ?? geo.countryCode,
 						},
-						() => ({
-							heading: pano.getPov().heading,
-							pitch: pano.getPov().pitch,
-							zoom: pano.getZoom(),
-						}),
+						() => capturePov(pano),
 					);
 				}
 			});
@@ -634,14 +633,7 @@ export function LocationPreview() {
 			clearTrail();
 			if (statusListener) google?.maps?.event?.removeListener(statusListener);
 			if (lockListener) google?.maps?.event?.removeListener(lockListener);
-			const pano = singletonPano;
-			if (pano) {
-				seenFlush(() => ({
-					heading: pano.getPov().heading,
-					pitch: pano.getPov().pitch,
-					zoom: pano.getZoom(),
-				}));
-			}
+			if (singletonPano) seenFlush(() => capturePov(singletonPano));
 		};
 	}, [location?.id, providerEpoch]);
 
@@ -827,6 +819,8 @@ export function LocationPreview() {
 			}
 		});
 
+		const enrichAc = new AbortController();
+		enrichAbortRef.current = enrichAc;
 		void svMetadata([loc.pano]).then(([data]) => {
 			if (cancelled || !data) return;
 			setPanoAltitude(data.altitude);
@@ -835,11 +829,15 @@ export function LocationPreview() {
 				countryCode: data.countryCode?.toUpperCase() ?? null,
 			});
 			const active = getMapState().activeLocation;
-			if (active) void enrich(active, data);
+			if (active) void enrich(active, data, enrichAc.signal).catch((e: unknown) => {
+				if (e instanceof Error && e.name === "AbortError") return;
+				throw e;
+			});
 		});
 
 	return () => {
 		cancelled = true;
+		enrichAc.abort();
 	};
 }, [location?.id, currentPano?.location?.pano, providerSession, setCoverageDefaultPanoId]);
 
@@ -887,13 +885,13 @@ export function LocationPreview() {
 	);
 
 	const handleSave = useCallback(async () => {
+		enrichAbortRef.current?.abort();
 		if (!location || !effectivePano) return;
 		// Staged (virtual) location: updateLocation no-ops, cursorId can't match a
 		// negative id, so this falls through to setActiveLocation(null) = close.
-		const pov = effectivePano.getPov();
-		const zoom = storedZoom(effectivePano.getZoom());
-		const pano = effectivePano.getPano();
-		const pos = effectivePano.getPosition();
+		const live = capturePano(effectivePano);
+		if (!live) return;
+		const pano = live.panoId;
 
 		const provider = findPanoProvider(location);
 		// Prefer the live viewer pano prefix when switching Baidu ↔ Tencent dates.
@@ -932,11 +930,7 @@ export function LocationPreview() {
 		if (isSeenPreview(location)) {
 			await addLocations([
 				createLocation({
-					lat: pos?.lat() ?? location.lat,
-					lng: pos?.lng() ?? location.lng,
-					heading: pov.heading,
-					pitch: pov.pitch,
-					zoom,
+					...live,
 					panoId: savedPanoId,
 					provider: isAltProvider || isInjectAlt ? providerId : (location.provider ?? "google"),
 					flags: location.flags & ~VIRTUAL_FLAGS, // keep LoadAsPanoId; drop the preview-kind bits
@@ -952,20 +946,20 @@ export function LocationPreview() {
 		}
 
 		const panoChanged = savedPanoId !== location.panoId;
+		const changed = [
+			...(panoChanged ? ["panoId"] : []),
+			...(live.lat !== location.lat || live.lng !== location.lng ? ["lat", "lng"] : []),
+		];
 		updateLocations([
 			{
 				id: location.id,
 				patch: {
-					heading: pov.heading,
-					pitch: pov.pitch,
-					zoom: zoom,
-					lat: pos?.lat() ?? location.lat,
-					lng: pos?.lng() ?? location.lng,
+					...live,
 					tags: (await createTags(pendingTags)).map((t) => t.id),
 					panoId: savedPanoId,
 					provider: isAltProvider || isInjectAlt ? providerId : (location.provider ?? "google"),
 					extra: {
-						...(panoChanged && !isAltProvider && !isInjectAlt ? {} : (location.extra ?? {})),
+						...(withoutDerivedFrom(location.extra, changed) ?? {}),
 						...saveExtra,
 					},
 				},
@@ -987,6 +981,7 @@ export function LocationPreview() {
 	]);
 
 	const handleClose = useCallback(() => {
+		enrichAbortRef.current?.abort();
 		if (exitPanoFullscreen()) return;
 		if (exitFullscreenMap()) return;
 		if (isReviewMode) {

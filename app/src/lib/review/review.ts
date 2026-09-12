@@ -14,11 +14,11 @@ import {
 	addSelections,
 	removeSelections,
 	removeLocations,
-	fetchLocations,
+	resolveIds,
 } from "@/store/useMapStore";
-import { selectionDisplayName } from "@/store/selections";
+import { buildSelection, selectionDisplayName } from "@/store/selections";
 
-import type { ReviewSession, Selection } from "@/bindings.gen";
+import type { ReviewSession, Selection, Selector } from "@/bindings.gen";
 import { t } from "@/lib/i18n";
 
 // --- Pure helpers (unit-tested; no side effects) ---
@@ -140,6 +140,19 @@ async function gotoCursor(s: ReviewSession): Promise<void> {
 
 // --- Public API ---
 
+/** The map's review order over `worklist`. */
+function reviewOrdering(worklist: Selector, expr: string | null | undefined): Selector {
+	const order = expr?.trim();
+	if (!order) return worklist;
+	return {
+		type: "Ranked",
+		selection: buildSelection(worklist),
+		expr: order,
+		k: null,
+		ascending: false,
+	};
+}
+
 /** Start (or resume) a review over `ids`. When `source` is a real selection, the session
  *  is keyed by it so re-reviewing that selection resumes the in-progress session. */
 export async function beginReview(ids: number[], source?: Selection): Promise<void> {
@@ -160,10 +173,9 @@ export async function beginReview(ids: number[], source?: Selection): Promise<vo
 		}
 	}
 
-	// Freeze the worklist to ids that still exist, preserving the given order.
-	const live = await fetchLocations({ type: "Locations", locations: ids, name: null });
-	const liveSet = new Set(live.map((l) => l.id));
-	const order = ids.filter((id) => liveSet.has(id));
+	// Freeze the worklist to ids that still exist, in the map's review order.
+	const worklist: Selector = { type: "Locations", locations: ids, name: null };
+	const order = await resolveIds(reviewOrdering(worklist, map.meta.settings.reviewOrder));
 	if (order.length === 0) return;
 
 	const name = source ? selectionDisplayName(source) : t("Selected locations");
@@ -371,8 +383,9 @@ function clearProjection(id: string): void {
 async function adopt(s: ReviewSession): Promise<void> {
 	let { order, reviewed, cursorId } = s;
 	try {
-		const live = await fetchLocations({ type: "Locations", locations: s.order, name: null });
-		const liveIds = new Set(live.map((l) => l.id));
+		const liveIds = new Set(
+			await resolveIds({ type: "Locations", locations: s.order, name: null }),
+		);
 		order = s.order.filter((id) => liveIds.has(id));
 		if (order.length === 0) {
 			await cmd.storeReviewDelete(s.id).catch(() => {});

@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n";
 import { toast } from "@/lib/util/toast";
 import { createTags, getVisibleTags, useMapState } from "@/store/useMapStore";
 import { getRecentTags, rememberRecentTag } from "./recentTagsStore";
+import { search } from "@/lib/search";
 
 function normalizeTagName(name: string): string {
 	return name
@@ -32,19 +33,15 @@ export function AddTagPanel({
 	const appTags = useMapState(getVisibleTags);
 
 	const trimmed = normalizeTagName(name);
-	const query = trimmed.toLowerCase();
 
-	const filteredRecent = useMemo(() => {
-		if (!query) return recent;
-		return recent.filter((n) => n.toLowerCase().includes(query));
-	}, [recent, query]);
+	const filteredRecent = useMemo(() => search(recent, name, (n) => [n]), [recent, name]);
 
 	const filteredAppTags = useMemo(() => {
 		const recentLower = new Set(recent.map((n) => n.toLowerCase()));
-		const list = appTags.filter((tag) => !recentLower.has(tag.name.toLowerCase()));
-		if (!query) return list.slice(0, 12);
-		return list.filter((tag) => tag.name.toLowerCase().includes(query)).slice(0, 12);
-	}, [appTags, recent, query]);
+		return search(appTags, name, (tag) => [tag.name])
+			.filter((tag) => !recentLower.has(tag.name.toLowerCase()))
+			.slice(0, 12);
+	}, [appTags, recent, name]);
 
 	const applyTag = async (raw: string) => {
 		const tagName = normalizeTagName(raw);

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/types", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@/types")>()),
@@ -10,7 +10,11 @@ vi.mock("@/store/useMapStore", () => ({
 	fetchBounds: async () => null,
 }));
 vi.mock("@/lib/commands", () => ({ cmd: {} }));
-vi.mock("@/lib/events", () => ({ emit: () => {}, subscribe: () => () => {} }));
+vi.mock("@/lib/events", () => ({
+	emit: () => {},
+	subscribe: () => () => {},
+	bridgeAcrossWindows: () => {},
+}));
 
 import {
 	formatDistance,
@@ -23,10 +27,12 @@ import {
 	WORLD_MAX_ERROR,
 } from "@/lib/geo/scoring";
 import { isWorldBounds } from "@/types";
+import { setSetting } from "@/store/settings";
 
 const WORLD_BOUNDS = { south: -90, west: -180, north: 90, east: 180 };
 
 describe("formatDistance", () => {
+	beforeEach(() => setSetting("units", "metric"));
 	it("formats 500 meters as '500 m'", () => {
 		expect(formatDistance(500)).toBe("500 m");
 	});
@@ -47,8 +53,8 @@ describe("formatDistance", () => {
 		expect(formatDistance(999)).toBe("999 m");
 	});
 
-	it("formats exactly 1000 meters as '1,000 m' (not over threshold)", () => {
-		expect(formatDistance(1000)).toBe("1,000 m");
+	it("formats exactly 1000 meters as km", () => {
+		expect(formatDistance(1000)).toBe("1 km");
 	});
 
 	it("formats 50000 meters as '50 km'", () => {

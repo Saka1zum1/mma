@@ -22,6 +22,7 @@ import { toggleTagSelections } from "@/store/useMapStore";
 import { useStableHandler } from "@/lib/hooks/useStableHandler";
 import { useSetting } from "@/store/settings";
 import { useT } from "@/lib/i18n";
+import { matches } from "@/lib/search";
 import { TagContextMenuContent } from "./TagManager";
 import {
 	rangeToggleTagIds,
@@ -140,6 +141,7 @@ export function TagTreeView({
 	filterText,
 	ref,
 }: TagTreeViewProps & { ref?: React.Ref<TagTreeHandle> }) {
+	const { t } = useT();
 	const folderColorMode = useSetting("tagFolderColorMode");
 	const folderColorRgb = useSetting("tagFolderColor");
 	const truncateTagPaths = useSetting("truncateTagPaths");
@@ -198,12 +200,11 @@ export function TagTreeView({
 
 	const filteredTree = useMemo(() => {
 		if (!filterText) return tree;
-		const lower = filterText.toLowerCase();
 
 		function filterNodes(nodes: TagTreeNode[]): TagTreeNode[] {
 			const result: TagTreeNode[] = [];
 			for (const node of nodes) {
-				const nameMatch = node.segment.toLowerCase().includes(lower);
+				const nameMatch = matches(filterText, node.segment);
 				const filteredChildren = filterNodes(node.children);
 				if (nameMatch || filteredChildren.length > 0) {
 					result.push({ ...node, children: filteredChildren });
@@ -245,6 +246,7 @@ export function TagTreeView({
 	const [dragPaths, setDragPaths] = useState<ReadonlySet<string> | null>(null);
 	const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
 	const dragEnabled = !filterText;
+	const reorderEnabled = sortMode === "default";
 	const draggedRef = useRef(false);
 	const dragNodeRef = useRef<TagTreeNode | null>(null);
 	const dragBlockRef = useRef<Set<string> | null>(null);
@@ -424,7 +426,7 @@ export function TagTreeView({
 			}
 
 			if (
-				sortMode === "default" &&
+				reorderEnabled &&
 				src.parentPath === node.parentPath &&
 				isLeafTag(src) === isLeafTag(node) &&
 				src.descendantTagIds.length > 0 &&
@@ -466,7 +468,7 @@ export function TagTreeView({
 	// Alt+Arrow is the keyboard route through the same reorder the drag commits.
 	const handleDragKeyDown = useStableHandler((e: React.KeyboardEvent, node: TagTreeNode) => {
 		if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-		if (!dragEnabled || node.isAlias) return;
+		if (!dragEnabled || !reorderEnabled || node.isAlias) return;
 		const order = stepSiblingFlatOrder(
 			treeRef.current,
 			node.fullPath,
@@ -589,6 +591,19 @@ export function TagTreeView({
 						/>
 					))}
 				</ul>
+			)}
+			{dragPaths && dragNodeRef.current && dragNodeRef.current.parentPath !== "" && (
+				<div
+					className={`tag-tree__root-drop${dropTarget?.position === "into" && dropTarget.path === "" ? " is-drop-into" : ""}`}
+					onMouseMove={() => {
+						const block = dragBlockRef.current;
+						if (!block || !canDropInto(treeRef.current, [...block], "")) return;
+						if (dropTargetRef.current?.path !== "" || dropTargetRef.current.position !== "into")
+							applyDropTarget({ path: "", position: "into" });
+					}}
+				>
+					{t("Move to top level")}
+				</div>
 			)}
 			</div>
 			{dragLeaf &&

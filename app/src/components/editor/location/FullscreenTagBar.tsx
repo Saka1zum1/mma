@@ -8,6 +8,7 @@ import { Icon } from "@/components/primitives/Icon";
 import { useSetting, setSetting } from "@/store/settings";
 import { displayTagName } from "@/store/selections";
 import { useT } from "@/lib/i18n";
+import { search } from "@/lib/search";
 
 export function FullscreenTagBar({
 	pendingTags,
@@ -53,10 +54,7 @@ export function FullscreenTagBar({
 	const capped =
 		suggestionLimit > 0 ? available.slice(0, suggestionLimit) : available;
 	const filtered = input.trim()
-		? available.filter((t) => t.name.toLowerCase().includes(input.toLowerCase())).slice(
-				0,
-				suggestionLimit || available.length,
-			)
+		? search(available, input, (t) => [t.name]).slice(0, suggestionLimit || available.length)
 		: capped;
 
 	return (

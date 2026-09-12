@@ -3,8 +3,10 @@ import { useMapState, getActiveSelections } from "@/store/useMapStore";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
+import { Flag } from "@/components/primitives/Flag";
 import type { Selection } from "@/bindings.gen";
 import type { GeneratorRegionMeta } from "../engine/types";
+import { useProgressTick } from "./progressSignal";
 import { t } from "@/lib/i18n";
 
 function getPolygonName(sel: Selection): string {
@@ -28,6 +30,7 @@ export function RegionSelector({
 	meta: Map<string, GeneratorRegionMeta>;
 	onMetaChange: (meta: Map<string, GeneratorRegionMeta>) => void;
 }) {
+	useProgressTick();
 	const selections = useMapState(getActiveSelections);
 	const polygonSelections = selections.filter((s) => s.selector.type === "Polygon");
 	const [capDialogOpen, setCapDialogOpen] = useState(false);
@@ -64,6 +67,14 @@ export function RegionSelector({
 		}
 		onMetaChange(next);
 	};
+
+	let totalFound = 0;
+	let totalTarget = 0;
+	for (const sel of polygonSelections) {
+		const m = meta.get(sel.key);
+		totalFound += m?.found.length ?? 0;
+		totalTarget += m?.target ?? defaultTarget;
+	}
 
 	const confirmCap = () => {
 		const val = Math.abs(parseInt(capInput || ""));
@@ -142,42 +153,40 @@ export function RegionSelector({
 				</DialogContent>
 			</Dialog>
 			{polygonSelections.length > 0 && (
-				<div className="generator-regions__list">
-					{polygonSelections.map((sel) => {
-						const name = getPolygonName(sel);
-						const code = getPolygonCode(sel);
-						const m = meta.get(sel.key);
-						const found = m?.found.length ?? 0;
-						const target = m?.target ?? defaultTarget;
-						return (
-							<div key={sel.key} className="generator-regions__item">
-								<div className="generator-regions__item-name">
-									{code && (
-										<img
-											src={`/flags/${code.toUpperCase()}.svg`}
-											alt={code}
-											width={20}
-											height={15}
-											style={{ borderRadius: 2, flexShrink: 0 }}
+				<>
+					<div className="generator-regions__list">
+						{polygonSelections.map((sel) => {
+							const name = getPolygonName(sel);
+							const code = getPolygonCode(sel);
+							const m = meta.get(sel.key);
+							const found = m?.found.length ?? 0;
+							const target = m?.target ?? defaultTarget;
+							return (
+								<div key={sel.key} className="generator-regions__item">
+									<div className="generator-regions__item-name">
+										<Flag code={code} className="generator-regions__flag" />
+										<span>{name}</span>
+										{m?.isProcessing && <span className="generator-regions__spinner" />}
+									</div>
+									<div className="generator-regions__item-count">
+										{found} /
+										<input
+											type="number"
+											className="text-input"
+											min={found || 1}
+											value={target}
+											onChange={(e) => setTarget(sel.key, Number(e.target.value) || 1)}
+											style={{ width: "5rem", fontSize: "inherit" }}
 										/>
-									)}
-									<span>{name}</span>
+									</div>
 								</div>
-								<div className="generator-regions__item-count">
-									{found} /
-									<input
-										type="number"
-										className="text-input"
-										min={found || 1}
-										value={target}
-										onChange={(e) => setTarget(sel.key, Number(e.target.value) || 1)}
-										style={{ width: "5rem", fontSize: "inherit" }}
-									/>
-								</div>
-							</div>
-						);
-					})}
-				</div>
+							);
+						})}
+					</div>
+					<div className="generator-regions__total">
+						{t("Total:")} {totalFound} / {totalTarget}
+					</div>
+				</>
 			)}
 		</div>
 	);

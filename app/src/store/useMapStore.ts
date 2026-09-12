@@ -56,6 +56,7 @@ import {
 	composeSiblings as composeSiblingsSel,
 	replaceSelection as replaceSel,
 	isolateGhostKeys,
+	childSelections,
 } from "./selections";
 
 // --- Map state ---
@@ -862,22 +863,27 @@ export function previewDuplicateGroups(distance: number): Promise<number[][]> {
 	return cmd.storeDuplicateGroups(distance);
 }
 
-/** Merge each transitive duplicate group into one survivor (tags unioned). One undoable edit. */
+/** Merge each transitive duplicate group into one survivor (tags unioned), ranked by the
+ *  map's duplicate preference. One undoable edit. */
 export async function mergeDuplicates(distance: number) {
-	await mutate(() => cmd.storeMergeDuplicates(distance));
+	await mutate(() =>
+		cmd.storeMergeDuplicates(distance, state.map?.meta.settings.duplicateScore ?? null),
+	);
 }
 
 /**
  * Prune duplicates within a resolved selection: keeps the most relevant location per
- * cluster (<= 25m) or thins to enforce spacing (> 25m). Locations tagged "keep pano"
- * get a +5 score bonus. Returns the number pruned.
+ * cluster (<= 25m) or thins to enforce spacing (> 25m). Returns the number pruned.
  */
 export async function pruneDuplicates(selector: Selector, distance: number): Promise<number> {
 	if (!state.map) return 0;
-	const keepTagIds = getVisibleTags()
-		.filter((t) => t.name === "keep pano")
-		.map((t) => t.id);
-	const r = await mutate(() => cmd.storePruneDuplicates(selector, distance, keepTagIds));
+	const r = await mutate(() =>
+		cmd.storePruneDuplicates(
+			selector,
+			distance,
+			state.map?.meta.settings.duplicateScore ?? null,
+		),
+	);
 	return r.delta.removed.length;
 }
 
@@ -994,7 +1000,7 @@ export const getSelectedTagIdsDeep: () => readonly number[] = memoOnRefs(
 		const walk = (list: Selection[]) => {
 			for (const s of list) {
 				if (s.selector.type === "Tag") out.push(s.selector.tagId);
-				if ("selections" in s.selector) walk(s.selector.selections);
+				walk(childSelections(s.selector));
 			}
 		};
 		walk(sels);

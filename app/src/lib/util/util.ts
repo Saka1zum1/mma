@@ -62,8 +62,8 @@ export function isWeb(): boolean {
 // In a browser (web-serve) there's no native save dialog that returns a path for the
 // backend to write to. Use the File System Access API to let the user pick a destination
 // and stream the already-built temp export straight into it (no full read into memory).
-// Falls back to a plain download where that API is unavailable. Returns false if cancelled.
-async function downloadInBrowser(srcPath: string, fileName: string): Promise<boolean> {
+// Falls back to a plain download where that API is unavailable. Null = cancelled.
+async function downloadInBrowser(srcPath: string, fileName: string): Promise<string | null> {
 	const url = mmaBufUrl(srcPath);
 	const picker = (
 		window as unknown as {
@@ -75,7 +75,7 @@ async function downloadInBrowser(srcPath: string, fileName: string): Promise<boo
 		try {
 			handle = await picker({ suggestedName: fileName });
 		} catch (e) {
-			if (e instanceof DOMException && e.name === "AbortError") return false;
+			if (e instanceof DOMException && e.name === "AbortError") return null;
 			throw e;
 		}
 		const res = await fetch(url);
@@ -84,10 +84,10 @@ async function downloadInBrowser(srcPath: string, fileName: string): Promise<boo
 		// can't see; without the picker we never get here and fall through to downloadBlob.
 		// eslint-disable-next-line local/no-unsupported-builtins
 		await res.body.pipeTo((await handle.createWritable()) as unknown as WritableStream<Uint8Array>);
-		return true;
+		return handle.name;
 	}
 	downloadBlob(await (await fetch(url)).blob(), fileName);
-	return true;
+	return fileName;
 }
 
 /** Trigger a browser download from an in-memory Blob. */
@@ -119,17 +119,21 @@ export async function copyImageToClipboard(blob: Blob): Promise<boolean> {
 }
 
 /** Prompt for a destination and move a temp export file there (native dialog in
- *  Tauri, File System Access / download in the browser). False = cancelled. */
-export async function saveExportTempFile(srcPath: string, fileName: string): Promise<boolean> {
+ *  Tauri, File System Access / download in the browser). Returns the name it was saved
+ *  under, which the user may have changed in the dialog. Null = cancelled. */
+export async function saveExportTempFile(
+	srcPath: string,
+	fileName: string,
+): Promise<string | null> {
 	if (isWeb()) return downloadInBrowser(srcPath, fileName);
 	const ext = fileName.split(".").pop() ?? "";
 	const dest = await save({
 		defaultPath: fileName,
 		filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
 	});
-	if (!dest) return false;
+	if (!dest) return null;
 	await cmd.storeSaveExportFile(srcPath, dest);
-	return true;
+	return dest.split(/[/\\]/).at(-1) ?? fileName;
 }
 
 // Order strings with embedded numbers by numeric value, not lexically
@@ -168,4 +172,31 @@ export function appendTagName(pending: string[], name: string, tags: Tag[]): str
 // FOV (degrees) → zoom level
 export function fovToZoom(fov: number): number {
 	return -Math.log2((4 / 3) * Math.tan((Math.PI * fov) / 360)) + 1;
+}
+
+/** Rolling anchor for a phase-relative locations/second average. */
+export interface WaveRate {
+	t0: number;
+	done0: number;
+	done: number;
+	total: number;
+}
+
+/** Locations/second averaged over the progress wave in flight. A done that went backward
+ *  or a total that grew means a new wave began (within one wave done only grows and the
+ *  total only shrinks as skips are found), so the average re-anchors there instead of
+ *  carrying the previous wave's speed. Null until the wave shows a quarter second of work. */
+export function waveRate(
+	prev: WaveRate | null,
+	done: number,
+	total: number,
+	now: number,
+): { state: WaveRate; rate: number | null } {
+	const state =
+		!prev || done < prev.done || total > prev.total
+			? { t0: now, done0: done, done, total }
+			: { ...prev, done, total };
+	const dt = (now - state.t0) / 1000;
+	const dd = state.done - state.done0;
+	return { state, rate: dt >= 0.25 && dd > 0 ? dd / dt : null };
 }

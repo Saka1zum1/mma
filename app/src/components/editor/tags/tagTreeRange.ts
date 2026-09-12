@@ -522,19 +522,41 @@ function aliasLeafSegment(node: TagTreeNode): string {
 	return node.tag ? leafOf(node.tag.name) : node.segment;
 }
 
+/** Whether the sibling block `dragPaths` may drop INTO folder `targetPath` (`""` is the
+ *  top level): the target is a folder (branch or declared empty folder) outside the
+ *  block and its subtrees. A name already taken in the target is allowed — the rename
+ *  that follows merges the two tags, as typing the same path in the rename dialog does.
+ *  Alias leaves may move between folders; mixed alias/real blocks cannot. Real leaves
+ *  may drop into their own parent (alias semantics). Folder moves into their current
+ *  parent are a no-op. */
 export function canDropInto(tree: TagTreeNode[], dragPaths: string[], targetPath: string): boolean {
-	const target = findByPath(tree, targetPath);
-	if (!target || isLeafTag(target) || target.isAlias) return false;
-	const nodes = dragPaths.map((p) => findByPath(tree, p));
-	if (nodes.length === 0 || nodes.some((n) => !n)) return false;
-	const hasAlias = nodes.some((n) => n!.isAlias);
-	const hasReal = nodes.some((n) => !n!.isAlias);
+	const targetChildren = targetPath === "" ? tree : findByPath(tree, targetPath)?.children;
+	if (!targetChildren) return false;
+	if (targetPath !== "") {
+		const target = findByPath(tree, targetPath)!;
+		if (isLeafTag(target) || target.isAlias) return false;
+	}
+	const nodes: TagTreeNode[] = [];
+	for (const p of dragPaths) {
+		const n = findByPath(tree, p);
+		if (!n) return false;
+		nodes.push(n);
+	}
+	if (nodes.length === 0) return false;
+	const hasAlias = nodes.some((n) => n.isAlias);
+	const hasReal = nodes.some((n) => !n.isAlias);
 	if (hasAlias && hasReal) return false;
 	if (dragPaths.some((p) => targetPath === p || targetPath.startsWith(`${p}/`))) return false;
-	const childSegments = new Set(target.children.map((c) => c.segment));
-	return !nodes.some(
-		(n) => n!.parentPath !== targetPath && childSegments.has(aliasLeafSegment(n!)),
-	);
+	if (hasAlias) {
+		// Aliases leave a folder via "out", not a top-level "into".
+		if (targetPath === "") return false;
+		return nodes[0].parentPath !== targetPath;
+	}
+	if (nodes.every(isLeafTag)) {
+		if (targetPath === "") return nodes.some((n) => n.parentPath !== "");
+		return true;
+	}
+	return nodes[0].parentPath !== targetPath;
 }
 
 export interface TagMoveResult {
@@ -599,9 +621,16 @@ export function moveIntoFolder(
 	if (!canDropInto(tree, dragPaths, targetPath)) return null;
 	const nodes = dragPaths.map((p) => findByPath(tree, p)!);
 
-	// Leaf drops use alias semantics (including moving an existing alias to another folder).
-	if (nodes.every(isLeafTag)) {
-		return aliasLeavesIntoFolder(tags, nodes, targetPath, virtualTags, aliases);
+	// Leaf drops into a folder use alias semantics unless a child already holds that
+	// segment — then cascadeRename merges, as the rename dialog does. Top-level drops
+	// always rename to the bare segment.
+	if (nodes.every(isLeafTag) && targetPath !== "") {
+		const targetChildren = findByPath(tree, targetPath)!.children;
+		const childSegments = new Set(targetChildren.map((c) => c.segment));
+		const collides = nodes.some(
+			(n) => n.parentPath !== targetPath && childSegments.has(aliasLeafSegment(n)),
+		);
+		if (!collides) return aliasLeavesIntoFolder(tags, nodes, targetPath, virtualTags, aliases);
 	}
 
 	// Block members are siblings (disjoint prefixes), so the cascades never overlap.
@@ -611,7 +640,7 @@ export function moveIntoFolder(
 	const renameById = new Map<number, string>();
 	const pathRemaps: [string, string][] = [];
 	for (const node of nodes) {
-		const newPath = `${targetPath}/${node.segment}`;
+		const newPath = targetPath === "" ? node.segment : `${targetPath}/${node.segment}`;
 		const res = cascadeRename(node.fullPath, newPath, workingTags, workingVT, workingAliases);
 		for (const r of res.tagRenames) renameById.set(r.id, r.name);
 		workingTags = workingTags.map((t) => {
@@ -639,6 +668,7 @@ export function moveIntoFolder(
 		}
 	};
 	walk(tree);
+	if (targetPath === "") for (const b of nodes) emitSubtree(b);
 
 	return {
 		tagRenames: [...renameById].map(([id, name]) => ({ id, name })),

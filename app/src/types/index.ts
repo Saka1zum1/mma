@@ -3,6 +3,8 @@ import { normalizeLocationStorageFields } from "@/lib/sv/providers/panoIdStorage
 
 /** Street View camera orientation (POV). */
 export type LocationPOV = Pick<Location, "heading" | "pitch" | "zoom">;
+/** The camera fields a Location and the live Street View viewer share. */
+export type PanoCapture = LocationPOV & Pick<Location, "lat" | "lng" | "panoId">;
 
 export type LatLng = google.maps.LatLngLiteral;
 export type Bounds = google.maps.LatLngBoundsLiteral;
@@ -160,6 +162,26 @@ export function createLocation(partial: Partial<Location> & LatLng): Location {
 		modifiedAt: null,
 		...normalized,
 	};
+}
+
+/** A new Location at the viewer's live camera, carrying `source`'s flags, provider, and
+ *  the given tags. `extra` describes the pano it was fetched for, so it only survives a
+ *  drop that stayed on that pano. */
+export function dropLocation(
+	source: Location,
+	live: PanoCapture,
+	panoId: string | null,
+	tags: number[],
+): Location {
+	const loc = createLocation({
+		...live,
+		panoId,
+		provider: source.provider,
+		flags: source.flags,
+		tags,
+	});
+	loc.extra = loc.panoId === source.panoId ? source.extra : null;
+	return loc;
 }
 
 /** Apply a LocationPatch JS-side, mirroring Rust's `overlay_update`: `extra` is a

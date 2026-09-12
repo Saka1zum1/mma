@@ -1,8 +1,10 @@
 import { useIsMeasuring, useMeasureLength, endMeasure } from "@/lib/sv/measure";
 import { formatDistance, computeScore, useScoreMaxError } from "@/lib/geo/scoring";
+import { useSetting } from "@/store/settings";
 import { t } from "@/lib/i18n";
 
 export function MeasurementBar() {
+	useSetting("units");
 	const isMeasuring = useIsMeasuring();
 	const length = useMeasureLength();
 	const maxError = useScoreMaxError();

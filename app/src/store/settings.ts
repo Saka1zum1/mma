@@ -80,8 +80,14 @@ export const POLYGON_COLOR_MODES = {
 } as const;
 export const BORDER_DETAILS = {
 	light: msg("Standard (bundled)"),
-	medium: msg("High (~10MB)"),
-	heavy: msg("Ultra (~46MB)"),
+	medium: msg("High ({size})"),
+	heavy: msg("Ultra ({size})"),
+} as const;
+/** On-disk size of each downloadable archive under `data/borders/`. */
+export const BORDER_ARCHIVE_BYTES = {
+	medium: 7_460_312,
+	heavy: 21_514_464,
+	adm1: 56_891_952,
 } as const;
 export const SUBDIVISION_DETAILS = {
 	off: msg("Off"),
@@ -97,6 +103,12 @@ export const PREVIEW_ASPECT_RATIOS = {
 	"32 / 9": "32:9",
 	free: msg("Free"),
 } as const;
+export const UNIT_SYSTEMS = {
+	auto: msg("Automatic"),
+	metric: msg("Metric (m / km)"),
+	imperial: msg("Imperial (ft / mi)"),
+} as const;
+export type UnitSystem = keyof typeof UNIT_SYSTEMS;
 
 export type Language = keyof typeof LANGUAGES;
 export type MovementMode = keyof typeof MOVEMENT_MODES;
@@ -230,11 +242,9 @@ export const DEFAULTS = {
 		"---",
 		"bulk-enrich",
 	] as PinnedEntry[],
-	hasSeenWelcome: false,
-	/** Off = Commit applies immediately with no message prompt. */
-	askCommitMessage: true,
 	/** Offer GitHub pre-releases in the in-app updater. */
 	prereleaseUpdates: false,
+	units: "metric" as UnitSystem,
 };
 export type AppSettings = typeof DEFAULTS;
 
@@ -289,6 +299,13 @@ export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettin
 	if (key === "truncateTagPaths" || key === "tagViewMode") {
 		void import("@/store/selections").then((m) => m.invalidateTagDisplayCache());
 	}
+}
+
+export function resetSettings(): void {
+	settings = { ...DEFAULTS, globalCopyBindings: settings.globalCopyBindings };
+	setLocal(APP_SETTINGS, settings);
+	emitEvent("settings:changed");
+	void import("@/store/selections").then((m) => m.invalidateTagDisplayCache());
 }
 
 export function useSettings(): AppSettings {

@@ -3,7 +3,7 @@ import { cmd } from "@/lib/commands";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
-import { fmt, localeFormat } from "@/lib/util/format";
+import { fmt, formatBytes, localeFormat } from "@/lib/util/format";
 import { getMapState } from "@/store/useMapStore";
 import {
 	startFrameMeter,
@@ -48,18 +48,13 @@ async function gatherStats(): Promise<Stats> {
 	const startupMs = await cmd.appReady();
 
 	const bytes = dbStats.dbSizeBytes;
-	const dbSize =
-		bytes < 1024 * 1024
-			? `${(bytes / 1024).toFixed(1)} KB`
-			: bytes < 1024 * 1024 * 1024
-				? `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-				: `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+	const dbSize = formatBytes(bytes);
 
 	const perfMem = (
 		performance as unknown as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }
 	).memory;
 	const mem = perfMem
-		? `${(perfMem.usedJSHeapSize / (1024 * 1024)).toFixed(1)} / ${(perfMem.jsHeapSizeLimit / (1024 * 1024)).toFixed(0)} MB`
+		? `${formatBytes(perfMem.usedJSHeapSize)} / ${formatBytes(perfMem.jsHeapSizeLimit)}`
 		: "N/A";
 
 	const secs = Math.floor(performance.now() / 1000);
@@ -116,7 +111,6 @@ const uptimeFmt = localeFormat<Partial<Record<Intl.DurationFormatUnit, number>>>
 	(l) => new Intl.DurationFormat(l, { style: "narrow" }),
 );
 const fmtInt = (n: number) => fmt.format(Math.round(n));
-const fmtMB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 function liveRows(live: LiveStats): [string, string][] {
 	const { frame, deck, scene } = live;
@@ -146,7 +140,7 @@ function liveRows(live: LiveStats): [string, string][] {
 			["GPU / frame", deck.gpuTimePerFrame > 0 ? `${deck.gpuTimePerFrame.toFixed(2)} ms` : "n/a"],
 			[
 				"GPU memory",
-				`${fmtMB(deck.gpuMemory)} (buf ${fmtMB(deck.bufferMemory)}, tex ${fmtMB(deck.textureMemory)})`,
+				`${formatBytes(deck.gpuMemory)} (buf ${formatBytes(deck.bufferMemory)}, tex ${formatBytes(deck.textureMemory)})`,
 			],
 		);
 	}

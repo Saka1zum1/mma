@@ -11,11 +11,13 @@
 
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { PickingInfo } from "@deck.gl/core";
 import { buildTileUrl, type TileConfig } from "@/lib/geo/tiles";
 import { createSvConfigForPrefs } from "@/lib/geo/mapStack";
 import { vectorStyleUrl } from "@/lib/geo/mapStyles";
+import { log } from "@/lib/util/log";
 import type { MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import type { LatLng, Bounds } from "@/types";
 import type {
@@ -33,6 +35,10 @@ const SV_SOURCE = "mma-sv";
 const SV_SCHEME = "mma-sv://";
 
 const PREFETCH_MARGIN = 128;
+
+// v6 ships the worker as a separate module; bundlers can't resolve it from
+// import.meta.url, so without this no vector tiles are ever requested.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 // Raster (SV) tiles queue behind MapLibre's global image-request cap (default 16);
 // vector tiles don't, so the basemap outruns SV coverage without this.
@@ -167,6 +173,7 @@ class MapLibreHost implements MapHostContract<"maplibre"> {
 		this.map.getCanvas().classList.add("mma-vector-canvas");
 		// Re-add the SV overlay after every style (re)load: setStyle wipes custom sources.
 		this.map.on("style.load", () => this.addSvLayer());
+		this.map.on("error", (e) => log.error("[maplibre]", e.error?.message ?? e));
 
 		this.map.on("contextmenu", (e) => {
 			e.preventDefault();

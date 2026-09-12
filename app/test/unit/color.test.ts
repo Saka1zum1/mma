@@ -5,6 +5,7 @@ import {
 	hslToHex,
 	hslToRgb,
 	rgbCss,
+	asRgb,
 	rgbToHex,
 	labelColor,
 	colorForName,
@@ -112,10 +113,32 @@ describe("rgbCss", () => {
 	});
 });
 
+describe("asRgb", () => {
+	it("passes through a valid RGB object", () => {
+		expect(asRgb({ r: 42, g: 42, b: 42 })).toEqual({ r: 42, g: 42, b: 42 });
+	});
+
+	it("accepts a leftover [r,g,b] tuple", () => {
+		expect(asRgb([255, 0, 128])).toEqual({ r: 255, g: 0, b: 128 });
+	});
+
+	it("rejects invalid values", () => {
+		expect(asRgb(null)).toBeNull();
+		expect(asRgb([1, 2])).toBeNull();
+		expect(asRgb({ r: Number.NaN, g: 0, b: 0 })).toBeNull();
+	});
+});
+
 describe("rgbToHex", () => {
 	it("formats an RGB object as a hex string", () => {
 		expect(rgbToHex({ r: 255, g: 128, b: 0 })).toBe("#ff8000");
 		expect(rgbToHex({ r: 0, g: 0, b: 0 })).toBe("#000000");
+	});
+
+	it("formats a leftover [r,g,b] tuple", () => {
+		expect(rgbToHex([255, 128, 0] as unknown as { r: number; g: number; b: number })).toBe(
+			"#ff8000",
+		);
 	});
 });
 

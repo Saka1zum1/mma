@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import type React from "react";
 import { useDomEvent } from "./useDomEvent";
 
 /**
@@ -49,7 +50,9 @@ export function useHoverExpand(ref: RefObject<HTMLElement | null>, closeDelay: n
 	return {
 		expanded,
 		hoverProps: {
-			onPointerEnter: open,
+			onPointerEnter: (e: React.PointerEvent) => {
+				if (e.buttons === 0) open();
+			},
 			onPointerLeave: scheduleClose,
 			onPointerDown: () => {
 				dragging.current = true;

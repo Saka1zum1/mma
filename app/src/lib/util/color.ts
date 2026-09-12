@@ -94,9 +94,27 @@ export function hexToRgbObj(hex: string): RGB {
 	return { r, g, b };
 }
 
-export function rgbToHex({ r, g, b }: RGB): string {
+/** Accept the live `{r,g,b}` shape or a leftover `[r,g,b]` tuple from an older persist. */
+export function asRgb(color: unknown): RGB | null {
+	if (Array.isArray(color) && color.length >= 3) {
+		const r = Number(color[0]);
+		const g = Number(color[1]);
+		const b = Number(color[2]);
+		if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) return { r, g, b };
+		return null;
+	}
+	if (color && typeof color === "object" && "r" in color && "g" in color && "b" in color) {
+		const { r, g, b } = color as RGB;
+		if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) return { r, g, b };
+	}
+	return null;
+}
+
+export function rgbToHex(color: RGB): string {
+	const rgb = asRgb(color);
+	if (!rgb) return "#000000";
 	const h = (n: number) => Math.round(n).toString(16).padStart(2, "0");
-	return `#${h(r)}${h(g)}${h(b)}`;
+	return `#${h(rgb.r)}${h(rgb.g)}${h(rgb.b)}`;
 }
 
 /** A label's color: a user override if set, else a deterministic color from its name. */

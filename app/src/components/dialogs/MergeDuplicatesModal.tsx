@@ -3,7 +3,8 @@ import { Dialog, DialogContent, type DialogProps } from "@/components/primitives
 import { Button } from "@/components/primitives/Button";
 import { previewDuplicateGroups, mergeDuplicates } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
-import { fmt } from "@/lib/util/format";
+import { fmt, formatDistance } from "@/lib/util/format";
+import { useSetting } from "@/store/settings";
 import { log } from "@/lib/util/log";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { t } from "@/lib/i18n";
@@ -19,6 +20,8 @@ interface Preview {
 }
 
 export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
+	useSetting("units");
+	const distLabel = formatDistance(distance);
 	const [merging, setMerging] = useState(false);
 
 	const { data: preview, loading } = useAsync<Preview | null>(async () => {
@@ -64,15 +67,15 @@ export function MergeDuplicatesModal({ open, onOpenChange, distance }: Props) {
 				)}
 				{nothing && (
 					<p className="merge-duplicates__status">
-						{t("No duplicate groups within {distance}m.", { distance })}
+						{t("No duplicate groups within {distance}.", { distance: distLabel })}
 					</p>
 				)}
 				{!loading && preview != null && preview.groups > 0 && (
 					<>
 						<p className="merge-duplicates__status">
 							{t(
-								{ one: "{n} group within {distance}m.", other: "{n} groups within {distance}m." },
-								{ n: preview.groups, distance },
+								{ one: "{n} group within {distance}.", other: "{n} groups within {distance}." },
+								{ n: preview.groups, distance: distLabel },
 							)}{" "}
 							{t(
 								{

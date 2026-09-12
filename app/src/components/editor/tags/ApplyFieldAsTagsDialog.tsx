@@ -18,6 +18,10 @@ import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { t } from "@/lib/i18n";
+import { fillTemplate } from "@/lib/util/format";
+
+/** `{value}` alone keeps today's names; a prefix such as `Camera/{value}` files them in a folder. */
+const DEFAULT_TEMPLATE = "{value}";
 
 export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 	const tzDefault = useSetting("dateTimezone") === "location";
@@ -26,6 +30,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 	const [width, setWidth] = useState("");
 	const [tzLocal, setTzLocal] = useState(tzDefault);
 	const [tagMissing, setTagMissing] = useState(false);
+	const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
 	const scopeCtl = useSelectorPick();
 	const fields = useExtraFieldKeys();
 
@@ -48,6 +53,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 
 	const fieldLabel = fields.find((f) => f.key === field)?.label ?? field;
 	const missingName = t("No {field} data", { field: t(fieldLabel) });
+	const tagName = (value: string) => fillTemplate(template, { value, field: t(fieldLabel) });
 
 	const handleApply = async () => {
 		if (!field || !widthValid) return;
@@ -78,17 +84,17 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 		const locById = new Map(locs.map((l) => [l.id, l]));
 
 		const tagNames = new Set<string>();
-		if (missing.length > 0) tagNames.add(missingName);
+		if (missing.length > 0) tagNames.add(tagName(missingName));
 		for (const g of groups) {
 			if (transform) {
 				for (const id of g.ids) {
 					const l = locById.get(id);
 					if (!l) continue;
 					const name = transform(field, g.key, l);
-					if (name != null) tagNames.add(name);
+					if (name != null) tagNames.add(tagName(name));
 				}
 			} else {
-				tagNames.add(g.key);
+				tagNames.add(tagName(g.key));
 			}
 		}
 
@@ -99,14 +105,15 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 			for (const id of g.ids) {
 				const l = locById.get(id);
 				if (!l) continue;
-				const name = transform ? transform(field, g.key, l) : g.key;
-				if (name == null) continue;
+				const raw = transform ? transform(field, g.key, l) : g.key;
+				if (raw == null) continue;
+				const name = tagName(raw);
 				const tagId = tagIdByName.get(name.toLowerCase());
 				if (tagId != null && !l.tags.includes(tagId))
 					updates.push({ id, patch: { tags: [...l.tags, tagId] } });
 			}
 		}
-		const missingTagId = tagIdByName.get(missingName.toLowerCase());
+		const missingTagId = tagIdByName.get(tagName(missingName).toLowerCase());
 		if (missingTagId != null) {
 			for (const id of missing) {
 				const l = locById.get(id);
@@ -129,6 +136,7 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 					setWidth("");
 					setTzLocal(tzDefault);
 					setTagMissing(false);
+					setTemplate(DEFAULT_TEMPLATE);
 				}
 			}}
 		>
@@ -196,6 +204,17 @@ export function ApplyFieldAsTagsDialog({ open, onOpenChange }: DialogProps) {
 							/>
 
 							{t("Location timezone")}
+						</label>
+					)}
+					{field && (
+						<label className="bulk-operation__option">
+							{t("Tag name")}
+							<TextInput
+								value={template}
+								onChange={(e) => setTemplate(e.target.value)}
+								placeholder={DEFAULT_TEMPLATE}
+								title={t("{value} is the projected value, {field} the field label. A / makes a folder.")}
+							/>
 						</label>
 					)}
 					{field && (

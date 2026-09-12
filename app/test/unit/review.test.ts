@@ -6,11 +6,17 @@ vi.mock("@/store/useMapStore", () => ({
 	getMapState: () => ({ mapId: null, map: null, activeLocation: null }),
 	setActiveLocation: vi.fn(),
 	addSelections: vi.fn(),
+	removeSelections: vi.fn(),
+	removeLocations: vi.fn(),
+	resolveIds: vi.fn(),
 	mutate: vi.fn(),
 }));
 vi.mock("@/lib/commands", () => ({ cmd: {} }));
 vi.mock("@/lib/events", () => ({ subscribe: () => () => {}, emit: vi.fn() }));
-vi.mock("@/store/selections", () => ({ selectionDisplayName: () => "x" }));
+vi.mock("@/store/selections", () => ({
+	selectionDisplayName: () => "x",
+	buildSelection: (s: unknown) => s,
+}));
 vi.mock("@/lib/util/log", () => ({
 	log: { error: vi.fn(), debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));

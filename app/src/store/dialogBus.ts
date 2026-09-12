@@ -17,6 +17,7 @@ type DialogPayloads = {
 	"review-selected": void;
 	"doclink-assign": void;
 	"command-palette": void;
+	"plugin-modal": string;
 	"bulk-op": string;
 	"inline-panel": string;
 	"expand-sv-links": void;

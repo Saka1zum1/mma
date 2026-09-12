@@ -727,13 +727,37 @@ describe("canDropInto / moveIntoFolder", () => {
 		expect(canDropInto(tree(), ["Cars"], "Cars/Old")).toBe(false); // own descendant
 	});
 
-	it("rejects a segment collision with the target's children", () => {
+	it("allows a segment collision with the target's children", () => {
 		const tags = [...baseTags, mkTag(6, "Cars/Red")];
-		expect(canDropInto(tree(tags), ["Red"], "Cars")).toBe(false);
+		expect(canDropInto(tree(tags), ["Red"], "Cars")).toBe(true);
+		const move = moveIntoFolder(tree(tags), ["Red"], "Cars", tags, {}, {});
+		expect(move?.tagRenames).toContainEqual({ id: 1, name: "Cars/Red" });
 	});
 
 	it("rejects pills as targets", () => {
 		expect(canDropInto(tree(), ["Red"], "Blue")).toBe(false);
+	});
+
+	it("the top level is a target for anything inside a folder, never for what is already there", () => {
+		expect(canDropInto(tree(), ["Cars/a"], "")).toBe(true);
+		expect(canDropInto(tree(), ["Cars/Old"], "")).toBe(true);
+		expect(canDropInto(tree(), ["Red"], "")).toBe(false);
+		expect(canDropInto(tree(), ["Cars"], "")).toBe(false);
+		const tags = [...baseTags, mkTag(6, "Cars/Red")];
+		expect(canDropInto(tree(tags), ["Cars/Red"], "")).toBe(true);
+	});
+
+	it("moves a folder's tag to the top level: bare name, ordered after the last root node", () => {
+		const move = moveIntoFolder(tree(), ["Cars/a"], "", baseTags, {}, {});
+		expect(move!.tagRenames).toEqual([{ id: 3, name: "a" }]);
+		expect(move!.orderedIds).toEqual([1, 2, 4, 5, 3]);
+	});
+
+	it("moves a nested folder to the top level: cascades and remaps its path", () => {
+		const move = moveIntoFolder(tree(), ["Cars/Old"], "", baseTags, {}, {});
+		expect(move!.tagRenames).toEqual([{ id: 5, name: "Old/c" }]);
+		expect(move!.pathRemaps).toEqual([["Cars/Old", "Old"]]);
+		expect(move!.orderedIds).toEqual([1, 2, 3, 4, 5]);
 	});
 
 	it("drops a pill into a folder by creating an alias (tag name unchanged)", () => {

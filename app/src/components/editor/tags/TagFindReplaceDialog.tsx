@@ -5,6 +5,7 @@ import { Dialog, DialogContent, type DialogProps } from "@/components/primitives
 import { Button } from "@/components/primitives/Button";
 import { TextInput } from "@/components/primitives/TextInput";
 import { t } from "@/lib/i18n";
+import { matches as textMatches } from "@/lib/search";
 
 export function TagFindReplaceDialog({ open, onOpenChange }: DialogProps) {
 	const [find, setFind] = useState("");
@@ -12,7 +13,7 @@ export function TagFindReplaceDialog({ open, onOpenChange }: DialogProps) {
 	const [applied, setApplied] = useState(false);
 
 	const tags = getVisibleTags();
-	const matches = find ? tags.filter((t) => t.name.toLowerCase().includes(find.toLowerCase())) : [];
+	const matches = find ? tags.filter((t) => textMatches(find, t.name)) : [];
 
 	const handleApply = async () => {
 		if (!find || matches.length === 0) return;

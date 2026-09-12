@@ -383,13 +383,11 @@ export function MapEditor() {
 						<h1>{map.meta.name}</h1>
 						<Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
 							<Tooltip content={t("Edit map")} side="bottom">
-								<DialogTrigger asChild>
-									<button className="icon-button" type="button" aria-label={t("Edit map")}>
-										<Icon path={mdiPencil} />
-									</button>
+								<DialogTrigger className="icon-button" aria-label={t("Edit map")}>
+									<Icon path={mdiPencil} />
 								</DialogTrigger>
 							</Tooltip>
-							<DialogContent title={t("Map settings")} className="edit-map-modal">
+							<DialogContent title={t("Edit map")} className="edit-map-modal">
 								<MapRenameForm mapId={map.meta.id} currentName={map.meta.name} />
 							</DialogContent>
 						</Dialog>

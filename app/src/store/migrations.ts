@@ -20,7 +20,7 @@ export const MIGRATIONS: StoredMigration[] = [
 	{
 		since: "0.9.2",
 		key: "appSettings",
-		describe: "marker/active/preview/panoDot/polygon/tagFolder colors: {r,g,b} -> [r,g,b]",
+		describe: "marker/active/preview/panoDot/polygon/tagFolder colors: [r,g,b] -> {r,g,b}",
 		apply: (stored) => {
 			const keys = [
 				"markerColor",
@@ -32,9 +32,8 @@ export const MIGRATIONS: StoredMigration[] = [
 			];
 			for (const key of keys) {
 				const value = stored[key];
-				if (value && !Array.isArray(value)) {
-					const { r, g, b } = value as { r: number; g: number; b: number };
-					stored[key] = [r, g, b];
+				if (Array.isArray(value) && value.length >= 3) {
+					stored[key] = { r: value[0], g: value[1], b: value[2] };
 				}
 			}
 		},
@@ -58,6 +57,16 @@ export const MIGRATIONS: StoredMigration[] = [
 		describe: "savedSelections moved to SQLite; drop from localStorage",
 		apply: (stored) => {
 			delete stored.savedSelections;
+		},
+	},
+	{
+		since: "0.10.2",
+		key: "appSettings",
+		describe: "hasSeenWelcome -> its own welcomeSeen key",
+		apply: (stored) => {
+			if (!("hasSeenWelcome" in stored)) return;
+			if (stored.hasSeenWelcome === true) localStorage.setItem("welcomeSeen", "true");
+			delete stored.hasSeenWelcome;
 		},
 	},
 ];

@@ -17,7 +17,7 @@ import { cmpVersion } from "@/lib/util/util";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cmd } from "@/lib/commands";
 import { mmaBufUrl, downloadBlob } from "@/lib/util/util";
-import * as Collapsible from "@radix-ui/react-collapsible";
+import { Collapsible } from "@base-ui-components/react/collapsible";
 import bundledChangelog from "../../../../CHANGELOG.md?raw";
 import { Dialog, DialogContent, useCloseDialog } from "@/components/primitives/Dialog";
 import { Icon } from "@/components/primitives/Icon";
@@ -609,8 +609,11 @@ const FolderEntry = React.memo(function FolderEntry({
 	const count = useMemo(() => maps.reduce((a, m) => a + m.locationCount, 0), [maps]);
 
 	return (
-		<Collapsible.Root asChild open={open} onOpenChange={setOpen}>
-			<li className="map-folder" data-drop-folder={name} data-filter-folder>
+		<Collapsible.Root
+			open={open}
+			onOpenChange={setOpen}
+			render={<li className="map-folder" data-drop-folder={name} data-filter-folder />}
+		>
 				<div className="map-folder__head">
 					<Collapsible.Trigger
 						id={triggerId}
@@ -646,22 +649,19 @@ const FolderEntry = React.memo(function FolderEntry({
 						<Icon path={mdiFolderRemove} />
 					</button>
 				</div>
-				<Collapsible.Content asChild>
-					<ul className="map-sublist">
-						{maps.map((m) => (
-							<MapEntry
-								key={m.id}
-								meta={m}
-								isDragging={dragId === m.id}
-								onDragStart={onDragStart}
-								onAction={onMapAction}
-								onLabelClick={onLabelClick}
-								fields={fields}
-							/>
-						))}
-					</ul>
-				</Collapsible.Content>
-			</li>
+				<Collapsible.Panel render={<ul className="map-sublist" />}>
+					{maps.map((m) => (
+						<MapEntry
+							key={m.id}
+							meta={m}
+							isDragging={dragId === m.id}
+							onDragStart={onDragStart}
+							onAction={onMapAction}
+							onLabelClick={onLabelClick}
+							fields={fields}
+						/>
+					))}
+				</Collapsible.Panel>
 		</Collapsible.Root>
 	);
 });

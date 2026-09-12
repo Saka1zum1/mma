@@ -7,6 +7,7 @@ import {
 	lngSpan,
 	pointInPolygon,
 	ringsBbox,
+	polygonBbox,
 	unionBounds,
 	unwrapLng,
 	unwrapRing,
@@ -158,6 +159,18 @@ describe("ringsBbox / inBbox", () => {
 		expect(inBbox(-179, -70, bb)).toBe(true);
 		expect(inBbox(100, -70, bb)).toBe(true);
 		expect(inBbox(0, -50, bb)).toBe(false); // latitude still rejects
+	});
+});
+
+describe("polygonBbox", () => {
+	it("spans the extra polygons, not just the primary one", () => {
+		const bb = polygonBbox({ coordinates: [box(0, 10)], extraPolygons: [[box(40, 50)]] })!;
+		expect([bb.west, bb.east]).toEqual([0, 50]);
+	});
+
+	it("keeps the crossing form when an extra polygon sits past the antimeridian", () => {
+		const bb = polygonBbox({ coordinates: [box(170, 180)], extraPolygons: [[box(-180, -170)]] })!;
+		expect([bb.west, bb.east]).toEqual([170, -170]);
 	});
 });
 

@@ -8,6 +8,7 @@ import { TextInput } from "@/components/primitives/TextInput";
 import {
 	SettingRow,
 	SettingsSearchContext,
+	SettingsGroup,
 	useSettingsSearch,
 } from "@/components/primitives/SettingRow";
 import {
@@ -20,6 +21,7 @@ import {
 	reassignBinding,
 	getConflicts,
 	getAltSlowConflict,
+	hotkeyLabel,
 	isCustomized,
 	type HotkeyAction,
 	type HotkeyDef,
@@ -61,9 +63,12 @@ import {
 	POLYGON_COLOR_MODES,
 	OPACITY_TOGGLE_MODES,
 	TAG_SUGGESTION_LIMITS,
+	BORDER_ARCHIVE_BYTES,
 	BORDER_DETAILS,
 	SUBDIVISION_DETAILS,
 	PREVIEW_ASPECT_RATIOS,
+	UNIT_SYSTEMS,
+	resetSettings,
 } from "@/store/settings";
 import { formatBinding, buildComboString } from "@/lib/hooks/useHotkey";
 import { cmd } from "@/lib/commands";
@@ -74,6 +79,8 @@ import { useAsync } from "@/lib/hooks/useAsync";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
 import { t, msg } from "@/lib/i18n";
+import { matches } from "@/lib/search";
+import { formatBytes } from "@/lib/util/format";
 import { errText } from "@/lib/util/util";
 import { Trans } from "@/components/primitives/Trans";
 import { collectDiagnostics } from "@/lib/diagnostics";
@@ -83,9 +90,11 @@ import { collectDiagnostics } from "@/lib/diagnostics";
  *  contains the query. */
 function Aux({ children, match }: { children: ReactNode; match?: string }) {
 	const { query, auxVisible } = useSettingsSearch();
-	if (!auxVisible && !(match && query && match.toLowerCase().includes(query))) return null;
+	if (!auxVisible && !(match && query && matches(query, match))) return null;
 	return <div className="settings-aux">{children}</div>;
 }
+
+const optionLabels = (options: Record<string, string>) => Object.values(options).map((m) => t(m));
 
 /** A sub-group heading inside a section. Visible only when the section is fully
  *  shown (not searching, or section title matched) so search results collapse
@@ -162,7 +171,7 @@ function getBlockedReason(e: KeyboardEvent): string | null {
 		if (conflict) {
 			return t('{combo} conflicts with "{label}" (Alt is the slow modifier for navigation)', {
 				combo: formatBinding(combo),
-				label: t(conflict.label),
+				label: hotkeyLabel(conflict),
 			});
 		}
 	}
@@ -251,7 +260,7 @@ function HotkeyRow({
 			id={`hotkey-row-${action}`}
 			className={`${custom ? "hotkey-row--custom" : ""}${flash ? " hotkey-row--flash" : ""}${hasConflict ? " hotkey-row--conflict" : ""}`}
 		>
-			<td>{t(label)}</td>
+			<td>{label}</td>
 			<td>
 				{recording ? (
 					pending ? (
@@ -260,7 +269,7 @@ function HotkeyRow({
 								<Trans
 									msg="{combo} is bound to {labels}"
 									combo={<code className="mono">{formatBinding(pending.combo)}</code>}
-									labels={<strong>{pending.conflicts.map((c) => t(c.label)).join(", ")}</strong>}
+									labels={<strong>{pending.conflicts.map(hotkeyLabel).join(", ")}</strong>}
 								/>
 							</span>
 							<Button variant="primary" className="hotkey-reset" autoFocus onClick={reassign}>
@@ -301,10 +310,10 @@ function HotkeyRow({
 							key={c.action}
 							className="hotkey-conflict"
 							onClick={() => onJump(c.action)}
-							title={t('Also bound to "{label}" - click to jump there', { label: t(c.label) })}
+							title={t('Also bound to "{label}" - click to jump there', { label: hotkeyLabel(c) })}
 						>
 							<Icon path={mdiAlertCircleOutline} className="hotkey-conflict__icon" />
-							{t(c.label)}
+							{hotkeyLabel(c)}
 						</button>
 					))}
 			</td>
@@ -338,7 +347,7 @@ function KeyboardBody() {
 	const { query, searching, sectionMatched } = useSettingsSearch();
 	const [filter, setFilter] = useState("");
 	const [flash, setFlash] = useState<string | null>(null);
-	const lower = searching && !sectionMatched ? query : filter.toLowerCase();
+	const needle = searching && !sectionMatched ? query : filter;
 	const allBindings = getAllBindings();
 
 	const jumpTo = useCallback((action: string) => {
@@ -365,10 +374,7 @@ function KeyboardBody() {
 			{GROUPS.map((group) => {
 				const defs = allBindings.filter(
 					(d) =>
-						d.group === group &&
-						(!lower ||
-							t(d.label).toLowerCase().includes(lower) ||
-							getBinding(d.action).toLowerCase().includes(lower)),
+						d.group === group && matches(needle, hotkeyLabel(d), getBinding(d.action)),
 				);
 				if (defs.length === 0) return null;
 				return (
@@ -387,7 +393,7 @@ function KeyboardBody() {
 									<HotkeyRow
 										key={d.action}
 										action={d.action}
-										label={d.label}
+										label={hotkeyLabel(d)}
 										flash={flash === d.action}
 										onJump={jumpTo}
 									/>
@@ -742,7 +748,9 @@ function BorderDetailGroup() {
 	const subdivisionStatus = () => {
 		if (downloading === "adm1") return ` ${t("(downloading...)")}`;
 		if (adm1Ready === null) return "";
-		return adm1Ready ? "" : ` ${t("(~45MB, will download)")}`;
+		return adm1Ready
+			? ""
+			: ` ${t("({size}, will download)", { size: formatBytes(BORDER_ARCHIVE_BYTES.adm1) })}`;
 	};
 
 	return (
@@ -757,12 +765,17 @@ function BorderDetailGroup() {
 						onChange={(e) => handleChange(e.target.value as BorderDetail)}
 						disabled={downloading !== null}
 					>
-						{Object.entries(BORDER_DETAILS).map(([value, label]) => (
-							<option key={value} value={value}>
-								{t(label)}
-								{value !== "light" && statusLabel(value as "medium" | "heavy")}
-							</option>
-						))}
+						{Object.entries(BORDER_DETAILS).map(([value, label]) => {
+							const level = value as BorderDetail;
+							return (
+								<option key={level} value={level}>
+									{level === "light"
+										? t(label)
+										: t(label, { size: formatBytes(BORDER_ARCHIVE_BYTES[level]) }) +
+											statusLabel(level)}
+								</option>
+							);
+						})}
 					</NSelect>
 				}
 			/>
@@ -806,9 +819,10 @@ function EditingBody() {
 	);
 	return (
 		<>
-			<GroupHeading>{t("Tags")}</GroupHeading>
+			<SettingsGroup title={t("Tags")}>
 			<SettingRow
 				label={t("View mode")}
+				keywords={optionLabels(TAG_VIEW_MODES)}
 				control={<SettingSelect setting="tagViewMode" options={TAG_VIEW_MODES} />}
 			/>
 			{s.tagViewMode === "tree" && (
@@ -863,6 +877,7 @@ function EditingBody() {
 					/>
 				}
 			/>
+			</SettingsGroup>
 
 			<GroupHeading>{t("Seen")}</GroupHeading>
 			<SettingRow setting="enableSeen" label={t("Log viewed panos")} />
@@ -878,9 +893,6 @@ function EditingBody() {
 					)}
 				</>
 			)}
-
-			<GroupHeading>{t("Version control")}</GroupHeading>
-			<SettingRow setting="askCommitMessage" label={t("Ask for a commit message")} />
 
 			<GroupHeading>{t("Geocoding")}</GroupHeading>
 			<SettingRow
@@ -946,6 +958,8 @@ function MapListBlock() {
 
 declare const __APP_VERSION__: string;
 
+const UPDATE_PENDING_PHASES: ReadonlySet<string> = new Set(["available", "downloading", "ready"]);
+
 const UPDATE_STATUS: Record<string, string> = {
 	idle: msg("Updates haven't been checked yet."),
 	checking: msg("Checking for updates..."),
@@ -958,7 +972,8 @@ function UpdateBlock() {
 	const update = useUpdateState();
 	const version = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 	const checking = update.phase === "checking";
-	const badgeMod = update.phase === "up-to-date" ? " settings-updates__version--latest" : "";
+	const pendingUpdate = UPDATE_PENDING_PHASES.has(update.phase);
+	const badgeMod = pendingUpdate ? " settings-updates__version--update" : "";
 	const status =
 		update.phase === "available"
 			? t("Version {version} is available.", { version: update.version ?? "" })
@@ -1088,6 +1103,14 @@ function ApplicationBody() {
 		<>
 			<GroupHeading>{t("Language")}</GroupHeading>
 			<LanguageRow />
+
+			<GroupHeading>{t("Units")}</GroupHeading>
+			<SettingRow
+				label={t("Distance")}
+				description={t("Automatic follows the system locale")}
+				keywords={optionLabels(UNIT_SYSTEMS)}
+				control={<SettingSelect setting="units" options={UNIT_SYSTEMS} />}
+			/>
 
 			<GroupHeading>{t("Startup")}</GroupHeading>
 			<SettingRow setting="restoreSession" label={t("Restore open maps on startup")} />
@@ -1249,6 +1272,37 @@ function AdvancedBody() {
 					<CopyDiagnosticsButton />
 				</div>
 			</Aux>
+
+			<GroupHeading>{t("Reset")}</GroupHeading>
+			<Aux match="reset defaults restore">
+				<ResetSettingsButton />
+			</Aux>
+		</>
+	);
+}
+
+function ResetSettingsButton() {
+	const [open, setOpen] = useState(false);
+	return (
+		<>
+			<Button onClick={() => setOpen(true)}>{t("Reset all settings")}</Button>
+			<Dialog open={open} onOpenChange={setOpen}>
+				<DialogContent title={t("Reset all settings")} className="edit-map-modal">
+					<p>{t("Reset every app setting to its default? Key bindings are kept.")}</p>
+					<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+						<Button onClick={() => setOpen(false)}>{t("Cancel")}</Button>
+						<Button
+							variant="destructive"
+							onClick={() => {
+								resetSettings();
+								setOpen(false);
+							}}
+						>
+							{t("Reset")}
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</>
 	);
 }
@@ -1301,10 +1355,12 @@ function SectionShell({
 	hidden?: boolean;
 }) {
 	const sectionMatched =
-		mode === "single" || query === "" || t(section.title).toLowerCase().includes(query);
+		mode === "single" || query === "" || matches(query, t(section.title));
 	const Body = section.Body;
 	return (
-		<SettingsSearchContext.Provider value={{ query, searching: mode === "search", sectionMatched }}>
+		<SettingsSearchContext.Provider
+			value={{ query, searching: mode === "search", sectionMatched, sectionTitle: t(section.title) }}
+		>
 			<section
 				className={`settings-section${mode === "search" ? " settings-section--search" : ""}`}
 				data-qa={`settings-section-${section.id}`}
@@ -1322,8 +1378,9 @@ function SectionShell({
 export function SettingsPage({ open, onOpenChange }: DialogProps) {
 	const [selected, setSelected] = useState<string>(SECTIONS[0].id);
 	const [query, setQuery] = useState("");
-	const q = query.trim().toLowerCase();
+	const q = query.trim();
 	const searching = q !== "";
+	const searchRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		if (open) setQuery("");
@@ -1331,9 +1388,14 @@ export function SettingsPage({ open, onOpenChange }: DialogProps) {
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent title={t("Settings")} className="settings-page">
+			<DialogContent
+				title={t("Settings")}
+				className="settings-page"
+				initialFocus={searchRef}
+			>
 				<nav className="settings-rail">
 					<TextInput
+						ref={searchRef}
 						type="text"
 						className="settings-rail__search"
 						placeholder={t("Search settings...")}

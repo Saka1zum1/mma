@@ -11,6 +11,7 @@ import {
 } from "@/lib/geo/scoring";
 import { TextInput } from "@/components/primitives/TextInput";
 import { Radio } from "@/components/primitives/Radio";
+import { useSetting } from "@/store/settings";
 import { t } from "@/lib/i18n";
 
 type Mode = "auto" | "world" | "fixed";
@@ -22,6 +23,7 @@ function modeOf(bounds: ScoreBounds): Mode {
 
 /** "Scoring" section of the edit-map modal. */
 export function ScoreBoundsEditor() {
+	useSetting("units");
 	const map = useMapState((s) => s.map);
 	const bounds: ScoreBounds = map?.meta.scoreBounds ?? "auto";
 	const mode = modeOf(bounds);

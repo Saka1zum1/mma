@@ -52,6 +52,7 @@ import {
 	type TagMoveResult,
 } from "./tagTreeRange";
 import { useT } from "@/lib/i18n";
+import { matches } from "@/lib/search";
 
 /** `order` rides the optimistic overlay only; persisted order goes through `reorderTags`. */
 type OptimisticTagPatch = TagPatch & { order?: number };
@@ -231,8 +232,7 @@ export function TagManager() {
 		const hidden = aliasedTagIds(aliases);
 		let filtered = tags.filter((t) => !hidden.has(t.id));
 		if (filterText) {
-			const lower = filterText.toLowerCase();
-			filtered = filtered.filter((t) => t.name.toLowerCase().includes(lower));
+			filtered = filtered.filter((t) => matches(filterText, t.name));
 		}
 		return sortTagsByMode(filtered, sortMode, tagCounts);
 	}, [tags, filterText, sortMode, tagCounts, aliases]);
@@ -1017,9 +1017,8 @@ function AddAliasDialog({
 		for (const t of tags) addAncestors(t.name);
 		for (const k of Object.keys(virtualTags)) set.add(k);
 		for (const k of Object.keys(aliases)) addAncestors(k);
-		const lower = folder.toLowerCase();
 		return [...set]
-			.filter((p) => p.toLowerCase().includes(lower))
+			.filter((p) => matches(folder, p))
 			.sort()
 			.slice(0, 50);
 	}, [tags, virtualTags, aliases, folder]);
