@@ -1,6 +1,7 @@
 import type { Location } from "@/bindings.gen";
 import { normalizeHeading } from "@/lib/sv/lookup";
 import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
+import type { BatchOutcome } from "@/lib/data/procedures";
 import { msg } from "@/lib/i18n";
 
 export type RoadDirection = "forwards" | "backwards";
@@ -31,7 +32,10 @@ export async function bulkPanHeading(
 		signal?: AbortSignal;
 		onProgress?: (done: number, total: number) => void;
 	} = {},
-): Promise<number> {
+): Promise<BatchOutcome> {
 	const result = await runResolvers(locations, [{ id: "headingRoad", config: direction }], opts);
-	return result.headingRoad?.success.length ?? 0;
+	return {
+		succeeded: result.headingRoad?.success.length ?? 0,
+		failed: result.headingRoad?.failed ?? [],
+	};
 }

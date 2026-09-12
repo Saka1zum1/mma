@@ -4,10 +4,11 @@
 
 use super::{HttpRequestSpec, HttpResponse, PatchEntry, ProcHost, ProcShape, Procedure};
 use crate::location_store::{apply_updates, ExternalMutation, LocationPatch, StoreState, Update};
-use crate::selections::{ids_within, narrow, Selector};
+use crate::selections::{ids_within, narrow, resolve_field_loc, Selector};
 use crate::sidecar::SidecarStream;
 use crate::types::{AppError, AppResult, Location};
 use std::collections::HashMap;
+use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -107,6 +108,10 @@ pub struct ProviderDecl {
     pub fields: Vec<String>,
     #[serde(default)]
     pub requires: Vec<String>,
+    /// Extra keys to null when a written field's value actually changes, so dependents
+    /// re-derive from the new input instead of keeping the old pano's answers.
+    #[serde(default)]
+    pub invalidates: HashMap<String, Vec<String>>,
     pub select: Selector,
     pub batch: BatchMode,
     #[serde(default)]
@@ -334,33 +339,26 @@ fn unregister_run(run_id: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Wave scheduling
+// Dependency scheduling
 // ---------------------------------------------------------------------------
 
-/// A provider runs once no other unscheduled provider produces a field it requires.
-/// A dependency cycle collapses the remainder into one wave.
-pub(crate) fn provider_waves(list: &[ProviderDecl]) -> Vec<Vec<usize>> {
-    let mut waves = Vec::new();
-    let mut remaining: Vec<usize> = (0..list.len()).collect();
-    while !remaining.is_empty() {
-        let mut wave: Vec<usize> = remaining
-            .iter()
-            .copied()
-            .filter(|&i| {
-                !list[i].requires.iter().any(|r| {
-                    remaining
-                        .iter()
-                        .any(|&j| j != i && list[j].fields.iter().any(|f| f == r))
+/// Who gates whom: `producers[i]` are the co-running providers that write a field
+/// provider `i` requires. Provider `i` starts once every one of them has finished, so a
+/// slow provider only ever holds up its own dependents, never the rest of the run.
+pub(crate) fn producers(list: &[ProviderDecl]) -> Vec<Vec<usize>> {
+    (0..list.len())
+        .map(|i| {
+            (0..list.len())
+                .filter(|&j| {
+                    j != i
+                        && list[i]
+                            .requires
+                            .iter()
+                            .any(|r| list[j].fields.iter().any(|f| f == r))
                 })
-            })
-            .collect();
-        if wave.is_empty() {
-            wave = remaining.clone();
-        }
-        remaining.retain(|i| !wave.contains(i));
-        waves.push(wave);
-    }
-    waves
+                .collect()
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -639,8 +637,9 @@ impl WorkBatch {
     }
 }
 
-/// Schedule the run's providers into dependency waves and execute each wave
-/// concurrently. Blocking throughout: callers put this on a blocking thread.
+/// Run every provider concurrently, each starting the moment the providers that write
+/// its required fields have finished. Blocking throughout: callers put this on a
+/// blocking thread.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_all(
     state: &StoreState,
@@ -653,41 +652,69 @@ pub(crate) fn run_all(
     progress: Arc<ProgressSink>,
     results: Arc<ResultSink>,
 ) {
-    for wave in provider_waves(&providers) {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        std::thread::scope(|s| {
-            for idx in wave {
-                let decl = &providers[idx];
-                let ctx = RunCtx {
-                    state,
-                    map_id: map_id.clone(),
-                    run_id,
-                    force,
-                    cancel: cancel.clone(),
-                    deps,
-                    progress: progress.clone(),
-                    results: results.clone(),
+    let gates = producers(&providers);
+    let (tx, rx) = mpsc::channel::<usize>();
+    let mut pending: Vec<usize> = (0..providers.len()).collect();
+    let mut done: Vec<bool> = vec![false; providers.len()];
+    let mut running = 0usize;
+    std::thread::scope(|s| {
+        let start = |idx: usize, running: &mut usize| {
+            let decl = &providers[idx];
+            let ctx = RunCtx {
+                state,
+                map_id: map_id.clone(),
+                run_id,
+                force,
+                cancel: cancel.clone(),
+                deps,
+                progress: progress.clone(),
+                results: results.clone(),
+            };
+            let tx = tx.clone();
+            *running += 1;
+            s.spawn(move || {
+                if let Err(e) = run_provider(&ctx, decl) {
+                    log::error!("[procedure] provider '{}' failed: {e}", decl.id);
+                    // A provider that never reports finished would hang its listener.
+                    (ctx.progress)(ProcedureProgress {
+                        run_id,
+                        provider_id: decl.id.clone(),
+                        done: 0,
+                        total: 0,
+                        failed: 0,
+                        skipped: 0,
+                        finished: true,
+                    });
+                }
+                let _ = tx.send(idx);
+            });
+        };
+        loop {
+            if !cancel.load(Ordering::Relaxed) {
+                let ready: Vec<usize> = pending
+                    .iter()
+                    .copied()
+                    .filter(|&i| gates[i].iter().all(|&j| done[j]))
+                    .collect();
+                // A dependency cycle would wait forever; it runs as one block instead.
+                let release = if ready.is_empty() && running == 0 {
+                    mem::take(&mut pending)
+                } else {
+                    pending.retain(|i| !ready.contains(i));
+                    ready
                 };
-                s.spawn(move || {
-                    if let Err(e) = run_provider(&ctx, decl) {
-                        log::error!("[procedure] provider '{}' failed: {e}", decl.id);
-                        // A provider that never reports finished would hang its listener.
-                        (ctx.progress)(ProcedureProgress {
-                            run_id,
-                            provider_id: decl.id.clone(),
-                            done: 0,
-                            total: 0,
-                            failed: 0,
-                            skipped: 0,
-                            finished: true,
-                        });
-                    }
-                });
+                for idx in release {
+                    start(idx, &mut running);
+                }
             }
-        });
-    }
+            if running == 0 {
+                break;
+            }
+            let idx = rx.recv().expect("a worker cannot drop its sender");
+            running -= 1;
+            done[idx] = true;
+        }
+    });
     unregister_run(run_id);
 }
 
@@ -1081,7 +1108,9 @@ fn run_instance(
             .and_then(|entries| match decl.sink {
                 // Only the patch sink parses: a collected answer is the module's
                 // contract with its caller, not a LocationPatch.
-                Sink::Patch => to_updates(&entries).map(BatchProduct::Patches),
+                Sink::Patch => {
+                    to_updates(&entries, &batch.rows, &decl.invalidates).map(BatchProduct::Patches)
+                }
                 Sink::Collect => Ok(BatchProduct::Entries(entries)),
             });
         let units = batch.units();
@@ -1193,17 +1222,63 @@ fn fan_out(entries: Vec<PatchEntry>, fanout: Option<&HashMap<u32, Vec<u32>>>) ->
 
 /// Parse each entry's JSON into a store patch. A patch that sets nothing is dropped;
 /// one that does not parse fails the whole batch.
-fn to_updates(entries: &[PatchEntry]) -> AppResult<Vec<Update<LocationPatch>>> {
+fn to_updates(
+    entries: &[PatchEntry],
+    rows: &[Location],
+    invalidates: &HashMap<String, Vec<String>>,
+) -> AppResult<Vec<Update<LocationPatch>>> {
+    let by_id: HashMap<u32, &Location> = rows.iter().map(|l| (l.id, l)).collect();
     let mut out = Vec::with_capacity(entries.len());
     for e in entries {
-        let Some(map) = patch_object(e)? else {
+        let Some(mut map) = patch_object(e)? else {
             continue;
         };
+        if let Some(row) = by_id.get(&e.id) {
+            invalidate_derived(&mut map, row, invalidates);
+        }
         let patch = serde_json::from_value(serde_json::Value::Object(map))
             .map_err(|err| AppError(format!("patch for location {}: {err}", e.id)))?;
         out.push(Update { id: e.id, patch });
     }
     Ok(out)
+}
+
+/// A field whose value this patch changes takes the fields derived from it along: they
+/// were derived from the old value. A dependent the patch writes itself is kept, and a
+/// dependent the row never held has nothing to lose.
+fn invalidate_derived(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    row: &Location,
+    invalidates: &HashMap<String, Vec<String>>,
+) {
+    let written = |map: &serde_json::Map<String, serde_json::Value>, key: &str| {
+        map.get(key)
+            .or_else(|| map.get("extra")?.get(key))
+            .cloned()
+            .filter(|v| !v.is_null())
+    };
+    let stale: Vec<&str> = invalidates
+        .iter()
+        .filter(|(key, _)| {
+            map.contains_key(*key) || map.get("extra").is_some_and(|e| e.get(key).is_some())
+        })
+        .filter(|(key, _)| written(map, key) != resolve_field_loc(row, key))
+        .flat_map(|(_, deps)| deps.iter().map(String::as_str))
+        .filter(|dep| !patch_keys().iter().any(|k| k == dep))
+        .filter(|dep| resolve_field_loc(row, dep).is_some())
+        .collect();
+    if stale.is_empty() {
+        return;
+    }
+    let extra = map
+        .entry("extra")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    let serde_json::Value::Object(extra) = extra else {
+        return;
+    };
+    for dep in stale {
+        extra.entry(dep).or_insert(serde_json::Value::Null);
+    }
 }
 
 struct EngineHost<'a> {
@@ -1351,6 +1426,7 @@ fn query_decl(entry: &str, config: Option<String>) -> ProviderDecl {
         entry: Some(entry.to_string()),
         fields: Vec::new(),
         requires: Vec::new(),
+        invalidates: HashMap::new(),
         select: Selector::Everything,
         batch: BatchMode::PerRow,
         sink: Sink::Patch,

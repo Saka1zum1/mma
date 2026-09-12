@@ -131,6 +131,22 @@ describe("rewriteSelectionFields", () => {
 		expect(out).toHaveLength(1);
 		expect(out[0].selector.type).toBe("Tag");
 	});
+
+	it("rewrites a Ranked expression and its has-filter child", () => {
+		const ranked = buildSelection({
+			type: "Ranked",
+			selection: filter("a"),
+			expr: "a",
+			k: 5,
+			ascending: false,
+		});
+		const out = rewriteSelectionFields([ranked], "a", "b");
+		expect(out[0].selector).toMatchObject({
+			type: "Ranked",
+			expr: "b",
+			selection: { selector: { type: "Filter", field: "b" } },
+		});
+	});
 });
 
 describe("field expressions", () => {
@@ -197,7 +213,7 @@ describe("field expressions", () => {
 			"heading",
 			parseFieldExpr("mod(sunAzimuth + 180, 360)"),
 		);
-		expect(skipped).toBe(1);
+		expect(skipped).toEqual([2]);
 		expect(updates).toEqual([{ id: 1, patch: { heading: 20 } }]);
 	});
 

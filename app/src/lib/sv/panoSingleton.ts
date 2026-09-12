@@ -6,7 +6,8 @@ import { google } from "@/lib/sv/opensv";
 import { patchOpenSV, setPanoHovered } from "@/lib/sv/opensvPatch";
 import { seenSkipNext } from "@/lib/seen/seen";
 import type { ResolvedPano } from "@/lib/sv/lookup";
-import { displayZoom } from "@/lib/sv/constants";
+import type { LocationPOV, PanoCapture } from "@/types";
+import { displayZoom, storedZoom, PANO_ZOOM } from "@/lib/sv/constants";
 
 export let singletonPano: google.maps.StreetViewPanorama | null = null;
 
@@ -60,6 +61,33 @@ export function getPanorama(): google.maps.StreetViewPanorama | null {
 		| undefined;
 	if (root) root.style.backgroundColor = "#000";
 	return singletonPano;
+}
+
+/** The live viewer's camera in the stored zoom domain. Zeroed if there is no viewer. */
+export function capturePov(
+	pano: google.maps.StreetViewPanorama | null = singletonPano,
+): LocationPOV {
+	const pov = pano?.getPov();
+	return {
+		heading: pov?.heading ?? 0,
+		pitch: pov?.pitch ?? 0,
+		zoom: storedZoom(pano?.getZoom() ?? PANO_ZOOM.min),
+	};
+}
+
+/** Read the live viewer back into Location fields, the inverse of {@link applyResolved}.
+ *  Null until the viewer has a position. Accepts an alt-provider panorama. */
+export function capturePano(
+	pano: google.maps.StreetViewPanorama | null = singletonPano,
+): PanoCapture | null {
+	const pos = pano?.getPosition();
+	if (!pos) return null;
+	return {
+		...capturePov(pano),
+		lat: pos.lat(),
+		lng: pos.lng(),
+		panoId: pano?.getPano() || null,
+	};
 }
 
 export function clearSingletonPano() {

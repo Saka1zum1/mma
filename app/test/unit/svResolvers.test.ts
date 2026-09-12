@@ -37,10 +37,11 @@ describe("headingRoadResolver", () => {
 });
 
 describe("pinPanoResolver", () => {
-	it("flags only panos resolved this run", () => {
-		const l = loc({ flags: 0 });
+	it("pins only the pano resolved this run, never an older stored id", () => {
+		const l = loc({ flags: 0, panoId: "OLD" });
 		expect(pinPanoResolver.resolve!(l, null, { config: undefined, resolvedPanoId: "ABC" })).toEqual(
 			{
+				panoId: "ABC",
 				flags: LocationFlag.LoadAsPanoId,
 			},
 		);

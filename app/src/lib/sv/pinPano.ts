@@ -2,6 +2,7 @@ import { LocationFlag, isPinnedToPano } from "@/types";
 import type { Location } from "@/bindings.gen";
 import { registerSvResolver, runResolvers, type SvResolver } from "@/lib/sv/svRunner";
 import { newestOfficialPano } from "@/lib/sv/panoId";
+import type { BatchOutcome } from "@/lib/data/procedures";
 import { msg } from "@/lib/i18n";
 
 export interface PinPanoConfig {
@@ -29,7 +30,10 @@ export const pinPanoResolver: SvResolver = {
 			return null;
 		}
 		if (ctx.resolvedPanoId) {
-			return { flags: loc.flags | LocationFlag.LoadAsPanoId };
+			return {
+				panoId: ctx.resolvedPanoId,
+				flags: loc.flags | LocationFlag.LoadAsPanoId,
+			};
 		}
 		return null;
 	},
@@ -46,9 +50,12 @@ export async function bulkPinToPano(
 		useLatest?: boolean;
 		onProgress?: (done: number, total: number) => void;
 	} = {},
-): Promise<number> {
+): Promise<BatchOutcome> {
 	const { useLatest, ...runOpts } = opts;
 	const config: PinPanoConfig = { useLatest };
 	const result = await runResolvers(locations, [{ id: "pinPano", config }], runOpts);
-	return result.pinPano?.success.length ?? 0;
+	return {
+		succeeded: result.pinPano?.success.length ?? 0,
+		failed: result.pinPano?.failed ?? [],
+	};
 }

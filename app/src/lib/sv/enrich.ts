@@ -1,11 +1,12 @@
 import { svMetadata } from "@/lib/sv/query";
 import type { Pano } from "@/types";
 import { metadataPatch, SVMETA_FIELDS } from "@/lib/sv/getMetadata";
-import { getMapState, updateLocations } from "@/store/useMapStore";
+import { getMapState, updateLocations, fetchLocations } from "@/store/useMapStore";
 import {
 	getEnrichmentProviders,
 	getDefaultEnrichKeys,
 	knownFieldDefs,
+	providerWaves,
 	registerEnrichmentProvider,
 	type EnrichmentProvider,
 	type ProcedureSpec,
@@ -17,6 +18,7 @@ import {
 	outcomeDidWork,
 	procedureEntry,
 	type ResolverOutcome,
+	type ProviderPart,
 } from "@/lib/data/procedures";
 import {
 	GET_METADATA_INFLIGHT,
@@ -37,23 +39,39 @@ export function needsEnrichment(loc: Location, enrichFields?: string[]): boolean
 /** Enrich a single location (used on pano load). `data` is the answer the caller
  *  already has from the `metadata` query; without one this fetches it. The patch is the
  *  same one the svMeta procedure writes in a run. */
-export async function enrich(loc: Location, data?: Pano | null): Promise<boolean> {
+export async function enrich(
+	loc: Location,
+	data?: Pano | null,
+	signal?: AbortSignal,
+): Promise<boolean> {
+	signal?.throwIfAborted();
 	if (!data) {
 		if (!loc.panoId) return false;
 		[data] = await svMetadata([loc.panoId]);
 		if (!data) return false;
 	}
+	signal?.throwIfAborted();
 	const map = getMapState().map;
 	if (!map || !map.meta.settings.enrichMetadata) return false;
 	const enrichFields = map.meta.settings.enrichFields ?? getDefaultEnrichKeys();
 
-	const patch = metadataPatch(data, loc.extra, new Set(enrichFields));
+	const patch = Object.fromEntries(
+		Object.entries(metadataPatch(data, loc.extra, new Set(enrichFields))).filter(
+			([key, value]) => JSON.stringify(loc.extra?.[key] ?? null) !== JSON.stringify(value),
+		),
+	);
 	if (Object.keys(patch).length > 0) {
+		signal?.throwIfAborted();
 		await updateLocations([{ id: loc.id, patch: { extra: patch } }], { undoable: false });
+	} else if (!needsEnrichment(loc, enrichFields)) {
+		return true;
 	}
 
+	signal?.throwIfAborted();
 	// svMeta is excluded: its fields are the answer this was handed.
-	await runProvidersForIds([loc.id], { enrichFields, excludeIds: ["svMeta"] });
+	const selector = { type: "Locations" as const, locations: [loc.id], name: null };
+	await runProvidersForIds([loc.id], { enrichFields, excludeIds: ["svMeta"], signal });
+	await runJsEnrichers(selector, { enrichFields, signal });
 	return true;
 }
 
@@ -140,6 +158,7 @@ function ensureAdm1(): Promise<boolean> {
 export const subdivisionProvider: EnrichmentProvider = {
 	id: "subdivision",
 	label: msg("Subdivision"),
+	requires: ["lat", "lng"],
 	fieldDefs: {
 		subdivision: { type: "string", label: msg("Subdivision") },
 	},
@@ -170,6 +189,43 @@ registerEnrichmentProvider(exactDateProvider);
 registerEnrichmentProvider(timezoneProvider);
 registerEnrichmentProvider(subdivisionProvider);
 
+/** Fork alt-providers (baidu/tencent/yandex/apple) keep a JS `enrich` instead of a
+ *  Rust procedure. They run after the engine so a just-resolved pano id is on the row. */
+async function runJsEnrichers(
+	selector: Selector,
+	opts: {
+		enrichFields: string[] | null;
+		force?: boolean;
+		signal?: AbortSignal;
+	},
+): Promise<Record<string, ResolverOutcome>> {
+	const js = getEnrichmentProviders().filter((p) => p.enrich && !p.procedure);
+	const out: Record<string, ResolverOutcome> = {};
+	if (js.length === 0) return out;
+	const locs = await fetchLocations(selector);
+	for (const wave of providerWaves(js)) {
+		opts.signal?.throwIfAborted();
+		await Promise.all(
+			wave.map(async (p) => {
+				const failed: number[] = [];
+				const patches = await p.enrich!(locs, opts.enrichFields, {
+					signal: opts.signal,
+					force: opts.force,
+					onFail: (id) => failed.push(id),
+				});
+				opts.signal?.throwIfAborted();
+				if (patches.size > 0) {
+					await updateLocations(
+						[...patches.entries()].map(([id, extra]) => ({ id, patch: { extra } })),
+					);
+				}
+				out[p.id] = { success: patches.size, failed };
+			}),
+		);
+	}
+	return out;
+}
+
 /** One summary row per pass that did work: the core metadata pass, then every
  *  provider that updated or failed at least one location. */
 export interface EnrichOutcome extends ResolverOutcome {
@@ -185,7 +241,7 @@ export async function enrichAll(
 	opts: {
 		signal?: AbortSignal;
 		force?: boolean;
-		onProgress?: (done: number, total: number, label?: string) => void;
+		onProgress?: (done: number, total: number, label?: string, parts?: ProviderPart[]) => void;
 	} = {},
 ): Promise<EnrichResult> {
 	const map = getMapState().map;
@@ -209,8 +265,9 @@ export async function enrichAll(
 		selector,
 		{ ...opts, enrichFields },
 	);
+	const js = await runJsEnrichers(selector, { ...opts, enrichFields });
 	const labelOf = (id: string) => getEnrichmentProviders().find((p) => p.id === id)?.label ?? id;
-	return Object.entries(run)
+	return Object.entries({ ...run, ...js })
 		.filter(([, o]) => outcomeDidWork(o))
 		.map(([id, o]) => ({ id, label: labelOf(id), ...o }));
 }

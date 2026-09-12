@@ -154,8 +154,12 @@ export async function runResolvers(
 					config,
 					resolvedPanoId: resolvedPanoIds?.get(loc.id),
 				});
-				result[r.id].success.push(loc.id);
-				if (patch) patches.push(patch);
+				if (patch) {
+					result[r.id].success.push(loc.id);
+					patches.push(patch);
+				} else {
+					result[r.id].failed.push(loc.id);
+				}
 			}
 			const merged = mergePatches(patches);
 			if (merged) allUpdates.push({ id: loc.id, patch: merged });

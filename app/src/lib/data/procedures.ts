@@ -1,6 +1,6 @@
 /**
  * Driver for the Rust procedure engine. A bulk operation is one or more procedures plus
- * a `Selector`: the engine resolves the selector, schedules the dependency waves, pages
+ * a `Selector`: the engine resolves the selector, gates providers on their dependencies, pages
  * the locations, calls each procedure and delivers what it answers, as patches or back
  * to the caller. Locations never reach JS.
  */
@@ -8,6 +8,7 @@
 import type { Selector } from "@/bindings.gen";
 import { holdAutosave } from "@/store/useMapStore";
 import {
+	derivedFrom,
 	getAllEnrichKeys,
 	getDefaultEnrichKeys,
 	getEnrichmentProviders,
@@ -19,7 +20,6 @@ import { events } from "@/bindings.gen";
 import type { ProcedureProgress, ProcedureResult, ProviderDecl, Sink } from "@/bindings.gen";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { msg } from "@/lib/i18n";
 
 /** Entry point of a procedure this app bundles. Plugins ship their own paths. */
 export const procedureEntry = (name: string) => `res://procedures/${name}.js`;
@@ -100,6 +100,24 @@ export function outcomeDidWork(o: ResolverOutcome): boolean {
 }
 export type SvRunResult = Record<string, ResolverOutcome>;
 
+/** What a non-enrich bulk run reports: how many rows it worked, and the ids it could not. */
+export interface BatchOutcome {
+	succeeded: number;
+	failed: number[];
+}
+
+/** One provider's own progress. Counts are net of skipped rows. */
+export interface ProviderPart {
+	label: string;
+	done: number;
+	total: number;
+	failed: number;
+	finished: boolean;
+}
+
+/** @deprecated Use {@link ProviderPart}. */
+export type PhasePart = ProviderPart;
+
 /** A collected answer is the module's own JSON; a module that emits something else
  *  loses that entry rather than the run. */
 function parseAnswer(providerId: string, json: string): unknown {
@@ -116,10 +134,11 @@ export interface RunOpts {
 	force?: boolean;
 	/** The `extra` keys the run should produce; null means the default set. */
 	enrichFields?: string[] | null;
-	/** `label` names the current phase; undefined = no labelled provider is running.
-	 *  `done`/`total` are phase-relative and net of skipped rows, so they reset as each
-	 *  dependency wave begins. */
-	onProgress?: (done: number, total: number, label?: string) => void;
+	/** `done`/`total` are rows finished through every provider in the run -- the slowest
+	 *  provider's count, so the bar is monotonic and full means fully enriched. `parts`
+	 *  carries each labeled provider's own counts for the whole run, zeros until it
+	 *  starts, and is ordered as declared. `label` is kept so existing callers still type-check. */
+	onProgress?: (done: number, total: number, label?: string, parts?: ProviderPart[]) => void;
 }
 
 /** A provider to run, optionally overriding the config its procedure declares. */
@@ -159,6 +178,7 @@ export async function runProviders(
 	const { enrichFields = null } = opts;
 	const selectable = new Set(getAllEnrichKeys());
 	const active = new Set(enrichFields ?? getDefaultEnrichKeys());
+	const core = new Set(getEnrichmentProviders().flatMap((p) => p.provides ?? []));
 	const decls: ProviderDecl[] = [];
 	for (const { provider: p, config, force: providerForce } of items) {
 		const fields = activeProviderFields(p, selectable, active);
@@ -168,13 +188,19 @@ export async function runProviders(
 		const spec = p.procedure;
 		if (!spec) continue;
 		if (spec.prepare && !(await spec.prepare())) continue;
+		const written = [...fields, ...(p.provides ?? [])];
 		decls.push(
 			declare(p.id, spec, selector, {
 				label: p.label,
 				config,
 				force: providerForce,
-				fields: [...fields, ...(p.provides ?? [])],
+				fields: written,
 				requires: p.requires,
+				invalidates: Object.fromEntries(
+					written
+						.map((f) => [f, [...derivedFrom([f])].filter((k) => !core.has(k))] as const)
+						.filter(([, deps]) => deps.length > 0),
+				),
 			}),
 		);
 	}
@@ -192,6 +218,7 @@ interface DeclOpts {
 	force?: boolean;
 	fields?: string[];
 	requires?: string[];
+	invalidates?: Record<string, string[]>;
 }
 
 function declare(
@@ -206,6 +233,7 @@ function declare(
 		entry: spec.entry,
 		fields: o.fields ?? [],
 		requires: o.requires ?? [],
+		invalidates: o.invalidates ?? {},
 		select: spec.select ?? selector,
 		batch: spec.batch,
 		sink: o.sink ?? spec.sink ?? "patch",
@@ -238,7 +266,6 @@ async function runDecls(decls: ProviderDecl[], opts: RunOpts): Promise<SvRunResu
 	const { signal, force = false, onProgress } = opts;
 	const result: SvRunResult = {};
 	if (decls.length === 0) return result;
-	const labels = new Map(decls.map((d) => [d.id, d.label ?? undefined]));
 
 	const seen = new Map<string, ProcedureProgress>();
 	const collected = new Map<string, CollectedEntry[]>();
@@ -247,34 +274,28 @@ async function runDecls(decls: ProviderDecl[], opts: RunOpts): Promise<SvRunResu
 		settle = resolve;
 	});
 
-	// The engine runs providers in sequential dependency waves, so the bar tracks the
-	// wave in flight: a provider reporting in after every member of the phase finished
-	// opens a new one.
-	let phase: string[] = [];
-
 	const handle = (p: ProcedureProgress) => {
 		seen.set(p.providerId, p);
-		if (!phase.includes(p.providerId)) {
-			if (phase.every((id) => seen.get(id)?.finished)) phase = [];
-			phase.push(p.providerId);
-		}
-		let done = 0;
-		let total = 0;
-		const running: string[] = [];
-		for (const id of phase) {
-			const s = seen.get(id);
-			if (!s) continue;
-			// Skipped rows were never work, so they leave both sides of the bar. Each page
-			// discovers more of them, which is why the denominator shrinks as a run goes.
-			done += s.done - s.skipped;
-			total += s.total - s.skipped;
-			const label = labels.get(id);
-			if (!s.finished && label) running.push(label);
-		}
+		const net = (s?: ProcedureProgress) => ({
+			done: s ? s.done - s.skipped : 0,
+			total: s ? s.total - s.skipped : 0,
+			failed: s?.failed ?? 0,
+			finished: s?.finished ?? false,
+		});
+		const parts = decls
+			.filter((d) => d.label != null)
+			.map((d) => ({ label: d.label as string, ...net(seen.get(d.id)) }));
+		// Overall is rows finished through every provider: the slowest one's count. A
+		// provider that skipped its whole universe carries no work and counts for nothing.
+		const counting = decls.map((d) => net(seen.get(d.id))).filter((s) => !(s.finished && s.total === 0));
+		const done = counting.length > 0 ? Math.min(...counting.map((s) => s.done)) : 0;
+		const total = Math.max(0, ...counting.map((s) => s.total));
+		const running = parts.filter((part) => !part.finished && part.total > 0);
 		onProgress?.(
 			done,
 			total,
-			running.length === 1 ? running[0] : running.length > 1 ? msg("Enriching fields") : undefined,
+			running.length === 1 ? running[0].label : undefined,
+			parts,
 		);
 		if (seen.size === decls.length && [...seen.values()].every((s) => s.finished)) settle();
 	};

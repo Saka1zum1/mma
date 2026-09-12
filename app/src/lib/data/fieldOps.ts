@@ -11,11 +11,10 @@ import type {
 	Location,
 	ExtraFieldType,
 	Selection,
-	Selector,
 	Update,
 	LocationPatch_Deserialize as LocationPatch,
 } from "@/bindings.gen";
-import { buildSelection } from "@/store/selections";
+import { buildSelection, childSelections, withChildren } from "@/store/selections";
 import { isBuiltinField, isWritableField } from "@/lib/data/fieldDefRegistry";
 import { t, msg } from "@/lib/i18n";
 
@@ -259,18 +258,18 @@ function evalNode(expr: FieldExpr, loc: Location): number | null {
 }
 
 /** Plan per-location assignments `key = expr(loc)`. Locations whose expression
- *  can't evaluate are counted in `skipped`; unchanged locations are dropped. */
+ *  can't evaluate are named in `skipped`; unchanged locations are dropped. */
 export function planFieldExpr(
 	locations: Location[],
 	key: string,
 	expr: FieldExpr,
-): { updates: Update<LocationPatch>[]; skipped: number } {
+): { updates: Update<LocationPatch>[]; skipped: number[] } {
 	const updates: Update<LocationPatch>[] = [];
-	let skipped = 0;
+	const skipped: number[] = [];
 	for (const loc of locations) {
 		const v = evalFieldExpr(expr, loc);
 		if (v == null) {
-			skipped++;
+			skipped.push(loc.id);
 			continue;
 		}
 		const planned = planFieldSet([loc], fieldPatch(key, v));
@@ -290,15 +289,23 @@ function rewriteSelection(sel: Selection, from: string, to: string | null): Sele
 		if (p.field !== from) return sel;
 		return to === null ? null : buildSelection({ ...p, field: to });
 	}
-	if ("selections" in p) {
-		const children = p.selections
-			.map((c) => rewriteSelection(c, from, to))
-			.filter((c): c is Selection => c !== null);
-		if (children.length === 0) return null;
-		if (children.length === 1 && p.type !== "Invert") return children[0];
-		return buildSelection({ ...p, selections: children } as Selector);
+	if (p.type === "Ranked") {
+		const child = p.selection ? rewriteSelection(p.selection, from, to) : null;
+		if (p.expr === from) {
+			if (to === null) return child;
+			return buildSelection({ ...p, expr: to, selection: child });
+		}
+		if (child === p.selection) return sel;
+		return buildSelection({ ...p, selection: child });
 	}
-	return sel;
+	const children = childSelections(p);
+	if (children.length === 0) return sel;
+	const next = children
+		.map((c) => rewriteSelection(c, from, to))
+		.filter((c): c is Selection => c !== null);
+	if (next.length === 0) return null;
+	if (next.length === 1 && p.type !== "Invert") return next[0];
+	return buildSelection(withChildren(p, next));
 }
 
 /** Calendar digits of a timestamp in a clock frame. */
