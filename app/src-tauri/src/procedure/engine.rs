@@ -220,21 +220,34 @@ impl EngineDeps {
 }
 
 /// `res://<rel>` names a module bundled with the app; anything else is a filesystem path.
-/// A dev build reads the bundle from the crate: nothing copies `bundle.resources` beside
-/// the dev exe, so the resource dir there is whatever an earlier build left behind.
+///
+/// A `tauri dev` build reads from the crate: nothing copies `bundle.resources` beside
+/// the dev exe. An e2e `--no-bundle` debug build is not `is_dev()` either, so
+/// `resource_dir` is the exe directory and also has no copy — fall back to the crate
+/// path when the bundled file is missing.
 fn resolve_entry(spec: &str) -> AppResult<std::path::PathBuf> {
     let Some(rel) = spec.strip_prefix("res://") else {
         return Ok(std::path::PathBuf::from(spec));
     };
+    let crate_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
     if tauri::is_dev() {
-        return Ok(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel));
+        return Ok(crate_path);
     }
-    let app = crate::app_handle()
-        .ok_or_else(|| AppError("procedure: no app handle for resource lookup".to_string()))?;
-    let dir = tauri::Manager::path(app)
-        .resource_dir()
-        .map_err(|e| AppError(format!("procedure: resource dir unavailable: {e}")))?;
-    Ok(dir.join(rel))
+    if let Some(app) = crate::app_handle() {
+        if let Ok(dir) = tauri::Manager::path(app).resource_dir() {
+            let bundled = dir.join(rel);
+            if bundled.is_file() {
+                return Ok(bundled);
+            }
+        }
+    }
+    if crate_path.is_file() {
+        return Ok(crate_path);
+    }
+    Err(AppError(format!(
+        "procedure: {rel} not found beside the app or at {}",
+        crate_path.display()
+    )))
 }
 
 fn http_client() -> &'static reqwest::Client {
@@ -269,17 +282,14 @@ fn e2e_origin() -> Option<&'static str> {
                 return Some(s);
             }
         }
-        // The harness always serves the stub on 4599 under --mock, but env forwarding
-        // through the WebDriver spawn chain is unreliable. E2E apps are launched with
-        // --test-db, so fall back to the conventional port when the origin is missing.
-        if std::env::args().any(|a| a == "--test-db") {
-            let port = std::env::var("MMA_E2E_SV_PORT")
-                .ok()
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or(4599);
-            return Some(format!("http://127.0.0.1:{port}"));
-        }
-        None
+        // e2e binaries only run under the harness. WebDriver often drops both the
+        // origin env and `--test-db`, so always rewrite to the conventional stub
+        // rather than letting GetMetadata hit the real Google RPC.
+        let port = std::env::var("MMA_E2E_SV_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(4599);
+        Some(format!("http://127.0.0.1:{port}"))
     })
     .as_deref()
 }

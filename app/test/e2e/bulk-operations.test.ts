@@ -42,7 +42,8 @@ describe("Bulk operations -- enrichAll", () => {
 		});
 
 		const meta = result.find((r: EnrichOutcome) => r.id === "svMeta");
-		expect(meta!.success.length).toBeGreaterThanOrEqual(2);
+		expect(meta).toBeTruthy();
+		expect(meta!.success).toBeGreaterThanOrEqual(2);
 
 		const l = await getLoc(locIds[0]);
 		expect(l.extra?.countryCode).toBeTruthy();

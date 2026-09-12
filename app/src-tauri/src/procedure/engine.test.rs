@@ -1384,6 +1384,28 @@ mod e2e_rewrite {
 }
 
 // -----------------------------------------------------------------------
+// res:// procedure lookup
+// -----------------------------------------------------------------------
+
+#[test]
+fn resolve_entry_keeps_a_plain_filesystem_path() {
+    assert_eq!(
+        resolve_entry("C:/tmp/foo.js").unwrap(),
+        std::path::PathBuf::from("C:/tmp/foo.js")
+    );
+}
+
+#[test]
+fn resolve_entry_errors_when_the_bundled_module_is_missing() {
+    if tauri::is_dev() {
+        return;
+    }
+    let err = resolve_entry("res://procedures/__no_such_module__.js").unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("not found"), "{msg}");
+}
+
+// -----------------------------------------------------------------------
 // Query
 // -----------------------------------------------------------------------
 
