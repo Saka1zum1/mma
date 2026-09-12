@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, type ReactNode } from "react";
-import * as RadixDialog from "@radix-ui/react-dialog";
+import { createContext, useContext, useRef, type ComponentProps, type ReactNode } from "react";
+import { Dialog as BaseDialog } from "@base-ui-components/react/dialog";
 import clsx from "clsx";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiClose } from "@mdi/js";
@@ -19,54 +19,82 @@ export function useCloseDialog() {
 	return close;
 }
 
-export function Dialog({ open, onOpenChange, children, ...props }: RadixDialog.DialogProps) {
+const OUTSIDE_KEEP = ".suggest-portal, .color-picker__popover, .date-picker__popover";
+
+export function Dialog({
+	open,
+	onOpenChange,
+	children,
+	...props
+}: Omit<ComponentProps<typeof BaseDialog.Root>, "onOpenChange"> & {
+	onOpenChange?: (open: boolean) => void;
+}) {
 	return (
 		<CloseContext.Provider value={() => onOpenChange?.(false)}>
-			<RadixDialog.Root open={open} onOpenChange={onOpenChange} {...props}>
+			<BaseDialog.Root
+				open={open}
+				onOpenChange={(next, details) => {
+					// Portaled overlays live outside the popup in the DOM; interacting
+					// with them must not dismiss the dialog.
+					if (
+						!next &&
+						details.reason === "outside-press" &&
+						(details.event.target as Element | null)?.closest?.(OUTSIDE_KEEP)
+					) {
+						details.cancel();
+						return;
+					}
+					onOpenChange?.(next);
+				}}
+				{...props}
+			>
 				{children}
-			</RadixDialog.Root>
+			</BaseDialog.Root>
 		</CloseContext.Provider>
 	);
 }
 
-export const DialogTrigger = RadixDialog.Trigger;
+export const DialogTrigger = BaseDialog.Trigger;
 
 export function DialogContent({
 	className,
 	title,
+	initialFocus,
 	children,
 	headerExtra,
 	...props
-}: RadixDialog.DialogContentProps & { title: string; headerExtra?: ReactNode }) {
+}: ComponentProps<typeof BaseDialog.Popup> & { title: string; headerExtra?: ReactNode }) {
+	const popupRef = useRef<HTMLDivElement>(null);
 	return (
-		<RadixDialog.Portal>
-			<RadixDialog.Overlay className="modal__backdrop" />
-			<RadixDialog.Content
+		<BaseDialog.Portal>
+			<BaseDialog.Backdrop className="modal__backdrop" />
+			<BaseDialog.Popup
 				{...props}
+				ref={popupRef}
 				className="modal"
-				aria-describedby={undefined}
-				onInteractOutside={(e) => {
-					// A portaled SuggestInput dropdown lives outside the content in the DOM;
-					// interacting with it must not dismiss the dialog.
-					if ((e.target as Element | null)?.closest?.(".suggest-portal")) e.preventDefault();
-					else props.onInteractOutside?.(e);
-				}}
+				initialFocus={
+					// Landing on the first tabbable would put a focus ring on the close X.
+					// Park focus on the popup instead unless a child already claimed it (autoFocus).
+					initialFocus ??
+					(() => {
+						const popup = popupRef.current;
+						return popup && !popup.contains(document.activeElement) ? popup : false;
+					})
+				}
 			>
 				<div className={clsx("modal__dialog", className)}>
 					<header className={clsx("modal__header", className ? `${className}__header` : null)}>
-						<RadixDialog.Title className="modal__title">{title}</RadixDialog.Title>
+						<BaseDialog.Title className="modal__title">{title}</BaseDialog.Title>
 						<div className="modal__header-actions">
 							{headerExtra}
-							<RadixDialog.Close asChild>
-								<button type="button" className="icon-button modal__close">
-									<Icon path={mdiClose} />
-								</button>
-							</RadixDialog.Close>
+							<BaseDialog.Close className="icon-button modal__close">
+								<Icon path={mdiClose} />
+							</BaseDialog.Close>
 						</div>
 					</header>
 					<div className="modal__content">{children}</div>
 				</div>
-			</RadixDialog.Content>
-		</RadixDialog.Portal>
+			</BaseDialog.Popup>
+		</BaseDialog.Portal>
 	);
 }
