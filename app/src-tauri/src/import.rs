@@ -105,6 +105,7 @@ use crate::util::color_for_name;
 /// Parse CSV text into locations. Supports both named columns (lat/lng/heading/etc.)
 /// and positional (first two numeric columns = lat, lng). Skips malformed rows silently.
 fn parse_csv(text: &str) -> ParsedMap {
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
     let warn = |w: &str| {
         let mut m = ParsedMap::default();
         m.warnings.push(w.into());
@@ -309,6 +310,11 @@ fn settings_from_extra(extra: &serde_json::Value) -> serde_json::Map<String, Val
 
 /// Auto-detect format (JSON vs CSV) by first non-whitespace byte and dispatch.
 fn parse_file(buf: &mut [u8]) -> ParsedMap {
+    let buf = if buf.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        &mut buf[3..]
+    } else {
+        buf
+    };
     let trimmed = buf
         .iter()
         .position(|&b| !b.is_ascii_whitespace())
@@ -996,6 +1002,11 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
         .as_ref()
         .map(settings_from_extra)
         .unwrap_or_default();
+    let fields = extra_val
+        .as_ref()
+        .and_then(|e| e.get("fields"))
+        .filter(|f| f.is_object())
+        .cloned();
 
     // Merge chunk-local tag tables into one global table, remapping each chunk's
     // local ids to global ids in place.
@@ -1066,9 +1077,9 @@ fn parse_single_json_mut(buf: &mut [u8]) -> ParsedMap {
         folder,
         locations,
         tags,
+        fields,
         warnings,
         settings,
-        ..Default::default()
     }
 }
 
@@ -1652,11 +1663,11 @@ fn add_parsed_to_store(
 
     let t_undo = _t.elapsed();
 
-    for loc in std::mem::take(&mut parsed.locations) {
+    for loc in &parsed.locations {
         let ci = location_store::render_cell_idx(loc.lat, loc.lng);
         store.cell_add_render(ci, loc.id);
-        store.overlay_add(loc);
     }
+    store.overlay_add_many(std::mem::take(&mut parsed.locations));
     let t_overlay = _t.elapsed();
 
     let mut result = store.finish_mutation(&location_store::ChangeSet {

@@ -555,16 +555,19 @@ pub async fn store_export_bulk_zip() -> AppResult<String> {
                 entry.insert("name".into(), serde_json::json!(name));
                 entry.insert("customCoordinates".into(), serde_json::Value::Array(coords));
 
-                // Tag color metadata
+                let mut extra_meta = serde_json::Map::new();
                 if !tag_defs.is_empty() {
-                    let converted = tag_color_meta(&tag_defs);
-                    let mut extra_meta = serde_json::Map::new();
-                    extra_meta.insert("tags".into(), serde_json::Value::Object(converted));
-                    if let Ok(fields) = serde_json::from_str::<serde_json::Value>(extra_json) {
-                        if let Some(f) = fields.get("fields") {
-                            extra_meta.insert("fields".into(), f.clone());
-                        }
+                    extra_meta.insert(
+                        "tags".into(),
+                        serde_json::Value::Object(tag_color_meta(&tag_defs)),
+                    );
+                }
+                if let Ok(extra) = serde_json::from_str::<serde_json::Value>(extra_json) {
+                    if let Some(f) = extra.get("fields") {
+                        extra_meta.insert("fields".into(), f.clone());
                     }
+                }
+                if !extra_meta.is_empty() {
                     entry.insert("extra".into(), serde_json::Value::Object(extra_meta));
                 }
 

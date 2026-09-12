@@ -886,3 +886,21 @@ fn parse_legacy_provider_wire_values() {
     assert_eq!(parsed.locations[0].provider.as_deref(), Some("apple"));
     assert_eq!(parsed.locations[1].provider.as_deref(), Some("baidu"));
 }
+
+#[test]
+fn parse_json_carries_exported_field_defs() {
+    let json = br#"{"customCoordinates":[{"lat":1.0,"lng":2.0}],"extra":{"fields":{"note":{"type":"string"}}}}"#;
+    let mut buf = json.to_vec();
+    let parsed = parse_single_json_mut(&mut buf);
+    let fields = parsed.fields.expect("fields");
+    assert_eq!(fields["note"]["type"], "string");
+}
+
+#[test]
+fn parse_file_strips_utf8_bom_before_csv() {
+    let mut buf = "\u{FEFF}lat,lng\n10.5,20.5\n".as_bytes().to_vec();
+    let parsed = parse_file(&mut buf);
+    assert_eq!(parsed.locations.len(), 1);
+    assert_eq!(parsed.locations[0].lat, 10.5);
+    assert_eq!(parsed.locations[0].lng, 20.5);
+}
