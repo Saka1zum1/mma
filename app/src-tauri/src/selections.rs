@@ -7,7 +7,8 @@
 //! bitmasks. The bitmasks are then serialized into a per-cell binary format that JS reads
 //! to color the selection overlay.
 
-use crate::types::{Location, LocationFlags};
+use crate::field_expr;
+use crate::types::{AppResult, Location, LocationFlags};
 use crate::util::{tz_offset_seconds, unix_to_hour_min, unix_to_month_day};
 use arrow_array::{Array, Float64Array, ListArray, RecordBatch, StringArray, UInt32Array};
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -20,6 +21,7 @@ pub(crate) use mma_geo::{point_in_ring, unwrap_ring};
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 /// Discriminated union of all selection types. Serialized with `{ "type": "..." }` tag
@@ -85,16 +87,23 @@ pub enum Selector {
         #[serde(default, rename = "tzLocal")]
         tz_local: bool,
     },
-    TopK {
-        field: String,
-        k: u32,
+    /// Rank a selection by a `field_expr`, optionally keeping only the first `k`. Emits
+    /// a ranked root in rank order, where every other selector answers ascending. With no
+    /// `k` this selects its child unchanged and states only how to walk it. A member the
+    /// expression cannot score ranks last, so ranking never drops anything.
+    #[serde(rename_all = "camelCase")]
+    Ranked {
+        /// What to rank; `None` ranks the whole map.
+        selection: Option<Box<Selection>>,
+        expr: String,
+        k: Option<u32>,
         ascending: bool,
     },
 }
 
 /// Filter comparison operator. Single source of truth: specta renders the literal
 /// union, so the TS `FilterOp` type and `OP_LABELS` derive from this enum.
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOp {
     Eq,
@@ -340,7 +349,7 @@ impl<'a, 'v> RowRef<'a, 'v> {
                 let fv = if is_builtin_field(field) {
                     resolve_field_arrow(v, *i, field)
                 } else {
-                    fv_extra
+                    fv_extra.filter(|v| !v.is_null())
                 };
                 (fv, tz)
             }
@@ -480,6 +489,68 @@ impl<'a> LocView<'a> {
             .filter(move |r| set.is_none_or(|s| s.contains(r.id())))
     }
 
+    /// Binary search for `id` in the sorted batch. Overlay adds are searched separately.
+    fn batch_row_for_id(&self, id: u32) -> Option<usize> {
+        let ids = self.ids?;
+        let (mut lo, mut hi) = (0usize, self.batch_rows);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            let mid_id = ids.value(mid);
+            if mid_id < id {
+                lo = mid + 1;
+            } else if mid_id > id {
+                hi = mid;
+            } else {
+                return Some(mid);
+            }
+        }
+        None
+    }
+
+    /// `within` as a visitor. A set small enough that seeking each id beats one
+    /// sequential pass is walked by id (sorted ids on both the batch and the adds keep
+    /// view order); anything larger takes the dense walk.
+    #[inline]
+    pub fn for_each_within<'v>(
+        &'v self,
+        set: Option<&'v RoaringBitmap>,
+        mut f: impl FnMut(RowRef<'a, 'v>),
+    ) {
+        let physical_rows = self.batch_rows + self.adds.len();
+        let sparse = set.is_some_and(|set| {
+            let search_steps = self.batch_rows.checked_ilog2().unwrap_or(0)
+                + self.adds.len().checked_ilog2().unwrap_or(0)
+                + 2;
+            set.len().saturating_mul(u64::from(search_steps)) < physical_rows as u64
+        });
+        if !sparse {
+            self.within(set).for_each(f);
+            return;
+        }
+
+        let set = set.unwrap();
+        for id in set.iter() {
+            let Some(i) = self.batch_row_for_id(id) else {
+                continue;
+            };
+            if !self.is_alive(i) {
+                continue;
+            }
+            let row = match self.patch_at(i) {
+                Some(p) => RowRef::from_loc(p),
+                None => RowRef {
+                    inner: RowInner::Base(self, i),
+                },
+            };
+            f(row);
+        }
+        for id in set.iter() {
+            if let Ok(i) = self.adds.binary_search_by_key(&id, |loc| loc.id) {
+                f(RowRef::from_loc(&self.adds[i]));
+            }
+        }
+    }
+
     #[inline]
     pub fn for_each(&self, f: impl FnMut(RowRef)) {
         self.iter().for_each(f)
@@ -562,7 +633,7 @@ fn test_row(r: &RowRef, selector: &Selector) -> bool {
             }
             match r.resolve_field(field) {
                 Some(ref v) => compare_filter(v, *op, value, value2.as_ref()),
-                None => matches!(op, FilterOp::Neq | FilterOp::Nothas),
+                None => matches!(op, FilterOp::Nothas),
             }
         }
         _ => false,
@@ -643,6 +714,21 @@ pub fn resolve(view: &LocView, selector: &Selector) -> RoaringBitmap {
             let inner = resolve(view, &selections[0].selector);
             return universe - inner;
         }
+        Selector::Ranked {
+            selection,
+            expr,
+            k,
+            ascending,
+        } => {
+            let inner = match selection {
+                Some(child) => resolve(view, &child.selector),
+                None => alive_id_set(view),
+            };
+            let Some(k) = k else { return inner };
+            return ranked_within(view, Some(&inner), expr, Some(*k as usize), *ascending)
+                .into_iter()
+                .collect();
+        }
         _ => {}
     }
     // Scan leaves (incl. Tag with no index): build a positional mask, convert to ids.
@@ -695,6 +781,29 @@ pub fn resolve_forest(
                     walk(view, c, counts);
                 }
                 set
+            }
+            Selector::Ranked {
+                selection,
+                expr,
+                k,
+                ascending,
+            } => {
+                let inner = match selection {
+                    Some(child) => walk(view, child, counts),
+                    None => alive_id_set(view),
+                };
+                match k {
+                    None => inner,
+                    Some(k) => ranked_within(
+                        view,
+                        Some(&inner),
+                        expr,
+                        Some(*k as usize),
+                        *ascending,
+                    )
+                    .into_iter()
+                    .collect(),
+                }
             }
             _ => resolve(view, &sel.selector),
         };
@@ -773,51 +882,6 @@ fn resolve_leaf_mask(view: &LocView, selector: &Selector) -> Vec<bool> {
                     })
                 }
             }
-        }
-        Selector::TopK {
-            field,
-            k,
-            ascending,
-        } => {
-            let mut entries: Vec<(usize, f64)> = Vec::new();
-            for i in 0..view.batch_rows {
-                if !view.is_alive(i) {
-                    continue;
-                }
-                let row = match view.patch_at(i) {
-                    Some(p) => RowRef::from_loc(p),
-                    None => RowRef {
-                        inner: RowInner::Base(view, i),
-                    },
-                };
-                if let Some(v) = row.resolve_field(field).as_ref().and_then(as_f64) {
-                    entries.push((i, v));
-                }
-            }
-            for (j, loc) in view.adds.iter().enumerate() {
-                if let Some(v) = resolve_field_loc(loc, field).as_ref().and_then(as_f64) {
-                    entries.push((view.batch_rows + j, v));
-                }
-            }
-            let k = *k as usize;
-            let asc = |a: &(usize, f64), b: &(usize, f64)| {
-                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-            };
-            if k > 0 && k < entries.len() {
-                if *ascending {
-                    entries.select_nth_unstable_by(k - 1, asc);
-                } else {
-                    entries.select_nth_unstable_by(k - 1, |a, b| asc(b, a));
-                }
-                entries.truncate(k);
-            }
-            let mut mask = vec![false; n];
-            if k > 0 {
-                for &(i, _) in &entries {
-                    mask[i] = true;
-                }
-            }
-            mask
         }
         _ => view.resolve_mask(|r| test_row(r, selector)),
     }
@@ -1242,16 +1306,44 @@ pub fn find_duplicate_groups(view: &LocView, distance_m: f64) -> Vec<Vec<u32>> {
     groups
 }
 
+/// The default duplicate score: how finished a location is. Doubles as the placeholder
+/// the map settings input shows when a map states no preference of its own.
+pub const DEFAULT_DUPLICATE_SCORE: &str = "tagCount + has(panoId) + loadAsPanoId + (heading != 0)";
+
+/// The map's duplicate preference, or the built-in default when it states none. Merge
+/// and prune both rank through this, so a map has one answer to "which duplicate is the
+/// better one", not two.
+pub fn parse_duplicate_score(src: Option<&str>) -> AppResult<crate::field_expr::Expr> {
+    let src = src.map(str::trim).filter(|s| !s.is_empty());
+    crate::field_expr::parse(src.unwrap_or(DEFAULT_DUPLICATE_SCORE))
+}
+
+/// Which of two duplicates is the better one to keep, greatest first. `created_at` and
+/// `id` are reversed so the older and the lower win ties. A location the expression
+/// cannot score ranks below every one it can.
+pub fn better(a: &Location, b: &Location, score: &crate::field_expr::Expr) -> Ordering {
+    let rank = |l: &Location| {
+        let row = RowRef::from_loc(l);
+        crate::field_expr::eval(score, &|name| row.resolve_field(name))
+    };
+    // eval never yields NaN, so partial_cmp is total.
+    rank(a)
+        .partial_cmp(&rank(b))
+        .unwrap_or(Ordering::Equal)
+        .then_with(|| b.created_at.cmp(&a.created_at))
+        .then_with(|| b.id.cmp(&a.id))
+}
+
 /// Prune duplicates. `locs` is the resolved selection; informational locations are
 /// never pruned and never count as neighbours. Returns ids to remove.
 /// - <= 25 m: relevance prune — each radius cluster keeps its best-scored location
-///   (see [`prune_score`]; tie: oldest `created_at`, then lowest id), rest pruned.
+///   (see [`better`]), rest pruned.
 /// - > 25 m: greedy max-thinning — repeatedly drop the location with the most in-range
 ///   neighbours until no two survivors are within `distance_m`.
 pub fn prune_duplicates(
     locs: &[Location],
     distance_m: f64,
-    keep_tag_ids: &HashSet<u32>,
+    score: &crate::field_expr::Expr,
 ) -> Vec<u32> {
     let locs: Vec<&Location> = locs
         .iter()
@@ -1263,26 +1355,8 @@ pub fn prune_duplicates(
     if distance_m > 25.0 {
         prune_thinning(&locs, distance_m)
     } else {
-        prune_relevance(&locs, distance_m, keep_tag_ids)
+        prune_relevance(&locs, distance_m, score)
     }
-}
-
-/// Relevance score: +1 pano, +1 per tag, +1 LoadAsPanoId, +5 keep-tag, +1 nonzero heading.
-fn prune_score(l: &Location, keep_tag_ids: &HashSet<u32>) -> i64 {
-    let mut s = l.tags.len() as i64;
-    if l.pano_id.is_some() {
-        s += 1;
-    }
-    if l.flags.contains(LocationFlags::LOAD_AS_PANO_ID) {
-        s += 1;
-    }
-    if l.tags.iter().any(|t| keep_tag_ids.contains(t)) {
-        s += 5;
-    }
-    if l.heading != 0.0 {
-        s += 1;
-    }
-    s
 }
 
 /// Symmetric within-distance neighbour lists (indices into `locs`).
@@ -1301,7 +1375,11 @@ fn neighbor_lists(locs: &[&Location], distance_m: f64) -> Vec<Vec<usize>> {
     out
 }
 
-fn prune_relevance(locs: &[&Location], distance_m: f64, keep_tag_ids: &HashSet<u32>) -> Vec<u32> {
+fn prune_relevance(
+    locs: &[&Location],
+    distance_m: f64,
+    score: &crate::field_expr::Expr,
+) -> Vec<u32> {
     let neighbors = neighbor_lists(locs, distance_m);
     let mut pruned = vec![false; locs.len()];
     let mut out = Vec::new();
@@ -1316,12 +1394,7 @@ fn prune_relevance(locs: &[&Location], distance_m: f64, keep_tag_ids: &HashSet<u
         }
         let survivor = *cluster
             .iter()
-            .max_by(|&&a, &&b| {
-                prune_score(locs[a], keep_tag_ids)
-                    .cmp(&prune_score(locs[b], keep_tag_ids))
-                    .then_with(|| locs[b].created_at.cmp(&locs[a].created_at)) // older wins ties
-                    .then_with(|| locs[b].id.cmp(&locs[a].id))
-            })
+            .max_by(|&&a, &&b| better(locs[a], locs[b], score))
             .unwrap();
         for &j in &cluster {
             if j != survivor {
@@ -1382,6 +1455,9 @@ pub enum BuiltinFieldKind {
     Identity,
     /// Derived, not stored on the location. Never writable.
     Virtual,
+    /// Only a term in a field expression. Never writable, never offered in pickers: a
+    /// selection type already answers this question, and better.
+    Term,
     /// Explicitly bulk-editable top-level field.
     Writable,
 }
@@ -1430,12 +1506,17 @@ macro_rules! builtin_fields {
             }
         }
 
-        /// Resolve a field name to its JSON value from a `Location` struct.
-        /// Unknown fields fall through to `loc.extra`.
-        fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
+        /// Resolve a field name to its JSON value from a `Location` struct. Unknown fields
+        /// fall through to `loc.extra`. `None` is the one meaning of absence: a builtin
+        /// without a value and an `extra` key holding JSON null both resolve to it.
+        pub(crate) fn resolve_field_loc(loc: &Location, field: &str) -> Option<serde_json::Value> {
             match field {
                 $($key => { let $l = loc; $loc_expr })*
-                _ => loc.extra.as_ref().and_then(|e| e.get(field)),
+                _ => loc
+                    .extra
+                    .as_ref()
+                    .and_then(|e| e.get(field))
+                    .filter(|v| !v.is_null()),
             }
         }
 
@@ -1451,7 +1532,7 @@ macro_rules! builtin_fields {
                     }
                     // Byte-scan for the one key; parses only its value slice instead of
                     // the whole extras document per row.
-                    crate::types::json_field(extras.value(idx), field)
+                    crate::types::json_field(extras.value(idx), field).filter(|v| !v.is_null())
                 }
             }
         }
@@ -1501,12 +1582,26 @@ builtin_fields! {
     "tagCount", "Tag count", ExtraFieldType::Number, Some(BuiltinFieldKind::Virtual), None,
         |l| Some(serde_json::json!(l.tags.len())),
         |v, i| v.tags.map(|c| serde_json::json!(c.value(i).len()));
+    "loadAsPanoId", "Load as pano ID", ExtraFieldType::Number, Some(BuiltinFieldKind::Term), None,
+        |l| Some(flag_value(l.flags, LocationFlags::LOAD_AS_PANO_ID)),
+        |v, i| v.flags.map(|c| flag_value(LocationFlags::from_bits_retain(c.value(i)),
+            LocationFlags::LOAD_AS_PANO_ID));
+    "informational", "Informational", ExtraFieldType::Number, Some(BuiltinFieldKind::Term), None,
+        |l| Some(flag_value(l.flags, LocationFlags::INFORMATIONAL)),
+        |v, i| v.flags.map(|c| flag_value(LocationFlags::from_bits_retain(c.value(i)),
+            LocationFlags::INFORMATIONAL));
+}
+
+/// Flags read as 0/1 numbers: the expression language has no booleans, so a flag term
+/// adds itself to a score directly.
+fn flag_value(flags: LocationFlags, bit: LocationFlags) -> serde_json::Value {
+    serde_json::json!(u8::from(flags.contains(bit)))
 }
 
 /// Core comparison dispatch. Supports eq, neq, has, nothas, gt, lt, gte, lte, between,
 /// between_anyyear (month-day range ignoring year), and between_anytime (time-of-day range).
 /// Numeric comparison is attempted first; falls back to lexicographic string comparison.
-fn compare_filter(
+pub(crate) fn compare_filter(
     field_val: &serde_json::Value,
     op: FilterOp,
     value: &serde_json::Value,
@@ -1813,6 +1908,8 @@ pub fn partition(
     }
 }
 
+const MAX_BINS_WITH_EMPTIES: usize = 100;
+
 fn partition_numeric(
     view: &LocView,
     field: &str,
@@ -1820,11 +1917,11 @@ fn partition_numeric(
     set: Option<&RoaringBitmap>,
 ) -> Vec<PartitionBucket> {
     let mut vals: Vec<(u32, f64)> = Vec::new();
-    for row in view.within(set) {
+    view.for_each_within(set, |row| {
         if let Some(n) = row.resolve_field(field).as_ref().and_then(as_f64) {
             vals.push((row.id(), n));
         }
-    }
+    });
     let nums: Vec<f64> = vals.iter().map(|(_, n)| *n).collect();
     let buckets = match bin_numeric(&nums, binning) {
         Some(b) => b,
@@ -1842,7 +1939,9 @@ fn partition_numeric(
     for (id, n) in vals {
         groups[buckets.index_of(n)].ids.push(id);
     }
-    groups.retain(|g| !g.ids.is_empty());
+    if groups.len() > MAX_BINS_WITH_EMPTIES {
+        groups.retain(|g| !g.ids.is_empty());
+    }
     groups
 }
 
@@ -1854,7 +1953,7 @@ fn partition_keyed(
 ) -> Vec<PartitionBucket> {
     let mut index: HashMap<String, usize> = HashMap::new();
     let mut groups: Vec<PartitionBucket> = Vec::new();
-    for row in view.within(set) {
+    view.for_each_within(set, |row| {
         let id = row.id();
         let key = match spec {
             KeySpec::Value => row.resolve_field(field).and_then(|v| value_key(&v)),
@@ -1869,22 +1968,21 @@ fn partition_keyed(
             KeySpec::NumericBin { .. } => None,
         };
         if let Some(k) = key {
-            if k.is_empty() {
-                continue;
-            }
-            match index.get(&k) {
-                Some(&i) => groups[i].ids.push(id),
-                None => {
-                    index.insert(k.clone(), groups.len());
-                    groups.push(PartitionBucket {
-                        key: k,
-                        ids: vec![id],
-                        bin: None,
-                    });
+            if !k.is_empty() {
+                match index.get(&k) {
+                    Some(&i) => groups[i].ids.push(id),
+                    None => {
+                        index.insert(k.clone(), groups.len());
+                        groups.push(PartitionBucket {
+                            key: k,
+                            ids: vec![id],
+                            bin: None,
+                        });
+                    }
                 }
             }
         }
-    }
+    });
     groups
 }
 
@@ -1906,14 +2004,14 @@ pub fn count_by(
 /// fields does this map actually have, and how covered are they" in one pass.
 pub fn extra_key_coverage(view: &LocView, set: Option<&RoaringBitmap>) -> Vec<(String, u32)> {
     let mut counts: HashMap<String, u32> = HashMap::new();
-    for row in view.within(set) {
+    view.for_each_within(set, |row| {
         row.for_each_extra_key(|key| match counts.get_mut(key) {
             Some(c) => *c += 1,
             None => {
                 counts.insert(key.to_string(), 1);
             }
         });
-    }
+    });
     let mut out: Vec<(String, u32)> = counts.into_iter().collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
@@ -1926,7 +2024,7 @@ pub fn columns_within(
     fields: &[String],
 ) -> Vec<Vec<serde_json::Value>> {
     let mut out: Vec<Vec<serde_json::Value>> = fields.iter().map(|_| Vec::new()).collect();
-    for row in view.within(set) {
+    view.for_each_within(set, |row| {
         for (col, field) in out.iter_mut().zip(fields) {
             col.push(if field == "tags" {
                 let mut tags = Vec::new();
@@ -1936,35 +2034,84 @@ pub fn columns_within(
                 row.resolve_field(field).unwrap_or(serde_json::Value::Null)
             });
         }
-    }
+    });
     out
 }
 
 /// Size of the selected set. Counts rows, never materializes them.
 pub fn count_within(view: &LocView, set: Option<&RoaringBitmap>) -> u32 {
-    view.within(set).count() as u32
+    let mut count = 0;
+    view.for_each_within(set, |_| count += 1);
+    count
 }
 
 /// Ids of every alive location in the set, in view order (batch rows, then overlay adds).
 pub fn ids_within(view: &LocView, set: Option<&RoaringBitmap>) -> Vec<u32> {
-    view.within(set).map(|row| row.id()).collect()
+    let mut ids = Vec::new();
+    view.for_each_within(set, |row| ids.push(row.id()));
+    ids
+}
+
+/// Selected ids best-ranked first: highest score, or lowest when `ascending`. A row the
+/// expression cannot evaluate (unparseable expression, missing field, non-numeric,
+/// non-finite result) ranks below every row it can, whichever direction is asked for --
+/// "no score" is absence, not a low one. The sort is stable, so ties keep view order.
+/// `k` cuts to the best k first, which costs a selection rather than a full sort.
+pub fn ranked_within(
+    view: &LocView,
+    set: Option<&RoaringBitmap>,
+    expr: &str,
+    k: Option<usize>,
+    ascending: bool,
+) -> Vec<u32> {
+    let expr = field_expr::parse(expr).ok();
+    let mut scored: Vec<(u32, Option<f64>)> = Vec::new();
+    view.for_each_within(set, |row| {
+        let score = expr
+            .as_ref()
+            .and_then(|e| field_expr::eval(e, &|name| row.resolve_field(name)));
+        scored.push((row.id(), score));
+    });
+    // eval never yields NaN, so partial_cmp is total.
+    let better = |a: &(u32, Option<f64>), b: &(u32, Option<f64>)| match (a.1, b.1) {
+        (Some(x), Some(y)) => {
+            let c = x.partial_cmp(&y).unwrap_or(Ordering::Equal);
+            if ascending {
+                c
+            } else {
+                c.reverse()
+            }
+        }
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    };
+    if let Some(k) = k {
+        if k == 0 {
+            return Vec::new();
+        }
+        if k < scored.len() {
+            scored.select_nth_unstable_by(k - 1, better);
+            scored.truncate(k);
+        }
+    }
+    scored.sort_by(better);
+    scored.into_iter().map(|(id, _)| id).collect()
 }
 
 /// Distinct values of `field` across the selected set, sorted. Scalars stringify so they
 /// match the string-typed options they populate; null and containers are skipped.
 pub fn distinct_values(view: &LocView, field: &str, set: Option<&RoaringBitmap>) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
-    for row in view.within(set) {
-        match row.resolve_field(field) {
-            Some(serde_json::Value::String(s)) if !s.is_empty() => {
-                seen.insert(s);
-            }
-            Some(v @ (serde_json::Value::Number(_) | serde_json::Value::Bool(_))) => {
-                seen.insert(v.to_string());
-            }
-            _ => {}
+    view.for_each_within(set, |row| match row.resolve_field(field) {
+        Some(serde_json::Value::String(s)) if !s.is_empty() => {
+            seen.insert(s);
         }
-    }
+        Some(v @ (serde_json::Value::Number(_) | serde_json::Value::Bool(_))) => {
+            seen.insert(v.to_string());
+        }
+        _ => {}
+    });
     seen.into_iter().collect()
 }
 

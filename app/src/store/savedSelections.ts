@@ -5,7 +5,7 @@
  *  is stored verbatim and re-resolved against whatever map is open. */
 
 import type { SavedSelection, SavedSelectionInfo, Selection, Selector } from "@/bindings.gen";
-import { buildSelection, selectionDisplayName } from "./selections";
+import { buildSelection, childSelections, selectionDisplayName, withChildren } from "./selections";
 import { cmd } from "@/lib/commands";
 import { importLegacySavedSelections } from "./migrations";
 import { bridgeAcrossWindows, emit, useEventValue } from "@/lib/events";
@@ -27,7 +27,7 @@ const NOTHING: Selector = { type: "Locations", locations: [], name: null };
  *  the rule to the map it was built on. */
 export function isSaveable(selector: Selector): boolean {
 	if (MAP_LOCAL_SET.has(selector.type)) return false;
-	return "selections" in selector ? selector.selections.every((c) => isSaveable(c.selector)) : true;
+	return childSelections(selector).every((c) => isSaveable(c.selector));
 }
 
 /** The name of every `Tag` leaf in the tree, keyed by id. */
@@ -35,8 +35,8 @@ function captureTagNames(selector: Selector, out: Record<number, string> = {}) {
 	if (selector.type === "Tag") {
 		const tag = getTag(selector.tagId);
 		if (tag) out[selector.tagId] = tag.name;
-	} else if ("selections" in selector) {
-		for (const child of selector.selections) captureTagNames(child.selector, out);
+	} else {
+		for (const child of childSelections(selector)) captureTagNames(child.selector, out);
 	}
 	return out;
 }
@@ -60,16 +60,15 @@ function remap(selector: Selector, tagNames: Record<number, string>): Selector {
 			name != null ? resolveTagByName(name) : getTag(selector.tagId) ? selector.tagId : null;
 		return id === null ? NOTHING : { type: "Tag", tagId: id };
 	}
-	if ("selections" in selector) {
-		return {
-			type: selector.type,
-			selections: selector.selections.map((child) => ({
-				...buildSelection(remap(child.selector, tagNames)),
-				color: child.color,
-			})),
-		};
-	}
-	return selector;
+	const children = childSelections(selector);
+	if (children.length === 0) return selector;
+	return withChildren(
+		selector,
+		children.map((child) => ({
+			...buildSelection(remap(child.selector, tagNames)),
+			color: child.color,
+		})),
+	);
 }
 
 /** One part of a saved rule: what its chip reads as, and what it resolves to here. The

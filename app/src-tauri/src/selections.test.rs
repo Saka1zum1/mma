@@ -43,6 +43,22 @@ fn within_iterates_resolved_set_in_view_order() {
     assert_eq!(ids(Some(&RoaringBitmap::new())), Vec::<u32>::new());
 }
 
+#[test]
+fn within_sparse_applies_overlay_and_preserves_view_order() {
+    let base: Vec<Location> = (1..=1_000).map(|id| loc(id, id as f64, 0.0)).collect();
+    let fx = Fx::base(&base)
+        .with_adds(vec![loc(1_001, 1_001.0, 0.0)])
+        .with_dead([500])
+        .with_patch(750, loc(750, 7_500.0, 0.0));
+    let view = fx.view();
+    let set: RoaringBitmap = [1, 500, 750, 1_001, 9_999].into_iter().collect();
+
+    let mut rows = Vec::new();
+    view.for_each_within(Some(&set), |row| rows.push((row.id(), row.lat())));
+
+    assert_eq!(rows, vec![(1, 1.0), (750, 7_500.0), (1_001, 1_001.0)]);
+}
+
 // -----------------------------------------------------------------------
 // Geometry: point_in_ring / point_in_polygon
 // -----------------------------------------------------------------------
@@ -1583,8 +1599,8 @@ fn duplicate_groups_empty_when_all_far() {
 // prune_duplicates
 // -----------------------------------------------------------------------
 
-fn no_keep() -> HashSet<u32> {
-    HashSet::new()
+fn default_score() -> crate::field_expr::Expr {
+    parse_duplicate_score(None).expect("default expression parses")
 }
 
 // <= 25m relevance mode: the best-scored location in a cluster survives.
@@ -1594,21 +1610,20 @@ fn prune_relevance_keeps_highest_score() {
     best.pano_id = Some("p".into());
     best.tags = vec![7];
     let locs = vec![best, loc(2, 0.00001, 0.0), loc(3, 0.00002, 0.0)];
-    let mut removed = prune_duplicates(&locs, 10.0, &no_keep());
+    let mut removed = prune_duplicates(&locs, 10.0, &default_score());
     removed.sort_unstable();
     assert_eq!(removed, vec![2, 3]);
 }
 
-// Keep-tag bonus (+5) outweighs raw tag count.
+// A "keep pano" tag is just a tag: more tags still win, there is no +5 bonus.
 #[test]
-fn prune_relevance_keep_tag_beats_tag_count() {
+fn prune_relevance_has_no_keep_tag_bonus() {
     let mut tagged = loc(1, 0.00000, 0.0);
     tagged.tags = vec![1, 2, 3];
     let mut keep = loc(2, 0.00001, 0.0);
     keep.tags = vec![9];
-    let keep_ids: HashSet<u32> = [9].into_iter().collect();
-    let removed = prune_duplicates(&[tagged, keep], 10.0, &keep_ids);
-    assert_eq!(removed, vec![1]);
+    let removed = prune_duplicates(&[tagged, keep], 10.0, &default_score());
+    assert_eq!(removed, vec![2]);
 }
 
 // Score tie: the oldest location survives.
@@ -1618,7 +1633,7 @@ fn prune_relevance_tie_keeps_oldest() {
     old.created_at = 100;
     let mut new = loc(2, 0.00001, 0.0);
     new.created_at = 200;
-    let removed = prune_duplicates(&[new, old], 10.0, &no_keep());
+    let removed = prune_duplicates(&[new, old], 10.0, &default_score());
     assert_eq!(removed, vec![2]);
 }
 
@@ -1628,7 +1643,7 @@ fn prune_never_touches_informational() {
     let mut info = loc(1, 0.00000, 0.0);
     info.flags = crate::types::LocationFlags::INFORMATIONAL;
     let locs = vec![info, loc(2, 0.00001, 0.0), loc(3, 0.00002, 0.0)];
-    let removed = prune_duplicates(&locs, 10.0, &no_keep());
+    let removed = prune_duplicates(&locs, 10.0, &default_score());
     assert_eq!(removed.len(), 1);
     assert!(!removed.contains(&1));
 }
@@ -1642,7 +1657,7 @@ fn prune_relevance_is_radius_scoped_not_transitive() {
         loc(2, 0.00001, 0.0),
         loc(3, 0.00002, 0.0),
     ];
-    let removed = prune_duplicates(&locs, 2.0, &no_keep());
+    let removed = prune_duplicates(&locs, 2.0, &default_score());
     assert_eq!(removed, vec![2]);
 }
 
@@ -1655,7 +1670,7 @@ fn prune_thinning_drops_hub_keeps_endpoints() {
         loc(2, 0.0003, 0.0),
         loc(3, 0.0006, 0.0),
     ];
-    let removed = prune_duplicates(&locs, 40.0, &no_keep());
+    let removed = prune_duplicates(&locs, 40.0, &default_score());
     assert_eq!(removed, vec![2]);
 }
 
@@ -1666,7 +1681,7 @@ fn prune_thinning_no_survivors_in_range() {
     for i in 0..12u32 {
         locs.push(loc(i + 1, 0.0003 * f64::from(i), 0.0)); // ~33m spacing
     }
-    let removed = prune_duplicates(&locs, 40.0, &no_keep());
+    let removed = prune_duplicates(&locs, 40.0, &default_score());
     let removed_set: HashSet<u32> = removed.iter().copied().collect();
     let survivors: Vec<&Location> = locs
         .iter()
@@ -1756,6 +1771,53 @@ fn extra_filter_scans_base_batch_top_level_only() {
             &filter("note", FilterOp::Eq, serde_json::json!("a\"b}"))
         ),
         vec![1]
+    );
+}
+
+// Absence has one meaning on both read paths: a key that is not there and a key holding
+// JSON null. Only `nothas` matches an absent field; `neq` needs a value to differ from.
+#[test]
+fn an_absent_field_matches_only_nothas() {
+    let mut nulled = loc(1, 0.0, 0.0);
+    nulled.extra = crate::types::RawExtra::from_string(r#"{"alt":null}"#.to_string());
+    let mut valued = loc(2, 0.0, 0.0);
+    valued.extra = crate::types::RawExtra::from_string(r#"{"alt":5}"#.to_string());
+    let mut added = loc(3, 0.0, 0.0);
+    added.extra = crate::types::RawExtra::from_string(r#"{"alt":null}"#.to_string());
+    let fx = Fx::base(&[nulled, valued]).with_adds(vec![added]);
+    let view = fx.view();
+    let filter = |field: &str, op: FilterOp, value: serde_json::Value| Selector::Filter {
+        field: field.into(),
+        op,
+        value,
+        value2: None,
+        tz_local: false,
+    };
+    let null = serde_json::Value::Null;
+
+    assert_eq!(
+        ids_of(&view, &filter("alt", FilterOp::Has, null.clone())),
+        vec![2]
+    );
+    assert_eq!(
+        ids_of(&view, &filter("alt", FilterOp::Nothas, null.clone())),
+        vec![1, 3]
+    );
+    assert_eq!(
+        ids_of(&view, &filter("alt", FilterOp::Neq, serde_json::json!(6))),
+        vec![2]
+    );
+    assert_eq!(
+        ids_of(&view, &filter("alt", FilterOp::Eq, serde_json::json!(5))),
+        vec![2]
+    );
+    assert_eq!(
+        ids_of(&view, &filter("gone", FilterOp::Nothas, null.clone())),
+        vec![1, 2, 3]
+    );
+    assert_eq!(
+        ids_of(&view, &filter("gone", FilterOp::Neq, serde_json::json!(1))),
+        Vec::<u32>::new()
     );
 }
 
@@ -1921,54 +1983,98 @@ fn loc_extra(id: u32, extra: serde_json::Value) -> Location {
     }
 }
 
-// --- TopK ---
+// --- Ranked ---
 
-#[test]
-fn topk_selects_highest() {
-    let locs = vec![
+fn ranked(expr: &str, k: Option<u32>, ascending: bool) -> Selector {
+    Selector::Ranked {
+        selection: None,
+        expr: expr.into(),
+        k,
+        ascending,
+    }
+}
+
+/// Ranking over only the rows that hold the field, the way the top-k UI composes it.
+fn ranked_having(field: &str, k: Option<u32>, ascending: bool) -> Selector {
+    Selector::Ranked {
+        selection: Some(Box::new(leaf(
+            "has",
+            Selector::Filter {
+                field: field.into(),
+                op: FilterOp::Has,
+                value: serde_json::Value::Bool(true),
+                value2: None,
+                tz_local: false,
+            },
+        ))),
+        expr: field.into(),
+        k,
+        ascending,
+    }
+}
+
+fn alt_fx() -> Fx {
+    Fx::adds(vec![
         loc_extra(1, serde_json::json!({"alt": 100})),
         loc_extra(2, serde_json::json!({"alt": 300})),
         loc_extra(3, serde_json::json!({"alt": 200})),
         loc_extra(4, serde_json::json!({"alt": 500})),
         loc_extra(5, serde_json::json!({"alt": 400})),
-    ];
-    let fx = Fx::adds(locs);
-    let view = fx.view();
-    let ids = ids_of(
-        &view,
-        &Selector::TopK {
-            field: "alt".into(),
-            k: 3,
-            ascending: false,
-        },
-    );
+    ])
+}
+
+#[test]
+fn ranked_k_keeps_the_highest() {
+    let fx = alt_fx();
+    let ids = ids_of(&fx.view(), &ranked("alt", Some(3), false));
     assert_eq!(ids, vec![2, 4, 5]); // 500, 400, 300
 }
 
 #[test]
-fn topk_selects_lowest() {
-    let locs = vec![
-        loc_extra(1, serde_json::json!({"alt": 100})),
-        loc_extra(2, serde_json::json!({"alt": 300})),
-        loc_extra(3, serde_json::json!({"alt": 200})),
-        loc_extra(4, serde_json::json!({"alt": 500})),
-        loc_extra(5, serde_json::json!({"alt": 400})),
-    ];
-    let fx = Fx::adds(locs);
-    let view = fx.view();
-    let ids = ids_of(
-        &view,
-        &Selector::TopK {
-            field: "alt".into(),
-            k: 2,
-            ascending: true,
-        },
-    );
+fn ranked_k_ascending_keeps_the_lowest() {
+    let fx = alt_fx();
+    let ids = ids_of(&fx.view(), &ranked("alt", Some(2), true));
     assert_eq!(ids, vec![1, 3]); // 100, 200
 }
 
 #[test]
-fn topk_skips_missing_field() {
+fn ranked_orders_the_ids_it_returns() {
+    let fx = alt_fx();
+    let view = fx.view();
+    // Membership is a set, so the order lives in the read, not in `resolve`.
+    assert_eq!(
+        ranked_within(&view, None, "alt", None, false),
+        vec![4, 5, 2, 3, 1]
+    );
+    assert_eq!(
+        ranked_within(&view, None, "alt", None, true),
+        vec![1, 3, 2, 5, 4]
+    );
+}
+
+#[test]
+fn ranked_sinks_what_it_cannot_score_in_either_direction() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"alt": 100})),
+        loc_extra(2, serde_json::json!({})),
+        loc_extra(3, serde_json::json!({"alt": "x"})),
+        loc_extra(4, serde_json::json!({"alt": 50})),
+    ];
+    let fx = Fx::adds(locs);
+    let view = fx.view();
+    // "no score" is absence, not a low score: it ranks last ascending too.
+    assert_eq!(
+        ranked_within(&view, None, "alt", None, false),
+        vec![1, 4, 2, 3]
+    );
+    assert_eq!(
+        ranked_within(&view, None, "alt", None, true),
+        vec![4, 1, 2, 3]
+    );
+}
+
+#[test]
+fn ranked_keeps_unscorable_members_but_a_filtered_child_drops_them() {
     let locs = vec![
         loc_extra(1, serde_json::json!({"alt": 100})),
         loc_extra(2, serde_json::json!({})),
@@ -1976,74 +2082,96 @@ fn topk_skips_missing_field() {
     ];
     let fx = Fx::adds(locs);
     let view = fx.view();
-    let ids = ids_of(
-        &view,
-        &Selector::TopK {
-            field: "alt".into(),
-            k: 10,
-            ascending: false,
-        },
+    // Ranking never drops: k=10 over 3 rows keeps all 3, unscorable included.
+    assert_eq!(
+        ids_of(&view, &ranked("alt", Some(10), false)),
+        vec![1, 2, 3]
     );
-    assert_eq!(ids, vec![1, 3]); // only 2 have the field, k=10 returns all available
+    // Dropping is the child's job.
+    assert_eq!(
+        ids_of(&view, &ranked_having("alt", Some(10), false)),
+        vec![1, 3]
+    );
 }
 
 #[test]
-fn topk_works_on_base_batch() {
+fn ranked_without_k_selects_its_child_unchanged() {
+    let locs = vec![
+        loc_extra(1, serde_json::json!({"alt": 100})),
+        loc_extra(2, serde_json::json!({})),
+        loc_extra(3, serde_json::json!({"alt": 50})),
+    ];
+    let fx = Fx::adds(locs);
+    let view = fx.view();
+    assert_eq!(ids_of(&view, &ranked("alt", None, false)), vec![1, 2, 3]);
+    assert_eq!(
+        ids_of(&view, &ranked_having("alt", None, false)),
+        vec![1, 3]
+    );
+}
+
+#[test]
+fn ranked_works_on_base_batch() {
     let locs = vec![
         loc_extra(1, serde_json::json!({"val": 10})),
         loc_extra(2, serde_json::json!({"val": 30})),
         loc_extra(3, serde_json::json!({"val": 20})),
     ];
     let fx = Fx::base(&locs);
-    let view = fx.view();
-    let ids = ids_of(
-        &view,
-        &Selector::TopK {
-            field: "val".into(),
-            k: 1,
-            ascending: false,
-        },
-    );
+    let ids = ids_of(&fx.view(), &ranked("val", Some(1), false));
     assert_eq!(ids, vec![2]); // 30 is highest
 }
 
 #[test]
-fn topk_zero_k_selects_nothing() {
-    let locs = vec![
-        loc_extra(1, serde_json::json!({"alt": 100})),
-        loc_extra(2, serde_json::json!({"alt": 200})),
-    ];
-    let fx = Fx::adds(locs);
-    let view = fx.view();
-    let ids = ids_of(
-        &view,
-        &Selector::TopK {
-            field: "alt".into(),
-            k: 0,
-            ascending: false,
-        },
-    );
+fn ranked_zero_k_selects_nothing() {
+    let fx = alt_fx();
+    let ids = ids_of(&fx.view(), &ranked("alt", Some(0), false));
     assert_eq!(ids, Vec::<u32>::new());
 }
 
 #[test]
-fn topk_k_equals_len_selects_all() {
+fn ranked_k_equals_len_selects_all() {
+    let fx = alt_fx();
+    let ids = ids_of(&fx.view(), &ranked("alt", Some(5), false));
+    assert_eq!(ids, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn ranked_within_honours_the_set() {
+    let fx = alt_fx();
+    let set: RoaringBitmap = [1u32, 3].into_iter().collect();
+    assert_eq!(
+        ranked_within(&fx.view(), Some(&set), "alt", None, false),
+        vec![3, 1]
+    );
+}
+
+#[test]
+fn ranked_takes_a_whole_expression_not_just_a_field() {
     let locs = vec![
-        loc_extra(1, serde_json::json!({"alt": 100})),
-        loc_extra(2, serde_json::json!({"alt": 300})),
-        loc_extra(3, serde_json::json!({"alt": 200})),
+        loc_extra(1, serde_json::json!({"a": 1, "b": 10})),
+        loc_extra(2, serde_json::json!({"a": 5, "b": 1})),
+        loc_extra(3, serde_json::json!({"a": 2, "b": 2})),
     ];
     let fx = Fx::adds(locs);
-    let view = fx.view();
-    let ids = ids_of(
-        &view,
-        &Selector::TopK {
-            field: "alt".into(),
-            k: 3,
-            ascending: false,
-        },
+    assert_eq!(
+        ranked_within(&fx.view(), None, "a + b", None, false),
+        vec![1, 2, 3]
     );
-    assert_eq!(ids, vec![1, 2, 3]);
+}
+
+#[test]
+fn ranked_with_an_unparseable_expression_scores_nothing_and_keeps_view_order() {
+    let fx = alt_fx();
+    let view = fx.view();
+    assert_eq!(
+        ranked_within(&view, None, "alt +", None, false),
+        vec![1, 2, 3, 4, 5]
+    );
+    assert_eq!(
+        ids_of(&view, &ranked("alt +", Some(2), false)),
+        vec![1, 2]
+    );
 }
 
 #[test]
@@ -2096,8 +2224,42 @@ fn partition_numeric_width_anchors_at_multiples() {
     let mut ids = g2.ids.clone();
     ids.sort();
     assert_eq!(ids, vec![2, 3]);
-    // the empty "500–1000" bin is dropped
-    assert!(groups.iter().all(|g| g.key != "500–1000"));
+    let gap = groups.iter().find(|g| g.key == "500–1000").unwrap();
+    assert!(gap.ids.is_empty());
+    assert_eq!(gap.bin, Some([500.0, 1000.0]));
+}
+
+#[test]
+fn partition_numeric_drops_empties_once_the_table_would_be_unusable() {
+    let adds = vec![
+        loc_extra(1, serde_json::json!({"n": 0})),
+        loc_extra(2, serde_json::json!({"n": 150})),
+    ];
+    let fx = Fx::adds(adds);
+    let view = fx.view();
+    let groups = partition(
+        &view,
+        "n",
+        &KeySpec::NumericBin {
+            binning: NumericBinning::Width { w: 1.0 },
+        },
+        None,
+    );
+    assert_eq!(groups.len(), 2);
+    assert!(groups.iter().all(|g| !g.ids.is_empty()));
+}
+
+#[test]
+fn partition_value_never_invents_a_group() {
+    let adds = vec![
+        loc_extra(1, serde_json::json!({"c": "a"})),
+        loc_extra(2, serde_json::json!({"c": "c"})),
+    ];
+    let fx = Fx::adds(adds);
+    let view = fx.view();
+    let groups = partition(&view, "c", &KeySpec::Value, None);
+    assert_eq!(groups.len(), 2);
+    assert!(groups.iter().all(|g| !g.ids.is_empty()));
 }
 
 #[test]

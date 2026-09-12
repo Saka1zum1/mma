@@ -3,7 +3,7 @@
 import { match, P } from "ts-pattern";
 import type { FilterOp, PolygonGeometry, Tag } from "@/bindings.gen";
 import { getVisibleTags, getTag } from "@/store/useMapStore";
-import { hslToRgb } from "@/lib/util/color";
+import { asRgb, hslToRgb } from "@/lib/util/color";
 import { getFieldDef } from "@/lib/data/fieldDefRegistry";
 import { localDateTime, utcDateTime } from "@/lib/util/format";
 import { clamp, isVariant, unionTuple, type Variant } from "@/types/util";
@@ -26,7 +26,6 @@ export type UnaryType = "Invert";
 /** Composite variants that are flat n-ary groups. */
 export type GroupType = Exclude<CompositeType, UnaryType>;
 
-const COMPOSITE_TYPES = unionTuple<CompositeType>()(["Intersection", "Union", "Invert"]);
 const GROUP_TYPES = unionTuple<GroupType>()(["Intersection", "Union"]);
 export const UNARY_TYPES = unionTuple<UnaryType>()(["Invert"]);
 
@@ -135,7 +134,7 @@ function keyForSelector(selector: Selector, locations: number[]): string {
 			(p) =>
 				`filter:${p.field}:${p.op}:${String(p.value)}${p.value2 != null ? `:${String(p.value2)}` : ""}${p.tzLocal ? ":local" : ""}`,
 		)
-		.with({ type: "TopK" }, (p) => `topk:${p.field}:${p.k}:${p.ascending}`)
+		.with({ type: "Ranked" }, (p) => `ranked:${p.expr}:${p.k}:${p.ascending}:${p.selection?.key ?? ""}`)
 		.exhaustive();
 }
 
@@ -148,7 +147,10 @@ function selectionColor(selector: Selector, key: string): [number, number, numbe
 	}
 	if (selector.type === "Polygon") {
 		const { polygonColorMode, polygonColor } = getSettings();
-		if (polygonColorMode === "fixed") return [polygonColor.r, polygonColor.g, polygonColor.b];
+		if (polygonColorMode === "fixed") {
+			const rgb = asRgb(polygonColor);
+			if (rgb) return [rgb.r, rgb.g, rgb.b];
+		}
 	}
 	return colorForKey(key);
 }
@@ -158,6 +160,20 @@ export function buildSelection(selector: Selector): Selection {
 	const locations = resolveLocations(selector);
 	const key = keyForSelector(selector, locations);
 	return { key, color: selectionColor(selector, key), selector };
+}
+
+/** Every child selection a selector wraps, whatever shape it wraps them in. */
+export function childSelections(selector: Selector): Selection[] {
+	if ("selections" in selector) return selector.selections;
+	if ("selection" in selector) return selector.selection ? [selector.selection] : [];
+	return [];
+}
+
+/** `selector` with its children replaced, keeping the shape it wraps them in. */
+export function withChildren(selector: Selector, children: Selection[]): Selector {
+	if ("selections" in selector) return { ...selector, selections: children };
+	if ("selection" in selector) return { ...selector, selection: children[0] ?? null };
+	return selector;
 }
 
 // dedupe by key, preserving order of last occurrence
@@ -187,12 +203,11 @@ export function polygonSelectionsContaining(
 	return keys;
 }
 
-/** Remove a selection by key. Composites (Intersection/Union/Invert) unwrap their children back into the list. */
+/** Remove a selection by key. Wrappers (Intersection/Union/Invert/Ranked) unwrap their children back into the list. */
 export function removeSelection(current: Selection[], key: string): Selection[] {
 	return current.flatMap((s) => {
 		if (s.key !== key) return [s];
-		if (isVariant(s.selector, COMPOSITE_TYPES)) return s.selector.selections;
-		return [];
+		return childSelections(s.selector);
 	});
 }
 
@@ -472,14 +487,14 @@ function transformInTree(
 	fn: (matched: Selection) => Selection,
 ): Selection | null {
 	if (sel.key === key) return fn(sel);
-	if (!isVariant(sel.selector, COMPOSITE_TYPES)) return null;
-	const children = sel.selector.selections;
+	const children = childSelections(sel.selector);
+	if (children.length === 0) return null;
 	for (let i = 0; i < children.length; i++) {
 		const next = transformInTree(children[i], key, fn);
 		if (next) {
 			const newChildren = spliceMerging(children, i, next);
-			if (newChildren.length === 1 && !isVariant(sel.selector, UNARY_TYPES)) return newChildren[0];
-			return buildSelection({ type: sel.selector.type, selections: newChildren });
+			if (newChildren.length === 1 && isVariant(sel.selector, GROUP_TYPES)) return newChildren[0];
+			return buildSelection(withChildren(sel.selector, newChildren));
 		}
 	}
 	return null;
@@ -564,12 +579,13 @@ export function selectionDisplayName(sel: Selection, tagNames?: Record<number, s
 				return clause(p.op as FilterOp, `${fmtVal(p.value)}..${fmtVal(p.value2)}`);
 			return clause(p.op as FilterOp, fmtVal(p.value));
 		})
-		.with({ type: "TopK" }, (p) => {
-			const fieldDef = getFieldDef(p.field);
-			const label = fieldDef?.label ? t(fieldDef.label) : p.field;
+		.with({ type: "Ranked" }, (p) => {
+			const fieldDef = getFieldDef(p.expr);
+			const by = fieldDef?.label ? t(fieldDef.label) : p.expr;
+			if (p.k == null) return t("Ranked by {field}", { field: by });
 			return p.ascending
-				? t("Bottom {k} by {field}", { k: p.k, field: label })
-				: t("Top {k} by {field}", { k: p.k, field: label });
+				? t("Bottom {k} by {field}", { k: p.k, field: by })
+				: t("Top {k} by {field}", { k: p.k, field: by });
 		})
 		.exhaustive();
 }
@@ -654,15 +670,23 @@ function rewriteSelection(sel: Selection, from: string, to: string | null): Sele
 		if (p.field !== from) return sel;
 		return to === null ? null : buildSelection({ ...p, field: to });
 	}
-	if ("selections" in p) {
-		const children = p.selections
-			.map((child) => rewriteSelection(child, from, to))
-			.filter((child): child is Selection => child !== null);
-		if (children.length === 0) return null;
-		if (children.length === 1 && p.type !== "Invert") return children[0];
-		return buildSelection({ ...p, selections: children } as Selector);
+	if (p.type === "Ranked") {
+		const child = p.selection ? rewriteSelection(p.selection, from, to) : null;
+		if (p.expr === from) {
+			if (to === null) return child;
+			return buildSelection({ ...p, expr: to, selection: child });
+		}
+		if (child === p.selection) return sel;
+		return buildSelection({ ...p, selection: child });
 	}
-	return sel;
+	const children = childSelections(p);
+	if (children.length === 0) return sel;
+	const next = children
+		.map((child) => rewriteSelection(child, from, to))
+		.filter((child): child is Selection => child !== null);
+	if (next.length === 0) return null;
+	if (next.length === 1 && isVariant(p, GROUP_TYPES)) return next[0];
+	return buildSelection(withChildren(p, next));
 }
 
 export function rewriteSelectionFields(

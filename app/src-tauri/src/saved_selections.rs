@@ -102,7 +102,7 @@ fn parse_row(
             color: serde_json::from_str(color)?,
             created_at,
         },
-        selector: serde_json::from_str(selector)?,
+        selector: serde_json::from_value(modernize(serde_json::from_str(selector)?))?,
         tag_names: serde_json::from_str(tag_names)?,
     })
 }
@@ -142,6 +142,45 @@ fn insert(conn: &Connection, s: &SavedSelection) -> AppResult<()> {
         ],
     )?;
     Ok(())
+}
+
+/// Rows written before Ranked spell it `TopK`, which ranked a bare field and dropped
+/// rows lacking it -- the drop is now the child selection's job, so the rewrite wraps
+/// the field in a `has` filter. Rewritten on read, so the row itself is never touched.
+pub(crate) fn modernize(mut selector: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    let Some(obj) = selector.as_object_mut() else {
+        return selector;
+    };
+    if obj.get("type").and_then(Value::as_str) == Some("TopK") {
+        if let Some(Value::String(field)) = obj.remove("field") {
+            let k = obj.remove("k").unwrap_or(Value::Null);
+            obj.insert("type".into(), Value::String("Ranked".into()));
+            obj.insert("expr".into(), Value::String(field.clone()));
+            obj.insert("k".into(), k);
+            obj.insert(
+                "selection".into(),
+                serde_json::json!({
+                    "key": format!("filter:{field}:has:true"),
+                    "color": NO_COLOR,
+                    "selector": { "type": "Filter", "field": field, "op": "has", "value": true },
+                }),
+            );
+        }
+    }
+    if let Some(child) = obj.get_mut("selection").and_then(Value::as_object_mut) {
+        if let Some(inner) = child.get_mut("selector") {
+            *inner = modernize(inner.take());
+        }
+    }
+    if let Some(Value::Array(children)) = obj.get_mut("selections") {
+        for child in children {
+            if let Some(inner) = child.get_mut("selector") {
+                *inner = modernize(inner.take());
+            }
+        }
+    }
+    selector
 }
 
 pub(crate) fn delete(conn: &Connection, id: &str) -> AppResult<()> {

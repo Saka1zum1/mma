@@ -161,3 +161,33 @@ fn get_ignores_ids_that_are_not_there() {
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].info.id, a.info.id);
 }
+
+#[test]
+fn a_topk_row_reads_as_a_ranked_over_the_rows_that_hold_the_field() {
+    use crate::selections::FilterOp;
+    let old = r#"{"type":"TopK","field":"altitude","k":10,"ascending":true}"#;
+    let selector: Selector =
+        serde_json::from_value(modernize(serde_json::from_str(old).unwrap())).unwrap();
+    let Selector::Ranked {
+        selection,
+        expr,
+        k,
+        ascending,
+    } = selector
+    else {
+        panic!("not a ranked");
+    };
+    assert_eq!(expr, "altitude");
+    assert_eq!(k, Some(10));
+    assert!(ascending);
+    let child = selection.expect("ranks a filtered child");
+    assert_eq!(child.key, "filter:altitude:has:true");
+    assert!(matches!(
+        child.selector,
+        Selector::Filter {
+            ref field,
+            op: FilterOp::Has,
+            ..
+        } if field == "altitude"
+    ));
+}
