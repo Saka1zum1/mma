@@ -1,3 +1,23 @@
+## v0.10.6 - 2026-09-12
+- **High and Ultra country borders** use the same country list as Standard, with padded coastlines, at about half the download size
+- **Distance units** can be metric, imperial, or automatic from your system; they apply to the measure bar, map overview, merge distance, and other distance fields
+- **Duplicate preference** in map settings is a formula that decides which location survives a merge or prune; **review order** can walk locations by a formula as well
+- **Enrichment** fills each field as soon as it is ready, instead of waiting for the slowest one; the bulk dialog shows per-field progress, speed, and failures
+- Every bulk operation offers **Select failed** for the locations it could not process
+- **Search** works the same in the map list, tags, command palette, and manual: accents are ignored, and words can be typed in any order
+- **Plugin commands** appear in the command palette alongside built-in actions
+- **Drop marker** copies the panorama you are looking at, not the one already stored on the location
+- Launching the app a second time focuses the existing window instead of opening another copy
+- Windows open more cleanly, without a maximized flash
+- A crashed plugin only closes its own panel; it no longer takes the rest of the editor with it
+- Plugin updates at startup run once, even when several windows open together
+- Files exported from Excel import correctly; map exports keep field definitions even when a map has no tag colors
+- Dialogs, date and color pickers, and collapsible panels behave more consistently
+- Fixed saved selections being dropped when older maps were reopened
+- Fixed ghosted selection counts, bulk progress totals, and enrichment treating some failed locations as successes
+- Fixed tags that could not be dragged back to the top level, and drop-to-merge when two tags share the same path
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.10.0 - 2026-08-29
 - **App UI is now available in seven languages** (English, German, French, Russian, Simplified Chinese, Spanish, Japanese, and Polish), with clearer settings layout and a refreshed welcome screen
 - **Saved selections** can be stored and reused from the map sidebar; selection and filter tools share one consistent way to pick locations
