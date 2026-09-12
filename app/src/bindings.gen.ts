@@ -13,6 +13,13 @@ export const commands = {
 	/**  Read a file from disk as UTF-8 text. Used by JS to read temp files and plugin sources. */
 	readFile: (path: string) => __TAURI_INVOKE<string>("read_file", { path }),
 	appReady: () => __TAURI_INVOKE<number>("app_ready"),
+	/**
+	 *  Reveal with the native open animation: a true first show() (DWM plays its pop-in),
+	 *  then maximize back-to-back while the shell is still blank. The show must come first:
+	 *  maximize on a hidden window reveals it without setting tao's visible flag, and the
+	 *  window gets re-hidden a frame later.
+	 */
+	revealWindow: (maximized: boolean) => __TAURI_INVOKE<void>("reveal_window", { maximized }),
 	/**  Return the platform-specific app data directory path (e.g., `%LOCALAPPDATA%/app.map-making.local`). */
 	getAppDataDir: () => __TAURI_INVOKE<string>("get_app_data_dir"),
 	/**  Report where map data is currently stored. */
@@ -26,6 +33,13 @@ export const commands = {
 	openDataFolder: () => __TAURI_INVOKE<null>("open_data_folder"),
 	/**  Open the current log file in the OS default handler. */
 	openLogFile: () => __TAURI_INVOKE<null>("open_log_file"),
+	/**
+	 *  First caller per app run wins the silent update pass. Every webview boots the
+	 *  plugin loader, so without this a restored editor window plus the map list run
+	 *  two full passes -- double registry fetches, double downloads, and interleaved
+	 *  install progress for the same plugin.
+	 */
+	claimPluginUpdatePass: () => __TAURI_INVOKE<boolean>("claim_plugin_update_pass"),
 	/**  Scan the `plugins/` directory under app data and return manifests for all installed plugins. */
 	listUserPlugins: () => __TAURI_INVOKE<PluginManifest[]>("list_user_plugins"),
 	/**
@@ -105,11 +119,14 @@ export const commands = {
 	storeCloseMap: () => __TAURI_INVOKE<null>("store_close_map"),
 	/**  Autosave uncommitted changes to the delta sidecar. No-op when nothing changed. */
 	storeSaveDirty: () => __TAURI_INVOKE<SaveResult>("store_save_dirty"),
-	/**
-	 *  Copy locations into another map, skipping ones the target already has. Tags and extra
-	 *  fields carry over.
-	 */
+	/**  Copy locations already stored in this map into another map. */
 	storeCopyLocationsToMap: (targetMapId: string, selector: Selector) => __TAURI_INVOKE<CopyToMapResult>("store_copy_locations_to_map", { targetMapId, selector }),
+	/**
+	 *  Copy caller-supplied location data into another map. Tag ids are read against this
+	 *  map's tag table, so the values may differ from any row it holds -- that is how the
+	 *  editor sends the pano you are currently looking at rather than the one on disk.
+	 */
+	storeAddLocationsToMap: (targetMapId: string, locations: Location[]) => __TAURI_INVOKE<CopyToMapResult>("store_add_locations_to_map", { targetMapId, locations: locations.map(i=>i) }),
 	/**  Lightweight status query: location count, version, and dirty flag. */
 	storeGetSummary: () => __TAURI_INVOKE<SummaryResult>("store_get_summary"),
 	/**  Return metadata for every map in the database. */
@@ -159,7 +176,10 @@ export const commands = {
 	 *  the JS side recolors its cell buffers in place (no full rebuild).
 	 */
 	storeSetMarkerColor: (color: [number, number, number]) => __TAURI_INVOKE<null>("store_set_marker_color", { color }),
-	/**  Ids of every location the selector resolves to, ascending. */
+	/**
+	 *  Ids of every location the selector resolves to. Ranked roots emit rank order;
+	 *  every other selector answers ascending.
+	 */
 	storeResolve: (selector: Selector) => __TAURI_INVOKE<number[]>("store_resolve", { selector }),
 	/**  How many locations the selector resolves to. Counts rows, never materializes them. */
 	storeCount: (selector: Selector) => __TAURI_INVOKE<number>("store_count", { selector }),
@@ -266,14 +286,15 @@ export const commands = {
 	storeDuplicateGroups: (distance: number) => __TAURI_INVOKE<number[][]>("store_duplicate_groups", { distance }),
 	/**
 	 *  Merge each duplicate group within `distance` metres into one survivor location, unioning
-	 *  tags and extra fields. One undoable edit.
+	 *  tags and extra fields. `score` is the map's duplicate preference expression; blank or
+	 *  absent uses the built-in ranking. One undoable edit.
 	 */
-	storeMergeDuplicates: (distance: number) => __TAURI_INVOKE<MutationResult>("store_merge_duplicates", { distance }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeMergeDuplicates: (distance: number, score: string | null) => __TAURI_INVOKE<MutationResult>("store_merge_duplicates", { distance, score }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Thin duplicates among `ids` within `distance` metres, keeping the best location per
 	 *  cluster. Informational locations are never pruned. One undoable edit.
 	 */
-	storePruneDuplicates: (selector: Selector, distance: number, keepTagIds: number[]) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { selector, distance, keepTagIds }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storePruneDuplicates: (selector: Selector, distance: number, score: string | null) => __TAURI_INVOKE<MutationResult>("store_prune_duplicates", { selector, distance, score }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Full render rebuild: single-pass over all alive locations, writes binary to a temp file.
 	 *  Returns the file path for JS to fetch via `mma-buf://`. Only called on map open or full reset.
@@ -475,7 +496,9 @@ export const events = {
 };
 
 /* Constants */
-export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","kind":"identity","comparison":null},{"key":"lng","label":"Longitude","type":"number","kind":"identity","comparison":null},{"key":"heading","label":"Heading","type":"number","kind":"writable","comparison":{"type":"circular","period":360.0}},{"key":"pitch","label":"Pitch","type":"number","kind":"writable","comparison":null},{"key":"zoom","label":"Zoom","type":"number","kind":"writable","comparison":null},{"key":"id","label":"ID","type":"number","kind":"identity","comparison":null},{"key":"createdAt","label":"Created","type":"date","kind":null,"comparison":null},{"key":"modifiedAt","label":"Modified","type":"date","kind":null,"comparison":null},{"key":"panoId","label":"Pano ID","type":"string","kind":null,"comparison":null},{"key":"provider","label":"Provider","type":"string","kind":null,"comparison":null},{"key":"tagCount","label":"Tag count","type":"number","kind":"virtual","comparison":null}] as const;
+export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","kind":"identity","comparison":null},{"key":"lng","label":"Longitude","type":"number","kind":"identity","comparison":null},{"key":"heading","label":"Heading","type":"number","kind":"writable","comparison":{"type":"circular","period":360.0}},{"key":"pitch","label":"Pitch","type":"number","kind":"writable","comparison":null},{"key":"zoom","label":"Zoom","type":"number","kind":"writable","comparison":null},{"key":"id","label":"ID","type":"number","kind":"identity","comparison":null},{"key":"createdAt","label":"Created","type":"date","kind":null,"comparison":null},{"key":"modifiedAt","label":"Modified","type":"date","kind":null,"comparison":null},{"key":"panoId","label":"Pano ID","type":"string","kind":null,"comparison":null},{"key":"provider","label":"Provider","type":"string","kind":null,"comparison":null},{"key":"tagCount","label":"Tag count","type":"number","kind":"virtual","comparison":null},{"key":"loadAsPanoId","label":"Load as pano ID","type":"number","kind":"term","comparison":null},{"key":"informational","label":"Informational","type":"number","kind":"term","comparison":null}] as const;
+
+export const DEFAULT_DUPLICATE_SCORE = "tagCount + has(panoId) + loadAsPanoId + (heading != 0)" as const;
 
 export const KNOWN_FIELDS = [{"key":"altitude","type":"number","label":"Altitude","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"countryCode","type":"string","label":"Country code","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"cameraType","type":"enum","label":"Camera type","values":["gen1","gen2","gen4","badcam","tripod","trekker"],"labels":[["gen1","Gen 1"],["gen2","Gen 2/3"],["gen4","Gen 4"],["badcam","Bad cam"],["tripod","Tripod"],["trekker","Trekker"]],"circularPeriod":null,"defaultOff":false},{"key":"panoType","type":"enum","label":"Pano type","values":["2","3","10"],"labels":[["2","Official"],["3","Unknown"],["10","User uploaded"]],"circularPeriod":null,"defaultOff":false},{"key":"imageDate","type":"month","label":"Image date","values":[],"labels":[],"circularPeriod":null,"defaultOff":false},{"key":"datetime","type":"date","label":"Exact date","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"timezone","type":"enum","label":"Timezone","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"drivingDirection","type":"number","label":"Driving direction","values":[],"labels":[],"circularPeriod":360.0,"defaultOff":true},{"key":"uploaderName","type":"string","label":"Uploader","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"coverageDates","type":"array","label":"Coverage dates","values":[],"labels":[],"circularPeriod":null,"defaultOff":true},{"key":"subdivision","type":"string","label":"Subdivision","values":[],"labels":[],"circularPeriod":null,"defaultOff":true}] as const;
 
@@ -1083,6 +1106,16 @@ export type MapSettings_Deserialize = {
 	 *  there. Tree-view only; clicking the alias leaf toggles the real tag.
 	 */
 	aliases?: { [key in string]: number },
+	/**
+	 *  Which member of a duplicate group survives a merge: a `field_expr` scoring the
+	 *  location, highest wins. `None` (or blank) uses the built-in ranking.
+	 */
+	duplicateScore?: string | null,
+	/**
+	 *  Scores every location; a review pass walks them highest first. `None` (or blank)
+	 *  reviews them in the order the selection resolved.
+	 */
+	reviewOrder?: string | null,
 	/**  Alternate Street View providers (Apple Look Around, …). */
 	providers?: ProvidersSettings_Deserialize,
 };
@@ -1113,6 +1146,16 @@ export type MapSettings = {
 	 *  there. Tree-view only; clicking the alias leaf toggles the real tag.
 	 */
 	aliases: { [key in string]: number },
+	/**
+	 *  Which member of a duplicate group survives a merge: a `field_expr` scoring the
+	 *  location, highest wins. `None` (or blank) uses the built-in ranking.
+	 */
+	duplicateScore: string | null,
+	/**
+	 *  Scores every location; a review pass walks them highest first. `None` (or blank)
+	 *  reviews them in the order the selection resolved.
+	 */
+	reviewOrder: string | null,
 	/**  Alternate Street View providers (Apple Look Around, …). */
 	providers: ProvidersSettings,
 };
@@ -1272,6 +1315,11 @@ export type ProviderDecl = {
 	entry?: string | null,
 	fields?: string[],
 	requires?: string[],
+	/**
+	 *  Extra keys to null when a written field's value actually changes, so dependents
+	 *  re-derive from the new input instead of keeping the old pano's answers.
+	 */
+	invalidates?: { [key in string]: string[] },
 	select: Selector,
 	batch: BatchMode,
 	sink?: Sink,
@@ -1627,7 +1675,16 @@ export type SelectionSync = {
  *   parallel batch scans. Composites (Intersection, Union, Invert) recursively resolve
  *  children. Duplicates uses a grid-accelerated spatial scan.
  */
-export type Selector = { type: "Locations"; locations: number[]; name: string | null } | { type: "Everything" } | { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean } | { type: "Tag"; tagId: number } | { type: "Untagged" } | { type: "Unpanned" } | { type: "PanoIds" } | { type: "NotPanoIds" } | { type: "Uncommitted" } | { type: "Manual"; locations: number[] } | { type: "Duplicates"; distance: number } | { type: "ValidationState"; locations: number[]; state: number } | { type: "Reviewed"; locations: number[]; sessionId: string; mode: string } | { type: "Intersection"; selections: Selection[] } | { type: "Union"; selections: Selection[] } | { type: "Invert"; selections: Selection[] } | { type: "Filter"; field: string; op: FilterOp; value: any; value2?: any | null; tzLocal?: boolean } | { type: "TopK"; field: string; k: number; ascending: boolean };
+export type Selector = { type: "Locations"; locations: number[]; name: string | null } | { type: "Everything" } | { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean } | { type: "Tag"; tagId: number } | { type: "Untagged" } | { type: "Unpanned" } | { type: "PanoIds" } | { type: "NotPanoIds" } | { type: "Uncommitted" } | { type: "Manual"; locations: number[] } | { type: "Duplicates"; distance: number } | { type: "ValidationState"; locations: number[]; state: number } | { type: "Reviewed"; locations: number[]; sessionId: string; mode: string } | { type: "Intersection"; selections: Selection[] } | { type: "Union"; selections: Selection[] } | { type: "Invert"; selections: Selection[] } | { type: "Filter"; field: string; op: FilterOp; value: any; value2?: any | null; tzLocal?: boolean } | 
+/**
+ *  Rank a selection by a `field_expr`, optionally keeping only the first `k`. Emits
+ *  a ranked root in rank order, where every other selector answers ascending. With no
+ *  `k` this selects its child unchanged and states only how to walk it. A member the
+ *  expression cannot score ranks last, so ranking never drops anything.
+ */
+{ type: "Ranked"; 
+/**  What to rank; `None` ranks the whole map. */
+selection: Selection | null; expr: string; k: number | null; ascending: boolean };
 
 export type SideCounts = {
 	create: number,

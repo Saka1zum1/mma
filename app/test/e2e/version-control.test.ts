@@ -156,9 +156,16 @@ describe("Version control - checkout revives soft-deleted tags", () => {
 describe("Version control - commit message dialog", () => {
 	const map = useMap("E2E VCS Message UI");
 
-	it("typed message lands on the commit", async () => {
+	async function shiftClickCommit() {
+		await browser.execute(() => {
+			const btn = [...document.querySelectorAll("button")].find((b) => b.textContent === "Commit");
+			btn?.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+		});
+	}
+
+	it("a shift+click types a message onto the commit", async () => {
 		await addLocs([createLocation({ lat: 5, lng: 5, heading: 0, panoId: null, flags: 0 })]);
-		await browser.$("button=Commit").click();
+		await shiftClickCommit();
 		const input = await browser.$(".commit-dialog__message");
 		await input.waitForExist();
 		await input.setValue("from the commit dialog");
@@ -168,5 +175,16 @@ describe("Version control - commit message dialog", () => {
 			return commits.length >= 1 && commits[0].message === "from the commit dialog";
 		});
 		await input.waitForExist({ reverse: true });
+	});
+
+	it("a plain click commits with no dialog", async () => {
+		const before = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
+		await addLocs([createLocation({ lat: 6, lng: 6, heading: 0, panoId: null, flags: 0 })]);
+		await browser.$("button=Commit").click();
+		await browser.waitUntil(async () => {
+			const commits = await withApi(async (api, id) => api.cmd.storeListCommits(id), map.id);
+			return commits.length > before.length;
+		});
+		expect(await browser.$(".commit-dialog").isExisting()).toBe(false);
 	});
 });

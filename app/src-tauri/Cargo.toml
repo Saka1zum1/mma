@@ -59,6 +59,7 @@ uuid = { version = "1", features = ["v4"] }
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
 reverse_geocoder = "4"
 memmap2 = "0.9"
 rkyv = { version = "=0.7.46", features = ["validation"] }

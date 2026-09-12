@@ -11,7 +11,15 @@ import { getMapList } from "@/store/mapList";
 import { initRouter } from "@/store/router";
 import { getSettings } from "@/store/settings";
 import { loadSession, saveSession } from "@/store/session";
-import { openMapWindow, openMapWindowIds, closeAllMapWindows } from "@/lib/window";
+import {
+	appWindow,
+	hasWindowHost,
+	openMapWindow,
+	openMapWindowIds,
+	closeAllMapWindows,
+	revealWindow,
+	saveWindowState,
+} from "@/lib/window";
 import { cmd } from "@/lib/commands";
 import { checkForUpdate } from "@/lib/util/updateCheck";
 import { blockBrowserAccelerators } from "@/lib/hooks/useHotkey";
@@ -61,6 +69,7 @@ async function boot() {
 			await closeAllMapWindows();
 		}
 		await flushSave();
+		await saveWindowState();
 		await cmd.storeCloseMap().catch((e) => log.error("[close] store_close_map failed:", e));
 		log.info("Map closed, destroying window");
 		getCurrentWindow().destroy();
@@ -83,7 +92,14 @@ async function boot() {
 	createRoot(document.getElementById("root")!).render(<App />);
 	mark("render");
 
-	getCurrentWindow().show();
+	// Shown as soon as the shell has rendered: the webview surface exists by now, so the
+	// appear is a single native show (with DWM's pop-in), the maximize lands while the
+	// window is still a blank shell, and content streams into a visible window.
+	if (hasWindowHost) {
+		void revealWindow();
+	} else {
+		void appWindow.show();
+	}
 	const jsTotal = performance.now();
 	mark("show");
 

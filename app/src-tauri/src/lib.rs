@@ -291,6 +291,17 @@ pub(crate) fn validate_sidecar_command(command: &str) -> AppResult<()> {
     validate_ident("sidecar command", command)
 }
 
+/// First caller per app run wins the silent update pass. Every webview boots the
+/// plugin loader, so without this a restored editor window plus the map list run
+/// two full passes -- double registry fetches, double downloads, and interleaved
+/// install progress for the same plugin.
+#[tauri::command]
+#[specta::specta]
+fn claim_plugin_update_pass() -> bool {
+    static CLAIMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    !CLAIMED.swap(true, std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Scan the `plugins/` directory under app data and return manifests for all installed plugins.
 #[tauri::command]
 #[specta::specta]
@@ -456,7 +467,23 @@ fn respond_async(
     responder: tauri::UriSchemeResponder,
     f: impl FnOnce() -> tauri::http::Response<Vec<u8>> + Send + 'static,
 ) {
-    std::thread::spawn(move || responder.respond(f()));
+    tauri::async_runtime::spawn_blocking(move || responder.respond(f()));
+}
+
+#[cfg(not(feature = "e2e"))]
+fn focus_existing(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(window) = app
+        .webview_windows()
+        .into_values()
+        .next()
+        .map(|w| w.as_ref().window())
+    else {
+        return;
+    };
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 /// Build a 502 error response with CORS headers for failed proxy requests.
@@ -632,6 +659,21 @@ fn app_ready() -> u32 {
     })
 }
 
+/// Reveal with the native open animation: a true first show() (DWM plays its pop-in),
+/// then maximize back-to-back while the shell is still blank. The show must come first:
+/// maximize on a hidden window reveals it without setting tao's visible flag, and the
+/// window gets re-hidden a frame later.
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::needless_pass_by_value)]
+fn reveal_window(window: tauri::WebviewWindow, maximized: bool) {
+    let _ = window.show();
+    if maximized {
+        let _ = window.maximize();
+    }
+    let _ = window.set_focus();
+}
+
 /// Single source of truth for the IPC command surface. Used by both the desktop
 /// app (`run`) and the web sidecar (`serve`), so adding a command here wires it
 /// for both transports automatically — no second list.
@@ -647,16 +689,22 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .constant("KNOWN_FIELDS", map_meta::KNOWN_FIELDS)
         .constant("BUILTIN_FIELDS", selections::BUILTIN_FIELDS)
         .constant("PROJECTIONS", selections::PROJECTIONS)
+        .constant(
+            "DEFAULT_DUPLICATE_SCORE",
+            selections::DEFAULT_DUPLICATE_SCORE,
+        )
         .commands(tauri_specta::collect_commands![
             write_temp_file,
             read_file,
             // --- Utility ---
             app_ready,
+            reveal_window,
             get_app_data_dir,
             get_data_location,
             set_data_location,
             open_data_folder,
             open_log_file,
+            claim_plugin_update_pass,
             list_user_plugins,
             install_plugin,
             uninstall_plugin,
@@ -681,6 +729,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             location_store::store_close_map,
             location_store::store_save_dirty,
             location_store::store_copy_locations_to_map,
+            location_store::store_add_locations_to_map,
             location_store::store_get_summary,
             // --- Map metadata ---
             map_meta::store_list_maps,
@@ -968,9 +1017,9 @@ pub fn run() {
             let path = req.uri().path().to_string();
             let query = req.uri().query().unwrap_or("").to_string();
             let resolve = query.split('&').any(|kv| kv == "mma_resolve=1");
-            std::thread::spawn(move || {
+            respond_async(responder, move || {
                 if resolve {
-                    responder.respond(resolve_bmapslink(&path));
+                    resolve_bmapslink(&path)
                 } else {
                     let qs = if query.is_empty() {
                         String::new()
@@ -978,7 +1027,7 @@ pub fn run() {
                         format!("?{query}")
                     };
                     let url = format!("https://j.map.baidu.com{path}{qs}");
-                    responder.respond(proxy_bmaps(&url));
+                    proxy_bmaps(&url)
                 }
             });
         })
@@ -1048,7 +1097,18 @@ pub fn run() {
                 ))
                 .build(),
         )
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    // MAXIMIZED excluded: tao's SW_MAXIMIZE reveals a hidden window, so the
+                    // creation-time restore would defeat the first-frame show gate. The
+                    // frontend re-applies it right before showing (window.ts).
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE
+                        - tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .setup(|app| {
             let t = std::time::Instant::now();
             let _ = APP_HANDLE.set(app.handle().clone());
@@ -1079,6 +1139,11 @@ pub fn run() {
             }
             Ok(())
         });
+
+    #[cfg(not(feature = "e2e"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        focus_existing(app);
+    }));
 
     #[cfg(feature = "e2e")]
     let builder = builder.plugin(tauri_plugin_webdriver::init());
