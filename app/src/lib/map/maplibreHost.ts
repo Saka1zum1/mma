@@ -13,6 +13,7 @@ import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MapboxOverlay } from "@deck.gl/mapbox";
+import { releaseDeckContext } from "@/lib/render/webglContexts";
 import type { PickingInfo } from "@deck.gl/core";
 import { buildTileUrl, type TileConfig } from "@/lib/geo/tiles";
 import { createSvConfigForPrefs } from "@/lib/geo/mapStack";
@@ -114,6 +115,9 @@ class MapLibreDeckOverlay implements DeckOverlayHandle {
 	finalize() {
 		if (this.finalized) return;
 		this.finalized = true;
+		releaseDeckContext(
+			(this.overlay as unknown as { _deck?: Parameters<typeof releaseDeckContext>[0] })._deck,
+		);
 		this.map.removeControl(this.overlay);
 		this.onFinalize(this);
 	}

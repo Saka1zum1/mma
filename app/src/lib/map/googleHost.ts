@@ -4,6 +4,7 @@ import { GoogleMapsOverlay } from "@deck.gl/google-maps";
 import type { GoogleMapsOverlayProps } from "@deck.gl/google-maps";
 import type { PickingInfo } from "@deck.gl/core";
 import { registerDeckStats, type DeckMetrics } from "@/lib/render/renderStats";
+import { releaseDeckContext } from "@/lib/render/webglContexts";
 import { google } from "@/lib/sv/opensv";
 import { resolveStackForPrefs } from "@/lib/geo/mapStack";
 import { getStyleBackgroundColor } from "@/lib/geo/mapStyles";
@@ -98,6 +99,10 @@ class GoogleDeckOverlay implements DeckOverlayHandle {
 		this.finalized = true;
 		this.unregisterStats();
 		if (this.raf) cancelAnimationFrame(this.raf);
+		releaseDeckContext(
+			(this.overlay as unknown as { _deck?: Parameters<typeof releaseDeckContext>[0] } | null)
+				?._deck,
+		);
 		this.overlay?.setMap(null);
 		this.overlay?.finalize();
 		this.overlay = null;

@@ -1,5 +1,6 @@
 import { google } from "@/lib/sv/opensv";
 import { singletonDiv } from "@/lib/sv/panoSingleton";
+import { releaseWebglContexts } from "@/lib/render/webglContexts";
 
 const PANO_LOAD_TIMEOUT_MS = 15_000;
 const CANVAS_SETTLE_TIMEOUT_MS = 3_000;
@@ -103,6 +104,7 @@ export async function renderPanoView(
 		if (!scaled) throw new Error("Could not create output canvas");
 		return scaled;
 	} finally {
+		releaseWebglContexts(host);
 		container.remove();
 	}
 }
