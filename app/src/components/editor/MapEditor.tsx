@@ -273,7 +273,7 @@ export function MapEditor() {
 		const unlisten = listen<string>("map-deleted", (e) => {
 			if (e.payload === getMapState().mapId) {
 				discardOpenMap();
-				goToList();
+				void goToList({ force: true });
 			}
 		});
 		return () => {
@@ -374,7 +374,7 @@ export function MapEditor() {
 								aria-label={t("Back to map list")}
 								onClick={(e) => {
 									e.preventDefault();
-									goToList();
+									void goToList();
 								}}
 							>
 								<Icon path={mdiBackburger} />

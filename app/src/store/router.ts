@@ -11,6 +11,7 @@
 // render, before any async map load). The store (currentMap) is the data;
 // applyRoute reconciles the store to the URL.
 import { openMap, closeMap, getMapState } from "@/store/useMapStore";
+import { confirmMapExit } from "@/lib/jobs";
 import { emit, useEventValue, subscribe as subscribeEvent } from "@/lib/events";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -71,8 +72,14 @@ function navigate(next: Route) {
 	applyRoute();
 }
 
-export const goToMap = (id: string) => navigate({ mapId: id, manual: route.manual });
-export const goToList = () => navigate({ mapId: null, manual: route.manual });
+export async function goToMap(id: string): Promise<void> {
+	if (route.mapId && route.mapId !== id && !(await confirmMapExit("leave"))) return;
+	navigate({ mapId: id, manual: route.manual });
+}
+export async function goToList(opts?: { force?: boolean }): Promise<void> {
+	if (!opts?.force && route.mapId && !(await confirmMapExit("leave"))) return;
+	navigate({ mapId: null, manual: route.manual });
+}
 export const openManual = (chapter = "") => navigate({ ...route, manual: chapter });
 export const gotoManualChapter = (chapter: string) => navigate({ ...route, manual: chapter });
 export const closeManual = () => navigate({ ...route, manual: null });

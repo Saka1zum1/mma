@@ -12,7 +12,10 @@ import { RegionSelector } from "./RegionSelector";
 import { SettingsPanel } from "./SettingsPanel";
 import { tickProgress } from "./progressSignal";
 import { google } from "@/lib/sv/opensv";
-import { getActiveSelections, useMapState, createTags } from "@/store/useMapStore";
+import { getActiveSelections, useMapState, createTags, setPluginMode } from "@/store/useMapStore";
+import { registerJob, type JobHandle } from "@/lib/jobs";
+import { subscribe } from "@/lib/events";
+import { fmt } from "@/lib/util/format";
 import type { Selection } from "@/bindings.gen";
 import { createPluginStorage } from "@/plugins/registry";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
@@ -75,6 +78,44 @@ let sessionEngine: GenerationEngine | null = null;
 let sessionRunning = false;
 let sessionPaused = false;
 let sessionTagId: number | null = null;
+let sessionJob: JobHandle | null = null;
+let sessionSidebarOpen = false;
+
+let jobUpdateQueued = false;
+// Coalesced to a frame like tickProgress: onProgress fires per found pano, and an
+// eager jobs:changed per pano re-renders the tray that often.
+function updateSessionJob(): void {
+	if (!sessionJob || jobUpdateQueued) return;
+	jobUpdateQueued = true;
+	requestAnimationFrame(() => {
+		jobUpdateQueued = false;
+		if (!sessionJob) return;
+		let found = 0;
+		let target = 0;
+		for (const m of sessionMeta.values()) {
+			found += m.found.length;
+			target += m.target;
+		}
+		sessionJob.update(
+			target > 0 ? Math.min(found / target, 1) : 0,
+			`${fmt.format(found)} / ${fmt.format(target)}`,
+		);
+	});
+}
+
+function endSessionJob(message?: string): void {
+	sessionJob?.finish(sessionSidebarOpen ? undefined : message);
+	sessionJob = null;
+}
+
+/** Stop the engine from outside the sidebar (job tray cancel, map close). */
+function stopSessionEngine(): void {
+	sessionEngine?.stop();
+	sessionEngine = null;
+	sessionRunning = false;
+	sessionPaused = false;
+	endSessionJob();
+}
 
 function formatYearMonth(ym: string) {
 	const p = ymParse(ym);
@@ -174,9 +215,13 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		engine.replaceCallbacks({
 			onLocationsFound: (locs: GeneratedLocation[]) => {
 				MMA.addLocations(locs.map((l) => generatedToLocation(l, tagId)));
+				updateSessionJob();
 				rerender((n) => n + 1);
 			},
-			onProgress: () => tickProgress(),
+			onProgress: () => {
+				tickProgress();
+				updateSessionJob();
+			},
 			onRegionComplete: () => {
 				rerender((n) => n + 1);
 			},
@@ -185,9 +230,21 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				setPaused(false);
 				engineRef.current = null;
 				sessionEngine = null;
+				endSessionJob(t("Generation complete"));
 			},
 		});
 	}, [running]);
+
+	useEffect(
+		() =>
+			subscribe("jobs:changed", () => {
+				if (sessionEngine || !engineRef.current) return;
+				engineRef.current = null;
+				setRunning(false);
+				setPaused(false);
+			}),
+		[],
+	);
 
 	// Drive the search-coverage overlay's visibility live from the toggle.
 	useEffect(() => {
@@ -196,7 +253,11 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 
 	// Clear the overlay when leaving the generator, unless it's still running in the background.
 	useEffect(() => {
+		sessionSidebarOpen = true;
+		sessionJob?.setHidden(true);
 		return () => {
+			sessionSidebarOpen = false;
+			sessionJob?.setHidden(false);
 			if (!sessionRunning) searchCoverage.endSession();
 		};
 	}, []);
@@ -245,9 +306,13 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 		const engine = new GenerationEngine(google, settings, regions, {
 			onLocationsFound: (locs: GeneratedLocation[]) => {
 				MMA.addLocations(locs.map((l) => generatedToLocation(l, tagId)));
+				updateSessionJob();
 				rerender((n) => n + 1);
 			},
-			onProgress: () => tickProgress(),
+			onProgress: () => {
+				tickProgress();
+				updateSessionJob();
+			},
 			onRegionComplete: () => {
 				rerender((n) => n + 1);
 			},
@@ -256,11 +321,19 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				setPaused(false);
 				engineRef.current = null;
 				sessionEngine = null;
+				endSessionJob(t("Generation complete"));
 			},
 		});
 
 		engineRef.current = engine;
 		sessionEngine = engine;
+		sessionJob?.finish();
+		sessionJob = registerJob(t("Map generator"), {
+			scope: "map",
+			cancel: stopSessionEngine,
+			reveal: () => setPluginMode("map-generator"),
+		});
+		sessionJob.setHidden(true);
 		setRunning(true);
 		setPaused(false);
 		engine.start();
@@ -295,11 +368,10 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 	}, [settings.defaultTarget]);
 
 	const handleStop = useCallback(() => {
-		engineRef.current?.stop();
+		stopSessionEngine();
 		setRunning(false);
 		setPaused(false);
 		engineRef.current = null;
-		sessionEngine = null;
 	}, []);
 
 	const handleClose = useCallback(() => {

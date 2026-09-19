@@ -7,6 +7,7 @@ import App from "@/App.tsx";
 import { initLogging, log } from "@/lib/util/log";
 import { initLocale } from "@/lib/i18n";
 import { initStore, flushSave } from "@/store/useMapStore";
+import { getJobs, confirmMapExit } from "@/lib/jobs";
 import { getMapList } from "@/store/mapList";
 import { initRouter } from "@/store/router";
 import { getSettings } from "@/store/settings";
@@ -60,6 +61,7 @@ async function boot() {
 
 	getCurrentWindow().onCloseRequested(async (event) => {
 		event.preventDefault();
+		if (getJobs().some((j) => j.scope === "map") && !(await confirmMapExit("quit"))) return;
 		log.info("Window close requested, closing map...");
 		// Closing the main (list) window ends the session: remember the maps still
 		// open at this instant, then close them so they restore next launch.

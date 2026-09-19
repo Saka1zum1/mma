@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent } from "@/components/primitives/Dialog";
 import { NSelect } from "@/components/primitives/NSelect";
 import { Button } from "@/components/primitives/Button";
@@ -52,6 +52,9 @@ import { fmt } from "@/lib/util/format";
 import { waveRate, type WaveRate } from "@/lib/util/util";
 import type { BatchOutcome, ProviderPart } from "@/lib/data/procedures";
 import { toast } from "@/lib/util/toast";
+import { registerJob, type JobHandle } from "@/lib/jobs";
+import { emit as emitEvent, useEventValue } from "@/lib/events";
+import { openDialog } from "@/store/dialogBus";
 import { t, msg } from "@/lib/i18n";
 
 const TITLES = {
@@ -101,10 +104,18 @@ interface SetupProps {
 // Setup components — each produces a BulkRunner closure
 // ---------------------------------------------------------------------------
 
-function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
+function ValidateSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
+	const [checkPinned, setCheckPinned] = useState(true);
+	const pinned = scopedLocs.filter((l) => isPinnedToPano(l)).length;
 	return (
 		<div className="bulk-operation">
 			<SelectorPicker ctl={scopeCtl} />
+			{pinned > 0 && (
+				<label className="bulk-operation__option">
+					<Checkbox checked={checkPinned} onChange={(e) => setCheckPinned(e.target.checked)} />
+					{t("Check pinned locations for newer coverage")}
+				</label>
+			)}
 			<div className="bulk-operation__actions">
 				<Button
 					variant="primary"
@@ -114,6 +125,7 @@ function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
 								signal,
 								onProgress: (p) =>
 									onProgress(Math.round(p.progress * locations.length), locations.length),
+								config: { checkPinned },
 							});
 							const stateOrder = [
 								ValidationState.Ok,
@@ -788,86 +800,181 @@ function EnrichSummary({
 }
 
 // ---------------------------------------------------------------------------
-// Progress — runs the BulkRunner and shows progress/results
+// Run store — bulk runs live at module level so closing the dialog backgrounds
+// them instead of aborting; the dialog re-attaches to the run for its operation.
+// ---------------------------------------------------------------------------
+
+type BulkRunStatus = "running" | "done" | "cancelled" | "error";
+
+interface BulkRunState {
+	operation: BulkOperation;
+	status: BulkRunStatus;
+	progress: number;
+	total: number;
+	done: number;
+	rate: number | null;
+	elapsed: number | null;
+	parts: ProviderPart[];
+	providerRates: ReadonlyMap<string, number | null>;
+	error: string | null;
+	result: BulkRunResult;
+	controller: AbortController;
+	job: JobHandle;
+	attached: boolean;
+}
+
+let bulkRuns: ReadonlyMap<BulkOperation, BulkRunState> = new Map();
+
+function getBulkRuns(): ReadonlyMap<BulkOperation, BulkRunState> {
+	return bulkRuns;
+}
+
+function patchRun(operation: BulkOperation, fields: Partial<BulkRunState>) {
+	const cur = bulkRuns.get(operation);
+	if (!cur) return;
+	bulkRuns = new Map(bulkRuns).set(operation, { ...cur, ...fields });
+	emitEvent("bulkruns:changed");
+}
+
+function dropRun(operation: BulkOperation) {
+	if (!bulkRuns.has(operation)) return;
+	const next = new Map(bulkRuns);
+	next.delete(operation);
+	bulkRuns = next;
+	emitEvent("bulkruns:changed");
+}
+
+function settleRun(operation: BulkOperation) {
+	const run = bulkRuns.get(operation);
+	if (!run) return;
+	if (run.attached) {
+		run.job.finish();
+		return;
+	}
+	if (run.status === "error") run.job.fail(t("Error: {error}", { error: run.error ?? "" }));
+	else if (run.status === "cancelled") run.job.finish();
+	else {
+		run.job.finish(
+			run.result.doneMessage ??
+				t(
+					{ one: "Done -- {n} location processed", other: "Done -- {n} locations processed" },
+					{ n: run.total },
+				),
+		);
+	}
+	dropRun(operation);
+}
+
+function setRunAttached(operation: BulkOperation, attached: boolean) {
+	const run = bulkRuns.get(operation);
+	if (!run) return;
+	run.job.setHidden(attached);
+	if (!attached && run.status !== "running") dropRun(operation);
+	else patchRun(operation, { attached });
+}
+
+function startBulkRun(operation: BulkOperation, runner: BulkRunner, target: Selector): void {
+	if (bulkRuns.get(operation)?.status === "running") return;
+	const controller = new AbortController();
+	const job = registerJob(t(TITLES[operation]), {
+		scope: "map",
+		cancel: () => controller.abort(),
+		reveal: () => openDialog("bulk-op", operation),
+	});
+	job.setHidden(true);
+	bulkRuns = new Map(bulkRuns).set(operation, {
+		operation,
+		status: "running",
+		progress: 0,
+		total: 0,
+		done: 0,
+		rate: null,
+		elapsed: null,
+		parts: [],
+		providerRates: new Map(),
+		error: null,
+		result: {},
+		controller,
+		job,
+		attached: true,
+	});
+	emitEvent("bulkruns:changed");
+
+	const runStart = performance.now();
+	let rateState: WaveRate | null = null;
+	const providerRateStates = new Map<string, WaveRate>();
+	const onProgress: ProgressFn = (d, tot, _label, providerParts) => {
+		const now = performance.now();
+		const overall = waveRate(rateState, d, tot, now);
+		rateState = overall.state;
+		const rates = new Map<string, number | null>();
+		for (const p of providerParts ?? []) {
+			const r = waveRate(providerRateStates.get(p.label) ?? null, p.done, p.total, now);
+			providerRateStates.set(p.label, r.state);
+			rates.set(p.label, r.rate);
+		}
+		const progress = tot > 0 ? d / tot : 1;
+		patchRun(operation, {
+			done: d,
+			total: tot,
+			parts: providerParts ?? [],
+			progress,
+			rate: overall.rate,
+			providerRates: rates,
+		});
+		job.update(progress, `${fmt.format(d)} / ${fmt.format(tot)}`);
+	};
+
+	void (async () => {
+		try {
+			const locations = await fetchLocations(target);
+			const r = await runner({
+				locations,
+				selector: target,
+				signal: controller.signal,
+				onProgress,
+			});
+			patchRun(operation, {
+				result: r,
+				progress: 1,
+				elapsed: (performance.now() - runStart) / 1000,
+				status: "done",
+			});
+		} catch (e: unknown) {
+			if (controller.signal.aborted) {
+				patchRun(operation, { status: "cancelled" });
+			} else {
+				patchRun(operation, {
+					error: e instanceof Error ? e.message : t("Operation failed"),
+					status: "error",
+				});
+			}
+		}
+		settleRun(operation);
+	})();
+}
+
+// ---------------------------------------------------------------------------
+// Progress — shows the module-level run for this operation
 // ---------------------------------------------------------------------------
 
 function BulkProgress({
-	runner,
-	scope,
+	operation,
 	onClose,
 }: {
-	runner: BulkRunner;
-	scope: Selector;
+	operation: BulkOperation;
 	onClose: () => void;
 }) {
-	const [progress, setProgress] = useState(0);
-	const [total, setTotal] = useState(0);
-	const [done, setDone] = useState(0);
-	const [rate, setRate] = useState<number | null>(null);
-	const [elapsed, setElapsed] = useState<number | null>(null);
-	const [parts, setParts] = useState<ProviderPart[]>([]);
-	const [status, setStatus] = useState<"running" | "done" | "cancelled" | "error">("running");
-	const [error, setError] = useState<string | null>(null);
-	const [result, setResult] = useState<BulkRunResult>({});
-	const controllerRef = useRef<AbortController | null>(null);
-	const rateRef = useRef<WaveRate | null>(null);
-	const providerRateRef = useRef(new Map<string, WaveRate>());
-	const [providerRates, setProviderRates] = useState<ReadonlyMap<string, number | null>>(
-		new Map(),
-	);
-
-	const run = useCallback(async () => {
-		const controller = new AbortController();
-		controllerRef.current = controller;
-
-		const locations = await fetchLocations(scope);
-		const runStart = performance.now();
-		rateRef.current = null;
-		setRate(null);
-		setElapsed(null);
-
-		const onProgress: ProgressFn = (d, tot, _label, providerParts) => {
-			setParts(providerParts ?? []);
-			setTotal(tot);
-			setDone(d);
-			setProgress(tot > 0 ? d / tot : 1);
-
-			const now = performance.now();
-			const { state, rate: next } = waveRate(rateRef.current, d, tot, now);
-			rateRef.current = state;
-			setRate(next);
-			const rates = new Map<string, number | null>();
-			for (const p of providerParts ?? []) {
-				const r = waveRate(providerRateRef.current.get(p.label) ?? null, p.done, p.total, now);
-				providerRateRef.current.set(p.label, r.state);
-				rates.set(p.label, r.rate);
-			}
-			setProviderRates(rates);
-		};
-
-		try {
-			const r = await runner({ locations, selector: scope, signal: controller.signal, onProgress });
-			setResult(r);
-			setProgress(1);
-			setElapsed((performance.now() - runStart) / 1000);
-			setStatus("done");
-		} catch (e: unknown) {
-			if (e instanceof Error && e.name === "AbortError") {
-				if (controllerRef.current === controller) setStatus("cancelled");
-			} else {
-				setError(e instanceof Error ? e.message : t("Operation failed"));
-				setStatus("error");
-			}
-		}
-	}, [runner, scope]);
+	const run = useEventValue("bulkruns:changed", getBulkRuns).get(operation);
 
 	useEffect(() => {
-		run();
-		return () => {
-			controllerRef.current?.abort();
-		};
-	}, [run]);
+		setRunAttached(operation, true);
+		return () => setRunAttached(operation, false);
+	}, [operation]);
 
+	if (!run) return null;
+	const { status, progress, total, done, rate, elapsed, parts, providerRates, error, result } =
+		run;
 	const pct = Math.round(progress * 100);
 
 	return (
@@ -894,9 +1001,12 @@ function BulkProgress({
 										{running && `${fmt.format(p.done)}/${fmt.format(p.total)}`}
 										{p.finished && t("Done")}
 										{p.failed > 0 && (
-											<span className="bulk-operation__provider-failed">
-												{t({ one: ", {n} failed", other: ", {n} failed" }, { n: p.failed })}
-											</span>
+											<>
+												{" · "}
+												<span className="bulk-operation__provider-failed">
+													{t({ one: "{n} failed", other: "{n} failed" }, { n: p.failed })}
+												</span>
+											</>
 										)}
 									</span>
 									<progress
@@ -945,7 +1055,8 @@ function BulkProgress({
 							}) +
 								(rate != null ? t(" -- {rate}/s", { rate: fmt.format(Math.round(rate)) }) : "")}
 						</span>
-						<Button variant="destructive" onClick={() => controllerRef.current?.abort()}>
+						<Button onClick={onClose}>{t("Continue in background")}</Button>
+						<Button variant="destructive" onClick={() => run.controller.abort()}>
 							{t("Cancel")}
 						</Button>
 					</>
@@ -980,19 +1091,24 @@ const SETUPS: Record<BulkOperation, React.ComponentType<SetupProps>> = {
 };
 
 export function BulkOperationModal({ operation, onClose }: Props) {
-	const [runner, setRunner] = useState<BulkRunner | null>(null);
+	const live = useEventValue("bulkruns:changed", getBulkRuns).get(operation);
+	const [started, setStarted] = useState(live?.status === "running" || live != null);
 	const scopeCtl = useSelectorPick();
 	const { data: locs } = useAsync(() => fetchLocations({ type: "Everything" }), []);
 	const selectedIds = useMapState((s) => s.selectedLocationIds);
 
 	if (locs === null) return null;
 
-	const onReady = (run: BulkRunner) => setRunner(() => run);
+	const onReady = (run: BulkRunner) => {
+		startBulkRun(operation, run, scopeCtl.selector);
+		setStarted(true);
+	};
 	const scopedLocs =
 		scopeCtl.choice.pick === "selection"
 			? locs.filter((location) => selectedIds.has(location.id))
 			: locs;
 	const Setup = SETUPS[operation];
+	const showProgress = started || live != null;
 
 	return (
 		<Dialog
@@ -1002,8 +1118,8 @@ export function BulkOperationModal({ operation, onClose }: Props) {
 			}}
 		>
 			<DialogContent title={t(TITLES[operation])} className="bulk-operation-modal">
-				{runner ? (
-					<BulkProgress runner={runner} scope={scopeCtl.selector} onClose={onClose} />
+				{showProgress ? (
+					<BulkProgress operation={operation} onClose={onClose} />
 				) : (
 					<Setup scopeCtl={scopeCtl} locs={locs} scopedLocs={scopedLocs} onReady={onReady} />
 				)}

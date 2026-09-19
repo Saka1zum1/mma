@@ -29,6 +29,7 @@ import { applyAccentColor, resolveSvColorHex } from "@/lib/util/color";
 import { Icon, mdiDiscord } from "@/components/primitives/Icon";
 import { mdiCog, mdiPuzzle, mdiClose, mdiBookOpenPageVariantOutline } from "@mdi/js";
 import { ToastContainer } from "@/components/primitives/Toast";
+import { JobTray, JobExitDialog } from "@/components/primitives/JobTray";
 import { TooltipProvider } from "@/components/primitives/Tooltip";
 import { useUpdateState, dismissUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { APP_NAME } from "@/lib/util/format";
@@ -86,6 +87,7 @@ export default function App() {
 			{!closing && <AppChrome />}
 			<AccentSync />
 			<ToastContainer />
+			<JobExitDialog />
 		</TooltipProvider>
 	);
 }
@@ -120,7 +122,7 @@ function AppChrome() {
 	useHotkey(useBinding("toggleSettings"), () => setShowSettings((v) => !v));
 	useHotkey(useBinding("togglePlugins"), () => setShowPlugins((v) => !v));
 	useHotkey(useBinding("closeMap"), () => {
-		if (map) goToList();
+		if (map) void goToList();
 	});
 
 	useEffect(() => {
@@ -152,6 +154,7 @@ function AppChrome() {
 			<WelcomeDialog open={isMapList && !welcomeSeen} onDismiss={() => setWelcomeSeen(true)} />
 			{!showSettings && !showPlugins && !(map && fullscreenMap) && (
 				<div className="bottom-bar">
+					<JobTray />
 					{update.version && !update.dismissed && (
 						<div className="update-pill">
 							{update.phase === "available" && (

@@ -9,7 +9,7 @@ import { getCommands, togglePinnedCommand, type CommandGroup } from "@/store/com
 import { useSetting } from "@/store/settings";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { getBinding, useBinding } from "@/lib/util/hotkeys";
-import { getMapState, closeMap, setPluginMode } from "@/store/useMapStore";
+import { getMapState, setPluginMode } from "@/store/useMapStore";
 import { getEnabledPlugins } from "@/plugins/registry";
 import { score } from "@/lib/search";
 import { useMapList } from "@/store/mapList";
@@ -195,7 +195,7 @@ function MapSwitcher() {
 					<PaletteItem
 						key={m.id}
 						label={m.name}
-						onSelect={() => closeMap().then(() => goToMap(m.id))}
+						onSelect={() => void goToMap(m.id)}
 					/>
 				))
 			)}
