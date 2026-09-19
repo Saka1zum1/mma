@@ -4,7 +4,9 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "noEmit": true
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true
   },
   "include": ["src", "../types/mma.d.ts"]
 }

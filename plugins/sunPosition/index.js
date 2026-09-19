@@ -24,6 +24,20 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// mma-ext:react
+var require_react = __commonJS({
+  "mma-ext:react"(exports, module) {
+    module.exports = globalThis.__mma_require("react");
+  }
+});
+
+// mma-ext:@deck.gl/layers
+var require_layers = __commonJS({
+  "mma-ext:@deck.gl/layers"(exports, module) {
+    module.exports = globalThis.__mma_require("@deck.gl/layers");
+  }
+});
+
 // sunPosition/node_modules/suncalc/suncalc.js
 var require_suncalc = __commonJS({
   "sunPosition/node_modules/suncalc/suncalc.js"(exports, module) {
@@ -205,9 +219,21 @@ var require_suncalc = __commonJS({
   }
 });
 
-// sunPosition/src/index.ts
+// mma-ext:react/jsx-runtime
+var require_jsx_runtime = __commonJS({
+  "mma-ext:react/jsx-runtime"(exports, module) {
+    module.exports = globalThis.__mma_require("react/jsx-runtime");
+  }
+});
+
+// sunPosition/src/index.tsx
+var import_react = __toESM(require_react());
+var import_layers = __toESM(require_layers());
 var import_suncalc = __toESM(require_suncalc());
+var import_jsx_runtime = __toESM(require_jsx_runtime());
 var DEG = 180 / Math.PI;
+var RAY_LIMIT = 8e3;
+var EARTH_RADIUS_KM = 6371;
 var FIELDS = {
   sunAzimuth: {
     type: "number",
@@ -239,6 +265,173 @@ async function enrich(locations, enrichFields) {
   }
   return patches;
 }
+var DEFAULT_OVERLAY = {
+  visible: true,
+  lengthKm: 2,
+  width: 2,
+  color: { r: 255, g: 196, b: 64 }
+};
+var overlayStore = MMA.storage("sunPosition");
+function loadOverlay() {
+  const stored = overlayStore.get("overlay") ?? {};
+  const color = stored.color;
+  return {
+    ...DEFAULT_OVERLAY,
+    ...stored,
+    color: color && Number.isFinite(color.r) && Number.isFinite(color.g) && Number.isFinite(color.b) ? color : DEFAULT_OVERLAY.color,
+    lengthKm: typeof stored.lengthKm === "number" && stored.lengthKm > 0 ? stored.lengthKm : DEFAULT_OVERLAY.lengthKm,
+    width: typeof stored.width === "number" && stored.width > 0 ? stored.width : DEFAULT_OVERLAY.width,
+    visible: stored.visible !== false
+  };
+}
+var overlaySettings = loadOverlay();
+var overlayHandle = null;
+var rebuildToken = 0;
+var settingsListeners = /* @__PURE__ */ new Set();
+function getOverlaySettings() {
+  return overlaySettings;
+}
+function setOverlaySettings(patch) {
+  overlaySettings = { ...overlaySettings, ...patch };
+  overlayStore.set("overlay", overlaySettings);
+  for (const fn of settingsListeners) fn();
+  void rebuildRays();
+}
+function destination(lat, lng, bearingDeg, km) {
+  const \u03B4 = km / EARTH_RADIUS_KM;
+  const \u03B8 = bearingDeg * Math.PI / 180;
+  const \u03C61 = lat * Math.PI / 180;
+  const \u03BB1 = lng * Math.PI / 180;
+  const sin\u03C61 = Math.sin(\u03C61);
+  const cos\u03C61 = Math.cos(\u03C61);
+  const sin\u03B4 = Math.sin(\u03B4);
+  const cos\u03B4 = Math.cos(\u03B4);
+  const \u03C62 = Math.asin(sin\u03C61 * cos\u03B4 + cos\u03C61 * sin\u03B4 * Math.cos(\u03B8));
+  const \u03BB2 = \u03BB1 + Math.atan2(Math.sin(\u03B8) * sin\u03B4 * cos\u03C61, cos\u03B4 - sin\u03C61 * Math.sin(\u03C62));
+  return [\u03BB2 * 180 / Math.PI, \u03C62 * 180 / Math.PI];
+}
+async function rebuildRays() {
+  if (!overlayHandle) return;
+  const token = ++rebuildToken;
+  if (!overlaySettings.visible) {
+    overlayHandle.setProps({ layers: [] });
+    return;
+  }
+  let locs = [];
+  try {
+    locs = await MMA.fetchLocations({
+      type: "Filter",
+      field: "sunAzimuth",
+      op: "has",
+      value: true
+    });
+  } catch {
+    if (token === rebuildToken && overlayHandle) overlayHandle.setProps({ layers: [] });
+    return;
+  }
+  if (token !== rebuildToken || !overlayHandle) return;
+  const { lengthKm, width, color } = overlaySettings;
+  const rgba = [color.r, color.g, color.b, 220];
+  const data = [];
+  for (const loc of locs) {
+    if (data.length >= RAY_LIMIT) break;
+    const azimuth = loc.extra?.sunAzimuth;
+    const altitude = loc.extra?.sunAltitude;
+    if (typeof azimuth !== "number" || !Number.isFinite(azimuth)) continue;
+    if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) continue;
+    const altRad = typeof altitude === "number" && Number.isFinite(altitude) ? altitude * Math.PI / 180 : 0;
+    const km = lengthKm * Math.max(0.15, Math.cos(altRad));
+    const dest = destination(loc.lat, loc.lng, azimuth, km);
+    if (!Number.isFinite(dest[0]) || !Number.isFinite(dest[1])) continue;
+    data.push({ path: [[loc.lng, loc.lat], dest] });
+  }
+  overlayHandle.setProps({
+    layers: [
+      new import_layers.LineLayer({
+        id: "mma-sun-rays",
+        data,
+        getSourcePosition: (d) => d.path[0],
+        getTargetPosition: (d) => d.path[1],
+        getColor: rgba,
+        getWidth: width,
+        widthMinPixels: 1,
+        widthUnits: "pixels",
+        pickable: false
+      })
+    ]
+  });
+}
+function attachOverlay(host) {
+  overlayHandle = host.createDeckOverlay();
+  void rebuildRays();
+  const onChange = () => {
+    void rebuildRays();
+  };
+  const events = [
+    "location:add",
+    "location:remove",
+    "location:update",
+    "location:invalidate",
+    "scene:changed"
+  ];
+  const unsubs = events.map((e) => MMA.on(e, onChange));
+  return () => {
+    unsubs.forEach((u) => u());
+    overlayHandle?.finalize();
+    overlayHandle = null;
+  };
+}
+var { Sidebar, Section, Field, SwitchRow, ColorPicker, Slider } = MMA.ui;
+function OverlaySidebar({ onClose }) {
+  const [settings, setSettings] = (0, import_react.useState)(getOverlaySettings);
+  (0, import_react.useEffect)(() => {
+    const sync = () => setSettings(getOverlaySettings());
+    settingsListeners.add(sync);
+    return () => {
+      settingsListeners.delete(sync);
+    };
+  }, []);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Sidebar, { title: MMA.t("Sun Position"), onBack: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Section, { title: MMA.t("Sun rays"), children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      SwitchRow,
+      {
+        label: MMA.t("Show rays"),
+        checked: settings.visible,
+        onChange: (visible) => setOverlaySettings({ visible })
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Ray length"), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Slider,
+      {
+        type: "range",
+        min: 0.2,
+        max: 20,
+        step: 0.2,
+        value: settings.lengthKm,
+        onChange: (e) => setOverlaySettings({ lengthKm: Number(e.currentTarget.value) })
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Ray width"), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      Slider,
+      {
+        type: "range",
+        min: 1,
+        max: 8,
+        step: 0.5,
+        value: settings.width,
+        onChange: (e) => setOverlaySettings({ width: Number(e.currentTarget.value) })
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Ray color"), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      ColorPicker,
+      {
+        color: settings.color,
+        onChange: (color) => setOverlaySettings({ color }),
+        ariaLabel: MMA.t("Ray color")
+      }
+    ) })
+  ] }) });
+}
 MMA.registerPlugin({
   activate() {
     MMA.registerEnrichFields([
@@ -251,5 +444,31 @@ MMA.registerPlugin({
       fieldDefs: FIELDS,
       requires: ["datetime"]
     });
-  }
+    let cancelled = false;
+    let overlayTeardown = null;
+    const stopOverlay = () => {
+      overlayTeardown?.();
+      overlayTeardown = null;
+    };
+    const startOverlay = () => {
+      if (cancelled) return;
+      const host = MMA.getMapHost();
+      if (!host) return;
+      stopOverlay();
+      overlayTeardown = attachOverlay(host);
+    };
+    const unsubs = [MMA.on("map:open", startOverlay), MMA.on("map:close", stopOverlay)];
+    startOverlay();
+    if (!MMA.getMapHost()) {
+      void MMA.waitForMapHost().then(() => {
+        if (!cancelled) startOverlay();
+      });
+    }
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+      stopOverlay();
+    };
+  },
+  sidebar: OverlaySidebar
 });
