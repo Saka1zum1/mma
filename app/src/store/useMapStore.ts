@@ -7,7 +7,7 @@ import {
 	locId,
 	applyLocationPatch,
 } from "@/types";
-import type { Location, MapData, MapMeta, MapSettings, Tag, ExtraFieldDef, StoreStatus } from "@/bindings.gen";
+import type { Location, MapData, MapMeta, MapSettings, Tag, ExtraFieldDef, StoreStatus, StoreWarning } from "@/bindings.gen";
 import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
@@ -20,7 +20,7 @@ import { log, fireAndForget } from "@/lib/util/log";
 import { hexToRgb } from "@/lib/util/color";
 import { toast } from "@/lib/util/toast";
 import { trace } from "@/lib/util/debug";
-import { nowUnix } from "@/lib/util/format";
+import { nowUnix, storeWarningText } from "@/lib/util/format";
 import { mmaBufUrl } from "@/lib/util/util";
 import {
 	setUserFieldDefs,
@@ -247,7 +247,7 @@ export async function initStore() {
 	setCachedMapList(await cmd.storeListMaps());
 	emitEvent("store:changed");
 	listen("map-list-changed", () => reloadMapList());
-	listen<string>("store-warning", (event) => toast(event.payload, 8000));
+	listen<StoreWarning>("store-warning", (event) => toast(storeWarningText(event.payload), 8000));
 }
 
 /** Cross-module stopwatch for map-open latency. */

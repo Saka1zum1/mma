@@ -1,3 +1,4 @@
+import type { ExprError, StoreWarning } from "@/bindings.gen";
 import { getLocale, msg, t } from "@/lib/i18n";
 import { getSettings } from "@/store/settings";
 
@@ -218,6 +219,52 @@ export function nowUnix(): number {
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
+
+/** The message for a warning the store raised. */
+export function storeWarningText(warning: StoreWarning): string {
+	switch (warning.kind) {
+		case "deltaSetAside":
+			return t(
+				"Uncommitted changes could not be read and were set aside as a .corrupt file. The map opened from its last committed state.",
+			);
+	}
+}
+
+/** The message for a field-expression parse error. */
+export function exprErrorText(err: ExprError): string {
+	switch (err.kind) {
+		case "invalidNumber":
+			return t("Invalid number at position {position}", { position: err.position });
+		case "unterminatedString":
+			return t("Unterminated string");
+		case "unexpectedCharacter":
+			return t('Unexpected character "{char}" at position {position}', {
+				char: err.character,
+				position: err.position,
+			});
+		case "expectedSymbol":
+			return t('Expected "{token}"', { token: err.symbol });
+		case "chainedComparison":
+			return t("Comparisons do not chain; use parentheses");
+		case "unexpectedEnd":
+			return t("Unexpected end of expression");
+		case "missingLeftOperand":
+			return t("Expected a value before the comparison");
+		case "hasTakesFieldName":
+			return t("has() takes a field name");
+		case "unknownFunction":
+			return t('Unknown function "{name}"', { name: err.name });
+		case "wrongArgCount":
+			return t(
+				{ one: "{name}() takes {n} argument", other: "{name}() takes {n} arguments" },
+				{ name: err.name, n: err.expected },
+			);
+		case "unexpectedToken":
+			return t('Unexpected "{token}"', { token: err.token });
+		case "trailingToken":
+			return t('Unexpected "{token}" after expression', { token: err.token });
+	}
+}
 
 export function relativeTime(time: string | number): string {
 	const ms = typeof time === "number" ? time * 1000 : new Date(time).getTime();

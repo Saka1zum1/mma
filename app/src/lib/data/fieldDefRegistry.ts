@@ -142,15 +142,15 @@ export function getFieldDef(key: string): ExtraFieldDef | undefined {
 	return mergeDef(mergeDef(userDefs[key], pluginDefs[key]), FIELDS[key]);
 }
 
-/** Display label for a field key: registered label if known, otherwise sentence-cased from camelCase/snake_case. */
+/** Translated display label for a field key, falling back to a sentence-cased version of the key. */
 export function fieldLabel(key: string): string {
-	return (
-		getFieldDef(key)?.label ??
-		key
-			.replace(/([a-z])([A-Z])/g, (_, a, b) => `${a} ${b.toLowerCase()}`)
-			.replace(/_/g, " ")
-			.replace(/^./, (c) => c.toUpperCase())
-	);
+	const label = getFieldDef(key)?.label;
+	return label
+		? t(label)
+		: key
+				.replace(/([a-z])([A-Z])/g, (_, a, b) => `${a} ${b.toLowerCase()}`)
+				.replace(/_/g, " ")
+				.replace(/^./, (c) => c.toUpperCase());
 }
 
 /** Display text for one *value* of a field, the counterpart to [`fieldLabel`] naming the

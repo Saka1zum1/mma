@@ -64,7 +64,7 @@ fn a_missing_field_or_non_finite_result_skips_the_row() {
 
 #[test]
 fn syntax_errors_name_the_problem() {
-    let err = |src: &str| parse(src).unwrap_err().0;
+    let err = |src: &str| parse(src).unwrap_err().to_string();
     assert_eq!(err("1 +"), "Unexpected end of expression");
     assert_eq!(err("foo(1)"), "Unknown function \"foo\"");
     assert_eq!(err("mod(1)"), "mod() takes 2 arguments");
@@ -80,8 +80,8 @@ fn syntax_errors_name_the_problem() {
 fn the_live_check_reports_only_failures() {
     assert_eq!(field_expr_error("a + 1".into()), None);
     assert_eq!(
-        field_expr_error("a +".into()).as_deref(),
-        Some("Unexpected end of expression")
+        field_expr_error("a +".into()),
+        Some(ExprError::UnexpectedEnd)
     );
 }
 
@@ -103,7 +103,7 @@ fn comparisons_bind_looser_than_arithmetic() {
     assert_eq!(run("a + 1 == 3", &r), Some(1.0));
     assert_eq!(run("a * 2 > 3", &r), Some(1.0));
     assert_eq!(
-        parse("1 < 2 < 3").unwrap_err().0,
+        parse("1 < 2 < 3").unwrap_err().to_string(),
         "Comparisons do not chain; use parentheses"
     );
     assert_eq!(run("(1 < 2) < 3", &row(&[])), Some(1.0));
@@ -165,7 +165,7 @@ fn the_prune_default_is_expressible() {
 
 #[test]
 fn new_syntax_errors_name_the_problem() {
-    let err = |src: &str| parse(src).unwrap_err().0;
+    let err = |src: &str| parse(src).unwrap_err().to_string();
     assert_eq!(err("has(1)"), "has() takes a field name");
     assert_eq!(err("if(1, 2)"), "if() takes 3 arguments");
     assert_eq!(err("< 2"), "Expected a value before the comparison");

@@ -457,6 +457,14 @@ impl specta::Type for LocationFlags {
     }
 }
 
+/// A warning the store raised. The sentence is TypeScript's to write.
+#[derive(Clone, Debug, serde::Serialize, specta::Type, tauri_specta::Event)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[tauri_specta(event_name = "store-warning")]
+pub enum StoreWarning {
+    DeltaSetAside,
+}
+
 /// Error type for every fallible backend operation and Tauri command.
 #[derive(Debug, Clone)]
 pub struct AppError(pub String);

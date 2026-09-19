@@ -7,6 +7,7 @@ import { Icon } from "../primitives/Icon";
 import { TextInput } from "../primitives/TextInput";
 import { ScoreBoundsEditor } from "./map/ScoreBoundsEditor";
 import { t } from "@/lib/i18n";
+import { exprErrorText } from "@/lib/util/format";
 import { cmd } from "@/lib/commands";
 import { DEFAULT_DUPLICATE_SCORE } from "@/bindings.gen";
 import { mdiRestore } from "@mdi/js";
@@ -54,7 +55,7 @@ export function MapRenameForm({ mapId, currentName }: { mapId: string; currentNa
 		}
 		let live = true;
 		void cmd.fieldExprError(score).then((err) => {
-			if (live) setScoreError(err);
+			if (live) setScoreError(err && exprErrorText(err));
 		});
 		return () => {
 			live = false;
@@ -68,7 +69,7 @@ export function MapRenameForm({ mapId, currentName }: { mapId: string; currentNa
 		}
 		let live = true;
 		void cmd.fieldExprError(reviewOrder).then((err) => {
-			if (live) setReviewError(err);
+			if (live) setReviewError(err && exprErrorText(err));
 		});
 		return () => {
 			live = false;
