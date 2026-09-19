@@ -1,3 +1,18 @@
+## v0.10.9 - 2026-09-19
+- **Background jobs** keep bulk operations and generation running after you close the dialog; a tray in the bottom bar shows progress, and leaving or quitting a map asks before cancelling that work
+- **Pin to panorama** prefers official Google Street View over a nearby photosphere or user photo
+- The Street View **date picker** can fall back to official coverage when the current panorama is unofficial
+- **Validate locations** treats a newer capture month as an update, not just a different nearby panorama
+- **Sun Position** can draw sun-direction rays on the map, with length, width, and color in the plugin sidebar
+- map-making.app **API keys** are stored in the system keychain instead of ordinary plugin storage
+- Pasting a **Google Maps** link (including short links) is more reliable
+- Field formulas and map-open warnings show clearer messages
+- Long enrichment and Street View lookups stay more reliable on unstable connections
+- Polygon tools keep the shape when you finish drawing; merging duplicates no longer flashes an empty dialog
+- Plugin settings live in each plugin’s sidebar, not on marketplace cards
+- Fewer map and Street View crashes when many overlays are open
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.10.6 - 2026-09-12
 - **High and Ultra country borders** use the same country list as Standard, with padded coastlines, at about half the download size
 - **Distance units** can be metric, imperial, or automatic from your system; they apply to the measure bar, map overview, merge distance, and other distance fields
