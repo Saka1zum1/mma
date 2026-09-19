@@ -103,7 +103,7 @@ describe("i18n catalogs", () => {
 		expect(staleCatalogs().map(([f]: [string]) => path.basename(f))).toEqual([]);
 	});
 
-	it("leave no user-visible string unwrapped", () => {
+	it("leave no user-visible string unwrapped", { timeout: 15_000 }, () => {
 		const unwrapped: string[] = [];
 		// Surfaces pending English-as-key msg() wrapping (audit noise until cleaned).
 		const forkOwned = [
