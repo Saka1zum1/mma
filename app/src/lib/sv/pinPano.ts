@@ -10,7 +10,9 @@ export interface PinPanoConfig {
 }
 
 /** Pin to pano ID: resolve the pano from coords, then set the LoadAsPanoId flag.
- *  With `useLatest`, fetches the timeline and picks the last official pano. */
+ *  With `useLatest`, fetches the timeline and picks the last official pano.
+ *  The prelude re-resolves Google rows against official coverage only: the closest
+ *  pano can be a photosphere, and a bulk pin must never relocate rows onto one. */
 export const pinPanoResolver: SvResolver = {
 	id: "pinPano",
 	label: msg("Pin to pano ID"),

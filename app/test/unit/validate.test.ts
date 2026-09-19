@@ -30,11 +30,12 @@ function pano(opts: {
 	pano: string;
 	cameraType?: string | null;
 	time?: { pano: string; date?: Date }[];
+	imageDate?: string;
 }): Pano {
-	const { pano: id, cameraType = "gen4", time = [] } = opts;
+	const { pano: id, cameraType = "gen4", time = [], imageDate = "2022-01" } = opts;
 	return {
 		location: { latLng: { lat: () => 0, lng: () => 0 }, pano: id },
-		imageDate: "2022-01",
+		imageDate,
 		time: time.map((t) => ({ pano: t.pano, date: t.date ?? new Date(0) })),
 		tiles: { worldSize: { width: 0, height: 8192 } },
 		extra: { cameraType, countryCode: null, _levelId: null },
@@ -108,9 +109,22 @@ describe("coord-based locations (not pinned): UpdateApplied vs Ok", () => {
 		mockCoords.mockResolvedValue(OFFICIAL_NEW);
 		byId({
 			[OFFICIAL_OLD]: pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] }),
-			[OFFICIAL_NEW]: pano({ pano: OFFICIAL_NEW, time: [{ pano: OFFICIAL_NEW }] }),
+			[OFFICIAL_NEW]: pano({
+				pano: OFFICIAL_NEW,
+				imageDate: "2024-06",
+				time: [{ pano: OFFICIAL_NEW }],
+			}),
 		});
 		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.UpdateApplied);
+	});
+
+	it("a different pano at the same image date is not an update", async () => {
+		mockCoords.mockResolvedValue(OFFICIAL_NEW);
+		byId({
+			[OFFICIAL_OLD]: pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] }),
+			[OFFICIAL_NEW]: pano({ pano: OFFICIAL_NEW, time: [{ pano: OFFICIAL_NEW }] }),
+		});
+		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.Ok);
 	});
 
 	it("stored pano not newest in its own timeline -> UpdateApplied", async () => {

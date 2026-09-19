@@ -58,10 +58,17 @@ export async function getPanoAtCoords(
 	lat: number,
 	lng: number,
 	radius = SV_SEARCH_RADIUS,
+	opts?: { officialOnly?: boolean },
 ): Promise<string | null> {
 	const sv = new google.maps.StreetViewService();
 	try {
-		const result = await sv.getPanorama({ location: { lat, lng }, radius });
+		const result = await sv.getPanorama({
+			location: { lat, lng },
+			radius,
+			...(opts?.officialOnly
+				? { sources: [google.maps.StreetViewSource.GOOGLE] }
+				: {}),
+		});
 		return result.data.location?.pano ?? null;
 	} catch {
 		return null;
@@ -125,9 +132,12 @@ export async function resolvePanoIds(
 		batchSize?: number;
 		signal?: AbortSignal;
 		onProgress?: (done: number, total: number) => void;
+		/** Google rows only: search official coverage so a photosphere is never the pin. */
+		officialOnly?: boolean;
 	} = {},
 ): Promise<ResolvePanoResult> {
-	const { concurrency = SV_CONCURRENCY, batchSize = 200, signal, onProgress } = opts;
+	const { concurrency = SV_CONCURRENCY, batchSize = 200, signal, onProgress, officialOnly } =
+		opts;
 	const result: ResolvePanoResult = { resolved: [], failed: [] };
 	if (!google) return result;
 
@@ -137,7 +147,11 @@ export async function resolvePanoIds(
 		await runConcurrent(
 			batch,
 			async (loc) => {
-				const pano = await getPanoAtCoords(loc.lat, loc.lng);
+				const googleOfficial =
+					officialOnly && getLocationProvider(loc) === "google";
+				const pano = await getPanoAtCoords(loc.lat, loc.lng, SV_SEARCH_RADIUS, {
+					officialOnly: googleOfficial,
+				});
 				if (pano) {
 					result.resolved.push({ id: loc.id, panoId: pano });
 				} else {

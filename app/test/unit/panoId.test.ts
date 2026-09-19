@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isOfficialPano, newestOfficialPano } from "@/lib/sv/panoId";
+import { capturedAfter, isOfficialPano, newestOfficialPano } from "@/lib/sv/panoId";
+import type { Pano } from "@/types";
 
 describe("isOfficialPano", () => {
 	it("recognizes F: prefix as unofficial", () => {
@@ -29,6 +30,28 @@ describe("isOfficialPano", () => {
 
 	it("handles empty string as unofficial", () => {
 		expect(isOfficialPano("")).toBe(false);
+	});
+
+	it("a bare CIHM contributor key is not official, even at 22 chars ending in a key bit", () => {
+		expect(isOfficialPano("CIHM0ogKEICAgICTzu7WYg")).toBe(false);
+	});
+});
+
+describe("capturedAfter", () => {
+	const dated = (imageDate: string) => ({ imageDate }) as Pano;
+
+	it("a later month is after", () => {
+		expect(capturedAfter(dated("2026-02"), dated("2023-05"))).toBe(true);
+	});
+
+	it("an earlier or equal month is not", () => {
+		expect(capturedAfter(dated("2023-05"), dated("2026-02"))).toBe(false);
+		expect(capturedAfter(dated("2023-05"), dated("2023-05"))).toBe(false);
+	});
+
+	it("undated coverage never counts as newer, but always loses to a date", () => {
+		expect(capturedAfter(dated(""), dated("2023-05"))).toBe(false);
+		expect(capturedAfter(dated("2023-05"), dated(""))).toBe(true);
 	});
 });
 

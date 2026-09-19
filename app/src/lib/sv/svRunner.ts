@@ -121,6 +121,9 @@ export async function runResolvers(
 		const pr = await resolvePanoIds(needResolve, {
 			signal,
 			onProgress: (d) => onProgress?.(d, needResolve.length, msg("Resolving panoramas")),
+			// Pinning re-resolves what is at the coordinates now. Official coverage only
+			// for Google: the closest pano can be a photosphere.
+			officialOnly: chosen.some(({ r }) => r.id === "pinPano"),
 		});
 		resolvedPanoIds = new Map(pr.resolved.map((x) => [x.id, x.panoId]));
 		for (const { id, panoId } of pr.resolved) {

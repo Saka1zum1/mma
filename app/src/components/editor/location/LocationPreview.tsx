@@ -20,7 +20,7 @@ import { Tooltip } from "@/components/primitives/Tooltip";
 import { Icon } from "@/components/primitives/Icon";
 import { Button } from "@/components/primitives/Button";
 import { mdiChevronLeft, mdiChevronRight } from "@mdi/js";
-import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
+import { SV_OFFICIAL_FALLBACK_RADIUS, SV_SEARCH_RADIUS } from "@/lib/sv/constants";
 import type { Tag } from "@/bindings.gen";
 import {
 	useMapState,
@@ -57,7 +57,7 @@ import {
 } from "@/store/settings";
 import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
-import { type PanoReference, resolvePano, fetchPanoData, showToast } from "@/lib/sv/lookup";
+import { type PanoReference, resolvePano, fetchPanoData, parsePanoDate, showToast } from "@/lib/sv/lookup";
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { enrich } from "@/lib/sv/enrich";
 import { FullscreenMiniMap } from "@/components/editor/location/FullscreenMiniMap";
@@ -284,6 +284,7 @@ export function LocationPreview() {
 		selectedPanoId,
 		coverageDefaultPanoId,
 		setCoverageDefaultPanoId,
+		setCoverageDefaultDate,
 	} = usePanoViewer();
 	const isFullscreen = usePanoFullscreen();
 	const providerEpoch = useSyncStore(subscribePanoProviders, getPanoProvidersSnapshot);
@@ -795,29 +796,38 @@ export function LocationPreview() {
 		const byPano = fetchPanoData({ pano: loc.pano });
 		const byLoc = fetchPanoData({ location: panoPos, radius: SV_SEARCH_RADIUS });
 
-		Promise.all([byPano, byLoc]).then(([panoData, locData]) => {
-			if (cancelled) return;
-			const merged = new Map<string, PanoReference>();
-			for (const t of extractTimes(locData)) merged.set(t.pano, t);
-			for (const t of extractTimes(panoData)) merged.set(t.pano, t);
-
-			// If all entries are unofficial, do an extra
-			// official-only lookup to get the full multi-year coverage history.
-			const allUnofficial = merged.size > 0 && [...merged.keys()].every((p) => !isOfficialPano(p));
-			if (allUnofficial && !cancelled) {
-				fetchPanoData({
-					location: panoPos,
-					radius: 25,
-					sources: [google.maps.StreetViewSource.GOOGLE],
-				}).then((officialData) => {
-					if (cancelled) return;
-					for (const t of extractTimes(officialData)) merged.set(t.pano, t);
-					setPanoDates(Array.from(merged.values()));
-				});
-			} else {
-				setPanoDates(Array.from(merged.values()));
-			}
-		});
+		Promise.all([byPano, byLoc])
+			.then(([panoData, locData]) => {
+				if (cancelled) return;
+				const locPanoId = locData?.location?.pano ?? null;
+				if (locPanoId) setCoverageDefaultPanoId(locPanoId);
+				const locTimes = extractTimes(locData);
+				const defaultRef = locPanoId ? locTimes.find((t) => t.pano === locPanoId) : undefined;
+				setCoverageDefaultDate(
+					defaultRef?.date ??
+						(locData?.imageDate ? parsePanoDate(locData.imageDate) : null),
+				);
+				// The date picker offers this pano's own capture stack, not a neighbour merge.
+				const own = extractTimes(panoData);
+				const unofficial = own.every((t) => !isOfficialPano(t.pano));
+				if (unofficial && !cancelled && google?.maps?.StreetViewSource) {
+					return fetchPanoData({
+						location: panoPos,
+						radius: SV_OFFICIAL_FALLBACK_RADIUS,
+						sources: [google.maps.StreetViewSource.GOOGLE],
+					}).then((officialData) => {
+						if (cancelled) return;
+						const merged = new Map<string, PanoReference>();
+						for (const t of extractTimes(officialData)) merged.set(t.pano, t);
+						for (const t of own) merged.set(t.pano, t);
+						setPanoDates(Array.from(merged.values()));
+					});
+				}
+				setPanoDates(own);
+			})
+			.catch((e: unknown) => {
+				if (!cancelled) log.warn("[pano-dates]", e);
+			});
 
 		const enrichAc = new AbortController();
 		enrichAbortRef.current = enrichAc;
@@ -839,7 +849,7 @@ export function LocationPreview() {
 		cancelled = true;
 		enrichAc.abort();
 	};
-}, [location?.id, currentPano?.location?.pano, providerSession, setCoverageDefaultPanoId]);
+}, [location?.id, currentPano?.location?.pano, providerSession, setCoverageDefaultPanoId, setCoverageDefaultDate]);
 
 	// Reads the active location at call time to stay referentially stable
 	// (it is a memo'd PanoDatePicker prop).

@@ -49,6 +49,7 @@ interface PanoViewerContextValue {
 	 */
 	coverageDefaultPanoId: string | null;
 	setCoverageDefaultPanoId: React.Dispatch<React.SetStateAction<string | null>>;
+	setCoverageDefaultDate: React.Dispatch<React.SetStateAction<Date | null>>;
 	/** Resolved live pano position (current pano if loaded, else the active location). */
 	lat: number;
 	lng: number;
@@ -68,6 +69,7 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 	const [panoDates, setPanoDates] = useState<PanoReference[]>([]);
 	const [panoReady, setPanoReady] = useState(false);
 	const [coverageDefaultPanoId, setCoverageDefaultPanoId] = useState<string | null>(null);
+	const [coverageDefaultDate, setCoverageDefaultDate] = useState<Date | null>(null);
 
 	const provider = location ? findPanoProvider(location) : null;
 	const injectProvider =
@@ -85,13 +87,14 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		setCoverageDefaultPanoId(null);
+		setCoverageDefaultDate(null);
 	}, [location?.id]);
 
 	// Inject alts: Default tracks coverage default / spawn. Look Around: specific.
-	// Google: LoadAsPanoId flag.
+	// Google: the coordinate-resolved pano when known, else spawn / stored id.
 	const defaultPanoId = isInjectAlt
 		? (coverageDefaultPanoId ?? spawnPanoId)
-		: (spawnPanoId ?? location?.panoId ?? null);
+		: (coverageDefaultPanoId ?? spawnPanoId ?? location?.panoId ?? null);
 
 	const currentViewerPano = currentPano?.location?.pano ?? null;
 	const selectedPanoId = isInjectAlt
@@ -115,6 +118,7 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 		typeof location?.extra?.datetime === "number"
 			? new Date(location.extra.datetime * 1000)
 			: null;
+	const defaultDate = coverageDefaultDate ?? defaultDateFromExtra;
 
 	const dateState = useMemo(
 		() =>
@@ -123,9 +127,9 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 				selectedPanoId,
 				currentPano,
 				defaultPanoId,
-				defaultDateFromExtra,
+				defaultDate,
 			),
-		[panoDates, selectedPanoId, currentPano, defaultPanoId, defaultDateFromExtra],
+		[panoDates, selectedPanoId, currentPano, defaultPanoId, defaultDate],
 	);
 	const exactDate = useExactDate(
 		dateState.triggerPanoId,
@@ -177,6 +181,7 @@ export function PanoViewerProvider({ children }: { children: ReactNode }) {
 			selectedPanoId,
 			coverageDefaultPanoId,
 			setCoverageDefaultPanoId,
+			setCoverageDefaultDate,
 			lat,
 			lng,
 			dateState,

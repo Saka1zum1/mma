@@ -2,16 +2,26 @@ import { hasLoadAsPanoId } from "@/types";
 import type { Location } from "@/bindings.gen";
 import { ValidationState } from "@/store/selections";
 import { fetchSvMetadata } from "./svMeta";
-import { isOfficialPano, newestOfficialPano } from "./panoId";
+import { capturedAfter, isOfficialPano, newestOfficialPano } from "./panoId";
 import { getPanoAtCoords, isUnofficial } from "./lookup";
 import { runConcurrent } from "@/lib/util/concurrent";
 
 const GOOD_CAM_TYPES = new Set(["gen4", "gen2"]);
 
-export async function validateOne(loc: Location, signal?: AbortSignal): Promise<ValidationState> {
+export interface ValidateConfig {
+	radius?: number;
+	checkPinned?: boolean;
+}
+
+export async function validateOne(
+	loc: Location,
+	signal?: AbortSignal,
+	config?: ValidateConfig,
+): Promise<ValidationState> {
 	signal?.throwIfAborted();
 
 	const pinned = hasLoadAsPanoId(loc);
+	const checkPinned = config?.checkPinned ?? true;
 	let data: google.maps.StreetViewResolvedPanoramaData | null = null;
 	let coordData: google.maps.StreetViewResolvedPanoramaData | null = null;
 	let state = ValidationState.Ok;
@@ -21,17 +31,17 @@ export async function validateOne(loc: Location, signal?: AbortSignal): Promise<
 		[data] = await fetchSvMetadata([loc.panoId]).catch(() => [null]);
 	}
 
-	if (pinned) {
-		// LoadAsPanoId: if pano lookup failed, mark broke, fall back to coord
-		if (data == null) {
-			if (loc.panoId != null) state = ValidationState.PanoIdBroke;
-			const coordPano = await getPanoAtCoords(loc.lat, loc.lng);
-			if (coordPano) [data] = await fetchSvMetadata([coordPano]).catch(() => [null]);
-		}
-	} else {
-		// No LoadAsPanoId: do coord lookup
-		const coordPano = await getPanoAtCoords(loc.lat, loc.lng);
+	// The coordinate is the comparison (pinned rows included under checkPinned) and the
+	// fallback for a pinned row whose pano broke.
+	const needCoord = checkPinned || !pinned || data == null;
+	if (needCoord) {
+		const coordPano = await getPanoAtCoords(loc.lat, loc.lng, config?.radius);
 		if (coordPano) [coordData] = await fetchSvMetadata([coordPano]).catch(() => [null]);
+		if (pinned && data == null) {
+			if (loc.panoId != null) state = ValidationState.PanoIdBroke;
+			data = coordData;
+			coordData = null;
+		}
 	}
 
 	data ??= coordData;
@@ -39,8 +49,8 @@ export async function validateOne(loc: Location, signal?: AbortSignal): Promise<
 	if (data == null) return ValidationState.NotFound;
 	if (isUnofficial(data)) return ValidationState.Unofficial;
 
-	// Badcam check (only when not pinned)
-	if (!pinned && data.extra?.cameraType === "badcam" && data.time?.length) {
+	// Badcam check (pinned rows included under checkPinned)
+	if ((checkPinned || !pinned) && data.extra?.cameraType === "badcam" && data.time?.length) {
 		const timePanoIds = data.time.map((t) => t.pano);
 		const timeResults = await fetchSvMetadata(timePanoIds).catch(() => []);
 		if (timeResults.some((t) => t && GOOD_CAM_TYPES.has(t.extra?.cameraType ?? ""))) {
@@ -48,9 +58,15 @@ export async function validateOne(loc: Location, signal?: AbortSignal): Promise<
 		}
 	}
 
-	// Coord update (only when not pinned, since coordData is only set then)
-	if (coordData != null && coordData.location.pano !== data.location.pano) {
-		return ValidationState.UpdateApplied;
+	// Only newer official coverage counts as an update: the nearest hit can be a
+	// photosphere, an adjacent road, or a default lagging behind the pinned pano.
+	if (
+		coordData != null &&
+		!isUnofficial(coordData) &&
+		coordData.location.pano !== data.location.pano &&
+		capturedAfter(coordData, data)
+	) {
+		return pinned ? ValidationState.UpdateAvailable : ValidationState.UpdateApplied;
 	}
 
 	// Timeline check: the stored pano is a known official capture, but not the newest one
@@ -75,9 +91,10 @@ export async function validateLocations(
 	opts: {
 		signal?: AbortSignal;
 		onProgress?: (p: ValidationProgress) => void;
+		config?: ValidateConfig;
 	} = {},
 ): Promise<Map<ValidationState, Location[]>> {
-	const { signal, onProgress } = opts;
+	const { signal, onProgress, config } = opts;
 	const results = new Map<ValidationState, Location[]>();
 	let completed = 0;
 	let lastUpdate = 0;
@@ -86,7 +103,7 @@ export async function validateLocations(
 		locations,
 		async (loc) => {
 			try {
-				const state = await validateOne(loc, signal);
+				const state = await validateOne(loc, signal, config);
 				const list = results.get(state);
 				if (list) list.push(loc);
 				else results.set(state, [loc]);

@@ -156,19 +156,19 @@ export function coverageDates(p: Pano): string[] {
 	return p.time.map((t) => t.date.slice(0, 7));
 }
 
-/** The capture history to show for a pano: its own stack merged with the stacks of the panos
- *  beside it, since a partly-official stack carries only part of the history. Entries are
- *  keyed by pano id and later sources win, so pass the pano itself last. */
+/** A pano's stack merged with another's, for the all-unofficial case where the multi-year
+ *  history lives on official coverage nearby. Entries are keyed by pano id and later
+ *  sources win, so pass the pano itself last. */
 export function mergeTimelines(sources: (Pano | null | undefined)[]): Pano["time"] {
 	const merged = new Map<string, Pano["time"][number]>();
 	for (const p of sources) for (const t of p?.time ?? []) merged.set(t.pano, t);
 	return [...merged.values()];
 }
 
-/** True when nothing in the timeline is official coverage, so the multi-year history lives
- *  on official coverage nearby rather than on these panos. */
+/** True when nothing in the timeline is official coverage, an empty stack included, so
+ *  the multi-year history lives on official coverage nearby rather than on these panos. */
 export function allUnofficial(time: Pano["time"]): boolean {
-	return time.length > 0 && time.every((t) => !isOfficialPano(t.pano));
+	return time.every((t) => !isOfficialPano(t.pano));
 }
 
 /** The heading at the horizontal centre of the image, which is also the driving direction
