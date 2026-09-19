@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Field } from "@/components/primitives/Sidebar";
 import { mapMakingApp } from "@/components/primitives/Icon";
 import { ConnectionUser, SyncSidebar as SharedSyncSidebar } from "@/lib/sync/ui/SyncSidebar";
-import type { Remote } from "./map-making-web-api";
+import type { User } from "./remote-types";
 import * as auth from "./controller";
 import { controller } from "./controller";
 import { errText } from "@/lib/util/util";
@@ -10,22 +10,20 @@ import { t } from "@/lib/i18n";
 
 /** The shared sync sidebar, with map-making.app's API-key auth plugged into it. */
 export function SyncSidebar({ onClose }: { onClose: () => void }) {
-	const [keyDraft, setKeyDraft] = useState(auth.getApiKey());
-	const [user, setUser] = useState<Remote.User | null>(auth.getCachedUser());
+	const [keyDraft, setKeyDraft] = useState("");
+	const [user, setUser] = useState<User | null>(auth.getCachedUser());
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	// True only while the mount-time validation below is in flight. With no key there is nothing
-	// to check, so the key form shows immediately rather than flashing through a "checking" state.
-	const [checking, setChecking] = useState(() => !!auth.getApiKey() && !auth.getCachedUser());
+	const [checking, setChecking] = useState(() => !auth.getCachedUser());
 
-	const validate = useCallback(async () => {
+	const validate = useCallback(async (key?: string) => {
 		setBusy(true);
 		setError(null);
 		try {
 			// Validate before persisting: a typo'd key must not replace a working one.
-			const user = await auth.validate(keyDraft);
-			auth.setApiKey(keyDraft);
-			setUser(user);
+			const next = await auth.validate(key);
+			if (key !== undefined) await auth.setApiKey(key);
+			setUser(next);
 		} catch (e) {
 			setError(errText(e));
 			setUser(null);
@@ -33,13 +31,19 @@ export function SyncSidebar({ onClose }: { onClose: () => void }) {
 			setBusy(false);
 			setChecking(false);
 		}
-	}, [keyDraft]);
+	}, []);
 
 	// Validate once when a key exists but nothing is cached yet; cached opens are instant.
 	useEffect(() => {
-		if (auth.getApiKey() && !auth.getCachedUser()) void validate();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+		if (auth.getCachedUser()) {
+			setChecking(false);
+			return;
+		}
+		void (async () => {
+			if (await auth.hasApiKey()) await validate();
+			else setChecking(false);
+		})();
+	}, [validate]);
 
 	const authUi = user ? (
 		// map-making.app's API-key surface exposes no avatar (auth is Discord-side), so the
@@ -52,6 +56,8 @@ export function SyncSidebar({ onClose }: { onClose: () => void }) {
 					onClick={() => {
 						auth.forgetAuth();
 						setUser(null);
+						setKeyDraft("");
+						setError(null);
 					}}
 				>
 					{t("Change key")}
@@ -62,7 +68,7 @@ export function SyncSidebar({ onClose }: { onClose: () => void }) {
 		<form
 			onSubmit={(e) => {
 				e.preventDefault();
-				void validate();
+				void validate(keyDraft);
 			}}
 		>
 			{/* Hidden username satisfies the password-form a11y heuristic. */}

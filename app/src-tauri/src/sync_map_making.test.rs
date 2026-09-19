@@ -561,6 +561,23 @@ fn decode_empty_response_is_empty() {
     assert!(decode_response(&[]).unwrap().is_empty());
 }
 
+// --- keyring cache ----------------------------------------------------------
+
+#[test]
+fn stored_key_roundtrip_and_blank_clears() {
+    *super::key_cell().lock().unwrap() = None;
+    let _ = crate::storage::secret::delete("map-making.app");
+
+    assert_eq!(stored_key().unwrap(), None);
+    super::set_stored_key(Some("  abc  ".into())).unwrap();
+    assert_eq!(stored_key().unwrap().as_deref(), Some("abc"));
+    super::set_stored_key(Some("   ".into())).unwrap();
+    assert_eq!(stored_key().unwrap(), None);
+
+    *super::key_cell().lock().unwrap() = None;
+    let _ = crate::storage::secret::delete("map-making.app");
+}
+
 // --- error classification ---------------------------------------------------
 
 #[test]

@@ -683,7 +683,11 @@ fn run_reconcile(
 
     match provider_name {
         "map-making.app" => {
-            let api_key = api_key.ok_or_else(|| AppError("missing api key".into()))?;
+            let api_key = match api_key.filter(|k| !k.trim().is_empty()) {
+                Some(k) => k,
+                None => crate::sync_map_making::stored_key()?
+                    .ok_or_else(|| AppError("missing api key".into()))?,
+            };
             let provider = MapMakingProvider { api_key };
             reconcile_with(
                 &provider,

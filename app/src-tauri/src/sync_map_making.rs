@@ -3,15 +3,20 @@
 //! without a network; see sync_map_making.test.rs.
 
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use vali_data::decode::Reader;
 
+use crate::storage;
 use crate::sync::{
     auth_error, canon_tags, sync_flags, IdentityModel, NormalizedSyncLocation, PushBatch, PushedId,
     RemoteSnapshot, SyncProvider,
 };
 use crate::types::{AppError, AppResult};
+
+/// OS keyring entry for the map-making.app API key. Never written to the app DB.
+const SECRET_NAME: &str = "map-making.app";
 
 const BASE_URL: &str = "https://map-making.app";
 
@@ -246,6 +251,149 @@ fn api_error(status: u16, body: &[u8]) -> AppError {
 
 fn default_error_message(status: u16) -> String {
     format!("map-making.app API request failed with HTTP {status}")
+}
+
+// --- account / listing (key lives in the OS keyring) ------------------------
+
+/// The signed-in map-making.app account.
+#[derive(Serialize, Deserialize, specta::Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MmUser {
+    pub id: i64,
+    pub username: String,
+}
+
+/// A remote map the signed-in user can link to.
+#[derive(Serialize, specta::Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MmRemoteMap {
+    pub id: i64,
+    pub name: String,
+    pub location_count: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawRemoteMap {
+    id: i64,
+    name: String,
+    #[serde(default)]
+    location_count: Option<i64>,
+    #[serde(default)]
+    archived_at: Option<serde_json::Value>,
+}
+
+/// Outer `None` = not yet read from the credential store; inner `None` = no key.
+fn key_cell() -> &'static Mutex<Option<Option<String>>> {
+    static S: OnceLock<Mutex<Option<Option<String>>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(None))
+}
+
+/// Current API key, read from the credential store on first use. A load failure is
+/// propagated and NOT cached, so the next call retries rather than reporting "unsigned"
+/// until restart.
+pub(crate) fn stored_key() -> AppResult<Option<String>> {
+    let mut g = key_cell().lock()?;
+    if g.is_none() {
+        *g = Some(storage::secret::get(SECRET_NAME)?);
+    }
+    Ok(g.clone().unwrap_or_default())
+}
+
+fn set_stored_key(key: Option<String>) -> AppResult<()> {
+    let key = key.and_then(|k| {
+        let t = k.trim();
+        (!t.is_empty()).then(|| t.to_string())
+    });
+    match key.as_deref() {
+        Some(v) => storage::secret::set(SECRET_NAME, v)?,
+        None => storage::secret::delete(SECRET_NAME)?,
+    }
+    *key_cell().lock()? = Some(key);
+    Ok(())
+}
+
+fn resolve_key(api_key: Option<String>) -> AppResult<String> {
+    match api_key {
+        Some(k) if !k.trim().is_empty() => Ok(k.trim().to_string()),
+        _ => stored_key()?.ok_or_else(|| AppError("missing api key".into())),
+    }
+}
+
+fn json_get<T: serde::de::DeserializeOwned>(path: &str, api_key: &str) -> AppResult<T> {
+    let url = format!("{BASE_URL}{path}");
+    let resp = crate::sync_client()
+        .get(&url)
+        .header("authorization", format!("API {api_key}"))
+        .header("accept", "application/json")
+        .send()?;
+    let status = resp.status().as_u16();
+    let body = resp.bytes()?;
+    if !(200..300).contains(&status) {
+        return Err(api_error(status, &body));
+    }
+    Ok(serde_json::from_slice(&body)?)
+}
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("task failed: {e}").into())
+}
+
+/// Local-only check: is a key stored? Says nothing about its validity.
+#[tauri::command]
+#[specta::specta]
+pub async fn map_making_has_key() -> AppResult<bool> {
+    blocking(|| stored_key().map(|k| k.is_some())).await?
+}
+
+/// Persist an API key in the OS keyring (replaces any previous key).
+#[tauri::command]
+#[specta::specta]
+pub async fn map_making_set_key(api_key: String) -> AppResult<()> {
+    blocking(move || set_stored_key(Some(api_key))).await?
+}
+
+/// Drop the stored API key.
+#[tauri::command]
+#[specta::specta]
+pub async fn map_making_clear_key() -> AppResult<()> {
+    blocking(|| set_stored_key(None)).await?
+}
+
+/// Validate `api_key` (or the stored one when `None`) against `/api/user`.
+#[tauri::command]
+#[specta::specta]
+pub async fn map_making_get_user(api_key: Option<String>) -> AppResult<MmUser> {
+    blocking(move || {
+        let key = resolve_key(api_key)?;
+        json_get("/api/user", &key)
+    })
+    .await?
+}
+
+/// Maps the stored key's owner can link to. Archived remotes are omitted.
+#[tauri::command]
+#[specta::specta]
+pub async fn map_making_list_maps() -> AppResult<Vec<MmRemoteMap>> {
+    blocking(|| {
+        let key = resolve_key(None)?;
+        let maps: Vec<RawRemoteMap> = json_get("/api/maps", &key)?;
+        Ok(maps
+            .into_iter()
+            .filter(|m| match &m.archived_at {
+                None => true,
+                Some(v) => v.is_null(),
+            })
+            .map(|m| MmRemoteMap {
+                id: m.id,
+                name: m.name,
+                location_count: m.location_count,
+            })
+            .collect())
+    })
+    .await?
 }
 
 // --- push chunking (pure) ---------------------------------------------------
