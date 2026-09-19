@@ -432,10 +432,46 @@ fn dedupe_by_pano_fans_the_patch_out_to_every_sharer() {
 }
 
 #[test]
+fn dedupe_by_spreads_representatives_over_every_instance() {
+    let mut locs: Vec<Location> = (1..=5_001u32)
+        .map(|i| Location {
+            pano_id: Some(format!("PANO_{i}").into()),
+            ..loc(i, i as f64 * 0.0001, 0.0)
+        })
+        .collect();
+    locs.push(Location {
+        pano_id: Some("PANO_5001".into()),
+        ..loc(5_002, 0.0, 0.0)
+    });
+    let (state, map_id) = setup(&locs);
+    let mut d = decl(
+        "spread",
+        BatchMode::DedupeBy {
+            key: "panoId".into(),
+        },
+    );
+    d.instances = Some(4);
+    let h = Harness::map_only(patch_extra_all(r#"{"country":"JP"}"#));
+    run_provider(&h.ctx(&state, &map_id), &d).unwrap();
+
+    let mut sizes: Vec<usize> = h.seen.lock().unwrap().iter().map(Vec::len).collect();
+    sizes.sort_unstable();
+    assert_eq!(sizes, vec![1, 2_500, 2_500]);
+    for id in [1, 5_001, 5_002] {
+        assert_eq!(
+            read_extra(&state, &map_id, id).unwrap()["country"],
+            serde_json::json!("JP"),
+            "location {id}"
+        );
+    }
+}
+
+#[test]
 fn dedupe_by_rejects_unsupported_keys() {
     let err = split_batches(
         &BatchMode::DedupeBy { key: "lat".into() },
         vec![loc(1, 0.0, 0.0)],
+        1,
     )
     .err()
     .expect("unsupported key must be rejected");
@@ -506,13 +542,42 @@ fn retry_stops_at_the_attempt_cap() {
 }
 
 #[test]
-fn no_retry_spec_means_one_attempt() {
+fn declared_attempts_clamp_to_the_engine_ceiling() {
+    let calls = run_retry(
+        RetrySpec {
+            attempts: 1000,
+            on: vec![500],
+        },
+        vec![500],
+    );
+    assert_eq!(calls, 8);
+}
+
+fn run_without_retry_spec(statuses: Vec<u16>) -> u32 {
     let (state, map_id) = setup(&[loc(1, 0.0, 0.0)]);
-    let d = decl("once", BatchMode::PerRow);
-    let (fetch, calls) = status_sequence(vec![500]);
+    let d = decl("defaulted", BatchMode::PerRow);
+    let (fetch, calls) = status_sequence(statuses);
     let h = Harness::new(ProcShape::RequestMap, Arc::new(|_| Ok(Vec::new())), fetch);
     run_provider(&h.ctx(&state, &map_id), &d).unwrap();
-    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    calls.load(Ordering::Relaxed)
+}
+
+#[test]
+fn no_retry_spec_retries_every_transient_status() {
+    for status in TRANSIENT_STATUSES {
+        assert_eq!(
+            run_without_retry_spec(vec![status, 200]),
+            2,
+            "status {status} should have been retried by default"
+        );
+    }
+}
+
+#[test]
+fn no_retry_spec_leaves_a_settled_status_alone() {
+    assert_eq!(run_without_retry_spec(vec![400, 200]), 1);
+    assert_eq!(run_without_retry_spec(vec![403, 200]), 1);
+    assert_eq!(run_without_retry_spec(vec![404, 200]), 1);
 }
 
 // -----------------------------------------------------------------------
@@ -632,6 +697,50 @@ fn cancel_stops_before_the_next_batch_and_keeps_applied_patches() {
     );
     assert!(read_extra(&state, &map_id, 2).is_none());
     assert!(read_extra(&state, &map_id, 3).is_none());
+}
+
+#[test]
+fn cancel_with_more_batches_queued_than_the_queue_holds_still_lands_and_returns() {
+    // One instance holds a queue of two; a page of twelve per-row batches overfills it.
+    let locs: Vec<Location> = (1..=12u32).map(|i| loc(i, i as f64, 0.0)).collect();
+    let (state, map_id) = setup(&locs);
+    let d = decl("canceller", BatchMode::PerRow);
+    let flag = Arc::new(AtomicBool::new(false));
+    let f = flag.clone();
+    let on_map: MapFn = Arc::new(move |rows: &[Location]| {
+        f.store(true, Ordering::Relaxed);
+        Ok(rows
+            .iter()
+            .map(|r| PatchEntry {
+                id: r.id,
+                patch: r#"{"extra":{"hit":true}}"#.into(),
+            })
+            .collect())
+    });
+    let mut h = Harness::map_only(on_map);
+    h.cancel = flag;
+    // Leaked so the worker can be abandoned: a deadlocked provider must fail this test,
+    // not hang it.
+    let (h, state, map_id, d) = (
+        &*Box::leak(Box::new(h)),
+        &*Box::leak(Box::new(state)),
+        &*Box::leak(Box::new(map_id)),
+        &*Box::leak(Box::new(d)),
+    );
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(run_provider(&h.ctx(state, map_id), d));
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .expect("a cancelled provider must return, not block on its own queue")
+        .unwrap();
+
+    assert_eq!(h.seen.lock().unwrap().len(), 1, "only one batch should run");
+    assert_eq!(
+        read_extra(state, map_id, 1).unwrap()["hit"],
+        serde_json::json!(true)
+    );
+    assert!(read_extra(state, map_id, 2).is_none());
 }
 
 // -----------------------------------------------------------------------

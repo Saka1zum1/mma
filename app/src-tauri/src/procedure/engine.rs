@@ -9,7 +9,7 @@ use crate::sidecar::SidecarStream;
 use crate::types::{AppError, AppResult, Location};
 use std::collections::HashMap;
 use std::mem;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -24,6 +24,8 @@ const DEFAULT_INFLIGHT: u32 = 48;
 /// Ceiling on a provider's in-flight requests. These are futures, not threads, so it
 /// bounds what the remote endpoint sees rather than what the machine can hold.
 const MAX_INFLIGHT: u32 = 1024;
+/// Ceiling on a declared retry policy's total tries per request.
+const MAX_ATTEMPTS: u32 = 8;
 
 /// Procedure instances a provider gets. `instances` is for procedures that cannot run beside
 /// themselves -- one sidecar process, one large model in memory; everything else takes
@@ -73,6 +75,14 @@ pub struct RateSpec {
     #[serde(default)]
     pub cost: RateCost,
 }
+
+/// The statuses a request is worth re-sending on: the endpoint is overloaded or wedged
+/// rather than answering the request it was given. Google's frontend sheds a burst with
+/// 502 as readily as with 429, so a list that omits it drops rows a second try would
+/// have resolved.
+pub const TRANSIENT_STATUSES: [u16; 7] = [408, 425, 429, 500, 502, 503, 504];
+/// Tries a request gets when the provider declares no policy of its own.
+const DEFAULT_ATTEMPTS: u32 = 3;
 
 /// Retry only the listed HTTP statuses, up to `attempts` total tries.
 #[derive(Clone, serde::Deserialize, specta::Type)]
@@ -250,15 +260,26 @@ fn resolve_entry(spec: &str) -> AppResult<std::path::PathBuf> {
     )))
 }
 
+/// Connections the client spreads requests over. Google caps concurrent streams per
+/// HTTP/2 connection (~100), so one connection silently throttles a wide provider's
+/// `inflight`; each client holds its own connection and requests deal round-robin.
+const HTTP_CONNECTIONS: usize = 8;
+
 fn http_client() -> &'static reqwest::Client {
-    static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-    C.get_or_init(|| {
-        reqwest::Client::builder()
-            .use_rustls_tls()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("failed to build the procedure http client")
-    })
+    static POOL: std::sync::OnceLock<Vec<reqwest::Client>> = std::sync::OnceLock::new();
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let pool = POOL.get_or_init(|| {
+        (0..HTTP_CONNECTIONS)
+            .map(|_| {
+                reqwest::Client::builder()
+                    .use_rustls_tls()
+                    .timeout(Duration::from_secs(30))
+                    .build()
+                    .expect("failed to build the procedure http client")
+            })
+            .collect()
+    });
+    &pool[NEXT.fetch_add(1, Ordering::Relaxed) % pool.len()]
 }
 
 /// Test-only: swap the origin of an outgoing URL for the local e2e Street View stub,
@@ -487,7 +508,7 @@ async fn fetch_one(
     aborted: &(dyn Fn() -> bool + Sync),
     req: &HttpRequestSpec,
 ) -> AppResult<HttpResponse> {
-    let attempts = attempts.max(1);
+    let attempts = attempts.clamp(1, MAX_ATTEMPTS);
     let mut delay = deps.backoff;
     for attempt in 0..attempts {
         let resp = {
@@ -503,7 +524,7 @@ async fn fetch_one(
             return Ok(resp);
         }
         tokio::time::sleep(delay).await;
-        delay *= 2;
+        delay = delay.saturating_mul(2);
     }
     unreachable!("attempts is at least 1")
 }
@@ -754,7 +775,9 @@ pub(crate) fn run_provider(ctx: &RunCtx, decl: &ProviderDecl) -> AppResult<()> {
     let config = configure_json(&decl.fields, force, decl.config.as_deref());
     // No more instances than the run can keep busy: a one-row run must not load a
     // procedure per core.
-    let instances = instance_count(decl).min(batch_ceiling(&batch_mode, total).max(1));
+    let per_instance = rows_per_instance(decl);
+    let instances =
+        instance_count(decl).min(batch_ceiling(&batch_mode, total, per_instance).max(1));
 
     // Three roles, so a page boundary never drains the pipeline: this thread pages rows
     // into a bounded queue (at most a couple of pages ahead), the instances pull batches
@@ -775,13 +798,14 @@ pub(crate) fn run_provider(ctx: &RunCtx, decl: &ProviderDecl) -> AppResult<()> {
             if ctx.aborted() {
                 break;
             }
-            let batches = match page_batches(ctx, decl, chunk, force, &batch_mode, &prog) {
-                Ok(b) => b,
-                Err(e) => {
-                    produced = Err(e);
-                    break;
-                }
-            };
+            let batches =
+                match page_batches(ctx, decl, chunk, force, &batch_mode, per_instance, &prog) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        produced = Err(e);
+                        break;
+                    }
+                };
             if batches.is_empty() {
                 continue;
             }
@@ -826,6 +850,7 @@ fn page_batches(
     page: &[u32],
     force: bool,
     batch_mode: &BatchMode,
+    per_instance: usize,
     prog: &ProviderProgress,
 ) -> AppResult<Vec<WorkBatch>> {
     let rows = {
@@ -848,18 +873,18 @@ fn page_batches(
     if rows.is_empty() {
         return Ok(Vec::new());
     }
-    split_batches(batch_mode, rows)
+    split_batches(batch_mode, rows, per_instance)
 }
 
 /// An upper bound on how many batches `total` rows can become, before skipping. Batches
 /// are cut per page, so a chunk larger than a page still yields one batch per page.
-fn batch_ceiling(mode: &BatchMode, total: u32) -> usize {
+fn batch_ceiling(mode: &BatchMode, total: u32, per_instance: usize) -> usize {
     let total = total as usize;
     let pages = total.div_ceil(PAGE_SIZE);
     match mode {
         BatchMode::PerRow => total,
         BatchMode::Chunk { size } => total.min(PAGE_SIZE).div_ceil((*size).max(1) as usize) * pages,
-        BatchMode::DedupeBy { .. } => pages,
+        BatchMode::DedupeBy { .. } => total.min(PAGE_SIZE).div_ceil(per_instance.max(1)) * pages,
     }
 }
 
@@ -989,13 +1014,20 @@ fn effective_batch_mode(ctx: &RunCtx, decl: &ProviderDecl) -> AppResult<BatchMod
     if (ctx.deps.factory)(decl)?.shape() != ProcShape::MapOnly {
         return Ok(decl.batch.clone());
     }
-    let per_instance = (PAGE_SIZE as u32).div_ceil(instance_count(decl) as u32);
     Ok(BatchMode::Chunk {
-        size: (*size).min(per_instance).max(1),
+        size: (*size).min(rows_per_instance(decl) as u32).max(1),
     })
 }
 
-fn split_batches(mode: &BatchMode, rows: Vec<Location>) -> AppResult<Vec<WorkBatch>> {
+fn rows_per_instance(decl: &ProviderDecl) -> usize {
+    PAGE_SIZE.div_ceil(instance_count(decl))
+}
+
+fn split_batches(
+    mode: &BatchMode,
+    rows: Vec<Location>,
+    per_instance: usize,
+) -> AppResult<Vec<WorkBatch>> {
     match mode {
         BatchMode::PerRow => Ok(rows
             .into_iter()
@@ -1022,7 +1054,6 @@ fn split_batches(mode: &BatchMode, rows: Vec<Location>) -> AppResult<Vec<WorkBat
                     "procedure: dedupeBy key '{key}' unsupported"
                 )));
             }
-            let ids: Vec<u32> = rows.iter().map(|r| r.id).collect();
             let mut order: Vec<String> = Vec::new();
             let mut groups: HashMap<String, Vec<u32>> = HashMap::new();
             let mut reps: Vec<Location> = Vec::new();
@@ -1041,16 +1072,33 @@ fn split_batches(mode: &BatchMode, rows: Vec<Location>) -> AppResult<Vec<WorkBat
                     }
                 }
             }
-            let fanout = reps
+            let mut members: HashMap<u32, Vec<u32>> = reps
                 .iter()
                 .zip(order)
                 .map(|(rep, k)| (rep.id, groups.remove(&k).unwrap()))
                 .collect();
-            Ok(vec![WorkBatch {
-                rows: reps,
-                fanout: Some(fanout),
-                ids,
-            }])
+            let mut reps = reps.into_iter();
+            let mut batches = Vec::new();
+            loop {
+                let rows: Vec<Location> = reps.by_ref().take(per_instance.max(1)).collect();
+                if rows.is_empty() {
+                    break;
+                }
+                let fanout: HashMap<u32, Vec<u32>> = rows
+                    .iter()
+                    .map(|r| (r.id, members.remove(&r.id).unwrap()))
+                    .collect();
+                let ids = rows
+                    .iter()
+                    .flat_map(|r| fanout[&r.id].iter().copied())
+                    .collect();
+                batches.push(WorkBatch {
+                    rows,
+                    fanout: Some(fanout),
+                    ids,
+                });
+            }
+            Ok(batches)
         }
     }
 }
@@ -1094,12 +1142,14 @@ fn run_instance(
         }
     };
     loop {
-        if ctx.aborted() {
-            return;
-        }
         let next = batches.lock().unwrap_or_else(|p| p.into_inner()).recv();
         let Ok(Tagged { page, batch }) = next else {
             return;
+        };
+        // A cancelled instance keeps draining: the queue is bounded, and a pager blocked
+        // on a full one would never close it, so the applied batches would never land.
+        if ctx.aborted() {
+            continue;
         };
         let mut host = EngineHost {
             ctx,
@@ -1306,11 +1356,12 @@ struct EngineHost<'a> {
 }
 
 impl EngineHost<'_> {
-    /// The declared retry policy, or a single attempt when the provider declares none.
+    /// The declared retry policy, or the transient-status default when the provider
+    /// declares none.
     fn retry_policy(&self) -> (u32, &[u16]) {
         match self.decl.retry.as_ref() {
             Some(r) => (r.attempts, r.on.as_slice()),
-            None => (1, &[]),
+            None => (DEFAULT_ATTEMPTS, &TRANSIENT_STATUSES),
         }
     }
 }
@@ -1371,10 +1422,6 @@ impl ProcHost for EngineHost<'_> {
 // Query
 // ---------------------------------------------------------------------------
 
-/// A query carries no declaration, so its retry policy is fixed.
-const QUERY_ATTEMPTS: u32 = 3;
-const QUERY_RETRY_ON: [u16; 2] = [429, 503];
-
 /// Host for `query`. Effects are allowed (a query exists to reach a remote API), but
 /// there is no run to report into: progress and failures go nowhere. A cancelled query
 /// has its requests declined, the same way a cancelled run does.
@@ -1397,8 +1444,8 @@ impl ProcHost for QueryHost<'_> {
             self.deps,
             &self.budget,
             1,
-            QUERY_ATTEMPTS,
-            &QUERY_RETRY_ON,
+            DEFAULT_ATTEMPTS,
+            &TRANSIENT_STATUSES,
             self.aborted,
             reqs,
         )
