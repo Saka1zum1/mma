@@ -186,7 +186,10 @@ declare const commands$1: {
      *  the JS side recolors its cell buffers in place (no full rebuild).
      */
     storeSetMarkerColor: (color: [number, number, number]) => Promise<null>;
-    /**  Ids of every location the selector resolves to, ascending. */
+    /**
+     *  Ids of every location the selector resolves to. Ranked roots emit rank order;
+     *  every other selector answers ascending.
+     */
     storeResolve: (selector: Selector) => Promise<number[]>;
     /**  How many locations the selector resolves to. Counts rows, never materializes them. */
     storeCount: (selector: Selector) => Promise<number>;
@@ -216,7 +219,7 @@ declare const commands$1: {
     storeColumns: (selector: Selector, fields: string[]) => Promise<Columns>;
     storeApplyFieldOp: (selector: Selector, op: FieldOp, recordUndo: boolean | null) => Promise<FieldOpResult>;
     /**  The parse error for `src`, or nothing when it parses. For the dialog's live check. */
-    fieldExprError: (src: string) => Promise<string | null>;
+    fieldExprError: (src: string) => Promise<ExprError | null>;
     /**
      *  Start a procedure run. Returns immediately with the run id; the work continues
      *  on a background thread and reports through `procedure-progress`.
@@ -347,6 +350,8 @@ declare const commands$1: {
      *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
      */
     storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<EditorImportResult>;
+    /**  The location a pasted Maps URL names, short links resolved. */
+    parseMapsUrl: (input: string) => Promise<ParsedLocation | null>;
     /**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
     storeExportJson: (opts: ExportOpts) => Promise<string>;
     /**  Export locations as a minimal lat/lng CSV file. */
@@ -434,6 +439,16 @@ declare const commands$1: {
     geoguessrLogout: () => Promise<null>;
     /**  Local-only check: is a token stored? Says nothing about its validity. */
     geoguessrHasSession: () => Promise<boolean>;
+    /**  Local-only check: is a key stored? Says nothing about its validity. */
+    mapMakingHasKey: () => Promise<boolean>;
+    /**  Persist an API key in the OS keyring (replaces any previous key). */
+    mapMakingSetKey: (apiKey: string) => Promise<null>;
+    /**  Drop the stored API key. */
+    mapMakingClearKey: () => Promise<null>;
+    /**  Validate `api_key` (or the stored one when `None`) against `/api/user`. */
+    mapMakingGetUser: (apiKey: string | null) => Promise<MmUser>;
+    /**  Maps the stored key's owner can link to. Archived remotes are omitted. */
+    mapMakingListMaps: () => Promise<MmRemoteMap[]>;
     /**
      *  Commit the map's uncommitted changes and return the new commit id.
      *  `message` None auto-generates a `+a -r ~m` summary.
@@ -568,6 +583,15 @@ declare const events: {
         listen: (cb: __TAURI_EVENT.EventCallback<ExternalMutation>) => Promise<__TAURI_EVENT.UnlistenFn>;
         once: (cb: __TAURI_EVENT.EventCallback<ExternalMutation>) => Promise<__TAURI_EVENT.UnlistenFn>;
         emit: (payload: ExternalMutation) => Promise<void>;
+    };
+    storeWarning: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
+        listen: (cb: __TAURI_EVENT.EventCallback<StoreWarning>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<StoreWarning>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: StoreWarning) => Promise<void>;
+    }) & {
+        listen: (cb: __TAURI_EVENT.EventCallback<StoreWarning>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        once: (cb: __TAURI_EVENT.EventCallback<StoreWarning>) => Promise<__TAURI_EVENT.UnlistenFn>;
+        emit: (payload: StoreWarning) => Promise<void>;
     };
     updateProgress: ((target: _tauri_apps_api_webview.Webview | _tauri_apps_api_window.Window) => {
         listen: (cb: __TAURI_EVENT.EventCallback<UpdateProgress>) => Promise<__TAURI_EVENT.UnlistenFn>;
@@ -1015,6 +1039,41 @@ type ExportProgress = {
     total: number;
     mapName: string;
 };
+/**  Why an expression failed to parse. The sentence is TS's to write. */
+type ExprError = {
+    kind: "invalidNumber";
+    position: number;
+} | {
+    kind: "unterminatedString";
+} | {
+    kind: "unexpectedCharacter";
+    character: string;
+    position: number;
+} | {
+    kind: "expectedSymbol";
+    symbol: string;
+} | {
+    kind: "chainedComparison";
+} | {
+    kind: "unexpectedEnd";
+} | {
+    kind: "missingLeftOperand";
+} | {
+    kind: "hasTakesFieldName";
+} | {
+    kind: "unknownFunction";
+    name: string;
+} | {
+    kind: "wrongArgCount";
+    name: string;
+    expected: number;
+} | {
+    kind: "unexpectedToken";
+    token: string;
+} | {
+    kind: "trailingToken";
+    token: string;
+};
 /**  A mutation another window made to a map this window may have open, routed by `map_id`. */
 type ExternalMutation = {
     mapId: string;
@@ -1453,6 +1512,17 @@ type MapSettings = {
 };
 /**  When a move target already holds a value, which side survives. */
 type MergeWinner = "from" | "to";
+/**  A remote map the signed-in user can link to. */
+type MmRemoteMap = {
+    id: number;
+    name: string;
+    locationCount: number | null;
+};
+/**  The signed-in map-making.app account. */
+type MmUser = {
+    id: number;
+    username: string;
+};
 /**
  *  Unified response for every mutation IPC. Bundles the store status, render delta,
  *  optional selection sync, optional newly-discovered extra-field keys, and optional
@@ -1494,6 +1564,20 @@ type NumericBinning = {
 } | {
     by: "width";
     w: number;
+};
+/**  A single location parsed out of a pasted Maps URL. */
+type ParsedLocation = {
+    lat: number;
+    lng: number;
+    heading: number;
+    pitch: number;
+    zoom: number;
+    panoId: string | null;
+    flags: number;
+    /**  Tag names. */
+    tags: string[];
+    /**  Imagery provider. Google Maps URLs always produce `"google"`. */
+    provider: string | null;
 };
 /**
  *  One partition group: a stable key, the ids it holds, and (numeric bins only) the
@@ -1601,7 +1685,10 @@ type ProviderDecl = {
     entry?: string | null;
     fields?: string[];
     requires?: string[];
-    /** Extra keys to null when a written field's value actually changes. */
+    /**
+     *  Extra keys to null when a written field's value actually changes, so dependents
+     *  re-derive from the new input instead of keeping the old pano's answers.
+     */
     invalidates?: {
         [key in string]: string[];
     };
@@ -1994,11 +2081,10 @@ type Selector = {
     tzLocal?: boolean;
 } | 
 /**
- *  Rank a selection by a `field_expr`, optionally keeping only the first `k`. The
- *  order is the point: `store_resolve` emits a ranked root in rank order, where every
- *  other selector answers ascending. With no `k` this selects its child unchanged and
- *  states only how to walk it. A member the expression cannot score ranks last, so
- *  ranking never drops anything -- narrow the child when only scorable rows qualify.
+ *  Rank a selection by a `field_expr`, optionally keeping only the first `k`. Emits
+ *  a ranked root in rank order, where every other selector answers ascending. With no
+ *  `k` this selects its child unchanged and states only how to walk it. A member the
+ *  expression cannot score ranks last, so ranking never drops anything.
  */
 {
     type: "Ranked";
@@ -2065,6 +2151,10 @@ type StoreStatus = {
         [key in number]: number;
     } | null;
     knownFieldKeys: string[];
+};
+/**  A warning the store raised. The sentence is TypeScript's to write. */
+type StoreWarning = {
+    kind: "deltaSetAside";
 };
 /**  Lightweight status for polling: count, version, and whether unsaved changes exist. */
 type SummaryResult = {
@@ -4276,6 +4366,8 @@ declare const EVENT_DEFS: {
     "plugins:changed": void;
     "hotkeys:changed": void;
     "toasts:changed": void;
+    "jobs:changed": void;
+    "bulkruns:changed": void;
     "scene:changed": void;
     "measure:changed": void;
     "anchor:changed": void;
@@ -4720,6 +4812,8 @@ export interface ProcedureSpec<TCollected = unknown> {
     batch: BatchMode;
     sink?: Sink;
     rate?: RateSpec;
+    /** Overrides the engine's transient-status retry default. Omit unless this endpoint
+     *  answers a retryable condition with a status the default does not cover. */
     retry?: {
         attempts: number;
         on: number[];
@@ -4814,7 +4908,7 @@ declare function mergeUserFieldDefs(defs: Record<string, ExtraFieldDef>): void;
 declare function resetForMapChange(): void;
 /** Look up metadata for a single field key. Returns `undefined` if no metadata exists. */
 declare function getFieldDef(key: string): ExtraFieldDef | undefined;
-/** Display label for a field key: registered label if known, otherwise sentence-cased from camelCase/snake_case. */
+/** Translated display label for a field key, falling back to a sentence-cased version of the key. */
 declare function fieldLabel(key: string): string;
 /** Display text for one *value* of a field, the counterpart to [`fieldLabel`] naming the
  *  field itself. Enum values carry translated display names; everything else is its own
@@ -5185,7 +5279,9 @@ export interface PinPanoConfig {
     useLatest?: boolean;
 }
 /** Pin to pano ID: resolve the pano from coords, then set the LoadAsPanoId flag.
- *  With `useLatest`, fetches the timeline and picks the last official pano. */
+ *  With `useLatest`, fetches the timeline and picks the last official pano.
+ *  The prelude re-resolves Google rows against official coverage only: the closest
+ *  pano can be a photosphere, and a bulk pin must never relocate rows onto one. */
 declare const pinPanoResolver: SvResolver;
 /** Pin each location to a resolved panorama (sets `panoId`), so it always loads the same pano. */
 declare function bulkPinToPano$1(locations: Location[], opts?: {
@@ -5202,7 +5298,11 @@ declare namespace pinPano {
   export type { pinPano_PinPanoConfig as PinPanoConfig };
 }
 
-declare function validateOne(loc: Location, signal?: AbortSignal): Promise<ValidationState>;
+export interface ValidateConfig {
+    radius?: number;
+    checkPinned?: boolean;
+}
+declare function validateOne(loc: Location, signal?: AbortSignal, config?: ValidateConfig): Promise<ValidationState>;
 export interface ValidationProgress {
     progress: number;
     results: Map<ValidationState, Location[]>;
@@ -5212,14 +5312,16 @@ export interface ValidationProgress {
 declare function validateLocations(locations: Location[], opts?: {
     signal?: AbortSignal;
     onProgress?: (p: ValidationProgress) => void;
+    config?: ValidateConfig;
 }): Promise<Map<ValidationState, Location[]>>;
 
+export type validate_ValidateConfig = ValidateConfig;
 export type validate_ValidationProgress = ValidationProgress;
 declare const validate_validateLocations: typeof validateLocations;
 declare const validate_validateOne: typeof validateOne;
 declare namespace validate {
   export { validate_validateLocations as validateLocations, validate_validateOne as validateOne };
-  export type { validate_ValidationProgress as ValidationProgress };
+  export type { validate_ValidateConfig as ValidateConfig, validate_ValidationProgress as ValidationProgress };
 }
 
 /**
@@ -5812,6 +5914,9 @@ declare function fetchSvMetadata(panoIds: string[], signal?: AbortSignal): Promi
 
 declare let ready: boolean;
 
+/** Flip after boot. The write lives here so `ready` stays a `let` (MMA.ready is assignable)
+ *  without tripping prefer-const. */
+declare function markReady(): void;
 /** Snapshot so a plugin cannot mutate the live settings object. */
 declare function getSettings(): {
     showCameraBadges: boolean;
@@ -5905,6 +6010,7 @@ declare const host_enrichAll: typeof enrichAll;
 declare const host_fetchSvMetadata: typeof fetchSvMetadata;
 declare const host_getLocale: typeof getLocale;
 declare const host_getSettings: typeof getSettings;
+declare const host_markReady: typeof markReady;
 declare const host_ready: typeof ready;
 declare const host_setSetting: typeof setSetting;
 declare const host_t: typeof t;
@@ -5917,6 +6023,7 @@ declare namespace host {
     host_fetchSvMetadata as fetchSvMetadata,
     host_getLocale as getLocale,
     host_getSettings as getSettings,
+    host_markReady as markReady,
     host_ready as ready,
     host_setSetting as setSetting,
     host_t as t,
@@ -5983,4 +6090,4 @@ declare global {
 }
 
 export { BUILTIN_FIELDS, DEFAULT_DUPLICATE_SCORE, KNOWN_FIELDS, MMA as MMAApi, PROJECTIONS, PanoType, commands$1 as commands, events };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MutationResult, NormalizedSyncLocation, NumericBinning, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureProgress, ProcedureResult, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureProgress, ProcedureResult, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };

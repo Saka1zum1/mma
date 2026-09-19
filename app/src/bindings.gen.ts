@@ -209,7 +209,7 @@ export const commands = {
 	storeColumns: (selector: Selector, fields: string[]) => __TAURI_INVOKE<Columns>("store_columns", { selector, fields }),
 	storeApplyFieldOp: (selector: Selector, op: FieldOp, recordUndo: boolean | null) => __TAURI_INVOKE<FieldOpResult>("store_apply_field_op", { selector, op, recordUndo }).then((v) => (({...v,mutation:({...v.mutation,delta:({...v.mutation.delta,added:v.mutation.delta.added.map(i=>i),updated:v.mutation.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.mutation.newFieldDefs==null?v.mutation.newFieldDefs:Object.fromEntries(Object.entries(v.mutation.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})}) as typeof v)),
 	/**  The parse error for `src`, or nothing when it parses. For the dialog's live check. */
-	fieldExprError: (src: string) => __TAURI_INVOKE<string | null>("field_expr_error", { src }),
+	fieldExprError: (src: string) => __TAURI_INVOKE<ExprError | null>("field_expr_error", { src }),
 	/**
 	 *  Start a procedure run. Returns immediately with the run id; the work continues
 	 *  on a background thread and reports through `procedure-progress`.
@@ -340,6 +340,8 @@ export const commands = {
 	 *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
 	storeImportFile: (droppedFields: string[], tagName: string | null) => __TAURI_INVOKE<EditorImportResult>("store_import_file", { droppedFields, tagName }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	/**  The location a pasted Maps URL names, short links resolved. */
+	parseMapsUrl: (input: string) => __TAURI_INVOKE<ParsedLocation | null>("parse_maps_url", { input }).then((v) => (v==null?v:v as typeof v)),
 	/**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
 	storeExportJson: (opts: ExportOpts) => __TAURI_INVOKE<string>("store_export_json", { opts }),
 	/**  Export locations as a minimal lat/lng CSV file. */
@@ -427,6 +429,16 @@ export const commands = {
 	geoguessrLogout: () => __TAURI_INVOKE<null>("geoguessr_logout"),
 	/**  Local-only check: is a token stored? Says nothing about its validity. */
 	geoguessrHasSession: () => __TAURI_INVOKE<boolean>("geoguessr_has_session"),
+	/**  Local-only check: is a key stored? Says nothing about its validity. */
+	mapMakingHasKey: () => __TAURI_INVOKE<boolean>("map_making_has_key"),
+	/**  Persist an API key in the OS keyring (replaces any previous key). */
+	mapMakingSetKey: (apiKey: string) => __TAURI_INVOKE<null>("map_making_set_key", { apiKey }),
+	/**  Drop the stored API key. */
+	mapMakingClearKey: () => __TAURI_INVOKE<null>("map_making_clear_key"),
+	/**  Validate `api_key` (or the stored one when `None`) against `/api/user`. */
+	mapMakingGetUser: (apiKey: string | null) => __TAURI_INVOKE<MmUser>("map_making_get_user", { apiKey }),
+	/**  Maps the stored key's owner can link to. Archived remotes are omitted. */
+	mapMakingListMaps: () => __TAURI_INVOKE<MmRemoteMap[]>("map_making_list_maps"),
 	/**
 	 *  Commit the map's uncommitted changes and return the new commit id.
 	 *  `message` None auto-generates a `+a -r ~m` summary.
@@ -491,6 +503,7 @@ export const events = {
 	sidecarLine: makeEvent<SidecarLine>("sidecar-line"),
 	sidecarLog: makeEvent<SidecarLog>("sidecar-log"),
 	storeExternalMutation: makeEvent<ExternalMutation>("store-external-mutation", (v) => ({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}), (v) => ({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})),
+	storeWarning: makeEvent<StoreWarning>("store-warning"),
 	updateProgress: makeEvent<UpdateProgress>("update-progress"),
 	valiProgress: makeEvent<ValiProgress>("vali-progress"),
 };
@@ -741,6 +754,9 @@ export type ExportProgress = {
 	total: number,
 	mapName: string,
 };
+
+/**  Why an expression failed to parse. The sentence is TS's to write. */
+export type ExprError = { kind: "invalidNumber"; position: number } | { kind: "unterminatedString" } | { kind: "unexpectedCharacter"; character: string; position: number } | { kind: "expectedSymbol"; symbol: string } | { kind: "chainedComparison" } | { kind: "unexpectedEnd" } | { kind: "missingLeftOperand" } | { kind: "hasTakesFieldName" } | { kind: "unknownFunction"; name: string } | { kind: "wrongArgCount"; name: string; expected: number } | { kind: "unexpectedToken"; token: string } | { kind: "trailingToken"; token: string };
 
 /**  A mutation another window made to a map this window may have open, routed by `map_id`. */
 export type ExternalMutation = {
@@ -1163,6 +1179,19 @@ export type MapSettings = {
 /**  When a move target already holds a value, which side survives. */
 export type MergeWinner = "from" | "to";
 
+/**  A remote map the signed-in user can link to. */
+export type MmRemoteMap = {
+	id: number,
+	name: string,
+	locationCount: number | null,
+};
+
+/**  The signed-in map-making.app account. */
+export type MmUser = {
+	id: number,
+	username: string,
+};
+
 /**
  *  Unified response for every mutation IPC. Bundles the store status, render delta,
  *  optional selection sync, optional newly-discovered extra-field keys, and optional
@@ -1197,6 +1226,21 @@ export type NormalizedSyncLocation = {
 
 /**  Equal-width bin sizing. `count` derives the width from the data range; `width` fixes it. */
 export type NumericBinning = { by: "count"; n: number } | { by: "width"; w: number };
+
+/**  A single location parsed out of a pasted Maps URL. */
+export type ParsedLocation = {
+	lat: number,
+	lng: number,
+	heading: number,
+	pitch: number,
+	zoom: number,
+	panoId: string | null,
+	flags: number,
+	/**  Tag names. */
+	tags: string[],
+	/**  Imagery provider. Google Maps URLs always produce `"google"`. */
+	provider: string | null,
+};
 
 /**
  *  One partition group: a stable key, the ids it holds, and (numeric bins only) the
@@ -1749,6 +1793,9 @@ export type StoreStatus = {
 	tagCounts: { [key in number]: number } | null,
 	knownFieldKeys: string[],
 };
+
+/**  A warning the store raised. The sentence is TypeScript's to write. */
+export type StoreWarning = { kind: "deltaSetAside" };
 
 /**  Lightweight status for polling: count, version, and whether unsaved changes exist. */
 export type SummaryResult = {
