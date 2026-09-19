@@ -59,6 +59,7 @@ mod gdoc;
 mod geocoder;
 mod geoguessr;
 mod import;
+mod maps_url;
 mod map_meta;
 mod plugins;
 mod presence;
@@ -611,32 +612,39 @@ pub(crate) fn resolve_bmapslink(path: &str) -> tauri::http::Response<Vec<u8>> {
     }
 }
 
-/// googl: resolve a goo.gl / maps.app.goo.gl short link by reading its redirect
-/// `Location` header; returns the target URL as a JSON string.
-pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
+/// The redirect target of a goo.gl / maps.app.goo.gl short link, if the
+/// resolver can read a `Location` header.
+pub(crate) fn short_link_target(id: &str, mapsapp: bool) -> Result<Option<String>, String> {
     let url = if mapsapp {
         format!("https://maps.app.goo.gl/{id}")
     } else {
         format!("https://goo.gl/maps/{id}")
     };
     match resolve_client().get(&url).send() {
-        Ok(resp) => match resp
+        Ok(resp) => Ok(resp
             .headers()
             .get(reqwest::header::LOCATION)
             .and_then(|v| v.to_str().ok())
-        {
-            Some(location) => cors()
-                .status(200)
-                .header("Content-Type", "application/json")
-                .body(
-                    serde_json::to_string(location)
-                        .unwrap_or_default()
-                        .into_bytes(),
-                )
-                .unwrap(),
-            None => cors_resp(404, Vec::new()),
-        },
-        Err(e) => proxy_error(format!("googl fetch error: {e}")),
+            .map(str::to_owned)),
+        Err(e) => Err(format!("googl fetch error: {e}")),
+    }
+}
+
+/// googl: resolve a goo.gl / maps.app.goo.gl short link by reading its redirect
+/// `Location` header; returns the target URL as a JSON string.
+pub(crate) fn resolve_googl(id: &str, mapsapp: bool) -> tauri::http::Response<Vec<u8>> {
+    match short_link_target(id, mapsapp) {
+        Ok(Some(location)) => cors()
+            .status(200)
+            .header("Content-Type", "application/json")
+            .body(
+                serde_json::to_string(&location)
+                    .unwrap_or_default()
+                    .into_bytes(),
+            )
+            .unwrap(),
+        Ok(None) => cors_resp(404, Vec::new()),
+        Err(e) => proxy_error(e),
     }
 }
 
@@ -793,6 +801,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             import::store_import_paste_preview,
             import::store_import_staged_location,
             import::store_import_file,
+            maps_url::parse_maps_url,
             export::store_export_json,
             export::store_export_csv,
             export::store_export_geojson,
@@ -852,6 +861,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             import::ImportProgress,
             export::ExportProgress,
             location_store::ExternalMutation,
+            types::StoreWarning,
             plugins::ValiProgress,
             procedure::engine::ProcedureProgress,
             procedure::engine::ProcedureResult,

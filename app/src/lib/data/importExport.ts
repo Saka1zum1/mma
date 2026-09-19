@@ -1,7 +1,7 @@
 import { fetchSvMetadata, imageKeyToPanoId } from "@/lib/sv/svMeta";
 import { fovToZoom, schemeBase } from "@/lib/util/util";
 import { LocationFlag } from "@/types";
-import type { Location, Tag } from "@/bindings.gen";
+import { commands, type Location, type Tag } from "@/bindings.gen";
 import type { SvProvider } from "@/lib/sv/providers/types";
 import { providerToWireSource } from "@/lib/sv/providers/types";
 import { fetchBaiduMeta } from "@/lib/sv/baidu/api";
@@ -594,6 +594,13 @@ export async function parseMapsUrl(input: string): Promise<ParsedLocation | null
 	}
 	if (isYandexShareHost(url.hostname)) {
 		return parseYandexLocation(url);
+	}
+
+	try {
+		const rust = await commands.parseMapsUrl(url.toString());
+		if (rust) return { ...rust, provider: rust.provider ?? "google" };
+	} catch {
+		// Vitest / no Tauri: fall through to the JS Google grammar.
 	}
 
 	return parseExpandedMapsUrl(url);
