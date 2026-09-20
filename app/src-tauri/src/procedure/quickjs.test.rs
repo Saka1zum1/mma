@@ -880,6 +880,26 @@ fn a_second_live_checkout_gets_its_own_procedure() {
 }
 
 #[test]
+fn idle_copies_are_capped() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("capped.js");
+    write_module(&path, SMALL);
+
+    let held: Vec<_> = (0..8).map(|_| checkout(&path).expect("held")).collect();
+    drop(held);
+    // Only IDLE_CAP stay warm; the rest of the wide run are dropped.
+    let reloads = loads(|| {
+        let extra: Vec<_> = (0..8).map(|_| checkout(&path).expect("again")).collect();
+        drop(extra);
+    });
+    assert!(
+        reloads >= 4,
+        "expected leftover copies to reload, got {reloads}"
+    );
+    assert!(reloads < 8, "the cap should keep some warm, got {reloads}");
+}
+
+#[test]
 fn a_pooled_procedure_carries_no_configuration_from_its_last_borrower() {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("configured.js");

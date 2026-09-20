@@ -967,6 +967,10 @@ struct PoolEntry {
     idle: Vec<JsProcedure>,
 }
 
+/// Warm copies kept per module. More than this is leftover concurrency from a wide
+/// run; keeping them all would pin a QuickJS runtime each.
+const IDLE_CAP: usize = 2;
+
 type Stamp = (Option<SystemTime>, u64);
 
 fn pool() -> &'static Mutex<HashMap<PathBuf, PoolEntry>> {
@@ -1043,8 +1047,9 @@ impl Drop for PooledProcedure {
                 idle: Vec::new(),
             });
         // The file changed while this was on loan: it was loaded from bytes that are
-        // no longer there, so it retires instead of being pooled.
-        if entry.stamp == self.stamp {
+        // no longer there, so it retires instead of being pooled. Extra copies from a
+        // wide run are dropped rather than kept forever.
+        if entry.stamp == self.stamp && entry.idle.len() < IDLE_CAP {
             entry.idle.push(proc);
         }
     }
