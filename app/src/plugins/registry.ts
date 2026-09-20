@@ -90,15 +90,21 @@ export function resolveBuild(entry: PluginManifest, appVersion: string): Resolve
 	return null;
 }
 
-/** True when the installed plugin should be refreshed to `target`. @unstable */
+/** True when the installed plugin should be refreshed to `target`. A pinned older
+ *  ref still repairs a missing or drifted sidecar; version-only comparison would
+ *  leave a half-installed build stuck. @unstable */
 export function needsBuildUpdate(
 	installedVersion: string | undefined,
 	target: ResolvedBuild,
 	installedSidecarVersion: string | null | undefined,
 	latestSidecarVersion: string | undefined,
 ): boolean {
-	if (target.ref) return isPluginUpdatable(installedVersion, target.version);
-	return needsUpdate(installedVersion, target.version, installedSidecarVersion, latestSidecarVersion);
+	return needsUpdate(
+		installedVersion,
+		target.version,
+		installedSidecarVersion,
+		latestSidecarVersion,
+	);
 }
 
 let registryPromise: Promise<PluginManifest[]> | null = null;

@@ -86,4 +86,10 @@ describe("needsBuildUpdate", () => {
 		expect(needsBuildUpdate("1.0.0", target, null, undefined)).toBe(true);
 		expect(needsBuildUpdate("1.1.0", target, null, undefined)).toBe(false);
 	});
+
+	it("repairs a missing sidecar even when the JS version is pinned", () => {
+		const pinned = { version: "1.0.0", ref: "abc", minAppVersion: null };
+		expect(needsBuildUpdate("1.0.0", pinned, null, "0.1.0")).toBe(true);
+		expect(needsBuildUpdate("1.0.0", pinned, "0.1.0", "0.1.0")).toBe(false);
+	});
 });
