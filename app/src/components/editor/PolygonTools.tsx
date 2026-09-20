@@ -52,8 +52,9 @@ function finishRing(ring: number[][]): number[][] {
 
 /** Take the primary-button drag away from the engine so it draws instead of panning.
  *  Only that gesture is claimed: the engine's `draggable` flag would resolve to
- *  gestureHandling "none" and take wheel zoom and the keyboard with it. Clicks are
- *  swallowed too, so a stroke can't also place a marker or double-click-zoom. */
+ *  gestureHandling "none" and take wheel zoom and the keyboard with it. Clicks and
+ *  the drag's mouseup are swallowed too, so a stroke can't also place a marker,
+ *  open coverage, or double-click-zoom. */
 function claimDrag(
 	host: MapHost,
 	on: { down: (ll: LatLng) => void; move: (ll: LatLng) => void; up: (ll: LatLng) => void },
@@ -93,8 +94,12 @@ function claimDrag(
 	div.addEventListener("mousedown", onDown, capture);
 	div.addEventListener("click", swallow, capture);
 	div.addEventListener("dblclick", swallow, capture);
+	// mouseup is captured on window first so `onUp` still runs, then swallowed on
+	// the map so Google/deck cannot treat the stroke's end as a coverage click.
 	window.addEventListener("mousemove", onMove, { signal });
-	window.addEventListener("mouseup", onUp, { signal });
+	window.addEventListener("mouseup", onUp, { capture: true, signal });
+	div.addEventListener("mouseup", swallow, capture);
+	div.addEventListener("pointerup", swallow, capture);
 	return () => ac.abort();
 }
 
@@ -120,6 +125,7 @@ export function PolygonTools({
 		if (!host || mode !== "freehand") return;
 
 		const points: number[][] = [];
+		const offClick = addClickInterceptor(() => true);
 		const off = claimDrag(host, {
 			down: (ll) => {
 				points.length = 0;
@@ -144,6 +150,7 @@ export function PolygonTools({
 
 		return () => {
 			off();
+			offClick();
 			if (freehandPathRef.current) {
 				freehandPathRef.current = null;
 				emitUpdate();
@@ -241,6 +248,7 @@ export function PolygonTools({
 				[a[0], b[1]],
 			]);
 
+		const offClick = addClickInterceptor(() => true);
 		const off = claimDrag(host, {
 			down: (ll) => {
 				anchor = [ll.lng, ll.lat];
@@ -276,6 +284,7 @@ export function PolygonTools({
 
 		return () => {
 			off();
+			offClick();
 			document.removeEventListener("keydown", onKey, true);
 			if (freehandPathRef.current) {
 				freehandPathRef.current = null;
