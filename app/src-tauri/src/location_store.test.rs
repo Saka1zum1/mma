@@ -987,6 +987,33 @@ fn noop_batch_is_removed_before_selection_and_render_work() {
     assert!(result.selection_sync.is_none());
 }
 
+#[test]
+fn paged_updates_share_one_undo_entry() {
+    let rows: Vec<Location> = (1..=4)
+        .map(|id| loc_with_heading(id, id as f64, 0.0, 0.0))
+        .collect();
+    let mut store = setup_store_with(&rows);
+
+    let page = |ids: [u32; 2]| -> Vec<Update<LocationPatch>> {
+        ids.into_iter()
+            .map(|id| Update {
+                id,
+                patch: patch!(heading: 90.0),
+            })
+            .collect()
+    };
+
+    apply_updates(&mut store, &page([1, 2]), true);
+    apply_updates_extending_undo(&mut store, &page([3, 4]));
+    assert_eq!(store.edits.undo.len(), 1);
+
+    press_undo(&mut store);
+    for id in 1..=4 {
+        let loc = store.get_loc_by_id(id).unwrap();
+        assert_eq!(loc.heading, 0.0, "id {id}");
+    }
+}
+
 // -----------------------------------------------------------------------
 // Edge case: re-add a previously removed ID
 // -----------------------------------------------------------------------

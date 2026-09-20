@@ -596,7 +596,7 @@ fn rate_limiter_holds_the_declared_floor() {
     let t = Instant::now();
     drive(async {
         for _ in 0..6 {
-            l.acquire(1).await;
+            l.acquire(1, &|| false).await.unwrap();
         }
     });
     let ms = t.elapsed().as_millis();

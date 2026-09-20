@@ -363,7 +363,8 @@ impl SelectionState {
 
     /// Every id some live selection holds: the selected set.
     pub(crate) fn live_ids(&self) -> RoaringBitmap {
-        self.live().fold(RoaringBitmap::new(), |acc, r| acc | &r.set)
+        self.live()
+            .fold(RoaringBitmap::new(), |acc, r| acc | &r.set)
     }
 
     /// Paint of a selected id = the last selection containing it. None if unselected.
@@ -1016,10 +1017,33 @@ impl Store {
         &mut self,
         updated: impl IntoIterator<Item = (Location, Location)>,
     ) -> bool {
+        self.record_update_undo_inner(updated, false)
+    }
+
+    /// Fold further patches into the last undo entry so a paged run is one Ctrl+Z.
+    fn extend_update_undo(
+        &mut self,
+        updated: impl IntoIterator<Item = (Location, Location)>,
+    ) -> bool {
+        self.record_update_undo_inner(updated, true)
+    }
+
+    fn record_update_undo_inner(
+        &mut self,
+        updated: impl IntoIterator<Item = (Location, Location)>,
+        extend: bool,
+    ) -> bool {
         let (changed_old, changed_new): (Vec<_>, Vec<_>) =
             updated.into_iter().filter(|(old, new)| old != new).unzip();
         if changed_old.is_empty() {
             return false;
+        }
+        if extend {
+            if let Some(last) = self.edits.undo.last_mut() {
+                merge_update_undo(last, changed_old, changed_new);
+                self.edits.redo.clear();
+                return true;
+            }
         }
         self.push_undo(EditEntry {
             created: changed_new,
@@ -2483,12 +2507,48 @@ pub async fn store_update_locations(
     })
 }
 
+/// Fold a later page of updates into an existing undo entry. Locations already in
+/// the entry keep their original `removed` (the pre-run row) and replace `created`
+/// with the latest new row; new ids are appended.
+fn merge_update_undo(entry: &mut EditEntry, olds: Vec<Location>, news: Vec<Location>) {
+    let mut idx: HashMap<u32, usize> = HashMap::with_capacity(entry.created.len());
+    for (i, loc) in entry.created.iter().enumerate() {
+        idx.insert(loc.id, i);
+    }
+    for (old, new) in olds.into_iter().zip(news) {
+        if let Some(&i) = idx.get(&new.id) {
+            entry.created[i] = new;
+        } else {
+            idx.insert(new.id, entry.created.len());
+            entry.removed.push(old);
+            entry.created.push(new);
+        }
+    }
+}
+
 /// Apply `{id, patch}` updates: overlay, tag counts, undo, extras registration. The one
 /// place a patch batch becomes a mutation -- every command that derives patches ends here.
 pub(crate) fn apply_updates(
     store: &mut Store,
     updates: &[Update<LocationPatch>],
     record_undo: bool,
+) -> MutationResult {
+    apply_updates_inner(store, updates, record_undo, false)
+}
+
+/// Same as [`apply_updates`], folding this page into the last undo entry when one exists.
+pub(crate) fn apply_updates_extending_undo(
+    store: &mut Store,
+    updates: &[Update<LocationPatch>],
+) -> MutationResult {
+    apply_updates_inner(store, updates, true, true)
+}
+
+fn apply_updates_inner(
+    store: &mut Store,
+    updates: &[Update<LocationPatch>],
+    record_undo: bool,
+    extend_undo: bool,
 ) -> MutationResult {
     let mut updated: Vec<(Location, Location)> = Vec::with_capacity(updates.len());
     let any_tags = updates.iter().any(|u| u.patch.tags.is_some());
@@ -2517,9 +2577,16 @@ pub(crate) fn apply_updates(
         ..Default::default()
     };
     let mut result = store.finish_mutation(&changes);
-    if record_undo && store.record_update_undo(changes.updated) {
-        result.status.can_undo = true;
-        result.status.can_redo = false;
+    if record_undo {
+        let recorded = if extend_undo {
+            store.extend_update_undo(changes.updated)
+        } else {
+            store.record_update_undo(changes.updated)
+        };
+        if recorded {
+            result.status.can_undo = true;
+            result.status.can_redo = false;
+        }
     }
     if any_extras {
         let refs: Vec<&crate::types::RawExtra> = extras.iter().collect();
@@ -3324,8 +3391,13 @@ fn copy_to_map(
             alive,
             Some(serialize_tags_json(&target_tags)),
         )?;
-        log::debug!("[cmd] copy_to_map closed-target read={}ms history={}ms save={}ms total={}ms",
-            read_ms, hist_ms, t_save.elapsed().as_millis(), _t.elapsed().as_millis());
+        log::debug!(
+            "[cmd] copy_to_map closed-target read={}ms history={}ms save={}ms total={}ms",
+            read_ms,
+            hist_ms,
+            t_save.elapsed().as_millis(),
+            _t.elapsed().as_millis()
+        );
     }
     Ok(CopyToMapResult {
         copied,

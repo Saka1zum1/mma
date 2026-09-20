@@ -3,7 +3,10 @@
 //! progress. Nothing here knows what any provider actually computes.
 
 use super::{HttpRequestSpec, HttpResponse, PatchEntry, ProcHost, ProcShape, Procedure};
-use crate::location_store::{apply_updates, ExternalMutation, LocationPatch, StoreState, Update};
+use crate::location_store::{
+    apply_updates, apply_updates_extending_undo, ExternalMutation, LocationPatch, StoreState,
+    Update,
+};
 use crate::selections::{ids_within, narrow, resolve_field_loc, Selector};
 use crate::sidecar::SidecarStream;
 use crate::types::{AppError, AppResult, Location};
@@ -417,9 +420,13 @@ impl RateLimiter {
 
     /// Waits until `cost` tokens are available. Sleeps outside the lock so waiters
     /// queue. A cost above capacity is clamped, otherwise it could never be paid.
-    async fn acquire(&self, cost: u32) {
+    /// Returns `CANCELLED` as soon as `aborted` is true, without waiting out the bucket.
+    async fn acquire(&self, cost: u32, aborted: &(dyn Fn() -> bool + Sync)) -> AppResult<()> {
         let want = (cost.max(1) as f64).min(self.capacity);
         loop {
+            if aborted() {
+                return Err(AppError(CANCELLED.into()));
+            }
             let wait = {
                 let mut st = self.state.lock().unwrap_or_else(|p| p.into_inner());
                 let now = Instant::now();
@@ -428,11 +435,11 @@ impl RateLimiter {
                 st.1 = now;
                 if st.0 >= want {
                     st.0 -= want;
-                    return;
+                    return Ok(());
                 }
                 Duration::from_secs_f64((want - st.0) / self.per_ms / 1000.0)
             };
-            tokio::time::sleep(wait.max(Duration::from_micros(200))).await;
+            abortable_sleep(aborted, wait.max(Duration::from_micros(200))).await?;
         }
     }
 }
@@ -443,6 +450,26 @@ impl RateLimiter {
 
 /// What a request declined by a cancelling run answers with.
 pub(super) const CANCELLED: &str = "procedure: run cancelled";
+
+async fn abortable_sleep(
+    aborted: &(dyn Fn() -> bool + Sync),
+    mut delay: Duration,
+) -> AppResult<()> {
+    const SLICE: Duration = Duration::from_millis(20);
+    while !delay.is_zero() {
+        if aborted() {
+            return Err(AppError(CANCELLED.into()));
+        }
+        let step = delay.min(SLICE);
+        tokio::time::sleep(step).await;
+        delay -= step;
+    }
+    if aborted() {
+        Err(AppError(CANCELLED.into()))
+    } else {
+        Ok(())
+    }
+}
 
 /// A provider's share of the network for the length of its run: how many requests may be
 /// in flight at once, and how fast they may be issued. Every instance of the provider
@@ -463,15 +490,28 @@ impl FetchBudget {
     }
 
     /// Waits for the rate bucket, then for a slot. The slot is held until the response
-    /// lands, so `inflight` counts requests actually outstanding.
-    async fn admit(&self, cost: u32) -> tokio::sync::SemaphorePermit<'_> {
-        if let Some(l) = &self.limiter {
-            l.acquire(cost).await;
+    /// lands, so `inflight` counts requests actually outstanding. A cancelling run
+    /// leaves the queue instead of draining it one slot at a time.
+    async fn admit(
+        &self,
+        cost: u32,
+        aborted: &(dyn Fn() -> bool + Sync),
+    ) -> AppResult<tokio::sync::SemaphorePermit<'_>> {
+        if aborted() {
+            return Err(AppError(CANCELLED.into()));
         }
-        self.slots
-            .acquire()
-            .await
-            .expect("the budget semaphore is never closed")
+        if let Some(l) = &self.limiter {
+            l.acquire(cost, aborted).await?;
+        }
+        loop {
+            if aborted() {
+                return Err(AppError(CANCELLED.into()));
+            }
+            match self.slots.try_acquire() {
+                Ok(permit) => return Ok(permit),
+                Err(_) => tokio::time::sleep(Duration::from_millis(20)).await,
+            }
+        }
     }
 }
 
@@ -511,10 +551,13 @@ async fn fetch_one(
     let attempts = attempts.clamp(1, MAX_ATTEMPTS);
     let mut delay = deps.backoff;
     for attempt in 0..attempts {
+        if aborted() {
+            return Err(AppError(CANCELLED.into()));
+        }
         let resp = {
-            let _slot = budget.admit(cost).await;
-            // Checked holding the slot: a request that waited behind a long backlog must
-            // not be sent once the run is cancelling.
+            let _slot = budget.admit(cost, aborted).await?;
+            // Recheck holding the slot: a request that won the race with cancel
+            // must not be sent.
             if aborted() {
                 return Err(AppError(CANCELLED.into()));
             }
@@ -523,7 +566,7 @@ async fn fetch_one(
         if !retry_on.contains(&resp.status) || attempt + 1 == attempts {
             return Ok(resp);
         }
-        tokio::time::sleep(delay).await;
+        abortable_sleep(aborted, delay).await?;
         delay = delay.saturating_mul(2);
     }
     unreachable!("attempts is at least 1")
@@ -907,12 +950,27 @@ enum Produced {
 }
 
 /// Write one page: patches to the store, answers and failed ids to the caller.
-fn deliver_page(ctx: &RunCtx, decl: &ProviderDecl, page: PageOutput) -> AppResult<()> {
+/// `undo_open` is set once this run has pushed an undo entry; later pages fold into it.
+fn deliver_page(
+    ctx: &RunCtx,
+    decl: &ProviderDecl,
+    page: PageOutput,
+    undo_open: &mut bool,
+) -> AppResult<()> {
     if !page.updates.is_empty() {
         let result = {
             let mut mgr = ctx.state.lock()?;
             let store = mgr.store_for_map(&ctx.map_id)?;
-            apply_updates(store, &page.updates, true)
+            if *undo_open {
+                apply_updates_extending_undo(store, &page.updates)
+            } else {
+                let n = store.edits.undo.len();
+                let result = apply_updates(store, &page.updates, true);
+                if store.edits.undo.len() > n {
+                    *undo_open = true;
+                }
+                result
+            }
         };
         crate::emit_typed(ExternalMutation {
             result,
@@ -948,6 +1006,7 @@ fn apply_pages(ctx: &RunCtx, decl: &ProviderDecl, rx: mpsc::Receiver<Produced>) 
         out: PageOutput,
     }
     let mut pages: HashMap<usize, Pending> = HashMap::new();
+    let mut undo_open = false;
     while let Ok(msg) = rx.recv() {
         match msg {
             Produced::PageStart { page, batches } => {
@@ -968,7 +1027,7 @@ fn apply_pages(ctx: &RunCtx, decl: &ProviderDecl, rx: mpsc::Receiver<Produced>) 
                 p.out.failed.extend(failed);
                 if p.expected > 0 && p.seen == p.expected {
                     let done = pages.remove(&page).expect("just inserted");
-                    deliver_page(ctx, decl, done.out)?;
+                    deliver_page(ctx, decl, done.out, &mut undo_open)?;
                 }
             }
         }
@@ -976,7 +1035,7 @@ fn apply_pages(ctx: &RunCtx, decl: &ProviderDecl, rx: mpsc::Receiver<Produced>) 
     let mut left: Vec<(usize, Pending)> = pages.into_iter().collect();
     left.sort_by_key(|(page, _)| *page);
     for (_, p) in left {
-        deliver_page(ctx, decl, p.out)?;
+        deliver_page(ctx, decl, p.out, &mut undo_open)?;
     }
     Ok(())
 }
