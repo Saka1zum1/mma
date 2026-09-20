@@ -46,7 +46,10 @@ impl Display for ExprError {
             ExprError::UnexpectedCharacter {
                 character,
                 position,
-            } => write!(f, "Unexpected character \"{character}\" at position {position}"),
+            } => write!(
+                f,
+                "Unexpected character \"{character}\" at position {position}"
+            ),
             ExprError::ExpectedSymbol { symbol } => write!(f, "Expected \"{symbol}\""),
             ExprError::ChainedComparison => {
                 f.write_str("Comparisons do not chain; use parentheses")
@@ -56,7 +59,11 @@ impl Display for ExprError {
             ExprError::HasTakesFieldName => f.write_str("has() takes a field name"),
             ExprError::UnknownFunction { name } => write!(f, "Unknown function \"{name}\""),
             ExprError::WrongArgCount { name, expected } => {
-                let noun = if *expected == 1 { "argument" } else { "arguments" };
+                let noun = if *expected == 1 {
+                    "argument"
+                } else {
+                    "arguments"
+                };
                 write!(f, "{name}() takes {expected} {noun}")
             }
             ExprError::UnexpectedToken { token } => write!(f, "Unexpected \"{token}\""),
@@ -203,7 +210,11 @@ fn tokenize(src: &str) -> ExprResult<Vec<Token>> {
             let text: String = chars[start..i].iter().collect();
             match text.parse::<f64>() {
                 Ok(v) if chars[i - 1].is_ascii_digit() => tokens.push(Token::Num(v)),
-                _ => return Err(ExprError::InvalidNumber { position: start as u32 }),
+                _ => {
+                    return Err(ExprError::InvalidNumber {
+                        position: start as u32,
+                    })
+                }
             }
         } else if c.is_ascii_alphabetic() || c == '_' {
             let start = i;
@@ -342,10 +353,7 @@ impl Parser {
     }
 
     fn primary(&mut self) -> ExprResult<Expr> {
-        let tok = self
-            .peek()
-            .cloned()
-            .ok_or(ExprError::UnexpectedEnd)?;
+        let tok = self.peek().cloned().ok_or(ExprError::UnexpectedEnd)?;
         match tok {
             Token::Num(v) => {
                 self.pos += 1;
@@ -373,9 +381,8 @@ impl Parser {
                 if name == "if" {
                     self.pos += 1;
                     let args = self.arg_list()?;
-                    let [cond, then, otherwise]: [Expr; 3] = args
-                        .try_into()
-                        .map_err(|_| ExprError::WrongArgCount {
+                    let [cond, then, otherwise]: [Expr; 3] =
+                        args.try_into().map_err(|_| ExprError::WrongArgCount {
                             name: "if".into(),
                             expected: 3,
                         })?;
@@ -450,12 +457,18 @@ fn operand(expr: &Expr, field: &Resolver) -> Option<serde_json::Value> {
     }
 }
 
+/// Native JSON numbers, or numeric strings the way filters already accept them.
+fn as_f64(v: &serde_json::Value) -> Option<f64> {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
+
 fn eval_node(expr: &Expr, field: &Resolver) -> Option<f64> {
     Some(match expr {
         Expr::Num(v) => *v,
         // Bare strings are comparison operands; there is nothing numeric to yield.
         Expr::Str(_) => return None,
-        Expr::Field(name) => field(name)?.as_f64()?,
+        Expr::Field(name) => as_f64(&field(name)?)?,
         Expr::Has(name) => f64::from(u8::from(field(name).is_some())),
         Expr::Neg(arg) => -eval_node(arg, field)?,
         Expr::Bin(op, l, r) => {

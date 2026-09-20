@@ -137,6 +137,13 @@ fn strings_compare_as_strings() {
 }
 
 #[test]
+fn numeric_strings_participate_in_arithmetic() {
+    let r = json_row(&[("zoom", json!("1.5")), ("heading", json!("90"))]);
+    assert_eq!(run("zoom * 2", &r), Some(3.0));
+    assert_eq!(run("heading + 10", &r), Some(100.0));
+}
+
+#[test]
 fn if_evaluates_only_the_branch_it_takes() {
     let r = row(&[("a", 4.0)]);
     assert_eq!(run("if(1, 2, 3)", &r), Some(2.0));
