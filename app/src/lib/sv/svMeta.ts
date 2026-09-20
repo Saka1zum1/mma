@@ -229,12 +229,25 @@ export function parseResult(
 	return data;
 }
 
+type MetaResult = google.maps.StreetViewResolvedPanoramaData | null;
+type MetaFetch = {
+	datas: MetaResult[];
+	/** True when the request itself failed (HTTP error or status 3) and a multi-pano
+	 *  batch should split. Aligned all-null / status 5 is coverage gone, not poison. */
+	split: boolean;
+};
+
 /** Fetch full pano metadata directly from Google's internal RPC (bypasses StreetViewService). */
 export async function fetchSvMetadata(
 	panoIds: string[],
 	signal?: AbortSignal,
 ): Promise<(google.maps.StreetViewResolvedPanoramaData | null)[]> {
-	if (panoIds.length === 0) return [];
+	return (await fetchSvMetadataOutcome(panoIds, signal)).datas;
+}
+
+async function fetchSvMetadataOutcome(panoIds: string[], signal?: AbortSignal): Promise<MetaFetch> {
+	const none = (): MetaFetch => ({ datas: panoIds.map(() => null), split: false });
+	if (panoIds.length === 0) return { datas: [], split: false };
 	const writer = new PbfWriter();
 	writeGetMetadataRequest(buildGetMetadataRequest(panoIds), writer);
 	// Binary protobuf both ways: the response format mirrors the request content-type
@@ -249,21 +262,19 @@ export async function fetchSvMetadata(
 		credentials: "omit",
 		signal,
 	});
-	if (!res.ok) return panoIds.map(() => null);
+	if (!res.ok) return { datas: panoIds.map(() => null), split: true };
 	const resp = readGetMetadataResponse(new PbfReader(new Uint8Array(await res.arrayBuffer())));
 	const statusCode = resp.status?.code;
-	if (statusCode === 3 || statusCode === 5) return panoIds.map(() => null);
-	return resp.metadata.map(parseResult);
+	if (statusCode === 3) return { datas: panoIds.map(() => null), split: true };
+	if (statusCode === 5) return none();
+	return { datas: resp.metadata.map(parseResult), split: false };
 }
 
 // 200 is GetMetadata's hard per-request cap.
 export const META_BATCH_SIZE = 200;
 export const META_CONCURRENCY = 48;
 
-type MetaResult = google.maps.StreetViewResolvedPanoramaData | null;
-
-/** An all-null response is usually one poisoned pano poisoning its whole request,
- *  so split and retry rather than writing off the batch. */
+/** HTTP errors and status 3 split; a successful all-null decode is accepted as missing. */
 async function fetchInto(
 	panoIds: string[],
 	start: number,
@@ -272,9 +283,9 @@ async function fetchInto(
 	signal?: AbortSignal,
 ): Promise<void> {
 	signal?.throwIfAborted();
-	const datas = await fetchSvMetadata(panoIds.slice(start, start + len), signal);
+	const { datas, split } = await fetchSvMetadataOutcome(panoIds.slice(start, start + len), signal);
 	signal?.throwIfAborted();
-	if (len > 1 && datas.every((d) => d == null)) {
+	if (len > 1 && split) {
 		const mid = Math.ceil(len / 2);
 		await fetchInto(panoIds, start, mid, out, signal);
 		await fetchInto(panoIds, start + mid, len - mid, out, signal);
@@ -284,7 +295,7 @@ async function fetchInto(
 }
 
 /** Metadata for arbitrarily many panos: chunked to the per-request cap, fetched
- *  concurrently, bisected on all-null. Results stay aligned to `panoIds`. */
+ *  concurrently, split on poisoned requests. Results stay aligned to `panoIds`. */
 export async function fetchSvMetadataBatched(
 	panoIds: string[],
 	opts: {

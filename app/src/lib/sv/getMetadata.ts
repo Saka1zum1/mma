@@ -113,10 +113,17 @@ function parseImage(m: ImageMetadata): Pano | null {
 /** Every image in a response, aligned to the request. Empty when the response as a whole
  *  reports no coverage (status 3 or 5), which writes off the request the same way. */
 export function decodeMetadataResponse(body: Uint8Array): (Pano | null)[] {
+	return decodeMetadataRound(body).metas;
+}
+
+/** Status 3 is one poisoned pano invalidating the batch (split and retry). Status 5
+ *  and a decoded all-null payload mean every pano is gone — accept, do not split. */
+function decodeMetadataRound(body: Uint8Array): { metas: (Pano | null)[]; split: boolean } {
 	const resp = readGetMetadataResponse(new PbfReader(body));
 	const code = resp.status?.code;
-	if (code === 3 || code === 5) return [];
-	return resp.metadata.map(parseMetadata);
+	if (code === 3) return { metas: [], split: true };
+	if (code === 5) return { metas: [], split: false };
+	return { metas: resp.metadata.map(parseMetadata), split: false };
 }
 
 // --- array-JSON ---
@@ -335,9 +342,10 @@ function metadataRequest(panos: string[], span: Span): ProcedureRequest {
 	};
 }
 
-/** Issues every span of a round together and folds the answers into `out`. A multi-pano
- *  request that fails or decodes all-null is usually one poisoned pano, so those spans come
- *  back to be split and retried in the next round rather than being written off. */
+/** Issues every span of a round together and folds the answers into `out`. A
+ *  multi-pano request that fails or comes back poisoned (status 3) is usually one
+ *  bad pano, so those spans split and retry. A successful all-null decode means
+ *  the panos are gone and is accepted as-is. */
 function fetchRound(panos: string[], spans: Span[], out: FetchedMetadata): Span[] {
 	const res = mma.fetchMany(spans.map((s) => metadataRequest(panos, s)));
 	const retry: Span[] = [];
@@ -348,8 +356,8 @@ function fetchRound(panos: string[], spans: Span[], out: FetchedMetadata): Span[
 			// A cancelling run has its requests declined rather than answered; leaving those
 			// rows unfinished keeps a cancel from counting them as failures.
 			if (mma.aborted()) continue;
-			// A failed request says nothing about which pano is at fault, so split it the
-			// same way an all-null decode splits. Only a pano that fails alone is failed.
+			// A failed request says nothing about which pano is at fault, so split it.
+			// Only a pano that fails alone is failed.
 			if (span.len > 1) {
 				const mid = Math.ceil(span.len / 2);
 				retry.push({ start: span.start, len: mid });
@@ -360,8 +368,8 @@ function fetchRound(panos: string[], spans: Span[], out: FetchedMetadata): Span[
 			out.failed[span.start] = true;
 			continue;
 		}
-		const metas = decodeMetadataResponse(r.body);
-		if (span.len > 1 && !metas.some((m) => m !== null)) {
+		const { metas, split } = decodeMetadataRound(r.body);
+		if (span.len > 1 && split) {
 			const mid = Math.ceil(span.len / 2);
 			retry.push({ start: span.start, len: mid });
 			retry.push({ start: span.start + mid, len: span.len - mid });

@@ -334,22 +334,23 @@ test("top-level status 3 bisects a multi-pano request", () => {
   );
 });
 
-test("an all-null request is bisected until results come back", () => {
+test("an all-null request is accepted as missing coverage", () => {
   const panos = [CLASSIC_A, CLASSIC_B, FIFE, BINARY];
-  const { patches, calls, progress, failed } = runProcedure(rowsFor(panos), (c) =>
-    c.keys.length === 4 ? EMPTY_RESPONSE : responseBytes({ metadata: c.keys.map(() => meta()) }),
-  );
-  assert.deepEqual(
-    calls.map((c) => c.keys.length),
-    [4, 2, 2],
-  );
-  assert.deepEqual(calls[1].decoded.key.map((k) => k.key.id).length, 2);
-  assert.deepEqual(
-    patches.map((p) => p.id),
-    [1, 2, 3, 4],
-  );
+  const { patches, calls, progress, failed } = runProcedure(rowsFor(panos), () => EMPTY_RESPONSE);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(patches, []);
   assert.deepEqual(failed, []);
   assert.equal(progress, 4);
+});
+
+test("per-pano nulls in a successful decode are not bisected", () => {
+  const panos = [CLASSIC_A, CLASSIC_B];
+  const { calls, patches, progress } = runProcedure(rowsFor(panos), () =>
+    responseBytes({ metadata: panos.map(() => ({ status: { code: 5 } })) }),
+  );
+  assert.equal(calls.length, 1);
+  assert.deepEqual(patches, []);
+  assert.equal(progress, 2);
 });
 
 test("a single-pano all-null response is not bisected", () => {
@@ -411,13 +412,15 @@ test("every request of a round is issued in one host call", () => {
 test("a bisected round retries both halves in one host call", () => {
   const panos = manyPanos(4);
   const { calls, hostCalls } = runProcedure(rowsFor(panos), (c) =>
-    c.keys.length === 4 ? EMPTY_RESPONSE : responseBytes({ metadata: c.keys.map(() => meta()) }),
+    c.n === 0
+      ? responseBytes({ status: { code: 3 }, metadata: [] })
+      : responseBytes({ metadata: c.keys.map(() => meta()) }),
   );
   assert.deepEqual(
     calls.map((c) => c.keys.length),
     [4, 2, 2],
   );
-  // One call for the round that came back empty, one for the two halves together.
+  // One call for the poisoned round, one for the two halves together.
   assert.equal(hostCalls, 2);
 });
 
