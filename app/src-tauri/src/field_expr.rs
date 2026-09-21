@@ -4,8 +4,9 @@
 //! duplicates are merged or pruned.
 //!
 //! There is no boolean type. A comparison yields 1 or 0, so a predicate is a term you
-//! can add to a score. Comparison semantics are [`compare_filter`]'s, so `>` here means
-//! what `>` means in a filter.
+//! can add to a score. A field reads as a number the way a filter reads it: a numeric
+//! string as its number, a boolean as 1 or 0, a list as its length. Comparison semantics
+//! are [`compare_filter`]'s, so `>` here means what `>` means in a filter.
 
 use std::fmt::{self, Display, Formatter};
 
@@ -468,7 +469,11 @@ fn eval_node(expr: &Expr, field: &Resolver) -> Option<f64> {
         Expr::Num(v) => *v,
         // Bare strings are comparison operands; there is nothing numeric to yield.
         Expr::Str(_) => return None,
-        Expr::Field(name) => as_f64(&field(name)?)?,
+        Expr::Field(name) => match field(name)? {
+            serde_json::Value::Bool(b) => f64::from(u8::from(b)),
+            serde_json::Value::Array(items) => items.len() as f64,
+            v => as_f64(&v)?,
+        },
         Expr::Has(name) => f64::from(u8::from(field(name).is_some())),
         Expr::Neg(arg) => -eval_node(arg, field)?,
         Expr::Bin(op, l, r) => {

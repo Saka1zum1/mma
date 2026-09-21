@@ -171,6 +171,24 @@ fn the_prune_default_is_expressible() {
 }
 
 #[test]
+fn a_field_reads_as_a_number_the_way_a_filter_reads_it() {
+    let quoted = json_row(&[("elevation", json!("1200"))]);
+    let native = json_row(&[("elevation", json!(1200))]);
+    assert_eq!(run("elevation * 2", &quoted), Some(2400.0));
+    assert_eq!(run("elevation * 2", &quoted), run("elevation * 2", &native));
+
+    let listed = json_row(&[("stops", json!(["a", "b", "c"]))]);
+    assert_eq!(run("stops + 1", &listed), Some(4.0));
+    assert_eq!(run("stops > 2", &listed), Some(1.0));
+
+    let flag = json_row(&[("loadAsPanoId", json!(true))]);
+    assert_eq!(run("loadAsPanoId + 1", &flag), Some(2.0));
+
+    let word = json_row(&[("elevation", json!("high"))]);
+    assert_eq!(run("elevation * 2", &word), None);
+}
+
+#[test]
 fn new_syntax_errors_name_the_problem() {
     let err = |src: &str| parse(src).unwrap_err().to_string();
     assert_eq!(err("has(1)"), "has() takes a field name");
