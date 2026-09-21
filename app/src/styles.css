@@ -3540,7 +3540,9 @@ input.date-picker__trigger.is-invalid:focus {
 /* Above .modal (10050). z-index must sit on the positioned wrapper: the popover
  * portals to <body>, and an inner z-index cannot climb out of the wrapper. */
 [data-radix-popper-content-wrapper]:has(> .color-picker__popover),
-[data-radix-popper-content-wrapper]:has(> .date-picker__popover) {
+[data-radix-popper-content-wrapper]:has(> .date-picker__popover),
+.picker-positioner,
+.suggest-portal {
 	z-index: 10100;
 }
 .color-picker__popover {
