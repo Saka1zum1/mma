@@ -20,6 +20,21 @@ export function randomPointInBounds(b: Bounds): LatLng {
 	return { lat, lng: lerpLng(b, Math.random()) };
 }
 
+/** Convert a GeoJSON polygon feature to the IPC `PolygonGeometry` shape. */
+export function featureToPolygon(
+	feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
+): import("@/bindings.gen").PolygonGeometry {
+	const g = feature.geometry;
+	if (g.type === "Polygon") {
+		return { coordinates: g.coordinates as [number, number][][] };
+	}
+	const [first, ...rest] = g.coordinates;
+	return {
+		coordinates: first as [number, number][][],
+		extraPolygons: rest.length > 0 ? (rest as [number, number][][][]) : null,
+	};
+}
+
 /** `null` for a feature with no coordinates. */
 export function getBoundingBox(
 	feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,

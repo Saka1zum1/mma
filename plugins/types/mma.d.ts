@@ -238,6 +238,8 @@ declare const commands$1: {
      *  its module answers for declined requests, which the caller discards.
      */
     procedureQueryCancel: (cancel: number) => Promise<null>;
+    /**  What the procedure engine is working on right now. */
+    procedureActivity: () => Promise<ProcedureActivity>;
     /**
      *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
      *  `level` selects border precision, falling back to "light" if unavailable.
@@ -251,6 +253,28 @@ declare const commands$1: {
      *  already-covered spots) pay one IPC round-trip, not one per point.
      */
     storeNearAny: (lats: number[], lngs: number[], radiusM: number) => Promise<boolean[]>;
+    /**
+     *  The points of a honeycomb about `spacingM` metres apart that fall inside the polygon,
+     *  one entry per row of points.
+     */
+    honeycombPoints: (polygon: PolygonGeometry, spacingM: number) => Promise<HoneycombRun[]>;
+    /**
+     *  Up to `count` points drawn uniformly at random inside the polygon, as `[lng, lat]`
+     *  pairs. Fewer come back when the polygon fills little of its bounding box.
+     */
+    polygonRandomPoints: (polygon: PolygonGeometry, count: number) => Promise<[number, number][]>;
+    /**
+     *  Points covering the polygon with no two closer than `spacingM` metres and no gap
+     *  wider than about twice that, in random order.
+     */
+    polygonPoissonPoints: (polygon: PolygonGeometry, spacingM: number) => Promise<[number, number][]>;
+    /**  Whether each of the points sits inside the polygon. */
+    polygonContainsPoints: (polygon: PolygonGeometry, lats: number[], lngs: number[]) => Promise<boolean[]>;
+    /**
+     *  Bounding box `[west, south, east, north]` of the polygon itself, or `null` when it
+     *  has no vertices. `west > east` means the box crosses the antimeridian.
+     */
+    polygonBounds: (polygon: PolygonGeometry) => Promise<[number, number, number, number] | null>;
     /**
      *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
      *  already exists, it is made visible instead of creating a duplicate.
@@ -685,7 +709,7 @@ declare const BUILTIN_FIELDS: readonly [{
     readonly key: "loadAsPanoId";
     readonly label: "Load as pano ID";
     readonly type: "number";
-    readonly kind: "term";
+    readonly kind: "writable";
     readonly comparison: null;
 }, {
     readonly key: "informational";
@@ -970,6 +994,7 @@ type DbStats = {
     tags: number;
     commits: number;
     dbSizeBytes: number;
+    locationSizeBytes: number;
     journalMode: string;
     foreignKeys: boolean;
 };
@@ -1180,6 +1205,16 @@ type GgUser = {
     nick: string;
     /**  Avatar pin path (e.g. `pin/<hash>.png`), served under `/images/` on geoguessr.com. */
     pin: string | null;
+};
+/**
+ *  One row of honeycomb points: `count` points from `lng` eastward, each `lngStep` degrees
+ *  apart.
+ */
+type HoneycombRun = {
+    lat: number;
+    lng: number;
+    lngStep: number;
+    count: number;
 };
 /**
  *  Summary of a single map found during bulk import preview.
@@ -1649,6 +1684,15 @@ type PresenceActivity = {
     /**  Unix seconds; Discord renders an "elapsed" timer counting up from here. */
     start: number | null;
 };
+/**  Everything the procedure engine has in flight at one instant. */
+type ProcedureActivity = {
+    /**  The providers working right now. */
+    runs: ProviderActivity[];
+    /**  The procedures answering a question right now. */
+    queries: QueryActivity[];
+    /**  Requests answered per second over the last few seconds, across everything running. */
+    requestsPerSecond: number;
+};
 type ProcedureProgress = {
     runId: number;
     providerId: string;
@@ -1673,6 +1717,33 @@ type ProcedureResult = {
     entries: ResultEntry[];
     /**  Rows the procedure failed, or every row of a batch whose call failed. */
     failed: number[];
+};
+/**  One provider working its share of a run. */
+type ProviderActivity = {
+    /**  The run this provider belongs to. */
+    runId: number;
+    /**  The provider's id. */
+    providerId: string;
+    /**  The provider's display name, where it has one. */
+    label: string | null;
+    /**  Locations the provider was handed. */
+    total: number;
+    /**  Locations it has finished. */
+    done: number;
+    /**  Locations it could not work. */
+    failed: number;
+    /**  Locations that already held everything it produces. */
+    skipped: number;
+    /**  Copies of the procedure working its queue. */
+    instances: number;
+    /**  Requests outstanding at this instant. */
+    inflight: number;
+    /**  The most requests the provider may keep outstanding. */
+    inflightLimit: number;
+    /**  Requests parked until the provider's rate limit lets them through. */
+    rateWaiting: number;
+    /**  Requests retried so far in this run. */
+    retries: number;
 };
 /**
  *  One provider as declared by the frontend. `fields` are the extra keys it produces
@@ -1760,6 +1831,17 @@ type PullCreate = {
 type PullUpdate = {
     localId: number;
     patch: SyncPatch;
+};
+/**  The questions one procedure is answering, taken together. */
+type QueryActivity = {
+    /**  The procedure answering. */
+    entry: string;
+    /**  Requests outstanding at this instant. */
+    inflight: number;
+    /**  The most requests it may keep outstanding. */
+    inflightLimit: number;
+    /**  Requests retried so far by the queries in flight. */
+    retries: number;
 };
 /**
  *  What one attempt charges the bucket: the call itself, or one per row in its batch
@@ -2819,6 +2901,8 @@ declare function updateLocations(updates: Update<LocationPatch_Deserialize>[], o
 declare function renameField(from: string, to: string, winner?: MergeWinner): Promise<void>;
 /** Delete extra-field `key` from every location, its definition, and references. */
 declare function deleteField(key: string): Promise<void>;
+/** Rewrite a field across `selector` in Rust. */
+declare function applyFieldOp(selector: Selector, op: FieldOp, recordUndo?: boolean): Promise<FieldOpResult>;
 /** Toggle a selection's ghosted state and re-sync (excludes/includes it from the overlay). */
 declare function toggleGhostSelection(key: string): Promise<void>;
 /** "Solo" a selection: ghost every other top-level selection, keep this one visible.
@@ -2956,6 +3040,7 @@ export type store_MapState = MapState;
 declare const store_addLocations: typeof addLocations;
 declare const store_addSelections: typeof addSelections;
 declare const store_addTagToLocations: typeof addTagToLocations;
+declare const store_applyFieldOp: typeof applyFieldOp;
 declare const store_cancelAutosave: typeof cancelAutosave;
 declare const store_checkoutCommit: typeof checkoutCommit;
 declare const store_closeDuplicates: typeof closeDuplicates;
@@ -3039,7 +3124,7 @@ declare const store_updateTags: typeof updateTags;
 declare const store_useMapState: typeof useMapState;
 declare const store_waitForInflightPersist: typeof waitForInflightPersist;
 declare namespace store {
-  export { store_addLocations as addLocations, store_addSelections as addSelections, store_addTagToLocations as addTagToLocations, store_cancelAutosave as cancelAutosave, store_checkoutCommit as checkoutCommit, store_closeDuplicates as closeDuplicates, closeMap$1 as closeMap, store_commitMap as commitMap, store_composeSelections as composeSelections, store_countBy as countBy, store_countIn as countIn, store_createTags as createTags, store_currentSelection as currentSelection, store_decomposeChild as decomposeChild, store_deleteField as deleteField, store_deleteTags as deleteTags, store_discardOpenMap as discardOpenMap, store_duplicateLocation as duplicateLocation, store_emitBitmask as emitBitmask, store_exitPluginMode as exitPluginMode, store_exitProvidersMode as exitProvidersMode, store_fetchBounds as fetchBounds, store_fetchLocations as fetchLocations, store_fieldCoverage as fieldCoverage, store_fieldValues as fieldValues, store_flushSave as flushSave, store_getActiveSelections as getActiveSelections, store_getMapState as getMapState, store_getSelectedTagIds as getSelectedTagIds, store_getSelectedTagIdsDeep as getSelectedTagIdsDeep, store_getTag as getTag, store_getVisibleTags as getVisibleTags, store_holdAutosave as holdAutosave, store_initStore as initStore, store_isolateSelection as isolateSelection, store_mapOpen as mapOpen, store_mergeDuplicates as mergeDuplicates, store_mutate as mutate, store_openDuplicateLocation as openDuplicateLocation, openMap$1 as openMap, store_openStagedLocation as openStagedLocation, store_partition as partition, store_previewDuplicateGroups as previewDuplicateGroups, store_previewVirtualLocation as previewVirtualLocation, store_pruneDuplicates as pruneDuplicates, store_redo as redo, store_removeChildFromSelection as removeChildFromSelection, store_removeDuplicate as removeDuplicate, store_removeLocations as removeLocations, store_removeSelections as removeSelections, store_removeTagFromAllLocations as removeTagFromAllLocations, store_removeTagFromLocations as removeTagFromLocations, store_renameField as renameField, store_renameMap as renameMap, store_reorderSelection as reorderSelection, store_reorderTags as reorderTags, store_resetSelections as resetSelections, store_resolveIds as resolveIds, store_resolveLocation as resolveLocation, store_sampleFrom as sampleFrom, store_scheduleAutoCommit as scheduleAutoCommit, store_scheduleSave as scheduleSave, store_selectIntersection as selectIntersection, store_selectInverse as selectInverse, store_selectRandomFromSelection as selectRandomFromSelection, store_selectSpacedFromSelection as selectSpacedFromSelection, store_selectUnion as selectUnion, store_setActiveLocation as setActiveLocation, store_setMapExtraFields as setMapExtraFields, store_setPluginMode as setPluginMode, store_setPolygonName as setPolygonName, store_setSelectedLocationIds as setSelectedLocationIds, store_setSelectionColors as setSelectionColors, store_setWorkArea as setWorkArea, store_toggleGhostAllSelections as toggleGhostAllSelections, store_toggleGhostSelection as toggleGhostSelection, store_toggleManualSelection as toggleManualSelection, store_toggleProvidersMode as toggleProvidersMode, store_toggleTagSelections as toggleTagSelections, store_undo as undo, store_updateFilterSelection as updateFilterSelection, store_updateLocations as updateLocations, store_updateMapLabels as updateMapLabels, store_updateMapMeta as updateMapMeta, store_updateTags as updateTags, store_useMapState as useMapState, store_waitForInflightPersist as waitForInflightPersist };
+  export { store_addLocations as addLocations, store_addSelections as addSelections, store_addTagToLocations as addTagToLocations, store_applyFieldOp as applyFieldOp, store_cancelAutosave as cancelAutosave, store_checkoutCommit as checkoutCommit, store_closeDuplicates as closeDuplicates, closeMap$1 as closeMap, store_commitMap as commitMap, store_composeSelections as composeSelections, store_countBy as countBy, store_countIn as countIn, store_createTags as createTags, store_currentSelection as currentSelection, store_decomposeChild as decomposeChild, store_deleteField as deleteField, store_deleteTags as deleteTags, store_discardOpenMap as discardOpenMap, store_duplicateLocation as duplicateLocation, store_emitBitmask as emitBitmask, store_exitPluginMode as exitPluginMode, store_exitProvidersMode as exitProvidersMode, store_fetchBounds as fetchBounds, store_fetchLocations as fetchLocations, store_fieldCoverage as fieldCoverage, store_fieldValues as fieldValues, store_flushSave as flushSave, store_getActiveSelections as getActiveSelections, store_getMapState as getMapState, store_getSelectedTagIds as getSelectedTagIds, store_getSelectedTagIdsDeep as getSelectedTagIdsDeep, store_getTag as getTag, store_getVisibleTags as getVisibleTags, store_holdAutosave as holdAutosave, store_initStore as initStore, store_isolateSelection as isolateSelection, store_mapOpen as mapOpen, store_mergeDuplicates as mergeDuplicates, store_mutate as mutate, store_openDuplicateLocation as openDuplicateLocation, openMap$1 as openMap, store_openStagedLocation as openStagedLocation, store_partition as partition, store_previewDuplicateGroups as previewDuplicateGroups, store_previewVirtualLocation as previewVirtualLocation, store_pruneDuplicates as pruneDuplicates, store_redo as redo, store_removeChildFromSelection as removeChildFromSelection, store_removeDuplicate as removeDuplicate, store_removeLocations as removeLocations, store_removeSelections as removeSelections, store_removeTagFromAllLocations as removeTagFromAllLocations, store_removeTagFromLocations as removeTagFromLocations, store_renameField as renameField, store_renameMap as renameMap, store_reorderSelection as reorderSelection, store_reorderTags as reorderTags, store_resetSelections as resetSelections, store_resolveIds as resolveIds, store_resolveLocation as resolveLocation, store_sampleFrom as sampleFrom, store_scheduleAutoCommit as scheduleAutoCommit, store_scheduleSave as scheduleSave, store_selectIntersection as selectIntersection, store_selectInverse as selectInverse, store_selectRandomFromSelection as selectRandomFromSelection, store_selectSpacedFromSelection as selectSpacedFromSelection, store_selectUnion as selectUnion, store_setActiveLocation as setActiveLocation, store_setMapExtraFields as setMapExtraFields, store_setPluginMode as setPluginMode, store_setPolygonName as setPolygonName, store_setSelectedLocationIds as setSelectedLocationIds, store_setSelectionColors as setSelectionColors, store_setWorkArea as setWorkArea, store_toggleGhostAllSelections as toggleGhostAllSelections, store_toggleGhostSelection as toggleGhostSelection, store_toggleManualSelection as toggleManualSelection, store_toggleProvidersMode as toggleProvidersMode, store_toggleTagSelections as toggleTagSelections, store_undo as undo, store_updateFilterSelection as updateFilterSelection, store_updateLocations as updateLocations, store_updateMapLabels as updateMapLabels, store_updateMapMeta as updateMapMeta, store_updateTags as updateTags, store_useMapState as useMapState, store_waitForInflightPersist as waitForInflightPersist };
   export type { store_MapState as MapState };
 }
 
@@ -3413,7 +3498,7 @@ declare const COMMANDS: {
         execute: () => void;
     };
     "bulk-pin-pano": {
-        label: "Pin locations to pano ID";
+        label: "Pin or unpin locations to pano ID";
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
@@ -3714,6 +3799,9 @@ declare const DEFAULTS: {
     markerColor: RGB;
     activeLocationColor: RGB;
     importPreviewColor: RGB;
+    svTrail: boolean;
+    svTrailColor: RGB;
+    svTrailPosition: boolean;
     panoDotColor: RGB;
     /** Color a newly drawn polygon selection starts with. `random` hashes it from the polygon's
      *  key; `fixed` uses polygonColor. Either way it's only the initial value -- recoloring a
@@ -3825,6 +3913,9 @@ declare const APP_SETTINGS: PersistedStore<{
     markerColor: RGB;
     activeLocationColor: RGB;
     importPreviewColor: RGB;
+    svTrail: boolean;
+    svTrailColor: RGB;
+    svTrailPosition: boolean;
     panoDotColor: RGB;
     /** Color a newly drawn polygon selection starts with. `random` hashes it from the polygon's
      *  key; `fixed` uses polygonColor. Either way it's only the initial value -- recoloring a
@@ -4257,7 +4348,9 @@ export type ResolvedBuild = {
  *  publishes one current build per id (no pinned older refs), so an incompatible
  *  latest simply means keep what is installed. @unstable */
 declare function resolveBuild(entry: PluginManifest, appVersion: string): ResolvedBuild | null;
-/** True when the installed plugin should be refreshed to `target`. @unstable */
+/** True when the installed plugin should be refreshed to `target`. A pinned older
+ *  ref still repairs a missing or drifted sidecar; version-only comparison would
+ *  leave a half-installed build stuck. @unstable */
 declare function needsBuildUpdate(installedVersion: string | undefined, target: ResolvedBuild, installedSidecarVersion: string | null | undefined, latestSidecarVersion: string | undefined): boolean;
 declare function fetchPluginRegistry(): Promise<PluginManifest[]>;
 /** Auto-update a plugin to the newest compatible catalog build before loading it.
@@ -4488,6 +4581,16 @@ declare namespace sidecar$1 {
   export type { sidecar$1_SidecarOptions as SidecarOptions, sidecar$1_SidecarRun as SidecarRun };
 }
 
+export type BarSize = "sm" | "md" | "lg";
+export type BarTone = "accent" | "complete" | "incomplete";
+/** A bar filled to `value`, a share from 0 to 1. */
+declare function Bar({ value, size, tone, className, }: {
+    value: number;
+    size?: BarSize;
+    tone?: BarTone;
+    className?: string;
+}): react.JSX.Element;
+
 export type ButtonVariant = "primary" | "destructive" | "ghost";
 declare function Button({ variant, small, type, className, ...props }: ComponentPropsWithRef<"button"> & {
     variant?: ButtonVariant;
@@ -4501,6 +4604,14 @@ declare function ColorPicker({ color, onChange, ariaLabel, }: {
     color: RGB;
     onChange: (color: RGB) => void;
     ariaLabel?: string;
+}): react.JSX.Element;
+
+/** Share of locations holding a value as a bar and a percentage, colored by whether every location is covered when `status` is set. */
+declare function CoverageBar({ ratio, size, status, className, }: {
+    ratio: number;
+    size?: BarSize;
+    status?: boolean;
+    className?: string;
 }): react.JSX.Element;
 
 export interface DatePickerProps {
@@ -4547,6 +4658,21 @@ declare function Flag({ code, height, className, }: {
     className?: string;
 }): react.JSX.Element | null;
 
+/** A line of secondary text, optionally marked as a warning or an error. */
+declare function Hint({ tone, children }: {
+    tone?: "warning" | "error";
+    children?: ReactNode;
+}): react.JSX.Element;
+/** An info icon beside a label, explaining it on hover instead of in a line under it. */
+declare function InfoButton({ text }: {
+    text: string;
+}): react.JSX.Element;
+/** A boxed message that informs, warns, reports an error or confirms a success. */
+declare function Notice({ tone, children, }: {
+    tone: "info" | "warning" | "error" | "success";
+    children: ReactNode;
+}): react.JSX.Element;
+
 /** Click-to-record key combo input. Backspace/Delete clears, Escape cancels. */
 declare function HotkeyInput({ value, onChange, }: {
     value: string;
@@ -4561,7 +4687,39 @@ export interface IconProps {
 }
 declare function Icon({ path, size, className, style }: IconProps): react.JSX.Element;
 
+/** A button showing only an icon, named by its label. @unstable */
+declare function IconButton({ icon, label, size, active, reveal, overlay, tooltip, tooltipSide, type, className, children, ...props }: Omit<ComponentPropsWithRef<"button">, "aria-label" | "title"> & {
+    /** An icon path, or a drawn icon to show instead. */
+    icon: string | ReactNode;
+    /** What the button does, read aloud and shown as its tooltip. */
+    label: string;
+    /** The icon's size in pixels. */
+    size?: number;
+    /** Shows the button as pressed. */
+    active?: boolean;
+    /** Hides the button until its row is hovered or holds focus. */
+    reveal?: boolean;
+    /** Draws the button for use over map or street view imagery. */
+    overlay?: boolean;
+    /** The tooltip text, or false for none. Defaults to the label. */
+    tooltip?: string | false;
+    /** The side the tooltip opens on. */
+    tooltipSide?: "top" | "bottom" | "left" | "right";
+    /** Shown after the icon, such as a badge. */
+    children?: ReactNode;
+}): react.JSX.Element;
+
 declare function NSelect({ className, onWheel, ...props }: ComponentPropsWithRef<"select">): react.JSX.Element;
+
+/** A progress bar under its label and count, with any extra detail below it. */
+declare function ProgressRow({ label, count, value, size, className, children, }: {
+    label: ReactNode;
+    count?: ReactNode;
+    value: number;
+    size?: BarSize;
+    className?: string;
+    children?: ReactNode;
+}): react.JSX.Element;
 
 declare function Radio({ className, ...props }: ComponentPropsWithRef<"input">): react.JSX.Element;
 
@@ -4638,6 +4796,12 @@ declare function SegmentedControl<T extends string | number>({ options, value, o
 /** Range input whose track fills with the accent up to the current value.
  *  Controlled only: the fill derives from the value prop. */
 declare function Slider({ className, ...props }: ComponentPropsWithRef<"input">): react.JSX.Element;
+
+/** A spinning ring shown while something loads. `size` is any length, such as `"10px"`. */
+declare function Spinner({ size, label }: {
+    size?: string;
+    label?: string;
+}): react.JSX.Element;
 
 /** Autocomplete input: owns open/close state, outside-click dismissal,
  *  Enter-picks-first, and Escape-closes. Suggestion sourcing stays at the call
@@ -4744,9 +4908,11 @@ declare function Tooltip({ content, side, align, children, }: {
  * (Settings-dialog plumbing), Trans (i18n infra).
  */
 
+declare const primitives_Bar: typeof Bar;
 declare const primitives_Button: typeof Button;
 declare const primitives_Checkbox: typeof Checkbox;
 declare const primitives_ColorPicker: typeof ColorPicker;
+declare const primitives_CoverageBar: typeof CoverageBar;
 declare const primitives_DatePicker: typeof DatePicker;
 declare const primitives_Dialog: typeof Dialog;
 declare const primitives_DialogContent: typeof DialogContent;
@@ -4755,9 +4921,14 @@ declare const primitives_DialogTrigger: typeof DialogTrigger;
 declare const primitives_EmptyState: typeof EmptyState;
 declare const primitives_Field: typeof Field;
 declare const primitives_Flag: typeof Flag;
+declare const primitives_Hint: typeof Hint;
 declare const primitives_HotkeyInput: typeof HotkeyInput;
 declare const primitives_Icon: typeof Icon;
+declare const primitives_IconButton: typeof IconButton;
+declare const primitives_InfoButton: typeof InfoButton;
 declare const primitives_NSelect: typeof NSelect;
+declare const primitives_Notice: typeof Notice;
+declare const primitives_ProgressRow: typeof ProgressRow;
 declare const primitives_Radio: typeof Radio;
 declare const primitives_Section: typeof Section;
 declare const primitives_SegmentedControl: typeof SegmentedControl;
@@ -4766,6 +4937,7 @@ declare const primitives_SelectorPicker: typeof SelectorPicker;
 declare const primitives_SettingRow: typeof SettingRow;
 declare const primitives_Sidebar: typeof Sidebar;
 declare const primitives_Slider: typeof Slider;
+declare const primitives_Spinner: typeof Spinner;
 declare const primitives_SuggestInput: typeof SuggestInput;
 declare const primitives_Switch: typeof Switch;
 declare const primitives_SwitchRow: typeof SwitchRow;
@@ -4776,7 +4948,7 @@ declare const primitives_ToolBlock: typeof ToolBlock;
 declare const primitives_Tooltip: typeof Tooltip;
 declare const primitives_useCloseDialog: typeof useCloseDialog;
 declare namespace primitives {
-  export { primitives_Button as Button, primitives_Checkbox as Checkbox, primitives_ColorPicker as ColorPicker, primitives_DatePicker as DatePicker, primitives_Dialog as Dialog, primitives_DialogContent as DialogContent, primitives_DialogTrigger as DialogTrigger, primitives_EmptyState as EmptyState, primitives_Field as Field, primitives_Flag as Flag, primitives_HotkeyInput as HotkeyInput, primitives_Icon as Icon, primitives_NSelect as NSelect, primitives_Radio as Radio, primitives_Section as Section, primitives_SegmentedControl as SegmentedControl, primitives_SelectorPicker as SelectorPicker, primitives_SettingRow as SettingRow, primitives_Sidebar as Sidebar, primitives_Slider as Slider, primitives_SuggestInput as SuggestInput, primitives_Switch as Switch, primitives_SwitchRow as SwitchRow, primitives_TagPill as TagPill, primitives_TagPillButton as TagPillButton, primitives_TextInput as TextInput, primitives_ToolBlock as ToolBlock, primitives_Tooltip as Tooltip, primitives_useCloseDialog as useCloseDialog };
+  export { primitives_Bar as Bar, primitives_Button as Button, primitives_Checkbox as Checkbox, primitives_ColorPicker as ColorPicker, primitives_CoverageBar as CoverageBar, primitives_DatePicker as DatePicker, primitives_Dialog as Dialog, primitives_DialogContent as DialogContent, primitives_DialogTrigger as DialogTrigger, primitives_EmptyState as EmptyState, primitives_Field as Field, primitives_Flag as Flag, primitives_Hint as Hint, primitives_HotkeyInput as HotkeyInput, primitives_Icon as Icon, primitives_IconButton as IconButton, primitives_InfoButton as InfoButton, primitives_NSelect as NSelect, primitives_Notice as Notice, primitives_ProgressRow as ProgressRow, primitives_Radio as Radio, primitives_Section as Section, primitives_SegmentedControl as SegmentedControl, primitives_SelectorPicker as SelectorPicker, primitives_SettingRow as SettingRow, primitives_Sidebar as Sidebar, primitives_Slider as Slider, primitives_Spinner as Spinner, primitives_SuggestInput as SuggestInput, primitives_Switch as Switch, primitives_SwitchRow as SwitchRow, primitives_TagPill as TagPill, primitives_TagPillButton as TagPillButton, primitives_TextInput as TextInput, primitives_ToolBlock as ToolBlock, primitives_Tooltip as Tooltip, primitives_useCloseDialog as useCloseDialog };
   export type { primitives_DialogProps as DialogProps, primitives_SegmentedOption as SegmentedOption };
 }
 
@@ -5822,6 +5994,8 @@ declare function errText(e: unknown): string;
 declare function toggleInSet<T>(set: ReadonlySet<T>, value: T, on?: boolean): Set<T>;
 /** Split into consecutive slices of at most `n` items. */
 declare function chunk<T>(arr: readonly T[], n: number): T[][];
+/** Fisher–Yates shuffle in place; returns the same array. */
+declare function shuffle<T>(arr: T[]): T[];
 /** Compare two dotted version strings (e.g. "0.6.1"). Returns >0 if a > b. */
 declare function cmpVersion(a: string, b: string): number;
 /** True for a semver pre-release (`0.10.0-rc.1`), as opposed to a stable dotted version. */
@@ -5874,12 +6048,13 @@ declare const util_isWeb: typeof isWeb;
 declare const util_mmaBufUrl: typeof mmaBufUrl;
 declare const util_saveExportTempFile: typeof saveExportTempFile;
 declare const util_schemeBase: typeof schemeBase;
+declare const util_shuffle: typeof shuffle;
 declare const util_sortTagsByMode: typeof sortTagsByMode;
 declare const util_tagColorFor: typeof tagColorFor;
 declare const util_toggleInSet: typeof toggleInSet;
 declare const util_waveRate: typeof waveRate;
 declare namespace util {
-  export { util_appendTagName as appendTagName, util_chunk as chunk, util_cmpVersion as cmpVersion, util_compareNatural as compareNatural, util_copyImageToClipboard as copyImageToClipboard, util_downloadBlob as downloadBlob, util_errText as errText, util_fovToZoom as fovToZoom, util_isPrereleaseVersion as isPrereleaseVersion, util_isWeb as isWeb, util_mmaBufUrl as mmaBufUrl, util_saveExportTempFile as saveExportTempFile, util_schemeBase as schemeBase, util_sortTagsByMode as sortTagsByMode, util_tagColorFor as tagColorFor, util_toggleInSet as toggleInSet, util_waveRate as waveRate };
+  export { util_appendTagName as appendTagName, util_chunk as chunk, util_cmpVersion as cmpVersion, util_compareNatural as compareNatural, util_copyImageToClipboard as copyImageToClipboard, util_downloadBlob as downloadBlob, util_errText as errText, util_fovToZoom as fovToZoom, util_isPrereleaseVersion as isPrereleaseVersion, util_isWeb as isWeb, util_mmaBufUrl as mmaBufUrl, util_saveExportTempFile as saveExportTempFile, util_schemeBase as schemeBase, util_shuffle as shuffle, util_sortTagsByMode as sortTagsByMode, util_tagColorFor as tagColorFor, util_toggleInSet as toggleInSet, util_waveRate as waveRate };
   export type { util_WaveRate as WaveRate };
 }
 
@@ -5976,6 +6151,9 @@ declare function getSettings(): {
     markerColor: RGB;
     activeLocationColor: RGB;
     importPreviewColor: RGB;
+    svTrail: boolean;
+    svTrailColor: RGB;
+    svTrailPosition: boolean;
     panoDotColor: RGB;
     opacityToggleMode: OpacityToggleMode;
     polygonColorMode: PolygonColorMode;
@@ -6090,4 +6268,4 @@ declare global {
 }
 
 export { BUILTIN_FIELDS, DEFAULT_DUPLICATE_SCORE, KNOWN_FIELDS, MMA as MMAApi, PROJECTIONS, PanoType, commands$1 as commands, events };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureProgress, ProcedureResult, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };

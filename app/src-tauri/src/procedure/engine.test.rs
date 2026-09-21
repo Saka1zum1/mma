@@ -1748,6 +1748,38 @@ fn fetch_many_puts_every_request_in_flight_at_once() {
 }
 
 #[test]
+fn fetch_stream_hands_answers_over_in_completion_order() {
+    let d = decl("stream", BatchMode::PerRow);
+    let reqs = gets(4);
+    // Higher index sleeps less, so request 3 lands first.
+    let fetch: FetchFn = Box::new(|req: HttpRequestSpec| {
+        Box::pin(async move {
+            let n: u64 = req
+                .url
+                .rsplit('/')
+                .next()
+                .unwrap()
+                .parse()
+                .expect("url ends with the index");
+            tokio::time::sleep(Duration::from_millis(80 * (4 - n))).await;
+            Ok(HttpResponse {
+                status: 200,
+                body: req.url.as_bytes().to_vec(),
+            })
+        })
+    });
+    let order = with_engine_host(fetch, &d, None, |h| {
+        let mut order = Vec::new();
+        h.fetch_stream(&reqs, &mut |i, r| {
+            order.push(i);
+            assert!(r.is_ok());
+        });
+        order
+    });
+    assert_eq!(order, vec![3, 2, 1, 0]);
+}
+
+#[test]
 fn fetch_many_holds_the_declared_inflight_ceiling() {
     let peak = Arc::new(AtomicU32::new(0));
     let mut d = decl("many", BatchMode::PerRow);

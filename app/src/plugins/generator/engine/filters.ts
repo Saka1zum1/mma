@@ -1,6 +1,17 @@
 import type { GeneratorSettings } from "./types";
 import { ymFromDate } from "@/lib/util/date";
 
+/** The bend, in degrees, of a fork with exactly two links: 0 for a straight road, 90 for a
+ *  right angle. Null when the pano isn't a simple two-link fork or a link has no heading. */
+export function bendAngle(links: { heading?: number | null }[]): number | null {
+	if (links.length !== 2) return null;
+	const [a, b] = links;
+	if (!Number.isFinite(a.heading) || !Number.isFinite(b.heading)) return null;
+	const diff = Math.abs(a.heading! - b.heading!) % 360;
+	const angle = diff > 180 ? 360 - diff : diff;
+	return 180 - angle;
+}
+
 function normalizeText(text: string): string {
 	return text
 		.toLowerCase()
@@ -166,6 +177,10 @@ export function isPanoGood(
 		if (pano.location.pano.length !== 22) return false;
 		if (s.filterByLinks && (pano.links.length < s.minLinks || pano.links.length > s.maxLinks))
 			return false;
+		if (s.findCurves) {
+			const bend = bendAngle(pano.links);
+			if (bend === null || bend < s.minCurveAngle) return false;
+		}
 		if (
 			s.rejectNoDescription &&
 			!s.rejectDescription &&

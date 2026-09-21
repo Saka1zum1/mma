@@ -5,6 +5,8 @@ const h = vi.hoisted(() => ({
 	// panoId -> the metadata GetMetadata would return for it
 	panos: new Map<string, unknown>(),
 	fetched: [] as string[],
+	gridRuns: [] as { lat: number; lng: number; lngStep: number; count: number }[],
+	gridRequests: [] as number[],
 }));
 
 vi.mock("@/lib/util/log", () => ({
@@ -12,10 +14,48 @@ vi.mock("@/lib/util/log", () => ({
 	fireAndForget: (p: Promise<unknown>) => void p.catch(() => {}),
 }));
 
+type MockPolygon = { coordinates: [number, number][][] };
+function rectOf(polygon: MockPolygon) {
+	const ring = polygon.coordinates[0];
+	const lngs = ring.map((p) => p[0]);
+	const lats = ring.map((p) => p[1]);
+	return {
+		west: Math.min(...lngs),
+		east: Math.max(...lngs),
+		south: Math.min(...lats),
+		north: Math.max(...lats),
+	};
+}
+
 vi.mock("@/lib/commands", () => ({
 	cmd: {
 		storeFindNearby: () => Promise.resolve(h.seeds),
 		storeNearAny: (lats: number[]) => Promise.resolve(lats.map(() => false)),
+		honeycombPoints: (_polygon: unknown, spacingM: number) => {
+			h.gridRequests.push(spacingM);
+			return Promise.resolve(h.gridRuns);
+		},
+		polygonBounds: (polygon: MockPolygon) => {
+			const r = rectOf(polygon);
+			return Promise.resolve([r.west, r.south, r.east, r.north]);
+		},
+		polygonContainsPoints: (polygon: MockPolygon, lats: number[], lngs: number[]) => {
+			const r = rectOf(polygon);
+			return Promise.resolve(
+				lats.map(
+					(lat, i) => lat >= r.south && lat <= r.north && lngs[i] >= r.west && lngs[i] <= r.east,
+				),
+			);
+		},
+		polygonRandomPoints: (polygon: MockPolygon, count: number) => {
+			const r = rectOf(polygon);
+			const pts: [number, number][] = Array.from({ length: count }, () => [
+				r.west + Math.random() * (r.east - r.west),
+				r.south + Math.random() * (r.north - r.south),
+			]);
+			return Promise.resolve(pts);
+		},
+		polygonPoissonPoints: () => Promise.resolve([]),
 	},
 }));
 
@@ -27,12 +67,13 @@ vi.mock("@/lib/sv/svMeta", () => {
 	return { fetchSvMetadata, fetchSvMetadataBatched: fetchSvMetadata };
 });
 
-import { passesDescriptionSearch, isPanoGood } from "@/plugins/generator/engine/filters";
+import { passesDescriptionSearch, isPanoGood, bendAngle } from "@/plugins/generator/engine/filters";
 import { GenerationEngine } from "@/plugins/generator/engine/GenerationEngine";
 import { DEFAULT_SETTINGS } from "@/plugins/generator/engine/types";
 import type {
 	GeneratorSettings,
 	GeneratorRegion,
+	GeneratedLocation,
 	GenerationCallbacks,
 } from "@/plugins/generator/engine/types";
 
@@ -148,6 +189,42 @@ describe("isPanoGood new filters", () => {
 		expect(isPanoGood(pano({ description: "Old Bridge" }), s)).toBe(true);
 		expect(isPanoGood(pano({ description: "Main Street" }), s)).toBe(false);
 	});
+
+	it("findCurves rejects panos not on a sharp enough bend", () => {
+		const s = settings({ findCurves: true, minCurveAngle: 60, rejectDateless: false });
+		const withLinks = (headings: number[]) =>
+			({
+				...pano({}),
+				links: headings.map((heading) => ({ heading, pano: "x" })),
+			}) as google.maps.StreetViewResolvedPanoramaData;
+		expect(isPanoGood(withLinks([0, 90]), s)).toBe(true);
+		expect(isPanoGood(withLinks([0, 180]), s)).toBe(false);
+		expect(isPanoGood(withLinks([0]), s)).toBe(false);
+	});
+});
+
+describe("bendAngle", () => {
+	it("a straight road bends 0 degrees", () => {
+		expect(bendAngle([{ heading: 0 }, { heading: 180 }])).toBe(0);
+	});
+
+	it("a right angle bends 90 degrees", () => {
+		expect(bendAngle([{ heading: 0 }, { heading: 90 }])).toBe(90);
+	});
+
+	it("folds headings that wrap past 360", () => {
+		expect(bendAngle([{ heading: 350 }, { heading: 100 }])).toBe(70);
+	});
+
+	it("is null for one or three links", () => {
+		expect(bendAngle([{ heading: 0 }])).toBeNull();
+		expect(bendAngle([{ heading: 0 }, { heading: 90 }, { heading: 180 }])).toBeNull();
+	});
+
+	it("is null when a link has no heading", () => {
+		expect(bendAngle([{ heading: 0 }, { heading: undefined }])).toBeNull();
+		expect(bendAngle([{ heading: 0 }, { heading: null }])).toBeNull();
+	});
 });
 
 // Engine-level tuning while a job runs: settings and the region set must be
@@ -230,7 +307,6 @@ const permissive = (patch: Partial<GeneratorSettings> = {}) =>
 		rejectUnofficial: false,
 		rejectDateless: false,
 		rejectNoDescription: false,
-		numGenerators: 1,
 		...patch,
 	});
 
@@ -247,7 +323,7 @@ describe("GenerationEngine live tuning", () => {
 				if (calls >= 40) engine.stop();
 				cb(null, "ZERO_RESULTS");
 			}),
-			{ ...DEFAULT_SETTINGS, radius: 500, numGenerators: 1 },
+			{ ...DEFAULT_SETTINGS, radius: 500 },
 			[A()],
 			noopCallbacks,
 		);
@@ -270,7 +346,7 @@ describe("GenerationEngine live tuning", () => {
 				if (calls > 10000) engine.stop();
 				cb(null, "ZERO_RESULTS");
 			}),
-			{ ...DEFAULT_SETTINGS, numGenerators: 1 },
+			{ ...DEFAULT_SETTINGS },
 			[A()],
 			noopCallbacks,
 		);
@@ -306,7 +382,7 @@ describe("GenerationEngine live tuning", () => {
 				if (total > 10000) engine.stop();
 				cb(null, "ZERO_RESULTS");
 			}),
-			{ ...DEFAULT_SETTINGS, numGenerators: 1 },
+			{ ...DEFAULT_SETTINGS },
 			[A()],
 			noopCallbacks,
 		);
@@ -351,7 +427,7 @@ describe("GenerationEngine live tuning", () => {
 				if (total > 10000) engine.stop();
 				cb(null, "ZERO_RESULTS");
 			}),
-			{ ...DEFAULT_SETTINGS, numGenerators: 1 },
+			{ ...DEFAULT_SETTINGS },
 			[A(), B()],
 			noopCallbacks,
 		);
@@ -401,7 +477,7 @@ describe("GenerationEngine live tuning", () => {
 		expect(flushed[0].panoId).toBe("p".repeat(22));
 	});
 
-	it("resume unblocks every paused worker, not just the last (numGenerators > 1)", async () => {
+	it("resume unblocks a parked worker instead of leaving the run hung", async () => {
 		let phase: "run" | "paused" | "resumed" = "run";
 		let probesAfterResume = 0;
 		let total = 0;
@@ -423,7 +499,7 @@ describe("GenerationEngine live tuning", () => {
 				if (total > 10000) engine.stop();
 				cb(null, "ZERO_RESULTS");
 			}),
-			{ ...DEFAULT_SETTINGS, numGenerators: 2 },
+			{ ...DEFAULT_SETTINGS },
 			[A()],
 			noopCallbacks,
 		);
@@ -576,5 +652,102 @@ describe("poissonDiskSample", () => {
 		const feature = squareFeature(10, 50, 10.001, 50.001);
 		const points = poissonDiskSample(feature, 5000);
 		expect(points.length).toBeLessThanOrEqual(1);
+	});
+});
+
+import { gridPointSource, streamedPoints } from "@/plugins/generator/engine/pointSources";
+import { spreadIndex } from "@/plugins/generator/engine/spread";
+import { keepRate, cellKeepRate } from "@/plugins/generator/engine/blueLineSampler";
+
+const GRID_RUNS = [
+	{ lat: 1, lng: -50, lngStep: 0.5, count: 4 },
+	{ lat: 1.5, lng: -49.75, lngStep: 0.5, count: 3 },
+	{ lat: 2, lng: -50, lngStep: 0.5, count: 1 },
+];
+const GRID_POINTS = GRID_RUNS.flatMap((r) =>
+	Array.from({ length: r.count }, (_, m) => `${r.lat},${r.lng + m * r.lngStep}`),
+);
+const keyOf = (p: { lat: number; lng: number }) => `${p.lat},${p.lng}`;
+
+describe("gridPointSource", () => {
+	it("draws every grid point once across batches, then runs dry", async () => {
+		const take = gridPointSource(GRID_RUNS);
+		const drawn = [...(await take(3)), ...(await take(3)), ...(await take(3))].map(keyOf);
+		expect(drawn.sort()).toEqual([...GRID_POINTS].sort());
+		expect(await take(3)).toEqual([]);
+	});
+});
+
+describe("streamedPoints", () => {
+	const P = (lat: number): { lat: number; lng: number } => ({ lat, lng: 0 });
+
+	it("serves points emitted so far without waiting for the producer to finish", async () => {
+		let finish!: () => void;
+		const take = streamedPoints(async (emit) => {
+			emit([P(1), P(2)]);
+			await new Promise<void>((r) => (finish = r));
+			emit([P(3)]);
+		});
+		expect((await take(5)).map((p) => p.lat).sort()).toEqual([1, 2]);
+		finish();
+		expect(await take(5)).toEqual([P(3)]);
+		expect(await take(5)).toEqual([]);
+	});
+
+	it("a producer failure surfaces on the draw once the buffer is drained", async () => {
+		const take = streamedPoints(async (emit) => {
+			emit([P(1)]);
+			throw new Error("tiles down");
+		});
+		expect(await take(1)).toEqual([P(1)]);
+		await expect(take(1)).rejects.toThrow("tiles down");
+	});
+});
+
+describe("spreadIndex", () => {
+	it("is 1 when every cell has the same count", () => {
+		expect(spreadIndex([2, 2, 2, 2])).toBe(1);
+	});
+
+	it("is null until there are two cells and a count", () => {
+		expect(spreadIndex([])).toBeNull();
+		expect(spreadIndex([5])).toBeNull();
+		expect(spreadIndex([0, 0])).toBeNull();
+	});
+});
+
+describe("coverage thinning", () => {
+	it("keepRate halves with each zoom step above the baseline", () => {
+		expect(keepRate(14, 14)).toBe(1);
+		expect(keepRate(15, 14)).toBe(0.5);
+		expect(keepRate(16, 14)).toBe(0.25);
+	});
+
+	it("cellKeepRate is globalKeep at density and capped even-share at even", () => {
+		expect(cellKeepRate(100, 0.5, 0)).toBe(0.5);
+		expect(cellKeepRate(100, 0.5, 1)).toBeLessThan(1);
+	});
+});
+
+describe("GenerationEngine grid sampling", () => {
+	it("builds one honeycomb radius * sqrt(3) apart and probes each point exactly once", async () => {
+		h.gridRuns = GRID_RUNS;
+		h.gridRequests = [];
+		const probed: string[] = [];
+
+		const engine = new GenerationEngine(
+			fakeGoogleWith((req, cb) => {
+				if (req.location) probed.push(`${req.location.lat},${req.location.lng}`);
+				cb(null, "ZERO_RESULTS");
+			}),
+			permissive({ samplingMode: "grid", radius: 500 }),
+			[A()],
+			noopCallbacks,
+		);
+		await engine.start();
+
+		expect(h.gridRequests).toHaveLength(1);
+		expect(h.gridRequests[0]).toBeCloseTo(500 * Math.sqrt(3));
+		expect(probed.sort()).toEqual([...GRID_POINTS].sort());
 	});
 });

@@ -5,6 +5,7 @@ import type {
 	GeneratorRegion,
 	GeneratorRegionMeta,
 	GeneratedLocation,
+	GeneratorStats,
 } from "../engine/types";
 import { DEFAULT_SETTINGS } from "../engine/types";
 import { GenerationEngine } from "../engine/GenerationEngine";
@@ -21,6 +22,17 @@ import { createPluginStorage } from "@/plugins/registry";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
 import { searchCoverage } from "../searchCoverage";
 import { MONTHS, ymParse } from "@/lib/util/date";
+import { Icon } from "@/components/primitives/Icon";
+import { Tooltip } from "@/components/primitives/Tooltip";
+import {
+	mdiBullseyeArrow,
+	mdiChartScatterPlot,
+	mdiContentDuplicate,
+	mdiFilterRemove,
+	mdiMapMarkerCheck,
+	mdiRadar,
+	mdiSpeedometer,
+} from "@mdi/js";
 import "./generator.css";
 import { t } from "@/lib/i18n";
 
@@ -80,6 +92,7 @@ let sessionPaused = false;
 let sessionTagId: number | null = null;
 let sessionJob: JobHandle | null = null;
 let sessionSidebarOpen = false;
+let lastStats: GeneratorStats | null = null;
 
 let jobUpdateQueued = false;
 // Coalesced to a frame like tickProgress: onProgress fires per found pano, and an
@@ -110,11 +123,81 @@ function endSessionJob(message?: string): void {
 
 /** Stop the engine from outside the sidebar (job tray cancel, map close). */
 function stopSessionEngine(): void {
+	if (sessionEngine) lastStats = sessionEngine.stats();
 	sessionEngine?.stop();
 	sessionEngine = null;
 	sessionRunning = false;
 	sessionPaused = false;
 	endSessionJob();
+}
+
+function Stat({ icon, hint, value }: { icon: string; hint: string; value: string }) {
+	return (
+		<span className="generator-sidebar__stat">
+			<Tooltip content={hint}>
+				<span className="generator-sidebar__stat-icon" aria-label={hint}>
+					<Icon path={icon} size={14} />
+				</span>
+			</Tooltip>
+			{value}
+		</span>
+	);
+}
+
+function StatsRow({ engine }: { engine: GenerationEngine | null }) {
+	const [stats, setStats] = useState<GeneratorStats | null>(
+		() => engine?.stats() ?? lastStats,
+	);
+	useEffect(() => {
+		const poll = setInterval(() => setStats(engine?.stats() ?? lastStats), 1000);
+		return () => clearInterval(poll);
+	}, [engine]);
+	if (!stats) return null;
+	return (
+		<div className="generator-sidebar__stats mono">
+			<div className="generator-sidebar__stat-group">
+				<Stat
+					icon={mdiBullseyeArrow}
+					hint={t("Hit rate: the share of answered probes that became a location, last 10 seconds")}
+					value={stats.hitRate == null ? "--" : `${Math.round(stats.hitRate * 100)}%`}
+				/>
+				<Stat
+					icon={mdiSpeedometer}
+					hint={t("Locations added per second, last 10 seconds")}
+					value={t("{rate}/s", { rate: Math.round(stats.locsPerSec) })}
+				/>
+				<Stat
+					icon={mdiRadar}
+					hint={t("Probes answered per second, last 10 seconds")}
+					value={t("{rate}/s", { rate: Math.round(stats.probesPerSec) })}
+				/>
+			</div>
+			<div className="generator-sidebar__stat-group">
+				<Stat
+					icon={mdiChartScatterPlot}
+					hint={t(
+						"Spread: how evenly locations cover the probed area, from clustered (low) to even (100%)",
+					)}
+					value={stats.spread == null ? "--" : `${Math.round(stats.spread * 100)}%`}
+				/>
+				<Stat
+					icon={mdiMapMarkerCheck}
+					hint={t("Locations found this run")}
+					value={fmt.format(stats.found)}
+				/>
+				<Stat
+					icon={mdiFilterRemove}
+					hint={t("Panos rejected by the filters")}
+					value={fmt.format(stats.rejected)}
+				/>
+				<Stat
+					icon={mdiContentDuplicate}
+					hint={t("Duplicate panos skipped")}
+					value={fmt.format(stats.duplicates)}
+				/>
+			</div>
+		</div>
+	);
 }
 
 function formatYearMonth(ym: string) {
@@ -158,6 +241,9 @@ function summarizeSettings(s: GeneratorSettings): string {
 	// Radius
 	parts.push(s.radius >= 1000 ? `${s.radius / 1000}km radius` : `${s.radius}m radius`);
 	if (s.samplingMode !== "random") parts.push(`${s.samplingMode} sampling`);
+	if (s.samplingMode === "blueline" && s.distribution !== "density") {
+		parts.push(`${s.distribution} distribution`);
+	}
 
 	// Date behavior
 	if (s.checkAllDates) parts.push("checking all dates");
@@ -172,6 +258,7 @@ function summarizeSettings(s: GeneratorSettings): string {
 	if (s.skipExisting) parts.push(`skipping existing (${s.skipExistingRadius}m)`);
 	if (s.getIntersection) parts.push("intersections");
 	if (s.pinpointSearch) parts.push(`curves >${s.pinpointAngle}°`);
+	if (s.findCurves) parts.push(t("bend >{angle}°", { angle: s.minCurveAngle }));
 	if (s.checkLinks) parts.push(`checking ${s.linksDepth} link hops`);
 	if (s.findRegions) parts.push(`${s.regionRadius}km from existing`);
 	if (s.filterByLinks) parts.push(`${s.minLinks}–${s.maxLinks} links`);
@@ -180,8 +267,6 @@ function summarizeSettings(s: GeneratorSettings): string {
 		parts.push(`${verb} "${s.searchTerms}"`);
 	}
 
-	// Parallelism
-	if (s.numGenerators > 1) parts.push(`${s.numGenerators} workers`);
 	if (s.oneCountryAtATime) parts.push("one region at a time");
 
 	return parts.join(", ");
@@ -226,6 +311,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				rerender((n) => n + 1);
 			},
 			onDone: () => {
+				lastStats = engineRef.current?.stats() ?? lastStats;
 				setRunning(false);
 				setPaused(false);
 				engineRef.current = null;
@@ -317,6 +403,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 				rerender((n) => n + 1);
 			},
 			onDone: () => {
+				lastStats = engineRef.current?.stats() ?? lastStats;
 				setRunning(false);
 				setPaused(false);
 				engineRef.current = null;
@@ -413,6 +500,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 			<div className="generator-sidebar__footer">
 				<p className="generator-sidebar__summary">{summarizeSettings(settings)}</p>
 				<div className="generator-sidebar__actions">
+					<StatsRow engine={engineRef.current} />
 					{!running ? (
 						<button
 							className="button button--primary"

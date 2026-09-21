@@ -56,11 +56,12 @@ mod borders;
 mod export;
 mod field_expr;
 mod gdoc;
+mod geo_cmd;
 mod geocoder;
 mod geoguessr;
 mod import;
-mod maps_url;
 mod map_meta;
+mod maps_url;
 mod plugins;
 mod presence;
 mod procedure;
@@ -772,9 +773,15 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             procedure::engine::procedure_cancel,
             procedure::engine::procedure_query,
             procedure::engine::procedure_query_cancel,
+            procedure::engine::procedure_activity,
             location_store::store_country_distribution,
             location_store::store_find_nearby,
             location_store::store_near_any,
+            geo_cmd::honeycomb_points,
+            geo_cmd::polygon_random_points,
+            geo_cmd::polygon_poisson_points,
+            geo_cmd::polygon_contains_points,
+            geo_cmd::polygon_bounds,
             // --- Tag CRUD ---
             location_store::store_create_tags,
             location_store::store_update_tags,
@@ -1125,6 +1132,11 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            // GTK adopts the user's LC_NUMERIC, and QuickJS parses numbers with strtod.
+            #[cfg(target_os = "linux")]
+            unsafe {
+                libc::setlocale(libc::LC_NUMERIC, c"C".as_ptr());
+            }
             let t = std::time::Instant::now();
             let _ = APP_HANDLE.set(app.handle().clone());
             storage::init_paths(app.handle())?;

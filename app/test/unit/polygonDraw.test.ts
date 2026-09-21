@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { PolygonTools } from "@/components/editor/PolygonTools";
 import type { MapHost } from "@/lib/map/host";
+import { tryInterceptClick } from "@/lib/map/mapState";
+import type { LatLng } from "@/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -17,6 +19,8 @@ div.appendChild(engineSurface);
 document.body.appendChild(div);
 
 let draggableCalls: boolean[] = [];
+let overlayUpdates = 0;
+let mousemoveListener: ((ll: LatLng) => void) | null = null;
 const host = {
 	container: div,
 	getZoom: () => 18,
@@ -24,24 +28,31 @@ const host = {
 	setDraggable: (v: boolean) => draggableCalls.push(v),
 	setCursor: () => {},
 	setDoubleClickZoom: () => {},
-	on: () => () => {},
+	on: (event: string, fn: (ll: LatLng) => void) => {
+		if (event === "mousemove") mousemoveListener = fn;
+		return () => {
+			if (mousemoveListener === fn) mousemoveListener = null;
+		};
+	},
 } as unknown as MapHost;
 
 let root: Root | null = null;
 let toolsEl: HTMLElement;
+let freehandPathRef = createRef<number[][] | null>();
 
 function mount(): number[][][][] {
 	const drawn: number[][][][] = [];
 	toolsEl = document.createElement("div");
+	freehandPathRef = createRef<number[][] | null>();
 	root = createRoot(toolsEl);
 	act(() =>
 		root!.render(
 			createElement(PolygonTools, {
 				host,
 				onDraw: (rings: number[][][]) => drawn.push(rings),
-				freehandPathRef: createRef<number[][] | null>(),
+				freehandPathRef,
 				polygonVerticesRef: createRef<number[][] | null>(),
-				requestOverlayUpdate: () => {},
+				requestOverlayUpdate: () => overlayUpdates++,
 			}),
 		),
 	);
@@ -72,6 +83,7 @@ afterEach(() => {
 	if (root) act(() => root!.unmount());
 	root = null;
 	draggableCalls = [];
+	overlayUpdates = 0;
 });
 
 describe("draw tools leave the map interactive", () => {
@@ -152,5 +164,88 @@ describe("draw tools still produce their ring", () => {
 		move(10, 200);
 		up(10, 200);
 		expect(drawn).toHaveLength(1);
+	});
+});
+
+describe("polygon preview", () => {
+	it("ends at the clicked vertex when the cursor event is stale", async () => {
+		mount();
+		arm("Draw a polygon selection");
+		await act(async () => {
+			await tryInterceptClick(0, 0);
+			mousemoveListener!({ lat: 1, lng: 1 });
+			await tryInterceptClick(2, 2);
+		});
+		expect(freehandPathRef.current).toEqual([
+			[0, 0],
+			[2, 2],
+			[2, 2],
+		]);
+	});
+});
+
+describe("draw tool cleanup", () => {
+	it.each(["Freehand polygon selection", "Draw a rectangle selection"])(
+		"repaints after disarming %s",
+		(label) => {
+			mount();
+			arm(label);
+			down(10, 10);
+			move(20, 20);
+			expect(freehandPathRef.current).not.toBeNull();
+			const updatesBeforeDisarm = overlayUpdates;
+			arm(label);
+			expect(freehandPathRef.current).toBeNull();
+			expect(overlayUpdates).toBe(updatesBeforeDisarm + 1);
+		},
+	);
+});
+
+describe("a finished draw keeps the click that ends it", () => {
+	// The engine raises its own click at the end of a claimed stroke and a third one for a
+	// double-click, both after the tool has disarmed itself. Either would otherwise pick a
+	// marker or drop a location on coverage.
+	it("consumes the click that follows a freehand stroke", async () => {
+		mount();
+		arm("Freehand polygon selection");
+		down(10, 10);
+		move(200, 10);
+		move(200, 200);
+		up(200, 200);
+		expect(await tryInterceptClick(0.2, 0.2)).toBe(true);
+	});
+
+	it("consumes the click that follows a rectangle drag", async () => {
+		mount();
+		arm("Draw a rectangle selection");
+		down(10, 10);
+		move(200, 200);
+		up(200, 200);
+		expect(await tryInterceptClick(0.2, 0.2)).toBe(true);
+	});
+
+	it("consumes the click that follows closing a polygon, and draws nothing more", async () => {
+		const drawn = mount();
+		arm("Draw a polygon selection");
+		await act(async () => {
+			await tryInterceptClick(0, 0);
+			await tryInterceptClick(0, 1);
+			await tryInterceptClick(1, 1);
+			await tryInterceptClick(0, 0);
+		});
+		expect(drawn).toHaveLength(1);
+		expect(await tryInterceptClick(0, 0)).toBe(true);
+		expect(drawn).toHaveLength(1);
+	});
+
+	it("releases the claim once a real gesture starts", async () => {
+		mount();
+		arm("Freehand polygon selection");
+		down(10, 10);
+		move(200, 10);
+		move(200, 200);
+		up(200, 200);
+		down(50, 50);
+		expect(await tryInterceptClick(0.05, 0.05)).toBe(false);
 	});
 });

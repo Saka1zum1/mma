@@ -3706,7 +3706,7 @@ fn pick_spaced_distance_enforces_threshold() {
     let store = spaced_grid_store();
     let coords = coord_lookup(&store);
     let res = store
-        .pick_spaced(Some(&store.selections.ids), None, Some(250))
+        .pick_spaced(Some(&store.selections.ids), None, Some(250.0))
         .unwrap();
     assert_eq!(res.distance_m, 250);
     assert!(!res.ids.is_empty());
@@ -3718,16 +3718,18 @@ fn pick_spaced_distance_enforces_threshold() {
 fn pick_spaced_arg_validation() {
     let store = spaced_grid_store();
     assert!(
-        store.pick_spaced(None, Some(5), Some(100)).is_err(),
+        store.pick_spaced(None, Some(5), Some(100.0)).is_err(),
         "both set"
     );
     assert!(store.pick_spaced(None, None, None).is_err(), "neither set");
     assert!(
-        store.pick_spaced(None, None, Some(0)).is_err(),
+        store.pick_spaced(None, None, Some(0.0)).is_err(),
         "zero distance"
     );
     assert!(
-        store.pick_spaced(None, None, Some(u32::MAX)).is_err(),
+        store
+            .pick_spaced(None, None, Some(i32::MAX as f64 + 1.0))
+            .is_err(),
         "distance above i32::MAX"
     );
 }
@@ -3741,7 +3743,7 @@ fn pick_spaced_empty_selection() {
     assert!(count.ids.is_empty());
     assert_eq!(count.distance_m, 0);
     let dist = store
-        .pick_spaced(Some(&store.selections.ids), None, Some(100))
+        .pick_spaced(Some(&store.selections.ids), None, Some(100.0))
         .unwrap();
     assert!(dist.ids.is_empty());
     assert_eq!(dist.distance_m, 0);
@@ -4151,6 +4153,51 @@ fn planned_extra(u: &Update<LocationPatch>) -> serde_json::Value {
 fn plan(locs: &[Location], op: &FieldOp) -> Vec<Update<LocationPatch>> {
     let fx = crate::test_util::Fx::base(locs);
     plan_field_op(&fx.view(), None, op).unwrap().updates
+}
+
+fn set_op(key: &str, value: serde_json::Value) -> FieldOp {
+    FieldOp::Set {
+        key: key.into(),
+        value,
+    }
+}
+
+#[test]
+fn set_op_toggles_a_flag_field_bit_and_keeps_the_others() {
+    let informational = LocationFlags::INFORMATIONAL;
+    let locs = [
+        Location {
+            flags: informational,
+            ..loc(1, 1.0, 1.0)
+        },
+        Location {
+            flags: LocationFlags::LOAD_AS_PANO_ID,
+            ..loc(2, 1.0, 1.0)
+        },
+    ];
+    let on = plan(&locs, &set_op("loadAsPanoId", serde_json::json!(1)));
+    assert_eq!(on.iter().map(|u| u.id).collect::<Vec<_>>(), vec![1]);
+    assert_eq!(
+        on[0].patch.flags,
+        Some((informational | LocationFlags::LOAD_AS_PANO_ID).bits())
+    );
+    assert!(on[0].patch.extra.is_none());
+    let off = plan(&locs, &set_op("loadAsPanoId", serde_json::json!(0)));
+    assert_eq!(off.iter().map(|u| u.id).collect::<Vec<_>>(), vec![2]);
+    assert_eq!(off[0].patch.flags, Some(0));
+}
+
+#[test]
+fn a_flag_field_takes_only_zero_or_one() {
+    let locs = [loc(1, 1.0, 1.0)];
+    let err = plan_field_op(
+        &crate::test_util::Fx::base(&locs).view(),
+        None,
+        &set_op("loadAsPanoId", serde_json::json!(2)),
+    )
+    .err()
+    .expect("expected error");
+    assert!(err.0.contains("takes 0 or 1"));
 }
 
 fn move_op(from: &str, to: &str, winner: MergeWinner) -> FieldOp {

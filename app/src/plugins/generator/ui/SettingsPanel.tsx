@@ -4,6 +4,7 @@ import { NSelect } from "@/components/primitives/NSelect";
 import { Radio } from "@/components/primitives/Radio";
 import { Checkbox } from "@/components/primitives/Checkbox";
 import { Section, SegmentedControl } from "@/components/primitives/Sidebar";
+import { SwitchRow } from "@/components/primitives/SwitchRow";
 import { t } from "@/lib/i18n";
 
 function Check({
@@ -293,25 +294,26 @@ export function SettingsPanel({
 						options={[
 							{ value: "random", label: t("Random") },
 							{ value: "poisson", label: t("Uniform") },
+							{ value: "grid", label: t("Grid") },
 							{ value: "blueline", label: t("Coverage") },
 							{ value: "kernels", label: t("Grow") },
 						]}
 					/>
 				</label>
-				<NumberInput
-					label={t("Generators")}
-					value={settings.numGenerators}
-					onChange={(v) => set("numGenerators", v)}
-					min={1}
-					max={10}
-				/>
-				<NumberInput
-					label={t("Speed")}
-					value={settings.speed}
-					onChange={(v) => set("speed", v)}
-					min={1}
-					max={1000}
-				/>
+				{settings.samplingMode === "blueline" && (
+					<label className="generator-settings__number">
+						{t("Distribution")}
+						<SegmentedControl
+							value={settings.distribution}
+							onChange={(v) => set("distribution", v as GeneratorSettings["distribution"])}
+							options={[
+								{ value: "density", label: t("Density") },
+								{ value: "balanced", label: t("Balanced") },
+								{ value: "even", label: t("Even") },
+							]}
+						/>
+					</label>
+				)}
 				<Check
 					label={t("Only check one country/polygon at a time")}
 					checked={settings.oneCountryAtATime}
@@ -487,17 +489,37 @@ export function SettingsPanel({
 						/>
 					</div>
 				)}
+				<Check
+					label={t("Find curves")}
+					checked={settings.findCurves}
+					onChange={(v) => set("findCurves", v)}
+				/>
+				{settings.findCurves && (
+					<NumberInput
+						label={t("Min curve angle")}
+						value={settings.minCurveAngle}
+						onChange={(v) => set("minCurveAngle", v)}
+						min={5}
+						max={90}
+						indent
+					/>
+				)}
 			</Section>
 
 			<Section title={t("Visualization")} defaultOpen={false}>
-				<Check
+				<SwitchRow
 					label={t("Show search coverage")}
 					checked={settings.showSearchOverlay}
 					onChange={(v) => set("showSearchOverlay", v)}
-					title={t(
-						"Draw where the generator has searched, as a growing overlay. Clears when you stop.",
-					)}
-				/>
+				>
+					<span
+						title={t(
+							"Draw where the generator has searched, as a growing overlay. Clears when you stop.",
+						)}
+					>
+						{t("Show search coverage")}
+					</span>
+				</SwitchRow>
 			</Section>
 		</div>
 	);

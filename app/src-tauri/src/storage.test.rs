@@ -542,7 +542,6 @@ fn atomic_write_failure_leaves_dest_unchanged() {
 fn atomic_write_failure_leaves_tmp_file_behind() {
     let dir = TempDir::new("mma_test_crash_atomic_tmp_leak");
     let path = dir.join("dest.arrow");
-    let tmp_path = path.with_extension("tmp");
 
     let batch = make_test_batch(&[1]);
     write_arrow_ipc(&path, &batch).unwrap();
@@ -552,10 +551,46 @@ fn atomic_write_failure_leaves_tmp_file_behind() {
     });
     assert!(err_result.is_err());
 
+    let leftover_tmp = std::fs::read_dir(&*dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|e| e.path().extension().is_some_and(|x| x == "tmp"));
     assert!(
-        tmp_path.exists(),
+        leftover_tmp,
         "current behavior: failed atomic_write leaves the .tmp file behind"
     );
+}
+
+#[test]
+fn tmp_paths_are_unique_per_write_and_sweepable() {
+    let dest = std::path::Path::new("E:/somewhere/map.arrow");
+    let a = tmp_path(dest);
+    let b = tmp_path(dest);
+    assert_ne!(a, b);
+    assert!(a.extension().is_some_and(|x| x == "tmp"));
+    assert!(b.extension().is_some_and(|x| x == "tmp"));
+}
+
+#[test]
+fn concurrent_atomic_writes_to_one_destination_leave_one_intact_payload() {
+    let dir = TempDir::new("mma_test_concurrent_atomic");
+    let dest = dir.join("out.bin");
+    let payloads: Vec<Vec<u8>> = (0u8..4).map(|i| vec![i; 4096]).collect();
+    std::thread::scope(|s| {
+        for p in &payloads {
+            s.spawn(|| {
+                atomic_write(&dest, |mut file| {
+                    use std::io::Write;
+                    file.write_all(p)?;
+                    Ok(())
+                })
+                .unwrap();
+            });
+        }
+    });
+    let got = std::fs::read(&dest).unwrap();
+    assert!(payloads.contains(&got));
+    assert_eq!(sweep_tmp_under(&*dir), 0);
 }
 
 #[test]

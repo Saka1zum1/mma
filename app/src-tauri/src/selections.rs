@@ -134,6 +134,20 @@ pub struct PolygonGeometry {
     pub properties: Option<serde_json::Value>,
 }
 
+impl PolygonGeometry {
+    /// Every polygon of the geometry (the primary one, then the extras), each an outer
+    /// ring followed by its holes.
+    pub(crate) fn parts(&self) -> impl Iterator<Item = &[Vec<[f64; 2]>]> {
+        std::iter::once(self.coordinates.as_slice())
+            .chain(self.extra_polygons.iter().flatten().map(Vec::as_slice))
+    }
+
+    /// The geometry preprocessed for repeated point tests. Build once per resolve.
+    pub(crate) fn prepared(&self) -> mma_geo::PreparedPolygons<'_> {
+        mma_geo::PreparedPolygons::new(self.parts())
+    }
+}
+
 /// A named, colored selection. `key` is deterministic (e.g., `"tag:5"`, `"polygon:abc"`)
 /// so JS can diff selections across syncs. `color` is the RGB overlay color.
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
@@ -794,15 +808,11 @@ pub fn resolve_forest(
                 };
                 match k {
                     None => inner,
-                    Some(k) => ranked_within(
-                        view,
-                        Some(&inner),
-                        expr,
-                        Some(*k as usize),
-                        *ascending,
-                    )
-                    .into_iter()
-                    .collect(),
+                    Some(k) => {
+                        ranked_within(view, Some(&inner), expr, Some(*k as usize), *ascending)
+                            .into_iter()
+                            .collect()
+                    }
                 }
             }
             _ => resolve(view, &sel.selector),
@@ -1497,7 +1507,7 @@ macro_rules! builtin_fields {
             matches!(field, $($key)|*)
         }
 
-        /// True for bulk-editable top-level columns (`heading`, `pitch`, `zoom`).
+        /// True for bulk-editable top-level fields (`heading`, `pitch`, `zoom`, `loadAsPanoId`).
         pub fn is_writable_builtin(field: &str) -> bool {
             matches!(field, $($key)|*) && {
                 BUILTIN_FIELDS.iter().any(|f| {
@@ -1582,7 +1592,7 @@ builtin_fields! {
     "tagCount", "Tag count", ExtraFieldType::Number, Some(BuiltinFieldKind::Virtual), None,
         |l| Some(serde_json::json!(l.tags.len())),
         |v, i| v.tags.map(|c| serde_json::json!(c.value(i).len()));
-    "loadAsPanoId", "Load as pano ID", ExtraFieldType::Number, Some(BuiltinFieldKind::Term), None,
+    "loadAsPanoId", "Load as pano ID", ExtraFieldType::Number, Some(BuiltinFieldKind::Writable), None,
         |l| Some(flag_value(l.flags, LocationFlags::LOAD_AS_PANO_ID)),
         |v, i| v.flags.map(|c| flag_value(LocationFlags::from_bits_retain(c.value(i)),
             LocationFlags::LOAD_AS_PANO_ID));
@@ -1596,6 +1606,11 @@ builtin_fields! {
 /// adds itself to a score directly.
 fn flag_value(flags: LocationFlags, bit: LocationFlags) -> serde_json::Value {
     serde_json::json!(u8::from(flags.contains(bit)))
+}
+
+/// The flag bit a built-in field reads and writes as 0/1.
+pub fn flag_field(field: &str) -> Option<LocationFlags> {
+    (field == "loadAsPanoId").then_some(LocationFlags::LOAD_AS_PANO_ID)
 }
 
 /// Core comparison dispatch. Supports eq, neq, has, nothas, gt, lt, gte, lte, between,

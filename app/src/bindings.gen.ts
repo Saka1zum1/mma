@@ -189,7 +189,7 @@ export const commands = {
 	 *  An evenly spaced subset: exactly one of `target_count` (thin to N, maximizing
 	 *  spacing) or `min_distance_m` (keep as many as fit at that spacing).
 	 */
-	storeSpaced: (selector: Selector, targetCount: number | null, minDistanceM: number | null) => __TAURI_INVOKE<SpacedPickResult>("store_spaced", { selector, targetCount, minDistanceM }),
+	storeSpaced: (selector: Selector, targetCount: number | null, minDistanceM: number | null) => __TAURI_INVOKE<SpacedPickResult>("store_spaced", { selector, targetCount, minDistanceM: minDistanceM==null?minDistanceM:minDistanceM }),
 	/**  Group by a derived key, returning `{ key, ids, bin }` per group. */
 	storeGroupBy: (selector: Selector, field: string, key: KeySpec) => __TAURI_INVOKE<PartitionBucket[]>("store_group_by", { selector, field, key }).then((v) => (v.map(i=>({...i,bin:i.bin==null?i.bin:i.bin.map(i=>i)})) as typeof v)),
 	/**  Group by a derived key, returning counts only -- no member ids on the wire. */
@@ -228,6 +228,8 @@ export const commands = {
 	 *  its module answers for declined requests, which the caller discards.
 	 */
 	procedureQueryCancel: (cancel: number) => __TAURI_INVOKE<null>("procedure_query_cancel", { cancel }),
+	/**  What the procedure engine is working on right now. */
+	procedureActivity: () => __TAURI_INVOKE<ProcedureActivity>("procedure_activity"),
 	/**
 	 *  Count locations by country (offline point-in-polygon). Returns unsorted (ISO-A2, count) pairs.
 	 *  `level` selects border precision, falling back to "light" if unavailable.
@@ -241,6 +243,28 @@ export const commands = {
 	 *  already-covered spots) pay one IPC round-trip, not one per point.
 	 */
 	storeNearAny: (lats: number[], lngs: number[], radiusM: number) => __TAURI_INVOKE<boolean[]>("store_near_any", { lats: lats.map(i=>i), lngs: lngs.map(i=>i), radiusM }),
+	/**
+	 *  The points of a honeycomb about `spacingM` metres apart that fall inside the polygon,
+	 *  one entry per row of points.
+	 */
+	honeycombPoints: (polygon: PolygonGeometry, spacingM: number) => __TAURI_INVOKE<HoneycombRun[]>("honeycomb_points", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}), spacingM }).then((v) => (v.map(i=>i) as typeof v)),
+	/**
+	 *  Up to `count` points drawn uniformly at random inside the polygon, as `[lng, lat]`
+	 *  pairs. Fewer come back when the polygon fills little of its bounding box.
+	 */
+	polygonRandomPoints: (polygon: PolygonGeometry, count: number) => __TAURI_INVOKE<([number, number])[]>("polygon_random_points", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}), count }).then((v) => (v.map(i=>i.map(i=>i)) as typeof v)),
+	/**
+	 *  Points covering the polygon with no two closer than `spacingM` metres and no gap
+	 *  wider than about twice that, in random order.
+	 */
+	polygonPoissonPoints: (polygon: PolygonGeometry, spacingM: number) => __TAURI_INVOKE<([number, number])[]>("polygon_poisson_points", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}), spacingM }).then((v) => (v.map(i=>i.map(i=>i)) as typeof v)),
+	/**  Whether each of the points sits inside the polygon. */
+	polygonContainsPoints: (polygon: PolygonGeometry, lats: number[], lngs: number[]) => __TAURI_INVOKE<boolean[]>("polygon_contains_points", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}), lats: lats.map(i=>i), lngs: lngs.map(i=>i) }),
+	/**
+	 *  Bounding box `[west, south, east, north]` of the polygon itself, or `null` when it
+	 *  has no vertices. `west > east` means the box crosses the antimeridian.
+	 */
+	polygonBounds: (polygon: PolygonGeometry) => __TAURI_INVOKE<[number, number, number, number] | null>("polygon_bounds", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
 	/**
 	 *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
 	 *  already exists, it is made visible instead of creating a duplicate.
@@ -509,7 +533,7 @@ export const events = {
 };
 
 /* Constants */
-export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","kind":"identity","comparison":null},{"key":"lng","label":"Longitude","type":"number","kind":"identity","comparison":null},{"key":"heading","label":"Heading","type":"number","kind":"writable","comparison":{"type":"circular","period":360.0}},{"key":"pitch","label":"Pitch","type":"number","kind":"writable","comparison":null},{"key":"zoom","label":"Zoom","type":"number","kind":"writable","comparison":null},{"key":"id","label":"ID","type":"number","kind":"identity","comparison":null},{"key":"createdAt","label":"Created","type":"date","kind":null,"comparison":null},{"key":"modifiedAt","label":"Modified","type":"date","kind":null,"comparison":null},{"key":"panoId","label":"Pano ID","type":"string","kind":null,"comparison":null},{"key":"provider","label":"Provider","type":"string","kind":null,"comparison":null},{"key":"tagCount","label":"Tag count","type":"number","kind":"virtual","comparison":null},{"key":"loadAsPanoId","label":"Load as pano ID","type":"number","kind":"term","comparison":null},{"key":"informational","label":"Informational","type":"number","kind":"term","comparison":null}] as const;
+export const BUILTIN_FIELDS = [{"key":"lat","label":"Latitude","type":"number","kind":"identity","comparison":null},{"key":"lng","label":"Longitude","type":"number","kind":"identity","comparison":null},{"key":"heading","label":"Heading","type":"number","kind":"writable","comparison":{"type":"circular","period":360.0}},{"key":"pitch","label":"Pitch","type":"number","kind":"writable","comparison":null},{"key":"zoom","label":"Zoom","type":"number","kind":"writable","comparison":null},{"key":"id","label":"ID","type":"number","kind":"identity","comparison":null},{"key":"createdAt","label":"Created","type":"date","kind":null,"comparison":null},{"key":"modifiedAt","label":"Modified","type":"date","kind":null,"comparison":null},{"key":"panoId","label":"Pano ID","type":"string","kind":null,"comparison":null},{"key":"provider","label":"Provider","type":"string","kind":null,"comparison":null},{"key":"tagCount","label":"Tag count","type":"number","kind":"virtual","comparison":null},{"key":"loadAsPanoId","label":"Load as pano ID","type":"number","kind":"writable","comparison":null},{"key":"informational","label":"Informational","type":"number","kind":"term","comparison":null}] as const;
 
 export const DEFAULT_DUPLICATE_SCORE = "tagCount + has(panoId) + loadAsPanoId + (heading != 0)" as const;
 
@@ -682,6 +706,7 @@ export type DbStats = {
 	tags: number,
 	commits: number,
 	dbSizeBytes: number,
+	locationSizeBytes: number,
 	journalMode: string,
 	foreignKeys: boolean,
 };
@@ -855,6 +880,17 @@ export type GgUser = {
 	nick: string,
 	/**  Avatar pin path (e.g. `pin/<hash>.png`), served under `/images/` on geoguessr.com. */
 	pin: string | null,
+};
+
+/**
+ *  One row of honeycomb points: `count` points from `lng` eastward, each `lngStep` degrees
+ *  apart.
+ */
+export type HoneycombRun = {
+	lat: number,
+	lng: number,
+	lngStep: number,
+	count: number,
 };
 
 /**
@@ -1321,6 +1357,16 @@ export type PresenceActivity = {
 	start: number | null,
 };
 
+/**  Everything the procedure engine has in flight at one instant. */
+export type ProcedureActivity = {
+	/**  The providers working right now. */
+	runs: ProviderActivity[],
+	/**  The procedures answering a question right now. */
+	queries: QueryActivity[],
+	/**  Requests answered per second over the last few seconds, across everything running. */
+	requestsPerSecond: number,
+};
+
 export type ProcedureProgress = {
 	runId: number,
 	providerId: string,
@@ -1346,6 +1392,34 @@ export type ProcedureResult = {
 	entries: ResultEntry[],
 	/**  Rows the procedure failed, or every row of a batch whose call failed. */
 	failed: number[],
+};
+
+/**  One provider working its share of a run. */
+export type ProviderActivity = {
+	/**  The run this provider belongs to. */
+	runId: number,
+	/**  The provider's id. */
+	providerId: string,
+	/**  The provider's display name, where it has one. */
+	label: string | null,
+	/**  Locations the provider was handed. */
+	total: number,
+	/**  Locations it has finished. */
+	done: number,
+	/**  Locations it could not work. */
+	failed: number,
+	/**  Locations that already held everything it produces. */
+	skipped: number,
+	/**  Copies of the procedure working its queue. */
+	instances: number,
+	/**  Requests outstanding at this instant. */
+	inflight: number,
+	/**  The most requests the provider may keep outstanding. */
+	inflightLimit: number,
+	/**  Requests parked until the provider's rate limit lets them through. */
+	rateWaiting: number,
+	/**  Requests retried so far in this run. */
+	retries: number,
 };
 
 /**
@@ -1437,6 +1511,18 @@ export type PullCreate = {
 export type PullUpdate = {
 	localId: number,
 	patch: SyncPatch,
+};
+
+/**  The questions one procedure is answering, taken together. */
+export type QueryActivity = {
+	/**  The procedure answering. */
+	entry: string,
+	/**  Requests outstanding at this instant. */
+	inflight: number,
+	/**  The most requests it may keep outstanding. */
+	inflightLimit: number,
+	/**  Requests retried so far by the queries in flight. */
+	retries: number,
 };
 
 /**

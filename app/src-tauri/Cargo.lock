@@ -3367,6 +3367,7 @@ dependencies = [
  "futures",
  "json5",
  "keyring",
+ "libc",
  "log",
  "memchr",
  "memmap2",

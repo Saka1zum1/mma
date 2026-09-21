@@ -7,7 +7,7 @@ import {
 	locId,
 	applyLocationPatch,
 } from "@/types";
-import type { Location, MapData, MapMeta, MapSettings, Tag, ExtraFieldDef, StoreStatus, StoreWarning } from "@/bindings.gen";
+import type { Location, MapData, MapMeta, MapSettings, Tag, ExtraFieldDef, StoreStatus, StoreWarning, Selector, FieldOp, FieldOpResult, Selection } from "@/bindings.gen";
 import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
@@ -28,16 +28,16 @@ import {
 	resetForMapChange,
 } from "@/lib/data/fieldDefRegistry";
 import { rewriteSelectionFields } from "@/lib/data/fieldOps";
+import { tagsNamed } from "@/lib/data/tagsNamed";
 import { compareNatural } from "@/lib/util/util";
 import { compareMonthOrder } from "@/lib/util/date";
 import type { LocationPatch_Deserialize as LocationPatch, Update, TagPatch } from "@/bindings.gen";
-import type { KeySpec, PartitionBucket, FieldOp, MergeWinner } from "@/bindings.gen";
+import type { KeySpec, PartitionBucket, MergeWinner } from "@/bindings.gen";
 import { SelectedIds, decodeSelectionBitmask, type ReadonlyIdSet } from "@/lib/render/CellManager";
 import { resetImportState } from "./importStaging";
 import { resetCommitDiffState, resetCommitDiffCounts } from "./commitDiff";
 import { setCachedMapList, invalidateMapList, reloadMapList } from "./mapList";
 
-import type { Selection, Selector } from "@/bindings.gen";
 import {
 	type GroupType,
 	addSelection as addSel,
@@ -631,26 +631,25 @@ export async function updateLocations(
  *  decides the survivor only where a location already holds `to`. */
 export async function renameField(from: string, to: string, winner: MergeWinner = "from") {
 	if (!state.map || from === to || !to) return;
-	await applyFieldOp({ kind: "move", from, to, winner });
+	await applyFieldOpOnMap({ kind: "move", from, to, winner });
 	await migrateFieldReferences(from, to);
 }
 
 /** Delete extra-field `key` from every location, its definition, and references. */
 export async function deleteField(key: string) {
 	if (!state.map) return;
-	await applyFieldOp({ kind: "delete", keys: [key] });
+	await applyFieldOpOnMap({ kind: "delete", keys: [key] });
 	await migrateFieldReferences(key, null);
 }
 
-/** Rewrite an `extra` field across the whole map in Rust. Not undoable. The per-location
- *  patches never exist in JS -- which is the point -- so instead of `location:update` this
- *  emits a coarse `location:invalidate` (derived views re-query) and refreshes the open
- *  editor's location. */
-async function applyFieldOp(op: FieldOp): Promise<MutationResult> {
-	const r = await mutate(async () => {
-		const result = await cmd.storeApplyFieldOp({ type: "Everything" }, op, false);
-		return result.mutation;
-	});
+/** Rewrite a field across `selector` in Rust. */
+export async function applyFieldOp(
+	selector: Selector,
+	op: FieldOp,
+	recordUndo = true,
+): Promise<FieldOpResult> {
+	const result = await cmd.storeApplyFieldOp(selector, op, recordUndo);
+	await mutate(async () => result.mutation);
 	emitEvent("location:invalidate");
 	const active = state.activeLocation;
 	if (active && !isVirtualLocation(active)) {
@@ -660,7 +659,11 @@ async function applyFieldOp(op: FieldOp): Promise<MutationResult> {
 			emitEvent("store:changed");
 		}
 	}
-	return r;
+	return result;
+}
+
+async function applyFieldOpOnMap(op: FieldOp): Promise<MutationResult> {
+	return (await applyFieldOp({ type: "Everything" }, op, false)).mutation;
 }
 
 /** Migrate field definition + active selection references after a data move.
@@ -1185,8 +1188,7 @@ export async function createTags(
 ): Promise<Tag[]> {
 	if (names.length === 0) return [];
 	await mutate(() => cmd.storeCreateTags(names, selector));
-	const lower = new Set(names.map((n) => n.toLowerCase()));
-	const created = Object.values(state.tags).filter((t) => lower.has(t.name.toLowerCase()));
+	const created = tagsNamed(names, Object.values(state.tags));
 	emitEvent("tag:add", created);
 	return created;
 }

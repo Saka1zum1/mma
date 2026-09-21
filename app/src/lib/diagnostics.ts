@@ -20,10 +20,12 @@ export interface Diagnostics {
 	panoSingleton: boolean;
 	db: {
 		maps: number;
-		locations: number;
+		/** Totals from each map's last save. */
+		savedLocations: number;
 		tags: number;
 		commits: number;
 		sizeBytes: number;
+		locationSizeBytes: number;
 		journalMode: string;
 		foreignKeys: boolean;
 	};
@@ -150,10 +152,11 @@ export async function collectDiagnostics(): Promise<Diagnostics> {
 		panoSingleton: !!google?.maps?.StreetViewPanorama,
 		db: {
 			maps: db.maps,
-			locations: db.locations,
+			savedLocations: db.locations,
 			tags: db.tags,
 			commits: db.commits,
 			sizeBytes: db.dbSizeBytes,
+			locationSizeBytes: db.locationSizeBytes,
 			journalMode: db.journalMode,
 			foreignKeys: db.foreignKeys,
 		},

@@ -1,15 +1,20 @@
 //! Spherical geometry shared across the workspace: one authority for
 //! meters<->degrees conversion, wrap-aware distances, the "which grid cells cover
-//! a radius around a point" computation, and ray-casting point-in-polygon with
-//! antimeridian handling. Consumed by the app's grids (`DupGrid`, `SpatialIndex`),
-//! polygon selections, borders, and vali-generate's region filters, so latitude
-//! scaling and antimeridian handling cannot drift between consumers.
+//! a radius around a point" computation, ray-casting point-in-polygon with
+//! antimeridian handling, and the honeycomb of evenly spaced points. Consumed by the
+//! app's grids (`DupGrid`, `SpatialIndex`), polygon selections, borders, the map
+//! generator's grid, and vali-generate's region filters, so latitude scaling and
+//! antimeridian handling cannot drift between consumers.
 
 use std::f64::consts::PI;
 use std::ops::RangeInclusive;
 
+mod hex;
 mod polygon;
+mod sample;
+pub use hex::{HexGrid, HexNode};
 pub use polygon::*;
+pub use sample::{poisson_points, random_points};
 
 pub const EARTH_R_M: f64 = 6_371_000.0;
 

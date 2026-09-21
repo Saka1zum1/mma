@@ -2168,10 +2168,7 @@ fn ranked_with_an_unparseable_expression_scores_nothing_and_keeps_view_order() {
         ranked_within(&view, None, "alt +", None, false),
         vec![1, 2, 3, 4, 5]
     );
-    assert_eq!(
-        ids_of(&view, &ranked("alt +", Some(2), false)),
-        vec![1, 2]
-    );
+    assert_eq!(ids_of(&view, &ranked("alt +", Some(2), false)), vec![1, 2]);
 }
 
 #[test]

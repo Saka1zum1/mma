@@ -41,6 +41,12 @@
 	", {n} failed.": {
 		"other": "，{n} 个失败。"
 	},
+	", {n} retries": {
+		"other": ", {n} retries"
+	},
+	", {n} skipped": {
+		"other": ", {n} skipped"
+	},
 	", {n} tags": {
 		"other": "，{n} 个标签"
 	},
@@ -174,6 +180,7 @@
 	"Badcam": "Badcam",
 	"Badcam, but good coverage available": "Badcam，但有更好的覆盖",
 	"Baidu": "百度",
+	"Balanced": "Balanced",
 	"Basemap": "底图",
 	"Behavior": "行为",
 	"Best score": "最高分",
@@ -447,6 +454,7 @@
 	"Deleted here": "本地已删除",
 	"Deleted on one side, edited on the other": "一方已删除，另一方已编辑",
 	"Deleted on the remote": "远程已删除",
+	"Density": "Density",
 	"Depth": "深度",
 	"Deselect": "取消选择",
 	"Deselect everything": "取消全部选择",
@@ -483,6 +491,9 @@
 		"other": "完成 - 已验证 {n} 个位置。"
 	},
 	"Done!": "完成！",
+	"Done. {n} locations unpinned.": {
+		"other": "Done. {n} locations unpinned."
+	},
 	"Dot color": "点颜色",
 	"Dot size": "点大小",
 	"Download": "下载",
@@ -522,6 +533,7 @@
 	"Drop marker": "放置标记",
 	"Dupes ({distance}m)": "重复（{distance}m）",
 	"Duplicate location": "复制位置",
+	"Duplicate panos skipped": "Duplicate panos skipped",
 	"Duplicate preference:": "Duplicate preference:",
 	"Duplicates ({distance}m)": "重复（{distance}m）",
 	"Dusk": "黄昏",
@@ -547,6 +559,8 @@
 	"End measurement": "结束测量",
 	"End the game to save a finished summary, or exit to keep it in Ongoing and resume later.": "结束本局将保存成绩并查看总结；退出则保留在进行中，之后可继续。",
 	"Ends with": "结尾为",
+	"Engine": "Engine",
+	"Engine idle": "Engine idle",
 	"English": "English",
 	"Enrich": "扩展",
 	"Enrich locations": "扩展位置",
@@ -557,6 +571,7 @@
 	"Enriching fields": "正在扩展字段",
 	"Enrichment": "元数据扩展",
 	"Enrichment only: adds data fields, no panel of its own": "仅元数据扩展：添加数据字段，无独立面板",
+	"Enter a bucket width": "Enter a bucket width",
 	"Enter opens location at map center": "Enter opens location at map center",
 	"Enum": "枚举",
 	"Enum values": "枚举值",
@@ -568,6 +583,7 @@
 	"Error: {error}": "错误：{error}",
 	"Est fragments": "估计片段",
 	"Europe": "Europe",
+	"Even": "Even",
 	"Every feature, explained. A recommended read and reference point.": "涵盖所有功能，建议阅读并作为参考。",
 	"Everything": "全部",
 	"Exact date": "确切日期",
@@ -636,6 +652,7 @@
 	"Find a remote map": "查找远程地图",
 	"Find and replace in tag names": "在标签名中查找并替换",
 	"Find curve locations": "查找弯道位置",
+	"Find curves": "Find curves",
 	"Find duplicates...": "查找重复…",
 	"Find generation": "查找代际",
 	"Find intersection locations": "查找交叉路口位置",
@@ -712,6 +729,7 @@
 	"Gradient name": "渐变名称",
 	"Grayscale": "灰度",
 	"Green-Yellow-Red": "绿-黄-红",
+	"Grid": "Grid",
 	"Group by": "分组依据",
 	"Grow": "扩展",
 	"Grow when zoomed in": "放大时变大",
@@ -736,6 +754,7 @@
 	"Highest score supplies the merged position and view; all tags are kept. Ties go to the oldest.": "Highest score supplies the merged position and view; all tags are kept. Ties go to the oldest.",
 	"History": "历史",
 	"Hit": "按下",
+	"Hit rate: the share of answered probes that became a location, last 10 seconds": "Hit rate: the share of answered probes that became a location, last 10 seconds",
 	"Hold + click for country (+Shift for subdivision)": "按住 + 点击选国家（+Shift 选行政区）",
 	"Hold + click to delete polygon": "按住 + 点击删除多边形",
 	"Hold Alt to slow down map panning and pano look.": "按住 Alt 可减慢地图平移和全景视角转动。",
@@ -856,9 +875,12 @@
 	"Location settings": "位置设置",
 	"Location timezone": "位置时区",
 	"Locations": "位置",
+	"Locations added per second, last 10 seconds": "Locations added per second, last 10 seconds",
 	"Locations cap for all regions:": "所有区域的位置上限：",
+	"Locations found this run": "Locations found this run",
 	"Locations in pool": "题库位置数",
 	"Locations per region:": "每区域位置数：",
+	"Locations with {field}": "Locations with {field}",
 	"Lock viewport direction": "锁定视口方向",
 	"Log viewed panos": "记录已查看的全景",
 	"Long tasks": "长任务",
@@ -931,6 +953,7 @@
 	"Midnight": "午夜",
 	"Min": "最小",
 	"Min confidence: {n}": "最低置信度：{n}",
+	"Min curve angle": "Min curve angle",
 	"Min distance (m)": "最小距离（米）",
 	"Min distance ({unit})": "最小间距（{unit}）",
 	"Min search radius:": "最小搜索半径：",
@@ -1013,6 +1036,7 @@
 	"No linkable headings found in this doc.": "此文档中未找到可链接的标题。",
 	"No locations have timezone data": "没有位置带有时区数据",
 	"No locations on this map.": "此地图没有位置。",
+	"No locations to tag": "No locations to tag",
 	"No locations with pano IDs": "没有带全景 ID 的位置",
 	"No look-at point set — pick one in the sidebar.": "未设置注视点 — 请在侧栏选取。",
 	"No map open": "未打开地图",
@@ -1032,13 +1056,18 @@
 	"No tags": "无标签",
 	"No tags in this map carry document links.": "此地图中没有带文档链接的标签。",
 	"No tags needed sorting": "没有需要整理的标签",
+	"No tags to create": "No tags to create",
 	"No timezone data on locations.": "位置上无时区数据。",
 	"No unfinished games yet.": "暂无未结束的对局。",
+	"No values could be grouped": "No values could be grouped",
 	"No {field} data": "No {field} data",
 	"Noir": "黑白",
 	"Nominatim": "Nominatim",
 	"Nominatim API key": "Nominatim API 密钥",
 	"None": "无",
+	"None of the {n} locations have {field}": {
+		"other": "None of the {n} locations have {field}"
+	},
 	"North America": "North America",
 	"Not an enrichment field": "非元数据扩展字段",
 	"Not found": "未找到",
@@ -1118,6 +1147,7 @@
 	"Panorama points (z≥16)": "全景点 (z≥16)",
 	"Panorama saved": "全景已保存",
 	"Panoramas (requires close zoom)": "全景（需高缩放）",
+	"Panos rejected by the filters": "Panos rejected by the filters",
 	"Parameters": "参数",
 	"Past month": "近一个月",
 	"Past week": "近一周",
@@ -1143,6 +1173,7 @@
 	"Pin": "图钉",
 	"Pin current section": "固定当前章节",
 	"Pin locations to pano ID": "将位置固定到全景 ID",
+	"Pin or unpin locations to pano ID": "Pin or unpin locations to pano ID",
 	"Pin panel": "固定面板",
 	"Pin section": "固定章节",
 	"Pin to Pano ID": "固定到全景 ID",
@@ -1192,6 +1223,7 @@
 	"Previous frame": "上一帧",
 	"Previous location": "上一个位置",
 	"Previous period": "上一周期",
+	"Probes answered per second, last 10 seconds": "Probes answered per second, last 10 seconds",
 	"Processed {count} locations": "已处理 {count} 个位置",
 	"Provider": "提供商",
 	"Providers": "提供商",
@@ -1498,7 +1530,9 @@
 	"Show mini location preview in fullscreen": "全屏时显示迷你位置预览",
 	"Show minimap in fullscreen": "全屏时显示小地图",
 	"Show navigation X": "显示导航 X",
+	"Show navigation trail": "Show navigation trail",
 	"Show pano metadata": "显示街景元数据",
+	"Show position indicator": "Show position indicator",
 	"Show rays": "Show rays",
 	"Show review bar in fullscreen": "全屏时显示审阅栏",
 	"Show road labels": "显示道路标签",
@@ -1527,6 +1561,7 @@
 	"Specific Panorama": "指定全景",
 	"Speed": "速度",
 	"Spin 180°": "旋转 180°",
+	"Spread: how evenly locations cover the probed area, from clustered (low) to even (100%)": "Spread: how evenly locations cover the probed area, from clustered (low) to even (100%)",
 	"Staged import marker color": "暂存导入标记颜色",
 	"Staged marker color": "暂存标记颜色",
 	"Standard (bundled)": "标准（内置）",
@@ -1558,6 +1593,8 @@
 	"Street View": "街景",
 	"Street View layer opacity": "街景图层透明度",
 	"Street View providers": "街景提供商",
+	"Street View trail": "Street View trail",
+	"Street View trail color": "Street View trail color",
 	"Street View unavailable": "街景不可用",
 	"Street View": "街景",
 	"Style name": "样式名称",
@@ -1612,6 +1649,8 @@
 	"Terrain": "地形",
 	"Text": "文本",
 	"Text to find...": "要查找的文本…",
+	"That's a lot of tags. Range groups numbers into buckets.": "That's a lot of tags. Range groups numbers into buckets.",
+	"That's a lot of tags. Try a coarser grouping.": "That's a lot of tags. Try a coarser grouping.",
 	"The linked section no longer exists in this document.": "链接的章节在此文档中已不存在。",
 	"The pano UI toggle also hides link arrows, the ground arrow, and the navigation X.": "全景 UI 开关同时会隐藏链接箭头、地面箭头与导航 X。",
 	"These operations will be cancelled if you leave this map:": "These operations will be cancelled if you leave this map:",
@@ -1666,6 +1705,7 @@
 	"Total": "合计",
 	"Total rounds": "总轮次",
 	"Total:": "合计：",
+	"Trail color": "Trail color",
 	"Translations are machine-generated and were not written by native speakers. Wording may be imperfect.": "译文由机器生成，并非母语者撰写，用词可能不够准确。",
 	"Tree": "树形",
 	"Trekker": "徒步",
@@ -1700,6 +1740,7 @@
 	"Unnamed polygon": "未命名多边形",
 	"Unofficial": "非官方",
 	"Unpanned": "未平移",
+	"Unpin": "Unpin",
 	"Unpin (follow selected tags)": "取消固定（跟随所选标签）",
 	"Unpin from toolbar": "从工具栏取消固定",
 	"Unreviewed": "未审",
@@ -1823,6 +1864,7 @@
 	"and": "至",
 	"any coverage": "任意覆盖",
 	"apple": "apple",
+	"bend >{angle}°": "bend >{angle}°",
 	"between": "介于",
 	"between (any date)": "介于（任意日期）",
 	"between (any year)": "介于（任意年）",
@@ -1974,6 +2016,7 @@
 	"{field}’s values": "{field} 的值",
 	"{fps} (p95 {p95} ms, worst {worst} ms)": "{fps}（p95 {p95} ms，最差 {worst} ms）",
 	"{groups} groups. Too many to color (max {max}).": "{groups} 个分组，过多无法着色（最多 {max}）。",
+	"{inflight} / {limit} in flight, {waiting} rate-waiting, {retries} retries, {instances} instances": "{inflight} / {limit} in flight, {waiting} rate-waiting, {retries} retries, {instances} instances",
 	"{label} (coming soon)": "{label}（即将推出）",
 	"{label} failed": "{label}失败",
 	"{maps} maps · {locations} locations": "{maps} 张地图 · {locations} 个位置",
@@ -2015,10 +2058,16 @@
 	"{n} locations": {
 		"other": "{n} 个位置"
 	},
+	"{n} locations already pinned.": {
+		"other": "{n} locations already pinned."
+	},
 	"{n} locations not pinned to a pano ID.": {
 		"other": "{n} 个位置未固定到全景 ID。"
 	},
 	"{n} locations selected": "已选 {n} 个位置",
+	"{n} locations skipped: no timezone. Enrich timezones, or set the date timezone to UTC.": {
+		"other": "{n} locations skipped: no timezone. Enrich timezones, or set the date timezone to UTC."
+	},
 	"{n} maps": {
 		"other": "{n} 张地图"
 	},
@@ -2030,6 +2079,9 @@
 	"{n} observations loaded": "已加载 {n} 条观测",
 	"{n} similar": "{n} 个相似",
 	"{n} skipped (missing source fields).": "已跳过 {n} 个（缺少源字段）。",
+	"{n} tags": {
+		"other": "{n} tags"
+	},
 	"{n} tags will be affected:": {
 		"other": "将影响 {n} 个标签："
 	},
@@ -2053,6 +2105,7 @@
 	"{radius}km from existing": "距现有位置 {radius}km",
 	"{radius}km radius": "半径 {radius}km",
 	"{radius}m radius": "半径 {radius}m",
+	"{rate} requests/s": "{rate} requests/s",
 	"{rate}/s": "{rate}/秒",
 	"{ratio}x viewport": "{ratio}x 视口",
 	"{reviewed} / {total} reviewed": "已审 {reviewed} / {total}",

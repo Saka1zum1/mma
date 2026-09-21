@@ -8,15 +8,20 @@
  * MeasurementBar (reads map state), SettingsSearchContext/useSettingsSearch
  * (Settings-dialog plumbing), Trans (i18n infra).
  */
+export { Bar } from "./Bar";
 export { Button } from "./Button";
 export { Checkbox } from "./Checkbox";
 export { ColorPicker } from "./ColorPicker";
+export { CoverageBar } from "./CoverageBar";
 export { DatePicker } from "./DatePicker";
 export { Dialog, DialogContent, DialogTrigger, useCloseDialog, type DialogProps } from "./Dialog";
 export { Flag } from "./Flag";
+export { Hint, InfoButton, Notice } from "./Hint";
 export { HotkeyInput } from "./HotkeyInput";
 export { Icon } from "./Icon";
+export { IconButton } from "./IconButton";
 export { NSelect } from "./NSelect";
+export { ProgressRow } from "./ProgressRow";
 export { Radio } from "./Radio";
 export { SelectorPicker } from "./SelectorPicker";
 export { SettingRow } from "./SettingRow";
@@ -29,6 +34,7 @@ export {
 	type SegmentedOption,
 } from "./Sidebar";
 export { Slider } from "./Slider";
+export { Spinner } from "./Spinner";
 export { SuggestInput } from "./SuggestInput";
 export { Switch } from "./Switch";
 export { SwitchRow } from "./SwitchRow";

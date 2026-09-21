@@ -47,6 +47,9 @@ export function useMapSurface(
 	const polygonGeomCache = useRef(new Map<string, PolyGeom>());
 	const activeLocationColor = useSetting("activeLocationColor");
 	const importPreviewColor = useSetting("importPreviewColor");
+	const svTrail = useSetting("svTrail");
+	const svTrailColor = useSetting("svTrailColor");
+	const svTrailPosition = useSetting("svTrailPosition");
 	const panoDotColor = useSetting("panoDotColor");
 	const panoDotScaled = useSetting("panoDotScaled");
 	const scoreMaxError = useScoreMaxError();
@@ -70,6 +73,9 @@ export function useMapSurface(
 			showPerfectScoreCircle: opts.prefs.showPerfectScoreCircle,
 			scoreMaxError,
 			svPanoramas: opts.prefs.svPanoramas,
+			svTrail,
+			svTrailColor,
+			svTrailPosition,
 			panoDotColor,
 			panoDotScaled,
 			activeLocationColor,
@@ -94,6 +100,9 @@ export function useMapSurface(
 		opts.prefs.markerSize,
 		opts.prefs.showPerfectScoreCircle,
 		opts.prefs.svPanoramas,
+		svTrail,
+		svTrailColor,
+		svTrailPosition,
 		panoDotColor,
 		panoDotScaled,
 		opts.prefs.selectOnly,

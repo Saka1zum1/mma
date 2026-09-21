@@ -50,6 +50,18 @@ pub trait ProcHost {
     fn fetch_many(&mut self, reqs: &[HttpRequestSpec]) -> Vec<AppResult<HttpResponse>> {
         reqs.iter().map(|r| self.fetch(r)).collect()
     }
+    /// Every request at once, answered as each one lands, in completion order. A
+    /// procedure that can start work on a response without waiting for the rest of
+    /// the batch uses this instead of `fetch_many`.
+    fn fetch_stream(
+        &mut self,
+        reqs: &[HttpRequestSpec],
+        on_each: &mut dyn FnMut(usize, AppResult<HttpResponse>),
+    ) {
+        for (i, r) in self.fetch_many(reqs).into_iter().enumerate() {
+            on_each(i, r);
+        }
+    }
     /// Point-in-polygon lookup against a local border dataset. `None` outside every feature.
     fn classify(&mut self, dataset: &str, lat: f64, lng: f64) -> AppResult<Option<String>>;
     /// Start one sidecar command; its output lines are pulled from the stream as they

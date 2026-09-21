@@ -159,7 +159,8 @@ function SpacedPickPanel() {
 			</NSelect>
 			<TextInput
 				type="number"
-				min={1}
+				min={mode === "count" ? 1 : 0}
+				step={mode === "count" ? 1 : "any"}
 				style={{ width: "7rem" }}
 				placeholder={mode === "count" ? t("Count") : unit.label}
 				value={value}

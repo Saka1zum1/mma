@@ -44,6 +44,9 @@ interface SceneContext {
 	showPerfectScoreCircle: boolean;
 	scoreMaxError: number;
 	svPanoramas: boolean;
+	svTrail: boolean;
+	svTrailColor: RGB;
+	svTrailPosition: boolean;
 	panoDotColor: RGB;
 	panoDotScaled: boolean;
 	activeLocationColor: RGB;
@@ -238,13 +241,14 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 	}
 
 	const svTrail = getTrail();
-	if (svTrail.length >= 2) {
+	if (ctx.svTrail && svTrail.length >= 2) {
+		const trailRgb = asRgb(ctx.svTrailColor) ?? { r: 255, g: 0, b: 0 };
 		layers.push(
 			new PathLayer({
 				id: "sv-trail",
 				data: [svTrail],
 				getPath: (d) => d,
-				getColor: [255, 0, 0],
+				getColor: [trailRgb.r, trailRgb.g, trailRgb.b],
 				getWidth: 2,
 				widthUnits: "pixels" as const,
 				jointRounded: true,
@@ -252,6 +256,25 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 				pickable: false,
 			}),
 		);
+		if (ctx.svTrailPosition) {
+			const tip = svTrail.at(-1)!;
+			layers.push(
+				new ScatterplotLayer<[number, number]>({
+					id: "sv-trail-position",
+					data: [tip],
+					getPosition: (d) => d,
+					getRadius: 5,
+					radiusUnits: "pixels" as const,
+					radiusMinPixels: 4,
+					getFillColor: [255, 255, 255, 220],
+					stroked: true,
+					lineWidthUnits: "pixels" as const,
+					getLineWidth: 2,
+					getLineColor: [trailRgb.r, trailRgb.g, trailRgb.b, 255],
+					pickable: false,
+				}),
+			);
+		}
 	}
 
 	// Active marker renders even with no committed locations so virtual previews (staged/seen)

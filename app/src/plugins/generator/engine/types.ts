@@ -1,3 +1,5 @@
+import type { LatLng } from "@/types";
+
 export interface GeneratorSettings {
 	defaultTarget: number;
 	radius: number;
@@ -19,7 +21,6 @@ export interface GeneratorSettings {
 	linksDepth: number;
 	onlyOneInTimeframe: boolean;
 	oneCountryAtATime: boolean;
-	numGenerators: number;
 	findGeneration: boolean;
 	generation: 1 | 23 | 4;
 	getIntersection: boolean;
@@ -43,13 +44,21 @@ export interface GeneratorSettings {
 	filterByLinks: boolean;
 	minLinks: number;
 	maxLinks: number;
+	findCurves: boolean;
+	minCurveAngle: number;
 	adjustZoom: boolean;
 	zoomLevel: number;
-	speed: number;
+	/** How coverage-mode probes allocate over the road network: proportional to road
+	 *  density, evenly per area, or halfway between. */
+	distribution: "density" | "balanced" | "even";
 	samplingMode: SamplingMode;
 }
 
-export type SamplingMode = "random" | "poisson" | "blueline" | "kernels";
+export type SamplingMode = "random" | "poisson" | "grid" | "blueline" | "kernels";
+
+/** A region's supply of probe points, drawn `n` at a time; a draw waits while more are on
+ *  the way, and an empty draw means it is used up. */
+export type PointSource = (n: number) => Promise<LatLng[]>;
 
 export type SearchMode = "contains" | "fullword" | "startswith" | "endswith" | "sectionmatch";
 
@@ -77,7 +86,6 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 	linksDepth: 2,
 	onlyOneInTimeframe: false,
 	oneCountryAtATime: false,
-	numGenerators: 1,
 	findGeneration: false,
 	generation: 1,
 	getIntersection: false,
@@ -101,11 +109,24 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 	filterByLinks: false,
 	minLinks: 1,
 	maxLinks: 5,
+	findCurves: false,
+	minCurveAngle: 30,
 	adjustZoom: false,
 	zoomLevel: 0,
-	speed: 1000,
 	samplingMode: "random",
+	distribution: "density",
 };
+
+export interface GeneratorStats {
+	probesPerSec: number;
+	locsPerSec: number;
+	hitRate: number | null;
+	probes: number;
+	found: number;
+	duplicates: number;
+	rejected: number;
+	spread: number | null;
+}
 
 export interface GeneratorRegionMeta {
 	target: number;

@@ -5,7 +5,7 @@
 // overlap darkening. This module is deck-free (so it stays unit-testable); the buffer
 // is rendered by coverageOverlay.ts into the plugin's own GoogleMapsOverlay.
 
-import { foldLng, lngSpan, M_PER_DEG } from "@/lib/geo/geo";
+import { foldLng, lngSpan, M_PER_DEG, unionBounds } from "@/lib/geo/geo";
 import type { Bounds } from "@/types";
 
 /** deck.gl BitmapLayer bounds, `[left, bottom, right, top]`. Unwrapped, so `right` runs
@@ -147,6 +147,54 @@ export function beginSession(b: Bounds, radiusMeters: number): void {
 	notify();
 }
 
+/** Widen the session to take in `b` as well, carrying over what is already drawn.
+ *
+ *  Regions can be added while a run is in flight. Without this the texture keeps the bounds
+ *  of whatever was selected at the start and every probe outside them is clipped away. */
+export function growSession(b: Bounds, radiusMeters: number): void {
+	if (!bounds) {
+		beginSession(b, radiusMeters);
+		return;
+	}
+	const merged = unionBounds(bounds, b);
+	if (
+		merged.west === bounds.west &&
+		merged.east === bounds.east &&
+		merged.south === bounds.south &&
+		merged.north === bounds.north
+	) {
+		return;
+	}
+
+	const prev = { bounds, buffer, texW, texH };
+	beginSession(merged, radiusMeters);
+	if (!prev.buffer || !bounds) return;
+
+	const next = new Uint8ClampedArray(texW * texH * 4);
+	const latSpan = bounds.north - bounds.south;
+	const span = lngSpan(bounds);
+	for (let y = 0; y < texH; y++) {
+		const lat = bounds.north - ((y + 0.5) / texH) * latSpan;
+		for (let x = 0; x < texW; x++) {
+			const lng = bounds.west + ((x + 0.5) / texW) * span;
+			const [sx, sy] = lngLatToPixel(prev.bounds, prev.texW, prev.texH, lng, lat);
+			const ix = Math.floor(sx);
+			const iy = Math.floor(sy);
+			if (ix < 0 || iy < 0 || ix >= prev.texW || iy >= prev.texH) continue;
+			const src = (iy * prev.texW + ix) * 4;
+			if (prev.buffer[src + 3] === 0) continue;
+			const dst = (y * texW + x) * 4;
+			next[dst] = prev.buffer[src];
+			next[dst + 1] = prev.buffer[src + 1];
+			next[dst + 2] = prev.buffer[src + 2];
+			next[dst + 3] = prev.buffer[src + 3];
+		}
+	}
+	buffer = next;
+	dirty = true;
+	scheduleFlush();
+}
+
 export function addProbe(lng: number, lat: number): void {
 	if (!enabled || !bounds) return;
 	if (!buffer) buffer = new Uint8ClampedArray(texW * texH * 4);
@@ -203,6 +251,7 @@ export function getVersion(): number {
 
 export const searchCoverage = {
 	beginSession,
+	growSession,
 	addProbe,
 	endSession,
 	setEnabled,

@@ -100,7 +100,8 @@ fn tags_come_from_the_query_and_the_fragment_owns_them_when_present() {
         "https://www.google.com/maps?map_action=pano&viewpoint=10,20&extra[tags]=Mountains&extra[tags]=Coastal",
     );
     assert_eq!(p.tags, ["Mountains", "Coastal"]);
-    let p = parsed("https://www.google.com/maps?map_action=pano&viewpoint=10,20#extra[tags]=FromHash");
+    let p =
+        parsed("https://www.google.com/maps?map_action=pano&viewpoint=10,20#extra[tags]=FromHash");
     assert_eq!(p.tags, ["FromHash"]);
     let p = parsed("https://www.google.com/maps?map_action=pano&viewpoint=10,20");
     assert!(p.tags.is_empty());
@@ -154,7 +155,10 @@ fn alt_provider_hosts_are_left_to_js() {
 
 #[test]
 fn from_image_key_maps_official_and_photosphere() {
-    assert_eq!(from_image_key(2, "bUp3OlCW2UH3MA4lYMRirQ"), "bUp3OlCW2UH3MA4lYMRirQ");
+    assert_eq!(
+        from_image_key(2, "bUp3OlCW2UH3MA4lYMRirQ"),
+        "bUp3OlCW2UH3MA4lYMRirQ"
+    );
     assert_eq!(from_image_key(0, "abc"), "abc");
     assert_eq!(from_image_key(3, "xyz"), "F:xyz");
     assert_eq!(from_image_key(10, ""), "");

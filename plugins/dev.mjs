@@ -13,6 +13,7 @@ import { existsSync, readFileSync, mkdirSync, copyFileSync, statSync } from "nod
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { cssImports } from "./build-plugin.mjs";
 
 const IS_WIN = process.platform === "win32";
 const pluginsDir = dirname(fileURLToPath(import.meta.url));
@@ -83,6 +84,7 @@ const opts = {
 	absWorkingDir: pluginsDir,
 	plugins: [
 		mmaExternals(),
+		cssImports(),
 		{
 			name: "sync-on-build",
 			setup(build) {

@@ -909,6 +909,7 @@ pub struct DbStats {
     pub tags: i64,
     pub commits: i64,
     pub db_size_bytes: i64,
+    pub location_size_bytes: i64,
     pub journal_mode: String,
     pub foreign_keys: bool,
 }
@@ -948,6 +949,24 @@ pub fn store_db_clear_table(table: String) -> AppResult<i64> {
     let conn = storage::open_db()?;
     let deleted = conn.execute(&format!("DELETE FROM \"{}\"", safe), [])?;
     Ok(deleted as i64)
+}
+
+/// Sum of file sizes under `dir`, including nested commit deltas. Missing or
+/// unreadable entries count as empty so a stats panel still answers.
+fn dir_bytes(dir: &std::path::Path) -> i64 {
+    fn walk(p: &std::path::Path) -> u64 {
+        let Ok(meta) = std::fs::metadata(p) else {
+            return 0;
+        };
+        if meta.is_file() {
+            return meta.len();
+        }
+        let Ok(rd) = std::fs::read_dir(p) else {
+            return 0;
+        };
+        rd.filter_map(|e| e.ok()).map(|e| walk(&e.path())).sum()
+    }
+    walk(dir) as i64
 }
 
 /// Compute aggregate database statistics (map/location/tag/commit counts,
@@ -1003,6 +1022,7 @@ pub async fn store_db_stats() -> AppResult<DbStats> {
             tags,
             commits,
             db_size_bytes: page_count * page_size,
+            location_size_bytes: storage::arrow_dir().map_or(0, |d| dir_bytes(&d)),
             journal_mode,
             foreign_keys: fk != 0,
         })

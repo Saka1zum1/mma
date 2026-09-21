@@ -415,7 +415,7 @@ const COMMANDS = {
 		execute: openBulkOp("clearFields"),
 	},
 	"bulk-pin-pano": {
-		label: msg("Pin locations to pano ID"),
+		label: msg("Pin or unpin locations to pano ID"),
 		icon: mdiMapMarkerCheck,
 		group: msg("Bulk Operations"),
 		aliases: ["snap to pano", "lock pano"],

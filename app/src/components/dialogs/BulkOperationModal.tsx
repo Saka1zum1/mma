@@ -11,6 +11,7 @@ import {
 	fetchLocations,
 	updateLocations,
 	useMapState,
+	applyFieldOp,
 } from "@/store/useMapStore";
 import { useSelectorPick, type SelectorPickController } from "@/store/selectorPick";
 import type {
@@ -263,10 +264,20 @@ function PinPanoSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 	const [force, setForce] = useState(false);
 	const [useLatest, setUseLatest] = useState(false);
 	const unpinned = scopedLocs.filter((l) => !isPinnedToPano(l)).length;
+	const pinned = scopedLocs.length - unpinned;
 
 	return (
 		<div className="bulk-operation">
 			<SelectorPicker ctl={scopeCtl} />
+			<div className="bulk-operation__status">
+				{t(
+					{
+						one: "{n} location already pinned.",
+						other: "{n} locations already pinned.",
+					},
+					{ n: pinned },
+				)}
+			</div>
 			<div className="bulk-operation__status">
 				{t(
 					{
@@ -287,6 +298,27 @@ function PinPanoSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 				{t("Use latest timeline coverage")}
 			</label>
 			<div className="bulk-operation__actions">
+				<Button
+					onClick={() =>
+						onReady(async ({ selector }) => {
+							const { changed } = await applyFieldOp(
+								selector,
+								{ kind: "set", key: "loadAsPanoId", value: 0 },
+								true,
+							);
+							return {
+								outcome: { succeeded: changed, failed: [] },
+								doneMessage: t(
+									{ one: "Done. {n} location unpinned.", other: "Done. {n} locations unpinned." },
+									{ n: changed },
+								),
+							};
+						})
+					}
+					disabled={pinned === 0}
+				>
+					{t("Unpin")}
+				</Button>
 				<Button
 					variant="primary"
 					onClick={() =>

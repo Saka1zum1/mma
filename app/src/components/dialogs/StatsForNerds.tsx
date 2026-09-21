@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cmd } from "@/lib/commands";
+import { engineRows, type EngineRows } from "@/lib/engineActivity";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useDomEvent } from "@/lib/hooks/useDomEvent";
 import { google } from "@/lib/sv/opensv";
@@ -26,6 +27,7 @@ interface Stats {
 	buildMode: string;
 	maps: number;
 	locations: number;
+	locationBytes: string;
 	tags: number;
 	commits: number;
 	pendingSaves: number;
@@ -83,6 +85,7 @@ async function gatherStats(): Promise<Stats> {
 		buildMode: import.meta.env.MODE,
 		maps: dbStats.maps,
 		locations: dbStats.locations,
+		locationBytes: formatBytes(dbStats.locationSizeBytes),
 		tags: dbStats.tags,
 		commits: dbStats.commits,
 		pendingSaves: getMapState().map ? (await cmd.storeGetSummary()).dirtyCount : 0,
@@ -149,12 +152,18 @@ function liveRows(live: LiveStats): [string, string][] {
 
 export function StatsForNerds({ onClose }: { onClose: () => void }) {
 	const [live, setLive] = useState<LiveStats | null>(null);
+	const [engine, setEngine] = useState<EngineRows>(() => engineRows(null));
 	const { data: stats, error } = useAsync(gatherStats, []);
 
 	useEffect(() => {
 		startFrameMeter();
-		const tick = () =>
+		const tick = () => {
 			setLive({ frame: frameStats(), deck: getDeckMetrics(), scene: computeRenderStats() });
+			void cmd.procedureActivity().then(
+				(a) => setEngine(engineRows(a)),
+				() => setEngine(engineRows(null)),
+			);
+		};
 		const iv = setInterval(tick, 1000);
 		tick();
 		return () => {
@@ -230,7 +239,8 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 								["Version", stats.appVersion],
 								["Build", stats.buildMode],
 								["Maps", stats.maps],
-								["Locations", fmt.format(stats.locations)],
+								["Locations (saved)", fmt.format(stats.locations)],
+								["Location data", stats.locationBytes],
 								["Tags", stats.tags],
 								["Commits", stats.commits],
 								["Pending saves", stats.pendingSaves],
@@ -265,6 +275,19 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 						</tbody>
 					</table>
 				)}
+				<div
+					style={{
+						fontSize: 12,
+						fontWeight: 600,
+						color: "var(--text-2)",
+						margin: "12px 0 4px",
+						textTransform: "uppercase",
+						letterSpacing: "0.05em",
+					}}
+				>
+					{t("Engine")}
+				</div>
+				<EngineSection engine={engine} />
 				{live && (
 					<>
 						<div
@@ -302,6 +325,63 @@ export function StatsForNerds({ onClose }: { onClose: () => void }) {
 						</table>
 					</>
 				)}
+			</div>
+		</div>
+	);
+}
+
+function EngineSection({ engine }: { engine: EngineRows }) {
+	const { providers, queries, requestsPerSecond, idle } = engine;
+	if (idle) return <p className="text-muted" style={{ margin: "0 0 8px" }}>{t("Engine idle")}</p>;
+	return (
+		<div style={{ marginBottom: 8 }}>
+			{providers.map((p) => {
+				const pct = Math.round(p.fraction * 100);
+				return (
+					<div key={p.key} style={{ marginBottom: 8 }}>
+						<div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+							<span>{t(p.label)}</span>
+							<span className="mono">
+								{fmt.format(p.done)} / {fmt.format(p.total)}
+								{p.failed > 0 &&
+									t({ one: ", {n} failed", other: ", {n} failed" }, { n: p.failed })}
+								{p.skipped > 0 &&
+									t({ one: ", {n} skipped", other: ", {n} skipped" }, { n: p.skipped })}
+							</span>
+						</div>
+						<div className="coverage-bar__track" style={{ width: "100%", margin: "4px 0" }}>
+							<div className="coverage-bar__fill" style={{ width: `${pct}%` }} />
+						</div>
+						<div className="text-muted mono" style={{ fontSize: 12 }}>
+							{t(
+								"{inflight} / {limit} in flight, {waiting} rate-waiting, {retries} retries, {instances} instances",
+								{
+									inflight: p.inflight,
+									limit: p.inflightLimit,
+									waiting: p.rateWaiting,
+									retries: p.retries,
+									instances: p.instances,
+								},
+							)}
+						</div>
+					</div>
+				);
+			})}
+			{queries.map((q) => (
+				<div
+					key={q.entry}
+					style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}
+				>
+					<span>{q.entry}</span>
+					<span className="mono">
+						{q.inflight} / {q.inflightLimit}
+						{q.retries > 0 &&
+							t({ one: ", {n} retry", other: ", {n} retries" }, { n: q.retries })}
+					</span>
+				</div>
+			))}
+			<div className="text-muted mono" style={{ fontSize: 12 }}>
+				{t("{rate} requests/s", { rate: requestsPerSecond.toFixed(1) })}
 			</div>
 		</div>
 	);

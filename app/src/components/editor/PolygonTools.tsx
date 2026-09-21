@@ -50,11 +50,35 @@ function finishRing(ring: number[][]): number[][] {
 	return densifyRing(closed);
 }
 
+/** Map clicks belong to the armed tool: `handle` sees them and none reaches the map.
+ *  The engine raises its own click after a stroke or a double-click, from its map object
+ *  rather than the DOM, so stopping DOM propagation cannot reach it and the claim instead
+ *  outlives the tool by one click. That click carries no mousedown of its own, so a real
+ *  gesture releases the claim before its click lands. */
+function claimClicks(handle?: (lat: number, lng: number, shiftKey: boolean) => void): () => void {
+	let lingering = false;
+	let off: (() => void) | null = null;
+	const release = () => {
+		off?.();
+		off = null;
+		window.removeEventListener("mousedown", release, true);
+	};
+	off = addClickInterceptor((lat, lng, shiftKey) => {
+		if (lingering) release();
+		else handle?.(lat, lng, shiftKey);
+		return true;
+	});
+	return () => {
+		if (!off) return;
+		lingering = true;
+		window.addEventListener("mousedown", release, true);
+	};
+}
+
 /** Take the primary-button drag away from the engine so it draws instead of panning.
  *  Only that gesture is claimed: the engine's `draggable` flag would resolve to
- *  gestureHandling "none" and take wheel zoom and the keyboard with it. Clicks and
- *  the drag's mouseup are swallowed too, so a stroke can't also place a marker,
- *  open coverage, or double-click-zoom. */
+ *  gestureHandling "none" and take wheel zoom and the keyboard with it. Double-clicks are
+ *  swallowed so a stroke can't also zoom. */
 function claimDrag(
 	host: MapHost,
 	on: { down: (ll: LatLng) => void; move: (ll: LatLng) => void; up: (ll: LatLng) => void },
@@ -90,17 +114,18 @@ function claimDrag(
 	};
 	const ac = new AbortController();
 	const { signal } = ac;
+	const releaseClicks = claimClicks();
+	// Capture phase: the engine's own handlers sit on inner elements and never see these.
 	const capture = { capture: true, signal };
 	div.addEventListener("mousedown", onDown, capture);
-	div.addEventListener("click", swallow, capture);
 	div.addEventListener("dblclick", swallow, capture);
-	// mouseup is captured on window first so `onUp` still runs, then swallowed on
-	// the map so Google/deck cannot treat the stroke's end as a coverage click.
+	// On window, so a stroke that runs past the map edge keeps tracking.
 	window.addEventListener("mousemove", onMove, { signal });
-	window.addEventListener("mouseup", onUp, { capture: true, signal });
-	div.addEventListener("mouseup", swallow, capture);
-	div.addEventListener("pointerup", swallow, capture);
-	return () => ac.abort();
+	window.addEventListener("mouseup", onUp, { signal });
+	return () => {
+		ac.abort();
+		releaseClicks();
+	};
 }
 
 export function PolygonTools({
@@ -125,7 +150,6 @@ export function PolygonTools({
 		if (!host || mode !== "freehand") return;
 
 		const points: number[][] = [];
-		const offClick = addClickInterceptor(() => true);
 		const off = claimDrag(host, {
 			down: (ll) => {
 				points.length = 0;
@@ -150,7 +174,6 @@ export function PolygonTools({
 
 		return () => {
 			off();
-			offClick();
 			if (freehandPathRef.current) {
 				freehandPathRef.current = null;
 				emitUpdate();
@@ -183,11 +206,11 @@ export function PolygonTools({
 		};
 
 		const nextVertex = (lng: number, lat: number): number[] => {
-			const prev = points[points.length - 1];
+			const prev = points.at(-1);
 			return [prev ? unwrapLng(lng, prev[0]) : lng, lat];
 		};
 
-		const offClick = addClickInterceptor((lat, lng) => {
+		const releaseClicks = claimClicks((lat, lng) => {
 			const v = nextVertex(lng, lat);
 			if (points.length >= 3) {
 				const start = points[0];
@@ -196,14 +219,13 @@ export function PolygonTools({
 				const b = latLngToWorld({ lat: start[1], lng: start[0] });
 				if (Math.hypot((a.x - b.x) * scale, (a.y - b.y) * scale) <= POLYGON_CLOSE_VERTEX_PX) {
 					finish(true);
-					return true;
+					return;
 				}
 			}
-			const prev = points[points.length - 1];
+			const prev = points.at(-1);
 			if (!prev || prev[0] !== v[0] || prev[1] !== v[1]) points.push(v);
 			cursor = v;
 			preview();
-			return true;
 		});
 		const offMove = host.on("mousemove", (ll) => {
 			cursor = nextVertex(ll.lng, ll.lat);
@@ -221,7 +243,7 @@ export function PolygonTools({
 		document.addEventListener("keydown", onKey, true);
 
 		return () => {
-			offClick();
+			releaseClicks();
 			offMove();
 			host.container.removeEventListener("dblclick", onDblClick, true);
 			document.removeEventListener("keydown", onKey, true);
@@ -248,7 +270,6 @@ export function PolygonTools({
 				[a[0], b[1]],
 			]);
 
-		const offClick = addClickInterceptor(() => true);
 		const off = claimDrag(host, {
 			down: (ll) => {
 				anchor = [ll.lng, ll.lat];
@@ -284,7 +305,6 @@ export function PolygonTools({
 
 		return () => {
 			off();
-			offClick();
 			document.removeEventListener("keydown", onKey, true);
 			if (freehandPathRef.current) {
 				freehandPathRef.current = null;

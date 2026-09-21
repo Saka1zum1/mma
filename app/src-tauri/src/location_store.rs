@@ -1385,7 +1385,7 @@ impl Store {
         &self,
         set: Option<&RoaringBitmap>,
         target_count: Option<u32>,
-        min_distance_m: Option<u32>,
+        min_distance_m: Option<f64>,
     ) -> AppResult<SpacedPickResult> {
         match (target_count, min_distance_m) {
             (Some(_), Some(_)) => {
@@ -1398,12 +1398,12 @@ impl Store {
                     "pick_spaced: pass exactly one of target_count or min_distance_m",
                 ))
             }
-            (_, Some(0)) => {
+            (_, Some(d)) if !(d > 0.0) => {
                 return Err(AppError::from(
                     "pick_spaced: min_distance_m must be greater than 0",
                 ))
             }
-            (_, Some(d)) if d > i32::MAX as u32 => {
+            (_, Some(d)) if d > i32::MAX as f64 => {
                 return Err(AppError::from("pick_spaced: min_distance_m too large"))
             }
             _ => {}
@@ -1436,7 +1436,7 @@ impl Store {
             return Ok(SpacedPickResult { ids, distance_m });
         }
 
-        let d = min_distance_m.unwrap() as i32;
+        let d = min_distance_m.unwrap().round().max(1.0) as i32;
         if candidates.is_empty() {
             return Ok(SpacedPickResult {
                 ids: Vec::new(),
@@ -2668,9 +2668,32 @@ fn number_value(v: f64) -> serde_json::Value {
     }
 }
 
-/// The patch assigning `value` to `key`: a writable built-in column directly, anything
-/// else as an `extra` merge.
-fn assign_patch(key: &str, value: serde_json::Value) -> AppResult<LocationPatch> {
+/// A flag field's value as the bit it sets: exactly 0 or 1.
+fn flag_bit(value: &serde_json::Value) -> Option<bool> {
+    match value.as_f64() {
+        Some(0.0) => Some(false),
+        Some(1.0) => Some(true),
+        _ => None,
+    }
+}
+
+/// The patch assigning `value` to `key`: a writable built-in column directly, a flag
+/// field toggling its bit in `flags`, anything else as an `extra` merge.
+fn assign_patch(
+    key: &str,
+    value: serde_json::Value,
+    flags: LocationFlags,
+) -> AppResult<LocationPatch> {
+    if let Some(bit) = selections::flag_field(key) {
+        let on = flag_bit(&value)
+            .ok_or_else(|| AppError(format!("'{key}' takes 0 or 1, not {value}")))?;
+        let mut next = flags;
+        next.set(bit, on);
+        return Ok(LocationPatch {
+            flags: Some(next.bits()),
+            ..Default::default()
+        });
+    }
     if selections::is_writable_builtin(key) {
         Ok(serde_json::from_value(serde_json::json!({ key: value }))?)
     } else {
@@ -2712,7 +2735,7 @@ fn plan_field_op(
             match op {
                 FieldOp::Set { key, value } => {
                     if !same_field_value(row.resolve_field(key).as_ref(), value) {
-                        match assign_patch(key, value.clone()) {
+                        match assign_patch(key, value.clone(), row.flags()) {
                             Ok(patch) => plan.updates.push(Update { id, patch }),
                             Err(e) => failed = Some(e),
                         }
@@ -2723,10 +2746,16 @@ fn plan_field_op(
                     let field = |name: &str| row.resolve_field(name);
                     match crate::field_expr::eval(expr, &field) {
                         None => plan.skipped += 1,
+                        Some(v)
+                            if selections::flag_field(key).is_some()
+                                && flag_bit(&number_value(v)).is_none() =>
+                        {
+                            plan.skipped += 1;
+                        }
                         Some(v) => {
                             let value = number_value(v);
                             if !same_field_value(row.resolve_field(key).as_ref(), &value) {
-                                match assign_patch(key, value) {
+                                match assign_patch(key, value, row.flags()) {
                                     Ok(patch) => plan.updates.push(Update { id, patch }),
                                     Err(e) => failed = Some(e),
                                 }
@@ -2802,6 +2831,9 @@ fn check_field_op(op: &FieldOp) -> AppResult<()> {
         )));
     }
     if let FieldOp::Set { key, value } = op {
+        if selections::flag_field(key).is_some() && flag_bit(value).is_none() {
+            return Err(AppError::from(format!("'{key}' takes 0 or 1, not {value}")));
+        }
         if selections::is_writable_builtin(key) && !value.is_number() {
             return Err(AppError::from(format!(
                 "store_apply_field_op: {key} takes a number"
@@ -4362,7 +4394,7 @@ pub fn store_spaced(
     state: tauri::State<'_, StoreState>,
     selector: Selector,
     target_count: Option<u32>,
-    min_distance_m: Option<u32>,
+    min_distance_m: Option<f64>,
 ) -> AppResult<SpacedPickResult> {
     selector_read!(webview, state, selector, store: |store, set| store.pick_spaced(
         set,

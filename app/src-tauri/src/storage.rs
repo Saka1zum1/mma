@@ -685,7 +685,7 @@ pub(crate) fn atomic_write(
     path: &std::path::Path,
     write_fn: impl FnOnce(std::fs::File) -> AppResult<()>,
 ) -> AppResult<()> {
-    let tmp = path.with_extension("tmp");
+    let tmp = tmp_path(path);
     let file = std::fs::File::create(&tmp)?;
     write_fn(file)?;
     // write_fn consumed the handle; reopen to fsync so the rename cannot become
@@ -696,6 +696,14 @@ pub(crate) fn atomic_write(
         .sync_all()?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+/// A `.tmp` sibling unique to this write, so concurrent writers to one destination
+/// never truncate each other's in-flight bytes.
+fn tmp_path(path: &std::path::Path) -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    path.with_extension(format!("{}.{n}.tmp", std::process::id()))
 }
 
 /// Delete orphaned `.tmp` files left under the Arrow root by interrupted

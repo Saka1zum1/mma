@@ -36,6 +36,17 @@ export function chunk<T>(arr: readonly T[], n: number): T[][] {
 	return out;
 }
 
+/** Fisher–Yates shuffle in place; returns the same array. */
+export function shuffle<T>(arr: T[]): T[] {
+	for (let i = arr.length - 1; i > 0; i--) {
+		const j = (Math.random() * (i + 1)) | 0;
+		const tmp = arr[i];
+		arr[i] = arr[j];
+		arr[j] = tmp;
+	}
+	return arr;
+}
+
 /** Compare two dotted version strings (e.g. "0.6.1"). Returns >0 if a > b. */
 export function cmpVersion(a: string, b: string): number {
 	const pa = a.split(".").map(Number);

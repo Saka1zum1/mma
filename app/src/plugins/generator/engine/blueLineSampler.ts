@@ -1,13 +1,71 @@
 import { TileConfig, LayerType, buildSvCoverageConfig, buildTileUrl } from "@/lib/geo/tiles";
-import { getBoundingBox, pointInGeoJsonGeometry } from "./geo";
-import { latLngToWorld, worldToTile, pixelToLatLng } from "@/lib/geo/mercator";
+import { latLngToWorld, worldToTile, pixelToLatLng, WORLD_SIZE } from "@/lib/geo/mercator";
+import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { chunk } from "@/lib/util/util";
+import { chunk, shuffle } from "@/lib/util/util";
+import { streamedPoints } from "./pointSources";
+import type { PointSource } from "./types";
+import type { PolygonGeometry } from "@/bindings.gen";
 import type { Bounds, LatLng } from "@/types";
 
-const TILE_SIZE = 256;
-const MAX_TILES_PER_AXIS = 50;
-const FETCH_CONCURRENCY = 10;
+const TILE_SIZE = WORLD_SIZE;
+const CLIP_BATCH = 50_000;
+
+const MAX_TILES_PER_AXIS = 150;
+/** The axis cap whose zoom sets the point-density baseline that `keepRate` thins to. */
+const BASE_TILES_PER_AXIS = 50;
+const FETCH_CONCURRENCY = 24;
+const SCAN_YIELD_EVERY = 6;
+
+/** Finer tiles put the jittered probe on the road instead of somewhere in a coarse
+ *  pixel's cell; thinning each pixel back to the base zoom's line density keeps the
+ *  point supply, memory and clip cost where they were. */
+export function keepRate(zoom: number, baseZoom: number): number {
+	return Math.min(1, 2 ** (baseZoom - zoom));
+}
+
+const CELL_PX = 32;
+const EVEN_CELL_POINTS = 600 * (CELL_PX / TILE_SIZE) ** 2;
+
+/** Probes per area the `distribution` setting buys, from road-density-proportional to
+ *  a flat share per cell. */
+export const DISTRIBUTION_EVENNESS = { density: 0, balanced: 0.5, even: 1 } as const;
+
+/** A cell's pixel keep-probability: density keeps `globalKeep` everywhere, even aims
+ *  at a flat point count per cell, and `evenness` blends between them. */
+export function cellKeepRate(rawCount: number, globalKeep: number, evenness: number): number {
+	if (rawCount === 0) return 0;
+	const even = Math.min(1, EVEN_CELL_POINTS / rawCount);
+	return (1 - evenness) * globalKeep + evenness * even;
+}
+
+/** Thins scanned pixels cell by cell, so a flat share holds inside a tile instead of one
+ *  dense corner absorbing it, and no lone road hoards a whole tile's quota. */
+export function thinCells(
+	xs: number[],
+	ys: number[],
+	from: number,
+	globalKeep: number,
+	evenness: number,
+) {
+	if (evenness === 0 && globalKeep >= 1) return;
+	const cellOf = (i: number) => ((xs[i] / CELL_PX) | 0) * 2 ** 20 + ((ys[i] / CELL_PX) | 0);
+	const counts = new Map<number, number>();
+	for (let i = from; i < xs.length; i++) {
+		const c = cellOf(i);
+		counts.set(c, (counts.get(c) ?? 0) + 1);
+	}
+	let w = from;
+	for (let i = from; i < xs.length; i++) {
+		if (Math.random() < cellKeepRate(counts.get(cellOf(i))!, globalKeep, evenness)) {
+			xs[w] = xs[i];
+			ys[w] = ys[i];
+			w++;
+		}
+	}
+	xs.length = w;
+	ys.length = w;
+}
 
 /** Columns run east from the northwest tile, wrapping the world, so a region crossing
  *  the antimeridian counts forward instead of coming out negative and scanning nothing. */
@@ -16,7 +74,7 @@ function tileCols(nwX: number, seX: number, zoom: number): number {
 	return ((seX - nwX + perAxis) % perAxis) + 1;
 }
 
-function calculateZoom(b: Bounds, maxPerAxis: number) {
+export function calculateZoom(b: Bounds, maxPerAxis: number) {
 	const nwWorld = latLngToWorld({ lat: b.north, lng: b.west });
 	const seWorld = latLngToWorld({ lat: b.south, lng: b.east });
 	for (let zoom = 16; zoom >= 0; zoom--) {
@@ -97,56 +155,115 @@ function scanTile(
 	}
 }
 
-export async function blueLineSample(
-	feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>,
-	maxTilesPerAxis = MAX_TILES_PER_AXIS,
-): Promise<LatLng[]> {
-	const bounds = getBoundingBox(feature);
-	if (!bounds) return [];
-	const { zoom, nwTile, seTile, cols, rows } = calculateZoom(bounds, maxTilesPerAxis);
-	log.info(`[generator] Blue line: ${cols * rows} tiles (${cols}x${rows}) at zoom ${zoom}`);
-
-	const cfg = buildSamplerTileConfig();
-	const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
-	const ctx = canvas.getContext("2d")!;
-	const pixelXs: number[] = [];
-	const pixelYs: number[] = [];
-
-	const tileJobs: { tx: number; ty: number }[] = [];
-	const perAxis = 2 ** zoom;
-	for (let ty = nwTile.y; ty <= seTile.y; ty++) {
-		for (let c = 0; c < cols; c++) {
-			tileJobs.push({ tx: (nwTile.x + c) % perAxis, ty });
-		}
-	}
-
-	// Fetch tiles concurrently, scan pixels sequentially (canvas is shared)
-	for (const batch of chunk(tileJobs, FETCH_CONCURRENCY)) {
-		const bmps = await Promise.all(batch.map((j) => fetchTileBlob(cfg, j.tx, j.ty, zoom)));
-		for (let b = 0; b < batch.length; b++) {
-			const bmp = bmps[b];
-			if (!bmp) continue;
-			scanTile(bmp, batch[b].tx, batch[b].ty, ctx, pixelXs, pixelYs);
-		}
-	}
-
-	log.info(`[generator] Blue line: ${pixelXs.length} coverage pixels`);
-
+async function clipToPolygon(polygon: PolygonGeometry, candidates: LatLng[]): Promise<LatLng[]> {
 	const result: LatLng[] = [];
-	for (let i = 0; i < pixelXs.length; i++) {
-		const pt = pixelToLatLng(pixelXs[i] + Math.random(), pixelYs[i] + Math.random(), zoom);
-		if (pointInGeoJsonGeometry(pt.lng, pt.lat, feature.geometry)) {
-			result.push(pt);
-		}
+	for (const batch of chunk(candidates, CLIP_BATCH)) {
+		// eslint-disable-next-line local/no-ipc-in-loop -- already bulk: 50k points per round trip
+		const inside = await cmd.polygonContainsPoints(
+			polygon,
+			batch.map((p) => p.lat),
+			batch.map((p) => p.lng),
+		);
+		for (let i = 0; i < batch.length; i++) if (inside[i]) result.push(batch[i]);
 	}
-
-	for (let i = result.length - 1; i > 0; i--) {
-		const j = (Math.random() * (i + 1)) | 0;
-		const tmp = result[i];
-		result[i] = result[j];
-		result[j] = tmp;
-	}
-
-	log.info(`[generator] Blue line: ${result.length} sample points after polygon clip`);
 	return result;
+}
+
+/** Tiles land in random order and each scanned batch is released as soon as it is clipped,
+ *  so probing starts on the first tiles while the rest are still downloading. Two passes:
+ *  a coarse one covers the whole region in seconds, so a run that stops early still probed
+ *  everywhere, then the fine pass replaces each tile's coarse points as it lands. */
+export function blueLineSource(
+	polygon: PolygonGeometry,
+	evenness = 0,
+	maxTilesPerAxis = MAX_TILES_PER_AXIS,
+): PointSource {
+	return streamedPoints(async (emit, retire) => {
+		const box = await cmd.polygonBounds(polygon);
+		if (!box) return;
+		const bounds: Bounds = { west: box[0], south: box[1], east: box[2], north: box[3] };
+		const fine = calculateZoom(bounds, maxTilesPerAxis);
+		const coarse = calculateZoom(bounds, BASE_TILES_PER_AXIS);
+		const keep = keepRate(fine.zoom, coarse.zoom);
+		const finePerAxis = 2 ** fine.zoom;
+		const fineKey = (p: LatLng) => {
+			const w = latLngToWorld(p);
+			const t = worldToTile(w.x, w.y, fine.zoom);
+			return t.y * finePerAxis + t.x;
+		};
+		log.info(
+			`[generator] Blue line: ${fine.cols * fine.rows} tiles (${fine.cols}x${fine.rows}) at zoom ${fine.zoom}, keeping ${Math.round(keep * 100)}% of pixels`,
+		);
+
+		const cfg = buildSamplerTileConfig();
+		const canvas = new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
+		const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+
+		let total = 0;
+		const pass = async (
+			plan: ReturnType<typeof calculateZoom>,
+			globalKeep: number,
+			deliver: (points: LatLng[], scanned: { tx: number; ty: number }[]) => void,
+		) => {
+			const tileJobs: { tx: number; ty: number }[] = [];
+			const perAxis = 2 ** plan.zoom;
+			for (let ty = plan.nwTile.y; ty <= plan.seTile.y; ty++) {
+				for (let c = 0; c < plan.cols; c++) {
+					tileJobs.push({ tx: (plan.nwTile.x + c) % perAxis, ty });
+				}
+			}
+			shuffle(tileJobs);
+
+			for (const batch of chunk(tileJobs, FETCH_CONCURRENCY)) {
+				const bmps = await Promise.all(batch.map((j) => fetchTileBlob(cfg, j.tx, j.ty, plan.zoom)));
+				const pixelXs: number[] = [];
+				const pixelYs: number[] = [];
+				const scanned: { tx: number; ty: number }[] = [];
+				for (let b = 0; b < batch.length; b++) {
+					const bmp = bmps[b];
+					if (!bmp) continue;
+					scanned.push(batch[b]);
+					const start = pixelXs.length;
+					scanTile(bmp, batch[b].tx, batch[b].ty, ctx, pixelXs, pixelYs);
+					thinCells(pixelXs, pixelYs, start, globalKeep, evenness);
+					if (b % SCAN_YIELD_EVERY === SCAN_YIELD_EVERY - 1) {
+						await new Promise((resolve) => setTimeout(resolve));
+					}
+				}
+				const candidates: LatLng[] = new Array(pixelXs.length);
+				for (let i = 0; i < pixelXs.length; i++) {
+					candidates[i] = pixelToLatLng(
+						pixelXs[i] + Math.random(),
+						pixelYs[i] + Math.random(),
+						plan.zoom,
+					);
+				}
+				const points = candidates.length > 0 ? await clipToPolygon(polygon, candidates) : [];
+				total += points.length;
+				deliver(points, scanned);
+			}
+		};
+
+		if (fine.zoom > coarse.zoom) {
+			await pass(coarse, keepRate(coarse.zoom, coarse.zoom), (points) => {
+				const byKey = new Map<number, LatLng[]>();
+				for (const p of points) {
+					const k = fineKey(p);
+					let group = byKey.get(k);
+					if (!group) byKey.set(k, (group = []));
+					group.push(p);
+				}
+				for (const [k, group] of byKey) emit(group, k);
+			});
+		}
+		// A fine tile that failed to fetch is not scanned, so its coarse points stay.
+		await pass(fine, keep, (points, scanned) => {
+			if (fine.zoom > coarse.zoom) {
+				for (const t of scanned) retire(t.ty * finePerAxis + t.tx);
+			}
+			if (points.length > 0) emit(points);
+		});
+
+		log.info(`[generator] Blue line: ${total} sample points after polygon clip`);
+	});
 }

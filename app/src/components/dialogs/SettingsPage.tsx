@@ -640,6 +640,25 @@ function MapBody() {
 				}
 			/>
 
+			<GroupHeading>{t("Street View trail")}</GroupHeading>
+			<SettingRow setting="svTrail" label={t("Show navigation trail")} />
+			{s.svTrail && (
+				<>
+					<SettingRow
+						sub
+						label={t("Trail color")}
+						control={
+							<ColorPicker
+								color={s.svTrailColor}
+								onChange={(color) => setSetting("svTrailColor", color)}
+								ariaLabel={t("Street View trail color")}
+							/>
+						}
+					/>
+					<SettingRow sub setting="svTrailPosition" label={t("Show position indicator")} />
+				</>
+			)}
+
 			<GroupHeading>{t("Selections")}</GroupHeading>
 			<SettingRow
 				label={t("Polygon color")}

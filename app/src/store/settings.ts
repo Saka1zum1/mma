@@ -195,6 +195,9 @@ export const DEFAULTS = {
 	markerColor: { r: 42, g: 42, b: 42 } as RGB,
 	activeLocationColor: { r: 200, g: 0, b: 0 } as RGB,
 	importPreviewColor: { r: 217, g: 70, b: 239 } as RGB,
+	svTrail: true,
+	svTrailColor: { r: 255, g: 0, b: 0 } as RGB,
+	svTrailPosition: true,
 	panoDotColor: { r: 255, g: 0, b: 0 } as RGB,
 	/** Color a newly drawn polygon selection starts with. `random` hashes it from the polygon's
 	 *  key; `fixed` uses polygonColor. Either way it's only the initial value -- recoloring a

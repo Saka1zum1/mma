@@ -41,6 +41,12 @@
 	", {n} failed.": {
 		"other": "、{n} 件失敗。"
 	},
+	", {n} retries": {
+		"other": ", {n} retries"
+	},
+	", {n} skipped": {
+		"other": ", {n} skipped"
+	},
 	", {n} tags": {
 		"other": "、タグ {n} 件"
 	},
@@ -174,6 +180,7 @@
 	"Badcam": "Badcam",
 	"Badcam, but good coverage available": "Badcam だが良好なカバレッジあり",
 	"Baidu": "Baidu",
+	"Balanced": "Balanced",
 	"Basemap": "Basemap",
 	"Behavior": "Behavior",
 	"Best score": "Best score",
@@ -447,6 +454,7 @@
 	"Deleted here": "ローカルで削除",
 	"Deleted on one side, edited on the other": "片側で削除、もう片側で編集",
 	"Deleted on the remote": "リモートで削除",
+	"Density": "Density",
 	"Depth": "深さ",
 	"Deselect": "選択解除",
 	"Deselect everything": "すべて選択解除",
@@ -483,6 +491,9 @@
 		"other": "完了 -- {n} 件の地点を検証しました。"
 	},
 	"Done!": "完了！",
+	"Done. {n} locations unpinned.": {
+		"other": "Done. {n} locations unpinned."
+	},
 	"Dot color": "ドットの色",
 	"Dot size": "ドットのサイズ",
 	"Download": "ダウンロード",
@@ -522,6 +533,7 @@
 	"Drop marker": "マーカーを置く",
 	"Dupes ({distance}m)": "重複（{distance}m）",
 	"Duplicate location": "地点を複製",
+	"Duplicate panos skipped": "Duplicate panos skipped",
 	"Duplicate preference:": "Duplicate preference:",
 	"Duplicates ({distance}m)": "重複（{distance}m）",
 	"Dusk": "ダスク",
@@ -547,6 +559,8 @@
 	"End measurement": "計測を終了",
 	"End the game to save a finished summary, or exit to keep it in Ongoing and resume later.": "End the game to save a finished summary, or exit to keep it in Ongoing and resume later.",
 	"Ends with": "で終わる",
+	"Engine": "Engine",
+	"Engine idle": "Engine idle",
 	"English": "English",
 	"Enrich": "エンリッチ",
 	"Enrich locations": "地点をエンリッチ",
@@ -557,6 +571,7 @@
 	"Enriching fields": "フィールドをエンリッチ中",
 	"Enrichment": "エンリッチメント",
 	"Enrichment only: adds data fields, no panel of its own": "エンリッチメント専用: データフィールドを追加し、独自のパネルは持ちません",
+	"Enter a bucket width": "Enter a bucket width",
 	"Enter opens location at map center": "Enter opens location at map center",
 	"Enum": "列挙",
 	"Enum values": "列挙値",
@@ -568,6 +583,7 @@
 	"Error: {error}": "エラー: {error}",
 	"Est fragments": "Est fragments",
 	"Europe": "Europe",
+	"Even": "Even",
 	"Every feature, explained. A recommended read and reference point.": "全機能の解説。通読にもリファレンスにも最適です。",
 	"Everything": "すべて",
 	"Exact date": "正確な日付",
@@ -636,6 +652,7 @@
 	"Find a remote map": "リモートマップを検索",
 	"Find and replace in tag names": "タグ名を検索して置換",
 	"Find curve locations": "カーブの地点を検出",
+	"Find curves": "Find curves",
 	"Find duplicates...": "重複を検出...",
 	"Find generation": "世代を検出",
 	"Find intersection locations": "交差点の地点を検出",
@@ -712,6 +729,7 @@
 	"Gradient name": "Gradient name",
 	"Grayscale": "グレースケール",
 	"Green-Yellow-Red": "緑-黄-赤",
+	"Grid": "Grid",
 	"Group by": "グループ化",
 	"Grow": "拡大",
 	"Grow when zoomed in": "ズームインで拡大",
@@ -736,6 +754,7 @@
 	"Highest score supplies the merged position and view; all tags are kept. Ties go to the oldest.": "Highest score supplies the merged position and view; all tags are kept. Ties go to the oldest.",
 	"History": "履歴",
 	"Hit": "Hit",
+	"Hit rate: the share of answered probes that became a location, last 10 seconds": "Hit rate: the share of answered probes that became a location, last 10 seconds",
 	"Hold + click for country (+Shift for subdivision)": "押しながらクリックで国を選択（+Shift で行政区画）",
 	"Hold + click to delete polygon": "押しながらクリックでポリゴンを削除",
 	"Hold Alt to slow down map panning and pano look.": "Alt を押している間、マップのパンとパノラマの視点移動が遅くなります。",
@@ -856,9 +875,12 @@
 	"Location settings": "地点設定",
 	"Location timezone": "現地タイムゾーン",
 	"Locations": "地点",
+	"Locations added per second, last 10 seconds": "Locations added per second, last 10 seconds",
 	"Locations cap for all regions:": "全地域の地点数上限:",
+	"Locations found this run": "Locations found this run",
 	"Locations in pool": "Locations in pool",
 	"Locations per region:": "地域ごとの地点数:",
+	"Locations with {field}": "Locations with {field}",
 	"Lock viewport direction": "ビューポートの向きを固定",
 	"Log viewed panos": "表示したパノラマを記録",
 	"Long tasks": "Long tasks",
@@ -931,6 +953,7 @@
 	"Midnight": "ミッドナイト",
 	"Min": "最小",
 	"Min confidence: {n}": "Min confidence: {n}",
+	"Min curve angle": "Min curve angle",
 	"Min distance (m)": "最小距離 (m)",
 	"Min distance ({unit})": "最小間隔 ({unit})",
 	"Min search radius:": "最小検索半径:",
@@ -1013,6 +1036,7 @@
 	"No linkable headings found in this doc.": "このドキュメントにリンクできる見出しがありません。",
 	"No locations have timezone data": "タイムゾーンデータを持つ地点がありません",
 	"No locations on this map.": "このマップには地点がありません。",
+	"No locations to tag": "No locations to tag",
 	"No locations with pano IDs": "No locations with pano IDs",
 	"No look-at point set — pick one in the sidebar.": "No look-at point set — pick one in the sidebar.",
 	"No map open": "マップが開かれていません",
@@ -1032,13 +1056,18 @@
 	"No tags": "タグなし",
 	"No tags in this map carry document links.": "このマップにドキュメントリンクを持つタグはありません。",
 	"No tags needed sorting": "No tags needed sorting",
+	"No tags to create": "No tags to create",
 	"No timezone data on locations.": "No timezone data on locations.",
 	"No unfinished games yet.": "No unfinished games yet.",
+	"No values could be grouped": "No values could be grouped",
 	"No {field} data": "No {field} data",
 	"Noir": "ノワール",
 	"Nominatim": "Nominatim",
 	"Nominatim API key": "Nominatim API key",
 	"None": "なし",
+	"None of the {n} locations have {field}": {
+		"other": "None of the {n} locations have {field}"
+	},
 	"North America": "North America",
 	"Not an enrichment field": "エンリッチメント対象のフィールドではありません",
 	"Not found": "見つかりません",
@@ -1118,6 +1147,7 @@
 	"Panorama points (z≥16)": "Panorama points (z≥16)",
 	"Panorama saved": "パノラマを保存しました",
 	"Panoramas (requires close zoom)": "パノラマ（近距離ズームが必要）",
+	"Panos rejected by the filters": "Panos rejected by the filters",
 	"Parameters": "Parameters",
 	"Past month": "Past month",
 	"Past week": "Past week",
@@ -1143,6 +1173,7 @@
 	"Pin": "ピン留め",
 	"Pin current section": "現在のセクションをピン留め",
 	"Pin locations to pano ID": "地点を Pano ID にピン留め",
+	"Pin or unpin locations to pano ID": "Pin or unpin locations to pano ID",
 	"Pin panel": "Pin panel",
 	"Pin section": "セクションをピン留め",
 	"Pin to Pano ID": "Pano ID にピン留め",
@@ -1192,6 +1223,7 @@
 	"Previous frame": "Previous frame",
 	"Previous location": "前の地点",
 	"Previous period": "前の期間",
+	"Probes answered per second, last 10 seconds": "Probes answered per second, last 10 seconds",
 	"Processed {count} locations": "Processed {count} locations",
 	"Provider": "プロバイダー",
 	"Providers": "Providers",
@@ -1498,7 +1530,9 @@
 	"Show mini location preview in fullscreen": "全画面でミニ地点プレビューを表示",
 	"Show minimap in fullscreen": "全画面でミニマップを表示",
 	"Show navigation X": "ナビゲーションの X を表示",
+	"Show navigation trail": "Show navigation trail",
 	"Show pano metadata": "パノラマのメタデータを表示",
+	"Show position indicator": "Show position indicator",
 	"Show rays": "Show rays",
 	"Show review bar in fullscreen": "全画面でレビューバーを表示",
 	"Show road labels": "道路ラベルを表示",
@@ -1527,6 +1561,7 @@
 	"Specific Panorama": "特定のパノラマ",
 	"Speed": "速度",
 	"Spin 180°": "180° 回転",
+	"Spread: how evenly locations cover the probed area, from clustered (low) to even (100%)": "Spread: how evenly locations cover the probed area, from clustered (low) to even (100%)",
 	"Staged import marker color": "ステージング中のインポートマーカー色",
 	"Staged marker color": "ステージング中のマーカー色",
 	"Standard (bundled)": "標準（同梱）",
@@ -1558,6 +1593,8 @@
 	"Street View": "ストリートビュー",
 	"Street View layer opacity": "ストリートビューレイヤーの不透明度",
 	"Street View providers": "Street View providers",
+	"Street View trail": "Street View trail",
+	"Street View trail color": "Street View trail color",
 	"Street View unavailable": "Street View unavailable",
 	"Street View": "ストリートビュー",
 	"Style name": "スタイル名",
@@ -1612,6 +1649,8 @@
 	"Terrain": "地形",
 	"Text": "テキスト",
 	"Text to find...": "検索する文字列...",
+	"That's a lot of tags. Range groups numbers into buckets.": "That's a lot of tags. Range groups numbers into buckets.",
+	"That's a lot of tags. Try a coarser grouping.": "That's a lot of tags. Try a coarser grouping.",
 	"The linked section no longer exists in this document.": "リンク先のセクションはこのドキュメントに存在しません。",
 	"The pano UI toggle also hides link arrows, the ground arrow, and the navigation X.": "パノラマ UI の切り替えでは、リンク矢印、地面の矢印、ナビゲーションの X も非表示になります。",
 	"These operations will be cancelled if you leave this map:": "These operations will be cancelled if you leave this map:",
@@ -1666,6 +1705,7 @@
 	"Total": "合計",
 	"Total rounds": "Total rounds",
 	"Total:": "合計:",
+	"Trail color": "Trail color",
 	"Translations are machine-generated and were not written by native speakers. Wording may be imperfect.": "翻訳は機械生成であり、ネイティブスピーカーによるものではありません。表現が不自然な場合があります。",
 	"Tree": "ツリー",
 	"Trekker": "Trekker",
@@ -1700,6 +1740,7 @@
 	"Unnamed polygon": "名前のないポリゴン",
 	"Unofficial": "非公式",
 	"Unpanned": "未パン",
+	"Unpin": "Unpin",
 	"Unpin (follow selected tags)": "ピン留めを解除（選択したタグに追従）",
 	"Unpin from toolbar": "ツールバーからピン留めを解除",
 	"Unreviewed": "未レビュー",
@@ -1823,6 +1864,7 @@
 	"and": "～",
 	"any coverage": "any coverage",
 	"apple": "apple",
+	"bend >{angle}°": "bend >{angle}°",
 	"between": "の範囲内",
 	"between (any date)": "の範囲内（任意の日付）",
 	"between (any year)": "の範囲内（任意の年）",
@@ -1973,6 +2015,7 @@
 	"{field}’s values": "{field} の値",
 	"{fps} (p95 {p95} ms, worst {worst} ms)": "{fps} (p95 {p95} ms, worst {worst} ms)",
 	"{groups} groups. Too many to color (max {max}).": "{groups} groups. Too many to color (max {max}).",
+	"{inflight} / {limit} in flight, {waiting} rate-waiting, {retries} retries, {instances} instances": "{inflight} / {limit} in flight, {waiting} rate-waiting, {retries} retries, {instances} instances",
 	"{label} (coming soon)": "{label} (coming soon)",
 	"{label} failed": "{label} 失敗",
 	"{maps} maps · {locations} locations": "{maps} マップ・{locations} 地点",
@@ -2014,10 +2057,16 @@
 	"{n} locations": {
 		"other": "{n} 地点"
 	},
+	"{n} locations already pinned.": {
+		"other": "{n} locations already pinned."
+	},
 	"{n} locations not pinned to a pano ID.": {
 		"other": "{n} 件の地点が Pano ID にピン留めされていません。"
 	},
 	"{n} locations selected": "{n} locations selected",
+	"{n} locations skipped: no timezone. Enrich timezones, or set the date timezone to UTC.": {
+		"other": "{n} locations skipped: no timezone. Enrich timezones, or set the date timezone to UTC."
+	},
 	"{n} maps": {
 		"other": "{n} 件のマップ"
 	},
@@ -2029,6 +2078,9 @@
 	"{n} observations loaded": "{n} observations loaded",
 	"{n} similar": "{n} similar",
 	"{n} skipped (missing source fields).": "{n} 件をスキップしました（ソースフィールドがありません）。",
+	"{n} tags": {
+		"other": "{n} tags"
+	},
 	"{n} tags will be affected:": {
 		"other": "{n} 件のタグが影響を受けます:"
 	},
@@ -2052,6 +2104,7 @@
 	"{radius}km from existing": "{radius}km from existing",
 	"{radius}km radius": "{radius}km radius",
 	"{radius}m radius": "{radius}m radius",
+	"{rate} requests/s": "{rate} requests/s",
 	"{rate}/s": "{rate}/秒",
 	"{ratio}x viewport": "{ratio}x viewport",
 	"{reviewed} / {total} reviewed": "{reviewed} / {total} reviewed",
