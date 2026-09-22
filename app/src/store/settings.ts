@@ -297,18 +297,12 @@ export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettin
 	settings = { ...settings, [key]: value };
 	setLocal(APP_SETTINGS, settings);
 	emitEvent("settings:changed");
-	// Tag display labels are memoized on the visible-tags array; bust that cache when
-	// truncation / view mode changes so selection chips and collapsed previews update.
-	if (key === "truncateTagPaths" || key === "tagViewMode") {
-		void import("@/store/selections").then((m) => m.invalidateTagDisplayCache());
-	}
 }
 
 export function resetSettings(): void {
 	settings = { ...DEFAULTS, globalCopyBindings: settings.globalCopyBindings };
 	setLocal(APP_SETTINGS, settings);
 	emitEvent("settings:changed");
-	void import("@/store/selections").then((m) => m.invalidateTagDisplayCache());
 }
 
 export function useSettings(): AppSettings {

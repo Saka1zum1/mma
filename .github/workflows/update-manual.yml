@@ -30,12 +30,26 @@ jobs:
        startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     steps:
+      - name: Check Claude credentials
+        id: creds
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "CLAUDE_CODE_OAUTH_TOKEN is not configured; skipping the manual updater."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.creds.outputs.ok == 'true'
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Update manual
+        if: steps.creds.outputs.ok == 'true'
         uses: anthropics/claude-code-action@v1
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
