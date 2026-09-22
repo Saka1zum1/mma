@@ -1,3 +1,22 @@
+## v0.11.3 - 2026-09-22
+- **Map generator** can sample on a **grid** (honeycomb) as well as random, Poisson, blue-line, and kernels
+- Coverage-mode probes can follow **road density**, spread **evenly**, or sit **balanced** between the two
+- **Find curves** keeps two-link forks whose bend is sharper than a chosen angle
+- The generator sidebar shows live **hit rate**, locations per second, and how evenly finds cover the probed area
+- Generator **speed** and **number of generators** settings are gone; sampling runs in larger batches
+- **Street View trail** can be shown, recolored, and given a current-position marker
+- Bulk **Unpin** clears a pin-to-pano-ID flag without resolving a new panorama
+- **Apply metadata as tags** previews how many tags and locations will be created, and warns when many values are left ungrouped
+- **Stats for Nerds** shows procedure-engine activity: in-flight requests, retries, and instances
+- Long enrichment and Street View jobs **stream results as they arrive**; cancelling no longer waits on a rate slot, and one enrichment run undoes as a single step
+- Bundled **Open Sans** and country-flag fonts so labels and flags look the same everywhere
+- Field formulas treat quoted numeric extras as numbers
+- A Street View metadata batch that comes back empty is treated as missing coverage, not a corrupt request
+- Finishing a rectangle or lasso over Street View no longer opens coverage as if you had clicked the map
+- A half-installed plugin sidecar repairs itself instead of staying broken
+- Idle procedure runtimes are released after a wide enrichment
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.10.9 - 2026-09-19
 - **Background jobs** keep bulk operations and generation running after you close the dialog; a tray in the bottom bar shows progress, and leaving or quitting a map asks before cancelling that work
 - **Pin to panorama** prefers official Google Street View over a nearby photosphere or user photo
