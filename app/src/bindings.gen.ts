@@ -265,6 +265,7 @@ export const commands = {
 	 *  has no vertices. `west > east` means the box crosses the antimeridian.
 	 */
 	polygonBounds: (polygon: PolygonGeometry) => __TAURI_INVOKE<[number, number, number, number] | null>("polygon_bounds", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
+	learnableMetaClue: (mapId: string, panoId: string) => __TAURI_INVOKE<LearnableMetaClue | null>("learnable_meta_clue", { mapId, panoId }),
 	/**
 	 *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
 	 *  already exists, it is made visible instead of creating a duplicate.
@@ -931,6 +932,14 @@ export type KeySpec =
 { kind: "numericBin"; binning: NumericBinning } | 
 /**  Calendar component of a date (epoch seconds) or month ("YYYY-MM") field. */
 { kind: "datePart"; part: DatePart; tzLocal: boolean };
+
+export type LearnableMetaClue = {
+	country: string,
+	metaName: string,
+	note: string,
+	footer: string,
+	images: string[],
+};
 
 /**
  *  A single Street View location on a map.

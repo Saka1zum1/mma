@@ -60,6 +60,7 @@ mod geo_cmd;
 mod geocoder;
 mod geoguessr;
 mod import;
+mod learnable_meta;
 mod map_meta;
 mod maps_url;
 mod plugins;
@@ -782,6 +783,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             geo_cmd::polygon_poisson_points,
             geo_cmd::polygon_contains_points,
             geo_cmd::polygon_bounds,
+            learnable_meta::learnable_meta_clue,
             // --- Tag CRUD ---
             location_store::store_create_tags,
             location_store::store_update_tags,
