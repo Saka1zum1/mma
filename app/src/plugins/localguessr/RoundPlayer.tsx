@@ -26,6 +26,7 @@ import { GamePanoView, type GamePanoHandle } from "./GamePanoView";
 import { GameTimer } from "./GameTimer";
 import { GuessMap } from "./GuessMap";
 import { ResultOverlay } from "./ResultOverlay";
+import { LearnableMetaCluePanel } from "./LearnableMetaClue";
 
 export function RoundPlayer({
 	active,
@@ -562,6 +563,14 @@ export function RoundPlayer({
 						hasGuess={!!localGuess}
 					/>
 				</div>
+				{showResult &&
+					active.config.learnableMeta &&
+					active.config.learnableMapId.trim() && (
+						<LearnableMetaCluePanel
+							mapId={active.config.learnableMapId.trim()}
+							panoId={lastResult?.location.panoId ?? round?.panoId ?? null}
+						/>
+					)}
 				{showResult && lastResult && (
 					<ResultOverlay
 						result={lastResult}

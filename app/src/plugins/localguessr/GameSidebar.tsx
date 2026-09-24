@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Sidebar, Section, Field, SegmentedControl, EmptyState } from "@/components/primitives/Sidebar";
+import { SwitchRow } from "@/components/primitives/SwitchRow";
+import { TextInput } from "@/components/primitives/TextInput";
 import { Button } from "@/components/primitives/Button";
 import { Slider } from "@/components/primitives/Slider";
 import { NSelect } from "@/components/primitives/NSelect";
 import { usePluginState } from "@/plugins/registry";
 import { useMapState } from "@/store/useMapStore";
-import { useT } from "@/lib/i18n";
+import { t, useT } from "@/lib/i18n";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiEarth, mdiPlayCircleOutline, mdiDeleteOutline } from "@mdi/js";
 import {
@@ -37,7 +39,7 @@ function formatStartedAt(ms: number): string {
 }
 
 export function GameSidebar({ onClose }: { onClose: () => void }) {
-	const { t } = useT();
+	useT();
 	const [stored, setStored] = usePluginState<Partial<GameConfig>>(
 		"localguessr",
 		"config",
@@ -72,6 +74,8 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 		config.timeLimit,
 		config.streakMode,
 		config.geocodeBackend,
+		config.learnableMeta,
+		config.learnableMapId,
 	]);
 
 	const patch = (p: Partial<GameConfig>) => {
@@ -123,7 +127,13 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 												{g.mapName}
 											</span>
 											<span className="gg-sidebar__ongoing-meta">
-												<span className="gg-sidebar__ongoing-mode">{g.active.config.movementMode}</span>
+												<span className="gg-sidebar__ongoing-mode">
+													{g.active.config.movementMode === "no-move"
+														? t("No Move")
+														: g.active.config.movementMode === "nmpz"
+															? t("NMPZ")
+															: t("Moving")}
+												</span>
 												<span className="gg-sidebar__ongoing-sep">·</span>
 												<span className="gg-sidebar__ongoing-rounds">{roundLabel}</span>
 												<span className="gg-sidebar__ongoing-sep">·</span>
@@ -247,6 +257,29 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 											patch({ timeLimit: Number(e.target.value) })
 										}
 									/>
+								</Field>
+							)}
+						</Section>
+
+						<Section title={t("Learnable Meta")} collapsible>
+							<SwitchRow
+								className="gg-sidebar__switch"
+								checked={config.learnableMeta}
+								onChange={(learnableMeta) => patch({ learnableMeta })}
+								label={t("Show clues after each round")}
+							/>
+							{config.learnableMeta && (
+								<Field label={t("Map ID")}>
+									<TextInput
+										value={config.learnableMapId}
+										placeholder={t("GeoGuessr map ID")}
+										onChange={(e) => patch({ learnableMapId: e.target.value.trim() })}
+									/>
+									<p className="gg-sidebar__help">
+										{t(
+											"Clues load for panoramas that belong to this Learnable Meta map.",
+										)}
+									</p>
 								</Field>
 							)}
 						</Section>

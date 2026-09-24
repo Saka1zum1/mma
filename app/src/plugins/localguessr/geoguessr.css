@@ -789,6 +789,80 @@
 	.gg-round-result__center { grid-area: center; }
 }
 
+.gg-sidebar__switch {
+	margin: 4px 0 8px;
+}
+.gg-sidebar__help {
+	margin: 6px 0 0;
+	color: var(--text-muted, #9a9a92);
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.gg-lm-clue {
+	position: absolute;
+	z-index: 9;
+	top: 16px;
+	left: 16px;
+	width: min(320px, calc(100% - 32px));
+	max-height: min(800px, 60%);
+	overflow: auto;
+	padding: 12px 14px;
+	border-radius: 10px;
+	background: rgba(20, 20, 18, 0.92);
+	color: #f4f1ea;
+	pointer-events: auto;
+}
+.gg-lm-clue__title {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 13px;
+	font-weight: 650;
+	margin: -12px -14px 8px;
+	padding: 12px 14px 8px;
+	cursor: grab;
+	user-select: none;
+	touch-action: none;
+}
+.gg-lm-clue__title:active {
+	cursor: grabbing;
+}
+.gg-lm-clue__title a {
+	color: inherit;
+	font-weight: 500;
+	font-size: 12px;
+}
+.gg-lm-clue__heading {
+	margin: 0 0 6px;
+}
+.gg-lm-clue__note,
+.gg-lm-clue__footer,
+.gg-lm-clue__status {
+	margin: 0 0 8px;
+	font-size: 13px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+}
+.gg-lm-clue__images img {
+	display: block;
+	width: 100%;
+	border-radius: 6px;
+}
+.gg-lm-clue__nav {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 6px;
+}
+.gg-lm-clue__nav button {
+	background: transparent;
+	color: inherit;
+	border: 0;
+	font-size: 18px;
+	cursor: pointer;
+}
+
 /* Result settlement chrome (ResultOverlay) */
 .gg-result {
 	position: absolute;

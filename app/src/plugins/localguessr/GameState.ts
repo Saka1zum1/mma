@@ -91,6 +91,10 @@ export interface GameConfig {
 	streakMode: StreakMode;
 	geocodeBackend: GeocodeBackend;
 	nominatimApiKey: string;
+	/** Show a Learnable Meta clue after each round. */
+	learnableMeta: boolean;
+	/** GeoGuessr map id registered on learnablemeta.com. */
+	learnableMapId: string;
 }
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {
@@ -102,6 +106,8 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
 	streakMode: "off",
 	geocodeBackend: "local",
 	nominatimApiKey: "",
+	learnableMeta: false,
+	learnableMapId: "",
 };
 
 export interface RoundLocation {
