@@ -349,6 +349,41 @@ fn list_user_plugins() -> Vec<PluginManifest> {
 /// Base URL for the plugin marketplace repository on GitHub.
 const PLUGIN_REPO_BASE: &str = "https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins";
 
+/// This checkout's `plugins/` directory. Only used by debug builds so a plugin
+/// that is not on master yet can still be installed from `cargo tauri dev`.
+#[cfg(debug_assertions)]
+fn workspace_plugin_dir(id: &str) -> Option<std::path::PathBuf> {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins")
+        .join(id);
+    dir.join("manifest.json").is_file().then_some(dir)
+}
+
+#[cfg(debug_assertions)]
+fn install_plugin_from_workspace(id: &str, dir: &std::path::Path) -> AppResult<PluginManifest> {
+    let dest = storage::app_data_dir()?.join("plugins").join(id);
+    std::fs::create_dir_all(&dest)?;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let is_js = name.ends_with(".js");
+        if name != "manifest.json" && !is_js {
+            continue;
+        }
+        std::fs::copy(entry.path(), dest.join(name))?;
+    }
+    let bytes = std::fs::read(dest.join("manifest.json"))?;
+    let mut manifest: PluginManifest =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Invalid manifest JSON: {e}"))?;
+    if manifest.name.is_empty() {
+        manifest.name = id.to_string();
+    }
+    manifest.id = id.to_string();
+    log::info!("[plugin] installed {id} from {}", dir.display());
+    Ok(manifest)
+}
+
 pub(crate) fn validate_plugin_id(id: &str) -> AppResult<()> {
     validate_ident("plugin id", id)
 }
@@ -359,6 +394,10 @@ pub(crate) fn validate_plugin_id(id: &str) -> AppResult<()> {
 #[specta::specta]
 fn install_plugin(id: String) -> AppResult<PluginManifest> {
     validate_plugin_id(&id)?;
+    #[cfg(debug_assertions)]
+    if let Some(dir) = workspace_plugin_dir(&id) {
+        return install_plugin_from_workspace(&id, &dir);
+    }
     let dir = storage::app_data_dir()?.join("plugins").join(&id);
     std::fs::create_dir_all(&dir)?;
 

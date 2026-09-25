@@ -8,10 +8,22 @@ import type { PluginManifest } from "@/bindings.gen";
 import { getLocal, setLocal } from "@/lib/hooks/useLocalStorage";
 import { toast } from "@/lib/util/toast";
 import { t } from "@/lib/i18n";
+import devRegistry from "../../../plugins/registry.json";
 
 /** Saka1zum1 marketplace catalog. Do not point this at the upstream ccmid registry. */
 export const PLUGIN_REGISTRY_URL =
 	"https://raw.githubusercontent.com/Saka1zum1/mma/master/plugins/registry.json";
+
+/** Dev builds catalog plugins that exist in this checkout but are not on master yet.
+ *  Local entries win on id so a bumped manifest shows up without a push. */
+function withDevRegistry(remote: PluginManifest[]): PluginManifest[] {
+	if (!import.meta.env.DEV) return remote;
+	const byId = new Map(remote.map((entry) => [entry.id, entry]));
+	for (const local of devRegistry as PluginManifest[]) {
+		byId.set(local.id, { ...byId.get(local.id), ...local });
+	}
+	return [...byId.values()];
+}
 
 export type PluginIdentity = Pick<
 	PluginManifest,
@@ -111,12 +123,16 @@ let registryPromise: Promise<PluginManifest[]> | null = null;
 
 export function fetchPluginRegistry(): Promise<PluginManifest[]> {
 	if (!registryPromise) {
-		registryPromise = fetch(PLUGIN_REGISTRY_URL, { signal: AbortSignal.timeout(5000) }).then(
-			(r) => {
+		registryPromise = fetch(PLUGIN_REGISTRY_URL, { signal: AbortSignal.timeout(5000) })
+			.then((r) => {
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			},
-		);
+				return r.json() as Promise<PluginManifest[]>;
+			})
+			.then(withDevRegistry)
+			.catch((err) => {
+				if (import.meta.env.DEV) return withDevRegistry([]);
+				throw err;
+			});
 		registryPromise.catch(() => {
 			registryPromise = null;
 		});

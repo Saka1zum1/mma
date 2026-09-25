@@ -13,7 +13,7 @@ import {
 	needsUpdate,
 	isPluginCompatible,
 	isBackgroundPlugin,
-	PLUGIN_REGISTRY_URL,
+	fetchPluginRegistry,
 } from "@/plugins/registry";
 import { events, type PluginManifest } from "@/bindings.gen";
 import { loadAndActivatePlugin, loadUserPlugin } from "@/plugins/index";
@@ -245,16 +245,12 @@ export function PluginMarketplace({ open, onOpenChange }: DialogProps) {
 
 	const fetchRegistry = useCallback(() => {
 		setFetchError(null);
-		fetch(PLUGIN_REGISTRY_URL)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((data: PluginManifest[]) => {
+		fetchPluginRegistry()
+			.then((data) => {
 				registryCache = data;
 				setRegistry(data);
 			})
-			.catch((e) => setFetchError(e.message));
+			.catch((e: Error) => setFetchError(e.message));
 	}, []);
 
 	useEffect(() => {

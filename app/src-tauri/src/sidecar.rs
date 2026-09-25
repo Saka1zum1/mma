@@ -104,6 +104,55 @@ fn data_dir(plugin_id: &str) -> AppResult<PathBuf> {
 
 // --- Install ---
 
+/// Debug builds ship the sidecar from this checkout when `cargo build` has produced
+/// it, so a plugin that has no GitHub release can still be installed from `tauri dev`.
+#[cfg(debug_assertions)]
+fn install_workspace_sidecar(plugin_id: &str, name: &str, version: &str) -> AppResult<bool> {
+    let src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins")
+        .join(plugin_id)
+        .join("sidecar");
+    if !src.join("Cargo.toml").is_file() {
+        return Ok(false);
+    }
+    let bin_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+    let built = src.join("target").join("debug").join(&bin_name);
+    if !built.is_file() {
+        log::info!("[sidecar] no local debug build of {name}; using the GitHub release");
+        return Ok(false);
+    }
+    let final_dir = sidecar_dir(plugin_id)?;
+    let tmp_dir = final_dir.parent().unwrap().join(".sidecar-tmp");
+    if tmp_dir.exists() {
+        std::fs::remove_dir_all(&tmp_dir)?;
+    }
+    std::fs::create_dir_all(tmp_dir.join("models"))?;
+    std::fs::copy(&built, tmp_dir.join(&bin_name))?;
+    let models = src.join("models");
+    if models.is_dir() {
+        for entry in std::fs::read_dir(&models)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                std::fs::copy(entry.path(), tmp_dir.join("models").join(entry.file_name()))?;
+            }
+        }
+    }
+    std::fs::write(tmp_dir.join("version.txt"), version)?;
+    with_plugin_stopped(plugin_id, || {
+        if final_dir.exists() {
+            std::fs::remove_dir_all(&final_dir)?;
+        }
+        std::fs::rename(&tmp_dir, &final_dir)?;
+        Ok(())
+    })?;
+    log::info!("[sidecar] installed local debug {name} for {plugin_id}");
+    Ok(true)
+}
+
 /// Fetch the expected SHA-256 for `asset` from the release's `checksums.txt`
 /// (lines are `<hash>  <filename>`). None if the file or line is absent.
 fn fetch_expected_sha(
@@ -135,6 +184,10 @@ fn fetch_expected_sha(
 }
 
 fn install_blocking(plugin_id: String, name: String, version: String) -> AppResult<()> {
+    #[cfg(debug_assertions)]
+    if install_workspace_sidecar(&plugin_id, &name, &version)? {
+        return Ok(());
+    }
     let platform = platform_tag()?;
     let asset = format!("{name}-{platform}.zip");
     let url = format!(
