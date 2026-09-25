@@ -1,0 +1,12 @@
+{
+  "name": "mma-plugin-gen4cam",
+  "private": true,
+  "scripts": {
+    "build": "node ../build-plugin.mjs .",
+    "dev": "node ../build-plugin.mjs . --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "mma-plugin-types": "file:../types"
+  }
+}

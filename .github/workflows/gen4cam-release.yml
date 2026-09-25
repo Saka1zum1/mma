@@ -1,0 +1,79 @@
+name: Gen4 Camera Plugin Release
+
+on:
+  push:
+    tags: ['gen4cam-v*']
+  workflow_dispatch:
+
+jobs:
+  build-sidecar:
+    uses: ./.github/workflows/build-sidecar.yml
+    with:
+      crate-path: plugins/gen4cam/sidecar
+      binary-name: mma-gen4cam
+
+  package:
+    needs: [build-sidecar]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - label: windows-x64
+            suffix: .exe
+          - label: macos-arm64
+            suffix: ''
+          - label: linux-x64
+            suffix: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mma-gen4cam-${{ matrix.label }}
+          path: bundle/
+
+      - name: Add trained model to bundle
+        run: |
+          mkdir -p bundle/models
+          cp plugins/gen4cam/sidecar/models/gen4cam.onnx bundle/models/
+
+      - name: Create archive
+        run: |
+          cd bundle
+          chmod +x mma-gen4cam${{ matrix.suffix }} 2>/dev/null || true
+          zip -r ../mma-gen4cam-${{ matrix.label }}.zip .
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: mma-gen4cam-bundle-${{ matrix.label }}
+          path: mma-gen4cam-${{ matrix.label }}.zip
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mma-gen4cam-bundle-*
+          merge-multiple: true
+
+      - name: Compute SHA-256 digests
+        run: |
+          for f in mma-gen4cam-*.zip; do
+            platform="${f#mma-gen4cam-}"
+            platform="${platform%.zip}"
+            hash=$(sha256sum "$f" | cut -d' ' -f1)
+            echo "${hash}  ${f}" >> checksums.txt
+          done
+          cat checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          make_latest: false
+          files: |
+            mma-gen4cam-*.zip
+            checksums.txt
