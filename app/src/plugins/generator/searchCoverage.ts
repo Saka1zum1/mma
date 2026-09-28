@@ -5,8 +5,10 @@
 // overlap darkening. This module is deck-free (so it stays unit-testable); the buffer
 // is rendered by coverageOverlay.ts into the plugin's own GoogleMapsOverlay.
 
-import { foldLng, lngSpan, M_PER_DEG, unionBounds } from "@/lib/geo/geo";
+import { wrapDeg, lngSpan, unionBounds, M_PER_DEG } from "@/lib/geo/geo";
 import type { Bounds } from "@/types";
+/** Coverage color as byte channels. Indexed, so it stays independent of the app's RGB object. */
+type RGB = readonly [number, number, number];
 
 /** deck.gl BitmapLayer bounds, `[left, bottom, right, top]`. Unwrapped, so `right` runs
  *  past 180 for a region crossing the antimeridian rather than doubling back west. */
@@ -15,7 +17,7 @@ export type BitmapBounds = [number, number, number, number];
 const TARGET_DISC_PX = 6; // texels per probe radius at full resolution
 const MIN_DISC_PX = 2.5; // floor so coarse (large-region) textures still draw round dots, not plus-signs
 const MAX_DIM = 2048; // cap texture size (memory + upload bandwidth)
-const COLOR: readonly [number, number, number] = [56, 189, 248];
+const COLOR: Readonly<RGB> = [56, 189, 248];
 const FLUSH_MS = 200; // coalesce probe bursts; each flush costs a full-texture GPU upload
 
 let enabled = false;
@@ -63,7 +65,7 @@ export function stampDisc(
 	cx: number,
 	cy: number,
 	r: number,
-	color: readonly [number, number, number] = COLOR,
+	color: Readonly<RGB> = COLOR,
 ): void {
 	// 1px anti-aliased edge so small discs read as round dots, not blocky plus-signs.
 	const x0 = Math.max(0, Math.floor(cx - r - 1));
@@ -103,7 +105,7 @@ export function lngLatToPixel(
 	lng: number,
 	lat: number,
 ): [number, number] {
-	const px = (foldLng(lng - b.west, 0) / lngSpan(b)) * w;
+	const px = (wrapDeg(lng - b.west, 0) / lngSpan(b)) * w;
 	const py = ((b.north - lat) / (b.north - b.south)) * h;
 	return [px, py];
 }
@@ -170,6 +172,8 @@ export function growSession(b: Bounds, radiusMeters: number): void {
 	beginSession(merged, radiusMeters);
 	if (!prev.buffer || !bounds) return;
 
+	// Resample the old texture through lng/lat rather than pixels: the new session may have
+	// landed on a different metres-per-texel after the MAX_DIM clamp.
 	const next = new Uint8ClampedArray(texW * texH * 4);
 	const latSpan = bounds.north - bounds.south;
 	const span = lngSpan(bounds);

@@ -1,4 +1,14 @@
-import type { LatLng } from "@/types";
+import type { Location, PolygonGeometry } from "@/bindings.gen";
+import type { CameraType } from "@/bindings.gen";
+import type { LatLng, PanoView } from "@/types";
+
+/** The camera type each `generation` choice asks for. Equality, not rig family: a
+ *  "Gen 4" pick excludes trekkers the way a `cameraType` metadata filter does. */
+export const GENERATION_CAMERA_TYPE = {
+	1: "gen1",
+	23: "gen2",
+	4: "gen4",
+} as const satisfies Record<GeneratorSettings["generation"], CameraType>;
 
 export interface GeneratorSettings {
 	defaultTarget: number;
@@ -12,6 +22,11 @@ export interface GeneratorSettings {
 	adjustHeading: boolean;
 	headingReference: "link" | "forward" | "backward";
 	headingDeviation: number;
+	/** Degrees added to the chosen heading. `headingRandomInRange` draws inside the
+	 *  interval; otherwise it picks one of the two ends. */
+	headingRangeMin: number;
+	headingRangeMax: number;
+	headingRandomInRange: boolean;
 	adjustPitch: boolean;
 	pitchDeviation: number;
 	fromDate: string;
@@ -52,9 +67,78 @@ export interface GeneratorSettings {
 	 *  density, evenly per area, or halfway between. */
 	distribution: "density" | "balanced" | "even";
 	samplingMode: SamplingMode;
+	/** Which street-view service a probe asks. Google tiles list a z17 photometa tile. */
+	provider: StreetViewProvider;
+	traverse: BaiduTraverseSettings;
+	filterByAltitude: { enabled: boolean; min: number; max: number };
+	filterByMinutes: { enabled: boolean; min: number; max: number };
+	filterByProcdate: { enabled: boolean; from: string; to: string };
+	findByAuthor: { enabled: boolean; author: string; filterType: "include" | "exclude" };
+	findPhotospheres: boolean;
+	findDrones: boolean;
+	findNightCoverage: boolean;
+	tags: GeneratorTagSettings;
+	notification: GeneratorNotificationSettings;
 }
 
-export type SamplingMode = "random" | "poisson" | "grid" | "blueline" | "kernels";
+/** Desktop and Discord notices for a Google run. */
+export interface GeneratorNotificationSettings {
+	enabled: boolean;
+	anyLocation: boolean;
+	onePolygonComplete: boolean;
+	allPolygonsComplete: boolean;
+	sendToDiscord: boolean;
+	discordWebhook: string;
+}
+
+/** Automatic tags applied to each find, in addition to the sidebar's tag name. */
+export interface GeneratorTagSettings {
+	enabled: boolean;
+	provider: boolean;
+	year: boolean;
+	country: boolean;
+	road: boolean;
+	procdate: boolean;
+}
+
+export type StreetViewProvider =
+	| "google"
+	| "googleZoom"
+	| "apple"
+	| "yandex"
+	| "baidu"
+	| "tencent";
+
+/** Google radius search and the photometa tile listing both speak Google pano ids. */
+export function isGoogleProvider(provider: StreetViewProvider): boolean {
+	return provider === "google" || provider === "googleZoom";
+}
+
+export type SamplingMode = "random" | "poisson" | "grid" | "blueline" | "kernels" | "traverse";
+
+/** Baidu id-range scan. Only used when `provider` is baidu and `samplingMode` is traverse. */
+export interface BaiduTraverseSettings {
+	startPanoId: string;
+	endPanoId: string;
+	/** Skip a capture that already has road links. */
+	filterNormalCover: boolean;
+	/** Skip a capture whose timeline lists more than one date. */
+	filterTimelineCoverage: boolean;
+	/** Sample a short window, then jump `scanStepMin` minutes, instead of every millisecond. */
+	useRoughScan: boolean;
+	scanStepMin: number;
+	scanDurationSec: number;
+	skipTimeEnabled: boolean;
+	/** Minute of day, 0–1439. When start is after end the window wraps midnight. */
+	skipStartMin: number;
+	skipEndMin: number;
+	/** In-flight sdata batches. Clamped to 50–500, matching various-map-gen. */
+	concurrency: number;
+	reqTimeoutSec: number;
+	retryTimes: number;
+	/** Log scanned-id progress every this many probes. */
+	progressStep: number;
+}
 
 /** A region's supply of probe points, drawn `n` at a time; a draw waits while more are on
  *  the way, and an empty draw means it is used up. */
@@ -77,6 +161,9 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 	adjustHeading: true,
 	headingReference: "link",
 	headingDeviation: 0,
+	headingRangeMin: 0,
+	headingRangeMax: 0,
+	headingRandomInRange: false,
 	adjustPitch: false,
 	pitchDeviation: 10,
 	fromDate: "2009-01",
@@ -115,6 +202,50 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 	zoomLevel: 0,
 	samplingMode: "random",
 	distribution: "density",
+	provider: "google",
+	traverse: {
+		startPanoId: "",
+		endPanoId: "",
+		filterNormalCover: false,
+		filterTimelineCoverage: false,
+		useRoughScan: false,
+		scanStepMin: 1,
+		scanDurationSec: 1,
+		skipTimeEnabled: false,
+		skipStartMin: 1110,
+		skipEndMin: 390,
+		concurrency: 200,
+		reqTimeoutSec: 25,
+		retryTimes: 2,
+		progressStep: 100_000,
+	},
+	filterByAltitude: { enabled: false, min: 0, max: 1000 },
+	filterByMinutes: { enabled: false, min: 0, max: 1439 },
+	filterByProcdate: {
+		enabled: false,
+		from: "2007-01-01",
+		to: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+	},
+	findByAuthor: { enabled: false, author: "", filterType: "include" },
+	findPhotospheres: false,
+	findDrones: false,
+	findNightCoverage: false,
+	tags: {
+		enabled: false,
+		provider: false,
+		year: false,
+		country: false,
+		road: false,
+		procdate: false,
+	},
+	notification: {
+		enabled: false,
+		anyLocation: false,
+		onePolygonComplete: false,
+		allPolygonsComplete: false,
+		sendToDiscord: false,
+		discordWebhook: "",
+	},
 };
 
 export interface GeneratorStats {
@@ -138,22 +269,23 @@ export interface GeneratorRegionMeta {
 export interface GeneratorRegion {
 	id: string;
 	name: string;
-	feature: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+	polygon: PolygonGeometry;
 	found: GeneratedLocation[];
 	target: number;
 	checkedPanos: Set<string>;
 	isProcessing: boolean;
 }
 
-export interface GeneratedLocation {
-	panoId: string;
-	lat: number;
-	lng: number;
-	heading: number;
-	pitch: number;
-	zoom: number;
-	imageDate: string | null;
-}
+export type GeneratedLocation = PanoView &
+	Pick<Location, "lat" | "lng"> & {
+		imageDate: string | null;
+		country?: string | null;
+		road?: string | null;
+		procdate?: string | null;
+		provider?: StreetViewProvider;
+		/** Set on a traverse hit that is not normal coverage. Never both kinds at once. */
+		baiduCoverage?: "hidden" | "timeline" | null;
+	};
 
 export interface GenerationCallbacks {
 	onLocationsFound: (locs: GeneratedLocation[]) => void;

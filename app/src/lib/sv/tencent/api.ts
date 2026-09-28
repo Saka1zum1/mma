@@ -44,6 +44,10 @@ export interface TencentPanoMeta {
 	/** Arrow links: nearest pano + nearest pano ~180° from the first. */
 	links: TencentLink[];
 	timeline: TencentTimeEntry[];
+	/** `basic.mode`, `"night"` for night coverage. */
+	mode: string | null;
+	roadName: string | null;
+	description: string | null;
 }
 
 interface TencentScene {
@@ -68,7 +72,13 @@ interface TencentRoad {
 }
 
 interface TencentMetaDetail {
-	basic: { svid: string; dir?: string | number; trans_svid?: string };
+	basic: {
+		svid: string;
+		dir?: string | number;
+		trans_svid?: string;
+		mode?: string;
+		append_addr?: string;
+	};
 	addr: { x_lng: number; y_lat: number };
 	all_scenes?: TencentScene[];
 	roads?: TencentRoad[];
@@ -278,6 +288,9 @@ function parseDetail(qq: TencentMetaDetail): TencentPanoMeta {
 		neighbors,
 		links,
 		timeline,
+		mode: qq.basic.mode ?? null,
+		roadName: findRoadPoint(qq.roads, id)?.road.name?.trim() || null,
+		description: qq.basic.append_addr?.trim() || null,
 	};
 }
 

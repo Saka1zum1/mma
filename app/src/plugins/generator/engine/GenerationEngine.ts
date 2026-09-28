@@ -9,15 +9,11 @@ import type {
 } from "./types";
 import { gridPointSource, pointsInOrder } from "./pointSources";
 import { blueLineSource, DISTRIBUTION_EVENNESS } from "./blueLineSampler";
-import {
-	randomPointInBounds,
-	getBoundingBox,
-	pointInGeoJsonGeometry,
-	featureToPolygon,
-} from "./geo";
-import { ymFromDate } from "@/lib/util/date";
 import { passesInitialFilters, passesDateFilters, isPanoGood, computeHeading } from "./filters";
-import { fetchSvMetadataBatched } from "@/lib/sv/svMeta";
+import { fetchPanos, panosFromBaiduSdata, probePoints } from "./providers";
+import type { Pano } from "./panoModel";
+import { isOfficialPano } from "@/lib/sv/panoId";
+import { isGoogleProvider } from "./types";
 import { distMeters, lerpLng, unionBounds } from "@/lib/geo/geo";
 import { searchCoverage } from "../searchCoverage";
 import { RateWindow } from "./rateWindow";
@@ -27,11 +23,32 @@ import { log } from "@/lib/util/log";
 import { chunk } from "@/lib/util/util";
 import type { Bounds, LatLng } from "@/types";
 
+async function regionBounds(region: GeneratorRegion): Promise<Bounds | null> {
+	const box = await cmd.polygonBounds(region.polygon);
+	return box ? { west: box[0], south: box[1], east: box[2], north: box[3] } : null;
+}
+
+/** Traverse with no polygon keeps every hit. An empty ring is that open region. */
+function regionIsUnbounded(region: GeneratorRegion): boolean {
+	const ring = region.polygon.coordinates[0];
+	return !ring || ring.length === 0;
+}
+
+function regionContains(region: GeneratorRegion, points: LatLng[]): Promise<boolean[]> {
+	return cmd.polygonContainsPoints(
+		region.polygon,
+		points.map((p) => p.lat),
+		points.map((p) => p.lng),
+	);
+}
+
 /** Share of a probe round that must have answered before the next round launches. */
 const ROUND_OVERLAP_AT = 0.9;
 const MAX_ROUNDS_IN_FLIGHT = 4;
 /** Points per probe round; with the rounds in flight it keeps the lookup pipe saturated. */
 const ROUND_SIZE = 1000;
+const SEED_BATCH = 100;
+const SEED_DELAY = 50;
 
 const SILENT: GenerationCallbacks = {
 	onLocationsFound: () => {},
@@ -44,8 +61,6 @@ export class GenerationEngine {
 	private settings: GeneratorSettings;
 	private regions: GeneratorRegion[];
 	private callbacks: GenerationCallbacks;
-	private sv: google.maps.StreetViewService;
-	private google: Google;
 	private readonly abort = new AbortController();
 	private started = false;
 	private paused = false;
@@ -67,19 +82,12 @@ export class GenerationEngine {
 	private cellDeg = 0.25;
 
 	constructor(
-		google: Google,
 		settings: GeneratorSettings,
 		regions: GeneratorRegion[],
 		callbacks: GenerationCallbacks,
 	) {
-		this.google = google;
-		this.sv = new google.maps.StreetViewService();
 		this.settings = settings;
 		this.regions = regions;
-		this.callbacks = callbacks;
-	}
-
-	replaceCallbacks(callbacks: GenerationCallbacks) {
 		this.callbacks = callbacks;
 	}
 
@@ -89,12 +97,15 @@ export class GenerationEngine {
 		this.settings = settings;
 	}
 
+	/** Runs until every region is done or the engine is stopped. A stopped engine never starts. */
 	async start(): Promise<void> {
 		if (this.started || this.stopped) return;
 		this.started = true;
-		this.beginSearchOverlay();
+		await this.beginSearchOverlay();
 		try {
-			if (this.settings.oneCountryAtATime) {
+			if (this.settings.provider === "baidu" && this.settings.samplingMode === "traverse") {
+				this.regionTasks.push(this.generateTraverse());
+			} else if (this.settings.oneCountryAtATime) {
 				this.regionTasks.push(this.runSequential());
 			} else {
 				for (const region of this.regions) {
@@ -106,10 +117,12 @@ export class GenerationEngine {
 				await Promise.all(this.regionTasks.splice(0));
 			}
 		} catch (e) {
+			// Stopping rejects the lookups in flight; only a live run's failure is news.
 			if (!this.stopped) throw e;
 		} finally {
 			this.flushBatch();
 			const { onDone } = this.callbacks;
+			// Walks still in flight are dropped, so their lookups are declined.
 			this.abort.abort();
 			onDone();
 		}
@@ -154,8 +167,9 @@ export class GenerationEngine {
 			this.regionTasks.push(this.runRegion(existing ?? region));
 		}
 
-		const b = this.searchOverlayBounds();
-		if (b && this.isRunning()) searchCoverage.growSession(b, this.settings.radius);
+		void this.searchOverlayBounds().then((b) => {
+			if (b && this.isRunning()) searchCoverage.growSession(b, this.settings.radius);
+		});
 	}
 
 	// Live-apply per-region target changes mid-job; workers re-read target every probe.
@@ -206,6 +220,8 @@ export class GenerationEngine {
 		return { found, target };
 	}
 
+	/** A stopped engine never restarts. Finds already confirmed are delivered; afterwards no
+	 *  callback fires and every lookup in flight is declined. */
 	stop(): void {
 		if (this.stopped) return;
 		this.flushBatch();
@@ -221,11 +237,11 @@ export class GenerationEngine {
 	}
 
 	/** Every region's box, padded by the probe radius so a disc at the edge still lands. */
-	private searchOverlayBounds(): Bounds | null {
+	private async searchOverlayBounds(): Promise<Bounds | null> {
 		if (this.regions.length === 0) return null;
 		let bounds: Bounds | null = null;
 		for (const region of this.regions) {
-			const bb = getBoundingBox(region.feature);
+			const bb = await regionBounds(region);
 			if (bb) bounds = bounds ? unionBounds(bounds, bb) : bb;
 		}
 		if (!bounds) return null;
@@ -241,8 +257,8 @@ export class GenerationEngine {
 		};
 	}
 
-	private beginSearchOverlay(): void {
-		const b = this.searchOverlayBounds();
+	private async beginSearchOverlay(): Promise<void> {
+		const b = await this.searchOverlayBounds();
 		if (b) {
 			searchCoverage.beginSession(b, this.settings.radius);
 			this.cellDeg = Math.max((b.north - b.south) / 24, (b.east - b.west) / 24, 0.005);
@@ -282,10 +298,96 @@ export class GenerationEngine {
 		);
 	}
 
+	/** Baidu id-range scan. One pass feeds every region; a hit is kept by each polygon that contains it. */
+	private async generateTraverse(): Promise<void> {
+		let cursor: number | null = null;
+		try {
+			const first = this.settings.traverse;
+			if (!first.startPanoId.trim() || !first.endPanoId.trim()) {
+				throw new Error("Baidu traverse needs a start and end pano id");
+			}
+			if (this.regions.length === 0) {
+				this.regions.push({
+					id: "baidu-traverse",
+					name: "Traverse",
+					polygon: { coordinates: [] },
+					found: [],
+					target: this.settings.defaultTarget,
+					checkedPanos: new Set(),
+					isProcessing: false,
+				});
+			}
+			for (const region of this.regions) region.isProcessing = true;
+			let done = false;
+			while (!done && (await this.proceedTraverse())) {
+				const t = this.settings.traverse;
+				const chunk = await cmd.baiduTraverseChunk({
+					startPanoId: t.startPanoId.trim(),
+					endPanoId: t.endPanoId.trim(),
+					cursorMs: cursor,
+					useRoughScan: t.useRoughScan,
+					scanStepMin: t.scanStepMin,
+					scanDurationSec: t.scanDurationSec,
+					skipTimeEnabled: t.skipTimeEnabled,
+					skipStartMin: t.skipStartMin,
+					skipEndMin: t.skipEndMin,
+					filterNormalCover: t.filterNormalCover,
+					filterTimelineCoverage: t.filterTimelineCoverage,
+					concurrency: t.concurrency,
+					reqTimeoutSec: t.reqTimeoutSec,
+					retryTimes: t.retryTimes,
+					budget: 2000,
+				});
+				cursor = chunk.nextCursorMs;
+				done = chunk.done;
+				const before = this.probesTotal;
+				this.probesTotal += chunk.probed;
+				this.answered.add(chunk.probed);
+				const step = Math.min(1_000_000, Math.max(1000, t.progressStep || 100_000));
+				if (Math.floor(before / step) !== Math.floor(this.probesTotal / step)) {
+					log.info(`[generator] traverse scanned ${this.probesTotal} ids`);
+				}
+				let rows: unknown[] = [];
+				try {
+					const parsed: unknown = JSON.parse(chunk.contentJson);
+					if (Array.isArray(parsed)) rows = parsed;
+				} catch (e) {
+					log.warn("[generator] traverse payload was not JSON", e);
+				}
+				const panos = panosFromBaiduSdata(rows);
+				if (panos.length === 0) continue;
+				for (const region of this.regions) {
+					if (this.cancelledRegions.has(region.id) || region.found.length >= region.target) continue;
+					await this.processPanos(panos, region, 0);
+				}
+			}
+		} finally {
+			for (const region of this.regions) {
+				region.isProcessing = false;
+				this.callbacks.onRegionComplete(region.id);
+			}
+		}
+	}
+
+	private async proceedTraverse(): Promise<boolean> {
+		while (this.paused) {
+			await new Promise<void>((resolve) => {
+				this.pauseResolvers.push(resolve);
+			});
+		}
+		if (this.stopped) return false;
+		return this.regions.some(
+			(region) => !this.cancelledRegions.has(region.id) && region.found.length < region.target,
+		);
+	}
+
 	private async generateRegion(region: GeneratorRegion): Promise<void> {
 		const mode = this.settings.samplingMode;
+		// The range scan is one task for every region. A region added mid-scan is picked up
+		// on the next slice; it must not start a second pass.
+		if (mode === "traverse" && this.settings.provider === "baidu") return;
 		if (mode === "kernels") await this.generateRegionKernels(region);
-		else if (mode === "random") await this.generateRegionRandom(region);
+		else if (mode === "random" || mode === "traverse") await this.generateRegionRandom(region);
 		else await this.generateRegionFrom(region, mode);
 
 		region.isProcessing = false;
@@ -296,7 +398,7 @@ export class GenerationEngine {
 	 *  draws from the one supply, so no point is probed twice. */
 	private async generateRegionFrom(
 		region: GeneratorRegion,
-		mode: Exclude<SamplingMode, "random" | "kernels">,
+		mode: Exclude<SamplingMode, "random" | "kernels" | "traverse">,
 	): Promise<void> {
 		let source = this.pointSources.get(region.id);
 		if (!source) {
@@ -321,19 +423,18 @@ export class GenerationEngine {
 
 	private async pointSource(
 		region: GeneratorRegion,
-		mode: Exclude<SamplingMode, "random" | "kernels">,
+		mode: Exclude<SamplingMode, "random" | "kernels" | "traverse">,
 	): Promise<PointSource> {
-		const polygon = featureToPolygon(region.feature);
 		if (mode === "blueline")
-			return blueLineSource(polygon, DISTRIBUTION_EVENNESS[this.settings.distribution]);
+			return blueLineSource(region.polygon, DISTRIBUTION_EVENNESS[this.settings.distribution]);
 		if (mode === "poisson") {
-			const pairs = await cmd.polygonPoissonPoints(polygon, 2 * this.settings.radius);
+			const pairs = await cmd.polygonPoissonPoints(region.polygon, 2 * this.settings.radius);
 			const points = pairs.map(([lng, lat]) => ({ lat, lng }));
 			log.info(`[generator] Poisson disk: ${points.length} probes for ${region.name}`);
 			return pointsInOrder(points);
 		}
 		// Discs of the search radius cover the plane with no gaps when their centers form a honeycomb radius * sqrt(3) apart.
-		const runs = await cmd.honeycombPoints(polygon, this.settings.radius * Math.sqrt(3));
+		const runs = await cmd.honeycombPoints(region.polygon, this.settings.radius * Math.sqrt(3));
 		log.info(
 			`[generator] Grid: ${runs.reduce((n, run) => n + run.count, 0)} probes for ${region.name}`,
 		);
@@ -357,7 +458,7 @@ export class GenerationEngine {
 	}
 
 	private async generateRegionKernels(region: GeneratorRegion): Promise<void> {
-		const bounds = getBoundingBox(region.feature);
+		const bounds = await regionBounds(region);
 		if (!bounds) return;
 		const { east, north, south } = bounds;
 		const centroidLat = (south + north) / 2;
@@ -370,9 +471,9 @@ export class GenerationEngine {
 		let seeds: string[];
 		try {
 			const locs = await cmd.storeFindNearby(centroidLat, centroidLng, coveringRadius);
-			seeds = locs
-				.filter((l) => l.panoId && pointInGeoJsonGeometry(l.lng, l.lat, region.feature.geometry))
-				.map((l) => l.panoId!);
+			const withPano = locs.filter((l) => l.panoId);
+			const inside = await regionContains(region, withPano);
+			seeds = withPano.filter((_, i) => inside[i]).map((l) => l.panoId!);
 		} catch (e) {
 			log.warn("[generator] Failed to fetch seed locations:", e);
 			return;
@@ -401,21 +502,18 @@ export class GenerationEngine {
 		while (queue.length > 0 && (await this.proceed(region))) {
 			region.isProcessing = true;
 			const frontier = queue.splice(0, ROUND_SIZE);
-			const results = await fetchSvMetadataBatched(frontier, { signal: this.abort.signal });
+			const results = await fetchPanos(s.provider, frontier, this.abort.signal);
+			const inside = await regionContains(
+				region,
+				results.map((p) => (p ? { lat: p.lat, lng: p.lng } : { lat: 0, lng: 0 })),
+			);
 
 			for (let i = 0; i < results.length; i++) {
 				if (region.found.length >= region.target) break;
 
 				const pano = results[i];
 				if (!pano) continue;
-
-				if (pano.extra?.drivingDirection != null && pano.tiles) {
-					pano.tiles.centerHeading = pano.extra.drivingDirection;
-				}
-
-				const lat = pano.location.latLng.lat();
-				const lng = pano.location.latLng.lng();
-				if (!pointInGeoJsonGeometry(lng, lat, region.feature.geometry)) continue;
+				if (!inside[i]) continue;
 
 				let depth = depthMap.get(frontier[i]) ?? 0;
 
@@ -428,18 +526,18 @@ export class GenerationEngine {
 				}
 
 				for (const link of pano.links) {
-					if (link.pano && !visited.has(link.pano)) {
-						visited.add(link.pano);
-						queue.push(link.pano);
-						depthMap.set(link.pano, depth);
+					if (link.panoId && !visited.has(link.panoId)) {
+						visited.add(link.panoId);
+						queue.push(link.panoId);
+						depthMap.set(link.panoId, depth);
 					}
 				}
 				if (s.checkAllDates && pano.time) {
 					for (const entry of pano.time) {
-						if (entry.pano && !visited.has(entry.pano)) {
-							visited.add(entry.pano);
-							queue.push(entry.pano);
-							depthMap.set(entry.pano, depth);
+						if (entry.panoId && !visited.has(entry.panoId)) {
+							visited.add(entry.panoId);
+							queue.push(entry.panoId);
+							depthMap.set(entry.panoId, depth);
 						}
 					}
 				}
@@ -450,33 +548,14 @@ export class GenerationEngine {
 	private async generateRegionRandom(region: GeneratorRegion): Promise<void> {
 		let coveredRounds = 0;
 		const rounds = this.roundLauncher(region);
-		const polygon = featureToPolygon(region.feature);
-		const bounds = getBoundingBox(region.feature);
 
 		while (await this.proceed(region)) {
 			region.isProcessing = true;
 			const n = Math.min(region.target * 100, ROUND_SIZE);
-			let randomCoords: LatLng[] = [];
-			try {
-				// eslint-disable-next-line local/no-ipc-in-loop -- one bulk sample per round, not per item
-				randomCoords = (await cmd.polygonRandomPoints(polygon, n)).map(([lng, lat]) => ({
-					lat,
-					lng,
-				}));
-			} catch (e) {
-				log.warn("[generator] polygonRandomPoints failed, sampling in JS:", e);
-				if (bounds) {
-					let attempts = 0;
-					const maxAttempts = n * 200;
-					while (randomCoords.length < n && attempts < maxAttempts) {
-						attempts++;
-						const pt = randomPointInBounds(bounds);
-						if (pointInGeoJsonGeometry(pt.lng, pt.lat, region.feature.geometry)) {
-							randomCoords.push(pt);
-						}
-					}
-				}
-			}
+			let randomCoords = (await cmd.polygonRandomPoints(region.polygon, n)).map(([lng, lat]) => ({
+				lat,
+				lng,
+			}));
 			if (this.settings.skipExisting && randomCoords.length > 0) {
 				randomCoords = await this.withoutExisting(randomCoords);
 				if (randomCoords.length === 0) {
@@ -522,6 +601,7 @@ export class GenerationEngine {
 	}
 
 	private async probeAll(coords: LatLng[], region: GeneratorRegion): Promise<void> {
+		// findRegions accepts each pano against region.found as it goes, so it probes one at a time
 		const size = this.settings.findRegions ? 1 : coords.length || 1;
 		for (const batch of chunk(coords, size)) {
 			if (!(await this.proceed(region))) return;
@@ -535,13 +615,35 @@ export class GenerationEngine {
 		coords: LatLng[],
 		region: GeneratorRegion,
 	): { mostlyDone: Promise<void>; settled: Promise<void> } {
+		for (const c of coords) searchCoverage.addProbe(c.lng, c.lat);
+		const s = this.settings;
 		const seen = new Uint8Array(coords.length);
 		const threshold = Math.max(1, Math.ceil(coords.length * ROUND_OVERLAP_AT));
 		let received = 0;
+		let found = 0;
 		let reachedMost!: () => void;
 		const mostlyDone = new Promise<void>((resolve) => (reachedMost = resolve));
 
-		const noteAnswer = (index: number) => {
+		let seeds: string[] = [];
+		let direct: Pano[] = [];
+		let seedTimer: ReturnType<typeof setTimeout> | null = null;
+		const flushSeeds = () => {
+			if (seedTimer) {
+				clearTimeout(seedTimer);
+				seedTimer = null;
+			}
+			if (direct.length > 0) {
+				const batch = direct;
+				direct = [];
+				this.accept(batch, region);
+			}
+			if (seeds.length > 0) {
+				const batch = seeds;
+				seeds = [];
+				this.walk(batch, region, 0);
+			}
+		};
+		const handle = (index: number, panos: Pano[]) => {
 			if (seen[index]) return;
 			seen[index] = 1;
 			received++;
@@ -549,179 +651,176 @@ export class GenerationEngine {
 			this.probesTotal++;
 			this.cell(coords[index]).probes++;
 			if (received === threshold) reachedMost();
+			if (panos.length === 0) return;
+			// Paused or stopped while the lookup was in flight: drop the result.
+			if (this.stopped || this.paused || this.cancelledRegions.has(region.id)) return;
+			found++;
+			// The search already answered the metadata, so a seed that is this pano is
+			// accepted from what is in hand; only derived ids need a lookup.
+			for (const pano of panos) {
+				const ids = this.seedsFrom(pano, region);
+				if (ids.length === 0) this.rejected++;
+				for (const id of ids) {
+					if (id === pano.id) direct.push(pano);
+					else seeds.push(id);
+				}
+			}
+			if (seeds.length + direct.length >= SEED_BATCH) flushSeeds();
+			else if (seeds.length + direct.length > 0 && !seedTimer)
+				seedTimer = setTimeout(flushSeeds, SEED_DELAY);
 		};
 
+		const probeStart = performance.now();
 		const settled = (async () => {
 			try {
-				await Promise.allSettled(
-					coords.map((coord, i) =>
-						this.getLoc(coord, region).finally(() => {
-							noteAnswer(i);
-						}),
-					),
+				// The search answers the metadata too, so there is no second lookup.
+				await probePoints(
+					s.provider,
+					coords,
+					s.radius,
+					s.rejectUnofficial,
+					this.abort.signal,
+					handle,
+				);
+				const probeMs = Math.max(1, performance.now() - probeStart);
+				log.debug(
+					`[generator] probed ${coords.length} in ${Math.round(probeMs)}ms (${Math.round((coords.length * 1000) / probeMs)} search/s), ${found} panos`,
 				);
 			} finally {
+				flushSeeds();
 				reachedMost();
 			}
 		})();
 		return { mostlyDone, settled };
 	}
 
-	private getLoc(coord: LatLng, region: GeneratorRegion): Promise<void> {
-		searchCoverage.addProbe(coord.lng, coord.lat);
+	private seedsFrom(pano: Pano, region: GeneratorRegion): string[] {
 		const s = this.settings;
-		const source = s.rejectUnofficial
-			? this.google.maps.StreetViewSource.GOOGLE
-			: this.google.maps.StreetViewSource.DEFAULT;
+		if (!passesInitialFilters(pano, s)) return [];
 
-		return new Promise<void>((resolve) => {
-			this.sv.getPanorama(
-				{ location: { lat: coord.lat, lng: coord.lng }, sources: [source], radius: s.radius },
-				(data: google.maps.StreetViewPanoramaData | null, status: string) => {
-					// Paused/stopped while this request was in flight: drop the result.
-					if (!this.isRunning() || this.paused) {
-						resolve();
-						return;
-					}
-					if (status !== "OK" || !data) {
-						this.rejected++;
-						resolve();
-						return;
-					}
-					const pano = data as google.maps.StreetViewResolvedPanoramaData;
+		if (s.findRegions) {
+			const coord = { lat: pano.lat, lng: pano.lng };
+			if (region.found.some((f) => distMeters(f, coord) < s.regionRadius * 1000)) return [];
+		}
 
-					if (!passesInitialFilters(pano, s)) {
-						this.rejected++;
-						resolve();
-						return;
-					}
+		const dateResult = passesDateFilters(pano, s);
+		if (dateResult === false) return [];
 
-					if (s.findRegions) {
-						for (const found of region.found) {
-							if (distMeters(found, coord) < s.regionRadius * 1000) {
-								resolve();
-								return;
-							}
-						}
-					}
+		if (s.randomInTimeline && pano.time?.length) {
+			const entry = pano.time[Math.floor(Math.random() * pano.time.length)];
+			if (entry.date) {
+				const ym = entry.date.slice(0, 7);
+				if (Date.parse(ym) < Date.parse(s.fromDate) || Date.parse(ym) > Date.parse(s.toDate)) {
+					return [];
+				}
+			}
+			return [entry.panoId];
+		}
 
-					const dateResult = passesDateFilters(pano, s);
-					if (dateResult === false) {
-						this.rejected++;
-						resolve();
-						return;
-					}
+		if (dateResult === "checkAll" && pano.time) {
+			const seeds: string[] = [];
+			const fromDate = Date.parse(s.fromDate);
+			const toDate = Date.parse(s.toDate);
+			for (const entry of pano.time) {
+				if (isGoogleProvider(s.provider) && s.rejectUnofficial && !isOfficialPano(entry.panoId)) continue;
+				if (!entry.date) continue;
+				const ym = entry.date.slice(0, 7);
+				if (Date.parse(ym) >= fromDate && Date.parse(ym) <= toDate) seeds.push(entry.panoId);
+			}
+			return seeds;
+		}
 
-					if (s.randomInTimeline && pano.time?.length) {
-						const idx = Math.floor(Math.random() * pano.time.length);
-						const entry = pano.time[idx];
-						const d = Object.values(entry).find((v): v is Date => v instanceof Date);
-						if (d) {
-							const ym = ymFromDate(d);
-							if (
-								Date.parse(ym) < Date.parse(s.fromDate) ||
-								Date.parse(ym) > Date.parse(s.toDate)
-							) {
-								this.rejected++;
-								resolve();
-								return;
-							}
-						}
-						this.getPanoDeep(entry.pano, region, 0);
-						resolve();
-						return;
-					}
+		return [pano.id];
+	}
 
-					if (dateResult === "checkAll" && pano.time) {
-						const fromDate = Date.parse(s.fromDate);
-						const toDate = Date.parse(s.toDate);
-						for (const entry of pano.time) {
-							if (s.rejectUnofficial && entry.pano.length !== 22) continue;
-							const d = Object.values(entry).find((v): v is Date => v instanceof Date);
-							if (!d) continue;
-							const ym = ymFromDate(d);
-							if (Date.parse(ym) >= fromDate && Date.parse(ym) <= toDate) {
-								this.getPanoDeep(entry.pano, region, 0);
-							}
-						}
-					} else {
-						this.getPanoDeep(pano.location.pano, region, 0);
-					}
-
-					resolve();
-				},
-			);
+	/** The walk runs alongside the probing rather than holding it up, so a region keeps
+	 *  sampling while earlier finds are still opening up. */
+	private walk(ids: string[], region: GeneratorRegion, depth: number): void {
+		void this.walkPanos(ids, region, depth).catch((e) => {
+			if (!this.stopped) log.warn("[generator] link walk failed:", e);
 		});
 	}
 
-	private getPanoDeep(id: string, region: GeneratorRegion, depth: number): void {
-		if (!this.isRunning() || this.paused || this.cancelledRegions.has(region.id)) return;
-		const s = this.settings;
-		if (depth > s.linksDepth) return;
-		if (region.checkedPanos.has(id)) {
-			this.duplicates++;
-			return;
-		}
-		region.checkedPanos.add(id);
-		if (region.found.length >= region.target) return;
-
-		this.sv.getPanorama(
-			{ pano: id },
-			(data: google.maps.StreetViewPanoramaData | null, status: string) => {
-				if (!this.isRunning() || this.paused || this.cancelledRegions.has(region.id)) return;
-				if (status === "UNKNOWN_ERROR") {
-					region.checkedPanos.delete(id);
-					this.getPanoDeep(id, region, depth);
-					return;
-				}
-				if (status !== "OK" || !data) return;
-				const pano = data as google.maps.StreetViewResolvedPanoramaData;
-
-				const inRegion = pointInGeoJsonGeometry(
-					pano.location.latLng.lng(),
-					pano.location.latLng.lat(),
-					region.feature.geometry,
-				);
-				const good = isPanoGood(pano, s) && inRegion;
-
-				if (s.checkAllDates && !s.selectMonths && pano.time) {
-					const fromDate = Date.parse(s.fromDate);
-					const toDate = Date.parse(s.toDate);
-					for (const entry of pano.time) {
-						if (s.rejectUnofficial && entry.pano.length !== 22) continue;
-						const d = Object.values(entry).find((v): v is Date => v instanceof Date);
-						if (!d) continue;
-						const ym = ymFromDate(d);
-						if (Date.parse(ym) >= fromDate && Date.parse(ym) <= toDate) {
-							this.getPanoDeep(entry.pano, region, good ? 1 : depth + 1);
-						}
-					}
-				}
-
-				if (s.checkLinks && pano.links) {
-					for (const link of pano.links) {
-						if (link.pano) this.getPanoDeep(link.pano, region, good ? 1 : depth + 1);
-					}
-				}
-				if (s.checkLinks && pano.time) {
-					for (const entry of pano.time) {
-						this.getPanoDeep(entry.pano, region, good ? 1 : depth + 1);
-					}
-				}
-
-				if (good) void this.finalizeLoc(pano, region);
-				else this.rejected++;
-			},
-		);
+	/** Panos already in hand enter the walk at its post-lookup stage. */
+	private accept(panos: Pano[], region: GeneratorRegion): void {
+		const fresh = panos.filter((p) => !region.checkedPanos.has(p.id));
+		this.duplicates += panos.length - fresh.length;
+		if (fresh.length === 0) return;
+		for (const p of fresh) region.checkedPanos.add(p.id);
+		void this.processPanos(fresh, region, 0).catch((e) => {
+			if (!this.stopped) log.warn("[generator] accept failed:", e);
+		});
 	}
 
-	private async finalizeLoc(
-		pano: google.maps.StreetViewResolvedPanoramaData,
+	/** Walks a level of the link/timeline graph: every id at `depth` is fetched in one
+	 *  batch, and what each one opens up is walked as the next level. A pano that passes
+	 *  resets the depth of what it leads to, which is what lets a good stretch keep
+	 *  going while a dead one bottoms out at `linksDepth`. */
+	private async walkPanos(ids: string[], region: GeneratorRegion, depth: number): Promise<void> {
+		if (this.stopped || this.paused || this.cancelledRegions.has(region.id)) return;
+		if (depth > this.settings.linksDepth) return;
+		if (region.found.length >= region.target) return;
+
+		const fresh = ids.filter((id) => id && !region.checkedPanos.has(id));
+		if (fresh.length === 0) return;
+		for (const id of fresh) region.checkedPanos.add(id);
+
+		const panos = await fetchPanos(this.settings.provider, fresh, this.abort.signal);
+		await this.processPanos(panos, region, depth);
+	}
+
+	private async processPanos(
+		panos: (Pano | null)[],
 		region: GeneratorRegion,
+		depth: number,
 	): Promise<void> {
-		if (!this.isRunning() || this.paused || this.cancelledRegions.has(region.id)) return;
+		if (this.stopped || this.paused || this.cancelledRegions.has(region.id)) return;
+		if (region.found.length >= region.target) return;
 		const s = this.settings;
-		const panoId: string = pano.location.pano;
+		const inside = regionIsUnbounded(region)
+			? panos.map(() => true)
+			: await regionContains(
+					region,
+					panos.map((p) => (p ? { lat: p.lat, lng: p.lng } : { lat: 0, lng: 0 })),
+				);
+
+		// A pano that passed sends what it opens up back to depth 1; everything else sinks.
+		const fromGood: string[] = [];
+		const deeper: string[] = [];
+
+		for (let i = 0; i < panos.length; i++) {
+			const pano = panos[i];
+			if (!pano) continue;
+			const good = isPanoGood(pano, s) && inside[i];
+			const next = good ? fromGood : deeper;
+
+			if (s.checkAllDates && !s.selectMonths && pano.time) {
+				const fromDate = Date.parse(s.fromDate);
+				const toDate = Date.parse(s.toDate);
+				for (const entry of pano.time) {
+					if (isGoogleProvider(s.provider) && s.rejectUnofficial && !isOfficialPano(entry.panoId)) continue;
+					if (!entry.date) continue;
+					const ym = entry.date.slice(0, 7);
+					if (Date.parse(ym) >= fromDate && Date.parse(ym) <= toDate) next.push(entry.panoId);
+				}
+			}
+
+			if (s.checkLinks) {
+				for (const link of pano.links) if (link.panoId) next.push(link.panoId);
+				for (const entry of pano.time) next.push(entry.panoId);
+			}
+
+			if (good) void this.finalizeLoc(pano, region);
+		}
+
+		this.walk(fromGood, region, 1);
+		this.walk(deeper, region, depth + 1);
+	}
+
+	private async finalizeLoc(pano: Pano, region: GeneratorRegion): Promise<void> {
+		if (this.stopped || this.paused || this.cancelledRegions.has(region.id)) return;
+		const s = this.settings;
+		const panoId: string = pano.id;
 
 		if (this.globalFoundPanoIds.has(panoId)) {
 			this.duplicates++;
@@ -735,27 +834,28 @@ export class GenerationEngine {
 		// its probe coordinate didn't — final skip-existing gate before accepting.
 		if (s.skipExisting) {
 			try {
-				const covered = await cmd.storeNearAny(
-					[pano.location.latLng.lat()],
-					[pano.location.latLng.lng()],
-					s.skipExistingRadius,
-				);
+				const covered = await cmd.storeNearAny([pano.lat], [pano.lng], s.skipExistingRadius);
 				if (covered[0]) return;
 			} catch (e) {
 				log.warn("[generator] storeNearAny failed, accepting unchecked:", e);
 			}
-			if (!this.isRunning() || this.paused || this.cancelledRegions.has(region.id)) return;
+			if (this.stopped || this.paused || this.cancelledRegions.has(region.id)) return;
 			if (region.found.length >= region.target) return;
 		}
 
 		const loc: GeneratedLocation = {
 			panoId,
-			lat: pano.location.latLng.lat(),
-			lng: pano.location.latLng.lng(),
+			lat: pano.lat,
+			lng: pano.lng,
 			heading: computeHeading(pano, s),
 			pitch: s.adjustPitch ? s.pitchDeviation : 0,
 			zoom: s.adjustZoom ? s.zoomLevel : 0,
-			imageDate: pano.imageDate ?? null,
+			imageDate: pano.imageDate || null,
+			country: pano.country ?? null,
+			road: pano.road ?? null,
+			procdate: pano.procdate ?? null,
+			provider: s.provider,
+			baiduCoverage: pano.baiduCoverage ?? null,
 		};
 
 		region.found.push(loc);
@@ -777,7 +877,7 @@ export class GenerationEngine {
 			clearTimeout(this.flushTimer);
 			this.flushTimer = null;
 		}
-		if (this.pendingBatch.length === 0 || !this.isRunning() || this.paused) return;
+		if (this.pendingBatch.length === 0 || this.stopped || this.paused) return;
 		const batch = this.pendingBatch.splice(0);
 		this.callbacks.onLocationsFound(batch);
 	}

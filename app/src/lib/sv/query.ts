@@ -38,6 +38,7 @@ export async function panosAt(
 	radius = SV_SEARCH_RADIUS,
 	opts?: SearchOpts,
 	signal?: AbortSignal,
+	onPano?: (index: number, pano: Pano | null) => void,
 ): Promise<(Pano | null)[]> {
 	if (points.length === 0) return [];
 	const answers = await queryProcedure<(Pano | null)[]>(
@@ -47,5 +48,9 @@ export async function panosAt(
 		signal,
 	);
 	if (!Array.isArray(answers)) throw new Error(`panoResolve query answered ${typeof answers}`);
-	return points.map((_, i) => answers[i] ?? null);
+	const panos = points.map((_, i) => answers[i] ?? null);
+	// The procedure answers the whole batch at once. Deliver each row to `onPano` before
+	// returning so a caller can overlap the next round; a true stream would call it earlier.
+	if (onPano) for (let i = 0; i < panos.length; i++) onPano(i, panos[i]);
+	return panos;
 }

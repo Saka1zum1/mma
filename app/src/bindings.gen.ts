@@ -265,6 +265,19 @@ export const commands = {
 	 *  has no vertices. `west > east` means the box crosses the antimeridian.
 	 */
 	polygonBounds: (polygon: PolygonGeometry) => __TAURI_INVOKE<[number, number, number, number] | null>("polygon_bounds", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
+	/**
+	 *  Pano ids in the z17 Google photometa tile that contains this point.
+	 *  An empty tile or an unreadable body is an empty list; a transport failure
+	 *  is an error so a missing endpoint is not mistaken for no coverage.
+	 */
+	photometaPanoIds: (lat: number, lng: number) => __TAURI_INVOKE<string[]>("photometa_pano_ids", { lat, lng }),
+	/**
+	 *  Probe the next slice of a Baidu pano-id range. Enumeration, concurrency,
+	 *  retries, and the sdata HTTP stay here; the generator applies its own filters.
+	 */
+	baiduTraverseChunk: (req: BaiduTraverseRequest) => __TAURI_INVOKE<BaiduTraverseChunk>("baidu_traverse_chunk", { req }),
+	/**  Batch GetMetadata for Google pano ids. Results are aligned with `ids`; a miss is null. */
+	googleBatchMetadata: (ids: string[]) => __TAURI_INVOKE<(GoogleBatchPano | null)[]>("google_batch_metadata", { ids }).then((v) => (v.map(i=>i==null?i:({...i,altitude:i.altitude==null?i.altitude:i.altitude,links:i.links.map(i=>i)})) as typeof v)),
 	learnableMetaClue: (mapId: string, panoId: string) => __TAURI_INVOKE<LearnableMetaClue | null>("learnable_meta_clue", { mapId, panoId }),
 	/**
 	 *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
@@ -608,6 +621,39 @@ export type AltProviderSettings = {
 	pointSizeScale: number,
 };
 
+/**
+ *  `content_json` is a JSON array of sdata `content` objects that survived the
+ *  traverse-only cover filters. Polygon and generator filters stay on the JS side.
+ */
+export type BaiduTraverseChunk = {
+	contentJson: string,
+	probed: number,
+	nextCursorMs: number,
+	done: boolean,
+};
+
+/**  One slice of a Baidu 27-character pano-id range scan. */
+export type BaiduTraverseRequest = {
+	startPanoId: string,
+	endPanoId: string,
+	/**  Next id's timestamp in epoch millis. `None` starts at `start_pano_id`. */
+	cursorMs: number | null,
+	useRoughScan: boolean,
+	scanStepMin: number,
+	scanDurationSec: number,
+	skipTimeEnabled: boolean,
+	skipStartMin: number,
+	skipEndMin: number,
+	filterNormalCover: boolean,
+	filterTimelineCoverage: boolean,
+	/**  In-flight `qt=sdata` batches. Clamped; 200 at once is more than this client will open. */
+	concurrency: number,
+	reqTimeoutSec: number,
+	retryTimes: number,
+	/**  How many ids to probe before returning, so a run can abort between slices. */
+	budget: number,
+};
+
 /**  How a page of rows is cut into procedure calls. */
 export type BatchMode = { mode: "chunk"; size: number } | { mode: "perRow" } | 
 /**
@@ -881,6 +927,32 @@ export type GgUser = {
 	nick: string,
 	/**  Avatar pin path (e.g. `pin/<hash>.png`), served under `/images/` on geoguessr.com. */
 	pin: string | null,
+};
+
+export type GoogleBatchLink = {
+	panoId: string,
+	heading: number,
+};
+
+/**  One panorama from the Maps JS GetMetadata batch endpoint. */
+export type GoogleBatchPano = {
+	id: string,
+	lat: number,
+	lng: number,
+	heading: number,
+	imageDate: string,
+	altitude: number | null,
+	country: string | null,
+	description: string,
+	shortDescription: string,
+	worldHeight: number,
+	links: GoogleBatchLink[],
+	time: GoogleBatchTime[],
+};
+
+export type GoogleBatchTime = {
+	panoId: string,
+	date: string,
 };
 
 /**

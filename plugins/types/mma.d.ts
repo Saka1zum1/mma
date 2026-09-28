@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Command } from '@tauri-apps/plugin-shell';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import * as react from 'react';
-import { ComponentType, SetStateAction, ComponentPropsWithRef, ComponentProps, ReactNode, CSSProperties, ElementType, ReactElement } from 'react';
+import { ComponentType, SetStateAction, ComponentPropsWithRef, ReactNode, ComponentProps, CSSProperties, ElementType, ReactElement } from 'react';
 import { Dialog as Dialog$1 } from '@base-ui-components/react/dialog';
 import { Layer, PickingInfo } from '@deck.gl/core';
 import * as maplibregl from 'maplibre-gl';
@@ -275,7 +275,19 @@ declare const commands$1: {
      *  has no vertices. `west > east` means the box crosses the antimeridian.
      */
     polygonBounds: (polygon: PolygonGeometry) => Promise<[number, number, number, number] | null>;
-    /** Clue for one panorama on a Learnable Meta map, or null when that location has none. */
+    /**
+     *  Pano ids in the z17 Google photometa tile that contains this point.
+     *  An empty tile or an unreadable body is an empty list; a transport failure
+     *  is an error so a missing endpoint is not mistaken for no coverage.
+     */
+    photometaPanoIds: (lat: number, lng: number) => Promise<string[]>;
+    /**
+     *  Probe the next slice of a Baidu pano-id range. Enumeration, concurrency,
+     *  retries, and the sdata HTTP stay here; the generator applies its own filters.
+     */
+    baiduTraverseChunk: (req: BaiduTraverseRequest) => Promise<BaiduTraverseChunk>;
+    /**  Batch GetMetadata for Google pano ids. Results are aligned with `ids`; a miss is null. */
+    googleBatchMetadata: (ids: string[]) => Promise<(GoogleBatchPano | null)[]>;
     learnableMetaClue: (mapId: string, panoId: string) => Promise<LearnableMetaClue | null>;
     /**
      *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name
@@ -895,6 +907,37 @@ type AltProviderSettings = {
     lineWidthScale: number;
     pointSizeScale: number;
 };
+/**
+ *  `content_json` is a JSON array of sdata `content` objects that survived the
+ *  traverse-only cover filters. Polygon and generator filters stay on the JS side.
+ */
+type BaiduTraverseChunk = {
+    contentJson: string;
+    probed: number;
+    nextCursorMs: number;
+    done: boolean;
+};
+/**  One slice of a Baidu 27-character pano-id range scan. */
+type BaiduTraverseRequest = {
+    startPanoId: string;
+    endPanoId: string;
+    /**  Next id's timestamp in epoch millis. `None` starts at `start_pano_id`. */
+    cursorMs: number | null;
+    useRoughScan: boolean;
+    scanStepMin: number;
+    scanDurationSec: number;
+    skipTimeEnabled: boolean;
+    skipStartMin: number;
+    skipEndMin: number;
+    filterNormalCover: boolean;
+    filterTimelineCoverage: boolean;
+    /**  In-flight `qt=sdata` batches. Clamped; 200 at once is more than this client will open. */
+    concurrency: number;
+    reqTimeoutSec: number;
+    retryTimes: number;
+    /**  How many ids to probe before returning, so a run can abort between slices. */
+    budget: number;
+};
 /**  How a page of rows is cut into procedure calls. */
 type BatchMode = {
     mode: "chunk";
@@ -1208,17 +1251,33 @@ type GgUser = {
     /**  Avatar pin path (e.g. `pin/<hash>.png`), served under `/images/` on geoguessr.com. */
     pin: string | null;
 };
+type GoogleBatchLink = {
+    panoId: string;
+    heading: number;
+};
+/**  One panorama from the Maps JS GetMetadata batch endpoint. */
+type GoogleBatchPano = {
+    id: string;
+    lat: number;
+    lng: number;
+    heading: number;
+    imageDate: string;
+    altitude: number | null;
+    country: string | null;
+    description: string;
+    shortDescription: string;
+    worldHeight: number;
+    links: GoogleBatchLink[];
+    time: GoogleBatchTime[];
+};
+type GoogleBatchTime = {
+    panoId: string;
+    date: string;
+};
 /**
  *  One row of honeycomb points: `count` points from `lng` eastward, each `lngStep` degrees
  *  apart.
  */
-type LearnableMetaClue = {
-    country: string;
-    metaName: string;
-    note: string;
-    footer: string;
-    images: string[];
-};
 type HoneycombRun = {
     lat: number;
     lng: number;
@@ -1268,6 +1327,13 @@ type KeySpec =
     kind: "datePart";
     part: DatePart;
     tzLocal: boolean;
+};
+type LearnableMetaClue = {
+    country: string;
+    metaName: string;
+    note: string;
+    footer: string;
+    images: string[];
 };
 /**
  *  A single Street View location on a map.
@@ -2398,6 +2464,8 @@ type VirtualTag = {
 
 /** Street View camera orientation (POV). */
 export type LocationPOV = Pick<Location, "heading" | "pitch" | "zoom">;
+/** Heading, pitch, zoom and pano id — the view a generated location carries. */
+export type PanoView = LocationPOV & Pick<Location, "panoId">;
 /** The camera fields a Location and the live Street View viewer share. */
 export type PanoCapture = LocationPOV & Pick<Location, "lat" | "lng" | "panoId">;
 export type LatLng = google.maps.LatLngLiteral;
@@ -2550,6 +2618,7 @@ export type types_PanoCapture = PanoCapture;
 export type types_PanoExtra = PanoExtra;
 export type types_PanoType = PanoType;
 declare const types_PanoType: typeof PanoType;
+export type types_PanoView = PanoView;
 export type types_SortMode = SortMode;
 export type types_SvColor = SvColor;
 export type types_SvCoverageType = SvCoverageType;
@@ -2575,7 +2644,7 @@ declare const types_locId: typeof locId;
 declare const types_scoreTupleToBounds: typeof scoreTupleToBounds;
 declare namespace types {
   export { types_LocationFlag as LocationFlag, types_PanoType as PanoType, types_VIRTUAL_FLAGS as VIRTUAL_FLAGS, types_ValidationState as ValidationState, types_applyLocationPatch as applyLocationPatch, types_bboxTupleToBounds as bboxTupleToBounds, types_boundsToScoreTuple as boundsToScoreTuple, types_createLocation as createLocation, types_dropLocation as dropLocation, types_hasLoadAsPanoId as hasLoadAsPanoId, types_isImportPreview as isImportPreview, types_isInformational as isInformational, types_isPinnedToPano as isPinnedToPano, types_isSeenPreview as isSeenPreview, types_isVirtualLocation as isVirtualLocation, types_isWorldBounds as isWorldBounds, types_locId as locId, types_scoreTupleToBounds as scoreTupleToBounds };
-  export type { types_Bounds as Bounds, types_LatLng as LatLng, types_LocationPOV as LocationPOV, types_MapTypeKey as MapTypeKey, types_MarkerStyle as MarkerStyle, types_MaybeLocation as MaybeLocation, types_Pano as Pano, types_PanoCapture as PanoCapture, types_PanoExtra as PanoExtra, types_SortMode as SortMode, types_SvColor as SvColor, types_SvCoverageType as SvCoverageType, types_SvThickness as SvThickness, types_TagSortMode as TagSortMode, types_WorkArea as WorkArea };
+  export type { types_Bounds as Bounds, types_LatLng as LatLng, types_LocationPOV as LocationPOV, types_MapTypeKey as MapTypeKey, types_MarkerStyle as MarkerStyle, types_MaybeLocation as MaybeLocation, types_Pano as Pano, types_PanoCapture as PanoCapture, types_PanoExtra as PanoExtra, types_PanoView as PanoView, types_SortMode as SortMode, types_SvColor as SvColor, types_SvCoverageType as SvCoverageType, types_SvThickness as SvThickness, types_TagSortMode as TagSortMode, types_WorkArea as WorkArea };
 }
 
 /** Per-cell, per-selection membership: a dense bitmask or a sparse selected-index list. */
@@ -4487,7 +4556,15 @@ declare const EVENT_DEFS: {
 };
 export type EditorEventMap = typeof EVENT_DEFS;
 export type EditorEvent = keyof EditorEventMap;
-export type EventHandler<E extends EditorEvent> = (payload: EditorEventMap[E]) => void;
+declare const pluginEventPayload: unique symbol;
+/** One of a plugin's own events, named `plugin:<plugin id>:<name>` and carrying a `T`.
+ *  `definePluginEvent` makes one. */
+export type PluginEvent<T = void> = `plugin:${string}:${string}` & {
+    readonly [pluginEventPayload]: T;
+};
+/** What an event hands its handlers. */
+export type EventPayload<E extends EditorEvent | PluginEvent<unknown>> = E extends EditorEvent ? EditorEventMap[E] : E extends PluginEvent<infer T> ? T : never;
+export type EventHandler<E extends EditorEvent | PluginEvent<unknown>> = (payload: EventPayload<E>) => void;
 
 export type Disposable = () => void;
 /** Run `fn` attributed to plugin `id`; host registrations during it are tracked for teardown. */
@@ -4606,7 +4683,15 @@ declare function Button({ variant, small, type, className, ...props }: Component
     small?: boolean;
 }): react.JSX.Element;
 
-declare function Checkbox({ className, ...props }: ComponentPropsWithRef<"input">): react.JSX.Element;
+export interface ChoiceLabelProps {
+    /** Text shown beside the control. Clicking the text acts like clicking the control. */
+    children?: ReactNode;
+    /** Secondary text shown under the label. */
+    hint?: ReactNode;
+}
+
+/** A checkbox, with its label and hint beside it when given. */
+declare function Checkbox({ className, children, hint, ...props }: Omit<ComponentPropsWithRef<"input">, "children"> & ChoiceLabelProps): react.JSX.Element;
 
 /** A color swatch that opens the picker in a popover on click. */
 declare function ColorPicker({ color, onChange, ariaLabel, }: {
@@ -4655,8 +4740,11 @@ declare function Dialog({ open, onOpenChange, children, ...props }: Omit<Compone
     onOpenChange?: (open: boolean) => void;
 }): react.JSX.Element;
 declare const DialogTrigger: Dialog$1.Trigger;
-declare function DialogContent({ className, title, initialFocus, children, headerExtra, ...props }: ComponentProps<typeof Dialog$1.Popup> & {
+/** A dialog's fixed width: small, medium, large or extra large. */
+export type DialogSize = "sm" | "md" | "lg" | "xl";
+declare function DialogContent({ className, title, size, initialFocus, children, headerExtra, ...props }: ComponentProps<typeof Dialog$1.Popup> & {
     title: string;
+    size?: DialogSize;
     headerExtra?: ReactNode;
 }): react.JSX.Element;
 
@@ -4718,7 +4806,11 @@ declare function IconButton({ icon, label, size, active, reveal, overlay, toolti
     children?: ReactNode;
 }): react.JSX.Element;
 
-declare function NSelect({ className, onWheel, ...props }: ComponentPropsWithRef<"select">): react.JSX.Element;
+/** A dropdown. `compact` shrinks it to fit its value; `limited` caps the height of its option list. */
+declare function NSelect({ className, compact, limited, onWheel, ...props }: ComponentPropsWithRef<"select"> & {
+    compact?: boolean;
+    limited?: boolean;
+}): react.JSX.Element;
 
 /** A progress bar under its label and count, with any extra detail below it. */
 declare function ProgressRow({ label, count, value, size, className, children, }: {
@@ -4730,7 +4822,8 @@ declare function ProgressRow({ label, count, value, size, className, children, }
     children?: ReactNode;
 }): react.JSX.Element;
 
-declare function Radio({ className, ...props }: ComponentPropsWithRef<"input">): react.JSX.Element;
+/** A radio button, with its label and hint beside it when given. */
+declare function Radio({ className, children, hint, ...props }: Omit<ComponentPropsWithRef<"input">, "children"> & ChoiceLabelProps): react.JSX.Element;
 
 declare function SelectorPicker({ ctl, className, }: {
     ctl: SelectorPickController;
@@ -4760,12 +4853,14 @@ export type ControlRow = Base & {
 declare function SettingRow(props: BoolRow | ControlRow | AutoBoolRow): react.JSX.Element | null;
 
 /** Standard right-hand sidebar chrome (title, back button, scrollable body). Use for plugin sidebars. */
-declare function Sidebar({ title, onBack, actions, className, flush, children, }: {
+declare function Sidebar({ title, onBack, actions, className, flush, footer, children, }: {
     title: ReactNode;
     onBack?: () => void;
     actions?: ReactNode;
     className?: string;
     flush?: boolean;
+    /** Stays pinned below the body while it scrolls, for the sidebar's main actions. */
+    footer?: ReactNode;
     children: ReactNode;
 }): react.JSX.Element;
 /** Collapsible titled section inside a Sidebar. */
@@ -5582,7 +5677,7 @@ declare function svMetadata(panoIds: string[], signal?: AbortSignal): Promise<(P
  *  `sources: ["google"]` means to the Maps JS API) and `opts.preference` picks nearest or
  *  best. The procedure hands every point to the host at once, so how many run concurrently
  *  stays the engine's call. */
-declare function panosAt(points: LatLng[], radius?: number, opts?: SearchOpts, signal?: AbortSignal): Promise<(Pano | null)[]>;
+declare function panosAt(points: LatLng[], radius?: number, opts?: SearchOpts, signal?: AbortSignal, onPano?: (index: number, pano: Pano | null) => void): Promise<(Pano | null)[]>;
 
 declare const query_panosAt: typeof panosAt;
 declare const query_svMetadata: typeof svMetadata;
@@ -6277,4 +6372,4 @@ declare global {
 }
 
 export { BUILTIN_FIELDS, DEFAULT_DUPLICATE_SCORE, KNOWN_FIELDS, MMA as MMAApi, PROJECTIONS, PanoType, commands$1 as commands, events };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, LearnableMetaClue, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BaiduTraverseChunk, BaiduTraverseRequest, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, GoogleBatchLink, GoogleBatchPano, GoogleBatchTime, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, LearnableMetaClue, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };

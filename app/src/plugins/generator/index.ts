@@ -1,4 +1,4 @@
-import { registerPlugin } from "@/plugins/registry";
+const { registerPlugin } = window.MMA;
 import { GeneratorSidebar } from "./ui/GeneratorSidebar";
 import { mountCoverageOverlay } from "./coverageOverlay";
 import { mdiMapMarkerPlus } from "@mdi/js";

@@ -1,21 +1,18 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { describe, it, expect, vi } from "vitest";
 import type { Selection } from "@/bindings.gen";
 import type { GeneratorRegionMeta } from "@/plugins/generator/engine/types";
 
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-
 const h = vi.hoisted(() => ({ selections: [] as Selection[] }));
 
-vi.mock("@/lib/util/log", () => ({ log: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+vi.mock("@/lib/util/log", async () => (await import("./fixtures/mocks")).logMock());
 vi.mock("@/store/useMapStore", () => ({
 	getActiveSelections: () => h.selections,
 	useMapState: (sel: (s: unknown) => unknown) => sel(undefined),
 }));
 
-const { RegionSelector } = await import("@/plugins/generator/ui/RegionSelector");
+import { RegionSelector } from "@/plugins/generator/ui/RegionSelector";
+import { mount } from "./fixtures/harness";
 
 function polygon(key: string, name: string, code?: string): Selection {
 	return {
@@ -37,38 +34,22 @@ function region(target: number, found: number, isProcessing = false): GeneratorR
 	};
 }
 
-let unmount: (() => void) | null = null;
-
 function render(selections: Selection[], meta: Map<string, GeneratorRegionMeta>) {
 	h.selections = selections;
-	const container = document.createElement("div");
-	document.body.appendChild(container);
-	const root = createRoot(container);
-	act(() =>
-		root.render(
-			<RegionSelector
-				defaultTarget={10}
-				onDefaultTargetChange={() => {}}
-				meta={meta}
-				onMetaChange={() => {}}
-			/>,
-		),
+	return mount(
+		<RegionSelector
+			defaultTarget={10}
+			onDefaultTargetChange={() => {}}
+			meta={meta}
+			onMetaChange={() => {}}
+			running={false}
+		/>,
 	);
-	unmount = () => {
-		act(() => root.unmount());
-		container.remove();
-	};
-	return container;
 }
-
-afterEach(() => {
-	unmount?.();
-	unmount = null;
-});
 
 describe("the generator region list", () => {
 	it("shows a flag for a two-letter country code and none for a subdivision code", () => {
-		const container = render(
+		const m = render(
 			[polygon("a", "France", "FR"), polygon("b", "Kabul", "AFG")],
 			new Map([
 				["a", region(10, 0)],
@@ -76,14 +57,14 @@ describe("the generator region list", () => {
 			]),
 		);
 
-		const rows = [...container.querySelectorAll(".generator-regions__item-name")];
+		const rows = [...m.container.querySelectorAll(".generator-regions__item-name")];
 		expect(rows).toHaveLength(2);
 		expect(rows[0].querySelector("img")?.getAttribute("src")).toBe("/flags/FR.svg");
 		expect(rows[1].querySelector("img")).toBeNull();
 	});
 
 	it("totals found and target across every region", () => {
-		const container = render(
+		const m = render(
 			[polygon("a", "France", "FR"), polygon("b", "Spain", "ES")],
 			new Map([
 				["a", region(10, 3)],
@@ -91,11 +72,13 @@ describe("the generator region list", () => {
 			]),
 		);
 
-		expect(container.querySelector(".generator-regions__total")?.textContent).toBe("Total: 10 / 35");
+		expect(m.container.querySelector(".generator-regions__total")?.textContent).toBe(
+			"Total: 10 / 35",
+		);
 	});
 
 	it("spins only on the region being processed", () => {
-		const container = render(
+		const m = render(
 			[polygon("a", "France", "FR"), polygon("b", "Spain", "ES")],
 			new Map([
 				["a", region(10, 3, true)],
@@ -103,8 +86,8 @@ describe("the generator region list", () => {
 			]),
 		);
 
-		const rows = [...container.querySelectorAll(".generator-regions__item-name")];
-		expect(rows[0].querySelector(".generator-regions__spinner")).not.toBeNull();
-		expect(rows[1].querySelector(".generator-regions__spinner")).toBeNull();
+		const rows = [...m.container.querySelectorAll(".generator-regions__item-name")];
+		expect(rows[0].querySelector(".spinner")).not.toBeNull();
+		expect(rows[1].querySelector(".spinner")).toBeNull();
 	});
 });

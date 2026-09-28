@@ -1,19 +1,24 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Work } from "./fixtures/jobContract";
 
 const h = vi.hoisted(() => ({
 	seeds: [] as { lat: number; lng: number; panoId: string }[],
 	// panoId -> the metadata GetMetadata would return for it
 	panos: new Map<string, unknown>(),
 	fetched: [] as string[],
+	// One coverage probe batch: the pano id found at each point, or null for none.
+	probe: (points: { lat: number; lng: number }[], _radius: number): (string | null)[] =>
+		points.map(() => null),
+	// When set, lookups park here instead of answering at once.
+	work: null as Work | null,
 	gridRuns: [] as { lat: number; lng: number; lngStep: number; count: number }[],
 	gridRequests: [] as number[],
 }));
 
-vi.mock("@/lib/util/log", () => ({
-	log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, trace: () => {} },
-	fireAndForget: (p: Promise<unknown>) => void p.catch(() => {}),
-}));
+vi.mock("@/lib/util/log", async () => (await import("./fixtures/mocks")).logMock());
 
+// Test polygons are rectangles, so the mocked shape commands answer with plain
+// interval checks against the outer ring.
 type MockPolygon = { coordinates: [number, number][][] };
 function rectOf(polygon: MockPolygon) {
 	const ring = polygon.coordinates[0];
@@ -55,30 +60,48 @@ vi.mock("@/lib/commands", () => ({
 			]);
 			return Promise.resolve(pts);
 		},
-		polygonPoissonPoints: () => Promise.resolve([]),
 	},
 }));
 
-vi.mock("@/lib/sv/svMeta", () => {
-	const fetchSvMetadata = (ids: string[]) => {
+vi.mock("@/lib/sv/query", () => {
+	const svMetadata = (ids: string[], signal?: AbortSignal) => {
 		h.fetched.push(...ids);
-		return Promise.resolve(ids.map((id) => h.panos.get(id) ?? null));
+		const answer = () => ids.map((id) => h.panos.get(id) ?? null);
+		return h.work ? h.work.park(answer, signal) : Promise.resolve(answer());
 	};
-	return { fetchSvMetadata, fetchSvMetadataBatched: fetchSvMetadata };
+	// The probe is scripted with pano ids; a location search now answers the pano itself.
+	const panosAt = (
+		points: { lat: number; lng: number }[],
+		radius: number,
+		_opts?: unknown,
+		signal?: AbortSignal,
+	) => {
+		const ids = h.probe(points, radius);
+		const answer = () => ids.map((id) => (id ? (h.panos.get(id) ?? null) : null));
+		return h.work ? h.work.park(answer, signal) : Promise.resolve(answer());
+	};
+	return { svMetadata, panosAt };
 });
 
-import { passesDescriptionSearch, isPanoGood, bendAngle } from "@/plugins/generator/engine/filters";
+import {
+	passesDescriptionSearch,
+	passesInitialFilters,
+	isPanoGood,
+	bendAngle,
+} from "@/plugins/generator/engine/filters";
 import { GenerationEngine } from "@/plugins/generator/engine/GenerationEngine";
 import { DEFAULT_SETTINGS } from "@/plugins/generator/engine/types";
 import type {
 	GeneratorSettings,
 	GeneratorRegion,
-	GeneratedLocation,
 	GenerationCallbacks,
+	GeneratedLocation,
 } from "@/plugins/generator/engine/types";
+import type { CameraType } from "@/bindings.gen";
+import type { Pano } from "@/plugins/generator/engine/panoModel";
 
-function loc(description = "", shortDescription = ""): google.maps.StreetViewLocation {
-	return { description, shortDescription } as unknown as google.maps.StreetViewLocation;
+function loc(description = "", shortDescription = ""): Pano {
+	return { description, shortDescription } as unknown as Pano;
 }
 
 function settings(patch: Partial<GeneratorSettings>): GeneratorSettings {
@@ -149,57 +172,87 @@ describe("passesDescriptionSearch", () => {
 		expect(passesDescriptionSearch(loc("Main Street"), ends)).toBe(true);
 		expect(passesDescriptionSearch(loc("Streetlight"), ends)).toBe(false);
 	});
+
+	// The short description is the first part of the description on its own, so a term
+	// that only appears there still has to match. It is carried separately because
+	// sectionmatch treats it as a whole section rather than a comma-delimited piece.
+	it("searches the short description, not just the description", () => {
+		const contains = settings({
+			searchInDescription: true,
+			searchTerms: "vilar",
+			searchMode: "contains",
+		});
+		expect(passesDescriptionSearch(loc("", "Rua do Vilar"), contains)).toBe(true);
+
+		const section = settings({
+			searchInDescription: true,
+			searchTerms: "Main Street",
+			searchMode: "sectionmatch",
+		});
+		expect(passesDescriptionSearch(loc("", "Main Street"), section)).toBe(true);
+	});
 });
 
+/** Official ids end in one of A/Q/g/w, which is what `isOfficialPano` tests. */
+const OFFICIAL_ID = `${"a".repeat(21)}A`;
+
 function pano(over: {
-	pano?: string;
+	id?: string;
 	links?: number;
 	description?: string;
 	imageDate?: string;
-}): google.maps.StreetViewResolvedPanoramaData {
-	const links = Array.from({ length: over.links ?? 2 }, () => ({ heading: 0, pano: "x" }));
+	cameraType?: CameraType | null;
+}): Pano {
+	const links = Array.from({ length: over.links ?? 2 }, () => ({ heading: 0, panoId: "x" }));
+	const imageDate = over.imageDate ?? "2020-06";
+	const [y, m] = imageDate.split("-");
 	return {
-		location: {
-			pano: over.pano ?? "a".repeat(22),
-			description: over.description ?? "Main Street",
-			shortDescription: "",
-		},
+		id: over.id ?? OFFICIAL_ID,
+		description: over.description ?? "Main Street",
+		shortDescription: "",
 		links,
-		imageDate: over.imageDate ?? "2020-06",
+		date: { year: Number(y), month: Number(m), day: 1 },
+		imageDate,
 		time: [],
-	} as unknown as google.maps.StreetViewResolvedPanoramaData;
+		cameraType: over.cameraType ?? "gen2",
+	} as unknown as Pano;
 }
 
-describe("isPanoGood new filters", () => {
-	it("rejects panos outside the links-length range", () => {
-		const s = settings({ filterByLinks: true, minLinks: 2, maxLinks: 3, rejectDateless: false });
-		expect(isPanoGood(pano({ links: 2 }), s)).toBe(true);
-		expect(isPanoGood(pano({ links: 1 }), s)).toBe(false);
-		expect(isPanoGood(pano({ links: 4 }), s)).toBe(false);
+describe("description-only rejection filters", () => {
+	const withShort = (description: string, shortDescription: string) =>
+		({ ...pano({}), description, shortDescription }) as Pano;
+
+	it("rejectNoDescription keeps a pano carrying only a short description", () => {
+		const s = settings({ rejectUnofficial: true, rejectNoDescription: true });
+		expect(passesInitialFilters(withShort("", "Main Street"), s)).toBe(true);
+		expect(passesInitialFilters(withShort("", ""), s)).toBe(false);
 	});
 
-	it("applies description search as a gate", () => {
-		const s = settings({
-			searchInDescription: true,
-			searchTerms: "bridge",
-			searchMode: "contains",
-			rejectDateless: false,
-			rejectNoDescription: false,
-		});
-		expect(isPanoGood(pano({ description: "Old Bridge" }), s)).toBe(true);
-		expect(isPanoGood(pano({ description: "Main Street" }), s)).toBe(false);
+	it("rejectDescription drops a pano carrying only a short description", () => {
+		const s = settings({ rejectUnofficial: true, rejectDescription: true });
+		expect(passesInitialFilters(withShort("", "Main Street"), s)).toBe(false);
+		expect(passesInitialFilters(withShort("", ""), s)).toBe(true);
+	});
+});
+
+describe("camera type filters", () => {
+	it("rejectGen1 drops gen1 and keeps the rest", () => {
+		const s = settings({ rejectGen1: true });
+		expect(passesInitialFilters(pano({ cameraType: "gen1" }), s)).toBe(false);
+		expect(passesInitialFilters(pano({ cameraType: "gen2" }), s)).toBe(true);
+		expect(passesInitialFilters(pano({ cameraType: "gen4" }), s)).toBe(true);
+		expect(passesInitialFilters(pano({ cameraType: null }), s)).toBe(true);
 	});
 
-	it("findCurves rejects panos not on a sharp enough bend", () => {
-		const s = settings({ findCurves: true, minCurveAngle: 60, rejectDateless: false });
-		const withLinks = (headings: number[]) =>
-			({
-				...pano({}),
-				links: headings.map((heading) => ({ heading, pano: "x" })),
-			}) as google.maps.StreetViewResolvedPanoramaData;
-		expect(isPanoGood(withLinks([0, 90]), s)).toBe(true);
-		expect(isPanoGood(withLinks([0, 180]), s)).toBe(false);
-		expect(isPanoGood(withLinks([0]), s)).toBe(false);
+	it("findGeneration matches the camera type exactly, not the rig family", () => {
+		const gen2 = settings({ findGeneration: true, generation: 23 });
+		expect(passesInitialFilters(pano({ cameraType: "gen2" }), gen2)).toBe(true);
+		expect(passesInitialFilters(pano({ cameraType: "badcam" }), gen2)).toBe(false);
+		expect(passesInitialFilters(pano({ cameraType: "tripod" }), gen2)).toBe(false);
+
+		const gen4 = settings({ findGeneration: true, generation: 4 });
+		expect(passesInitialFilters(pano({ cameraType: "gen4" }), gen4)).toBe(true);
+		expect(passesInitialFilters(pano({ cameraType: "trekker" }), gen4)).toBe(false);
 	});
 });
 
@@ -222,8 +275,59 @@ describe("bendAngle", () => {
 	});
 
 	it("is null when a link has no heading", () => {
-		expect(bendAngle([{ heading: 0 }, { heading: undefined }])).toBeNull();
-		expect(bendAngle([{ heading: 0 }, { heading: null }])).toBeNull();
+		expect(bendAngle([{ heading: 0 }, { heading: undefined as unknown as number }])).toBeNull();
+	});
+});
+
+describe("isPanoGood new filters", () => {
+	it("rejects panos outside the links-length range", () => {
+		const s = settings({ filterByLinks: true, minLinks: 2, maxLinks: 3, rejectDateless: false });
+		expect(isPanoGood(pano({ links: 2 }), s)).toBe(true);
+		expect(isPanoGood(pano({ links: 1 }), s)).toBe(false);
+		expect(isPanoGood(pano({ links: 4 }), s)).toBe(false);
+	});
+
+	it("rejectUnofficial tests the official id pattern, not the id length", () => {
+		const s = settings({ rejectUnofficial: true, rejectDateless: false });
+		expect(isPanoGood(pano({ id: OFFICIAL_ID }), s)).toBe(true);
+		expect(isPanoGood(pano({ id: `${"a".repeat(21)}b` }), s)).toBe(false);
+		expect(isPanoGood(pano({ id: `F:${"a".repeat(20)}` }), s)).toBe(false);
+	});
+
+	it("findCurves rejects panos not on a sharp enough bend", () => {
+		const s = settings({ findCurves: true, minCurveAngle: 60, rejectDateless: false });
+		const withLinks = (links: { heading: number; panoId: string }[]) =>
+			({ ...pano({}), links }) as Pano;
+		expect(
+			isPanoGood(
+				withLinks([
+					{ heading: 0, panoId: "x" },
+					{ heading: 90, panoId: "y" },
+				]),
+				s,
+			),
+		).toBe(true);
+		expect(
+			isPanoGood(
+				withLinks([
+					{ heading: 0, panoId: "x" },
+					{ heading: 180, panoId: "y" },
+				]),
+				s,
+			),
+		).toBe(false);
+	});
+
+	it("applies description search as a gate", () => {
+		const s = settings({
+			searchInDescription: true,
+			searchTerms: "bridge",
+			searchMode: "contains",
+			rejectDateless: false,
+			rejectNoDescription: false,
+		});
+		expect(isPanoGood(pano({ description: "Old Bridge" }), s)).toBe(true);
+		expect(isPanoGood(pano({ description: "Main Street" }), s)).toBe(false);
 	});
 });
 
@@ -234,21 +338,17 @@ function regionAt(id: string, west: number, east: number): GeneratorRegion {
 	return {
 		id,
 		name: id,
-		feature: {
-			type: "Feature",
-			properties: { name: id },
-			geometry: {
-				type: "Polygon",
-				coordinates: [
-					[
-						[west, -5],
-						[east, -5],
-						[east, 5],
-						[west, 5],
-						[west, -5],
-					],
+		polygon: {
+			coordinates: [
+				[
+					[west, -5],
+					[east, -5],
+					[east, 5],
+					[west, 5],
+					[west, -5],
 				],
-			},
+			],
+			extraPolygons: null,
 		},
 		found: [],
 		target: 1000, // never self-completes; tests drive stop() explicitly
@@ -264,21 +364,20 @@ const noopCallbacks: GenerationCallbacks = {
 	onDone: () => {},
 };
 
-function fakeGoogleWith(
-	getPanorama: (
-		req: { location?: { lat?: number; lng: number }; pano?: string; radius?: number },
-		cb: (d: unknown, s: string) => void,
-	) => void,
-): Google {
-	class FakeStreetViewService {
-		getPanorama = getPanorama;
-	}
-	return {
-		maps: {
-			StreetViewService: FakeStreetViewService,
-			StreetViewSource: { GOOGLE: "google", DEFAULT: "default" },
-		},
-	} as unknown as Google;
+/** Scripts the coverage probe. `onBatch` sees each batch of points and the radius it
+ *  was asked with, and returns the pano id found at each point (null for none). */
+function probeWith(
+	onBatch: (points: { lat: number; lng: number }[], radius: number) => (string | null)[],
+): void {
+	h.probe = onBatch;
+}
+
+/** Probe that finds nothing, counting the batch and the radius it carried. */
+function emptyProbe(onBatch: (points: { lat: number; lng: number }[], radius: number) => void) {
+	probeWith((points, radius) => {
+		onBatch(points, radius);
+		return points.map(() => null);
+	});
 }
 
 // region A lives in negative longitudes, region B in positive — classify probes by sign.
@@ -287,18 +386,21 @@ const B = () => regionAt("B", 40, 60);
 
 // A pano that clears every filter under the permissive settings used below, located
 // inside region A. Returned for both the location probe and the deep pano lookup.
+const FOUND_PANO = "p".repeat(22);
+
 function foundPano(lng: number, lat: number): unknown {
 	return {
-		location: {
-			pano: "p".repeat(22),
-			description: "Main Street",
-			shortDescription: "",
-			latLng: { lat: () => lat, lng: () => lng },
-		},
-		links: [{ heading: 90, pano: "l".repeat(22) }],
+		id: FOUND_PANO,
+		description: "Main Street, Springfield",
+		shortDescription: "Main Street",
+		lat,
+		lng,
+		links: [{ heading: 90, panoId: "l".repeat(22) }],
+		date: { year: 2020, month: 6, day: 1 },
 		imageDate: "2020-06",
 		time: [],
-		tiles: { centerHeading: 0, worldSize: { height: 6656 } },
+		worldSize: { height: 6656 },
+		pov: { heading: 0, tilt: 90, roll: 0 },
 	};
 }
 
@@ -315,18 +417,13 @@ describe("GenerationEngine live tuning", () => {
 		const radii: number[] = [];
 		let calls = 0;
 
-		const engine = new GenerationEngine(
-			fakeGoogleWith((req: { radius?: number } & { location?: { lng: number } }, cb) => {
-				radii.push(req.radius ?? -1);
-				calls++;
-				if (calls === 1) engine.updateSettings({ ...DEFAULT_SETTINGS, radius: 999 });
-				if (calls >= 40) engine.stop();
-				cb(null, "ZERO_RESULTS");
-			}),
-			{ ...DEFAULT_SETTINGS, radius: 500 },
-			[A()],
-			noopCallbacks,
-		);
+		emptyProbe((_points, radius) => {
+			radii.push(radius);
+			calls++;
+			if (calls === 1) engine.updateSettings({ ...DEFAULT_SETTINGS, radius: 999 });
+			if (calls >= 40) engine.stop();
+		});
+		const engine = new GenerationEngine({ ...DEFAULT_SETTINGS, radius: 500 }, [A()], noopCallbacks);
 
 		await engine.start();
 
@@ -339,17 +436,12 @@ describe("GenerationEngine live tuning", () => {
 	it("applies a mid-job target change, ending the region at the new cap", async () => {
 		let calls = 0;
 
-		const engine = new GenerationEngine(
-			fakeGoogleWith((_req, cb) => {
-				calls++;
-				if (calls === 3) engine.updateRegionTargets(new Map([["A", 0]]));
-				if (calls > 10000) engine.stop();
-				cb(null, "ZERO_RESULTS");
-			}),
-			{ ...DEFAULT_SETTINGS },
-			[A()],
-			noopCallbacks,
-		);
+		emptyProbe(() => {
+			calls++;
+			if (calls === 3) engine.updateRegionTargets(new Map([["A", 0]]));
+			if (calls > 10000) engine.stop();
+		});
+		const engine = new GenerationEngine({ ...DEFAULT_SETTINGS }, [A()], noopCallbacks);
 
 		await engine.start();
 
@@ -363,29 +455,24 @@ describe("GenerationEngine live tuning", () => {
 		let bAtAdd = -1;
 		let total = 0;
 
-		const engine = new GenerationEngine(
-			fakeGoogleWith((req, cb) => {
-				if (req.location) {
-					if (req.location.lng < 0) probes.A++;
-					else probes.B++;
-				}
-				total++;
-				if (phase === "run" && probes.A >= 3) {
-					phase = "added";
-					engine.pause();
-					bAtAdd = probes.B; // B not present yet
-					engine.reconcileRegions([A(), B()]);
-					setTimeout(() => engine.resume(), 0);
-				} else if (phase === "added" && probes.B >= 3) {
-					engine.stop();
-				}
-				if (total > 10000) engine.stop();
-				cb(null, "ZERO_RESULTS");
-			}),
-			{ ...DEFAULT_SETTINGS },
-			[A()],
-			noopCallbacks,
-		);
+		emptyProbe((points) => {
+			for (const pt of points) {
+				if (pt.lng < 0) probes.A++;
+				else probes.B++;
+			}
+			total++;
+			if (phase === "run" && probes.A >= 3) {
+				phase = "added";
+				engine.pause();
+				bAtAdd = probes.B; // B not present yet
+				engine.reconcileRegions([A(), B()]);
+				setTimeout(() => engine.resume(), 0);
+			} else if (phase === "added" && probes.B >= 3) {
+				engine.stop();
+			}
+			if (total > 10000) engine.stop();
+		});
+		const engine = new GenerationEngine({ ...DEFAULT_SETTINGS }, [A()], noopCallbacks);
 
 		await engine.start();
 
@@ -401,36 +488,31 @@ describe("GenerationEngine live tuning", () => {
 		let aAfterResume = -1;
 		let total = 0;
 
-		const engine = new GenerationEngine(
-			fakeGoogleWith((req, cb) => {
-				if (req.location) {
-					if (req.location.lng < 0) probes.A++;
-					else probes.B++;
-				}
-				total++;
-				if (phase === "run" && probes.A >= 3 && probes.B >= 3) {
-					phase = "removing";
-					engine.pause();
-					engine.reconcileRegions([A()]); // drop B
-					setTimeout(() => {
-						phase = "resumed";
-						engine.resume();
-					}, 0);
-				} else if (phase === "resumed") {
-					// first probe after resume: B is fully settled by now
-					bAfterResume = probes.B;
-					aAfterResume = probes.A;
-					phase = "measuring";
-				} else if (phase === "measuring" && probes.A >= aAfterResume + 200) {
-					engine.stop();
-				}
-				if (total > 10000) engine.stop();
-				cb(null, "ZERO_RESULTS");
-			}),
-			{ ...DEFAULT_SETTINGS },
-			[A(), B()],
-			noopCallbacks,
-		);
+		emptyProbe((points) => {
+			for (const pt of points) {
+				if (pt.lng < 0) probes.A++;
+				else probes.B++;
+			}
+			total++;
+			if (phase === "run" && probes.A >= 3 && probes.B >= 3) {
+				phase = "removing";
+				engine.pause();
+				engine.reconcileRegions([A()]); // drop B
+				setTimeout(() => {
+					phase = "resumed";
+					engine.resume();
+				}, 0);
+			} else if (phase === "resumed") {
+				// first probe after resume: B is fully settled by now
+				bAfterResume = probes.B;
+				aAfterResume = probes.A;
+				phase = "measuring";
+			} else if (phase === "measuring" && probes.A >= aAfterResume + 200) {
+				engine.stop();
+			}
+			if (total > 10000) engine.stop();
+		});
+		const engine = new GenerationEngine({ ...DEFAULT_SETTINGS }, [A(), B()], noopCallbacks);
 
 		await engine.start();
 
@@ -444,30 +526,25 @@ describe("GenerationEngine live tuning", () => {
 		const result = { beforePause: -1, afterPause: -1 };
 		let acted = false;
 
-		const engine = new GenerationEngine(
-			fakeGoogleWith((_req, cb) => {
-				cb(foundPano(-50, 0), "OK");
-			}),
-			permissive(),
-			[A()],
-			{
-				onLocationsFound: (locs) => flushed.push(...locs),
-				onProgress: () => {
-					if (acted) return;
-					acted = true;
-					// Defer past the probe call stack: the find is buffered (flushTimer
-					// pending), not yet flushed. pause() must commit it.
-					void Promise.resolve().then(() => {
-						result.beforePause = flushed.length;
-						engine.pause();
-						result.afterPause = flushed.length;
-						engine.stop();
-					});
-				},
-				onRegionComplete: () => {},
-				onDone: () => {},
+		h.panos.set(FOUND_PANO, foundPano(-50, 0));
+		probeWith((points) => points.map(() => FOUND_PANO));
+		const engine = new GenerationEngine(permissive(), [A()], {
+			onLocationsFound: (locs) => flushed.push(...locs),
+			onProgress: () => {
+				if (acted) return;
+				acted = true;
+				// Defer past the probe call stack: the find is buffered (flushTimer
+				// pending), not yet flushed. pause() must commit it.
+				void Promise.resolve().then(() => {
+					result.beforePause = flushed.length;
+					engine.pause();
+					result.afterPause = flushed.length;
+					engine.stop();
+				});
 			},
-		);
+			onRegionComplete: () => {},
+			onDone: () => {},
+		});
 
 		await engine.start();
 
@@ -477,32 +554,27 @@ describe("GenerationEngine live tuning", () => {
 		expect(flushed[0].panoId).toBe("p".repeat(22));
 	});
 
-	it("resume unblocks a parked worker instead of leaving the run hung", async () => {
+	it("resume unblocks every paused region worker, not just the last", async () => {
 		let phase: "run" | "paused" | "resumed" = "run";
 		let probesAfterResume = 0;
 		let total = 0;
 
-		const engine = new GenerationEngine(
-			fakeGoogleWith((_req, cb) => {
-				total++;
-				if (phase === "run" && total >= 5) {
-					phase = "paused";
-					engine.pause();
-					setTimeout(() => {
-						phase = "resumed";
-						engine.resume();
-					}, 0);
-				} else if (phase === "resumed") {
-					probesAfterResume++;
-					if (probesAfterResume >= 50) engine.stop();
-				}
-				if (total > 10000) engine.stop();
-				cb(null, "ZERO_RESULTS");
-			}),
-			{ ...DEFAULT_SETTINGS },
-			[A()],
-			noopCallbacks,
-		);
+		emptyProbe(() => {
+			total++;
+			if (phase === "run" && total >= 5) {
+				phase = "paused";
+				engine.pause();
+				setTimeout(() => {
+					phase = "resumed";
+					engine.resume();
+				}, 0);
+			} else if (phase === "resumed") {
+				probesAfterResume++;
+				if (probesAfterResume >= 50) engine.stop();
+			}
+			if (total > 10000) engine.stop();
+		});
+		const engine = new GenerationEngine({ ...DEFAULT_SETTINGS }, [A(), B()], noopCallbacks);
 
 		// With a single shared resolver, one of the two workers would stay parked
 		// forever and start() would never resolve.
@@ -510,6 +582,121 @@ describe("GenerationEngine live tuning", () => {
 
 		expect(probesAfterResume).toBeGreaterThanOrEqual(50);
 		expect(engine.isRunning()).toBe(false);
+	});
+});
+
+describe("GenerationEngine stop", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		h.work = new Work();
+	});
+	afterEach(() => {
+		h.work = null;
+		vi.useRealTimers();
+	});
+
+	/** Every probed point finds a pano of its own, so a live run keeps finding. */
+	function probeFindsEverywhere(): void {
+		let n = 0;
+		probeWith((points) =>
+			points.map(({ lat, lng }) => {
+				const id = `q${String(n++).padStart(21, "0")}`;
+				h.panos.set(id, { ...(foundPano(lng, lat) as object), id });
+				return id;
+			}),
+		);
+	}
+
+	it("reaches no callback once stopped, however its lookups answer", async () => {
+		probeFindsEverywhere();
+		let calls = 0;
+		const count = () => {
+			calls++;
+		};
+		const engine = new GenerationEngine(permissive(), [A()], {
+			onLocationsFound: count,
+			onProgress: count,
+			onRegionComplete: count,
+			onDone: count,
+		});
+		const run = engine.start();
+		await vi.advanceTimersByTimeAsync(0);
+		await h.work!.answer();
+		await h.work!.answer();
+		expect(calls).toBeGreaterThan(0);
+
+		engine.stop();
+		const atStop = calls;
+		for (let i = 0; i < 3; i++) await h.work!.answer({ honorAbort: false });
+		await run;
+		expect(calls).toBe(atStop);
+	});
+
+	it("aborts every lookup still in flight", async () => {
+		emptyProbe(() => {});
+		const engine = new GenerationEngine(permissive(), [A()], noopCallbacks);
+		const run = engine.start();
+		await vi.advanceTimersByTimeAsync(0);
+		const inFlight = h.work!.pendingSignals();
+		expect(inFlight.length).toBeGreaterThan(0);
+
+		engine.stop();
+		expect(inFlight.every((s) => s?.aborted)).toBe(true);
+		await h.work!.answer();
+		await run;
+	});
+
+	it("never starts once stopped", async () => {
+		emptyProbe(() => {});
+		const engine = new GenerationEngine(permissive(), [A()], noopCallbacks);
+		engine.stop();
+		await engine.start();
+		expect(h.work!.issued).toBe(0);
+		expect(engine.isRunning()).toBe(false);
+	});
+
+	it("asks nothing more when stopped while paused", async () => {
+		emptyProbe(() => {});
+		const engine = new GenerationEngine(permissive(), [A()], noopCallbacks);
+		const run = engine.start();
+		await vi.advanceTimersByTimeAsync(0);
+		engine.pause();
+		await h.work!.answer();
+		const issued = h.work!.issued;
+
+		engine.stop();
+		await h.work!.answer();
+		await run;
+		expect(h.work!.issued).toBe(issued);
+	});
+});
+
+describe("GenerationEngine probe batching", () => {
+	it("probes a round's coordinates in one search, not fixed sub-chunks", async () => {
+		const sizes: number[] = [];
+		emptyProbe((points) => {
+			sizes.push(points.length);
+			engine.stop();
+		});
+		const engine = new GenerationEngine(permissive(), [A()], noopCallbacks);
+
+		await engine.start();
+
+		// One search carried the whole round; the engine schedules it under its inflight budget.
+		expect(sizes[0]).toBe(1000);
+	});
+
+	it("probes one at a time when findRegions dedups against prior finds", async () => {
+		const sizes: number[] = [];
+		emptyProbe((points) => {
+			sizes.push(points.length);
+			if (sizes.length >= 3) engine.stop();
+		});
+		const engine = new GenerationEngine(permissive({ findRegions: true }), [A()], noopCallbacks);
+
+		await engine.start();
+
+		expect(sizes.slice(0, 3)).toEqual([1, 1, 1]);
 	});
 });
 
@@ -521,16 +708,17 @@ function seedChain(length: number, isGood: (i: number) => boolean): void {
 	h.panos.clear();
 	for (let i = 0; i < length; i++) {
 		h.panos.set(`p${i}`, {
-			location: {
-				pano: `p${i}`,
-				description: "Main Street",
-				shortDescription: "",
-				latLng: { lat: () => 0, lng: () => -50 },
-			},
-			links: i + 1 < length ? [{ heading: 90, pano: `p${i + 1}` }] : [],
+			id: `p${i}`,
+			description: "Main Street",
+			shortDescription: "Main Street",
+			lat: 0,
+			lng: -50,
+			links: i + 1 < length ? [{ heading: 90, panoId: `p${i + 1}` }] : [],
+			date: isGood(i) ? { year: 2020, month: 6, day: 1 } : { year: 2005, month: 1, day: 1 },
 			imageDate: isGood(i) ? "2020-06" : "2005-01",
 			time: [],
-			tiles: { centerHeading: 0, worldSize: { height: 6656 } },
+			worldSize: { height: 6656 },
+			pov: { heading: 0, tilt: 90, roll: 0 },
 		});
 	}
 	h.seeds = [{ lat: 0, lng: -50, panoId: "p0" }];
@@ -544,7 +732,6 @@ describe("GenerationEngine grow sampling", () => {
 		region.target = 20;
 
 		const engine = new GenerationEngine(
-			fakeGoogleWith(() => {}),
 			permissive({ samplingMode: "kernels", linksDepth: 2 }),
 			[region],
 			noopCallbacks,
@@ -561,7 +748,6 @@ describe("GenerationEngine grow sampling", () => {
 		const region = regionAt("A", -60, -40);
 
 		const engine = new GenerationEngine(
-			fakeGoogleWith(() => {}),
 			permissive({ samplingMode: "kernels", linksDepth: 2 }),
 			[region],
 			noopCallbacks,
@@ -574,90 +760,9 @@ describe("GenerationEngine grow sampling", () => {
 	});
 });
 
-// --- Poisson disk sampling ---
-
-import { poissonDiskSample } from "@/plugins/generator/engine/geo";
-
-function squareFeature(
-	west: number,
-	south: number,
-	east: number,
-	north: number,
-): GeoJSON.Feature<GeoJSON.Polygon> {
-	return {
-		type: "Feature",
-		properties: {},
-		geometry: {
-			type: "Polygon",
-			coordinates: [
-				[
-					[west, south],
-					[east, south],
-					[east, north],
-					[west, north],
-					[west, south],
-				],
-			],
-		},
-	};
-}
-
-describe("poissonDiskSample", () => {
-	it("all points are inside the polygon", () => {
-		const feature = squareFeature(10, 50, 11, 51);
-		const points = poissonDiskSample(feature, 5000);
-		expect(points.length).toBeGreaterThan(0);
-		for (const p of points) {
-			expect(p.lng).toBeGreaterThanOrEqual(10);
-			expect(p.lng).toBeLessThanOrEqual(11);
-			expect(p.lat).toBeGreaterThanOrEqual(50);
-			expect(p.lat).toBeLessThanOrEqual(51);
-		}
-	});
-
-	it("no two points are closer than minDistance", () => {
-		const feature = squareFeature(10, 50, 10.5, 50.5);
-		const minDist = 3000;
-		const points = poissonDiskSample(feature, minDist);
-
-		const mPerDegLat = 111_320;
-		const midLat = 50.25;
-		const mPerDegLng = mPerDegLat * Math.cos((midLat * Math.PI) / 180);
-
-		for (let i = 0; i < points.length; i++) {
-			for (let j = i + 1; j < points.length; j++) {
-				const dx = (points[i].lng - points[j].lng) * mPerDegLng;
-				const dy = (points[i].lat - points[j].lat) * mPerDegLat;
-				const dist = Math.sqrt(dx * dx + dy * dy);
-				expect(dist).toBeGreaterThanOrEqual(minDist * 0.99);
-			}
-		}
-	});
-
-	it("produces a reasonable number of points for the area", () => {
-		const feature = squareFeature(10, 50, 11, 51);
-		const minDist = 5000;
-		const points = poissonDiskSample(feature, minDist);
-
-		const mPerDegLat = 111_320;
-		const mPerDegLng = mPerDegLat * Math.cos((50.5 * Math.PI) / 180);
-		const areaM2 = 1 * mPerDegLng * (1 * mPerDegLat);
-		const maxPacking = areaM2 / (minDist * minDist * Math.PI * 0.25);
-
-		expect(points.length).toBeGreaterThan(maxPacking * 0.3);
-		expect(points.length).toBeLessThan(maxPacking * 1.5);
-	});
-
-	it("handles tiny polygons gracefully", () => {
-		const feature = squareFeature(10, 50, 10.001, 50.001);
-		const points = poissonDiskSample(feature, 5000);
-		expect(points.length).toBeLessThanOrEqual(1);
-	});
-});
+// --- Grid sampling ---
 
 import { gridPointSource, streamedPoints } from "@/plugins/generator/engine/pointSources";
-import { spreadIndex } from "@/plugins/generator/engine/spread";
-import { keepRate, cellKeepRate } from "@/plugins/generator/engine/blueLineSampler";
 
 const GRID_RUNS = [
 	{ lat: 1, lng: -50, lngStep: 0.5, count: 4 },
@@ -694,6 +799,58 @@ describe("streamedPoints", () => {
 		expect(await take(5)).toEqual([]);
 	});
 
+	it("a draw during starvation waits for the next emit instead of ending the supply", async () => {
+		let emitLate!: (pts: { lat: number; lng: number }[]) => void;
+		const take = streamedPoints(
+			(emit) =>
+				new Promise<void>((resolve) => {
+					emitLate = (pts) => {
+						emit(pts);
+						resolve();
+					};
+				}),
+		);
+		const pending = take(1);
+		emitLate([P(7)]);
+		expect(await pending).toEqual([P(7)]);
+		expect(await take(1)).toEqual([]);
+	});
+
+	it("draws split the buffer without duplicating or dropping points", async () => {
+		const take = streamedPoints(async (emit) => emit([P(1), P(2), P(3)]));
+		const first = await take(2);
+		const second = await take(2);
+		expect(first).toHaveLength(2);
+		expect(second).toHaveLength(1);
+		expect([...first, ...second].map((p) => p.lat).sort()).toEqual([1, 2, 3]);
+		expect(await take(2)).toEqual([]);
+	});
+
+	it("retire withdraws a key's undrawn points while other batches keep serving", async () => {
+		const take = streamedPoints(async (emit, retire) => {
+			emit([P(1), P(2)], 7);
+			emit([P(3)], 8);
+			retire(7);
+			emit([P(4)]);
+		});
+		expect((await take(10)).map((p) => p.lat).sort()).toEqual([3, 4]);
+		expect(await take(1)).toEqual([]);
+	});
+
+	it("a retire does not claw back points already drawn", async () => {
+		let step!: () => void;
+		const take = streamedPoints(async (emit, retire) => {
+			emit([P(1)], 7);
+			await new Promise<void>((r) => (step = r));
+			retire(7);
+			emit([P(2)]);
+		});
+		expect((await take(5)).map((p) => p.lat)).toEqual([1]);
+		step();
+		expect((await take(5)).map((p) => p.lat)).toEqual([2]);
+		expect(await take(5)).toEqual([]);
+	});
+
 	it("a producer failure surfaces on the draw once the buffer is drained", async () => {
 		const take = streamedPoints(async (emit) => {
 			emit([P(1)]);
@@ -704,42 +861,14 @@ describe("streamedPoints", () => {
 	});
 });
 
-describe("spreadIndex", () => {
-	it("is 1 when every cell has the same count", () => {
-		expect(spreadIndex([2, 2, 2, 2])).toBe(1);
-	});
-
-	it("is null until there are two cells and a count", () => {
-		expect(spreadIndex([])).toBeNull();
-		expect(spreadIndex([5])).toBeNull();
-		expect(spreadIndex([0, 0])).toBeNull();
-	});
-});
-
-describe("coverage thinning", () => {
-	it("keepRate halves with each zoom step above the baseline", () => {
-		expect(keepRate(14, 14)).toBe(1);
-		expect(keepRate(15, 14)).toBe(0.5);
-		expect(keepRate(16, 14)).toBe(0.25);
-	});
-
-	it("cellKeepRate is globalKeep at density and capped even-share at even", () => {
-		expect(cellKeepRate(100, 0.5, 0)).toBe(0.5);
-		expect(cellKeepRate(100, 0.5, 1)).toBeLessThan(1);
-	});
-});
-
 describe("GenerationEngine grid sampling", () => {
 	it("builds one honeycomb radius * sqrt(3) apart and probes each point exactly once", async () => {
 		h.gridRuns = GRID_RUNS;
 		h.gridRequests = [];
 		const probed: string[] = [];
+		emptyProbe((points) => probed.push(...points.map(keyOf)));
 
 		const engine = new GenerationEngine(
-			fakeGoogleWith((req, cb) => {
-				if (req.location) probed.push(`${req.location.lat},${req.location.lng}`);
-				cb(null, "ZERO_RESULTS");
-			}),
 			permissive({ samplingMode: "grid", radius: 500 }),
 			[A()],
 			noopCallbacks,

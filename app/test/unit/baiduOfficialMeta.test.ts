@@ -44,6 +44,7 @@ const sample: BaiduPanoMeta = {
 		{ pid: "far1", lng: 116.405, lat: 39.902, heading: 60 },
 	],
 	timeline: [{ id: "hist1", year: 2020, month: 6, isCurrent: false }],
+	procdate: null,
 };
 
 describe("baidu officialMeta", () => {

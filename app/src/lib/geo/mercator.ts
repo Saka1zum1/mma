@@ -4,6 +4,8 @@ import type { LatLng } from "@/types";
 import { clamp } from "@/types/util";
 
 export const WORLD_SIZE = 256;
+/** One web-mercator tile, in pixels. The generator's coverage sampler reads this. */
+export const TILE_SIZE = WORLD_SIZE;
 
 export function latLngToWorld(p: LatLng): { x: number; y: number } {
 	const siny = clamp(Math.sin((p.lat * Math.PI) / 180), -0.9999, 0.9999);

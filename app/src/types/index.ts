@@ -3,6 +3,8 @@ import { normalizeLocationStorageFields } from "@/lib/sv/providers/panoIdStorage
 
 /** Street View camera orientation (POV). */
 export type LocationPOV = Pick<Location, "heading" | "pitch" | "zoom">;
+/** Heading, pitch, zoom and pano id — the view a generated location carries. */
+export type PanoView = LocationPOV & Pick<Location, "panoId">;
 /** The camera fields a Location and the live Street View viewer share. */
 export type PanoCapture = LocationPOV & Pick<Location, "lat" | "lng" | "panoId">;
 

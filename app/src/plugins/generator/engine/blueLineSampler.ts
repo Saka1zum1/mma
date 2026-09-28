@@ -1,5 +1,5 @@
 import { TileConfig, LayerType, buildSvCoverageConfig, buildTileUrl } from "@/lib/geo/tiles";
-import { latLngToWorld, worldToTile, pixelToLatLng, WORLD_SIZE } from "@/lib/geo/mercator";
+import { latLngToWorld, worldToTile, pixelToLatLng, TILE_SIZE } from "@/lib/geo/mercator";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 import { chunk, shuffle } from "@/lib/util/util";
@@ -8,7 +8,6 @@ import type { PointSource } from "./types";
 import type { PolygonGeometry } from "@/bindings.gen";
 import type { Bounds, LatLng } from "@/types";
 
-const TILE_SIZE = WORLD_SIZE;
 const CLIP_BATCH = 50_000;
 
 const MAX_TILES_PER_AXIS = 150;
@@ -214,6 +213,7 @@ export function blueLineSource(
 			}
 			shuffle(tileJobs);
 
+			// Fetch tiles concurrently, scan pixels sequentially (canvas is shared)
 			for (const batch of chunk(tileJobs, FETCH_CONCURRENCY)) {
 				const bmps = await Promise.all(batch.map((j) => fetchTileBlob(cfg, j.tx, j.ty, plan.zoom)));
 				const pixelXs: number[] = [];

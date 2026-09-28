@@ -41,6 +41,8 @@ export interface BaiduPanoMeta {
 	 */
 	neighbors: BaiduLink[];
 	timeline: BaiduTimeEntry[];
+	/** Publish/edit day as `YYYY-MM-DD` when sdata carries one. */
+	procdate: string | null;
 }
 
 interface SdataPanoLink {
@@ -73,6 +75,9 @@ interface SdataPano {
 	Links?: SdataPanoLink[];
 	Roads: { Name: string; 	IsCurrent: number; Panos?: SdataPanoRoadPano[] }[];
 	TimeLine?: { ID: string; Year: string; TimeLine: string; IsCurrent?: number }[];
+	/** Publish or edit day. The sdata payload uses either spelling. */
+	procdate?: string;
+	Procdate?: string;
 }
 
 const metaCache = new Map<string, BaiduPanoMeta>();
@@ -276,7 +281,27 @@ function parseSdata(baidu: SdataPano): BaiduPanoMeta {
 		links,
 		neighbors,
 		timeline,
+		procdate: normalizeProcdate(baidu.procdate ?? baidu.Procdate),
 	};
+}
+
+/** sdata dates arrive as `YYYYMMDD` or `YYYY-MM-DD`. */
+function normalizeProcdate(raw: string | undefined): string | null {
+	if (!raw) return null;
+	if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+	const digits = raw.replace(/\D/g, "");
+	if (digits.length >= 8) {
+		return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+	}
+	return null;
+}
+
+/** One sdata `content` row, the shape `qt=sdata` returns. */
+export function baiduMetaFromSdata(raw: unknown): BaiduPanoMeta | null {
+	if (!raw || typeof raw !== "object") return null;
+	const row = raw as SdataPano;
+	if (!row.ID) return null;
+	return parseSdata(row);
 }
 
 export async function fetchBaiduMeta(sid: string): Promise<BaiduPanoMeta | null> {

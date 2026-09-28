@@ -57,6 +57,7 @@ mod export;
 mod field_expr;
 mod gdoc;
 mod geo_cmd;
+mod sv_net;
 mod geocoder;
 mod geoguessr;
 mod import;
@@ -822,6 +823,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             geo_cmd::polygon_poisson_points,
             geo_cmd::polygon_contains_points,
             geo_cmd::polygon_bounds,
+            sv_net::photometa_pano_ids,
+            sv_net::baidu_traverse_chunk,
+            sv_net::google_batch_metadata,
             learnable_meta::learnable_meta_clue,
             // --- Tag CRUD ---
             location_store::store_create_tags,

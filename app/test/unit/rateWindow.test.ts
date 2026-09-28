@@ -1,28 +1,47 @@
 import { describe, it, expect } from "vitest";
 import { RateWindow } from "@/plugins/generator/engine/rateWindow";
 
+const at = (sec: number) => sec * 1000 + 500;
+
 describe("RateWindow", () => {
-	it("ignores the second still filling, so a partial bucket cannot drag the rate down", () => {
+	it("answers zero before anything happened", () => {
 		const w = new RateWindow();
-		const t0 = 10_000;
-		w.add(10, t0);
-		w.add(10, t0 + 1000);
-		w.add(1, t0 + 2000);
-		expect(w.inWindow(t0 + 2500)).toBe(20);
-		expect(w.perSecond(t0 + 2500)).toBe(10);
+		expect(w.perSecond(at(5))).toBe(0);
+		expect(w.inWindow(at(5))).toBe(0);
 	});
 
-	it("treats a stall as a falling rate rather than freezing the last good one", () => {
+	it("excludes the second still filling", () => {
 		const w = new RateWindow();
-		const t0 = 10_000;
-		w.add(10, t0);
-		w.add(10, t0 + 1000);
-		expect(w.perSecond(t0 + 5500)).toBe(4);
+		w.add(100, at(0));
+		w.add(100, at(1));
+		expect(w.inWindow(at(1))).toBe(100);
 	});
 
-	it("is zero until a whole second has elapsed", () => {
+	it("averages over the window", () => {
 		const w = new RateWindow();
-		w.add(5, 1000);
-		expect(w.perSecond(1500)).toBe(0);
+		for (let s = 0; s < 5; s++) w.add(200, at(s));
+		expect(w.perSecond(at(5))).toBe(200);
+	});
+
+	it("counts a quiet second as zero instead of freezing the rate", () => {
+		const w = new RateWindow();
+		w.add(300, at(0));
+		w.add(300, at(1));
+		expect(w.perSecond(at(2))).toBe(300);
+		expect(w.perSecond(at(4))).toBe(150);
+	});
+
+	it("expires counts older than the window", () => {
+		const w = new RateWindow();
+		w.add(500, at(0));
+		w.add(10, at(12));
+		expect(w.inWindow(at(13))).toBe(10);
+	});
+
+	it("reuses a ring slot without carrying its old count", () => {
+		const w = new RateWindow();
+		w.add(500, at(0));
+		w.add(7, at(11));
+		expect(w.inWindow(at(12))).toBe(7);
 	});
 });

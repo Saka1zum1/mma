@@ -11,24 +11,10 @@
 	flex-shrink: 0;
 }
 
-/* Actions pinned to the bottom of the sidebar, full-bleed over the body
-   padding, so the region list scrolls above without squishing them. */
-.generator-sidebar__footer {
-	position: sticky;
-	bottom: -0.5rem;
-	margin: auto -0.5rem -0.5rem;
-	padding: 0.5rem;
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	background: var(--surface-0);
-	border-top: 1px solid var(--pu-divider);
-}
-
 .generator-sidebar__summary {
 	margin: 0;
 	font-size: 0.8rem;
-	opacity: 0.6;
+	color: var(--text-2);
 	line-height: 1.4;
 }
 
@@ -41,7 +27,7 @@
 	gap: 0.75rem;
 	flex-wrap: wrap;
 	font-size: 0.75rem;
-	opacity: 0.85;
+	color: var(--text-2);
 }
 
 .generator-sidebar__stat-group {
@@ -84,33 +70,7 @@
 	-moz-appearance: textfield;
 }
 
-.generator-cap-dialog {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-}
-.generator-cap-dialog__actions {
-	display: flex;
-	gap: 0.5rem;
-	justify-content: flex-end;
-}
-
 /* Region selector */
-.generator-regions__hint {
-	padding: 6px 0;
-	opacity: 0.7;
-	font-style: italic;
-}
-
-.generator-regions__hint kbd {
-	padding: 1px 4px;
-	border-radius: 3px;
-	border: 1px solid var(--border-strong);
-	font-family: inherit;
-	font-style: normal;
-	font-size: 0.9em;
-}
-
 .generator-regions__controls {
 	display: flex;
 	align-items: center;
@@ -151,12 +111,6 @@
 	flex-shrink: 0;
 }
 
-.generator-regions__item-name > span:first-of-type {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .generator-regions__item-count {
 	display: flex;
 	align-items: center;
@@ -165,39 +119,18 @@
 	white-space: nowrap;
 }
 
+.generator-regions__rate {
+	color: var(--text-2);
+	font-size: 0.75rem;
+	margin: 0 0.4em;
+}
+
 .generator-regions__total {
 	margin-top: 6px;
 	font-weight: 600;
 }
 
-.generator-regions__spinner {
-	width: 10px;
-	height: 10px;
-	border: 2px solid var(--border-strong);
-	border-top-color: var(--text-2);
-	border-radius: 50%;
-	animation: generator-spin 0.6s linear infinite;
-}
-
-@keyframes generator-spin {
-	to {
-		transform: rotate(360deg);
-	}
-}
-
 /* Settings panel */
-.generator-settings__check {
-	display: flex;
-	align-items: center;
-	gap: 5px;
-	padding: 2px 0;
-	cursor: pointer;
-}
-
-.generator-settings__check input[type="checkbox"] {
-	margin: 0;
-}
-
 .generator-settings__number {
 	display: flex;
 	align-items: center;
@@ -206,11 +139,33 @@
 }
 
 .generator-settings__number input {
-	width: 5rem;
+	width: 16rem;
 }
 
 .generator-settings__indent {
 	padding-left: 16px;
+}
+
+.generator-settings__traverse {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-left: 4px;
+	padding-left: 8px;
+	border-left: 2px solid var(--border-subtle);
+}
+
+.generator-settings__hint {
+	margin: 0;
+	opacity: 0.7;
+}
+
+.generator-settings__file {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	padding: 2px 0;
 }
 
 .generator-settings__radios {
@@ -218,13 +173,6 @@
 	flex-wrap: wrap;
 	gap: 2px 10px;
 	padding: 2px 0;
-}
-
-.generator-settings__radio {
-	display: flex;
-	align-items: center;
-	gap: 3px;
-	cursor: pointer;
 }
 
 .generator-settings__date-range {
