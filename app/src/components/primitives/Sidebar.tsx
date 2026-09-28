@@ -9,6 +9,7 @@ export function Sidebar({
 	actions,
 	className,
 	flush,
+	footer,
 	children,
 }: {
 	title: ReactNode;
@@ -16,6 +17,8 @@ export function Sidebar({
 	actions?: ReactNode;
 	className?: string;
 	flush?: boolean;
+	/** Stays pinned below the body while it scrolls, for the sidebar's main actions. */
+	footer?: ReactNode;
 	children: ReactNode;
 }) {
 	return (
@@ -32,6 +35,7 @@ export function Sidebar({
 			<div className={`plugin-sidebar__body${flush ? " plugin-sidebar__body--flush" : ""}`}>
 				{children}
 			</div>
+			{footer && <footer className="plugin-sidebar__footer">{footer}</footer>}
 		</section>
 	);
 }
