@@ -1,3 +1,14 @@
+## v0.11.4 - 2026-09-29
+- **Map generator** can probe **Google**, **Google tiles**, **Apple Look Around**, **Yandex**, **Baidu**, and **Tencent**
+- **Baidu traverse** scans a panorama-id range. Set how many requests run at once, skip a time of day, and start with no polygon selected; a map file can fill in the start and end ids
+- A traverse find that is not normal coverage gets one tag, either **hidden coverage** or **timeline coverage**
+- Extra filters cover altitude, time of day, publish date, author, photosphere / drone / night, and heading. Settings that do not apply to the current provider or mode stay hidden
+- **Auto tagging** can label a find with the provider, year, month, update type, country, country code, subdivision, road name, polygon name, Baidu panorama id, and publish date
+- Google generation can show a **desktop notification** and post the same news to a **Discord** webhook
+- **LocalGuessr** can show a **Learnable Meta** clue after each round when you turn it on and set a map id
+- **Gen4 Camera** is an experimental plugin that classifies a Gen4 rig (normal, smallcam, truck, trekker) from the downward blur
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.11.3 - 2026-09-22
 - **Map generator** can sample on a **grid** (honeycomb) as well as random, Poisson, blue-line, and kernels
 - Coverage-mode probes can follow **road density**, spread **evenly**, or sit **balanced** between the two
