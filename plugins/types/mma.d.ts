@@ -288,6 +288,8 @@ declare const commands$1: {
     baiduTraverseChunk: (req: BaiduTraverseRequest) => Promise<BaiduTraverseChunk>;
     /**  Batch GetMetadata for Google pano ids. Results are aligned with `ids`; a miss is null. */
     googleBatchMetadata: (ids: string[]) => Promise<(GoogleBatchPano | null)[]>;
+    /**  Whether one pixel of a Google or Baidu coverage tile is painted. */
+    coverageTileAlpha: (url: string, x: number, y: number) => Promise<boolean>;
     learnableMetaClue: (mapId: string, panoId: string) => Promise<LearnableMetaClue | null>;
     /**
      *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name

@@ -1,11 +1,12 @@
 import { LocationFlag } from "@/types";
-import { msg, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { registerJob, type JobHandle } from "@/lib/jobs";
-import { countryName, fmt } from "@/lib/util/format";
+import { fmt } from "@/lib/util/format";
 import { log } from "@/lib/util/log";
 import { definePluginEvent, emitPluginEvent } from "@/plugins/pluginEvents";
 import { createTags, setPluginMode } from "@/store/useMapStore";
 import { createLocation } from "@/types";
+import { autoTagNames } from "./engine/autoTags";
 import { GenerationEngine } from "./engine/GenerationEngine";
 import {
 	isGoogleProvider,
@@ -13,7 +14,6 @@ import {
 	type GeneratorRegion,
 	type GeneratorSettings,
 	type GeneratorStats,
-	type StreetViewProvider,
 } from "./engine/types";
 import { searchCoverage } from "./searchCoverage";
 
@@ -29,27 +29,6 @@ interface Run {
 let run: Run | null = null;
 let sidebarOpen = false;
 let frameQueued = false;
-
-const PROVIDER_TAG: Record<StreetViewProvider, string> = {
-	google: msg("Google"),
-	googleZoom: msg("Google tiles"),
-	apple: msg("Apple"),
-	yandex: msg("Yandex"),
-	baidu: msg("Baidu"),
-	tencent: msg("Tencent"),
-};
-
-function autoTagNames(loc: GeneratedLocation, settings: GeneratorSettings | null): string[] {
-	const tags = settings?.tags;
-	if (!tags?.enabled) return [];
-	const names: string[] = [];
-	if (tags.provider && loc.provider) names.push(t(PROVIDER_TAG[loc.provider]));
-	if (tags.year && loc.imageDate && loc.imageDate.length >= 4) names.push(loc.imageDate.slice(0, 4));
-	if (tags.country && loc.country) names.push(countryName(loc.country));
-	if (tags.road && loc.road) names.push(loc.road);
-	if (tags.procdate && loc.procdate) names.push(loc.procdate);
-	return names.map((name) => name.trim()).filter(Boolean);
-}
 
 /** Traverse locations that are not normal coverage. One location gets one of these, never both. */
 function coverageTag(loc: GeneratedLocation): string | null {

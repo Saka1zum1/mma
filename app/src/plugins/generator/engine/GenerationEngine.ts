@@ -10,8 +10,10 @@ import type {
 import { gridPointSource, pointsInOrder } from "./pointSources";
 import { blueLineSource, DISTRIBUTION_EVENNESS } from "./blueLineSampler";
 import { passesInitialFilters, passesDateFilters, isPanoGood, computeHeading } from "./filters";
+import { polygonTagName } from "./autoTags";
 import { fetchPanos, panosFromBaiduSdata, probePoints } from "./providers";
 import type { Pano } from "./panoModel";
+import { resolveUpdateType } from "./updateType";
 import { isOfficialPano } from "@/lib/sv/panoId";
 import { isGoogleProvider } from "./types";
 import { distMeters, lerpLng, unionBounds } from "@/lib/geo/geo";
@@ -843,6 +845,18 @@ export class GenerationEngine {
 			if (region.found.length >= region.target) return;
 		}
 
+		let updateType: string | null = null;
+		if (s.tags.enabled && s.tags.updateType) {
+			updateType = await resolveUpdateType(
+				pano,
+				s.provider,
+				s.rejectUnofficial && !s.rejectOfficial,
+				this.abort.signal,
+			);
+			if (this.stopped || this.paused || this.cancelledRegions.has(region.id)) return;
+			if (region.found.length >= region.target) return;
+		}
+
 		const loc: GeneratedLocation = {
 			panoId,
 			lat: pano.lat,
@@ -852,8 +866,11 @@ export class GenerationEngine {
 			zoom: s.adjustZoom ? s.zoomLevel : 0,
 			imageDate: pano.imageDate || null,
 			country: pano.country ?? null,
+			region: pano.region ?? null,
 			road: pano.road ?? null,
 			procdate: pano.procdate ?? null,
+			polygonName: polygonTagName(region.polygon.properties),
+			updateType,
 			provider: s.provider,
 			baiduCoverage: pano.baiduCoverage ?? null,
 		};

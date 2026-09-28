@@ -278,6 +278,11 @@ export const commands = {
 	baiduTraverseChunk: (req: BaiduTraverseRequest) => __TAURI_INVOKE<BaiduTraverseChunk>("baidu_traverse_chunk", { req }),
 	/**  Batch GetMetadata for Google pano ids. Results are aligned with `ids`; a miss is null. */
 	googleBatchMetadata: (ids: string[]) => __TAURI_INVOKE<(GoogleBatchPano | null)[]>("google_batch_metadata", { ids }).then((v) => (v.map(i=>i==null?i:({...i,altitude:i.altitude==null?i.altitude:i.altitude,links:i.links.map(i=>i)})) as typeof v)),
+	/**
+	 *  Whether one pixel of a Google or Baidu coverage tile is painted. The webview cannot
+	 *  read these tiles (no CORS), so the fetch and the alpha test stay here.
+	 */
+	coverageTileAlpha: (url: string, x: number, y: number) => __TAURI_INVOKE<boolean>("coverage_tile_alpha", { url, x, y }),
 	learnableMetaClue: (mapId: string, panoId: string) => __TAURI_INVOKE<LearnableMetaClue | null>("learnable_meta_clue", { mapId, panoId }),
 	/**
 	 *  Create tags by name. Deduplicates case-insensitively: if a tag with the same name

@@ -34,6 +34,8 @@ export interface Pano {
 	road?: string | null;
 	/** Baidu publish/edit day, `YYYY-MM-DD`. */
 	procdate?: string | null;
+	/** Last segment of a Google address, used as the subdivision tag. */
+	region?: string | null;
 	/** Uploader or author, for the unofficial author filter. */
 	author?: string | null;
 	/** Zero-link Google coverage, or a Tencent night capture. */
@@ -47,6 +49,21 @@ export interface Pano {
 }
 
 export type PanoCoverage = "photosphere" | "drone" | "night";
+
+/** various-map-gen folds Taiwan, Hong Kong, and Macau into CN. */
+export function googleCountry(code: string | null | undefined): string | null {
+	if (!code) return null;
+	if (code === "TW" || code === "HK" || code === "MO") return "CN";
+	return code;
+}
+
+/** Last comma-separated piece of an address. A single piece is the region itself. */
+export function addressRegion(address: string | null | undefined): string | null {
+	if (!address) return null;
+	const parts = address.split(",");
+	const region = (parts.length > 1 ? parts[parts.length - 1] : parts[0])?.trim();
+	return region || null;
+}
 
 function isGeneratorPano(raw: LocalPano | Pano): raw is Pano {
 	return "id" in raw && typeof raw.id === "string" && !("pano" in raw);
@@ -70,7 +87,8 @@ export function adaptPano(raw: LocalPano | Pano | null): Pano | null {
 		pov: raw.pov,
 		cameraType: detectCameraType(raw),
 		altitude: Number.isFinite(raw.altitude) ? raw.altitude : null,
-		country: raw.countryCode,
+		country: googleCountry(raw.countryCode),
+		region: addressRegion(raw.description),
 		road: null,
 		procdate: null,
 		author: raw.uploaderName,

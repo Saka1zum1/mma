@@ -650,6 +650,64 @@ fn parse_google_item(item: &serde_json::Value) -> Option<GoogleBatchPano> {
     })
 }
 
+fn coverage_url_allowed(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "https" {
+        return false;
+    }
+    match parsed.host_str() {
+        Some("www.google.com") => parsed.path() == "/maps/vt",
+        Some("mapsv0.bdimg.com") | Some("mapsv1.bdimg.com") => parsed.path() == "/tile/",
+        _ => false,
+    }
+}
+
+/// Alpha of one pixel in a coverage-tile PNG. `None` when the bytes are not a readable PNG
+/// or the pixel is outside the image.
+fn png_alpha_at(bytes: &[u8], x: u32, y: u32) -> Option<u8> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    if info.width == 0 || x >= info.width || y >= info.height {
+        return None;
+    }
+    let samples = info.color_type.samples();
+    let index = (y as usize) * (info.width as usize) * samples + (x as usize) * samples;
+    let pixel = buf.get(index..index + samples)?;
+    let alpha = match info.color_type {
+        png::ColorType::Rgba => *pixel.get(3)?,
+        png::ColorType::GrayscaleAlpha => *pixel.get(1)?,
+        _ => 255,
+    };
+    Some(alpha)
+}
+
+/// Whether one pixel of a Google or Baidu coverage tile is painted. The webview cannot
+/// read these tiles (no CORS), so the fetch and the alpha test stay here.
+#[tauri::command]
+#[specta::specta]
+pub async fn coverage_tile_alpha(url: String, x: u32, y: u32) -> AppResult<bool> {
+    if !coverage_url_allowed(&url) {
+        return Err(AppError::from("coverage_tile_alpha: url is not a coverage tile"));
+    }
+    let bytes = http_client()
+        .get(&url)
+        .header(
+            "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        )
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let alpha = png_alpha_at(&bytes, x, y).ok_or_else(|| AppError::from("coverage_tile_alpha: unreadable tile"))?;
+    Ok(alpha > 0)
+}
+
 fn parse_google_batch(response: &serde_json::Value) -> Vec<GoogleBatchPano> {
     let Some(items) = response.get(1).and_then(|v| v.as_array()) else {
         return Vec::new();
@@ -784,5 +842,23 @@ mod tests {
         assert_eq!(parsed.links[0].heading, 45.0);
         assert!(parsed.time.iter().any(|t| t.date == "2019-04"));
         assert!(parsed.time.iter().any(|t| t.pano_id == parsed.id && t.date == "2024-03"));
+    }
+
+    #[test]
+    fn png_alpha_reads_one_pixel() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 2, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[0, 0, 0, 0, 1, 2, 3, 200]).unwrap();
+        }
+        assert_eq!(png_alpha_at(&bytes, 0, 0), Some(0));
+        assert_eq!(png_alpha_at(&bytes, 1, 0), Some(200));
+        assert_eq!(png_alpha_at(&bytes, 2, 0), None);
+        assert!(!coverage_url_allowed("https://example.com/maps/vt"));
+        assert!(coverage_url_allowed("https://www.google.com/maps/vt?pb=1"));
+        assert!(coverage_url_allowed("https://mapsv1.bdimg.com/tile/?qt=tile&x=1&y=2&z=20"));
     }
 }

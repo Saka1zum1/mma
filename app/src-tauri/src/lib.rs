@@ -826,6 +826,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sv_net::photometa_pano_ids,
             sv_net::baidu_traverse_chunk,
             sv_net::google_batch_metadata,
+            sv_net::coverage_tile_alpha,
             learnable_meta::learnable_meta_clue,
             // --- Tag CRUD ---
             location_store::store_create_tags,

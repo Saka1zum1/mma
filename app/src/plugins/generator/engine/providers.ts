@@ -14,7 +14,7 @@ import { panosAt, svMetadata } from "@/lib/sv/query";
 import { fetchTencentMeta, parseTencentDateFromSvid, resolveTencentNear, type TencentPanoMeta } from "@/lib/sv/tencent/api";
 import { fetchYandexMeta, resolveYandexNear, type YandexPanoMeta } from "@/lib/sv/yandex/api";
 import { PanoType, type LatLng } from "@/types";
-import { adaptPano, type Pano } from "./panoModel";
+import { adaptPano, addressRegion, googleCountry, type Pano } from "./panoModel";
 import { baiduCoverageKind } from "./traverseRange";
 import { isGoogleProvider, type StreetViewProvider } from "./types";
 
@@ -272,6 +272,16 @@ async function byId(provider: StreetViewProvider, id: string): Promise<Pano | nu
 
 type GoogleBatchPano = NonNullable<Awaited<ReturnType<typeof cmd.googleBatchMetadata>>[number]>;
 
+/** Subdivision is the last piece of the long address, not the combined short+long string. */
+function batchRegion(description: string, short: string): string | null {
+	const prefix = short.trim();
+	if (prefix && description.startsWith(prefix)) {
+		const rest = description.slice(prefix.length).replace(/^,\s*/, "").trim();
+		if (rest) return addressRegion(rest);
+	}
+	return addressRegion(description);
+}
+
 function fromGoogleBatch(row: GoogleBatchPano): Pano {
 	const height = row.worldHeight;
 	const coverage =
@@ -289,7 +299,8 @@ function fromGoogleBatch(row: GoogleBatchPano): Pano {
 		pov: pov(row.heading),
 		cameraType: cameraTypeFromHeight(height),
 		altitude: row.altitude,
-		country: row.country,
+		country: googleCountry(row.country),
+		region: batchRegion(row.description, row.shortDescription),
 		road: row.shortDescription || null,
 		procdate: null,
 		author: null,

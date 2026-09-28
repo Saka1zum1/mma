@@ -96,8 +96,17 @@ export interface GeneratorTagSettings {
 	enabled: boolean;
 	provider: boolean;
 	year: boolean;
+	/** `YY-MM` taken from the capture month. */
+	month: boolean;
+	/** `newroad`, `noblueline`, or `gen1update` / `gen2or3update` / `gen4update`. */
+	updateType: boolean;
 	country: boolean;
+	countryCode: boolean;
+	region: boolean;
 	road: boolean;
+	polygon: boolean;
+	/** Last two characters of a Baidu pano id (the car code). */
+	panoId: boolean;
 	procdate: boolean;
 }
 
@@ -234,8 +243,14 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 		enabled: false,
 		provider: false,
 		year: false,
+		month: false,
+		updateType: false,
 		country: false,
+		countryCode: false,
+		region: false,
 		road: false,
+		polygon: false,
+		panoId: false,
 		procdate: false,
 	},
 	notification: {
@@ -280,8 +295,13 @@ export type GeneratedLocation = PanoView &
 	Pick<Location, "lat" | "lng"> & {
 		imageDate: string | null;
 		country?: string | null;
+		region?: string | null;
 		road?: string | null;
 		procdate?: string | null;
+		/** Polygon the find was kept in. */
+		polygonName?: string | null;
+		/** various-map-gen update tag: new road, no blue line, or a generation update. */
+		updateType?: string | null;
 		provider?: StreetViewProvider;
 		/** Set on a traverse hit that is not normal coverage. Never both kinds at once. */
 		baiduCoverage?: "hidden" | "timeline" | null;

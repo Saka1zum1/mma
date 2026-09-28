@@ -357,14 +357,11 @@ export function SettingsPanel({
 	const apple = settings.provider === "apple";
 	const googleOfficial = google && settings.rejectUnofficial && !settings.rejectOfficial;
 	const hasTimeline = !apple;
-	const roadTag = settings.provider === "baidu" || settings.provider === "tencent" || settings.provider === "googleZoom";
-	const countryTag = google || settings.provider === "baidu" || settings.provider === "tencent";
 
 	return (
 		<div className="generator-settings">
 			<Section title={t("Provider")}>
 				<label className="generator-settings__number">
-					{t("Street View")}
 					<NSelect
 						value={settings.provider}
 						onChange={(e) => {
@@ -611,7 +608,7 @@ export function SettingsPanel({
 					checked={settings.tags.enabled}
 					onChange={(e) => set("tags", { ...settings.tags, enabled: e.target.checked })}
 				>
-					{t("Tag each find")}
+					{t("Enable auto tagging for locations")}
 				</Checkbox>
 				{settings.tags.enabled && (
 					<div className="generator-settings__indent">
@@ -619,38 +616,68 @@ export function SettingsPanel({
 							checked={settings.tags.provider}
 							onChange={(e) => set("tags", { ...settings.tags, provider: e.target.checked })}
 						>
-							{t("Provider")}
+							{t("Street View Provider Tag")}
 						</Checkbox>
 						<Checkbox
 							checked={settings.tags.year}
 							onChange={(e) => set("tags", { ...settings.tags, year: e.target.checked })}
 						>
-							{t("Year")}
+							{t("Year Tag (YYYY)")}
 						</Checkbox>
-						{countryTag && (
+						<Checkbox
+							checked={settings.tags.month}
+							onChange={(e) => set("tags", { ...settings.tags, month: e.target.checked })}
+						>
+							{t("Month Tag (YY-MM)")}
+						</Checkbox>
+						<Checkbox
+							checked={settings.tags.updateType}
+							onChange={(e) => set("tags", { ...settings.tags, updateType: e.target.checked })}
+						>
+							{t("Update Type Tag (gen?update)")}
+						</Checkbox>
 						<Checkbox
 							checked={settings.tags.country}
 							onChange={(e) => set("tags", { ...settings.tags, country: e.target.checked })}
 						>
-							{t("Country")}
+							{t("Country Tag")}
 						</Checkbox>
-						)}
-						{roadTag && (
+						<Checkbox
+							checked={settings.tags.countryCode}
+							onChange={(e) => set("tags", { ...settings.tags, countryCode: e.target.checked })}
+						>
+							{t("CountryCode Tag (ISO-3166 Code)")}
+						</Checkbox>
+						<Checkbox
+							checked={settings.tags.region}
+							onChange={(e) => set("tags", { ...settings.tags, region: e.target.checked })}
+						>
+							{t("Subdivision Tag")}
+						</Checkbox>
 						<Checkbox
 							checked={settings.tags.road}
 							onChange={(e) => set("tags", { ...settings.tags, road: e.target.checked })}
 						>
-							{t("Road")}
+							{t("Road Name Tag")}
 						</Checkbox>
-						)}
-						{settings.provider === "baidu" && (
+						<Checkbox
+							checked={settings.tags.polygon}
+							onChange={(e) => set("tags", { ...settings.tags, polygon: e.target.checked })}
+						>
+							{t("Polygon Name Tag (GeoJSON)")}
+						</Checkbox>
+						<Checkbox
+							checked={settings.tags.panoId}
+							onChange={(e) => set("tags", { ...settings.tags, panoId: e.target.checked })}
+						>
+							{t("PanoId Tag (Baidu)")}
+						</Checkbox>
 						<Checkbox
 							checked={settings.tags.procdate}
 							onChange={(e) => set("tags", { ...settings.tags, procdate: e.target.checked })}
 						>
-							{t("Publish date")}
+							{t("Publish(Edit) Date Tag (Baidu)")}
 						</Checkbox>
-						)}
 					</div>
 				)}
 			</Section>

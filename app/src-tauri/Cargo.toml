@@ -88,6 +88,7 @@ rquickjs = { version = "0.9", features = ["parallel"] }
 futures = { version = "0.3", default-features = false, features = ["std", "executor", "async-await"] }
 regex = "1"
 url = "2"
+png = "0.17.16"
 base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
