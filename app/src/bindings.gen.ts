@@ -237,6 +237,7 @@ export const commands = {
 	storeCountryDistribution: (selector: Selector, level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { selector, level }),
 	/**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
 	storeFindNearby: (lat: number, lng: number, radiusM: number) => __TAURI_INVOKE<Location[]>("store_find_nearby", { lat, lng, radiusM }).then((v) => (v.map(i=>i) as typeof v)),
+	storeFindNearest: (lat: number, lng: number) => __TAURI_INVOKE<Location | null>("store_find_nearest", { lat, lng }).then((v) => (v==null?v:(v) as typeof v)),
 	/**
 	 *  For each input point, whether any existing location lies within `radius_m` metres.
 	 *  Bulk form so callers probing many coordinates (e.g. the map generator skipping
@@ -265,6 +266,7 @@ export const commands = {
 	 *  has no vertices. `west > east` means the box crosses the antimeridian.
 	 */
 	polygonBounds: (polygon: PolygonGeometry) => __TAURI_INVOKE<[number, number, number, number] | null>("polygon_bounds", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
+	polygonUntangle: (polygon: PolygonGeometry) => __TAURI_INVOKE<PolygonGeometry | null>("polygon_untangle", { polygon: ({...polygon, coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:(v) as typeof v)),
 	/**
 	 *  Pano ids in the z17 Google photometa tile that contains this point.
 	 *  An empty tile or an unreadable body is an empty list; a transport failure
@@ -651,11 +653,14 @@ export type BaiduTraverseRequest = {
 	skipEndMin: number,
 	filterNormalCover: boolean,
 	filterTimelineCoverage: boolean,
-	/**  In-flight `qt=sdata` batches. Clamped; 200 at once is more than this client will open. */
+	/**  In-flight `qt=sdata` batches. Each batch is 100 ids, matching various-map-gen. */
 	concurrency: number,
 	reqTimeoutSec: number,
 	retryTimes: number,
-	/**  How many ids to probe before returning, so a run can abort between slices. */
+	/**
+	 *  How many ids to probe before returning, so a run can abort between slices.
+	 *  A full window is `concurrency * 100`; several windows keep the pipe full.
+	 */
 	budget: number,
 };
 
@@ -807,10 +812,12 @@ export type EditorImportResult = {
  *  Configuration for JSON export. Controls which fields are included and
  *  whether the export covers all locations or a specific selection.
  */
+export type ExportShape = "geoguessr" | "mapMaking" | "local";
+
 export type ExportOpts = {
 	exportZoom: boolean,
 	exportUnpanned: boolean,
-	exportExtras: boolean,
+	shape: ExportShape,
 	/**  Which locations to export. */
 	selector: Selector,
 	mapName: string,
@@ -1188,6 +1195,7 @@ export type MapMeta_Deserialize = {
 	tags: { [key in string]: Tag },
 	labels: string[],
 	locationCount: number,
+	pending: CommitDiff,
 	createdAt: string,
 	updatedAt: string,
 	lastOpenedAt: string | null,
@@ -1208,6 +1216,7 @@ export type MapMeta = {
 	tags: { [key in string]: Tag },
 	labels: string[],
 	locationCount: number,
+	pending: CommitDiff,
 	createdAt: string,
 	updatedAt: string,
 	lastOpenedAt: string | null,
@@ -1233,6 +1242,8 @@ export type MapSettings_Deserialize = {
 	exportZoom?: boolean,
 	exportUnpanned?: boolean,
 	exportExtras?: boolean,
+	/**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+	exportShape?: string,
 	searchRadius?: number | null,
 	enrichMetadata?: boolean,
 	enrichFields?: string[] | null,
@@ -1273,6 +1284,8 @@ export type MapSettings = {
 	exportZoom: boolean,
 	exportUnpanned: boolean,
 	exportExtras: boolean,
+	/**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+	exportShape: string,
 	searchRadius: number | null,
 	enrichMetadata: boolean,
 	enrichFields: string[] | null,
@@ -1597,6 +1610,8 @@ export type PullCreate = {
 export type PullUpdate = {
 	localId: number,
 	patch: SyncPatch,
+	remoteId: number,
+	hash: string,
 };
 
 /**  The questions one procedure is answering, taken together. */

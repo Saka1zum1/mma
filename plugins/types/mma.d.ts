@@ -247,6 +247,7 @@ declare const commands$1: {
     storeCountryDistribution: (selector: Selector, level: string) => Promise<[string, number][]>;
     /**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
     storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location[]>;
+    storeFindNearest: (lat: number, lng: number) => Promise<Location | null>;
     /**
      *  For each input point, whether any existing location lies within `radius_m` metres.
      *  Bulk form so callers probing many coordinates (e.g. the map generator skipping
@@ -275,6 +276,7 @@ declare const commands$1: {
      *  has no vertices. `west > east` means the box crosses the antimeridian.
      */
     polygonBounds: (polygon: PolygonGeometry) => Promise<[number, number, number, number] | null>;
+    polygonUntangle: (polygon: PolygonGeometry) => Promise<PolygonGeometry | null>;
     /**
      *  Pano ids in the z17 Google photometa tile that contains this point.
      *  An empty tile or an unreadable body is an empty list; a transport failure
@@ -288,7 +290,10 @@ declare const commands$1: {
     baiduTraverseChunk: (req: BaiduTraverseRequest) => Promise<BaiduTraverseChunk>;
     /**  Batch GetMetadata for Google pano ids. Results are aligned with `ids`; a miss is null. */
     googleBatchMetadata: (ids: string[]) => Promise<(GoogleBatchPano | null)[]>;
-    /**  Whether one pixel of a Google or Baidu coverage tile is painted. */
+    /**
+     *  Whether one pixel of a Google or Baidu coverage tile is painted. The webview cannot
+     *  read these tiles (no CORS), so the fetch and the alpha test stay here.
+     */
     coverageTileAlpha: (url: string, x: number, y: number) => Promise<boolean>;
     learnableMetaClue: (mapId: string, panoId: string) => Promise<LearnableMetaClue | null>;
     /**
@@ -933,11 +938,14 @@ type BaiduTraverseRequest = {
     skipEndMin: number;
     filterNormalCover: boolean;
     filterTimelineCoverage: boolean;
-    /**  In-flight `qt=sdata` batches. Clamped; 200 at once is more than this client will open. */
+    /**  In-flight `qt=sdata` batches. Each batch is 100 ids, matching various-map-gen. */
     concurrency: number;
     reqTimeoutSec: number;
     retryTimes: number;
-    /**  How many ids to probe before returning, so a run can abort between slices. */
+    /**
+     *  How many ids to probe before returning, so a run can abort between slices.
+     *  A full window is `concurrency * 100`; several windows keep the pipe full.
+     */
     budget: number;
 };
 /**  How a page of rows is cut into procedure calls. */
@@ -1088,10 +1096,11 @@ type EditorImportResult = {
  *  Configuration for JSON export. Controls which fields are included and
  *  whether the export covers all locations or a specific selection.
  */
+type ExportShape = "geoguessr" | "mapMaking" | "local";
 type ExportOpts = {
     exportZoom: boolean;
     exportUnpanned: boolean;
-    exportExtras: boolean;
+    shape: ExportShape;
     /**  Which locations to export. */
     selector: Selector;
     mapName: string;
@@ -1507,6 +1516,7 @@ type MapMeta_Deserialize = {
     };
     labels: string[];
     locationCount: number;
+    pending: CommitDiff;
     createdAt: string;
     updatedAt: string;
     lastOpenedAt: string | null;
@@ -1528,6 +1538,7 @@ type MapMeta = {
     };
     labels: string[];
     locationCount: number;
+    pending: CommitDiff;
     createdAt: string;
     updatedAt: string;
     lastOpenedAt: string | null;
@@ -1551,6 +1562,8 @@ type MapSettings_Deserialize = {
     exportZoom?: boolean;
     exportUnpanned?: boolean;
     exportExtras?: boolean;
+    /**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+    exportShape?: string;
     searchRadius?: number | null;
     enrichMetadata?: boolean;
     enrichFields?: string[] | null;
@@ -1594,6 +1607,8 @@ type MapSettings = {
     exportZoom: boolean;
     exportUnpanned: boolean;
     exportExtras: boolean;
+    /**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+    exportShape: string;
     searchRadius: number | null;
     enrichMetadata: boolean;
     enrichFields: string[] | null;
@@ -1908,6 +1923,8 @@ type PullCreate = {
 type PullUpdate = {
     localId: number;
     patch: SyncPatch;
+    remoteId: number;
+    hash: string;
 };
 /**  The questions one procedure is answering, taken together. */
 type QueryActivity = {
@@ -2996,12 +3013,12 @@ declare function addSelections(selector: Selector[]): Promise<void>;
 declare function removeSelections(keys: string[]): Promise<void> | undefined;
 /** Clear all selections. */
 declare function resetSelections(): Promise<void>;
-/** Combine selections into an AND composite. `keys` null combines all top-level selections. */
-declare function selectIntersection(keys?: string[] | null): Promise<void>;
-/** Combine selections into an OR composite. `keys` null combines all top-level selections. */
-declare function selectUnion(keys?: string[] | null): Promise<void>;
-/** Wrap selections in an Invert composite (everything NOT in them). `keys` null inverts all. */
-declare function selectInverse(keys?: string[] | null): Promise<void>;
+/** Combine selections into an AND composite. `keys` null combines the active selections. */
+declare function selectIntersection(keys?: string[] | null): Promise<void> | undefined;
+/** Combine selections into an OR composite. `keys` null combines the active selections. */
+declare function selectUnion(keys?: string[] | null): Promise<void> | undefined;
+/** Wrap selections in an Invert composite (everything NOT in them). `keys` null inverts the active ones. */
+declare function selectInverse(keys?: string[] | null): Promise<void> | undefined;
 /** Add or remove one location from the Manual selection (creating it if needed). */
 declare function toggleManualSelection(locationId: number): Promise<void>;
 /** Replace the current selection with a single Manual selection holding `count` ids picked
@@ -3421,19 +3438,19 @@ declare const COMMANDS: {
         label: "Invert selection";
         icon: string;
         group: "Selections";
-        execute: () => Promise<void>;
+        execute: () => Promise<void> | undefined;
     };
     "intersect-selections": {
         label: "Intersect (AND) selections";
         icon: string;
         group: "Selections";
-        execute: () => Promise<void>;
+        execute: () => Promise<void> | undefined;
     };
     "union-selections": {
         label: "Union (OR) selections";
         icon: string;
         group: "Selections";
-        execute: () => Promise<void>;
+        execute: () => Promise<void> | undefined;
     };
     "load-geojson": {
         label: "Load shapes from GeoJSON as selection";
@@ -3596,6 +3613,14 @@ declare const COMMANDS: {
         icon: string;
         group: "Bulk Operations";
         aliases: string[];
+        execute: () => void;
+    };
+    "set-selection-view": {
+        label: "Set heading, pitch, and zoom";
+        icon: string;
+        group: "Bulk Operations";
+        aliases: string[];
+        enabled: typeof hasSelection;
         execute: () => void;
     };
     "delete-selected-tags": {
@@ -3860,6 +3885,8 @@ declare const DEFAULTS: {
     slowModifier: number;
     showFps: boolean;
     mapListFields: MapListField[];
+    /** Badge source ids hidden on map-list rows. */
+    hiddenMapBadges: string[];
     /** Read once at boot; changing it relaunches the app rather than re-rendering. */
     language: Language;
     /** Reopen the maps that were open when the session last ended (main window closed). */
@@ -3974,6 +4001,8 @@ declare const APP_SETTINGS: PersistedStore<{
     slowModifier: number;
     showFps: boolean;
     mapListFields: MapListField[];
+    /** Badge source ids hidden on map-list rows. */
+    hiddenMapBadges: string[];
     /** Read once at boot; changing it relaunches the app rather than re-rendering. */
     language: Language;
     /** Reopen the maps that were open when the session last ended (main window closed). */
@@ -4232,6 +4261,68 @@ declare namespace picker {
   export type { picker_SelectorPick as SelectorPick, picker_SelectorPickController as SelectorPickController, picker_SelectorPickHandle as SelectorPickHandle };
 }
 
+export interface SelectionBitmaskPayload {
+    selColors: [number, number, number][];
+    cellEntries: SelCellEntry[];
+    setIds: (ids: SelectedIds) => void;
+}
+declare const EVENT_DEFS: {
+    "location:add": Location[];
+    "location:remove": number[];
+    "location:update": Update<LocationPatch_Deserialize>[];
+    /** Location data changed in bulk without per-location patches (e.g. a Rust-side
+     *  field op). Anything derived from location data must re-query. */
+    "location:invalidate": void;
+    "tag:add": Tag[];
+    "tag:remove": number[];
+    "tag:update": Update<TagPatch>[];
+    "selection:change": Selection[];
+    "active:change": number | null;
+    "map:open": MapData;
+    "map:close": void;
+    "store:changed": void;
+    "render:delta": RenderDelta;
+    "render:selection": SelectionBitmaskPayload;
+    "map-list:changed": void;
+    "map-badges:changed": void;
+    "sync-links:changed": void;
+    "saved-selections:changed": void;
+    "settings:changed": void;
+    "settings:open": void;
+    "locale:changed": void;
+    "fullscreen:changed": void;
+    "plugins:changed": void;
+    "hotkeys:changed": void;
+    "toasts:changed": void;
+    "jobs:changed": void;
+    "bulkruns:changed": void;
+    "scene:changed": void;
+    "measure:changed": void;
+    "anchor:changed": void;
+    "viewport-lock:changed": void;
+    "trail:changed": void;
+    "altitude:changed": void;
+    "seen:changed": void;
+    "update:changed": void;
+    "review:changed": void;
+    "fields:changed": void;
+    "route:changed": void;
+    "import-markers:changed": void;
+    "diff-markers:changed": void;
+    "commit-diff:changed": void;
+};
+export type EditorEventMap = typeof EVENT_DEFS;
+export type EditorEvent = keyof EditorEventMap;
+declare const pluginEventPayload: unique symbol;
+/** One of a plugin's own events, named `plugin:<plugin id>:<name>` and carrying a `T`.
+ *  `definePluginEvent` makes one. */
+export type PluginEvent<T = void> = `plugin:${string}:${string}` & {
+    readonly [pluginEventPayload]: T;
+};
+/** What an event hands its handlers. */
+export type EventPayload<E extends EditorEvent | PluginEvent<unknown>> = E extends EditorEvent ? EditorEventMap[E] : E extends PluginEvent<infer T> ? T : never;
+export type EventHandler<E extends EditorEvent | PluginEvent<unknown>> = (payload: EventPayload<E>) => void;
+
 /** Reactive list of all maps (metadata only). */
 declare function useMapList(): MapMeta[];
 /** The list of all maps (metadata only). */
@@ -4248,29 +4339,45 @@ declare function deleteMap$1(id: string): Promise<void>;
 declare function renameFolder(from: string, to: string): Promise<void>;
 declare function moveMapToFolder(mapId: string, folder: string | null): Promise<void>;
 declare function deleteFolder(name: string): Promise<void>;
+/** A mark drawn on one map-list row. */
+export type MapBadge = {
+    key: string;
+    title: string;
+} & ({
+    icon: string;
+} | {
+    diff: CommitDiff;
+});
+export interface BadgeSource {
+    id: string;
+    label: string;
+    events: readonly EditorEvent[];
+    collect(): Iterable<[mapId: string, badge: MapBadge]>;
+}
+declare function registerMapBadges(source: BadgeSource): void;
+declare function getMapBadgeSources(): BadgeSource[];
+declare function getMapBadges(mapId: string): MapBadge[];
+/** Re-renders when a badge source changes. Returns the badges for one map. */
+declare function useMapBadges(): (mapId: string) => MapBadge[];
 
+export type mapList_BadgeSource = BadgeSource;
+export type mapList_MapBadge = MapBadge;
 declare const mapList_createMap: typeof createMap;
 declare const mapList_deleteFolder: typeof deleteFolder;
+declare const mapList_getMapBadgeSources: typeof getMapBadgeSources;
+declare const mapList_getMapBadges: typeof getMapBadges;
 declare const mapList_getMapList: typeof getMapList;
 declare const mapList_invalidateMapList: typeof invalidateMapList;
 declare const mapList_moveMapToFolder: typeof moveMapToFolder;
+declare const mapList_registerMapBadges: typeof registerMapBadges;
 declare const mapList_reloadMapList: typeof reloadMapList;
 declare const mapList_renameFolder: typeof renameFolder;
 declare const mapList_setCachedMapList: typeof setCachedMapList;
+declare const mapList_useMapBadges: typeof useMapBadges;
 declare const mapList_useMapList: typeof useMapList;
 declare namespace mapList {
-  export {
-    mapList_createMap as createMap,
-    mapList_deleteFolder as deleteFolder,
-    deleteMap$1 as deleteMap,
-    mapList_getMapList as getMapList,
-    mapList_invalidateMapList as invalidateMapList,
-    mapList_moveMapToFolder as moveMapToFolder,
-    mapList_reloadMapList as reloadMapList,
-    mapList_renameFolder as renameFolder,
-    mapList_setCachedMapList as setCachedMapList,
-    mapList_useMapList as useMapList,
-  };
+  export { mapList_createMap as createMap, mapList_deleteFolder as deleteFolder, deleteMap$1 as deleteMap, mapList_getMapBadgeSources as getMapBadgeSources, mapList_getMapBadges as getMapBadges, mapList_getMapList as getMapList, mapList_invalidateMapList as invalidateMapList, mapList_moveMapToFolder as moveMapToFolder, mapList_registerMapBadges as registerMapBadges, mapList_reloadMapList as reloadMapList, mapList_renameFolder as renameFolder, mapList_setCachedMapList as setCachedMapList, mapList_useMapBadges as useMapBadges, mapList_useMapList as useMapList };
+  export type { mapList_BadgeSource as BadgeSource, mapList_MapBadge as MapBadge };
 }
 
 export interface PruneResult {
@@ -4507,66 +4614,6 @@ declare namespace registry {
   export { registry_PLUGIN_REGISTRY_URL as PLUGIN_REGISTRY_URL, registry_activatePlugin as activatePlugin, registry_activatePlugins as activatePlugins, registry_autoUpdatePlugin as autoUpdatePlugin, registry_createPluginStorage as createPluginStorage, registry_deactivatePlugin as deactivatePlugin, registry_deactivatePlugins as deactivatePlugins, registry_fetchPluginRegistry as fetchPluginRegistry, registry_getEnabledPlugins as getEnabledPlugins, registry_getPlugin as getPlugin, registry_getPluginSetting as getPluginSetting, registry_getPlugins as getPlugins, registry_isBackgroundPlugin as isBackgroundPlugin, registry_isPluginCompatible as isPluginCompatible, registry_isPluginEnabled as isPluginEnabled, registry_isPluginUpdatable as isPluginUpdatable, registry_needsBuildUpdate as needsBuildUpdate, registry_needsUpdate as needsUpdate, registry_registerPlugin as registerPlugin, registry_resolveBuild as resolveBuild, registry_setPendingManifest as setPendingManifest, registry_setPluginEnabled as setPluginEnabled, registry_setPluginSetting as setPluginSetting, registry_storage as storage, registry_unregisterPlugin as unregisterPlugin, registry_usePluginState as usePluginState };
   export type { registry_Plugin as Plugin, registry_PluginBehavior as PluginBehavior, registry_PluginIdentity as PluginIdentity, registry_PluginSettingDef as PluginSettingDef, registry_PluginStorage as PluginStorage, registry_ResolvedBuild as ResolvedBuild };
 }
-
-export interface SelectionBitmaskPayload {
-    selColors: [number, number, number][];
-    cellEntries: SelCellEntry[];
-    setIds: (ids: SelectedIds) => void;
-}
-declare const EVENT_DEFS: {
-    "location:add": Location[];
-    "location:remove": number[];
-    "location:update": Update<LocationPatch_Deserialize>[];
-    /** Location data changed in bulk without per-location patches (e.g. a Rust-side
-     *  field op). Anything derived from location data must re-query. */
-    "location:invalidate": void;
-    "tag:add": Tag[];
-    "tag:remove": number[];
-    "tag:update": Update<TagPatch>[];
-    "selection:change": Selection[];
-    "active:change": number | null;
-    "map:open": MapData;
-    "map:close": void;
-    "store:changed": void;
-    "render:delta": RenderDelta;
-    "render:selection": SelectionBitmaskPayload;
-    "map-list:changed": void;
-    "saved-selections:changed": void;
-    "settings:changed": void;
-    "settings:open": void;
-    "locale:changed": void;
-    "fullscreen:changed": void;
-    "plugins:changed": void;
-    "hotkeys:changed": void;
-    "toasts:changed": void;
-    "jobs:changed": void;
-    "bulkruns:changed": void;
-    "scene:changed": void;
-    "measure:changed": void;
-    "anchor:changed": void;
-    "viewport-lock:changed": void;
-    "trail:changed": void;
-    "altitude:changed": void;
-    "seen:changed": void;
-    "update:changed": void;
-    "review:changed": void;
-    "fields:changed": void;
-    "route:changed": void;
-    "import-markers:changed": void;
-    "diff-markers:changed": void;
-    "commit-diff:changed": void;
-};
-export type EditorEventMap = typeof EVENT_DEFS;
-export type EditorEvent = keyof EditorEventMap;
-declare const pluginEventPayload: unique symbol;
-/** One of a plugin's own events, named `plugin:<plugin id>:<name>` and carrying a `T`.
- *  `definePluginEvent` makes one. */
-export type PluginEvent<T = void> = `plugin:${string}:${string}` & {
-    readonly [pluginEventPayload]: T;
-};
-/** What an event hands its handlers. */
-export type EventPayload<E extends EditorEvent | PluginEvent<unknown>> = E extends EditorEvent ? EditorEventMap[E] : E extends PluginEvent<infer T> ? T : never;
-export type EventHandler<E extends EditorEvent | PluginEvent<unknown>> = (payload: EventPayload<E>) => void;
 
 export type Disposable = () => void;
 /** Run `fn` attributed to plugin `id`; host registrations during it are tracked for teardown. */
@@ -4931,9 +4978,9 @@ declare function SuggestInput<T>({ value, onChange, suggestions, onPick, renderI
     disabled?: boolean;
     /** When false, Enter closes the dropdown and falls through (e.g. to a form submit). */
     pickOnEnter?: boolean;
-    /** Render the dropdown in a body portal (fixed, anchored to the input) so it floats
-     *  over clipping ancestors like `.modal__content`. Clicks on it are exempted from
-     *  dialog outside-dismissal via the `suggest-portal` class (see DialogContent). */
+    /** Render the dropdown in a body portal, anchored to the input and following it as it
+     *  moves, so it floats over clipping ancestors like `.modal__content`. Clicks on it are
+     *  exempted from dialog outside-dismissal via the `suggest-portal` class (see DialogContent). */
     portal?: boolean;
 }): react.JSX.Element;
 
@@ -5717,8 +5764,10 @@ export interface MapEmbedPrefs {
     showPerfectScoreCircle: boolean;
     showSearchRadiusCursor: boolean;
     showPreviews: boolean;
-    selectOnly: boolean;
+    /** What clicking empty map does: create a location, nothing, or snap to the nearest one. */
+    clickMode: ClickMode;
 }
+export type ClickMode = "default" | "selectOnly" | "nearest";
 
 export interface MapStyle {
     featureType?: string;
@@ -6244,6 +6293,7 @@ declare function getSettings(): {
     slowModifier: number;
     showFps: boolean;
     mapListFields: MapListField[];
+    hiddenMapBadges: string[];
     language: Language;
     restoreSession: boolean;
     discordPresence: DiscordPresenceMode;
@@ -6374,4 +6424,4 @@ declare global {
 }
 
 export { BUILTIN_FIELDS, DEFAULT_DUPLICATE_SCORE, KNOWN_FIELDS, MMA as MMAApi, PROJECTIONS, PanoType, commands$1 as commands, events };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BaiduTraverseChunk, BaiduTraverseRequest, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, GoogleBatchLink, GoogleBatchPano, GoogleBatchTime, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, LearnableMetaClue, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BaiduTraverseChunk, BaiduTraverseRequest, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExportShape, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, GoogleBatchLink, GoogleBatchPano, GoogleBatchTime, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, LearnableMetaClue, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
