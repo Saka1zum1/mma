@@ -1364,6 +1364,28 @@ impl Store {
         cand
     }
 
+    /// The closest alive location, growing the search until one is found.
+    pub(crate) fn find_nearest_id(&mut self, lat: f64, lng: f64) -> Option<u32> {
+        let mut radius = 50.0;
+        while radius < 20_000_000.0 {
+            let mut best: Option<(u32, f64)> = None;
+            for id in self.find_nearby_ids(lat, lng, radius) {
+                let Some((la, ln)) = self.coords_of(id) else {
+                    continue;
+                };
+                let d = selections::haversine_m(lat, lng, la, ln);
+                if best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((id, d));
+                }
+            }
+            if let Some((id, _)) = best {
+                return Some(id);
+            }
+            radius *= 4.0;
+        }
+        None
+    }
+
     /// Whether any alive location lies within `radius_m` metres of the point.
     pub(crate) fn any_within(&mut self, lat: f64, lng: f64, radius_m: f64) -> bool {
         self.ensure_spatial();
@@ -1816,25 +1838,13 @@ impl Store {
         self.overlay.dirty = false;
     }
 
-    /// Merge overlay (adds, patches, dead) into the Arrow batch. O(N) where N = batch rows.
-    /// Expensive at 10M+ rows — prefer delta saves; full bake only on commit.
-    /// Gated on emptiness, not `dirty`: an autosave clears `dirty` without folding
-    /// anything in, and a clean-but-nonempty overlay must still bake.
-    pub(crate) fn bake_overlay(&mut self) {
+    /// The overlay folded into the base, without adopting it. `None` when there is nothing to fold.
+    fn folded_batch(&self) -> Option<RecordBatch> {
         if self.overlay.is_empty() {
-            return;
+            return None;
         }
-        let _t = std::time::Instant::now();
-
-        let mut batch = match self.batch.take() {
-            Some(b) => b,
-            None => {
-                // No batch yet, just convert adds
-                let b = arrow_bridge::locations_to_batch(&self.overlay.adds);
-                self.clear_overlay();
-                self.batch = Some(b);
-                return;
-            }
+        let Some(mut batch) = self.batch.clone() else {
+            return Some(arrow_bridge::locations_to_batch(&self.overlay.adds));
         };
 
         // Step 1: filter out dead rows
@@ -1871,11 +1881,6 @@ impl Store {
                 .expect("concat failed");
         }
 
-        log::debug!(
-            "[bake_overlay] total={}ms rows={}",
-            _t.elapsed().as_millis(),
-            batch.num_rows()
-        );
         assert!(
             {
                 let ids = col_id(&batch);
@@ -1883,6 +1888,18 @@ impl Store {
             },
             "batch IDs must be strictly sorted after bake"
         );
+        Some(batch)
+    }
+
+    /// Merge overlay (adds, patches, dead) into the Arrow batch. O(N) where N = batch rows.
+    /// Expensive at 10M+ rows — prefer delta saves; full bake only on commit.
+    /// Gated on emptiness, not `dirty`: an autosave clears `dirty` without folding
+    /// anything in, and a clean-but-nonempty overlay must still bake.
+    pub(crate) fn bake_overlay(&mut self) {
+        let Some(batch) = self.folded_batch() else {
+            return;
+        };
+        log::debug!("[bake_overlay] rows={}", batch.num_rows());
         self.batch = Some(batch);
         self.clear_overlay();
     }
@@ -2181,6 +2198,29 @@ pub async fn store_open_map(
     state: tauri::State<'_, StoreState>,
     map_id: String,
 ) -> AppResult<StoreStatus> {
+    // Claim the window binding before the unlocked read, so a concurrent checkout's
+    // open-elsewhere guard sees this open from its first moment.
+    let label = webview.label().to_string();
+    state
+        .lock()?
+        .window_map
+        .insert(label.clone(), map_id.clone());
+    let opened = open_claimed_map(webview, state.clone(), map_id.clone()).await;
+    if opened.is_err() {
+        if let Ok(mut mgr) = state.lock() {
+            if mgr.window_map.get(&label) == Some(&map_id) {
+                mgr.window_map.remove(&label);
+            }
+        }
+    }
+    opened
+}
+
+async fn open_claimed_map(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    map_id: String,
+) -> AppResult<StoreStatus> {
     let map_id2 = map_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -2282,7 +2322,7 @@ pub async fn store_open_map(
     store.bounds_dirty = false;
     {
         let conn = storage::open_db()?;
-        storage::set_location_count(&conn, &map_id, alive)?;
+        storage::set_map_counts(&conn, &map_id, alive, store.overlay_diff_counts())?;
         let mut tags = read_tags_json(&conn, &map_id);
         let (max_tag_id, healed) = reconcile_tag_registry(&mut tags, &tag_counts);
         store.tags.all = tags;
@@ -2355,7 +2395,7 @@ fn flush_closed_store(map_id: &str, store: &Store) -> AppResult<()> {
     }
     let count = store.alive_count;
     let conn = storage::open_db()?;
-    storage::set_location_count(&conn, map_id, count)?;
+    storage::set_map_counts(&conn, map_id, count, store.overlay_diff_counts())?;
     if store.tags.dirty {
         write_tags_json(&conn, map_id, &store.tags.all)?;
     }
@@ -3417,11 +3457,14 @@ fn copy_to_map(
         delta.adds.extend(fresh);
         let bytes = rmp_serde::to_vec_named(&delta)?;
         let alive = existing.len() + copied as usize;
+        let (added, removed, modified) = storage::pending_counts(&conn, &target_map_id)?;
+        let pending = (added.saturating_add(copied), removed, modified);
         persist_dirty(
             &target_map_id,
             Some(bytes),
             alive,
             Some(serialize_tags_json(&target_tags)),
+            pending,
         )?;
         log::debug!(
             "[cmd] copy_to_map closed-target read={}ms history={}ms save={}ms total={}ms",
@@ -3445,6 +3488,7 @@ pub(crate) fn persist_dirty(
     delta_data: Option<Vec<u8>>,
     alive: usize,
     tags_json: Option<String>,
+    pending: (u32, u32, u32),
 ) -> AppResult<()> {
     if let Some(delta_data) = delta_data {
         let path = storage::arrow_delta_path(map_id)?;
@@ -3454,7 +3498,7 @@ pub(crate) fn persist_dirty(
         })?;
     }
     let conn = storage::open_db()?;
-    storage::set_location_count(&conn, map_id, alive)?;
+    storage::set_map_counts(&conn, map_id, alive, pending)?;
     if let Some(tags_json) = tags_json {
         conn.execute(
             "UPDATE maps SET tags = ?1 WHERE id = ?2",
@@ -3476,7 +3520,7 @@ pub async fn store_save_dirty(
 ) -> AppResult<SaveResult> {
     let _t = std::time::Instant::now();
     log::debug!("[cmd] store_save_dirty ENTER");
-    let (map_id, delta_data, alive, tags_json, rev) = {
+    let (map_id, delta_data, alive, tags_json, rev, pending) = {
         let mut mgr = state.lock()?;
         let store = mgr.store_for_window(webview.label())?;
         let map_id = store.map_id.clone().ok_or("no map open")?;
@@ -3500,6 +3544,7 @@ pub async fn store_save_dirty(
             store.alive_count,
             tags_json,
             store.overlay.rev,
+            store.overlay_diff_counts(),
         )
     };
 
@@ -3507,8 +3552,9 @@ pub async fn store_save_dirty(
     let wrote_delta = delta_data.is_some();
     let wrote_tags = tags_json.is_some();
     let map_id2 = map_id.clone();
-    let write =
-        tokio::task::spawn_blocking(move || persist_dirty(&map_id2, delta_data, alive, tags_json))
+    let write = tokio::task::spawn_blocking(move || {
+        persist_dirty(&map_id2, delta_data, alive, tags_json, pending)
+    })
             .await
             .unwrap_or_else(|e| Err(e.into()));
     if write.is_err() && wrote_tags {
@@ -3660,28 +3706,40 @@ pub(crate) fn save_arrow(store: &Store, map_id: &str) -> AppResult<()> {
 /// the batch only once.
 pub(crate) fn bake_and_save(store: &mut Store, map_id: &str) -> AppResult<()> {
     let _t = std::time::Instant::now();
-    store.bake_overlay();
-    let t_bake = _t.elapsed();
-    store.mmap_handle = None;
-    save_arrow(store, map_id)?;
-    let t_write = _t.elapsed();
     let path = storage::arrow_path(map_id)?;
+    let delta = storage::arrow_delta_path(map_id)?;
+    // Fold first and write before adopting, so a failed base write leaves the overlay in place.
+    if let Some(baked) = store.folded_batch() {
+        store.mmap_handle = None;
+        if let Err(e) = storage::write_arrow_ipc(&path, &baked) {
+            if path.exists() {
+                if let Ok((batch, handle)) = storage::read_arrow_ipc_mmap(&path) {
+                    store.batch = Some(batch);
+                    store.mmap_handle = Some(handle);
+                }
+            }
+            return Err(e);
+        }
+        let _ = std::fs::remove_file(&delta);
+        store.batch = Some(baked);
+        store.clear_overlay();
+    } else {
+        store.mmap_handle = None;
+        save_arrow(store, map_id)?;
+    }
+    let t_write = _t.elapsed();
     if path.exists() {
         let (batch, handle) = storage::read_arrow_ipc_mmap(&path)?;
         store.batch = Some(batch);
         store.mmap_handle = Some(handle);
     }
-    let t_mmap = _t.elapsed();
     log::debug!(
-        "[bake_and_save] bake={:.0}ms base-write={:.0}ms remmap={:.0}ms total={:.0}ms",
-        t_bake.as_millis(),
-        (t_write - t_bake).as_millis(),
-        (t_mmap - t_write).as_millis(),
-        _t.elapsed().as_millis()
+        "[bake_and_save] write+remmap={:.0}ms",
+        t_write.as_millis()
     );
     let count = store.batch.as_ref().map_or(0, |b| b.num_rows());
     let conn = storage::open_db()?;
-    storage::set_location_count(&conn, map_id, count)?;
+    storage::set_map_counts(&conn, map_id, count, (0, 0, 0))?;
     if store.tags.dirty {
         write_tags_json(&conn, map_id, &store.tags.all)?;
         store.tags.dirty = false;
@@ -4613,6 +4671,22 @@ pub async fn store_prune_duplicates(
             _t.elapsed().as_millis()
         );
         Ok(store.apply_undoable(remove, Vec::new()))
+    })
+}
+
+/// The closest alive location to (`lat`, `lng`), if the map has any.
+#[tauri::command]
+#[specta::specta]
+pub fn store_find_nearest(
+    webview: tauri::Webview,
+    state: tauri::State<'_, StoreState>,
+    lat: f64,
+    lng: f64,
+) -> AppResult<Option<Location>> {
+    with_store!(webview, state, |store| {
+        Ok(store
+            .find_nearest_id(lat, lng)
+            .and_then(|id| store.get_loc_by_id(id)))
     })
 }
 

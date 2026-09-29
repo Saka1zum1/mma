@@ -169,7 +169,7 @@ pub async fn store_commit(
         "INSERT INTO commits (id, map_id, parent_id, message, location_count, created_at, tree_hash, added, removed, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![id, map_id, parent_id, message, location_count, now, Option::<String>::None, added, removed_n, modified],
     )?;
-    storage::set_location_count(&conn, &map_id, location_count as usize)?;
+    storage::set_map_counts(&conn, &map_id, location_count as usize, (0, 0, 0))?;
 
     log::info!(
         "[vcs] commit {} locs={} +{} -{} ~{} in {}ms (bake+base-write={:.0}ms delta-write={:.0}ms sqlite={:.0}ms genesis={})",
@@ -221,18 +221,29 @@ pub async fn store_list_commits(map_id: String) -> AppResult<Vec<CommitInfo>> {
 // and clears the uncommitted delta.
 #[tauri::command]
 #[specta::specta]
-pub fn store_checkout_commit(map_id: String, commit_id: String) -> AppResult<()> {
+pub fn store_checkout_commit(
+    state: State<'_, StoreState>,
+    map_id: String,
+    commit_id: String,
+) -> AppResult<()> {
     let conn = storage::open_db()?;
     let materialized = vcs_delta::materialize_commit(&conn, &map_id, &commit_id)?;
     // BTreeMap yields ascending id order, satisfying the sorted-id invariant the
     // base batch requires.
     let locs: Vec<Location> = materialized.into_values().collect();
-    let batch = arrow_bridge::locations_to_batch(&locs);
 
+    let mgr = state.lock()?;
+    // window_map covers an open still in flight, whose store lands only when it finishes.
+    if mgr.stores.contains_key(&map_id) || mgr.window_map.values().any(|id| id == &map_id) {
+        return Err(crate::types::AppError(
+            "close this map in every other window before restoring a version".into(),
+        ));
+    }
     let path = storage::arrow_path(&map_id)?;
-    storage::write_arrow_ipc(&path, &batch)?;
+    storage::write_arrow_ipc(&path, &arrow_bridge::locations_to_batch(&locs))?;
     let delta = storage::arrow_delta_path(&map_id)?;
     let _ = std::fs::remove_file(delta);
+    storage::set_map_counts(&conn, &map_id, locs.len(), (0, 0, 0))?;
 
     log::info!(
         "[vcs] checkout {} on map {} ({} locs)",

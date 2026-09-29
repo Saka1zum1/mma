@@ -195,12 +195,28 @@ fn configure_connection(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-pub(crate) fn set_location_count(conn: &Connection, map_id: &str, count: usize) -> AppResult<()> {
+/// Location count plus the uncommitted `(added, removed, modified)` the map list badge reads.
+pub(crate) fn set_map_counts(
+    conn: &Connection,
+    map_id: &str,
+    count: usize,
+    pending: (u32, u32, u32),
+) -> AppResult<()> {
+    let (added, removed, modified) = pending;
     conn.execute(
-        "UPDATE maps SET location_count = ?1 WHERE id = ?2",
-        rusqlite::params![count, map_id],
+        "UPDATE maps SET location_count = ?1, pending_added = ?2, pending_removed = ?3, pending_modified = ?4 WHERE id = ?5",
+        rusqlite::params![count, added, removed, modified, map_id],
     )?;
     Ok(())
+}
+
+pub(crate) fn pending_counts(conn: &Connection, map_id: &str) -> AppResult<(u32, u32, u32)> {
+    conn.query_row(
+        "SELECT pending_added, pending_removed, pending_modified FROM maps WHERE id = ?1",
+        rusqlite::params![map_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .map_err(Into::into)
 }
 
 /// Apply all pending schema migrations from [`MIGRATIONS`] in order.
@@ -549,6 +565,12 @@ const MIGRATIONS: &[(u32, &str)] = &[
             color      TEXT NOT NULL,
             created_at TEXT NOT NULL
           );",
+    ),
+    (
+        22,
+        "ALTER TABLE maps ADD COLUMN pending_added INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE maps ADD COLUMN pending_removed INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE maps ADD COLUMN pending_modified INTEGER NOT NULL DEFAULT 0;",
     ),
 ];
 

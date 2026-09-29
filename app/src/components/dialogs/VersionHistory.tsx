@@ -7,6 +7,7 @@ import { cmd } from "@/lib/commands";
 import { useAsync } from "@/lib/hooks/useAsync";
 import type { CommitInfo } from "@/bindings.gen";
 import { t } from "@/lib/i18n";
+import { toast } from "@/lib/util/toast";
 import { fmt, dateTimeFmt } from "@/lib/util/format";
 
 function diffLabel(c: CommitInfo): ReactNode | null {
@@ -59,9 +60,14 @@ export function VersionHistory({ onClose }: { onClose: () => void }) {
 		}
 		setConfirmingId(null);
 		setRestoring(commit.id);
-		await checkoutCommit(commit.id);
-		setRestoring(null);
-		onClose();
+		try {
+			await checkoutCommit(commit.id);
+			onClose();
+		} catch (e) {
+			toast(t("Restore failed: {error}", { error: String(e) }));
+		} finally {
+			setRestoring(null);
+		}
 	};
 
 	return (
