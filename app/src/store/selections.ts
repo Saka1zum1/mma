@@ -203,12 +203,47 @@ export function polygonSelectionsContaining(
 	return keys;
 }
 
-/** Remove a selection by key. Wrappers (Intersection/Union/Invert/Ranked) unwrap their children back into the list. */
+/** Remove a selection by key. A group, inverted or not, leaves its children in its place.
+ *  Other wrappers unwrap one level. */
 export function removeSelection(current: Selection[], key: string): Selection[] {
 	return current.flatMap((s) => {
 		if (s.key !== key) return [s];
+		const inner = isVariant(s.selector, UNARY_TYPES) ? s.selector.selections[0] : s;
+		if (isVariant(inner.selector, GROUP_TYPES)) return inner.selector.selections;
 		return childSelections(s.selector);
 	});
+}
+
+/** Put `active` into the non-ghosted slots and leave ghosted rows where they are. A result
+ *  whose key is already a ghosted row updates that row and stays ghosted. */
+export function withActive(
+	selections: Selection[],
+	ghosted: ReadonlySet<string>,
+	active: Selection[],
+): Selection[] {
+	const ghostedAt = new Map<string, number>();
+	selections.forEach((s, i) => {
+		if (ghosted.has(s.key)) ghostedAt.set(s.key, i);
+	});
+	const landed = new Map<number, Selection>();
+	const fresh: Selection[] = [];
+	for (const s of active) {
+		const i = ghostedAt.get(s.key);
+		if (i === undefined) fresh.push(s);
+		else landed.set(i, s);
+	}
+	const queue = fresh.values();
+	const out: Selection[] = [];
+	selections.forEach((s, i) => {
+		if (ghosted.has(s.key)) {
+			out.push(landed.get(i) ?? s);
+			return;
+		}
+		const next = queue.next();
+		if (!next.done) out.push(next.value);
+	});
+	for (const selection of queue) out.push(selection);
+	return out;
 }
 
 /** Split selections into [matching the keys, everything else]. */
@@ -360,8 +395,9 @@ function removeChildFromComposite(
 		const childIdx = children.findIndex((s) => s.key === childKey);
 		if (childIdx === -1) return null;
 		const child = children[childIdx];
+		const inner = isVariant(child.selector, UNARY_TYPES) ? child.selector.selections[0] : child;
 		const inlined =
-			dissolve && isVariant(child.selector, GROUP_TYPES) ? child.selector.selections : [];
+			dissolve && isVariant(inner.selector, GROUP_TYPES) ? inner.selector.selections : [];
 		return { updated: rebuild(children.toSpliced(childIdx, 1, ...inlined)), removed: child };
 	}
 

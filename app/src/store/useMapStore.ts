@@ -57,6 +57,7 @@ import {
 	replaceSelection as replaceSel,
 	isolateGhostKeys,
 	childSelections,
+	withActive,
 } from "./selections";
 
 // --- Map state ---
@@ -685,8 +686,9 @@ async function migrateFieldReferences(from: string, to: string | null) {
 
 /** Resolve a selection's overlay color, substituting the live tag color for Tag selections. */
 function selectionSyncColor(s: Selection): [number, number, number] {
-	if (s.selector.type === "Tag") {
-		const tag = state.tags[s.selector.tagId];
+	const inner = s.selector.type === "Invert" ? s.selector.selections[0] : s;
+	if (inner.selector.type === "Tag") {
+		const tag = state.tags[inner.selector.tagId];
 		if (tag) return hexToRgb(tag.color);
 	}
 	return s.color;
@@ -787,19 +789,32 @@ export function resetSelections() {
 	return applySelectionUpdate(() => []);
 }
 
-/** Combine selections into an AND composite. `keys` null combines all top-level selections. */
+/** Apply `op` to the active selections only. Ghosted rows keep their places. */
+function applyActiveUpdate(op: (active: Selection[]) => Selection[]) {
+	const active = getActiveSelections();
+	const next = op(active);
+	if (next === active) return;
+	const ghosted = state.ghostedSelections;
+	const selections = state.selections;
+	return applySelectionUpdate(() => withActive(selections, ghosted, next));
+}
+
+/** Combine selections into an AND composite. `keys` null combines the active selections. */
 export function selectIntersection(keys: string[] | null = null) {
-	return applySelectionUpdate((sels) => intersectSelections(sels, keys));
+	if (keys) return applySelectionUpdate((sels) => intersectSelections(sels, keys));
+	return applyActiveUpdate((sels) => intersectSelections(sels, null));
 }
 
-/** Combine selections into an OR composite. `keys` null combines all top-level selections. */
+/** Combine selections into an OR composite. `keys` null combines the active selections. */
 export function selectUnion(keys: string[] | null = null) {
-	return applySelectionUpdate((sels) => unionSelections(sels, keys));
+	if (keys) return applySelectionUpdate((sels) => unionSelections(sels, keys));
+	return applyActiveUpdate((sels) => unionSelections(sels, null));
 }
 
-/** Wrap selections in an Invert composite (everything NOT in them). `keys` null inverts all. */
+/** Wrap selections in an Invert composite (everything NOT in them). `keys` null inverts the active ones. */
 export function selectInverse(keys: string[] | null = null) {
-	return applySelectionUpdate((sels) => invertSelections(sels, keys));
+	if (keys) return applySelectionUpdate((sels) => invertSelections(sels, keys));
+	return applyActiveUpdate((sels) => invertSelections(sels, null));
 }
 
 /** Add or remove one location from the Manual selection (creating it if needed). */
@@ -832,7 +847,7 @@ export async function selectRandomFromSelection(
 	);
 	const picked = [...new Set(buckets.flat())];
 	if (picked.length === 0) return 0;
-	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: picked }));
+	await applyActiveUpdate(() => addSel([], { type: "Manual", locations: picked }));
 	return picked.length;
 }
 
@@ -855,7 +870,7 @@ export async function selectSpacedFromSelection(
 	);
 	const ids = [...new Set(results.flatMap((r) => r.ids))];
 	if (ids.length === 0) return { picked: 0, distanceM: 0 };
-	await applySelectionUpdate(() => addSel([], { type: "Manual", locations: ids }));
+	await applyActiveUpdate(() => addSel([], { type: "Manual", locations: ids }));
 	// Spacing only holds within a bucket - two buckets can each pick a coincident location.
 	const distanceM = results.length === 1 ? results[0].distanceM : 0;
 	return { picked: ids.length, distanceM };
@@ -1312,6 +1327,15 @@ export async function commitMap(message?: string): Promise<string> {
 	return id;
 }
 
+/** Re-resolve the listed selections into the open store. */
+async function syncSelections() {
+	if (!state.map) return;
+	const result = await cmd.storeSyncSelections(buildSyncInputs());
+	applySelectionSync(result);
+	emitEvent("store:changed");
+	emitEvent("selection:change", state.selections);
+}
+
 /** Restore the map to a previous commit's state and reopen it. Clears undo/redo. */
 export async function checkoutCommit(commitId: string) {
 	if (!state.mapId) return;
@@ -1319,13 +1343,18 @@ export async function checkoutCommit(commitId: string) {
 	let openResult;
 	try {
 		await cmd.storeCloseMap();
-		await cmd.storeCheckoutCommit(state.mapId, commitId);
-		openResult = await cmd.storeOpenMap(state.mapId);
+		try {
+			await cmd.storeCheckoutCommit(state.mapId, commitId);
+		} finally {
+			// A failed checkout must not leave the window without a map.
+			openResult = await cmd.storeOpenMap(state.mapId);
+		}
 		await cmd.storeResetUndo();
 		const msg = `Revert to ${commitId.slice(0, 7)}`;
 		await cmd.storeCommit(state.mapId, msg);
 	} catch (e) {
 		log.error("[checkout] restore failed:", e);
+		await syncSelections().catch(() => {});
 		throw e;
 	}
 	const map = await cmd.storeGetMap(state.mapId);

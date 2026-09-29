@@ -5,6 +5,7 @@ import {
 	buildSelection,
 	addSelection,
 	removeSelection,
+	withActive,
 	intersectSelections,
 	unionSelections,
 	invertSelections,
@@ -283,6 +284,26 @@ describe("addSelection / removeSelection", () => {
 		const composite = buildSelection({ type: "Intersection", selections: [s1, s2] });
 		const result = removeSelection([composite], composite.key);
 		expect(result).toHaveLength(2);
+	});
+
+	it("removeSelection ungroups an inverted group", () => {
+		const s1 = buildSelection({ type: "PanoIds" });
+		const s2 = buildSelection({ type: "Untagged" });
+		const group = buildSelection({ type: "Union", selections: [s1, s2] });
+		const inverted = buildSelection({ type: "Invert", selections: [group] });
+		const result = removeSelection([inverted], inverted.key);
+		expect(result.map((s) => s.key)).toEqual([s1.key, s2.key]);
+	});
+});
+
+describe("withActive", () => {
+	it("keeps a ghosted row while replacing the active ones", () => {
+		const a = buildSelection({ type: "PanoIds" });
+		const b = buildSelection({ type: "Untagged" });
+		const c = buildSelection({ type: "Unpanned" });
+		const ghosted = new Set([b.key]);
+		const result = withActive([a, b], ghosted, [c]);
+		expect(result.map((s) => s.key)).toEqual([c.key, b.key]);
 	});
 });
 
