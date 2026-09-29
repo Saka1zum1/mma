@@ -1,5 +1,5 @@
-import { addSelections } from "@/store/useMapStore";
-import type { PolygonGeometry, Selector } from "@/bindings.gen";
+import type { PolygonGeometry } from "@/bindings.gen";
+import { addPolygonSelections } from "@/lib/map/addPolygonSelections";
 
 /** Prompt for GeoJSON file(s) and add their polygons as selections. */
 export async function loadGeoJSON() {
@@ -9,7 +9,7 @@ export async function loadGeoJSON() {
 	input.multiple = true;
 	input.onchange = async () => {
 		if (!input.files) return;
-		const selector: Selector[] = [];
+		const polygons: PolygonGeometry[] = [];
 		for (const file of input.files) {
 			try {
 				const text = await file.text();
@@ -17,13 +17,9 @@ export async function loadGeoJSON() {
 				const features = data.type === "FeatureCollection" ? data.features : [data];
 				for (const f of features) {
 					if (f.geometry?.type === "Polygon") {
-						selector.push({
-							type: "Polygon",
-							polygon: {
-								coordinates: f.geometry.coordinates,
-								properties: f.properties ?? undefined,
-							},
-							includeInformational: false,
+						polygons.push({
+							coordinates: f.geometry.coordinates,
+							properties: f.properties ?? undefined,
 						});
 					} else if (f.geometry?.type === "MultiPolygon") {
 						const [first, ...rest] = f.geometry.coordinates;
@@ -33,14 +29,14 @@ export async function loadGeoJSON() {
 							properties: f.properties ?? undefined,
 						};
 						if (rest.length) polygon.extraPolygons = rest;
-						selector.push({ type: "Polygon", polygon, includeInformational: false });
+						polygons.push(polygon);
 					}
 				}
 			} catch {
 				/* ignore malformed files */
 			}
 		}
-		if (selector.length) void addSelections(selector);
+		void addPolygonSelections(polygons);
 	};
 	input.click();
 }
