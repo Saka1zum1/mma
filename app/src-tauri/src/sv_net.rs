@@ -3,6 +3,7 @@
 //! Parsing follows various-map-gen's field layout.
 
 use chrono::{Datelike, TimeZone, Timelike};
+use futures::stream::{FuturesUnordered, StreamExt};
 
 use crate::types::{AppError, AppResult};
 
@@ -14,6 +15,46 @@ fn http_client() -> &'static reqwest::Client {
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .expect("failed to build the street-view http client")
+    })
+}
+
+/// Baidu `qt=sdata`. HTTP/1.1 with a deep idle pool: one HTTP/2 connection is capped by
+/// the server's stream limit (often ~100), which is slower than the script's hundreds of
+/// keep-alive connections. Browser headers match what that script sends.
+fn baidu_http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::USER_AGENT,
+            reqwest::header::HeaderValue::from_static(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            ),
+        );
+        headers.insert(
+            reqwest::header::ACCEPT,
+            reqwest::header::HeaderValue::from_static("application/json,text/html;q=0.9,*/*;q=0.8"),
+        );
+        headers.insert(
+            reqwest::header::ACCEPT_LANGUAGE,
+            reqwest::header::HeaderValue::from_static("zh-CN,zh;q=0.9"),
+        );
+        headers.insert(
+            reqwest::header::REFERER,
+            reqwest::header::HeaderValue::from_static("https://map.baidu.com/"),
+        );
+        reqwest::Client::builder()
+            .use_rustls_tls()
+            .http1_only()
+            .pool_max_idle_per_host(512)
+            .pool_idle_timeout(std::time::Duration::from_secs(60))
+            .tcp_keepalive(std::time::Duration::from_secs(30))
+            .tcp_nodelay(true)
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .default_headers(headers)
+            .build()
+            .expect("failed to build the baidu sdata client")
     })
 }
 
@@ -97,11 +138,12 @@ pub struct BaiduTraverseRequest {
     pub skip_end_min: u32,
     pub filter_normal_cover: bool,
     pub filter_timeline_coverage: bool,
-    /// In-flight `qt=sdata` batches. Clamped; 200 at once is more than this client will open.
+    /// In-flight `qt=sdata` batches. Each batch is 100 ids, matching various-map-gen.
     pub concurrency: u32,
     pub req_timeout_sec: u32,
     pub retry_times: u32,
     /// How many ids to probe before returning, so a run can abort between slices.
+    /// A full window is `concurrency * 100`; several windows keep the pipe full.
     pub budget: u32,
 }
 
@@ -161,26 +203,39 @@ fn baidu_time_to_ms(time: &str) -> Option<i64> {
     Some(dt.timestamp_millis() + i64::from(millis))
 }
 
+/// Howard Hinnant's `civil_from_days`. `days` is the Unix day (1970-01-01 = 0).
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m as u32, d as u32)
+}
+
 fn format_pid(prefix: &str, ms: i64, car: &str) -> Option<String> {
-    let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms)?;
-    let millis = ms.rem_euclid(1000);
+    let millis = ms.rem_euclid(1000) as u32;
+    let secs = ms.div_euclid(1000);
+    let (year, month, day) = civil_from_days(secs.div_euclid(86_400));
+    let sod = secs.rem_euclid(86_400) as u32;
     Some(format!(
         "{prefix}{:02}{:02}{:02}{:02}{:02}{:02}{millis:03}{car}",
-        dt.year().rem_euclid(100),
-        dt.month(),
-        dt.day(),
-        dt.hour(),
-        dt.minute(),
-        dt.second(),
+        year.rem_euclid(100),
+        month,
+        day,
+        sod / 3600,
+        (sod % 3600) / 60,
+        sod % 60,
     ))
 }
 
 fn minute_of_day(ms: i64) -> u32 {
-    let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms);
-    match dt {
-        Some(dt) => dt.hour() * 60 + dt.minute(),
-        None => 0,
-    }
+    (ms.rem_euclid(86_400_000) as u32) / 60_000
 }
 
 fn is_skip_time(ms: i64, enabled: bool, start_min: u32, end_min: u32) -> bool {
@@ -197,11 +252,123 @@ fn is_skip_time(ms: i64, enabled: bool, start_min: u32, end_min: u32) -> bool {
     }
 }
 
+/// Walks a pano-id range one id at a time so HTTP can start before the whole budget exists.
+struct ScanState {
+    prefix: String,
+    car: String,
+    cursor: i64,
+    target: i64,
+    reverse: bool,
+    left: usize,
+    rough: bool,
+    jump: i64,
+    dur: i64,
+    skip: bool,
+    skip_start: u32,
+    skip_end: u32,
+    done: bool,
+    guard: u64,
+    /// Next millisecond inside an open rough-scan window.
+    seg_collect: Option<i64>,
+    seg_end: i64,
+}
+
+impl ScanState {
+    fn past(&self) -> bool {
+        if self.reverse { self.cursor < self.target } else { self.cursor > self.target }
+    }
+
+    fn jump_cursor(&mut self) {
+        self.cursor += if self.reverse { -self.jump } else { self.jump };
+        if self.past() {
+            self.done = true;
+        }
+    }
+
+    fn next_id(&mut self) -> Option<String> {
+        if self.left == 0 || self.done {
+            return None;
+        }
+        loop {
+            if let Some(collect) = self.seg_collect {
+                if collect <= self.seg_end && self.left > 0 {
+                    let id = format_pid(&self.prefix, collect, &self.car);
+                    let next = collect + 1;
+                    if let Some(id) = id {
+                        self.left -= 1;
+                        if self.left == 0 {
+                            self.seg_collect = None;
+                            if next <= self.seg_end {
+                                self.cursor = next;
+                            } else {
+                                self.jump_cursor();
+                            }
+                        } else {
+                            self.seg_collect = Some(next);
+                        }
+                        return Some(id);
+                    }
+                    self.seg_collect = Some(next);
+                    continue;
+                }
+                self.seg_collect = None;
+                self.jump_cursor();
+                if self.done {
+                    return None;
+                }
+                continue;
+            }
+
+            self.guard += 1;
+            if self.guard > 50_000_000 {
+                return None;
+            }
+            let skipped = is_skip_time(self.cursor, self.skip, self.skip_start, self.skip_end);
+            if self.rough {
+                if !skipped {
+                    self.seg_end = self.cursor + self.dur;
+                    self.seg_collect = Some(self.cursor);
+                    continue;
+                }
+                self.jump_cursor();
+                if self.done {
+                    return None;
+                }
+                continue;
+            }
+
+            let id = if skipped { None } else { format_pid(&self.prefix, self.cursor, &self.car) };
+            self.cursor += if self.reverse { -1 } else { 1 };
+            if self.past() {
+                self.done = true;
+            }
+            if let Some(id) = id {
+                self.left -= 1;
+                return Some(id);
+            }
+            if self.done {
+                return None;
+            }
+        }
+    }
+
+    fn next_batch(&mut self, n: usize) -> Option<Vec<String>> {
+        let mut batch = Vec::with_capacity(n);
+        while batch.len() < n {
+            match self.next_id() {
+                Some(id) => batch.push(id),
+                None => break,
+            }
+        }
+        if batch.is_empty() { None } else { Some(batch) }
+    }
+}
+
 /// The next `budget` ids at or after `cursor`, and the cursor just past the last one considered.
 fn take_baidu_ids(
     prefix: &str,
     car: &str,
-    mut cursor: i64,
+    cursor: i64,
     target: i64,
     reverse: bool,
     budget: usize,
@@ -212,48 +379,29 @@ fn take_baidu_ids(
     skip_start: u32,
     skip_end: u32,
 ) -> (Vec<String>, i64, bool) {
+    let mut scan = ScanState {
+        prefix: prefix.to_string(),
+        car: car.to_string(),
+        cursor,
+        target,
+        reverse,
+        left: budget,
+        rough,
+        jump: i64::from(step_min.max(1)) * 60_000,
+        dur: i64::from(dur_sec.max(1)) * 1000,
+        skip,
+        skip_start,
+        skip_end,
+        done: false,
+        guard: 0,
+        seg_collect: None,
+        seg_end: 0,
+    };
     let mut ids = Vec::new();
-    let jump = i64::from(step_min.max(1)) * 60_000;
-    let dur = i64::from(dur_sec.max(1)) * 1000;
-    let mut guard = 0u64;
-    let mut done = false;
-    while ids.len() < budget {
-        guard += 1;
-        if guard > 50_000_000 {
-            break;
-        }
-        let skipped = is_skip_time(cursor, skip, skip_start, skip_end);
-        if rough {
-            if !skipped {
-                let seg_end = cursor + dur;
-                let mut collect = cursor;
-                while collect <= seg_end && ids.len() < budget {
-                    if let Some(pid) = format_pid(prefix, collect, car) {
-                        ids.push(pid);
-                    }
-                    collect += 1;
-                }
-                if ids.len() >= budget && collect <= seg_end {
-                    cursor = collect;
-                    break;
-                }
-            }
-            cursor += if reverse { -jump } else { jump };
-        } else {
-            if !skipped {
-                if let Some(pid) = format_pid(prefix, cursor, car) {
-                    ids.push(pid);
-                }
-            }
-            cursor += if reverse { -1 } else { 1 };
-        }
-        let past = if reverse { cursor < target } else { cursor > target };
-        if past {
-            done = true;
-            break;
-        }
+    while let Some(id) = scan.next_id() {
+        ids.push(id);
     }
-    (ids, cursor, done)
+    (ids, scan.cursor, scan.done)
 }
 
 fn keep_sdata(item: &serde_json::Value, filter_normal: bool, filter_timeline: bool) -> bool {
@@ -291,7 +439,7 @@ async fn fetch_sdata_batch(
         return Vec::new();
     }
     let host = (ids[0].chars().last().map(|c| c as u32).unwrap_or(0)) & 1;
-    let url = format!("https://mapsv{host}.bdimg.com/?qt=sdata&sid={}", ids.join(";"));
+    let url = sdata_url(host, ids);
     let backoff = [
         std::time::Duration::from_millis(800),
         std::time::Duration::from_millis(1800),
@@ -299,13 +447,13 @@ async fn fetch_sdata_batch(
     ];
     let mut transfer_failed = false;
     for attempt in 0..=retries {
-        match http_client().get(&url).timeout(timeout).send().await {
+        match baidu_http_client().get(&url).timeout(timeout).send().await {
             Ok(resp) if resp.status().as_u16() == 403 => return Vec::new(),
             Ok(resp) if !resp.status().is_success() => {
                 transfer_failed = true;
             }
-            Ok(resp) => match resp.text().await {
-                Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(resp) => match resp.bytes().await {
+                Ok(body) => match serde_json::from_slice::<serde_json::Value>(&body) {
                     Ok(json) => {
                         let err = json.get("result").and_then(|v| v.get("error")).and_then(|v| v.as_i64());
                         if err == Some(404) {
@@ -360,7 +508,7 @@ async fn fetch_sdata_once(
         return Vec::new();
     }
     let host = (ids[0].chars().last().map(|c| c as u32).unwrap_or(0)) & 1;
-    let url = format!("https://mapsv{host}.bdimg.com/?qt=sdata&sid={}", ids.join(";"));
+    let url = sdata_url(host, ids);
     let backoff = [
         std::time::Duration::from_millis(800),
         std::time::Duration::from_millis(1800),
@@ -384,15 +532,15 @@ async fn sdata_attempt(
     filter_normal: bool,
     filter_timeline: bool,
 ) -> Option<Vec<serde_json::Value>> {
-    let resp = http_client().get(url).timeout(timeout).send().await.ok()?;
+    let resp = baidu_http_client().get(url).timeout(timeout).send().await.ok()?;
     if resp.status().as_u16() == 403 {
         return Some(Vec::new());
     }
     if !resp.status().is_success() {
         return None;
     }
-    let text = resp.text().await.ok()?;
-    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let body = resp.bytes().await.ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&body).ok()?;
     let err = json.get("result").and_then(|v| v.get("error")).and_then(|v| v.as_i64());
     if err == Some(404) {
         return Some(Vec::new());
@@ -412,6 +560,49 @@ async fn sdata_attempt(
             })
             .unwrap_or_default(),
     )
+}
+
+fn sdata_url(host: u32, ids: &[String]) -> String {
+    let mut url = String::with_capacity(48 + ids.len() * 28);
+    url.push_str("https://mapsv");
+    url.push(if host == 0 { '0' } else { '1' });
+    url.push_str(".bdimg.com/?qt=sdata&sid=");
+    for (i, id) in ids.iter().enumerate() {
+        if i > 0 {
+            url.push(';');
+        }
+        url.push_str(id);
+    }
+    url
+}
+
+/// Keep `concurrency` sdata batches in flight. The next batch of ids is built when a
+/// slot opens, so the first requests leave before the rest of the budget is formatted.
+async fn probe_sdata_pipelined(
+    scan: &mut ScanState,
+    concurrency: usize,
+    timeout: std::time::Duration,
+    retries: u32,
+    filter_normal: bool,
+    filter_timeline: bool,
+) -> Vec<serde_json::Value> {
+    let mut inflight = FuturesUnordered::new();
+    let mut kept = Vec::new();
+    loop {
+        while inflight.len() < concurrency {
+            let Some(batch) = scan.next_batch(100) else { break };
+            inflight.push(async move {
+                fetch_sdata_batch(&batch, timeout, retries, filter_normal, filter_timeline).await
+            });
+        }
+        if inflight.is_empty() {
+            break;
+        }
+        if let Some(part) = inflight.next().await {
+            kept.extend(part);
+        }
+    }
+    kept
 }
 
 /// Probe the next slice of a Baidu pano-id range. Enumeration, concurrency,
@@ -438,45 +629,46 @@ pub async fn baidu_traverse_chunk(req: BaiduTraverseRequest) -> AppResult<BaiduT
             done: true,
         });
     }
-    let budget = req.budget.clamp(1, 5_000) as usize;
-    let (ids, next, done) = take_baidu_ids(
-        &start.prefix,
-        &start.car,
+    // various-map-gen keeps `concurrency` batches of 100 in flight and refills a slot as
+    // soon as it finishes. A 5_000 cap was only 50 batches, so a setting of 200 never
+    // opened more than 20 requests, then waited out the round trip before the next slice.
+    let budget = req.budget.clamp(1, 200_000) as usize;
+    let mut scan = ScanState {
+        prefix: start.prefix,
+        car: start.car,
         cursor,
-        end.ms,
+        target: end.ms,
         reverse,
-        budget,
-        req.use_rough_scan,
-        req.scan_step_min.clamp(1, 1440),
-        req.scan_duration_sec.clamp(1, 3600),
-        req.skip_time_enabled,
-        req.skip_start_min,
-        req.skip_end_min,
-        );
+        left: budget,
+        rough: req.use_rough_scan,
+        jump: i64::from(req.scan_step_min.clamp(1, 1440)) * 60_000,
+        dur: i64::from(req.scan_duration_sec.clamp(1, 3600)) * 1000,
+        skip: req.skip_time_enabled,
+        skip_start: req.skip_start_min,
+        skip_end: req.skip_end_min,
+        done: false,
+        guard: 0,
+        seg_collect: None,
+        seg_end: 0,
+    };
     let concurrency = req.concurrency.clamp(50, 500) as usize;
     let timeout = std::time::Duration::from_secs(u64::from(req.req_timeout_sec.clamp(5, 30)));
     let retries = req.retry_times.clamp(1, 5);
-    let mut kept = Vec::new();
-    for wave in ids.chunks(100).collect::<Vec<_>>().chunks(concurrency) {
-        let mut jobs = Vec::new();
-		for batch in wave {
-            jobs.push(fetch_sdata_batch(
-                batch,
-                timeout,
-                retries,
-                req.filter_normal_cover,
-                req.filter_timeline_coverage,
-            ));
-        }
-        for part in futures::future::join_all(jobs).await {
-            kept.extend(part);
-        }
-    }
+    let kept = probe_sdata_pipelined(
+        &mut scan,
+        concurrency,
+        timeout,
+        retries,
+        req.filter_normal_cover,
+        req.filter_timeline_coverage,
+    )
+    .await;
+    let probed = (budget - scan.left) as u32;
     Ok(BaiduTraverseChunk {
         content_json: serde_json::to_string(&kept)?,
-        probed: ids.len() as u32,
-        next_cursor_ms: next,
-        done,
+        probed,
+        next_cursor_ms: scan.cursor,
+        done: scan.done,
     })
 }
 
@@ -783,6 +975,47 @@ mod tests {
         assert_eq!(ids[0].len(), 27);
         assert!(done);
         assert!(next > end);
+    }
+
+    #[test]
+    fn formatted_ids_follow_utc_across_midnight() {
+        use chrono::Datelike;
+        let cases = ["240229235959999", "240301000000000", "230228235959999", "231231235959999"];
+        for time in cases {
+            let ms = baidu_time_to_ms(time).unwrap();
+            let id = format_pid("0900000000", ms, "01").unwrap();
+            assert_eq!(&id[10..25], time, "{time}");
+            let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms).unwrap();
+            let rolled = ms + 1;
+            let next = format_pid("0900000000", rolled, "01").unwrap();
+            let expect = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(rolled).unwrap();
+            assert_eq!(
+                &next[10..25],
+                &format!(
+                    "{:02}{:02}{:02}{:02}{:02}{:02}{:03}",
+                    expect.year().rem_euclid(100),
+                    expect.month(),
+                    expect.day(),
+                    expect.hour(),
+                    expect.minute(),
+                    expect.second(),
+                    rolled.rem_euclid(1000),
+                ),
+                "rollover from {time} via {dt}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rough_window_resumes_inside_the_segment() {
+        let start = baidu_time_to_ms("240315120000000").unwrap();
+        let (ids, cursor, done) = take_baidu_ids("0900000000", "01", start, start + 120_000, false, 1, true, 1, 1, false, 0, 0);
+        assert_eq!(ids.len(), 1);
+        assert!(!done);
+        assert_eq!(cursor, start + 1);
+        let (rest, _, _) = take_baidu_ids("0900000000", "01", cursor, start + 120_000, false, 1000, true, 1, 1, false, 0, 0);
+        assert_eq!(rest.len(), 1000);
+        assert_eq!(&rest[0][10..25], &format_pid("0900000000", start + 1, "01").unwrap()[10..25]);
     }
 
     #[test]
