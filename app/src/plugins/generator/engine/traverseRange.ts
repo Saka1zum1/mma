@@ -1,3 +1,5 @@
+import type { BaiduTraverseSettings } from "./types";
+
 /**
  * Traverse tag for one sdata row. A non-empty `Roads` list is normal coverage and gets
  * no tag. A longer `TimeLine` replaces hidden coverage, so a location carries one tag.
@@ -123,4 +125,140 @@ export function traverseRangeFromMap(data: unknown): TraverseEndpointRange | nul
 		count: best.length,
 		skippedGroups: groups.size - 1,
 	};
+}
+
+const DAY_MS = 86_400_000;
+const MIN_MS = 60_000;
+
+interface SkipWindow {
+	enabled: boolean;
+	start: number;
+	end: number;
+}
+
+function clampInt(n: number, lo: number, hi: number): number {
+	const v = Math.trunc(Number(n));
+	if (!Number.isFinite(v)) return lo;
+	return Math.min(hi, Math.max(lo, v));
+}
+
+/** Minute of day in UTC, matching the scanner's `minute_of_day`. */
+function minuteOfDay(ms: number): number {
+	const local = ((ms % DAY_MS) + DAY_MS) % DAY_MS;
+	return Math.floor(local / MIN_MS);
+}
+
+function skipMinute(minute: number, skip: SkipWindow): boolean {
+	if (!skip.enabled) return false;
+	if (skip.start <= skip.end) return minute >= skip.start && minute <= skip.end;
+	return minute >= skip.start || minute <= skip.end;
+}
+
+function skippedMinutesPerDay(skip: SkipWindow): number {
+	if (!skip.enabled) return 0;
+	if (skip.start <= skip.end) return skip.end - skip.start + 1;
+	return 1440 - skip.start + skip.end + 1;
+}
+
+/** Non-skipped milliseconds in one UTC day slice. `localLo`/`localHi` are 0–86_399_999. */
+function countInDay(localLo: number, localHi: number, skip: SkipWindow): number {
+	if (!skip.enabled) return localHi - localLo + 1;
+	let total = 0;
+	let cursor = localLo;
+	while (cursor <= localHi) {
+		const minuteStart = cursor - (cursor % MIN_MS);
+		const segEnd = Math.min(localHi, minuteStart + MIN_MS - 1);
+		if (!skipMinute(Math.floor(cursor / MIN_MS), skip)) total += segEnd - cursor + 1;
+		cursor = segEnd + 1;
+	}
+	return total;
+}
+
+/** Every non-skipped millisecond from `lo` through `hi`, inclusive. */
+function countFine(lo: number, hi: number, skip: SkipWindow): number {
+	if (hi < lo) return 0;
+	if (!skip.enabled) return hi - lo + 1;
+	const loDay = Math.floor(lo / DAY_MS);
+	const hiDay = Math.floor(hi / DAY_MS);
+	if (loDay === hiDay) return countInDay(lo % DAY_MS, hi % DAY_MS, skip);
+	const head = countInDay(lo % DAY_MS, DAY_MS - 1, skip);
+	const tail = countInDay(0, hi % DAY_MS, skip);
+	const mid = hiDay - loDay - 1;
+	return head + tail + mid * (DAY_MS - skippedMinutesPerDay(skip) * MIN_MS);
+}
+
+/**
+ * Rough windows: each start that is still inside the range and outside the skip emits
+ * `duration` milliseconds plus the start itself, then jumps `step` minutes. The window
+ * is not cut at the end, same as `ScanState` in sv_net.rs.
+ */
+function countRough(
+	startMs: number,
+	endMs: number,
+	reverse: boolean,
+	stepMin: number,
+	durSec: number,
+	skip: SkipWindow,
+): number {
+	const jump = clampInt(stepMin, 1, 1440) * MIN_MS;
+	const dur = clampInt(durSec, 1, 3600) * 1000;
+	const maxSteps = Math.floor(Math.abs(endMs - startMs) / jump) + 2;
+	let cursor = startMs;
+	let total = 0;
+	for (let i = 0; i < maxSteps; i++) {
+		if (reverse ? cursor < endMs : cursor > endMs) break;
+		if (!skipMinute(minuteOfDay(cursor), skip)) total += dur + 1;
+		cursor += reverse ? -jump : jump;
+	}
+	return total;
+}
+
+/** 27-character id, no `BAIDU:` prefix. Rejects a timestamp chrono would reject. */
+function parseEndpoint(raw: string): ParsedBaiduId | null {
+	const id = raw.trim();
+	if (id.length !== 27) return null;
+	const ms = idMillis(id);
+	if (ms == null) return null;
+	const time = id.slice(10, 25);
+	const dt = new Date(ms);
+	if (
+		dt.getUTCMinutes() !== Number(time.slice(8, 10)) ||
+		dt.getUTCSeconds() !== Number(time.slice(10, 12)) ||
+		dt.getUTCMilliseconds() !== Number(time.slice(12, 15))
+	) {
+		return null;
+	}
+	return { id, group: id.slice(0, 10) + id.slice(25), ms };
+}
+
+/**
+ * How many pano ids a traverse will send for this range. Null when the endpoints
+ * cannot start a scan. Fine scans are counted in constant time; a month of 1 ms
+ * steps is billions of ids.
+ */
+export function traverseProbeTotal(
+	t: Pick<
+		BaiduTraverseSettings,
+		| "startPanoId"
+		| "endPanoId"
+		| "useRoughScan"
+		| "scanStepMin"
+		| "scanDurationSec"
+		| "skipTimeEnabled"
+		| "skipStartMin"
+		| "skipEndMin"
+	>,
+): number | null {
+	const start = parseEndpoint(t.startPanoId);
+	const end = parseEndpoint(t.endPanoId);
+	if (!start || !end || start.group !== end.group) return null;
+	const skip: SkipWindow = {
+		enabled: t.skipTimeEnabled,
+		start: clampInt(t.skipStartMin, 0, 1439),
+		end: clampInt(t.skipEndMin, 0, 1439),
+	};
+	if (t.useRoughScan) {
+		return countRough(start.ms, end.ms, start.ms > end.ms, t.scanStepMin, t.scanDurationSec, skip);
+	}
+	return countFine(Math.min(start.ms, end.ms), Math.max(start.ms, end.ms), skip);
 }

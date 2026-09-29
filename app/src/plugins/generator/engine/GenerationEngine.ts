@@ -19,6 +19,7 @@ import { isGoogleProvider } from "./types";
 import { distMeters, lerpLng, unionBounds } from "@/lib/geo/geo";
 import { searchCoverage } from "../searchCoverage";
 import { RateWindow } from "./rateWindow";
+import { traverseProbeTotal } from "./traverseRange";
 import { spreadIndex } from "./spread";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
@@ -77,6 +78,8 @@ export class GenerationEngine {
 	private answered = new RateWindow();
 	private accepted = new RateWindow();
 	private probesTotal = 0;
+	private traverseTotal = 0;
+	private traverseStartedAt = 0;
 	private foundTotal = 0;
 	private duplicates = 0;
 	private rejected = 0;
@@ -91,6 +94,10 @@ export class GenerationEngine {
 		this.settings = settings;
 		this.regions = regions;
 		this.callbacks = callbacks;
+		if (settings.provider === "baidu" && settings.samplingMode === "traverse") {
+			this.traverseTotal = traverseProbeTotal(settings.traverse) ?? 0;
+			this.traverseStartedAt = performance.now();
+		}
 	}
 
 	// Live-apply settings mid-job. Most settings are read fresh on every probe, so they
@@ -208,6 +215,23 @@ export class GenerationEngine {
 			duplicates: this.duplicates,
 			rejected: this.rejected,
 			spread: spreadIndex([...this.cells.values()].filter((c) => c.probes > 0).map((c) => c.found)),
+			traverse: this.traverseScan(),
+		};
+	}
+
+	/** Pano-id progress for a traverse run. Null for every other mode. */
+	traverseProgress() {
+		return this.traverseScan();
+	}
+
+	/** Session average from the click that started the scan, same idea as various-map-gen. */
+	private traverseScan() {
+		if (this.traverseTotal <= 0) return null;
+		const elapsed = (performance.now() - this.traverseStartedAt) / 1000;
+		return {
+			finished: this.probesTotal,
+			total: this.traverseTotal,
+			perSec: elapsed > 0 ? this.probesTotal / elapsed : 0,
 		};
 	}
 
@@ -320,6 +344,7 @@ export class GenerationEngine {
 				});
 			}
 			for (const region of this.regions) region.isProcessing = true;
+			this.notifyTraverse();
 			let done = false;
 			while (!done && (await this.proceedTraverse())) {
 				const t = this.settings.traverse;
@@ -338,13 +363,16 @@ export class GenerationEngine {
 					concurrency: t.concurrency,
 					reqTimeoutSec: t.reqTimeoutSec,
 					retryTimes: t.retryTimes,
-					budget: 2000,
+					// Two full windows (100 ids per in-flight request). One window matches the
+					// browser's steady state; the second refills a slot before this call returns.
+					budget: Math.min(200_000, Math.max(50, t.concurrency) * 200),
 				});
 				cursor = chunk.nextCursorMs;
 				done = chunk.done;
 				const before = this.probesTotal;
 				this.probesTotal += chunk.probed;
 				this.answered.add(chunk.probed);
+				this.notifyTraverse();
 				const step = Math.min(1_000_000, Math.max(1000, t.progressStep || 100_000));
 				if (Math.floor(before / step) !== Math.floor(this.probesTotal / step)) {
 					log.info(`[generator] traverse scanned ${this.probesTotal} ids`);
@@ -369,6 +397,12 @@ export class GenerationEngine {
 				this.callbacks.onRegionComplete(region.id);
 			}
 		}
+	}
+
+	private notifyTraverse(): void {
+		const region = this.regions[0];
+		if (!region) return;
+		this.callbacks.onProgress(region.id, region.found.length, region.target);
 	}
 
 	private async proceedTraverse(): Promise<boolean> {

@@ -5,6 +5,74 @@
 	flex-wrap: wrap;
 }
 
+.traverse-progress {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	min-width: 0;
+}
+
+.traverse-progress__head {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.35rem 0.5rem;
+	min-width: 0;
+}
+
+.traverse-progress__speed {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--text-0);
+}
+
+.traverse-progress__count {
+	margin-left: auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.75rem;
+	color: var(--text-2);
+}
+
+.traverse-ring {
+	position: relative;
+	width: 28px;
+	height: 28px;
+	flex-shrink: 0;
+	display: inline-flex;
+}
+
+.traverse-ring svg {
+	transform: rotate(-90deg);
+	display: block;
+}
+
+.traverse-ring__track {
+	stroke: color-mix(in srgb, currentColor 18%, transparent);
+	fill: none;
+}
+
+.traverse-ring__bar {
+	stroke: var(--accent);
+	fill: none;
+	stroke-linecap: round;
+	transition: stroke-dashoffset 0.2s ease;
+}
+
+.traverse-ring__label {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 8px;
+	font-weight: 700;
+	line-height: 1;
+	pointer-events: none;
+}
+
 /* Body children keep their natural height so the body scrolls, instead of the
    flex column shrinking the cards to nothing when the footer takes space. */
 .generator-sidebar .plugin-sidebar__body > * {

@@ -10,6 +10,7 @@ import { autoTagNames } from "./engine/autoTags";
 import { GenerationEngine } from "./engine/GenerationEngine";
 import {
 	isGoogleProvider,
+	storedProvider,
 	type GeneratedLocation,
 	type GeneratorRegion,
 	type GeneratorSettings,
@@ -45,6 +46,7 @@ function generatedToLocation(loc: GeneratedLocation, tagIds: number[]) {
 		heading: loc.heading,
 		pitch: loc.pitch,
 		zoom: loc.zoom,
+		provider: storedProvider(loc.provider),
 		flags: LocationFlag.LoadAsPanoId,
 		...(tagIds.length ? { tags: tagIds } : {}),
 		...(loc.imageDate ? { extra: { imageDate: loc.imageDate } } : {}),
@@ -168,11 +170,19 @@ function progressFrame(): void {
 	requestAnimationFrame(() => {
 		frameQueued = false;
 		if (run) {
-			const { found, target } = run.engine.progress();
-			run.job.update(
-				target > 0 ? Math.min(found / target, 1) : 0,
-				`${fmt.format(found)} / ${fmt.format(target)}`,
-			);
+			const scan = run.engine.traverseProgress();
+			if (scan && scan.total > 0) {
+				run.job.update(
+					Math.min(scan.finished / scan.total, 1),
+					`${fmt.format(scan.finished)} / ${fmt.format(scan.total)}`,
+				);
+			} else {
+				const { found, target } = run.engine.progress();
+				run.job.update(
+					target > 0 ? Math.min(found / target, 1) : 0,
+					`${fmt.format(found)} / ${fmt.format(target)}`,
+				);
+			}
 		}
 		emitPluginEvent(GENERATOR_CHANGED);
 	});

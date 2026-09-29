@@ -123,6 +123,22 @@ export function isGoogleProvider(provider: StreetViewProvider): boolean {
 	return provider === "google" || provider === "googleZoom";
 }
 
+/** Provider stored on a location. Photometa (`googleZoom`) is still Google imagery.
+ *  Anything else missing from this list is not a viewer provider, so it stays Google. */
+export function storedProvider(
+	provider: StreetViewProvider | null | undefined,
+): "google" | "apple" | "yandex" | "baidu" | "tencent" {
+	if (
+		provider === "apple" ||
+		provider === "baidu" ||
+		provider === "tencent" ||
+		provider === "yandex"
+	) {
+		return provider;
+	}
+	return "google";
+}
+
 export type SamplingMode = "random" | "poisson" | "grid" | "blueline" | "kernels" | "traverse";
 
 /** Baidu id-range scan. Only used when `provider` is baidu and `samplingMode` is traverse. */
@@ -263,6 +279,16 @@ export const DEFAULT_SETTINGS: GeneratorSettings = {
 	},
 };
 
+/** How far a Baidu traverse has walked its pano-id range. */
+export interface TraverseScanProgress {
+	/** Ids actually sent. */
+	finished: number;
+	/** Ids the range will send, matching the scanner (a rough window may run past the end). */
+	total: number;
+	/** Average ids per second since the scan started. */
+	perSec: number;
+}
+
 export interface GeneratorStats {
 	probesPerSec: number;
 	locsPerSec: number;
@@ -272,6 +298,8 @@ export interface GeneratorStats {
 	duplicates: number;
 	rejected: number;
 	spread: number | null;
+	/** Set for the whole of a traverse run, including after it stops. */
+	traverse: TraverseScanProgress | null;
 }
 
 export interface GeneratorRegionMeta {

@@ -8,6 +8,7 @@ import { getActiveSelections, useMapState } from "@/store/useMapStore";
 import { usePluginEvent } from "@/plugins/pluginEvents";
 import type { Selection } from "@/bindings.gen";
 import { storage } from "@/plugins/pluginStorage";
+import { Bar } from "@/components/primitives/Bar";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
 import { searchCoverage } from "../searchCoverage";
 import {
@@ -114,6 +115,78 @@ function Stat({ icon, hint, value }: { icon: string; hint: string; value: string
 			</Tooltip>
 			{value}
 		</span>
+	);
+}
+
+function formatTraverseSpeed(idsPerSec: number): string {
+	if (!Number.isFinite(idsPerSec) || idsPerSec <= 0) return t("{rate}/s", { rate: "—" });
+	if (idsPerSec >= 1000) return t("{rate}k/s", { rate: (idsPerSec / 1000).toFixed(1) });
+	return t("{rate}/s", { rate: Math.round(idsPerSec) });
+}
+
+/** Ring plus a bar for the pano-id range. Traverse often has no polygon row to hang this on. */
+function TraverseProgress({ settings }: { settings: GeneratorSettings }) {
+	const [stats, setStats] = useState(getGeneratorStats);
+	useEffect(() => {
+		const poll = setInterval(() => setStats(getGeneratorStats()), 400);
+		return () => clearInterval(poll);
+	}, []);
+	const scan = isTraverse(settings) ? stats?.traverse : null;
+	if (!scan || scan.total <= 0) return null;
+	const pct = Math.max(0, Math.min(100, (scan.finished / scan.total) * 100));
+	const size = 28;
+	const stroke = 3;
+	const radius = (size - stroke) / 2;
+	const circumference = 2 * Math.PI * radius;
+	const title = t("Scanned {done} of {total} pano ids", {
+		done: fmt.format(scan.finished),
+		total: fmt.format(scan.total),
+	});
+	return (
+		<div className="traverse-progress" title={title}>
+			<div className="traverse-progress__head">
+				<div
+					className="traverse-ring"
+					role="progressbar"
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-valuenow={Math.round(pct)}
+					aria-label={t("Traverse")}
+				>
+					<svg width={size} height={size} aria-hidden="true">
+						<circle
+							className="traverse-ring__track"
+							cx={size / 2}
+							cy={size / 2}
+							r={radius}
+							strokeWidth={stroke}
+						/>
+						{pct > 0 && (
+							<circle
+								className="traverse-ring__bar"
+								cx={size / 2}
+								cy={size / 2}
+								r={radius}
+								strokeWidth={stroke}
+								strokeDasharray={circumference}
+								strokeDashoffset={circumference * (1 - pct / 100)}
+							/>
+						)}
+					</svg>
+					<span className="traverse-ring__label">{Math.round(pct)}%</span>
+				</div>
+				<span
+					className="traverse-progress__speed mono"
+					title={t("Average pano ids per second since the scan started")}
+				>
+					{formatTraverseSpeed(scan.perSec)}
+				</span>
+				<span className="traverse-progress__count mono">
+					{t("{done} / {total}", { done: fmt.format(scan.finished), total: fmt.format(scan.total) })}
+				</span>
+			</div>
+			<Bar value={scan.finished / scan.total} size="md" />
+		</div>
 	);
 }
 
@@ -390,6 +463,7 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 			footer={
 				<>
 					<p className="generator-sidebar__summary">{summarizeSettings(settings)}</p>
+					<TraverseProgress settings={settings} />
 					<div className="generator-sidebar__actions">
 						{!running ? (
 							<Button
