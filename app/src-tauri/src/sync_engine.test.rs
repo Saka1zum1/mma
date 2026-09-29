@@ -297,7 +297,7 @@ fn drive(
         first_sync,
         resolutions,
     };
-    let planned = plan(&input);
+    let planned = plan(&input).unwrap();
     execute(provider, "r", planned, token, sink).unwrap()
 }
 
@@ -435,6 +435,8 @@ fn pushes_local_edit_and_pulls_remote_edit() {
     assert_eq!(out.pull_updates.len(), 1);
     assert_eq!(out.pull_updates[0].local_id, 2);
     assert_eq!(out.pull_updates[0].patch.lat, Some(22.0));
+    assert_eq!(out.pull_updates[0].remote_id, 8);
+    assert_eq!(out.pull_updates[0].hash, nhash(|n| n.lat = 22.0));
 
     let pushes = provider.pushes.borrow();
     assert_eq!(pushes[0].updates.len(), 1);
@@ -442,21 +444,28 @@ fn pushes_local_edit_and_pulls_remote_edit() {
     assert_eq!(pushes[0].updates[0].1, raw(|n| n.lat = 1.0, Some(7)));
     drop(pushes);
 
+    // The pulled row keeps its base hash until JS records the update.
     assert_eq!(
         sink.dump(),
         vec![
             (1, 1000, nhash(|n| n.lat = 11.0)),
-            (2, 8, nhash(|n| n.lat = 22.0)),
+            (2, 8, nhash(|n| n.lat = 2.0)),
         ]
     );
 
-    // With the pull applied locally (JS's job), the second pass is a no-op.
+    // With the pull applied locally and its mapping row written (JS's job), the second pass is a no-op.
     let settled_locs = [loc(1, |l| l.lat = 11.0), loc(2, |l| l.lat = 22.0)];
-    let mut sink2 = MemSink::seeded(&sink.mapping());
+    let mut applied = sink.mapping();
+    for u in &out.pull_updates {
+        let row = applied.iter_mut().find(|r| r.local_id == u.local_id).unwrap();
+        row.remote_id = u.remote_id;
+        row.hash = u.hash.clone();
+    }
+    let mut sink2 = MemSink::seeded(&applied);
     let out2 = sync(
         &provider,
         &settled_locs,
-        &sink.mapping(),
+        &applied,
         &no_tags(),
         &mut sink2,
     );
@@ -555,8 +564,11 @@ fn resolution_to_remote_applies_as_a_pull() {
     assert!(provider.pushes.borrow().is_empty());
     assert_eq!(out.pull_updates.len(), 1);
     assert_eq!(out.pull_updates[0].local_id, 1);
+    assert_eq!(out.pull_updates[0].remote_id, 7);
     assert_eq!(out.pull_updates[0].patch.lat, Some(3.0));
-    assert_eq!(sink.dump(), vec![(1, 7, nhash(|n| n.lat = 3.0))]);
+    assert_eq!(out.pull_updates[0].hash, nhash(|n| n.lat = 3.0));
+    // Base hash stays until JS applies the pull.
+    assert_eq!(sink.dump(), vec![(1, 7, nhash(|n| n.lat = 1.0))]);
 }
 
 // ---------------------------------------------------------------------------
@@ -864,7 +876,7 @@ fn commits_each_chunk_as_it_lands_and_does_not_rewrite_them_at_the_end() {
         first_sync: None,
         resolutions: &[],
     };
-    let planned = plan(&input);
+    let planned = plan(&input).unwrap();
     let out = execute(&provider, "r", planned, None, &mut sink).unwrap();
 
     // Two chunk commits, and nothing after them: pushed keys are excluded from the final rows.
@@ -887,6 +899,51 @@ fn atomic_provider_commits_once() {
     // The single push commit is the only upsert; the final settled write is empty.
     assert_eq!(sink.upsert_sizes, vec![2]);
     assert_eq!(sink.rows.len(), 2);
+}
+
+// ---------------------------------------------------------------------------
+// empty remote
+// ---------------------------------------------------------------------------
+
+#[test]
+fn empty_remote_snapshot_with_a_nonempty_mapping_refuses_the_sync() {
+    let provider = Fake::stable(vec![]);
+    let locs = [
+        loc(1, |l| l.lat = 1.0),
+        loc(2, |l| l.lat = 2.0),
+        loc(3, |l| l.lat = 3.0),
+    ];
+    let mapping = [
+        row(1, 7, nhash(|n| n.lat = 1.0)),
+        row(2, 8, nhash(|n| n.lat = 2.0)),
+        row(3, 9, nhash(|n| n.lat = 3.0)),
+    ];
+
+    let planned = plan(&ReconcileInput {
+        provider: &provider,
+        local_locs: &locs,
+        remote: provider.pull("r").unwrap(),
+        mapping: &mapping,
+        tag_names: &no_tags(),
+        first_sync: None,
+        resolutions: &[],
+    });
+
+    assert!(planned.is_err());
+    assert!(provider.pushes.borrow().is_empty());
+}
+
+#[test]
+fn empty_remote_snapshot_with_an_empty_mapping_still_syncs() {
+    let provider = Fake::stable(vec![]);
+    let mut sink = MemSink::new();
+
+    let out = sync(&provider, &[], &[], &no_tags(), &mut sink);
+
+    assert_eq!(out.pushed, side(0, 0, 0));
+    assert_eq!(out.pulled, side(0, 0, 0));
+    assert!(out.pull_delete_ids.is_empty());
+    assert!(sink.untouched());
 }
 
 // ---------------------------------------------------------------------------
