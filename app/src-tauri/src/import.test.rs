@@ -733,7 +733,7 @@ fn bench_parse_real() {
         locs = parsed.locations.len();
 
         let t1 = std::time::Instant::now();
-        let _preview = build_preview(parsed).expect("build_preview");
+        let _preview = build_preview(parsed, "bench").expect("build_preview");
         let t_build = t1.elapsed().as_secs_f64() * 1e3;
 
         eprintln!("iter {i}: parse={t_parse:.0}ms build_preview={t_build:.0}ms");
@@ -751,21 +751,24 @@ fn staged_location_fetch_by_index() {
     ]}"#;
     let mut buf = json.to_vec();
     let parsed = parse_single_json_mut(&mut buf);
-    *EDITOR_IMPORT_CACHE.lock().unwrap() = Some(parsed);
+    EDITOR_IMPORT_CACHE
+        .lock()
+        .unwrap()
+        .insert("test".into(), parsed);
 
-    let first = store_import_staged_location(0).unwrap();
+    let first = cached_staged_location("test", 0).unwrap();
     assert_eq!(first.id, 0); // staged sentinel id
     assert_eq!(first.lat, 10.5);
     assert_eq!(first.heading, 90.0);
     assert_eq!(first.pano_id.as_deref(), Some("abcdefghijklmnopqrstuv"));
 
-    let second = store_import_staged_location(1).unwrap();
+    let second = cached_staged_location("test", 1).unwrap();
     assert_eq!(second.lng, 7.75);
 
-    assert!(store_import_staged_location(2).is_err());
+    assert!(cached_staged_location("test", 2).is_err());
 
-    *EDITOR_IMPORT_CACHE.lock().unwrap() = None;
-    assert!(store_import_staged_location(0).is_err());
+    EDITOR_IMPORT_CACHE.lock().unwrap().clear();
+    assert!(cached_staged_location("test", 0).is_err());
 }
 
 // -----------------------------------------------------------------------

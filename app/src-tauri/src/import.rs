@@ -7,7 +7,7 @@
 
 use crate::types::AppResult;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 use std::sync::Mutex;
 
@@ -42,15 +42,9 @@ fn read_sequential(path: &str) -> std::io::Result<Vec<u8>> {
     }
 }
 
-/// Cached result from `bulk_import_preview` so `bulk_import_confirm` can
-/// skip re-parsing. Keyed by file path to detect stale caches.
-// TODO: single slot ??multi-file bulk import only caches the last file; earlier ones re-parse.
-static CACHED_PARSE: Mutex<Option<CachedImport>> = Mutex::new(None);
-
-struct CachedImport {
-    path: String,
-    maps: Vec<ParsedMap>,
-}
+/// Every file `bulk_import_preview` parsed, keyed by path, so `bulk_import_confirm`
+/// skips re-parsing each one.
+static CACHED_PARSE: Mutex<BTreeMap<String, Vec<ParsedMap>>> = Mutex::new(BTreeMap::new());
 
 // ---------------------------------------------------------------------------
 // Types returned to JS
@@ -1250,7 +1244,7 @@ pub async fn bulk_import_preview(path: String) -> AppResult<Vec<ImportPreviewEnt
             })
             .collect();
 
-        *CACHED_PARSE.lock().unwrap() = Some(CachedImport { path, maps });
+        CACHED_PARSE.lock().unwrap().insert(path, maps);
 
         Ok(results)
     })
@@ -1279,12 +1273,10 @@ pub async fn bulk_import_confirm(
     let main_path = storage::db_path()?;
 
     tokio::task::spawn_blocking(move || {
-        let all_maps = {
-            let mut cache = CACHED_PARSE.lock().unwrap();
-            if cache.as_ref().map(|c| c.path.as_str()) == Some(path.as_str()) {
-                cache.take().unwrap().maps
-            } else {
-                drop(cache);
+        let cached = CACHED_PARSE.lock().unwrap().remove(&path);
+        let all_maps = match cached {
+            Some(maps) => maps,
+            None => {
                 let entries = if path.ends_with(".zip") {
                     read_zip_entries(&path)?
                 } else {
@@ -1335,7 +1327,7 @@ pub async fn bulk_import_confirm(
 #[tauri::command]
 #[specta::specta]
 pub async fn bulk_import_cancel() -> AppResult<()> {
-    *CACHED_PARSE.lock().unwrap() = None;
+    CACHED_PARSE.lock().unwrap().clear();
     Ok(())
 }
 
@@ -1379,7 +1371,7 @@ pub struct EditorImportPreview {
 /// Write interleaved LE f32 `[lng, lat]` for every location to a temp file.
 /// Build preview stats from a parsed map and cache the parse for commit.
 /// Single pass: field counts, positions buffer, and bounds are computed together.
-fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
+fn build_preview(parsed: ParsedMap, window: &str) -> AppResult<EditorImportPreview> {
     let n = parsed.locations.len();
     let (mut h, mut p, mut z, mut pano_c, mut tag_c) = (0u32, 0u32, 0u32, 0u32, 0u32);
     let mut extra_counts: HashMap<String, u32> = HashMap::new();
@@ -1451,7 +1443,17 @@ fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
         });
     }
 
-    let path = std::env::temp_dir().join("mma_import_preview.bin");
+    let file_label: String = window
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let path = std::env::temp_dir().join(format!("mma_import_preview_{file_label}.bin"));
     std::fs::write(&path, &pos_buf)?;
 
     let preview = EditorImportPreview {
@@ -1468,19 +1470,18 @@ fn build_preview(parsed: ParsedMap) -> AppResult<EditorImportPreview> {
         will_auto_commit: n > IMPORT_AUTOCOMMIT_THRESHOLD,
     };
 
-    *EDITOR_IMPORT_CACHE.lock().unwrap() = Some(parsed);
+    EDITOR_IMPORT_CACHE
+        .lock()
+        .unwrap()
+        .insert(window.to_string(), parsed);
     Ok(preview)
 }
 
-static EDITOR_IMPORT_CACHE: Mutex<Option<ParsedMap>> = Mutex::new(None);
+static EDITOR_IMPORT_CACHE: Mutex<BTreeMap<String, ParsedMap>> = Mutex::new(BTreeMap::new());
 
-/// Fetch one staged (not yet imported) location by its preview index, for read-only
-/// preview in the editor. Indexes follow the preview positions order.
-#[tauri::command]
-#[specta::specta]
-pub fn store_import_staged_location(index: u32) -> AppResult<Location> {
+fn cached_staged_location(window: &str, index: u32) -> AppResult<Location> {
     let cache = EDITOR_IMPORT_CACHE.lock().unwrap();
-    let parsed = cache.as_ref().ok_or("no staged import")?;
+    let parsed = cache.get(window).ok_or("no staged import")?;
     parsed
         .locations
         .get(index as usize)
@@ -1488,20 +1489,32 @@ pub fn store_import_staged_location(index: u32) -> AppResult<Location> {
         .ok_or_else(|| "staged index out of range".into())
 }
 
+/// Fetch one staged (not yet imported) location by its preview index, for read-only
+/// preview in the editor. Indexes follow the preview positions order.
+#[tauri::command]
+#[specta::specta]
+pub fn store_import_staged_location(webview: tauri::Webview, index: u32) -> AppResult<Location> {
+    cached_staged_location(webview.label(), index)
+}
+
 /// Parse a file and return field-level statistics + preview positions for the editor
 /// import sidebar. Caches the parse result for `store_import_file` to consume on commit.
 #[tauri::command]
 #[specta::specta]
-pub async fn store_import_preview(path: String) -> AppResult<EditorImportPreview> {
+pub async fn store_import_preview(
+    webview: tauri::Webview,
+    path: String,
+) -> AppResult<EditorImportPreview> {
+    let window = webview.label().to_string();
     // CPU-bound parse runs on a blocking thread so it never stalls the main/event-loop
-    // thread (which the webview shares ??a sync command here freezes the window).
+    // thread (which the webview shares — a sync command here freezes the window).
     tokio::task::spawn_blocking(move || {
         let t0 = std::time::Instant::now();
         let mut buf = read_sequential(&path)?;
         let t_read = t0.elapsed();
         let parsed = parse_file(&mut buf);
         let t_parse = t0.elapsed();
-        let preview = build_preview(parsed)?;
+        let preview = build_preview(parsed, &window)?;
         log::debug!(
             "[import-preview] read={:.0}ms parse={:.0}ms build={:.0}ms locs={}",
             t_read.as_millis(),
@@ -1518,7 +1531,11 @@ pub async fn store_import_preview(path: String) -> AppResult<EditorImportPreview
 /// `store_import_preview` does for a file. Caches the parse for `store_import_file`.
 #[tauri::command]
 #[specta::specta]
-pub async fn store_import_paste_preview(text: String) -> AppResult<EditorImportPreview> {
+pub async fn store_import_paste_preview(
+    webview: tauri::Webview,
+    text: String,
+) -> AppResult<EditorImportPreview> {
+    let window = webview.label().to_string();
     tokio::task::spawn_blocking(move || {
         let t0 = std::time::Instant::now();
         let mut buf = text.into_bytes();
@@ -1531,7 +1548,7 @@ pub async fn store_import_paste_preview(text: String) -> AppResult<EditorImportP
             t0.elapsed().as_millis(),
             parsed.locations.len()
         );
-        build_preview(parsed)
+        build_preview(parsed, &window)
     })
     .await?
 }
@@ -1700,11 +1717,12 @@ pub async fn store_import_file(
     tag_name: Option<String>,
 ) -> AppResult<EditorImportResult> {
     let t0 = std::time::Instant::now();
+    let label = webview.label().to_string();
     let mut parsed = EDITOR_IMPORT_CACHE
         .lock()
         .unwrap()
-        .take()
-        .ok_or("no cached import ??call store_import_preview first")?;
+        .remove(&label)
+        .ok_or("no cached import — call store_import_preview first")?;
 
     let drop_set: std::collections::HashSet<&str> =
         dropped_fields.iter().map(|s| s.as_str()).collect();
