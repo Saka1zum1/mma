@@ -13,8 +13,32 @@ import { getAllFieldDefs } from "@/lib/data/fieldDefRegistry";
 import { serializeTagsForExport } from "@/lib/data/importExport";
 import { toast } from "@/lib/util/toast";
 import { log } from "@/lib/util/log";
-import { t } from "@/lib/i18n";
+import { msg, t } from "@/lib/i18n";
 import { Trans } from "@/components/primitives/Trans";
+import { NSelect } from "@/components/primitives/NSelect";
+import { InfoButton } from "@/components/primitives/Hint";
+import { updateMapMeta } from "@/store/useMapStore";
+import type { ExportShape } from "@/bindings.gen";
+
+const SHAPE_LABELS: Record<ExportShape, string> = {
+	geoguessr: msg("GeoGuessr"),
+	mapMaking: msg("map-making.app"),
+	local: msg("This app"),
+};
+
+const SHAPE_HINTS: Record<ExportShape, string> = {
+	geoguessr: msg("Coordinates, camera and pinned pano IDs only. The smallest file."),
+	mapMaking: msg("Adds tags, unpinned pano IDs and capture months. No custom fields."),
+	local: msg("Everything, including custom fields."),
+};
+
+const SHAPES: ExportShape[] = ["geoguessr", "mapMaking", "local"];
+
+function resolvedShape(exportShape: string, exportExtras: boolean): ExportShape {
+	if (exportShape === "geoguessr" || exportShape === "mapMaking" || exportShape === "local")
+		return exportShape;
+	return exportExtras ? "local" : "geoguessr";
+}
 
 interface Props {
 	onClose: () => void;
@@ -30,7 +54,9 @@ export function ExportDialog({ onClose }: Props) {
 	// Derived, not stored: "the selection" has to follow the live one.
 	const selector = selectorForPick(pick);
 	const [saveZoom, setSaveZoom] = useMapSetting("exportZoom");
-	const [saveExtras, setSaveExtras] = useMapSetting("exportExtras");
+	const [exportExtras] = useMapSetting("exportExtras");
+	const [exportShape] = useMapSetting("exportShape");
+	const shape = resolvedShape(exportShape, exportExtras);
 	const [bypassUnpanned, setBypassUnpanned] = useMapSetting("exportUnpanned");
 	const [fileName, setFileName] = useState(map?.meta.name ?? "");
 	const selCount = selectedIds.size;
@@ -46,7 +72,7 @@ export function ExportDialog({ onClose }: Props) {
 		cmd.storeExportJson({
 			exportZoom: saveZoom,
 			exportUnpanned: bypassUnpanned,
-			exportExtras: saveExtras,
+			shape,
 			selector: selector,
 			mapName: map.meta.name,
 			tagsJson: tagsJson(),
@@ -141,20 +167,32 @@ export function ExportDialog({ onClose }: Props) {
 
 							{t("Save zoom levels")}
 						</label>
-						<label>
-							<Checkbox
-								name="extras"
-								checked={saveExtras}
-								onChange={(e) => setSaveExtras(e.target.checked)}
-							/>
-
-							{t("Save app data")}
-							<br />
-							<small className="export-modal__help">
-								{t(
-									"Include app-specific data like tags. Not including this makes the file smaller,\n\t\t\t\t\t\t\t\twhich can help when uploading maps with 100K+ locations to GeoGuessr.",
-								)}
-							</small>
+						<label className="export-modal__shape">
+							{t("Format:")}
+							<NSelect
+								name="shape"
+								compact
+								value={shape}
+								onChange={(e) => {
+									const next = e.target.value as ExportShape;
+									const settings = getMapState().map?.meta.settings;
+									if (!settings) return;
+									void updateMapMeta({
+										settings: {
+											...settings,
+											exportShape: next,
+											exportExtras: next !== "geoguessr",
+										},
+									});
+								}}
+							>
+								{SHAPES.map((s) => (
+									<option key={s} value={s}>
+										{t(SHAPE_LABELS[s])}
+									</option>
+								))}
+							</NSelect>
+							<InfoButton text={t(SHAPE_HINTS[shape])} />
 						</label>
 						<label>
 							<Checkbox

@@ -10,6 +10,33 @@ use crate::types::{AppError, AppResult};
 use crate::util::hex_to_rgb;
 use std::io::Write;
 
+/// How much of a location a JSON export keeps. Each shape keeps everything the one before it does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExportShape {
+    /// Coordinates, camera and pinned panoramas.
+    Geoguessr,
+    /// Adds tags, unpinned panoramas and capture months. No custom fields.
+    MapMaking,
+    /// Everything, including custom fields.
+    Local,
+}
+
+impl ExportShape {
+    fn keeps_tags(self) -> bool {
+        self >= ExportShape::MapMaking
+    }
+    fn keeps_unpinned_pano(self) -> bool {
+        self >= ExportShape::MapMaking
+    }
+    fn keeps_pano_date(self) -> bool {
+        self >= ExportShape::MapMaking
+    }
+    fn keeps_app_data(self) -> bool {
+        self >= ExportShape::Local
+    }
+}
+
 /// Configuration for JSON export. Controls which fields are included and
 /// whether the export covers all locations or a specific selection.
 #[derive(serde::Deserialize, specta::Type)]
@@ -17,7 +44,7 @@ use std::io::Write;
 pub struct ExportOpts {
     pub export_zoom: bool,
     pub export_unpanned: bool,
-    pub export_extras: bool,
+    pub shape: ExportShape,
     /// Which locations to export.
     pub selector: Selector,
     pub map_name: String,
@@ -63,6 +90,7 @@ fn parse_tag_defs(
 /// Convert tag defs to the export metadata shape `{name: {color: [r,g,b], order}}`.
 fn tag_color_meta(
     tag_defs: &std::collections::HashMap<String, serde_json::Value>,
+    keep_doclinks: bool,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut converted = serde_json::Map::new();
     for v in tag_defs.values() {
@@ -80,9 +108,11 @@ fn tag_color_meta(
             if let Some(count) = v.get("count").and_then(|c| c.as_u64()) {
                 entry.insert("count".into(), serde_json::json!(count));
             }
-            if let Some(links) = v.get("doclinks").and_then(|d| d.as_array()) {
-                if !links.is_empty() {
-                    entry.insert("doclinks".into(), serde_json::Value::Array(links.clone()));
+            if keep_doclinks {
+                if let Some(links) = v.get("doclinks").and_then(|d| d.as_array()) {
+                    if !links.is_empty() {
+                        entry.insert("doclinks".into(), serde_json::Value::Array(links.clone()));
+                    }
                 }
             }
             converted.insert(name.to_string(), serde_json::Value::Object(entry));
@@ -95,7 +125,7 @@ fn tag_color_meta(
 struct CoordOpts {
     export_zoom: bool,
     export_unpanned: bool,
-    export_extras: bool,
+    shape: ExportShape,
 }
 
 /// Internal provider id → GeoGuessr-style JSON `source` value.
@@ -194,38 +224,36 @@ fn location_to_coord(
         );
     }
 
-    if is_alt {
-        // Alt-provider wire format: extra.tags only when exporting extras.
-        if opts.export_extras {
-            if let Some(names) = export_tag_names(loc, id_to_name) {
-                let mut extra = serde_json::Map::new();
-                extra.insert("tags".into(), json!(names));
-                c.insert("extra".into(), Value::Object(extra));
-            }
-        }
-    } else if opts.export_extras {
-        let mut extra = serde_json::Map::new();
-        if let Some(ref e) = loc.extra {
+    let mut extra = serde_json::Map::new();
+    if let Some(ref e) = loc.extra {
+        if !is_alt && opts.shape.keeps_app_data() {
             for (k, v) in e.to_map() {
                 if k == "countryCode" || k == "stateCode" {
                     continue;
                 }
                 extra.insert(k, v);
             }
+        } else if opts.shape.keeps_pano_date() {
+            if let Some(date) = e.get("panoDate") {
+                extra.insert("panoDate".into(), date);
+            }
         }
+    }
+    if opts.shape.keeps_tags() {
         if let Some(names) = export_tag_names(loc, id_to_name) {
             extra.insert("tags".into(), json!(names));
         }
-        // Google historically kept unpinned panoId under extra.
-        if !pinned && loc.pano_id.is_some() {
-            extra.insert(
-                "panoId".into(),
-                json!(strip_export_pano_prefix(loc.pano_id.as_ref().unwrap())),
-            );
-        }
-        if !extra.is_empty() {
-            c.insert("extra".into(), Value::Object(extra));
-        }
+    }
+    // Google historically kept unpinned panoId under extra. Alt providers already
+    // put their pano id on the top-level field.
+    if !is_alt && opts.shape.keeps_unpinned_pano() && !pinned && loc.pano_id.is_some() {
+        extra.insert(
+            "panoId".into(),
+            json!(strip_export_pano_prefix(loc.pano_id.as_ref().unwrap())),
+        );
+    }
+    if !extra.is_empty() {
+        c.insert("extra".into(), Value::Object(extra));
     }
 
     Value::Object(c)
@@ -247,7 +275,7 @@ pub fn store_export_json(
         let co = CoordOpts {
             export_zoom: opts.export_zoom,
             export_unpanned: opts.export_unpanned,
-            export_extras: opts.export_extras,
+            shape: opts.shape,
         };
         let coords: Vec<serde_json::Value> = locs
             .iter()
@@ -260,17 +288,19 @@ pub fn store_export_json(
         }
         parts.insert("customCoordinates".into(), serde_json::Value::Array(coords));
 
-        if opts.export_extras {
+        if opts.shape.keeps_tags() || opts.shape.keeps_app_data() {
             let mut extra = serde_json::Map::new();
-            if !tag_defs.is_empty() {
-                let converted = tag_color_meta(&tag_defs);
+            if opts.shape.keeps_tags() && !tag_defs.is_empty() {
+                let converted = tag_color_meta(&tag_defs, opts.shape.keeps_app_data());
                 if !converted.is_empty() {
                     extra.insert("tags".into(), serde_json::Value::Object(converted));
                 }
             }
-            if let Some(ref fields_json) = opts.extra_fields_json {
-                if let Ok(fields) = serde_json::from_str::<serde_json::Value>(fields_json) {
-                    extra.insert("fields".into(), fields);
+            if opts.shape.keeps_app_data() {
+                if let Some(ref fields_json) = opts.extra_fields_json {
+                    if let Ok(fields) = serde_json::from_str::<serde_json::Value>(fields_json) {
+                        extra.insert("fields".into(), fields);
+                    }
                 }
             }
             if !extra.is_empty() {
@@ -544,7 +574,7 @@ pub async fn store_export_bulk_zip() -> AppResult<String> {
                 let co = CoordOpts {
                     export_zoom: true,
                     export_unpanned: false,
-                    export_extras: true,
+                    shape: ExportShape::Local,
                 };
                 let coords: Vec<serde_json::Value> = locs
                     .iter()
@@ -559,7 +589,7 @@ pub async fn store_export_bulk_zip() -> AppResult<String> {
                 if !tag_defs.is_empty() {
                     extra_meta.insert(
                         "tags".into(),
-                        serde_json::Value::Object(tag_color_meta(&tag_defs)),
+                        serde_json::Value::Object(tag_color_meta(&tag_defs, true)),
                     );
                 }
                 if let Ok(extra) = serde_json::from_str::<serde_json::Value>(extra_json) {

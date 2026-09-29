@@ -222,6 +222,8 @@ pub struct MapSettings {
     pub export_zoom: bool,
     pub export_unpanned: bool,
     pub export_extras: bool,
+    /// `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `export_extras`.
+    pub export_shape: String,
     pub search_radius: Option<u32>,
     pub enrich_metadata: bool,
     pub enrich_fields: Option<Vec<String>>,
@@ -255,6 +257,7 @@ impl Default for MapSettings {
             export_zoom: false,
             export_unpanned: true,
             export_extras: true,
+            export_shape: String::new(),
             search_radius: None,
             enrich_metadata: false,
             enrich_fields: None,
@@ -581,6 +584,15 @@ pub fn persist_field_defs(
 // MapMeta
 // ---------------------------------------------------------------------------
 
+/// Uncommitted edits since the last commit, shown on the map list.
+#[derive(serde::Serialize, specta::Type, Clone, Copy, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCounts {
+    pub added: u32,
+    pub removed: u32,
+    pub modified: u32,
+}
+
 /// Full metadata for a map, deserialized from the SQLite `maps` row.
 /// JSON columns (settings, tags, extra, etc.) are parsed into typed structs.
 #[derive(serde::Serialize, specta::Type)]
@@ -596,6 +608,7 @@ pub struct MapMeta {
     pub tags: HashMap<String, Tag>,
     pub labels: Vec<String>,
     pub location_count: i64,
+    pub pending: PendingCounts,
     pub created_at: String,
     pub updated_at: String,
     pub last_opened_at: Option<String>,
@@ -655,6 +668,11 @@ fn row_to_map_meta(row: &rusqlite::Row<'_>) -> Result<MapMeta, rusqlite::Error> 
         tags: serde_json::from_str(&tags_str).unwrap_or_default(),
         labels: serde_json::from_str(&labels_str).unwrap_or_default(),
         location_count: row.get("location_count")?,
+        pending: PendingCounts {
+            added: row.get("pending_added")?,
+            removed: row.get("pending_removed")?,
+            modified: row.get("pending_modified")?,
+        },
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
         last_opened_at: row.get("last_opened_at")?,
