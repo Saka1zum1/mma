@@ -1,3 +1,4 @@
+import { mapMakingApp } from "@/components/primitives/Icon";
 import { isAuthPrefixed, type RemoteMapSummary, type SyncProvider } from "@/lib/sync/provider";
 
 export const PLUGIN_ID = "map-making-sync";
@@ -37,6 +38,7 @@ export async function clearApiKey(): Promise<void> {
 export const mapMakingProvider: SyncProvider = {
 	id: "map-making.app",
 	label: "map-making.app",
+	icon: mapMakingApp,
 
 	isAuthError: isAuthPrefixed,
 

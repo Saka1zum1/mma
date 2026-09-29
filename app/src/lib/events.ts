@@ -41,6 +41,8 @@ const EVENT_DEFS = {
 	"render:delta": event<RenderDelta>(),
 	"render:selection": event<SelectionBitmaskPayload>(),
 	"map-list:changed": event<void>(),
+	"map-badges:changed": event<void>(),
+	"sync-links:changed": event<void>(),
 	"saved-selections:changed": event<void>(),
 	"settings:changed": event<void>(),
 	"settings:open": event<void>(),

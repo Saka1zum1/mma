@@ -176,6 +176,8 @@ export const DEFAULTS = {
 	slowModifier: 4,
 	showFps: false,
 	mapListFields: ["locationCount"] as MapListField[],
+	/** Badge source ids hidden on map-list rows. */
+	hiddenMapBadges: [] as string[],
 	/** Read once at boot; changing it relaunches the app rather than re-rendering. */
 	language: "en" as Language,
 	/** Reopen the maps that were open when the session last ended (main window closed). */

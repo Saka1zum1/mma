@@ -1,5 +1,9 @@
-import { LOCATION_DATA_EVENTS, TAG_DATA_EVENTS } from "@/lib/events";
+import { LOCATION_DATA_EVENTS, TAG_DATA_EVENTS, bridgeAcrossWindows, emit } from "@/lib/events";
+import { msg, t } from "@/lib/i18n";
+import { isPluginEnabled } from "@/plugins/registry";
+import { reloadStorage } from "@/plugins/pluginStorage";
 import { errText } from "@/lib/util/util";
+import { registerMapBadges } from "@/store/mapList";
 import { reconcile, type FirstSyncMode, type ReconcileOptions, type SyncOutcome } from "./engine";
 import { createMappingBackend } from "./mappingBackend";
 import { createScheduler, type Scheduler, type SyncStatus } from "./scheduler";
@@ -11,6 +15,29 @@ import {
 	type SyncLink,
 	type SyncStore,
 } from "./syncStore";
+
+interface LiveController {
+	provider: SyncProvider;
+	pluginId: string;
+	kv: () => KeyValueStore;
+}
+
+const controllers = new Map<string, LiveController>();
+
+function listLinks(kv: KeyValueStore, providerId: string): SyncLink[] {
+	const prefix = `link:${providerId}:`;
+	const links: SyncLink[] = [];
+	for (const key of kv.keys()) {
+		if (!key.startsWith(prefix)) continue;
+		const link = kv.get<SyncLink | null>(key, null);
+		if (link) links.push(link);
+	}
+	return links;
+}
+
+function linksChanged() {
+	emit("sync-links:changed");
+}
 
 export interface SyncController {
 	readonly provider: { id: string; label: string };
@@ -65,6 +92,8 @@ export function activateSyncPlugin(controller: SyncController): () => void {
  */
 export function createSyncController(provider: SyncProvider, pluginId: string): SyncController {
 	const kv = (): KeyValueStore => window.MMA.storage(pluginId);
+	controllers.set(provider.id, { provider, pluginId, kv });
+	linksChanged();
 	const storeFor = (mapId: string): SyncStore =>
 		createSyncStore(kv(), createMappingBackend(), provider.id, mapId);
 	const currentMapId = (): string | null => window.MMA.getMapState().mapId;
@@ -150,6 +179,7 @@ export function createSyncController(provider: SyncProvider, pluginId: string): 
 				linkedAt: new Date().toISOString(),
 				lastSyncedAt: null,
 			});
+			linksChanged();
 		},
 
 		async unlink() {
@@ -161,6 +191,7 @@ export function createSyncController(provider: SyncProvider, pluginId: string): 
 			this.stopLive();
 			await pending?.catch(() => undefined);
 			await storeFor(id).clear();
+			linksChanged();
 		},
 
 		syncNow: () => runReconcile(),
@@ -220,3 +251,38 @@ export function createSyncController(provider: SyncProvider, pluginId: string): 
 		},
 	};
 }
+
+bridgeAcrossWindows("sync-links:changed", () => {
+	for (const c of controllers.values()) reloadStorage(c.pluginId);
+});
+
+registerMapBadges({
+	id: "sync",
+	label: msg("Sync links"),
+	events: ["sync-links:changed", "plugins:changed"],
+	*collect() {
+		for (const c of controllers.values()) {
+			if (!isPluginEnabled(c.pluginId)) continue;
+			let kv: KeyValueStore;
+			try {
+				kv = c.kv();
+			} catch {
+				continue;
+			}
+			for (const link of listLinks(kv, c.provider.id)) {
+				const name = link.remoteMapName || t("(unnamed)");
+				yield [
+					link.localMapId,
+					{
+						key: c.provider.id,
+						icon: c.provider.icon,
+						title: t('Linked to "{name}" on {provider}', {
+							name,
+							provider: t(c.provider.label),
+						}),
+					},
+				];
+			}
+		}
+	},
+});

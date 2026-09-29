@@ -41,6 +41,7 @@ export interface KeyValueStore {
 	get<T = unknown>(key: string, fallback?: T): T;
 	set(key: string, value: unknown): void;
 	remove(key: string): void;
+	keys(): string[];
 }
 
 /** Row-oriented mapping persistence (the real impl wraps the Rust `remote_mapping_*` commands). */

@@ -36,6 +36,7 @@ function makeMma() {
 			storage.has(k) ? (storage.get(k) as T) : (fallback as T),
 		set: (k: string, v: unknown) => void storage.set(k, v),
 		remove: (k: string) => void storage.delete(k),
+		keys: () => [...storage.keys()],
 	};
 
 	const api = {
@@ -99,6 +100,7 @@ function makeProvider(): SyncProvider {
 	return {
 		id: "fake",
 		label: "Fake",
+		icon: "M0,0",
 		remoteMapUrl: (id) => `https://fake.test/maps/${id}`,
 		listMaps: async () => [],
 	};

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { emit } from "@/lib/events";
-import { useMapList, setCachedMapList } from "@/store/mapList";
+import { useMapList, setCachedMapList, getMapBadges } from "@/store/mapList";
 import type { MapMeta } from "@/bindings.gen";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -46,6 +46,18 @@ describe("useMapList subscription granularity", () => {
 		expect(renders).toBe(2);
 		expect(seen).toHaveLength(1);
 		unmount();
+	});
+
+	it("badges a map with uncommitted counts and skips a clean one", () => {
+		setCachedMapList([
+			{ ...meta("dirty"), pending: { added: 2, removed: 1, modified: 0 } } as MapMeta,
+			{ ...meta("clean"), pending: { added: 0, removed: 0, modified: 0 } } as MapMeta,
+		]);
+		emit("map-list:changed");
+		expect(getMapBadges("dirty")).toMatchObject([
+			{ key: "uncommitted", diff: { added: 2, removed: 1, modified: 0 } },
+		]);
+		expect(getMapBadges("clean")).toEqual([]);
 	});
 
 	it("ignores store:changed", () => {

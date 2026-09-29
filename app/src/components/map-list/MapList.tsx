@@ -4,12 +4,14 @@ import { Checkbox } from "@/components/primitives/Checkbox";
 import { renameMap, updateMapLabels } from "@/store/useMapStore";
 import {
 	useMapList,
+	useMapBadges,
 	createMap,
 	deleteMap,
 	renameFolder,
 	deleteFolder,
 	moveMapToFolder,
 	invalidateMapList,
+	type MapBadge,
 } from "@/store/mapList";
 import { openMapWindow } from "@/lib/window";
 import { log, fireAndForget } from "@/lib/util/log";
@@ -37,7 +39,7 @@ import {
 } from "@mdi/js";
 import clsx from "clsx";
 import type { SortMode } from "@/types";
-import { events, type MapMeta } from "@/bindings.gen";
+import { events, type CommitDiff, type MapMeta } from "@/bindings.gen";
 import { fmt, relativeTime, shortDateFmt } from "@/lib/util/format";
 import { useLocalStorage } from "@/lib/hooks/useLocalStorage";
 import { useSetting, setSetting, getSettings, type MapListField } from "@/store/settings";
@@ -476,6 +478,34 @@ const FIELD_RENDERERS: Record<MapListField, (meta: MapMeta) => React.ReactNode> 
 	created: (meta) => <>{shortDateFmt.format(new Date(meta.createdAt))}</>,
 };
 
+function DiffCounts({ diff }: { diff: CommitDiff }) {
+	const parts: string[] = [];
+	if (diff.added) parts.push(`+${diff.added}`);
+	if (diff.removed) parts.push(`−${diff.removed}`);
+	if (diff.modified) parts.push(`~${diff.modified}`);
+	if (parts.length === 0) return null;
+	return <span className="map-list__diff">{parts.join(" ")}</span>;
+}
+
+function MapBadges({ badges }: { badges: MapBadge[] }) {
+	if (badges.length === 0) return null;
+	return (
+		<span className="map-list__badges">
+			{badges.map((badge) =>
+				"diff" in badge ? (
+					<span key={badge.key} className="map-list__badge" title={badge.title}>
+						<DiffCounts diff={badge.diff} />
+					</span>
+				) : (
+					<span key={badge.key} className="map-list__badge" title={badge.title}>
+						<Icon path={badge.icon} size={16} />
+					</span>
+				),
+			)}
+		</span>
+	);
+}
+
 const MapEntry = React.memo(function MapEntry({
 	meta,
 	isDragging,
@@ -483,6 +513,7 @@ const MapEntry = React.memo(function MapEntry({
 	onAction,
 	onLabelClick,
 	fields,
+	badges,
 }: {
 	meta: MapMeta;
 	isDragging: boolean;
@@ -490,6 +521,7 @@ const MapEntry = React.memo(function MapEntry({
 	onAction: (action: MapAction) => void;
 	onLabelClick: (label: string) => void;
 	fields: MapListField[];
+	badges: MapBadge[];
 }) {
 	const labelColors = useSetting("labelColors");
 	const metaParts: React.ReactNode[] = [];
@@ -527,6 +559,7 @@ const MapEntry = React.memo(function MapEntry({
 			>
 				{meta.name || t("(unnamed)")}
 			</a>
+			<MapBadges badges={badges} />
 			{metaParts.length > 0 && (
 				<span className="map-list__meta">
 					{metaParts.map((part, i) => (
@@ -586,6 +619,7 @@ const FolderEntry = React.memo(function FolderEntry({
 	onFolderAction,
 	onLabelClick,
 	fields,
+	badgesFor,
 	searching,
 }: {
 	name: string;
@@ -596,6 +630,7 @@ const FolderEntry = React.memo(function FolderEntry({
 	onFolderAction: (action: FolderAction) => void;
 	onLabelClick: (label: string) => void;
 	fields: MapListField[];
+	badgesFor: (mapId: string) => MapBadge[];
 	searching: boolean;
 }) {
 	const triggerId = `folder:${name}-trig`;
@@ -660,6 +695,7 @@ const FolderEntry = React.memo(function FolderEntry({
 							onAction={onMapAction}
 							onLabelClick={onLabelClick}
 							fields={fields}
+							badges={badgesFor(m.id)}
 						/>
 					))}
 				</Collapsible.Panel>
@@ -1061,6 +1097,7 @@ export function MapList() {
 	const filterInputRef = useRef<HTMLInputElement>(null);
 	const [hasFilter, setHasFilter] = useState(false);
 	const mapListFields = useSetting("mapListFields");
+	const badgesFor = useMapBadges();
 
 	const clearFilter = useCallback(() => {
 		if (filterInputRef.current) filterInputRef.current.value = "";
@@ -1307,6 +1344,7 @@ export function MapList() {
 							onFolderAction={handleFolderAction}
 							onLabelClick={toggleLabelFilter}
 							fields={mapListFields}
+							badgesFor={badgesFor}
 							searching={hasFilter}
 						/>
 					))}
@@ -1319,6 +1357,7 @@ export function MapList() {
 							onAction={handleMapAction}
 							onLabelClick={toggleLabelFilter}
 							fields={mapListFields}
+							badges={badgesFor(m.id)}
 						/>
 					))}
 					{rootMaps.length === 0 && dragItem && (

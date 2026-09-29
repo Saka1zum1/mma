@@ -20,6 +20,8 @@ export interface SyncProvider {
 	/** Persisted as the `provider` column of `remote_mapping`. Never change it for a shipped provider. */
 	readonly id: string;
 	readonly label: string;
+	/** Map-list mark. An `@mdi/js` path, or the map-making.app mark. */
+	readonly icon: string;
 
 	/** Web URL of a remote map, for opening it in the user's browser. */
 	remoteMapUrl(remoteMapId: string): string;

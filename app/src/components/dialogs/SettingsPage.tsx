@@ -79,6 +79,7 @@ import { useAsync } from "@/lib/hooks/useAsync";
 import { useUpdateState, checkForUpdate, installUpdate, relaunchApp } from "@/lib/util/updateCheck";
 import { ColorPicker } from "@/components/primitives/ColorPicker";
 import { t, msg } from "@/lib/i18n";
+import { getMapBadgeSources, useMapBadges } from "@/store/mapList";
 import { matches } from "@/lib/search";
 import { formatBytes } from "@/lib/util/format";
 import { errText } from "@/lib/util/util";
@@ -455,7 +456,7 @@ function StreetViewBody() {
 					<SettingSlider
 						value={s.panoLookSpeed}
 						min={1}
-						max={10}
+						max={20}
 						step={1}
 						onChange={(v) => setSetting("panoLookSpeed", v)}
 					/>
@@ -945,6 +946,8 @@ function EditingBody() {
 function MapListBlock() {
 	const s = useSettings();
 	const fields = s.mapListFields;
+	useMapBadges();
+	const hidden = new Set(s.hiddenMapBadges);
 
 	const toggle = (field: MapListField) => {
 		if (fields.includes(field)) {
@@ -957,8 +960,15 @@ function MapListBlock() {
 		}
 	};
 
+	const toggleBadge = (id: string) => {
+		setSetting(
+			"hiddenMapBadges",
+			hidden.has(id) ? s.hiddenMapBadges.filter((x) => x !== id) : [...s.hiddenMapBadges, id],
+		);
+	};
+
 	return (
-		<Aux match="map list fields columns row">
+		<Aux match="map list fields columns row badges">
 			<p className="text-muted" style={{ margin: "0.25rem 0", fontSize: "0.85rem" }}>
 				{t("Fields shown on each map row (labels are always shown)")}
 			</p>
@@ -969,6 +979,15 @@ function MapListBlock() {
 						onChange={() => toggle(value as MapListField)}
 					/>
 					{t(label)}
+				</label>
+			))}
+			<p className="text-muted" style={{ margin: "0.25rem 0", fontSize: "0.85rem" }}>
+				{t("Marks shown on each map row")}
+			</p>
+			{getMapBadgeSources().map((source) => (
+				<label key={source.id} className="settings-checkbox-item">
+					<Checkbox checked={!hidden.has(source.id)} onChange={() => toggleBadge(source.id)} />
+					{t(source.label)}
 				</label>
 			))}
 		</Aux>
