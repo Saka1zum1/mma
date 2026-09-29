@@ -23,7 +23,8 @@ import { getSettings, useSetting } from "@/store/settings";
 import { useMeasure, useMeasureInteraction } from "@/lib/sv/measure";
 import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
-import { addSelections, currentSelection, fetchBounds, mapOpen, useMapState } from "@/store/useMapStore";
+import { currentSelection, fetchBounds, mapOpen, useMapState } from "@/store/useMapStore";
+import { addPolygonSelections } from "@/lib/map/addPolygonSelections";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
 import { setMapHost, tryInterceptDraw } from "@/lib/map/mapState";
@@ -344,7 +345,11 @@ export function MapEmbed({
 	});
 
 	useHotkey(useBinding("toggleSelectOnly"), () => {
-		setPrefs((p) => ({ ...p, selectOnly: !p.selectOnly }));
+		const order = ["default", "selectOnly", "nearest"] as const;
+		setPrefs((p) => {
+			const i = order.indexOf(p.clickMode);
+			return { ...p, clickMode: order[(i + 1) % order.length] };
+		});
 	});
 	useHotkey(useBinding("toggleSvOpacity"), () => toggleLayer("sv"));
 	useHotkey(useBinding("toggleMarkerOpacity"), () => toggleLayer("marker"));
@@ -394,12 +399,8 @@ export function MapEmbed({
 							onDraw={(rings) => {
 								if (rings.length === 0) return;
 								if (tryInterceptDraw(rings)) return;
-								addSelections([
-									{
-										type: "Polygon",
-										polygon: { coordinates: rings as [number, number][][] },
-										includeInformational: false,
-									},
+								void addPolygonSelections([
+									{ coordinates: rings as [number, number][][] },
 								]);
 							}}
 							freehandPathRef={freehandPathRef}

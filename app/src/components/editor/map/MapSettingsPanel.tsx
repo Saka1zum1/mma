@@ -9,7 +9,7 @@ import {
 	VECTOR_STYLE_KEYS,
 	VECTOR_STYLE_LABELS,
 } from "@/lib/geo/mapStyles";
-import { MAP_TYPES, MAP_TYPE_LABELS, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
+import { MAP_TYPES, MAP_TYPE_LABELS, type ClickMode, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiCogOutline } from "@mdi/js";
 import type { MapTypeKey, SvCoverageType, MarkerStyle } from "@/types";
@@ -463,11 +463,18 @@ export function MapSettingsDropdown({
 							onChange={setPref("showPreviews")}
 							label={t("Show location previews when hovering the map")}
 						/>
-						<SwitchRow
-							checked={p.selectOnly}
-							onChange={setPref("selectOnly")}
-							label={t("Select-only mode")}
-						/>
+						<label className="settings-popup__item settings-popup__select">
+							{t("Click behavior:")}{" "}
+							<NSelect
+								className="nselect--compact"
+								value={p.clickMode}
+								onChange={(e) => setPref("clickMode")(e.target.value as ClickMode)}
+							>
+								<option value="default">{t("Create location")}</option>
+								<option value="selectOnly">{t("Select only")}</option>
+								<option value="nearest">{t("Select nearest location")}</option>
+							</NSelect>
+						</label>
 					</fieldset>
 					<fieldset className="fieldset">
 						<legend className="fieldset__header">

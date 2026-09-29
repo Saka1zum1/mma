@@ -69,6 +69,17 @@ export const MIGRATIONS: StoredMigration[] = [
 			delete stored.hasSeenWelcome;
 		},
 	},
+	{
+		since: "0.11.5",
+		key: "mapEmbedPrefs",
+		describe: "selectOnly boolean becomes clickMode",
+		apply: (stored) => {
+			if (stored.clickMode == null) {
+				stored.clickMode = stored.selectOnly === true ? "selectOnly" : "default";
+			}
+			delete stored.selectOnly;
+		},
+	},
 ];
 
 export function migrationsFor(key: string): Migration[] {

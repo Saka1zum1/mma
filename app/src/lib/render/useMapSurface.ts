@@ -62,7 +62,7 @@ export function useMapSurface(
 			handleMapClick(info, domEvent, {
 				cm: getScene(),
 				host,
-				selectOnly: opts.prefs.selectOnly,
+				clickMode: opts.prefs.clickMode,
 				measuring: opts.measuring,
 				onContextMenu: opts.onContextMenu,
 			});
@@ -105,7 +105,7 @@ export function useMapSurface(
 		svTrailPosition,
 		panoDotColor,
 		panoDotScaled,
-		opts.prefs.selectOnly,
+		opts.prefs.clickMode,
 		opts.measuring,
 		opts.onContextMenu,
 		opts.onError,
