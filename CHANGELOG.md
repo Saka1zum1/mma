@@ -1,3 +1,23 @@
+## v0.11.6 - 2026-09-29
+- **Export** can target **GeoGuessr**, **map-making.app**, or **this app**. GeoGuessr stays coordinates and panorama ids; map-making.app adds tags; this app also keeps extra fields, field definitions, and doclinks. Alternative provider sources stay on every format
+- **Map click** can create a location, select only, or select the nearest location. The hotkey cycles the three
+- The **map list** shows uncommitted changes since the last commit, and a mark for each sync provider a map is linked to. Either mark can be hidden in Settings
+- A **pivot table** can use all locations, the active selections, or a field for both rows and columns. **Within** limits the table to the current selection or a saved one. Ctrl+click selects that value on its own
+- **Set heading, pitch, and zoom** on every selected location. A blank field is left as it is
+- The **Street View trail** tip uses the same marker shape as the map and points along the path. Circle markers stay a dot. Look speed goes up to 20
+- A self-crossing polygon is split into simple areas before it becomes a selection
+- **Baidu traverse** shows how far the panorama-id scan has gotten, and how many ids it checks per second. Baidu metadata lookups stay faster when many ids are in flight
+- Import preview is kept per window, and confirming one file leaves the others
+- Sync refuses to apply a remote map that comes back empty, and a pull is recorded only after the locations are updated
+- Restoring a version waits until the map is closed in every window. A failed restore reopens the map, and a failed save keeps your uncommitted edits
+- Ghosted selections stay in the list when you combine, invert, or pick from the active ones. An inverted tag keeps the tag's color
+- Field expressions read numbers the same way filters do
+- Switching locations quickly no longer lets a slow panorama overwrite the one you opened later
+- Resuming a review keeps its place when the location under the cursor was deleted
+- A plugin that fails to start no longer stops the other plugins
+- Inline selection labels stay on one line, and suggestion menus follow their field while a dialog opens
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.11.4 - 2026-09-29
 - **Map generator** can probe **Google**, **Google tiles**, **Apple Look Around**, **Yandex**, **Baidu**, and **Tencent**
 - **Baidu traverse** scans a panorama-id range. Set how many requests run at once, skip a time of day, and start with no polygon selected; a map file can fill in the start and end ids
