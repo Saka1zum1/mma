@@ -17,6 +17,16 @@ export function normalizeHeading(h: number): number {
 	return wrapDeg(h, -180);
 }
 
+/** Initial great-circle bearing from `a` to `b` as a heading, in [-180, 180). */
+export function bearingDeg(a: LatLng, b: LatLng): number {
+	const f1 = (a.lat * Math.PI) / 180;
+	const f2 = (b.lat * Math.PI) / 180;
+	const dl = ((b.lng - a.lng) * Math.PI) / 180;
+	const y = Math.sin(dl) * Math.cos(f2);
+	const x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
+	return normalizeHeading((Math.atan2(y, x) * 180) / Math.PI);
+}
+
 /** The opposite bearing, in [-180, 180). */
 export function reverseHeading(h: number): number {
 	return wrapDeg(h + 180, -180);

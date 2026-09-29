@@ -28,7 +28,7 @@ import {
 	MEASURE_NODE_PX,
 } from "@/lib/sv/measure";
 import { asRgb, type RGB } from "@/lib/util/color";
-import { unwrapRing } from "@/lib/geo/geo";
+import { bearingDeg, unwrapRing } from "@/lib/geo/geo";
 
 export const LOCATION_LAYER_ID = "locations";
 export const PERFECT_SCORE_LAYER_ID = "perfect-score";
@@ -257,23 +257,45 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 			}),
 		);
 		if (ctx.svTrailPosition) {
-			const tip = svTrail.at(-1)!;
-			layers.push(
-				new ScatterplotLayer<[number, number]>({
-					id: "sv-trail-position",
-					data: [tip],
-					getPosition: (d) => d,
-					getRadius: 5,
-					radiusUnits: "pixels" as const,
-					radiusMinPixels: 4,
-					getFillColor: [255, 255, 255, 220],
-					stroked: true,
-					lineWidthUnits: "pixels" as const,
-					getLineWidth: 2,
-					getLineColor: [trailRgb.r, trailRgb.g, trailRgb.b, 255],
-					pickable: false,
-				}),
-			);
+			const [prev, tip] = svTrail.slice(-2);
+			const line: [number, number, number, number] = [trailRgb.r, trailRgb.g, trailRgb.b, 255];
+			if (ctx.markerStyle === "circle") {
+				layers.push(
+					new ScatterplotLayer<[number, number]>({
+						id: "sv-trail-position",
+						data: [tip],
+						getPosition: (d) => d,
+						getRadius: 5,
+						radiusUnits: "pixels" as const,
+						radiusMinPixels: 4,
+						getFillColor: [255, 255, 255, 220],
+						stroked: true,
+						lineWidthUnits: "pixels" as const,
+						getLineWidth: 2,
+						getLineColor: line,
+						pickable: false,
+					}),
+				);
+			} else {
+				const s = MARKER_STYLE[ctx.markerStyle];
+				layers.push(
+					new SDFMarkerLayer<[number, number]>({
+						id: "sv-trail-position-sdf",
+						data: [tip],
+						getPosition: (d) => d,
+						shape: s.shape,
+						radiusPixels: s.radiusPixels * ctx.markerSize,
+						getFillColor: line,
+						getAngle: s.angle
+							? -bearingDeg(
+									{ lng: prev[0], lat: prev[1] },
+									{ lng: tip[0], lat: tip[1] },
+								)
+							: 0,
+						pickable: false,
+					}),
+				);
+			}
 		}
 	}
 
