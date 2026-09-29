@@ -21,6 +21,7 @@ type DialogPayloads = {
 	"bulk-op": string;
 	"inline-panel": string;
 	"expand-sv-links": void;
+	"set-selection-view": void;
 };
 
 export type DialogKey = keyof DialogPayloads;

@@ -50,6 +50,7 @@ import {
 	mdiDownloadBoxOutline,
 	mdiFileDocumentOutline,
 	mdiGraphOutline,
+	mdiCameraControl,
 } from "@mdi/js";
 import { registerCommand, type CommandDef } from "./commands";
 import {
@@ -434,6 +435,16 @@ const COMMANDS = {
 		group: msg("Bulk Operations"),
 		aliases: ["bulk download", "export panoramas", "download street view"],
 		execute: openBulkOp("downloadPanoramas"),
+	},
+	"set-selection-view": {
+		label: msg("Set heading, pitch, and zoom"),
+		icon: mdiCameraControl,
+		group: msg("Bulk Operations"),
+		aliases: ["heading", "pitch", "zoom", "pov", "batch camera"],
+		enabled: hasSelection,
+		execute: () => {
+			if (hasSelection()) openDialog("set-selection-view");
+		},
 	},
 	"delete-selected-tags": {
 		label: msg("Delete selected tags"),

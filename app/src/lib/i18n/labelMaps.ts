@@ -40,6 +40,7 @@ export const COMMAND_LABELS: Record<string, string> = {
 	"selectRandom": "Pick random locations from selection",
 	"selectReviewed": "Select reviewed locations",
 	"selectSpaced": "Pick evenly spaced locations from selection",
+	"setSelectionView": "Set heading, pitch, and zoom",
 	"selectUncommitted": "Select uncommitted locations",
 	"selectUnpanned": "Select unpanned locations",
 	"selectUntagged": "Select untagged locations",

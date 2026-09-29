@@ -36,6 +36,7 @@ import { useDialog, useDialogState, openDialog } from "@/store/dialogBus";
 import { SelectionRow } from "./SelectionRow";
 import { PinnedToolbar } from "./PinnedToolbar";
 import { ExpandSvLinksButton } from "./ExpandSvLinksButton";
+import { SetSelectionViewButton, SetSelectionViewDialog } from "./SetSelectionViewButton";
 import { SaveSelectionsDialog, ApplySavedSelectionDialog } from "./SavedSelectionDialogs";
 import { t } from "@/lib/i18n";
 import { search } from "@/lib/search";
@@ -327,6 +328,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 	const [showApplyFieldAsTags, setShowApplyFieldAsTags] = useDialogState("apply-field-as-tags");
 	const [showSaveSelections, setShowSaveSelections] = useDialogState("save-selections");
 	const [showApplySaved, setShowApplySaved] = useDialogState("apply-saved-selection");
+	const [showSetView, setShowSetView] = useDialogState("set-selection-view");
 	const [saveSelName, setSaveSelName] = useState("");
 
 	useDialog("review-selected", () => {
@@ -360,6 +362,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				<SelectionList />
 
 				<PinnedToolbar
+					left={<SetSelectionViewButton onOpen={() => setShowSetView(true)} />}
 					insertAfter={{ commandId: "bulk-enrich", node: <ExpandSvLinksButton /> }}
 					right={<BulkTagForm />}
 					panels={{
@@ -438,6 +441,7 @@ export function MapOverview({ hidden }: { hidden?: boolean }) {
 				/>
 			)}
 			{showApplySaved && <ApplySavedSelectionDialog open onOpenChange={setShowApplySaved} />}
+			{showSetView && <SetSelectionViewDialog onClose={() => setShowSetView(false)} />}
 		</section>
 	);
 }
