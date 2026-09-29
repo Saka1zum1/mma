@@ -4100,6 +4100,10 @@ input.date-picker__trigger.is-invalid:focus {
 	align-items: center;
 	gap: 0.5rem;
 }
+.selection-manager__inline-form > :not(.nselect) {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
 .selection-manager__inline-option {
 	display: flex;
 	align-items: center;
