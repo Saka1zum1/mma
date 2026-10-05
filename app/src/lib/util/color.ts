@@ -1,13 +1,34 @@
 export type RGB = { r: number; g: number; b: number };
 
-/** Parse "#rrggbb" to an [r, g, b] byte tuple. Single source for hex parsing. */
+type HexBytes = Uint8Array & { toHex?: () => string };
+type HexArray = Uint8ArrayConstructor & { fromHex?: (hex: string) => Uint8Array };
+
+/** Node 26 and the webview expose these; older Node still runs the unit suite. */
+function hexToBytes(hex: string): Uint8Array {
+	const fromHex = (Uint8Array as HexArray).fromHex;
+	if (fromHex) return fromHex(hex);
+	if (hex.length % 2 !== 0 || /[^0-9a-f]/i.test(hex)) throw new SyntaxError("invalid hex");
+	const out = new Uint8Array(hex.length / 2);
+	for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+	return out;
+}
+
+export function bytesToHex(bytes: Uint8Array): string {
+	const toHex = (bytes as HexBytes).toHex;
+	if (toHex) return toHex.call(bytes);
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Parse "#rrggbb" or "#rgb" to an [r, g, b] byte tuple; black when it is not hex. */
 export function hexToRgb(hex: string): [number, number, number] {
 	const h = hex.replace("#", "");
-	return [
-		parseInt(h.substring(0, 2), 16),
-		parseInt(h.substring(2, 4), 16),
-		parseInt(h.substring(4, 6), 16),
-	];
+	try {
+		const [r, g, b] = hexToBytes(h.length === 3 ? h.replace(/./g, "$&$&") : h);
+		if (b !== undefined) return [r, g, b];
+	} catch {
+		// Stored colors are not validated, so a bad value falls back rather than throws.
+	}
+	return [0, 0, 0];
 }
 
 export function textColorFor(bg: string): string {
@@ -56,9 +77,7 @@ export function hexToHsl(hex: string): { h: number; s: number; l: number } {
 }
 
 export function hslToHex(h: number, s: number, l: number): string {
-	const [r, g, b] = hslToRgb(h, s / 100, l / 100);
-	const hex = (n: number) => n.toString(16).padStart(2, "0");
-	return `#${hex(r)}${hex(g)}${hex(b)}`;
+	return rgbToHex(hslToRgb(h, s / 100, l / 100));
 }
 
 export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -80,9 +99,7 @@ export function colorForName(name: string): string {
 	}
 	h = (Math.imul(h, 214013) + 2531011) | 0;
 	const hue = Math.abs(h) % 360;
-	const [r, g, b] = hslToRgb(hue, 0.5, 0.5);
-	const hex = (n: number) => n.toString(16).padStart(2, "0");
-	return `#${hex(r)}${hex(g)}${hex(b)}`;
+	return rgbToHex(hslToRgb(hue, 0.5, 0.5));
 }
 
 export function rgbCss([r, g, b]: [number, number, number]): string {
@@ -110,11 +127,10 @@ export function asRgb(color: unknown): RGB | null {
 	return null;
 }
 
-export function rgbToHex(color: RGB): string {
+export function rgbToHex(color: RGB | [number, number, number]): string {
 	const rgb = asRgb(color);
 	if (!rgb) return "#000000";
-	const h = (n: number) => Math.round(n).toString(16).padStart(2, "0");
-	return `#${h(rgb.r)}${h(rgb.g)}${h(rgb.b)}`;
+	return `#${bytesToHex(Uint8Array.from([rgb.r, rgb.g, rgb.b], Math.round))}`;
 }
 
 /** A label's color: a user override if set, else a deterministic color from its name. */

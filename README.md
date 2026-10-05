@@ -62,7 +62,7 @@ On both Mac & Linux, framerate and rendering stability can be an issue. If you e
 cd app && npm install && cargo tauri build
 ```
 
-Requires: Rust toolchain, Node.js, npm.
+Requires: Rust toolchain, Node 26 (see `.nvmrc`), npm.
 
 ### Run in a browser
 
