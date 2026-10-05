@@ -5,7 +5,14 @@ import { Tooltip } from "@/components/primitives/Tooltip";
 import { SuggestInput } from "@/components/primitives/SuggestInput";
 import { Icon } from "@/components/primitives/Icon";
 import { mdiInformationOutline } from "@mdi/js";
-import type { Conflict, FirstSyncMode, NormalizedSyncLocation } from "@/bindings.gen";
+import type {
+	Conflict,
+	FirstSyncMode,
+	NormalizedSyncLocation,
+	SideCounts,
+	SyncLogEntry,
+	SyncTrigger,
+} from "@/bindings.gen";
 import type { SyncController } from "../controller";
 import type { SyncOutcome } from "../engine";
 import type { RemoteMapSummary } from "../provider";
@@ -29,6 +36,8 @@ export interface SyncSidebarProps {
 	identity: { id: string | null } | null | undefined;
 	/** Fetch linkable remote maps. Called when authenticated and unlinked. */
 	listMaps: () => Promise<RemoteMapSummary[]>;
+	/** Create an empty remote map named `name`, to link to. */
+	createMap?: (name: string) => Promise<RemoteMapSummary>;
 	/** Provider mark for the header's open-in-browser button (shown when linked). */
 	brand?: { path: string; color: string };
 }
@@ -168,12 +177,83 @@ function ConflictItem({
 	);
 }
 
+/** One line for what a pass changed on each side. */
+function passSummary(r: {
+	pushed: SideCounts;
+	pulled: SideCounts;
+	adopted: number;
+	conflicts: number;
+}): string {
+	const counts = t("Pushed +{pc} ~{pu} -{pd} · Pulled +{lc} ~{lu} -{ld}", {
+		pc: r.pushed.create,
+		pu: r.pushed.update,
+		pd: r.pushed.delete,
+		lc: r.pulled.create,
+		lu: r.pulled.update,
+		ld: r.pulled.delete,
+	});
+	const adopted = r.adopted ? " · " + t("Adopted {n}", { n: r.adopted }) : "";
+	const conflicts = r.conflicts
+		? " · " +
+			t(
+				{ one: "{n} conflict held for review", other: "{n} conflicts held for review" },
+				{ n: r.conflicts },
+			)
+		: "";
+	return counts + adopted + conflicts;
+}
+
+const TRIGGER_LABEL: Record<SyncTrigger, string> = {
+	manual: msg("Sync now"),
+	live: msg("Live"),
+	link: msg("Linked"),
+	resolve: msg("Conflicts resolved"),
+};
+
+/** The map's recorded sync passes with this provider, newest first. */
+function SyncHistory({ controller, mapId }: { controller: SyncController; mapId: string }) {
+	const [entries, setEntries] = useState<SyncLogEntry[]>([]);
+	useEffect(() => {
+		let live = true;
+		const load = () =>
+			void controller
+				.history()
+				.then((e) => live && setEntries(e))
+				.catch(() => live && setEntries([]));
+		load();
+		const off = controller.onHistory(load);
+		return () => {
+			live = false;
+			off();
+		};
+	}, [controller, mapId]);
+
+	if (entries.length === 0) return null;
+	return (
+		<Section title={t("History")} defaultOpen={false}>
+			<ul className="sync-history">
+				{entries.map((e) => (
+					<li key={`${e.startedAt}:${e.trigger}`}>
+						<span style={{ opacity: 0.6 }}>
+							{new Date(e.startedAt).toLocaleString(getLocale())} · {t(TRIGGER_LABEL[e.trigger])}
+						</span>
+						<div className={e.result.kind === "error" ? "sync-history__error" : undefined}>
+							{e.result.kind === "ok" ? passSummary(e.result) : errText(e.result.message)}
+						</div>
+					</li>
+				))}
+			</ul>
+		</Section>
+	);
+}
+
 export function SyncSidebar({
 	onClose,
 	controller,
 	auth,
 	identity,
 	listMaps,
+	createMap,
 	brand,
 }: SyncSidebarProps) {
 	const [maps, setMaps] = useState<RemoteMapSummary[] | null>(null);
@@ -259,6 +339,20 @@ export function SyncSidebar({
 		},
 		[controller, performLink],
 	);
+
+	const doCreate = useCallback(async () => {
+		if (!createMap) return;
+		setBusy(true);
+		setError(null);
+		const created = await createMap(window.MMA.getMapState().map?.meta.name ?? "").catch(
+			(e: unknown) => {
+				setError(errText(e));
+				return null;
+			},
+		);
+		setBusy(false);
+		if (created) doLink(created);
+	}, [createMap, doLink]);
 
 	const doSync = useCallback(async () => {
 		setBusy(true);
@@ -435,25 +529,7 @@ export function SyncSidebar({
 					)}
 					{outcome && (
 						<p className="mma-input__help">
-							{t("Pushed +{pc} ~{pu} -{pd} · Pulled +{lc} ~{lu} -{ld}", {
-								pc: outcome.pushed.create,
-								pu: outcome.pushed.update,
-								pd: outcome.pushed.delete,
-								lc: outcome.pulled.create,
-								lu: outcome.pulled.update,
-								ld: outcome.pulled.delete,
-							})}
-							{outcome.adopted ? " · " + t("Adopted {n}", { n: outcome.adopted }) : ""}
-							{outcome.conflicts.length
-								? " · " +
-									t(
-										{
-											one: "{n} conflict held for review",
-											other: "{n} conflicts held for review",
-										},
-										{ n: outcome.conflicts.length },
-									)
-								: ""}
+							{passSummary({ ...outcome, conflicts: outcome.conflicts.length })}
 						</p>
 					)}
 					{outcome && outcome.conflicts.length > 0 && (
@@ -479,6 +555,8 @@ export function SyncSidebar({
 				</Section>
 			)}
 
+			{mapId && link && <SyncHistory controller={controller} mapId={mapId} />}
+
 			{authed && mapId && !link && !pendingLink && (
 				<Section title={t("Link this map")} defaultOpen>
 					{!maps && error ? (
@@ -490,39 +568,46 @@ export function SyncSidebar({
 							<span className="spinner" aria-label={t("Loading maps")} />
 						</div>
 					) : (
-						<Field label={t("Find a remote map")}>
-							<SuggestInput
-								// Portalled: the sidebar clips overflow, so an inline dropdown is both cut
-								// off and forced to grow the section instead of floating over it.
-								portal
-								listStyle={{ maxHeight: "40vh", overflowY: "auto" }}
-								value={filter}
-								onChange={setFilter}
-								suggestions={shown}
-								getKey={(m) => m.id}
-								onPick={(m) => !m.unsupported && doLink(m)}
-								disabled={busy}
-								placeholder={t(
-									{ one: "Search {n} map", other: "Search {n} maps" },
-									{ n: maps.length },
-								)}
-								renderItem={(m) => (
-									<span
-										style={{
-											display: "flex",
-											justifyContent: "space-between",
-											gap: 8,
-											opacity: m.unsupported ? 0.5 : 1,
-										}}
-									>
-										<span>{m.name || t("(unnamed)")}</span>
-										<span style={{ opacity: 0.6, whiteSpace: "nowrap" }}>
-											{m.unsupported ?? (m.locationCount !== null ? m.locationCount : "")}
+						<>
+							<Field label={t("Find a remote map")}>
+								<SuggestInput
+									// Portalled: the sidebar clips overflow, so an inline dropdown is both cut
+									// off and forced to grow the section instead of floating over it.
+									portal
+									listStyle={{ maxHeight: "40vh", overflowY: "auto" }}
+									value={filter}
+									onChange={setFilter}
+									suggestions={shown}
+									getKey={(m) => m.id}
+									onPick={(m) => !m.unsupported && doLink(m)}
+									disabled={busy}
+									placeholder={t(
+										{ one: "Search {n} map", other: "Search {n} maps" },
+										{ n: maps.length },
+									)}
+									renderItem={(m) => (
+										<span
+											style={{
+												display: "flex",
+												justifyContent: "space-between",
+												gap: 8,
+												opacity: m.unsupported ? 0.5 : 1,
+											}}
+										>
+											<span>{m.name || t("(unnamed)")}</span>
+											<span style={{ opacity: 0.6, whiteSpace: "nowrap" }}>
+												{m.unsupported ?? (m.locationCount !== null ? m.locationCount : "")}
+											</span>
 										</span>
-									</span>
-								)}
-							/>
-						</Field>
+									)}
+								/>
+							</Field>
+							{createMap && (
+								<button className="button" disabled={busy} onClick={() => void doCreate()}>
+									{t("Create a new remote map from this one")}
+								</button>
+							)}
+						</>
 					)}
 				</Section>
 			)}

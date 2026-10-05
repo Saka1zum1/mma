@@ -102,6 +102,7 @@ export function GeoGuessrSidebar({ onClose }: { onClose: () => void }) {
 			auth={auth}
 			identity={user === undefined ? undefined : user ? { id: user.id } : null}
 			listMaps={() => geoguessrProvider.listMaps()}
+			createMap={(name) => geoguessrProvider.createMap!(name)}
 			brand={{ path: mdiMapMarker, color: "#CC302E" }}
 		/>
 	);

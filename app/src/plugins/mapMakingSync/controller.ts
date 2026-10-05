@@ -26,3 +26,13 @@ export async function validate(key?: string): Promise<User> {
 }
 
 export const listMaps = (): Promise<RemoteMapSummary[]> => mapMakingProvider.listMaps();
+
+/** A new, empty map to link to. */
+export async function createMap(name: string): Promise<RemoteMapSummary> {
+	const created = await window.MMA.cmd.mapMakingCreateMap(name);
+	return {
+		id: String(created.id),
+		name: created.name,
+		locationCount: created.locationCount ?? 0,
+	};
+}

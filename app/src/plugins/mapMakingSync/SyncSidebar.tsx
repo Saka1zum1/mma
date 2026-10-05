@@ -108,6 +108,7 @@ export function SyncSidebar({ onClose }: { onClose: () => void }) {
 			auth={authUi}
 			identity={checking ? undefined : user ? { id: String(user.id) } : null}
 			listMaps={auth.listMaps}
+			createMap={auth.createMap}
 			brand={{ path: mapMakingApp, color: "#CC2F2D" }}
 		/>
 	);

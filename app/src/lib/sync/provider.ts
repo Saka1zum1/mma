@@ -29,6 +29,9 @@ export interface SyncProvider {
 	/** Maps the signed-in user can link to. */
 	listMaps(signal?: AbortSignal): Promise<RemoteMapSummary[]>;
 
+	/** Create an empty remote map named `name`, to link to. */
+	createMap?(name: string): Promise<RemoteMapSummary>;
+
 	/** Credential the Rust reconcile needs (an API key); omitted for cookie/session providers. */
 	credential?(): string;
 

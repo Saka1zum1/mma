@@ -75,6 +75,8 @@ function makeMma() {
 			remoteMappingClear: async (provider: string, id: string) => {
 				mapping.delete(`${provider}:${id}`);
 			},
+			syncLogAppend: async () => null,
+			syncLogList: async () => [],
 		},
 	};
 
