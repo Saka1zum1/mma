@@ -25,16 +25,10 @@ import {
 import { isVirtualLocation, isImportPreview, locId, createLocation } from "@/types";
 import type { MaybeLocation, Bounds } from "@/types";
 import type { Location } from "@/bindings.gen";
-import {
-	getEnabledAltProviders,
-	getProviderSettings,
-} from "@/lib/sv/providers/settings";
+import { getEnabledAltProviders, getProviderSettings } from "@/lib/sv/providers/settings";
 import type { AltSvProviderId } from "@/lib/sv/providers/types";
 import { createAppleLocationAtLatLng } from "@/lib/sv/lookaround/click";
-import {
-	createInjectProviderLocationAtLatLng,
-	isInjectProviderId,
-} from "@/lib/sv/providers/race";
+import { createInjectProviderLocationAtLatLng, isInjectProviderId } from "@/lib/sv/providers/race";
 import { createYandexLocationAtLatLng } from "@/lib/sv/yandex/click";
 
 export const isLocationLayer = (id?: string) =>
@@ -240,6 +234,9 @@ export async function handleMapClick(
 	}
 
 	if (domEvent instanceof MouseEvent && domEvent.button !== 0) return;
+	// The overlay replays the engine's double-click as one more click. The engine has already
+	// clicked for that gesture, and the browser also pairs presses it took as pans into one.
+	if (domEvent?.type === "dblclick") return;
 
 	// Interceptors first: the measure tool consumes the click to place a node.
 	if (
@@ -273,8 +270,7 @@ export async function handleMapClick(
 		if (ctx.clickMode === "nearest") {
 			const nearest = await cmd.storeFindNearest(info.coordinate[1], info.coordinate[0]);
 			if (!nearest) return;
-			if (domEvent instanceof MouseEvent && domEvent.ctrlKey)
-				toggleManualSelection(nearest.id);
+			if (domEvent instanceof MouseEvent && domEvent.ctrlKey) toggleManualSelection(nearest.id);
 			else setActiveLocation(nearest);
 			return;
 		}

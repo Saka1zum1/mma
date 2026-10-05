@@ -51,7 +51,7 @@ describe("JSON import/export round-trip", () => {
 			const path = await api.cmd.storeExportJson({
 				exportZoom: true,
 				exportUnpanned: true,
-				exportExtras: true,
+				shape: "local",
 				selector: { type: "Everything" },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
@@ -99,7 +99,7 @@ describe("JSON import/export round-trip", () => {
 			const path = await api.cmd.storeExportJson({
 				exportZoom: true,
 				exportUnpanned: true,
-				exportExtras: true,
+				shape: "local",
 				selector: { type: "Everything" },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
@@ -127,7 +127,7 @@ describe("JSON import/export round-trip", () => {
 			const path = await api.cmd.storeExportJson({
 				exportZoom: false,
 				exportUnpanned: true,
-				exportExtras: true,
+				shape: "local",
 				selector: { type: "Everything" },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
@@ -152,7 +152,7 @@ describe("JSON import/export round-trip", () => {
 			const path = await api.cmd.storeExportJson({
 				exportZoom: true,
 				exportUnpanned: true,
-				exportExtras: true,
+				shape: "local",
 				selector: { type: "Everything" },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
@@ -240,7 +240,10 @@ describe("GeoJSON export", () => {
 	});
 	it("GeoJSON export produces valid FeatureCollection", async () => {
 		const result = await withApi(async (api) => {
-			const path = await api.cmd.storeExportGeojson({ type: "Everything" }, JSON.stringify(api.getMapState().tags));
+			const path = await api.cmd.storeExportGeojson(
+				{ type: "Everything" },
+				JSON.stringify(api.getMapState().tags),
+			);
 			const res = await fetch(api.mmaBufUrl(path));
 			const geojson = await res.text();
 			const parsed = JSON.parse(geojson);

@@ -580,7 +580,7 @@ describe("Export with scope", () => {
 			const path = await api.cmd.storeExportJson({
 				exportZoom: true,
 				exportUnpanned: true,
-				exportExtras: true,
+				shape: "local",
 				selector: { type: "Locations", locations: ids, name: null },
 				mapName: map.meta.name,
 				tagsJson: JSON.stringify(api.getMapState().tags),
