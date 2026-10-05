@@ -74,7 +74,11 @@ fn pano_ids_from_photometa(text: &str) -> Vec<String> {
         Ok(value) => value,
         Err(_) => return Vec::new(),
     };
-    let Some(items) = data.get(1).and_then(|v| v.get(1)).and_then(|v| v.as_array()) else {
+    let Some(items) = data
+        .get(1)
+        .and_then(|v| v.get(1))
+        .and_then(|v| v.as_array())
+    else {
         return Vec::new();
     };
     let mut ids = Vec::new();
@@ -175,7 +179,8 @@ fn parse_pid(id: &str) -> Result<ParsedPid, String> {
     if !time.bytes().all(|b| b.is_ascii_digit()) {
         return Err("the middle 15 characters must be digits".to_string());
     }
-    let ms = baidu_time_to_ms(time).ok_or_else(|| format!("time {time} is not a real timestamp"))?;
+    let ms =
+        baidu_time_to_ms(time).ok_or_else(|| format!("time {time} is not a real timestamp"))?;
     Ok(ParsedPid { prefix, car, ms })
 }
 
@@ -275,7 +280,11 @@ struct ScanState {
 
 impl ScanState {
     fn past(&self) -> bool {
-        if self.reverse { self.cursor < self.target } else { self.cursor > self.target }
+        if self.reverse {
+            self.cursor < self.target
+        } else {
+            self.cursor > self.target
+        }
     }
 
     fn jump_cursor(&mut self) {
@@ -337,7 +346,11 @@ impl ScanState {
                 continue;
             }
 
-            let id = if skipped { None } else { format_pid(&self.prefix, self.cursor, &self.car) };
+            let id = if skipped {
+                None
+            } else {
+                format_pid(&self.prefix, self.cursor, &self.car)
+            };
             self.cursor += if self.reverse { -1 } else { 1 };
             if self.past() {
                 self.done = true;
@@ -360,7 +373,11 @@ impl ScanState {
                 None => break,
             }
         }
-        if batch.is_empty() { None } else { Some(batch) }
+        if batch.is_empty() {
+            None
+        } else {
+            Some(batch)
+        }
     }
 }
 
@@ -455,7 +472,10 @@ async fn fetch_sdata_batch(
             Ok(resp) => match resp.bytes().await {
                 Ok(body) => match serde_json::from_slice::<serde_json::Value>(&body) {
                     Ok(json) => {
-                        let err = json.get("result").and_then(|v| v.get("error")).and_then(|v| v.as_i64());
+                        let err = json
+                            .get("result")
+                            .and_then(|v| v.get("error"))
+                            .and_then(|v| v.as_i64());
                         if err == Some(404) {
                             return Vec::new();
                         }
@@ -467,7 +487,9 @@ async fn fetch_sdata_batch(
                                 .map(|items| {
                                     items
                                         .iter()
-                                        .filter(|item| keep_sdata(item, filter_normal, filter_timeline))
+                                        .filter(|item| {
+                                            keep_sdata(item, filter_normal, filter_timeline)
+                                        })
                                         .cloned()
                                         .collect()
                                 })
@@ -488,7 +510,14 @@ async fn fetch_sdata_batch(
         let mut out = Vec::new();
         for id in ids {
             out.extend(
-                fetch_sdata_once(std::slice::from_ref(id), timeout, retries, filter_normal, filter_timeline).await,
+                fetch_sdata_once(
+                    std::slice::from_ref(id),
+                    timeout,
+                    retries,
+                    filter_normal,
+                    filter_timeline,
+                )
+                .await,
             );
         }
         return out;
@@ -532,7 +561,12 @@ async fn sdata_attempt(
     filter_normal: bool,
     filter_timeline: bool,
 ) -> Option<Vec<serde_json::Value>> {
-    let resp = baidu_http_client().get(url).timeout(timeout).send().await.ok()?;
+    let resp = baidu_http_client()
+        .get(url)
+        .timeout(timeout)
+        .send()
+        .await
+        .ok()?;
     if resp.status().as_u16() == 403 {
         return Some(Vec::new());
     }
@@ -541,7 +575,10 @@ async fn sdata_attempt(
     }
     let body = resp.bytes().await.ok()?;
     let json: serde_json::Value = serde_json::from_slice(&body).ok()?;
-    let err = json.get("result").and_then(|v| v.get("error")).and_then(|v| v.as_i64());
+    let err = json
+        .get("result")
+        .and_then(|v| v.get("error"))
+        .and_then(|v| v.as_i64());
     if err == Some(404) {
         return Some(Vec::new());
     }
@@ -590,7 +627,9 @@ async fn probe_sdata_pipelined(
     let mut kept = Vec::new();
     loop {
         while inflight.len() < concurrency {
-            let Some(batch) = scan.next_batch(100) else { break };
+            let Some(batch) = scan.next_batch(100) else {
+                break;
+            };
             inflight.push(async move {
                 fetch_sdata_batch(&batch, timeout, retries, filter_normal, filter_timeline).await
             });
@@ -613,14 +652,22 @@ pub async fn baidu_traverse_chunk(req: BaiduTraverseRequest) -> AppResult<BaiduT
     let start = parse_pid(&req.start_pano_id).map_err(AppError::from)?;
     let end = parse_pid(&req.end_pano_id).map_err(AppError::from)?;
     if start.prefix != end.prefix {
-        return Err(AppError::from("start and end pano ids have different prefixes"));
+        return Err(AppError::from(
+            "start and end pano ids have different prefixes",
+        ));
     }
     if start.car != end.car {
-        return Err(AppError::from("start and end pano ids have different vehicle codes"));
+        return Err(AppError::from(
+            "start and end pano ids have different vehicle codes",
+        ));
     }
     let reverse = start.ms > end.ms;
     let cursor = req.cursor_ms.unwrap_or(start.ms);
-    let past = if reverse { cursor < end.ms } else { cursor > end.ms };
+    let past = if reverse {
+        cursor < end.ms
+    } else {
+        cursor > end.ms
+    };
     if past {
         return Ok(BaiduTraverseChunk {
             content_json: "[]".to_string(),
@@ -705,16 +752,37 @@ pub struct GoogleBatchPano {
 }
 
 fn pano_wire_type(id: &str) -> i64 {
-    if id.starts_with("CIHM") || id.len() != 22 { 10 } else { 2 }
+    if id.starts_with("CIHM") || id.len() != 22 {
+        10
+    } else {
+        2
+    }
 }
 
 fn metadata_payload(ids: &[String]) -> String {
     let fields: Vec<Vec<Vec<serde_json::Value>>> = ids
         .iter()
-        .map(|id| vec![vec![serde_json::json!(pano_wire_type(id)), serde_json::json!(id)]])
+        .map(|id| {
+            vec![vec![
+                serde_json::json!(pano_wire_type(id)),
+                serde_json::json!(id),
+            ]]
+        })
         .collect();
     serde_json::json!([
-        ["apiv3", null, null, null, "US", null, null, null, null, null, [[0]]],
+        [
+            "apiv3",
+            null,
+            null,
+            null,
+            "US",
+            null,
+            null,
+            null,
+            null,
+            null,
+            [[0]]
+        ],
         ["en", "US"],
         fields,
         [[1, 2, 3, 4, 8, 6]]
@@ -723,7 +791,10 @@ fn metadata_payload(ids: &[String]) -> String {
 }
 
 fn json_str(value: Option<&serde_json::Value>) -> Option<String> {
-    value.and_then(|v| v.as_str()).map(str::to_string).filter(|s| !s.is_empty())
+    value
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
 }
 
 fn month_stamp(year: i64, month: i64) -> Option<String> {
@@ -743,15 +814,27 @@ fn parse_google_item(item: &serde_json::Value) -> Option<GoogleBatchPano> {
     let loc = meta.get(1)?;
     let lat = loc.get(0)?.get(2)?.as_f64()?;
     let lng = loc.get(0)?.get(3)?.as_f64()?;
-    let heading = meta.get(2).and_then(|v| v.get(0)).and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let heading = meta
+        .get(2)
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     let world_height = item
         .get(2)
         .and_then(|v| v.get(2))
         .and_then(|v| v.get(0))
         .and_then(|v| v.as_f64())
         .unwrap_or(8192.0);
-    let year = item.get(6).and_then(|v| v.get(7)).and_then(|v| v.get(0)).and_then(|v| v.as_i64());
-    let month = item.get(6).and_then(|v| v.get(7)).and_then(|v| v.get(1)).and_then(|v| v.as_i64());
+    let year = item
+        .get(6)
+        .and_then(|v| v.get(7))
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.as_i64());
+    let month = item
+        .get(6)
+        .and_then(|v| v.get(7))
+        .and_then(|v| v.get(1))
+        .and_then(|v| v.as_i64());
     let image_date = match (year, month) {
         (Some(y), Some(m)) => month_stamp(y, m).unwrap_or_default(),
         _ => String::new(),
@@ -779,9 +862,14 @@ fn parse_google_item(item: &serde_json::Value) -> Option<GoogleBatchPano> {
     };
     let nodes = meta.get(3).and_then(|v| v.get(0));
     let mut links = Vec::new();
-    if let (Some(nodes), Some(raw)) = (nodes.and_then(|v| v.as_array()), meta.get(6).and_then(|v| v.as_array())) {
+    if let (Some(nodes), Some(raw)) = (
+        nodes.and_then(|v| v.as_array()),
+        meta.get(6).and_then(|v| v.as_array()),
+    ) {
         for link in raw {
-            let Some(index) = link.get(0).and_then(|v| v.as_u64()) else { continue };
+            let Some(index) = link.get(0).and_then(|v| v.as_u64()) else {
+                continue;
+            };
             let Some(pano_id) = nodes
                 .get(index as usize)
                 .and_then(|n| n.get(0))
@@ -790,8 +878,15 @@ fn parse_google_item(item: &serde_json::Value) -> Option<GoogleBatchPano> {
             else {
                 continue;
             };
-            let heading = link.get(1).and_then(|v| v.get(3)).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            links.push(GoogleBatchLink { pano_id: pano_id.to_string(), heading });
+            let heading = link
+                .get(1)
+                .and_then(|v| v.get(3))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            links.push(GoogleBatchLink {
+                pano_id: pano_id.to_string(),
+                heading,
+            });
         }
     }
     let mut time = Vec::new();
@@ -800,7 +895,9 @@ fn parse_google_item(item: &serde_json::Value) -> Option<GoogleBatchPano> {
         meta.get(8).and_then(|v| v.as_array()),
     ) {
         for node in raw {
-            let Some(index) = node.get(0).and_then(|v| v.as_u64()) else { continue };
+            let Some(index) = node.get(0).and_then(|v| v.as_u64()) else {
+                continue;
+            };
             let Some(pano_id) = nodes
                 .get(index as usize)
                 .and_then(|n| n.get(0))
@@ -819,11 +916,17 @@ fn parse_google_item(item: &serde_json::Value) -> Option<GoogleBatchPano> {
             else {
                 continue;
             };
-            time.push(GoogleBatchTime { pano_id: pano_id.to_string(), date });
+            time.push(GoogleBatchTime {
+                pano_id: pano_id.to_string(),
+                date,
+            });
         }
     }
     if let Some(date) = month_stamp(year.unwrap_or(0), month.unwrap_or(0)) {
-        time.push(GoogleBatchTime { pano_id: id.clone(), date });
+        time.push(GoogleBatchTime {
+            pano_id: id.clone(),
+            date,
+        });
     }
     time.sort_by(|a, b| a.date.cmp(&b.date));
     Some(GoogleBatchPano {
@@ -883,7 +986,9 @@ fn png_alpha_at(bytes: &[u8], x: u32, y: u32) -> Option<u8> {
 #[specta::specta]
 pub async fn coverage_tile_alpha(url: String, x: u32, y: u32) -> AppResult<bool> {
     if !coverage_url_allowed(&url) {
-        return Err(AppError::from("coverage_tile_alpha: url is not a coverage tile"));
+        return Err(AppError::from(
+            "coverage_tile_alpha: url is not a coverage tile",
+        ));
     }
     let bytes = http_client()
         .get(&url)
@@ -896,7 +1001,8 @@ pub async fn coverage_tile_alpha(url: String, x: u32, y: u32) -> AppResult<bool>
         .error_for_status()?
         .bytes()
         .await?;
-    let alpha = png_alpha_at(&bytes, x, y).ok_or_else(|| AppError::from("coverage_tile_alpha: unreadable tile"))?;
+    let alpha = png_alpha_at(&bytes, x, y)
+        .ok_or_else(|| AppError::from("coverage_tile_alpha: unreadable tile"))?;
     Ok(alpha > 0)
 }
 
@@ -953,7 +1059,10 @@ mod tests {
     #[test]
     fn photometa_ids_follow_the_xssi_json_path() {
         let body = ")]}'\n[0,[0,[[[[0,\"abc\"]]],[[[0,\"def\"]]],[[[0,\"abc\"]]]]]]";
-        assert_eq!(pano_ids_from_photometa(body), vec!["abc".to_string(), "def".to_string()]);
+        assert_eq!(
+            pano_ids_from_photometa(body),
+            vec!["abc".to_string(), "def".to_string()]
+        );
     }
 
     #[test]
@@ -968,7 +1077,8 @@ mod tests {
         let car = "01";
         let start = baidu_time_to_ms("240315120000000").unwrap();
         let end = start + 2;
-        let (ids, next, done) = take_baidu_ids(prefix, car, start, end, false, 10, false, 1, 1, false, 0, 0);
+        let (ids, next, done) =
+            take_baidu_ids(prefix, car, start, end, false, 10, false, 1, 1, false, 0, 0);
         assert_eq!(ids.len(), 3);
         assert_eq!(ids[0], format_pid(prefix, start, car).unwrap());
         assert_eq!(ids[2], format_pid(prefix, start + 2, car).unwrap());
@@ -980,7 +1090,12 @@ mod tests {
     #[test]
     fn formatted_ids_follow_utc_across_midnight() {
         use chrono::Datelike;
-        let cases = ["240229235959999", "240301000000000", "230228235959999", "231231235959999"];
+        let cases = [
+            "240229235959999",
+            "240301000000000",
+            "230228235959999",
+            "231231235959999",
+        ];
         for time in cases {
             let ms = baidu_time_to_ms(time).unwrap();
             let id = format_pid("0900000000", ms, "01").unwrap();
@@ -1009,13 +1124,42 @@ mod tests {
     #[test]
     fn a_rough_window_resumes_inside_the_segment() {
         let start = baidu_time_to_ms("240315120000000").unwrap();
-        let (ids, cursor, done) = take_baidu_ids("0900000000", "01", start, start + 120_000, false, 1, true, 1, 1, false, 0, 0);
+        let (ids, cursor, done) = take_baidu_ids(
+            "0900000000",
+            "01",
+            start,
+            start + 120_000,
+            false,
+            1,
+            true,
+            1,
+            1,
+            false,
+            0,
+            0,
+        );
         assert_eq!(ids.len(), 1);
         assert!(!done);
         assert_eq!(cursor, start + 1);
-        let (rest, _, _) = take_baidu_ids("0900000000", "01", cursor, start + 120_000, false, 1000, true, 1, 1, false, 0, 0);
+        let (rest, _, _) = take_baidu_ids(
+            "0900000000",
+            "01",
+            cursor,
+            start + 120_000,
+            false,
+            1000,
+            true,
+            1,
+            1,
+            false,
+            0,
+            0,
+        );
         assert_eq!(rest.len(), 1000);
-        assert_eq!(&rest[0][10..25], &format_pid("0900000000", start + 1, "01").unwrap()[10..25]);
+        assert_eq!(
+            &rest[0][10..25],
+            &format_pid("0900000000", start + 1, "01").unwrap()[10..25]
+        );
     }
 
     #[test]
@@ -1074,7 +1218,10 @@ mod tests {
         assert_eq!(parsed.links[0].pano_id, "LINKPANOLINKPANOLINK01");
         assert_eq!(parsed.links[0].heading, 45.0);
         assert!(parsed.time.iter().any(|t| t.date == "2019-04"));
-        assert!(parsed.time.iter().any(|t| t.pano_id == parsed.id && t.date == "2024-03"));
+        assert!(parsed
+            .time
+            .iter()
+            .any(|t| t.pano_id == parsed.id && t.date == "2024-03"));
     }
 
     #[test]
@@ -1085,13 +1232,17 @@ mod tests {
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
             let mut writer = encoder.write_header().unwrap();
-            writer.write_image_data(&[0, 0, 0, 0, 1, 2, 3, 200]).unwrap();
+            writer
+                .write_image_data(&[0, 0, 0, 0, 1, 2, 3, 200])
+                .unwrap();
         }
         assert_eq!(png_alpha_at(&bytes, 0, 0), Some(0));
         assert_eq!(png_alpha_at(&bytes, 1, 0), Some(200));
         assert_eq!(png_alpha_at(&bytes, 2, 0), None);
         assert!(!coverage_url_allowed("https://example.com/maps/vt"));
         assert!(coverage_url_allowed("https://www.google.com/maps/vt?pb=1"));
-        assert!(coverage_url_allowed("https://mapsv1.bdimg.com/tile/?qt=tile&x=1&y=2&z=20"));
+        assert!(coverage_url_allowed(
+            "https://mapsv1.bdimg.com/tile/?qt=tile&x=1&y=2&z=20"
+        ));
     }
 }

@@ -457,18 +457,15 @@ fn pushes_local_edit_and_pulls_remote_edit() {
     let settled_locs = [loc(1, |l| l.lat = 11.0), loc(2, |l| l.lat = 22.0)];
     let mut applied = sink.mapping();
     for u in &out.pull_updates {
-        let row = applied.iter_mut().find(|r| r.local_id == u.local_id).unwrap();
+        let row = applied
+            .iter_mut()
+            .find(|r| r.local_id == u.local_id)
+            .unwrap();
         row.remote_id = u.remote_id;
         row.hash = u.hash.clone();
     }
     let mut sink2 = MemSink::seeded(&applied);
-    let out2 = sync(
-        &provider,
-        &settled_locs,
-        &applied,
-        &no_tags(),
-        &mut sink2,
-    );
+    let out2 = sync(&provider, &settled_locs, &applied, &no_tags(), &mut sink2);
     assert_eq!(out2.pushed, side(0, 0, 0));
     assert_eq!(out2.pulled, side(0, 0, 0));
     assert!(sink2.untouched());
