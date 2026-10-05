@@ -14,7 +14,7 @@ import { getReviewSession } from "@/lib/review/review";
 import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { useMapKeyboardNav } from "@/lib/hooks/useMapKeyboardNav";
-import { markerLayerOpacity, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
+import { layerOpacity, type MapEmbedPrefs } from "@/store/mapEmbedPrefs";
 
 export interface MapSurfaceOpts {
 	prefs: MapEmbedPrefs;
@@ -54,7 +54,8 @@ export function useMapSurface(
 	const panoDotScaled = useSetting("panoDotScaled");
 	const scoreMaxError = useScoreMaxError();
 
-	const markerOpacity = markerLayerOpacity(opts.prefs);
+	const markerOpacity = layerOpacity(opts.prefs, "marker");
+	const selectedOpacity = layerOpacity(opts.prefs, "selected");
 	const rebuild = useCallback(() => {
 		const overlay = overlayRef.current;
 		if (!overlay) return;
@@ -69,6 +70,7 @@ export function useMapSurface(
 		const layers = buildSceneLayers(getScene(), {
 			markerStyle: opts.prefs.markerStyle,
 			markerOpacity,
+			selectedOpacity,
 			markerSize: opts.prefs.markerSize,
 			showPerfectScoreCircle: opts.prefs.showPerfectScoreCircle,
 			scoreMaxError,
@@ -97,6 +99,7 @@ export function useMapSurface(
 		importPreviewColor,
 		opts.prefs.markerStyle,
 		markerOpacity,
+		selectedOpacity,
 		opts.prefs.markerSize,
 		opts.prefs.showPerfectScoreCircle,
 		opts.prefs.svPanoramas,
@@ -116,7 +119,7 @@ export function useMapSurface(
 	// Latest rebuild, so overlay creation paints the first frame with current values.
 	const rebuildLatest = useEffectEvent(() => rebuild());
 
-	// Repaint on every visual signal WITHOUT rendering the host component 鈥?these buses
+	// Repaint on every visual signal WITHOUT rendering the host component — these buses
 	// used to be render subscriptions serving purely as effect triggers. Same-tick bursts
 	// coalesce into one rebuild (React's batching did this implicitly before).
 	const rebuildQueued = useRef(false);

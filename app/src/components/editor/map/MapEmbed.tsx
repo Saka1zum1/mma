@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, type CSSProperties } from "react";
 import { ContextMenu } from "@base-ui-components/react/context-menu";
 import { useSyncStore } from "@/lib/events";
 import {
@@ -16,6 +16,7 @@ import {
 import { startSceneEngine, loadScene, clearScene, recolorScene } from "@/lib/render/sceneStore";
 import { useMapSurface } from "@/lib/render/useMapSurface";
 import { Icon } from "@/components/primitives/Icon";
+import { IconButton } from "@/components/primitives/IconButton";
 import { Tooltip } from "@/components/primitives/Tooltip";
 import { svThumbnailUrl, svSearchRadius } from "@/lib/sv/lookup";
 import { log } from "@/lib/util/log";
@@ -23,7 +24,13 @@ import { getSettings, useSetting } from "@/store/settings";
 import { useMeasure, useMeasureInteraction } from "@/lib/sv/measure";
 import { MeasurementBar } from "@/components/primitives/MeasurementBar";
 import { MapContextMenuContent } from "@/components/editor/map/MapContextMenu";
-import { currentSelection, fetchBounds, mapOpen, useMapState } from "@/store/useMapStore";
+import {
+	currentSelection,
+	fetchBounds,
+	getActiveSelections,
+	mapOpen,
+	useMapState,
+} from "@/store/useMapStore";
 import { addPolygonSelections } from "@/lib/map/addPolygonSelections";
 import { loadOpenSV, google } from "@/lib/sv/opensv";
 import { BLOBBY_ZOOM_THRESHOLD } from "@/lib/sv/constants";
@@ -46,12 +53,26 @@ import { CUSTOM_STYLES_KEY, type CustomStyle } from "@/lib/geo/mapStack";
 import {
 	MAP_EMBED_PREFS,
 	toggledLayer,
+	layerOpacity,
 	svLayerOpacity,
-	markerLayerOpacity,
 	type MapEmbedPrefs,
+	type OpacityLayer,
 } from "@/store/mapEmbedPrefs";
 import { FpsCounter } from "@/components/editor/map/FpsCounter";
-import { t } from "@/lib/i18n";
+import { msg, t } from "@/lib/i18n";
+import { rgbCss } from "@/lib/util/color";
+
+const OPACITY_TARGET_ICONS: Record<OpacityLayer, string> = {
+	sv: mdiGoogleStreetView,
+	marker: mdiMapMarker,
+	selected: mdiMapMarker,
+};
+
+const OPACITY_TARGET_LABELS: Record<OpacityLayer, string> = {
+	sv: msg("Street View layer opacity"),
+	marker: msg("Unselected marker opacity"),
+	selected: msg("Selected marker opacity"),
+};
 
 /** Live zoom text with its own zoom subscription, so zooming doesn't re-render MapEmbed. */
 function ZoomReadout({ host }: { host: MapHost | null }) {
@@ -80,7 +101,7 @@ export function MapEmbed({
 		(v: MapEmbedPrefs[K]) =>
 			setPrefs((p) => ({ ...p, [k]: v }));
 	const { mapType, markerStyle, showSearchRadiusCursor, showPreviews } = prefs;
-	const toggleLayer = (layer: "sv" | "marker") =>
+	const toggleLayer = (layer: OpacityLayer) =>
 		setPrefs((p) => {
 			const next = toggledLayer(
 				p[`${layer}Opacity`],
@@ -90,7 +111,7 @@ export function MapEmbed({
 			return { ...p, [`${layer}Opacity`]: next.opacity, [`${layer}Visible`]: next.visible };
 		});
 	// The slider drives the effective opacity: dragging to 0 hides the layer without losing its value.
-	const setLayerOpacity = (layer: "sv" | "marker", v: number) =>
+	const setLayerOpacity = (layer: OpacityLayer, v: number) =>
 		setPrefs((p) => ({
 			...p,
 			[`${layer}Visible`]: v > 0,
@@ -107,7 +128,17 @@ export function MapEmbed({
 		date?: string;
 	} | null>(null);
 	const previewAbortRef = useRef<AbortController | null>(null);
-	const [opacityTarget, setOpacityTarget] = useState<"sv" | "marker">("sv");
+	const [pickedOpacityTarget, setOpacityTarget] = useState<OpacityLayer>("sv");
+	const selectionTint = useMapState(() => {
+		const active = getActiveSelections();
+		return active.length > 0 ? rgbCss(active[0].color) : null;
+	});
+	const opacityTargets: OpacityLayer[] = selectionTint
+		? ["sv", "marker", "selected"]
+		: ["sv", "marker"];
+	const opacityTarget = opacityTargets.includes(pickedOpacityTarget)
+		? pickedOpacityTarget
+		: "marker";
 	const freehandPathRef = useRef<number[][] | null>(null);
 	const polygonVerticesRef = useRef<number[][] | null>(null);
 	const contextTriggerRef = useRef<HTMLSpanElement>(null);
@@ -399,9 +430,7 @@ export function MapEmbed({
 							onDraw={(rings) => {
 								if (rings.length === 0) return;
 								if (tryInterceptDraw(rings)) return;
-								void addPolygonSelections([
-									{ coordinates: rings as [number, number][][] },
-								]);
+								void addPolygonSelections([{ coordinates: rings as [number, number][][] }]);
 							}}
 							freehandPathRef={freehandPathRef}
 							polygonVerticesRef={polygonVerticesRef}
@@ -421,36 +450,38 @@ export function MapEmbed({
 				>
 					<MapSettingsDropdown prefs={prefs} setPref={pref} />
 					<div className="map-control sv-opacity-control">
-						<Tooltip
-							content={
-								opacityTarget === "sv"
-									? t("Adjusting Street View opacity")
-									: t("Adjusting marker opacity")
-							}
-							side="left"
-						>
-							<button
-								className="opacity-target-toggle"
-								onClick={() => setOpacityTarget((cur) => (cur === "sv" ? "marker" : "sv"))}
-							>
-								<Icon
-									path={opacityTarget === "sv" ? mdiGoogleStreetView : mdiMapMarker}
-									size={20}
-								/>
-							</button>
-						</Tooltip>
+						<div className="opacity-targets">
+							{opacityTargets.map((layer) => {
+								const opacity = layerOpacity(prefs, layer);
+								return (
+									<IconButton
+										key={layer}
+										icon={OPACITY_TARGET_ICONS[layer]}
+										size={20}
+										label={t(OPACITY_TARGET_LABELS[layer])}
+										tooltipSide="bottom"
+										className="opacity-target"
+										active={layer === opacityTarget}
+										data-hidden={opacity === 0 || undefined}
+										style={
+											{
+												"--layer-opacity": opacity,
+												...(layer === "selected" && selectionTint ? { color: selectionTint } : {}),
+											} as CSSProperties
+										}
+										onClick={() => setOpacityTarget(layer)}
+									/>
+								);
+							})}
+						</div>
 						<Slider
 							className="sv-opacity-control__slider"
 							min={0}
 							max={1}
 							step={0.05}
-							value={opacityTarget === "sv" ? svLayerOpacity(prefs) : markerLayerOpacity(prefs)}
-							onChange={(e) =>
-								setLayerOpacity(opacityTarget, Number(e.target.value))
-							}
-							title={
-								opacityTarget === "sv" ? t("Street View layer opacity") : t("Marker layer opacity")
-							}
+							value={layerOpacity(prefs, opacityTarget)}
+							onChange={(e) => setLayerOpacity(opacityTarget, Number(e.target.value))}
+							title={t(OPACITY_TARGET_LABELS[opacityTarget])}
 						/>
 					</div>
 				</div>

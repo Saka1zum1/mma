@@ -35,6 +35,8 @@ export interface MapEmbedPrefs {
 	markerStyle: MarkerStyle;
 	markerOpacity: number;
 	markerVisible: boolean;
+	selectedOpacity: number;
+	selectedVisible: boolean;
 	markerSize: number;
 	showSvCoverage: boolean;
 	showPerfectScoreCircle: boolean;
@@ -68,6 +70,8 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 	markerStyle: "pin",
 	markerOpacity: 1,
 	markerVisible: true,
+	selectedOpacity: 1,
+	selectedVisible: true,
 	markerSize: 1,
 	showSvCoverage: true,
 	showPerfectScoreCircle: true,
@@ -78,14 +82,23 @@ export const DEFAULT_PREFS: MapEmbedPrefs = {
 
 export const MAP_EMBED_PREFS = persisted("mapEmbedPrefs", DEFAULT_PREFS);
 
-/** What the SV tile layer renders at: its opacity, gated by its visibility. */
-export function svLayerOpacity(prefs: MapEmbedPrefs): number {
-	return prefs.svVisible ? prefs.svOpacity : 0;
+/** A map layer with its own opacity and visibility: Street View coverage, unselected markers,
+ *  or selected markers. */
+export type OpacityLayer = "sv" | "marker" | "selected";
+
+/** What a layer renders at: its opacity, gated by its visibility. */
+export function layerOpacity(prefs: MapEmbedPrefs, layer: OpacityLayer): number {
+	return prefs[`${layer}Visible`] ? prefs[`${layer}Opacity`] : 0;
 }
 
-/** What the marker layers render at: their opacity, gated by their visibility. */
+/** What the SV tile layer renders at: its opacity, gated by its visibility. */
+export function svLayerOpacity(prefs: MapEmbedPrefs): number {
+	return layerOpacity(prefs, "sv");
+}
+
+/** What the unselected marker layers render at. */
 export function markerLayerOpacity(prefs: MapEmbedPrefs): number {
-	return prefs.markerVisible ? prefs.markerOpacity : 0;
+	return layerOpacity(prefs, "marker");
 }
 
 /** Next state for a layer visibility toggle. Hiding keeps the opacity value, so showing

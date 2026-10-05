@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { toggledLayer, svLayerOpacity, markerLayerOpacity } from "@/store/mapEmbedPrefs";
+import {
+	toggledLayer,
+	layerOpacity,
+	svLayerOpacity,
+	markerLayerOpacity,
+} from "@/store/mapEmbedPrefs";
 import { DEFAULT_PREFS } from "@/store/mapEmbedPrefs";
 
 describe("toggledLayer", () => {
@@ -31,5 +36,9 @@ describe("layer opacity", () => {
 		expect(markerLayerOpacity({ ...DEFAULT_PREFS, markerOpacity: 0.8, markerVisible: false })).toBe(
 			0,
 		);
+		expect(
+			layerOpacity({ ...DEFAULT_PREFS, selectedOpacity: 0.3, selectedVisible: true }, "selected"),
+		).toBe(0.3);
+		expect(layerOpacity({ ...DEFAULT_PREFS, selectedVisible: false }, "selected")).toBe(0);
 	});
 });

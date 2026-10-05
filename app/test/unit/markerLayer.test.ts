@@ -9,40 +9,28 @@ const buf: MarkerBuf = {
 	color: { kind: "perMarker", colors: new Uint8Array([255, 0, 0, 255]) },
 };
 
-function build(style: MarkerStyle, opacity?: number) {
-	return buildMarkerLayer(style, "t", 1, buf, 0, 0, opacity) as unknown as {
+function build(style: MarkerStyle, group: string | null) {
+	return buildMarkerLayer(style, "t", 1, buf, 0, 0, group) as unknown as {
 		constructor: unknown;
 		props: Record<string, unknown>;
 	};
 }
 
-describe("marker layer flattening (layer-level opacity)", () => {
-	it("translucent markers flatten: premultiply uniform + constant-alpha blend", () => {
-		const layer = build("pin", 0.5);
-		const expected = Math.pow(0.5, 1 / 2.2);
-		expect(layer.props.flattenOpacity).toBeCloseTo(expected);
-		expect(layer.props.opacity).toBe(1);
-		const params = layer.props.parameters as Record<string, unknown>;
-		expect(params.blendAlphaSrcFactor).toBe("constant");
-		expect((params.blendColor as number[])[3]).toBeCloseTo(expected);
+describe("marker layer translucency", () => {
+	it("a named group draws the marker offscreen", () => {
+		const layer = build("pin", "cells");
+		expect(layer.props.translucentGroup).toBe("cells");
 	});
 
-	it("full opacity renders without flattening", () => {
-		const layer = build("pin", 1);
-		expect(layer.props.flattenOpacity).toBe(0);
-		expect(layer.props.parameters).toEqual({});
-	});
-
-	it("layers without an opacity (selection overlay) never flatten", () => {
-		const layer = build("pin", undefined);
-		expect(layer.props.flattenOpacity).toBe(0);
-		expect(layer.props.parameters).toEqual({});
+	it("a null group draws the marker directly", () => {
+		const layer = build("pin", null);
+		expect(layer.props.translucentGroup).toBeNull();
 	});
 
 	it("every marker style uses the SDF layer with its style shape", () => {
 		for (const style of Object.keys(MARKER_STYLE) as MarkerStyle[]) {
-			for (const opacity of [0.5, 1]) {
-				const layer = build(style, opacity);
+			for (const group of ["cells", null]) {
+				const layer = build(style, group);
 				expect(layer).toBeInstanceOf(SDFMarkerLayer);
 				expect(layer.props.shape).toBe(MARKER_STYLE[style].shape);
 				expect(layer.props.radiusPixels).toBeCloseTo(MARKER_STYLE[style].radiusPixels);

@@ -1,7 +1,7 @@
 import type { Layer, Position } from "@deck.gl/core";
 import { ScatterplotLayer, PolygonLayer, PathLayer, LineLayer, TextLayer } from "@deck.gl/layers";
 import SDFMarkerLayer from "@/lib/render/sdf-marker-layer/SDFMarkerLayer";
-import { baseMarkerLayers, buildMarkerLayer, MARKER_STYLE } from "@/lib/render/markerLayer";
+import { baseMarkerLayers, selectedMarkerLayers, MARKER_STYLE } from "@/lib/render/markerLayer";
 import PanoCoverageLayer from "@/lib/render/PanoCoverageLayer";
 import LookAroundPanoCoverageLayer from "@/lib/sv/lookaround/LookAroundPanoCoverageLayer";
 import { isProviderEnabled, getProviderSettings } from "@/lib/sv/providers/settings";
@@ -40,6 +40,7 @@ export type PolyGeom = { poly: object; fill: Position[][][]; stroke: Position[][
 interface SceneContext {
 	markerStyle: MarkerStyle;
 	markerOpacity: number;
+	selectedOpacity: number;
 	markerSize: number;
 	showPerfectScoreCircle: boolean;
 	scoreMaxError: number;
@@ -190,27 +191,7 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		}
 	}
 
-	// Selection overlay rides on top as its own pickable layer — otherwise clicks fall through to
-	// the cell layer where selected markers have no z-priority, and an overlapping neighbor gets
-	// picked instead of the marker on top.
-	if (cm.overlay.count > 0) {
-		layers.push(
-			buildMarkerLayer(
-				ctx.markerStyle,
-				"sel-overlay",
-				cm.overlay.count,
-				{
-					positions: cm.overlay.positions,
-					angles: cm.overlay.angles,
-					color: { kind: "perMarker", colors: cm.overlay.colors },
-				},
-				cm.overlay.version,
-				cm.overlay.version,
-				undefined,
-				ctx.markerSize,
-			),
-		);
-	}
+	layers.push(...selectedMarkerLayers(cm, ctx.markerStyle, ctx.selectedOpacity, ctx.markerSize));
 
 	// Staged import preview markers; clicking one opens a read-only preview. Drawn *under* the
 	// active marker, which highlights whichever staged location is open — no per-index coloring.
@@ -287,10 +268,7 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 						radiusPixels: s.radiusPixels * ctx.markerSize,
 						getFillColor: line,
 						getAngle: s.angle
-							? -bearingDeg(
-									{ lng: prev[0], lat: prev[1] },
-									{ lng: tip[0], lat: tip[1] },
-								)
+							? -bearingDeg({ lng: prev[0], lat: prev[1] }, { lng: tip[0], lat: tip[1] })
 							: 0,
 						pickable: false,
 					}),
