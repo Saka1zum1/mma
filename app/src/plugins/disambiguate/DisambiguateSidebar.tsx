@@ -2,15 +2,11 @@ import type { ReactNode } from "react";
 import { useAsync } from "@/lib/hooks/useAsync";
 import { useEvent, SELECTION_EVENTS } from "@/lib/events";
 import { Sidebar, EmptyState } from "@/components/primitives/Sidebar";
-import type { Selection, ExtraFieldDef, Location } from "@/bindings.gen";
-import { computeDivergence, soleGroup } from "./engine";
-import type {
-	DisambiguateResult,
-	FieldDivergence,
-	GroupSummary,
-	ValueFormat,
-	Labeled,
-} from "./engine";
+import type { ExtraFieldDef, Selection, Selector } from "@/bindings.gen";
+import { getBuiltinKeys, isWritableField } from "@/lib/data/fieldDefRegistry";
+import { buildSelection } from "@/store/selections";
+import { divergenceFromCounts, exclusiveGroups, TAGS_COLUMN } from "./engine";
+import type { DisambiguateResult, FieldDivergence, GroupSummary, ValueFormat } from "./engine";
 import "./disambiguate.css";
 import { t } from "@/lib/i18n";
 
@@ -153,29 +149,41 @@ async function analyze(): Promise<Analysis> {
 	if (sels.length < 2) throw new Error(t("Select at least 2 groups to disambiguate."));
 
 	const colors = sels.map((s) => s.color);
-	const idSets = await Promise.all(
-		sels.map((s) => MMA.resolveIds(s.selector).then((ids) => new Set(ids))),
-	);
-
-	const labeled: Labeled[] = [];
-	let excludedOverlap = 0;
-	const unionIds = [...new Set(idSets.flatMap((s) => [...s]))];
-	for (const loc of await MMA.fetchLocations({
-		type: "Locations",
-		locations: unionIds,
-		name: null,
-	})) {
-		const g = soleGroup(idSets, loc.id);
-		if (g === "overlap") excludedOverlap++;
-		else if (g !== null) labeled.push({ group: g, loc: loc as Location });
-	}
+	const selectors = sels.map((s) => s.selector);
+	const union: Selector =
+		selectors.length === 1
+			? selectors[0]
+			: { type: "Union", selections: selectors.map((s) => buildSelection(s)) };
 
 	const fieldDefs: Record<string, ExtraFieldDef> = MMA.getAllFieldDefs();
 	const tagNames: Record<number, string> = {};
 	for (const [id, t] of Object.entries(MMA.getMapState().tags))
 		tagNames[Number(id)] = (t as { name: string }).name;
 
-	const result = computeDivergence(labeled, sels.length, fieldDefs, tagNames);
+	const [unionSize, present] = await Promise.all([MMA.countIn(union), MMA.fieldCoverage(union)]);
+	const fields = [
+		...new Set([
+			...getBuiltinKeys().filter((k) => isWritableField(k)),
+			...Object.keys(fieldDefs),
+			...present.map(([k]) => k),
+			TAGS_COLUMN,
+		]),
+	].filter((k) => k !== "countryCode" && k !== "timezone" && k !== "panoId");
+	const groups = await Promise.all(
+		exclusiveGroups(selectors).map(async (selector) => {
+			const [size, counts] = await Promise.all([
+				MMA.countIn(selector),
+				MMA.countBy(selector, fields, { kind: "value" }),
+			]);
+			return {
+				size,
+				counts: Object.fromEntries(fields.map((f, i) => [f, counts[i]])),
+			};
+		}),
+	);
+
+	const result = divergenceFromCounts(groups, fieldDefs, tagNames);
+	const excludedOverlap = unionSize - result.groupSizes.reduce((a, b) => a + b, 0);
 	return { result, colors, excludedOverlap };
 }
 
