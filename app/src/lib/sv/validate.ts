@@ -1,101 +1,109 @@
-import { hasLoadAsPanoId } from "@/types";
+import { hasLoadAsPanoId, ValidationFlag } from "@/types";
 import type { Location } from "@/bindings.gen";
-import { ValidationState } from "@/store/selections";
 import { fetchSvMetadata } from "./svMeta";
 import { capturedAfter, isOfficialPano, newestOfficialPano } from "./panoId";
 import { getPanoAtCoords, isUnofficial } from "./lookup";
 import { runConcurrent } from "@/lib/util/concurrent";
+import { log } from "@/lib/util/log";
+import {
+	STANDARD_VALIDATION_CATEGORIES,
+	VALIDATION_CATEGORIES,
+	type ValidationAnswer,
+} from "./validationCategories";
 
 const GOOD_CAM_TYPES = new Set(["gen4", "gen2"]);
+const KNOWN_BITS = Object.values(ValidationFlag).reduce<number>((all, f) => all | f, 0);
 
 export interface ValidateConfig {
 	radius?: number;
-	checkPinned?: boolean;
+}
+
+type GooglePano = google.maps.StreetViewResolvedPanoramaData;
+
+/** The official capture `p` is not the newest in its own timeline. */
+function behindOwnTimeline(p: GooglePano): boolean {
+	const id = p.location.pano;
+	return isOfficialPano(id) && newestOfficialPano(p.time ?? [])?.pano !== id;
 }
 
 export async function validateOne(
 	loc: Location,
 	signal?: AbortSignal,
 	config?: ValidateConfig,
-): Promise<ValidationState> {
+): Promise<ValidationAnswer> {
 	signal?.throwIfAborted();
 
 	const pinned = hasLoadAsPanoId(loc);
-	const checkPinned = config?.checkPinned ?? true;
-	let data: google.maps.StreetViewResolvedPanoramaData | null = null;
-	let coordData: google.maps.StreetViewResolvedPanoramaData | null = null;
-	let state = ValidationState.Ok;
-
-	// Fetch by pano ID if stored
+	let data: GooglePano | null = null;
 	if (loc.panoId != null) {
 		[data] = await fetchSvMetadata([loc.panoId]).catch(() => [null]);
 	}
+	const coordPano = await getPanoAtCoords(loc.lat, loc.lng, config?.radius);
+	let coordData: GooglePano | null = null;
+	if (coordPano) [coordData] = await fetchSvMetadata([coordPano]).catch(() => [null]);
 
-	// The coordinate is the comparison (pinned rows included under checkPinned) and the
-	// fallback for a pinned row whose pano broke.
-	const needCoord = checkPinned || !pinned || data == null;
-	if (needCoord) {
-		const coordPano = await getPanoAtCoords(loc.lat, loc.lng, config?.radius);
-		if (coordPano) [coordData] = await fetchSvMetadata([coordPano]).catch(() => [null]);
-		if (pinned && data == null) {
-			if (loc.panoId != null) state = ValidationState.PanoIdBroke;
-			data = coordData;
-			coordData = null;
-		}
-	}
-
-	data ??= coordData;
-
-	if (data == null) return ValidationState.NotFound;
-	if (isUnofficial(data)) return ValidationState.Unofficial;
-
-	// Badcam check (pinned rows included under checkPinned)
-	if ((checkPinned || !pinned) && data.extra?.cameraType === "badcam" && data.time?.length) {
-		const timePanoIds = data.time.map((t) => t.pano);
-		const timeResults = await fetchSvMetadata(timePanoIds).catch(() => []);
-		if (timeResults.some((t) => t && GOOD_CAM_TYPES.has(t.extra?.cameraType ?? ""))) {
-			return ValidationState.GoodcamAvailable;
-		}
-	}
-
-	// Only newer official coverage counts as an update: the nearest hit can be a
-	// photosphere, an adjacent road, or a default lagging behind the pinned pano.
+	let flags: number = ValidationFlag.None;
+	if (pinned && data == null && coordData != null) flags |= ValidationFlag.PanoIdBroke;
 	if (
+		pinned &&
+		data != null &&
+		coordData != null &&
+		data.location.pano !== coordData.location.pano
+	) {
+		flags |= ValidationFlag.OffDefault;
+	}
+	if (coordData != null && !isUnofficial(coordData) && behindOwnTimeline(coordData)) {
+		flags |= ValidationFlag.DefaultStale;
+	}
+
+	const shown = data ?? coordData;
+	if (shown == null) return { flags: ValidationFlag.NotFound, pinned };
+	if (isUnofficial(shown)) {
+		flags |= ValidationFlag.Unofficial;
+		return { flags, pinned };
+	}
+
+	if (shown.extra?.cameraType === "badcam" && shown.time?.length) {
+		const timeResults = await fetchSvMetadata(shown.time.map((t) => t.pano)).catch(() => []);
+		if (timeResults.some((t) => t && GOOD_CAM_TYPES.has(t.extra?.cameraType ?? ""))) {
+			flags |= ValidationFlag.GoodcamAvailable;
+		}
+	}
+
+	const defaultNewer =
 		coordData != null &&
 		!isUnofficial(coordData) &&
-		coordData.location.pano !== data.location.pano &&
-		capturedAfter(coordData, data)
-	) {
-		return pinned ? ValidationState.UpdateAvailable : ValidationState.UpdateApplied;
-	}
+		coordData.location.pano !== shown.location.pano &&
+		capturedAfter(coordData, shown);
+	const storedBehind = shown.location.pano === loc.panoId && behindOwnTimeline(shown);
+	if (defaultNewer || storedBehind) flags |= ValidationFlag.Newer;
 
-	// Timeline check: the stored pano is a known official capture, but not the newest one
-	const time = data.time ?? [];
-	const storedIsOfficial = time.some((t) => t.pano === loc.panoId && isOfficialPano(t.pano));
-	if (storedIsOfficial && newestOfficialPano(time)?.pano !== loc.panoId) {
-		return pinned ? ValidationState.UpdateAvailable : ValidationState.UpdateApplied;
-	}
-
-	return state;
+	return { flags, pinned };
 }
 
 export interface ValidationProgress {
 	progress: number;
-	results: Map<ValidationState, Location[]>;
 }
 
-/** Check that each location's Street View coverage still exists; returns locations grouped
- *  by validation state. */
+/** What a validation run answered: the ids in each asked-for category, keyed by category. */
+export interface ValidationOutcome {
+	categories: Map<string, number[]>;
+}
+
+/** Check that each location's Street View coverage still exists, grouping the locations
+ *  into `categories` (keys of `VALIDATION_CATEGORIES`; the standard ones when omitted). */
 export async function validateLocations(
 	locations: Location[],
 	opts: {
 		signal?: AbortSignal;
 		onProgress?: (p: ValidationProgress) => void;
 		config?: ValidateConfig;
+		categories?: readonly string[];
 	} = {},
-): Promise<Map<ValidationState, Location[]>> {
-	const { signal, onProgress, config } = opts;
-	const results = new Map<ValidationState, Location[]>();
+): Promise<ValidationOutcome> {
+	const { signal, onProgress, config, categories: asked = STANDARD_VALIDATION_CATEGORIES } = opts;
+	const wanted = VALIDATION_CATEGORIES.filter((c) => asked.includes(c.key));
+	const answers: { id: number; answer: ValidationAnswer }[] = [];
 	let completed = 0;
 	let lastUpdate = 0;
 
@@ -103,22 +111,33 @@ export async function validateLocations(
 		locations,
 		async (loc) => {
 			try {
-				const state = await validateOne(loc, signal, config);
-				const list = results.get(state);
-				if (list) list.push(loc);
-				else results.set(state, [loc]);
+				answers.push({ id: loc.id, answer: await validateOne(loc, signal, config) });
 			} finally {
 				completed++;
 				const now = Date.now();
 				if (now - lastUpdate > 16) {
 					lastUpdate = now;
-					onProgress?.({ progress: completed / locations.length, results });
+					onProgress?.({ progress: completed / locations.length });
 				}
 			}
 		},
 		{ concurrency: 100, signal },
 	);
 
-	onProgress?.({ progress: 1, results });
-	return results;
+	const ids = wanted.map((): number[] => []);
+	for (const { id, answer } of answers) {
+		if ((answer.flags & ~KNOWN_BITS) !== 0) {
+			log.warn(`[validate] location ${id}: unknown validation flags ${String(answer.flags)}`);
+			continue;
+		}
+		wanted.forEach((c, i) => {
+			if (c.test(answer)) ids[i].push(id);
+		});
+	}
+	onProgress?.({ progress: 1 });
+	return {
+		categories: new Map(
+			wanted.flatMap((c, i) => (ids[i].length > 0 ? [[c.key, ids[i]] as const] : [])),
+		),
+	};
 }

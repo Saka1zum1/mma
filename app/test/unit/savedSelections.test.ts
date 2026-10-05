@@ -169,7 +169,7 @@ describe("isSaveable", () => {
 	it("rejects every map-local leaf", () => {
 		expect(isSaveable({ type: "Locations", locations: [1], name: null })).toBe(false);
 		expect(isSaveable({ type: "Manual", locations: [1] })).toBe(false);
-		expect(isSaveable({ type: "ValidationState", locations: [1], state: 0 })).toBe(false);
+		expect(isSaveable({ type: "ValidationState", locations: [1], category: "valid" })).toBe(false);
 		expect(isSaveable({ type: "Reviewed", locations: [1], sessionId: "s", mode: "reviewed" })).toBe(
 			false,
 		);
@@ -225,7 +225,7 @@ describe("Selector coverage", () => {
 		Uncommitted: { type: "Uncommitted" },
 		Manual: { type: "Manual", locations: [1] },
 		Duplicates: { type: "Duplicates", distance: 25 },
-		ValidationState: { type: "ValidationState", locations: [1], state: 0 },
+		ValidationState: { type: "ValidationState", locations: [1], category: "valid" },
 		Reviewed: { type: "Reviewed", locations: [1], sessionId: "s", mode: "reviewed" },
 		Intersection: { type: "Intersection", selections: [sel({ type: "Everything" })] },
 		Union: { type: "Union", selections: [sel({ type: "Everything" })] },
@@ -284,9 +284,9 @@ describe("Selector coverage", () => {
 			sessionId: "session-1",
 			mode: "unreviewed",
 		};
-		expect(
-			await saveCurrentSelections("mixed", [sel(reviewed), sel({ type: "Untagged" })]),
-		).toBe(true);
+		expect(await saveCurrentSelections("mixed", [sel(reviewed), sel({ type: "Untagged" })])).toBe(
+			true,
+		);
 		expect(JSON.stringify(h.rows)).not.toContain("session-1");
 		expect(h.rows[0].selector).toEqual({ type: "Untagged" });
 	});

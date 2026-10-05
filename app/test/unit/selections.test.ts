@@ -23,7 +23,6 @@ import {
 	sampleIds,
 	polygonSelectionsContaining,
 	isolateGhostKeys,
-	ValidationState,
 } from "@/store/selections";
 import { setUserFieldDefs, resetForMapChange } from "@/lib/data/fieldDefRegistry";
 import { setSetting } from "@/store/settings";
@@ -743,7 +742,7 @@ describe("selectionDisplayName", () => {
 		const sel = buildSelection({
 			type: "ValidationState",
 			locations: [1],
-			state: ValidationState.NotFound,
+			category: "notFound",
 		});
 		expect(selectionDisplayName(sel)).toBe("Not found");
 	});
@@ -752,7 +751,7 @@ describe("selectionDisplayName", () => {
 		const sel = buildSelection({
 			type: "ValidationState",
 			locations: [2],
-			state: ValidationState.PanoIdBroke,
+			category: "panoIdBroke",
 		});
 		expect(selectionDisplayName(sel)).toBe("Pano ID broke");
 	});
@@ -821,7 +820,7 @@ describe("resolveLocations", () => {
 		const result = resolveLocations({
 			type: "ValidationState",
 			locations: locs,
-			state: ValidationState.Ok,
+			category: "valid",
 		});
 		expect(result).toEqual([7, 8, 9]);
 		expect(result).not.toBe(locs);

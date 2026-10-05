@@ -16,15 +16,18 @@ const { configure, run } = await import(
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// --- ValidationState (app/src/types/index.ts) ---
+// --- ValidationFlag (app/src/types/index.ts) ---
 
-const OK = 0;
-const UPDATE_AVAILABLE = 1;
-const UPDATE_APPLIED = 2;
-const NOT_FOUND = 3;
-const PANO_ID_BROKE = 4;
-const UNOFFICIAL = 5;
-const GOODCAM_AVAILABLE = 6;
+const NONE = 0;
+const NEWER = 1;
+const OFF_DEFAULT = 2;
+const DEFAULT_STALE = 4;
+const PANO_ID_BROKE = 8;
+const UNOFFICIAL = 16;
+const GOODCAM_AVAILABLE = 32;
+const NOT_FOUND = 64;
+
+const found = (flags, pinned) => ({ flags, pinned });
 
 const PINNED = 1;
 
@@ -135,7 +138,7 @@ function runProcedure(
 
 	globalThis.mma = {
 		fetch: respond,
-		fetchMany(reqs) {
+		fetch(reqs) {
 			hostCalls++;
 			return reqs.map(respond);
 		},
@@ -150,7 +153,8 @@ function runProcedure(
 	configure({ fields: [], force: false, config });
 	const answers = run(rows.map(toRow));
 	for (const a of answers) {
-		assert.equal(typeof a.patch, "number", "an answer is a bare ValidationState");
+		assert.equal(typeof a.patch, "object", "an answer is a ValidationAnswer");
+		assert.equal(typeof a.patch.flags, "number");
 	}
 	return { answers, metaCalls, coordCalls, progress, hostCalls };
 }
@@ -170,19 +174,19 @@ test("an unpinned row whose coordinate agrees is ok", () => {
 		{ panoId: A },
 		{ panos: { [A]: meta(A) }, coords: { "1,2": A } },
 	);
-	assert.equal(state, OK);
+	assert.deepEqual(state, found(NONE, false));
 	assert.equal(progress, 1);
 });
 
 test("a row with no coverage anywhere is not found", () => {
 	const { state, coordCalls } = stateOf({ panoId: null }, { coords: {} });
-	assert.equal(state, NOT_FOUND);
+	assert.deepEqual(state, found(NOT_FOUND, false));
 	assert.equal(coordCalls.length, 1);
 });
 
 test("a stored pano that no longer resolves is not found when the coordinate is empty", () => {
 	const { state } = stateOf({ panoId: A }, { panos: {}, coords: {} });
-	assert.equal(state, NOT_FOUND);
+	assert.deepEqual(state, found(NOT_FOUND, false));
 });
 
 test("a pinned row whose pano is gone but has coverage reports the broken pano", () => {
@@ -190,12 +194,12 @@ test("a pinned row whose pano is gone but has coverage reports the broken pano",
 		{ panoId: A, flags: PINNED },
 		{ panos: { [B]: meta(B) }, coords: { "1,2": B } },
 	);
-	assert.equal(state, PANO_ID_BROKE);
+	assert.deepEqual(state, found(PANO_ID_BROKE, true));
 });
 
 test("a pinned row with nothing at the coordinate is not found", () => {
 	const { state } = stateOf({ panoId: A, flags: PINNED }, { panos: {}, coords: {} });
-	assert.equal(state, NOT_FOUND);
+	assert.deepEqual(state, found(NOT_FOUND, true));
 });
 
 test("a failed metadata request counts as a missing pano", () => {
@@ -203,23 +207,25 @@ test("a failed metadata request counts as a missing pano", () => {
 		{ panoId: A, flags: PINNED },
 		{ panos: { [A]: meta(A) }, failing: [A], coords: {} },
 	);
-	assert.equal(state, NOT_FOUND);
+	assert.deepEqual(state, found(NOT_FOUND, true));
 });
 
-test("a pinned row never looks up its coordinate while its pano resolves", () => {
+test("a pinned row whose pano differs from the default is pinned away from it", () => {
 	const { state, coordCalls } = stateOf(
 		{ panoId: A, flags: PINNED },
-		{ panos: { [A]: meta(A) }, coords: { "1,2": B } },
+		{ panos: { [A]: meta(A), [B]: meta(B) }, coords: { "1,2": B } },
 	);
-	assert.equal(state, OK);
-	assert.deepEqual(coordCalls, []);
+	assert.equal(state.flags & OFF_DEFAULT, OFF_DEFAULT);
+	assert.equal(state.flags & NEWER, 0, "the same capture month is not newer coverage");
+	assert.equal(state.pinned, true);
+	assert.equal(coordCalls.length, 1);
 });
 
 // --- Unofficial ---
 
 test("a pano id longer than 22 characters is unofficial", () => {
 	const { state } = stateOf({ panoId: LONG, flags: PINNED }, { panos: { [LONG]: meta(LONG) } });
-	assert.equal(state, UNOFFICIAL);
+	assert.deepEqual(state, found(UNOFFICIAL, true));
 });
 
 test("a user-photo copyright is unofficial", () => {
@@ -228,7 +234,7 @@ test("a user-photo copyright is unofficial", () => {
 			{ panoId: A, flags: PINNED },
 			{ panos: { [A]: meta(A, { copyright }) } },
 		);
-		assert.equal(state, UNOFFICIAL, copyright);
+		assert.deepEqual(state, found(UNOFFICIAL, true), copyright);
 	}
 });
 
@@ -237,7 +243,7 @@ test("a Google copyright is not unofficial", () => {
 		{ panoId: A, flags: PINNED },
 		{ panos: { [A]: meta(A, { copyright: "© 2021 Google" }) } },
 	);
-	assert.equal(state, OK);
+	assert.deepEqual(state, found(NONE, true));
 });
 
 // --- Badcam ---
@@ -253,7 +259,7 @@ test("a badcam capture with a better camera in its timeline reports one", () => 
 			coords: { "1,2": A },
 		},
 	);
-	assert.equal(state, GOODCAM_AVAILABLE);
+	assert.deepEqual(state, found(GOODCAM_AVAILABLE, false));
 	// The timeline goes out as one request: the stored pano and its older capture.
 	assert.deepEqual(metaCalls.at(-1), [B, A]);
 });
@@ -270,13 +276,23 @@ test("a badcam capture with no better camera falls through to the timeline check
 		},
 	);
 	// A is the newest official capture and the stored one, so nothing is out of date.
-	assert.equal(state, OK);
+	assert.deepEqual(state, found(NONE, false));
 });
 
-test("a pinned badcam row is never checked for a better camera", () => {
-	const { state, metaCalls } = stateOf({ panoId: A, flags: PINNED }, { panos: { [A]: badcam(A) } });
-	assert.equal(state, OK);
-	assert.deepEqual(metaCalls, [[A]]);
+test("a pinned badcam row is checked for a better camera too", () => {
+	const { state, metaCalls } = stateOf(
+		{ panoId: A, flags: PINNED },
+		{
+			panos: {
+				[A]: badcam(A, { timeline: [{ pano: B, date: { year: 2019, month: 5, day: 1 } }] }),
+				[B]: meta(B),
+			},
+			coords: { "1,2": A },
+		},
+	);
+	assert.equal(state.flags & GOODCAM_AVAILABLE, GOODCAM_AVAILABLE);
+	assert.equal(state.pinned, true);
+	assert.ok(metaCalls.length >= 2);
 });
 
 // --- Updates ---
@@ -284,9 +300,15 @@ test("a pinned badcam row is never checked for a better camera", () => {
 test("a moved coordinate reports an applied update", () => {
 	const { state } = stateOf(
 		{ panoId: A },
-		{ panos: { [A]: meta(A), [B]: meta(B) }, coords: { "1,2": B } },
+		{
+			panos: {
+				[A]: meta(A),
+				[B]: meta(B, { date: { year: 2024, month: 1, day: 1 } }),
+			},
+			coords: { "1,2": B },
+		},
 	);
-	assert.equal(state, UPDATE_APPLIED);
+	assert.deepEqual(state, found(NEWER, false));
 });
 
 test("a pinned row on an older official capture reports an available update", () => {
@@ -301,7 +323,7 @@ test("a pinned row on an older official capture reports an available update", ()
 			},
 		},
 	);
-	assert.equal(state, UPDATE_AVAILABLE);
+	assert.deepEqual(state, found(NEWER, true));
 });
 
 test("an unpinned row on an older official capture reports it as applied", () => {
@@ -317,7 +339,7 @@ test("an unpinned row on an older official capture reports it as applied", () =>
 			coords: { "1,2": A },
 		},
 	);
-	assert.equal(state, UPDATE_APPLIED);
+	assert.deepEqual(state, found(NEWER | DEFAULT_STALE, false));
 });
 
 test("a stored pano that is not in the timeline is left alone", () => {
@@ -332,7 +354,7 @@ test("a stored pano that is not in the timeline is left alone", () => {
 			},
 		},
 	);
-	assert.equal(state, OK);
+	assert.deepEqual(state, found(NONE, true));
 });
 
 // --- Batch behaviour ---
@@ -348,9 +370,9 @@ test("every row is answered in order, once", () => {
 		coords: { "1,2": A },
 	});
 	assert.deepEqual(answers, [
-		{ id: 7, patch: OK },
-		{ id: 8, patch: NOT_FOUND },
-		{ id: 9, patch: OK },
+		{ id: 7, patch: found(NONE, false) },
+		{ id: 8, patch: found(NOT_FOUND, false) },
+		{ id: 9, patch: found(NONE, true) },
 	]);
 	assert.equal(progress, 3);
 });
@@ -370,7 +392,7 @@ test("a batch costs the same host rounds however many rows it carries", () => {
 	assert.equal(many.coordCalls.length, 40, "every row still gets its own lookup");
 	assert.deepEqual(
 		many.answers.map((a) => a.patch),
-		Array(40).fill(OK),
+		Array(40).fill(found(NONE, false)),
 	);
 });
 
@@ -387,7 +409,7 @@ test("badcam rows across a batch share one timeline round", () => {
 	assert.deepEqual(metaCalls.at(-1), [B, A], "the shared timeline is asked for once");
 	assert.deepEqual(
 		answers.map((a) => a.patch),
-		Array(5).fill(GOODCAM_AVAILABLE),
+		Array(5).fill(found(GOODCAM_AVAILABLE, false)),
 	);
 });
 

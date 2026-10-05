@@ -1,4 +1,8 @@
-import type { CameraType, Location, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
+import type {
+	CameraType,
+	Location,
+	LocationPatch_Deserialize as LocationPatch,
+} from "@/bindings.gen";
 import { normalizeLocationStorageFields } from "@/lib/sv/providers/panoIdStorage";
 
 /** Street View camera orientation (POV). */
@@ -48,16 +52,30 @@ export const enum PanoType {
 	UserUploaded = 10,
 }
 
-/** Outcome of a Street View coverage check, as `validate` answers it per row. */
-export enum ValidationState {
-	Ok = 0,
-	UpdateAvailable = 1,
-	UpdateApplied = 2,
-	NotFound = 3,
-	PanoIdBroke = 4,
-	Unofficial = 5,
-	GoodcamAvailable = 6,
-}
+/**
+ * One finding of a Street View coverage check. `validate` answers each row with the
+ * findings that apply, combined into one number.
+ */
+export const ValidationFlag = {
+	/** No findings: the location's coverage checked out. */
+	None: 0,
+	/** Official coverage newer than the location's stored pano exists. */
+	Newer: 1,
+	/** The location is pinned to a pano other than the one its coordinates load. */
+	OffDefault: 2,
+	/** The pano the location's coordinates load is not the newest capture there. */
+	DefaultStale: 4,
+	/** The location's pinned pano no longer loads, though coverage still exists at its coordinates. */
+	PanoIdBroke: 8,
+	/** The coverage the location shows is unofficial. */
+	Unofficial: 16,
+	/** The location shows bad-camera coverage, but its timeline holds a better camera capture. */
+	GoodcamAvailable: 32,
+	/** No coverage was found, neither the stored pano nor any within the search radius. */
+	NotFound: 64,
+} as const;
+
+export type ValidationFlag = (typeof ValidationFlag)[keyof typeof ValidationFlag];
 
 /** The `extra` fields an enrichment run derives for a pano, from `panoFields`. */
 export interface PanoExtra {
@@ -215,13 +233,7 @@ export type SortMode = "name" | "created" | "opened" | "amount";
 export type TagSortMode = "default" | "name" | "amount";
 
 export type WorkArea =
-	| "overview"
-	| "location"
-	| "duplicates"
-	| "import"
-	| "plugin"
-	| "providers"
-	| "diff";
+	"overview" | "location" | "duplicates" | "import" | "plugin" | "providers" | "diff";
 
 /** Hex like "#1098ad"; legacy stored prefs may hold an Open Props ramp name. */
 export type SvColor = string;

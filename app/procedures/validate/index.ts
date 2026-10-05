@@ -1,19 +1,25 @@
-// Street View coverage validation, Run shape. Port of `validateOne` in
-// app/src/lib/sv/validate.ts: metadata for the stored pano, a coordinate lookup as
-// fallback (or as the comparison when the row is not pinned), then the unofficial,
-// badcam and timeline checks. It answers with a ValidationState per row and writes
+﻿// Street View coverage validation, Run shape. Metadata for the stored pano, a coordinate
+// lookup as comparison and fallback, then the unofficial, badcam and timeline checks. It
+// answers each row with the ValidationFlags that apply and whether it is pinned, and writes
 // nothing -- the run declares the collect sink.
 //
 // The batch moves through four phases, each issuing every request it needs in one
-// `mma.fetchMany`, so a batch of any size costs a fixed number of rounds.
+// `mma.fetch`, so a batch of any size costs a fixed number of rounds.
 
 import type { Location, Update } from "@/bindings.gen";
-import { detectCameraType, fetchMetadata, indexPanos, isGoogleImagery, type FetchedMetadata } from "@/lib/sv/getMetadata";
-import { isOfficialPano, isUnofficial, newestOfficialPano } from "@/lib/sv/panoId";
+import {
+	detectCameraType,
+	fetchMetadata,
+	imageDateOf,
+	indexPanos,
+	isGoogleImagery,
+	type FetchedMetadata,
+} from "@/lib/sv/getMetadata";
+import { capturedAfter, isOfficialPano, isUnofficial, newestOfficialPano } from "@/lib/sv/panoId";
 import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
 import { panosAtCoords } from "@/lib/sv/singleImageSearch";
-import { LocationFlag, ValidationState, type Pano } from "@/types";
-
+import type { ValidationAnswer } from "@/lib/sv/validationCategories";
+import { LocationFlag, ValidationFlag, type Pano } from "@/types";
 
 interface RunConfig {
 	config?: { radius?: number } | null;
@@ -31,113 +37,86 @@ function isGoodCam(m: Pano): boolean {
 	return cam === "gen4" || cam === "gen2";
 }
 
-/** Metadata at one slot, or null when the pano is unknown or its request failed -- the
- *  two cases the JS `.catch(() => [null])` collapsed together. */
+/** Metadata at one slot, or null when the pano is unknown or its request failed. */
 function metaAt(f: FetchedMetadata, slot: number): Pano | null {
 	return slot >= 0 && f.done[slot] && !f.failed[slot] ? f.metas[slot] : null;
 }
 
-interface RowState {
-	row: Location;
-	pinned: boolean;
-	data: Pano | null;
-	coordData: Pano | null;
-	entries: Pano["time"];
-	state: ValidationState;
-	settled: boolean;
+/** The official capture `p` is not the newest in its own timeline. */
+function behindOwnTimeline(p: Pano): boolean {
+	return isOfficialPano(p.pano) && newestOfficialPano(p.time)?.pano !== p.pano;
 }
 
-export function run(rows: Location[]): Update<ValidationState>[] {
+interface RowState {
+	row: Location;
+	/** The pano the row shows: its stored pano, or the default when that does not load. */
+	data: Pano | null;
+	coordData: Pano | null;
+	pinned: boolean;
+	flags: number;
+}
+
+export function run(rows: Location[]): Update<ValidationAnswer>[] {
 	rows = rows.filter(isGoogleImagery);
 	if (rows.length === 0 || mma.aborted()) return [];
 
 	const stored = indexPanos(rows.map((r) => r.panoId ?? ""));
 	const storedMeta = fetchMetadata(stored.unique);
 	if (mma.aborted()) return [];
-
-	const items: RowState[] = rows.map((row, i) => ({
-		row,
-		pinned: (row.flags & LocationFlag.LoadAsPanoId) !== 0,
-		data: metaAt(storedMeta, stored.slot[i]),
-		coordData: null,
-		entries: [],
-		state: ValidationState.Ok,
-		settled: false,
-	}));
-
-	// A pinned row keeps its stored pano when it resolves; every other row needs the
-	// coordinate, as a fallback when pinned and as the comparison when not.
-	const needCoord = items.filter((it) => !it.pinned || it.data === null);
-	// The search answers their metadata too, so there is no second lookup.
-	const coordPanos =
-		needCoord.length > 0
-			? panosAtCoords(
-					needCoord.map((it) => it.row),
-					radius,
-				)
-			: [];
+	// The search answers the default's metadata too, so there is no second lookup.
+	const coordPanos = panosAtCoords(rows, radius);
 	if (mma.aborted()) return [];
 
-	needCoord.forEach((it, i) => {
-		const m = coordPanos[i];
-		if (!it.pinned) {
-			it.coordData = m;
-			return;
+	const items: RowState[] = rows.map((row, i) => {
+		const storedPano = metaAt(storedMeta, stored.slot[i]);
+		const coordData = coordPanos[i] ?? null;
+		const pinned = (row.flags & LocationFlag.LoadAsPanoId) !== 0;
+		let flags: number = ValidationFlag.None;
+		if (pinned && storedPano === null && coordData !== null) flags |= ValidationFlag.PanoIdBroke;
+		if (pinned && storedPano !== null && coordData !== null && storedPano.pano !== coordData.pano) {
+			flags |= ValidationFlag.OffDefault;
 		}
-		// Pinned to a pano: a broken one is worth reporting, but the coordinate still
-		// decides whether there is coverage at all.
-		if (it.row.panoId) it.state = ValidationState.PanoIdBroke;
-		it.data = m;
+		if (coordData !== null && !isUnofficial(coordData) && behindOwnTimeline(coordData)) {
+			flags |= ValidationFlag.DefaultStale;
+		}
+		return { row, data: storedPano ?? coordData, coordData, pinned, flags };
 	});
 
-	const badcam: RowState[] = [];
+	const checked: RowState[] = [];
 	for (const it of items) {
-		if (it.data === null) it.data = it.coordData;
-		if (it.data === null) {
-			it.state = ValidationState.NotFound;
-			it.settled = true;
-		} else if (isUnofficial(it.data)) {
-			it.state = ValidationState.Unofficial;
-			it.settled = true;
-		} else {
-			it.entries = it.data.time;
-			if (!it.pinned && detectCameraType(it.data) === "badcam") badcam.push(it);
-		}
+		if (it.data === null) it.flags = ValidationFlag.NotFound;
+		else if (isUnofficial(it.data)) it.flags |= ValidationFlag.Unofficial;
+		else checked.push(it);
 	}
 
-	const cams = indexPanos(badcam.flatMap((it) => it.entries.map((e) => e.pano)));
+	const badcam = checked.filter((it) => detectCameraType(it.data!) === "badcam");
+	const cams = indexPanos(badcam.flatMap((it) => it.data!.time.map((e) => e.pano)));
 	const camMeta = fetchMetadata(cams.unique);
 	if (mma.aborted()) return [];
 
 	let at = 0;
 	for (const it of badcam) {
 		let better = false;
-		for (let k = 0; k < it.entries.length; k++) {
+		for (let k = 0; k < it.data!.time.length; k++) {
 			const m = metaAt(camMeta, cams.slot[at++]);
 			if (m && isGoodCam(m)) better = true;
 		}
-		if (better) {
-			it.state = ValidationState.GoodcamAvailable;
-			it.settled = true;
-		}
+		if (better) it.flags |= ValidationFlag.GoodcamAvailable;
 	}
 
-	for (const it of items) {
-		if (it.settled || it.data === null) continue;
-		// Only set when the row is not pinned, so this is the "the coordinate moved" case.
-		if (it.coordData !== null && it.coordData.pano !== it.data.pano) {
-			it.state = ValidationState.UpdateApplied;
-			continue;
-		}
-		// The stored pano is a known official capture, but not the newest one.
-		const storedIsOfficial = it.entries.some(
-			(e) => e.pano === it.row.panoId && isOfficialPano(e.pano),
-		);
-		if (storedIsOfficial && newestOfficialPano(it.entries)?.pano !== it.row.panoId) {
-			it.state = it.pinned ? ValidationState.UpdateAvailable : ValidationState.UpdateApplied;
-		}
+	for (const it of checked) {
+		const data = it.data!;
+		// Only newer official coverage counts: the nearest hit can be a photosphere, an
+		// adjacent road, or a default lagging behind the stored pano.
+		const defaultNewer =
+			it.coordData !== null &&
+			!isUnofficial(it.coordData) &&
+			it.coordData.pano !== data.pano &&
+			capturedAfter({ imageDate: imageDateOf(it.coordData) }, { imageDate: imageDateOf(data) });
+		const storedBehind = data.pano === it.row.panoId && behindOwnTimeline(data);
+		if (defaultNewer || storedBehind) it.flags |= ValidationFlag.Newer;
 	}
 
 	mma.progress(items.length);
-	return items.map((it) => ({ id: it.row.id, patch: it.state }));
+	return items.map((it) => ({ id: it.row.id, patch: { flags: it.flags, pinned: it.pinned } }));
 }

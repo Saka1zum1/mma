@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { LocationFlag } from "@/types";
 import type { Location } from "@/types";
-import { ValidationState } from "@/store/selections";
+import { ValidationFlag } from "@/types";
 
 vi.mock("@/lib/sv/svMeta", () => ({ fetchSvMetadata: vi.fn() }));
 vi.mock("@/lib/sv/lookup", async () => {
@@ -11,6 +11,8 @@ vi.mock("@/lib/sv/lookup", async () => {
 });
 
 import { validateOne } from "@/lib/sv/validate";
+
+const answer = (flags: number, pinned: boolean) => ({ flags, pinned });
 import { fetchSvMetadata } from "@/lib/sv/svMeta";
 import { getPanoAtCoords } from "@/lib/sv/lookup";
 
@@ -72,7 +74,7 @@ describe("timeline check scans official coverage (fix #1)", () => {
 				],
 			}),
 		]);
-		expect(await validateOne(pinned(OFFICIAL_OLD))).toBe(ValidationState.UpdateAvailable);
+		expect(await validateOne(pinned(OFFICIAL_OLD))).toEqual(answer(ValidationFlag.Newer, true));
 	});
 
 	it("pinned official pano that IS the newest in its timeline -> Ok", async () => {
@@ -85,21 +87,21 @@ describe("timeline check scans official coverage (fix #1)", () => {
 				],
 			}),
 		]);
-		expect(await validateOne(pinned(OFFICIAL_NEW))).toBe(ValidationState.Ok);
+		expect(await validateOne(pinned(OFFICIAL_NEW))).toEqual(answer(ValidationFlag.None, true));
 	});
 });
 
 describe("Unofficial reuses the app-wide isUnofficial heuristic (fix #2)", () => {
 	it("a long-id (user-uploaded) pano -> Unofficial", async () => {
 		mockFetch.mockResolvedValue([pano({ pano: UNOFFICIAL })]);
-		expect(await validateOne(pinned(UNOFFICIAL))).toBe(ValidationState.Unofficial);
+		expect(await validateOne(pinned(UNOFFICIAL))).toEqual(answer(ValidationFlag.Unofficial, true));
 	});
 
 	it("a 22-char official pano is not Unofficial", async () => {
 		mockFetch.mockResolvedValue([pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] })]);
 		const result = await validateOne(pinned(OFFICIAL_OLD));
-		expect(result).not.toBe(ValidationState.Unofficial);
-		expect(result).toBe(ValidationState.Ok);
+		expect(result.flags & ValidationFlag.Unofficial).toBe(0);
+		expect(result).toEqual(answer(ValidationFlag.None, true));
 	});
 });
 
@@ -115,7 +117,7 @@ describe("coord-based locations (not pinned): UpdateApplied vs Ok", () => {
 				time: [{ pano: OFFICIAL_NEW }],
 			}),
 		});
-		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.UpdateApplied);
+		expect(await validateOne(coord(OFFICIAL_OLD))).toEqual(answer(ValidationFlag.Newer, false));
 	});
 
 	it("a different pano at the same image date is not an update", async () => {
@@ -124,7 +126,7 @@ describe("coord-based locations (not pinned): UpdateApplied vs Ok", () => {
 			[OFFICIAL_OLD]: pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] }),
 			[OFFICIAL_NEW]: pano({ pano: OFFICIAL_NEW, time: [{ pano: OFFICIAL_NEW }] }),
 		});
-		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.Ok);
+		expect(await validateOne(coord(OFFICIAL_OLD))).toEqual(answer(ValidationFlag.None, false));
 	});
 
 	it("stored pano not newest in its own timeline -> UpdateApplied", async () => {
@@ -139,13 +141,15 @@ describe("coord-based locations (not pinned): UpdateApplied vs Ok", () => {
 				],
 			}),
 		});
-		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.UpdateApplied);
+		expect(await validateOne(coord(OFFICIAL_OLD))).toEqual(
+			answer(ValidationFlag.Newer | ValidationFlag.DefaultStale, false),
+		);
 	});
 
 	it("current and newest at the coordinate -> Ok", async () => {
 		mockCoords.mockResolvedValue(OFFICIAL_OLD);
 		byId({ [OFFICIAL_OLD]: pano({ pano: OFFICIAL_OLD, time: [{ pano: OFFICIAL_OLD }] }) });
-		expect(await validateOne(coord(OFFICIAL_OLD))).toBe(ValidationState.Ok);
+		expect(await validateOne(coord(OFFICIAL_OLD))).toEqual(answer(ValidationFlag.None, false));
 	});
 });
 
@@ -154,13 +158,15 @@ describe("pinned pano resolution failures", () => {
 		mockCoords.mockResolvedValue(OFFICIAL_NEW);
 		// OFFICIAL_OLD absent from the fixture, so its fetch resolves null (broken).
 		byId({ [OFFICIAL_NEW]: pano({ pano: OFFICIAL_NEW, time: [{ pano: OFFICIAL_NEW }] }) });
-		expect(await validateOne(pinned(OFFICIAL_OLD))).toBe(ValidationState.PanoIdBroke);
+		expect(await validateOne(pinned(OFFICIAL_OLD))).toEqual(
+			answer(ValidationFlag.PanoIdBroke, true),
+		);
 	});
 
 	it("pinned pano fails and the coordinate has no coverage -> NotFound (beats PanoIdBroke)", async () => {
 		mockCoords.mockResolvedValue(null);
 		byId({});
-		expect(await validateOne(pinned(OFFICIAL_OLD))).toBe(ValidationState.NotFound);
+		expect(await validateOne(pinned(OFFICIAL_OLD))).toEqual(answer(ValidationFlag.NotFound, true));
 	});
 });
 
@@ -168,7 +174,7 @@ describe("NotFound and GoodcamAvailable", () => {
 	it("bare coord location with no coverage -> NotFound", async () => {
 		mockCoords.mockResolvedValue(null);
 		byId({});
-		expect(await validateOne(coord())).toBe(ValidationState.NotFound);
+		expect(await validateOne(coord())).toEqual(answer(ValidationFlag.NotFound, false));
 	});
 
 	it("coord resolves to badcam with a better camera in the timeline -> GoodcamAvailable", async () => {
@@ -181,6 +187,8 @@ describe("NotFound and GoodcamAvailable", () => {
 			}),
 			[GOODCAM]: pano({ pano: GOODCAM, cameraType: "gen4" }),
 		});
-		expect(await validateOne(coord())).toBe(ValidationState.GoodcamAvailable);
+		expect(await validateOne(coord())).toEqual(
+			answer(ValidationFlag.GoodcamAvailable | ValidationFlag.DefaultStale, false),
+		);
 	});
 });

@@ -36,8 +36,11 @@ import {
 	fieldPatch,
 	extraKeysOf,
 } from "@/lib/data/fieldOps";
-import { ValidationState } from "@/store/selections";
 import { validateLocations } from "@/lib/sv/validate";
+import {
+	STANDARD_VALIDATION_CATEGORIES,
+	VALIDATION_CATEGORIES,
+} from "@/lib/sv/validationCategories";
 import { enrichAll, type EnrichResult } from "@/lib/sv/enrich";
 import { getEnrichFieldOptions, getDefaultEnrichKeys, isFieldEnabled } from "@/lib/data/fieldDefs";
 import { bulkPinToPano } from "@/lib/sv/pinPano";
@@ -105,50 +108,48 @@ interface SetupProps {
 // Setup components — each produces a BulkRunner closure
 // ---------------------------------------------------------------------------
 
-function ValidateSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
-	const [checkPinned, setCheckPinned] = useState(true);
-	const pinned = scopedLocs.filter((l) => isPinnedToPano(l)).length;
+function ValidateSetup({ scopeCtl, onReady }: SetupProps) {
+	const [asked, setAsked] = useState<ReadonlySet<string>>(
+		() => new Set(STANDARD_VALIDATION_CATEGORIES),
+	);
+	const toggle = (key: string, on: boolean) =>
+		setAsked((prev) => {
+			const next = new Set(prev);
+			if (on) next.add(key);
+			else next.delete(key);
+			return next;
+		});
 	return (
 		<div className="bulk-operation">
 			<SelectorPicker ctl={scopeCtl} />
-			{pinned > 0 && (
-				<label className="bulk-operation__option">
-					<Checkbox checked={checkPinned} onChange={(e) => setCheckPinned(e.target.checked)} />
-					{t("Check pinned locations for newer coverage")}
+			{VALIDATION_CATEGORIES.map((c) => (
+				<label className="bulk-operation__option" key={c.key}>
+					<Checkbox checked={asked.has(c.key)} onChange={(e) => toggle(c.key, e.target.checked)} />
+					{t(c.label)}
 				</label>
-			)}
+			))}
 			<div className="bulk-operation__actions">
 				<Button
 					variant="primary"
+					disabled={asked.size === 0}
 					onClick={() =>
 						onReady(async ({ locations, signal, onProgress }) => {
 							const results = await validateLocations(locations, {
 								signal,
 								onProgress: (p) =>
 									onProgress(Math.round(p.progress * locations.length), locations.length),
-								config: { checkPinned },
+								categories: [...asked],
 							});
-							const stateOrder = [
-								ValidationState.Ok,
-								ValidationState.UpdateAvailable,
-								ValidationState.UpdateApplied,
-								ValidationState.GoodcamAvailable,
-								ValidationState.PanoIdBroke,
-								ValidationState.Unofficial,
-								ValidationState.NotFound,
-							];
-							const batch = stateOrder
-								.filter((state) => (results.get(state)?.length ?? 0) > 0)
-								.map((state) => ({
-									type: "ValidationState" as const,
-									locations: results.get(state)!.map((l) => l.id),
-									state,
-								}));
+							const batch = [...results.categories].map(([category, ids]) => ({
+								type: "ValidationState" as const,
+								locations: ids,
+								category,
+							}));
 							if (batch.length > 0) addSelections(batch);
 							const failed = [
-								...(results.get(ValidationState.NotFound) ?? []),
-								...(results.get(ValidationState.PanoIdBroke) ?? []),
-							].map((l) => l.id);
+								...(results.categories.get("notFound") ?? []),
+								...(results.categories.get("panoIdBroke") ?? []),
+							];
 							return {
 								outcome: { succeeded: locations.length - failed.length, failed },
 								doneMessage: t(
@@ -538,8 +539,7 @@ function SetFieldSetup({ locs, scopeCtl, onReady }: SetupProps) {
 										{ n: updates.length },
 									) +
 									(skipped.length > 0
-										? " " +
-											t("{n} skipped (missing source fields).", { n: skipped.length })
+										? " " + t("{n} skipped (missing source fields).", { n: skipped.length })
 										: "");
 								return {
 									outcome: { succeeded: updates.length, failed: skipped },
@@ -708,7 +708,10 @@ function DownloadPanoramasSetup({ scopeCtl, scopedLocs, onReady }: SetupProps) {
 								doneMessage:
 									t("Done -- {n} downloaded", { n: result.succeeded.length }) +
 									(result.failed.length > 0
-										? t({ one: ", {n} failed.", other: ", {n} failed." }, { n: result.failed.length })
+										? t(
+												{ one: ", {n} failed.", other: ", {n} failed." },
+												{ n: result.failed.length },
+											)
 										: "."),
 								doneActions: <DownloadDoneActions result={result} initiallySaved={saved} />,
 							};
@@ -990,13 +993,7 @@ function startBulkRun(operation: BulkOperation, runner: BulkRunner, target: Sele
 // Progress — shows the module-level run for this operation
 // ---------------------------------------------------------------------------
 
-function BulkProgress({
-	operation,
-	onClose,
-}: {
-	operation: BulkOperation;
-	onClose: () => void;
-}) {
+function BulkProgress({ operation, onClose }: { operation: BulkOperation; onClose: () => void }) {
 	const run = useEventValue("bulkruns:changed", getBulkRuns).get(operation);
 
 	useEffect(() => {
@@ -1005,8 +1002,7 @@ function BulkProgress({
 	}, [operation]);
 
 	if (!run) return null;
-	const { status, progress, total, done, rate, elapsed, parts, providerRates, error, result } =
-		run;
+	const { status, progress, total, done, rate, elapsed, parts, providerRates, error, result } = run;
 	const pct = Math.round(progress * 100);
 
 	return (
@@ -1084,8 +1080,7 @@ function BulkProgress({
 								done: fmt.format(done),
 								total: fmt.format(total),
 								pct,
-							}) +
-								(rate != null ? t(" -- {rate}/s", { rate: fmt.format(Math.round(rate)) }) : "")}
+							}) + (rate != null ? t(" -- {rate}/s", { rate: fmt.format(Math.round(rate)) }) : "")}
 						</span>
 						<Button onClick={onClose}>{t("Continue in background")}</Button>
 						<Button variant="destructive" onClick={() => run.controller.abort()}>

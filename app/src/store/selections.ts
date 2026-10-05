@@ -15,8 +15,7 @@ import { shortestUniqueSuffixes } from "@/components/editor/tags/tagTreeRange";
 import { subscribe } from "@/lib/events";
 
 import type { Selection, Selector } from "@/bindings.gen";
-import { ValidationState } from "@/types";
-export { ValidationState };
+import { validationCategory } from "@/lib/sv/validationCategories";
 
 /** Variants that wrap children — derived as exactly those carrying a `selections` array. */
 export type CompositeType = Extract<Selector, { selections: Selection[] }>["type"];
@@ -124,7 +123,7 @@ function keyForSelector(selector: Selector, locations: number[]): string {
 		.with({ type: "Uncommitted" }, () => "uncommitted")
 		.with({ type: "Duplicates" }, (p) => `duplicates:${p.distance}`)
 		.with({ type: "Manual" }, () => "manual")
-		.with({ type: "ValidationState" }, (p) => `validation:${p.state}`)
+		.with({ type: "ValidationState" }, (p) => `validation:${p.category}`)
 		.with({ type: "Reviewed" }, (p) => `review:${p.sessionId}:${p.mode}`)
 		.with({ type: "Intersection" }, (p) => p.selections.map((s) => `(${s.key})`).join("^"))
 		.with({ type: "Union" }, (p) => p.selections.map((s) => `(${s.key})`).join("|"))
@@ -134,7 +133,10 @@ function keyForSelector(selector: Selector, locations: number[]): string {
 			(p) =>
 				`filter:${p.field}:${p.op}:${String(p.value)}${p.value2 != null ? `:${String(p.value2)}` : ""}${p.tzLocal ? ":local" : ""}`,
 		)
-		.with({ type: "Ranked" }, (p) => `ranked:${p.expr}:${p.k}:${p.ascending}:${p.selection?.key ?? ""}`)
+		.with(
+			{ type: "Ranked" },
+			(p) => `ranked:${p.expr}:${p.k}:${p.ascending}:${p.selection?.key ?? ""}`,
+		)
 		.exhaustive();
 }
 
@@ -575,7 +577,10 @@ export function selectionDisplayName(sel: Selection, tagNames?: Record<number, s
 		.with({ type: "Uncommitted" }, () => t("Uncommitted"))
 		.with({ type: "Duplicates" }, (p) => t("Duplicates ({distance}m)", { distance: p.distance }))
 		.with({ type: "Manual" }, () => t("Manual selection"))
-		.with({ type: "ValidationState" }, (p) => t(validationStateLabel(p.state)))
+		.with({ type: "ValidationState" }, (p) => {
+			const label = validationCategory(p.category)?.label;
+			return label ? t(label) : p.category;
+		})
 		.with({ type: "Reviewed" }, (p) => (p.mode === "unreviewed" ? t("Unreviewed") : t("Reviewed")))
 		.with({ type: "Intersection" }, () => t("Intersection"))
 		.with({ type: "Union" }, () => t("Union"))
@@ -657,26 +662,6 @@ function tagDisplayName(tagId: number, tagNames?: Record<number, string>): strin
 	if (name != null) return displayTagName(name);
 	// Not a tag on this map: a saved rule still knows what it was called where it was saved.
 	return tagNames?.[tagId] ?? String(tagId);
-}
-
-/** English source strings -- callers translate. */
-function validationStateLabel(state: ValidationState): string {
-	switch (state) {
-		case ValidationState.Ok:
-			return msg("Valid location");
-		case ValidationState.UpdateAvailable:
-			return msg("Newer coverage available");
-		case ValidationState.UpdateApplied:
-			return msg("Coverage updated since last view");
-		case ValidationState.NotFound:
-			return msg("Not found");
-		case ValidationState.PanoIdBroke:
-			return msg("Pano ID broke");
-		case ValidationState.Unofficial:
-			return msg("Unofficial");
-		case ValidationState.GoodcamAvailable:
-			return msg("Badcam, but good coverage available");
-	}
 }
 
 export function setSelectionColors(
