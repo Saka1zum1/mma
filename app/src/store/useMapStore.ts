@@ -7,7 +7,21 @@ import {
 	locId,
 	applyLocationPatch,
 } from "@/types";
-import type { Location, MapData, MapMeta, MapSettings, Tag, ExtraFieldDef, StoreStatus, StoreWarning, Selector, FieldOp, FieldOpResult, Selection } from "@/bindings.gen";
+import type {
+	Location,
+	MapData,
+	MapMeta,
+	MapSettings,
+	Tag,
+	ExtraFieldDef,
+	StoreStatus,
+	StoreWarning,
+	Selector,
+	FieldOp,
+	FieldOpResult,
+	Selection,
+	CountBy,
+} from "@/bindings.gen";
 import { listen } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
 import type {
@@ -386,8 +400,17 @@ export function countBy(
 	selector: Selector,
 	field: string,
 	key: KeySpec,
-): Promise<[string, number][]> {
-	return cmd.storeCountBy(selector, field, key);
+): Promise<[string, number][]>;
+/** Group each field by a derived key and count, one result per field, in one pass. */
+export function countBy(selector: Selector, fields: string[], key: KeySpec): Promise<CountBy[]>;
+export async function countBy(
+	selector: Selector,
+	fieldOrFields: string | string[],
+	key: KeySpec,
+): Promise<[string, number][] | CountBy[]> {
+	const fields = typeof fieldOrFields === "string" ? [fieldOrFields] : fieldOrFields;
+	const rows = await cmd.storeCountBy(selector, fields, key);
+	return typeof fieldOrFields === "string" ? (rows[0]?.counts ?? []) : rows;
 }
 
 /** How many locations carry each `extra` key, key-sorted. */
@@ -450,6 +473,7 @@ async function patchMapMeta(id: string, patch: MapMetaPatch) {
 		if (patch.folder !== undefined) meta.folder = patch.folder;
 		if (patch.settings != null) {
 			// MapMetaPatch_Deserialize carries partial settings; merge onto the live map.
+			// The command replaces the stored JSON, so the write below sends this merge.
 			meta.settings = {
 				...meta.settings,
 				...patch.settings,
@@ -457,7 +481,12 @@ async function patchMapMeta(id: string, patch: MapMetaPatch) {
 					...meta.settings.providers,
 					...patch.settings.providers,
 				},
+				pluginData: {
+					...meta.settings.pluginData,
+					...patch.settings.pluginData,
+				},
 			} as MapSettings;
+			patch = { ...patch, settings: meta.settings };
 		}
 		if (patch.scoreBounds != null) meta.scoreBounds = patch.scoreBounds;
 		if (patch.extra != null) meta.extra = patch.extra;
@@ -841,9 +870,7 @@ export async function selectRandomFromSelection(
 	perSelection = false,
 ): Promise<number> {
 	const buckets = await Promise.all(
-		pickBuckets(perSelection).map((selector) =>
-			sampleFrom(selector ?? currentSelection(), count),
-		),
+		pickBuckets(perSelection).map((selector) => sampleFrom(selector ?? currentSelection(), count)),
 	);
 	const picked = [...new Set(buckets.flat())];
 	if (picked.length === 0) return 0;
@@ -896,11 +923,7 @@ export async function mergeDuplicates(distance: number) {
 export async function pruneDuplicates(selector: Selector, distance: number): Promise<number> {
 	if (!state.map) return 0;
 	const r = await mutate(() =>
-		cmd.storePruneDuplicates(
-			selector,
-			distance,
-			state.map?.meta.settings.duplicateScore ?? null,
-		),
+		cmd.storePruneDuplicates(selector, distance, state.map?.meta.settings.duplicateScore ?? null),
 	);
 	return r.delta.removed.length;
 }

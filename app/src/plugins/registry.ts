@@ -6,6 +6,7 @@ import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
 import type { PluginManifest } from "@/bindings.gen";
 import { getLocal, setLocal } from "@/lib/hooks/useLocalStorage";
+import { getMapState, updateMapMeta } from "@/store/useMapStore";
 import { toast } from "@/lib/util/toast";
 import { t } from "@/lib/i18n";
 import devRegistry from "../../../plugins/registry.json";
@@ -285,6 +286,62 @@ export function createPluginStorage(id: string): PluginStorage {
 
 /** Alias used by plugins as `MMA.storage`. */
 export const storage = createPluginStorage;
+
+/** A plugin's store in the open map. Writes resolve once they are saved. */
+export interface MapPluginStorage {
+	get<T = unknown>(key: string, fallback?: T): T;
+	set(key: string, value: unknown): Promise<void>;
+	remove(key: string): Promise<void>;
+	keys(): string[];
+}
+
+let mapPluginWrite: Promise<unknown> = Promise.resolve();
+
+function requireOpenMapSettings() {
+	const map = getMapState().map;
+	if (!map) throw new Error("No map is open");
+	return map.meta.settings;
+}
+
+function updateMapPluginStore(
+	id: string,
+	mutate: (data: Record<string, unknown>) => void,
+): Promise<void> {
+	const run = mapPluginWrite.then(async () => {
+		const settings = requireOpenMapSettings();
+		const data = { ...(settings.pluginData?.[id] ?? {}) };
+		mutate(data);
+		const pluginData = { ...settings.pluginData };
+		if (Object.keys(data).length > 0) pluginData[id] = data;
+		else delete pluginData[id];
+		await updateMapMeta({ settings: { ...settings, pluginData } });
+	});
+	mapPluginWrite = run.then(
+		() => undefined,
+		() => undefined,
+	);
+	return run;
+}
+
+/** Persistent key-value storage a plugin keeps with the open map, so every map has its own.
+ *  Throws when no map is open. */
+export function mapStorage(id: string): MapPluginStorage {
+	return {
+		get<T = unknown>(key: string, fallback?: T): T {
+			const data = requireOpenMapSettings().pluginData?.[id] ?? {};
+			return (key in data ? data[key] : fallback) as T;
+		},
+		set: (key, value) =>
+			updateMapPluginStore(id, (data) => {
+				data[key] = value;
+			}),
+		remove: (key) =>
+			updateMapPluginStore(id, (data) => {
+				delete data[key];
+			}),
+		keys: () => Object.keys(requireOpenMapSettings().pluginData?.[id] ?? {}),
+	};
+}
 
 /** useState persisted through the plugin's namespaced store. UI state saved this
  *  way survives sidebar unmount and app restart. Values are global, not per-map —

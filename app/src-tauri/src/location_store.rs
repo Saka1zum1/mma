@@ -3583,6 +3583,55 @@ pub async fn store_save_dirty(
     Ok(SaveResult { saved_bytes: size })
 }
 
+/// Write an open map's uncommitted overlay and tags to disk. No-op when the map
+/// is not open or nothing is dirty. Used before copying so the copy includes edits.
+pub(crate) fn flush_open_map(state: &StoreState, id: &str) -> AppResult<()> {
+    let (delta_data, alive, tags_json, rev, pending) = {
+        let mut mgr = state.lock()?;
+        let Some(store) = mgr.stores.get_mut(id) else {
+            return Ok(());
+        };
+        if !store.overlay.dirty && !store.tags.dirty {
+            return Ok(());
+        }
+        let delta_data = store
+            .overlay
+            .dirty
+            .then(|| overlay_delta_bytes(store))
+            .transpose()?;
+        let tags_json = if store.tags.dirty {
+            store.tags.dirty = false;
+            Some(serialize_tags_json(&store.tags.all))
+        } else {
+            None
+        };
+        (
+            delta_data,
+            store.alive_count,
+            tags_json,
+            store.overlay.rev,
+            store.overlay_diff_counts(),
+        )
+    };
+    let wrote_delta = delta_data.is_some();
+    let wrote_tags = tags_json.is_some();
+    let result = persist_dirty(id, delta_data, alive, tags_json, pending);
+    if result.is_err() && wrote_tags {
+        if let Some(store) = state.lock()?.stores.get_mut(id) {
+            store.tags.dirty = true;
+        }
+    }
+    result?;
+    if wrote_delta {
+        if let Some(store) = state.lock()?.stores.get_mut(id) {
+            if store.overlay.rev == rev {
+                store.overlay.dirty = false;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Lightweight status query: location count, version, and dirty flag.
 #[tauri::command]
 #[specta::specta]
@@ -3733,10 +3782,7 @@ pub(crate) fn bake_and_save(store: &mut Store, map_id: &str) -> AppResult<()> {
         store.batch = Some(batch);
         store.mmap_handle = Some(handle);
     }
-    log::debug!(
-        "[bake_and_save] write+remmap={:.0}ms",
-        t_write.as_millis()
-    );
+    log::debug!("[bake_and_save] write+remmap={:.0}ms", t_write.as_millis());
     let count = store.batch.as_ref().map_or(0, |b| b.num_rows());
     let conn = storage::open_db()?;
     storage::set_map_counts(&conn, map_id, count, (0, 0, 0))?;
@@ -4483,11 +4529,11 @@ pub fn store_count_by(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     selector: Selector,
-    field: String,
+    fields: Vec<String>,
     key: selections::KeySpec,
-) -> AppResult<Vec<(String, u32)>> {
-    selector_read!(webview, state, selector, |view, set| selections::count_by(
-        &view, &field, &key, set
+) -> AppResult<Vec<selections::CountBy>> {
+    selector_read!(webview, state, selector, |view, set| {
+        selections::count_by_fields(&view, &fields, &key, set)
     ))
 }
 

@@ -10,7 +10,7 @@ use crate::storage;
 use crate::types::AppResult;
 use crate::types::Tag;
 use crate::util::now_iso;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,8 @@ pub struct MapKeyBinding {
 #[serde(default, rename_all = "camelCase")]
 pub struct VirtualTag {
     pub color: Option<String>,
+    /// Place among the tag order. Empty folders have no tags to borrow an order from.
+    pub order: Option<f64>,
 }
 
 /// Per-provider Street View settings (coverage overlay + click behavior).
@@ -241,6 +243,9 @@ pub struct MapSettings {
     pub review_order: Option<String>,
     /// Alternate Street View providers (Apple Look Around, …).
     pub providers: ProvidersSettings,
+    /// What each plugin keeps with this map, by plugin id and then key.
+    #[specta(type = HashMap<String, HashMap<String, specta_typescript::Unknown>>)]
+    pub plugin_data: HashMap<String, HashMap<String, serde_json::Value>>,
 }
 
 /// Canonical default map settings.
@@ -267,6 +272,7 @@ impl Default for MapSettings {
             duplicate_score: None,
             review_order: None,
             providers: ProvidersSettings::default(),
+            plugin_data: HashMap::new(),
         }
     }
 }
@@ -274,6 +280,109 @@ impl Default for MapSettings {
 /// Serialized default settings JSON for a new map row.
 pub fn default_settings_json() -> String {
     serde_json::to_string(&MapSettings::default()).expect("MapSettings serializes")
+}
+
+/// Settings that travel to every new map. Bindings, tag folders, aliases, and plugin
+/// data stay with the map they were written on.
+const PORTABLE_SETTINGS: &[&str] = &[
+    "pointAlongRoad",
+    "preferDirection",
+    "preferOfficial",
+    "preferHigherQuality",
+    "onlyOfficial",
+    "cameraTypes",
+    "defaultPanoId",
+    "exportZoom",
+    "exportUnpanned",
+    "exportExtras",
+    "exportShape",
+    "searchRadius",
+    "enrichMetadata",
+    "enrichFields",
+    "duplicateScore",
+    "reviewOrder",
+    "providers",
+];
+
+fn portable_settings(
+    settings: &MapSettings,
+) -> AppResult<serde_json::Map<String, serde_json::Value>> {
+    let value = serde_json::to_value(settings)?;
+    let obj = value.as_object().cloned().unwrap_or_default();
+    let mut out = serde_json::Map::new();
+    for key in PORTABLE_SETTINGS {
+        if let Some(v) = obj.get(*key) {
+            out.insert((*key).to_string(), v.clone());
+        }
+    }
+    Ok(out)
+}
+
+fn load_map_defaults(
+    conn: &Connection,
+) -> rusqlite::Result<Option<serde_json::Map<String, serde_json::Value>>> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT preferences FROM map_defaults WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(json.and_then(|json| {
+        serde_json::from_str::<serde_json::Value>(&json)
+            .ok()
+            .and_then(|v| v.as_object().cloned())
+    }))
+}
+
+fn settings_with_defaults(conn: &Connection) -> AppResult<MapSettings> {
+    let mut value = serde_json::to_value(MapSettings::default())?;
+    if let Some(saved) = load_map_defaults(conn)? {
+        if let Some(obj) = value.as_object_mut() {
+            for (k, v) in saved {
+                if PORTABLE_SETTINGS.contains(&k.as_str()) {
+                    obj.insert(k, v);
+                }
+            }
+        }
+    }
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// The preferences new maps start from, or `null` when they start from the factory defaults.
+#[tauri::command]
+#[specta::specta]
+pub async fn store_get_map_defaults() -> AppResult<Option<MapSettings>> {
+    storage::with_db(|conn| {
+        Ok(load_map_defaults(conn)?
+            .map(|_| settings_with_defaults(conn))
+            .transpose()?)
+    })
+    .await
+}
+
+/// Set the preferences new maps start from; `null` restores the factory defaults.
+/// Maps that already exist keep their own. Only the portable settings are kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn store_set_map_defaults(settings: Option<MapSettings>) -> AppResult<()> {
+    storage::with_db(move |conn| {
+        match settings {
+            Some(settings) => {
+                let json = serde_json::to_string(&portable_settings(&settings)?)?;
+                conn.execute(
+                    "INSERT INTO map_defaults (id, preferences) VALUES (1, ?1)
+                     ON CONFLICT(id) DO UPDATE SET preferences = excluded.preferences",
+                    params![json],
+                )?;
+            }
+            None => {
+                conn.execute("DELETE FROM map_defaults WHERE id = 1", [])?;
+            }
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Type discriminant for `Location.extra` field definitions.
@@ -724,14 +833,71 @@ pub async fn store_create_map(name: String, folder: Option<String>) -> AppResult
     storage::with_db(move |conn| {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_iso();
+        let settings = serde_json::to_string(&settings_with_defaults(conn)?)?;
         conn.execute(
             "INSERT INTO maps (id, name, folder, settings, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, name, folder, default_settings_json(), now, now],
+            params![id, name, folder, settings, now, now],
         )?;
 
         let meta = conn.query_row("SELECT * FROM maps WHERE id = ?1", params![id], |row| {
             row_to_map_meta(row)
         })?;
+        Ok(MapData { meta })
+    })
+    .await
+}
+
+/// Copy a map, uncommitted edits included, into a new map named `name`. Version history,
+/// edit history, sync links, and review sessions stay with the original.
+#[tauri::command]
+#[specta::specta]
+pub async fn store_duplicate_map(
+    state: tauri::State<'_, StoreState>,
+    id: String,
+    name: String,
+) -> AppResult<MapData> {
+    crate::location_store::flush_open_map(&state, &id)?;
+    let copy_id = uuid::Uuid::new_v4().to_string();
+    storage::with_db(move |conn| {
+        let now = now_iso();
+        let copied = conn.execute(
+            "INSERT INTO maps (
+                id, name, description, folder, settings, score_bounds, extra, tags, labels,
+                location_count, pending_added, pending_removed, pending_modified,
+                created_at, updated_at
+             )
+             SELECT ?1, ?2, description, folder, settings, score_bounds, extra, tags, labels,
+                location_count, pending_added, pending_removed, pending_modified, ?3, ?3
+             FROM maps WHERE id = ?4",
+            params![copy_id, name, now, id],
+        )?;
+        if copied == 0 {
+            return Err(format!("no map {id} to copy").into());
+        }
+        let copy_arrow = storage::arrow_path(&copy_id)?;
+        let copy_delta = storage::arrow_delta_path(&copy_id)?;
+        let copied_files = (|| -> AppResult<()> {
+            let src_arrow = storage::arrow_path(&id)?;
+            if src_arrow.exists() {
+                std::fs::copy(&src_arrow, &copy_arrow)?;
+            }
+            let src_delta = storage::arrow_delta_path(&id)?;
+            if src_delta.exists() {
+                std::fs::copy(&src_delta, &copy_delta)?;
+            }
+            Ok(())
+        })();
+        if let Err(e) = copied_files {
+            let _ = conn.execute("DELETE FROM maps WHERE id = ?1", params![copy_id]);
+            let _ = std::fs::remove_file(&copy_arrow);
+            let _ = std::fs::remove_file(&copy_delta);
+            return Err(e);
+        }
+        let meta = conn.query_row(
+            "SELECT * FROM maps WHERE id = ?1",
+            params![copy_id],
+            |row| row_to_map_meta(row),
+        )?;
         Ok(MapData { meta })
     })
     .await

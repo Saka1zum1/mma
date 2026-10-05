@@ -7,6 +7,7 @@ import { useCommitDiff, hasCommitDiff } from "@/store/commitDiff";
 import { beginImportFromPath } from "@/store/importStaging";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { ExportDialog } from "@/components/dialogs/ExportDialog";
+import { SaveAsDialog } from "@/components/editor/SaveAsDialog";
 import { VersionHistory } from "@/components/dialogs/VersionHistory";
 import { SeenDialog } from "@/components/dialogs/SeenDialog";
 import { CopyToMapDialog } from "@/components/editor/CopyToMapDialog";
@@ -89,6 +90,7 @@ function UndoRedoControls() {
 export function MapMetaBar() {
 	const map = useMapState((s) => s.map);
 	const [showExport, setShowExport] = useDialogState("export");
+	const [showSaveAs, setShowSaveAs] = useDialogState("save-as");
 	const [showHistory, setShowHistory] = useDialogState("history");
 	const [showSeen, setShowSeen] = useDialogState("seen");
 	const [showCopyToMap, setShowCopyToMap] = useDialogState("copy-to-map");
@@ -122,6 +124,7 @@ export function MapMetaBar() {
 				<Button onClick={() => setShowExport(true)}>{t("Export")}</Button>
 			</div>
 			{showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+			{showSaveAs && <SaveAsDialog onClose={() => setShowSaveAs(false)} />}
 			{showHistory && <VersionHistory onClose={() => setShowHistory(false)} />}
 			{showSeen && <SeenDialog open onOpenChange={setShowSeen} onLoadPano={loadSeenPano} />}
 			{showCopyToMap && <CopyToMapDialog onClose={() => setShowCopyToMap(false)} />}

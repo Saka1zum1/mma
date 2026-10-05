@@ -1,4 +1,4 @@
-/// <reference types="google.maps" />
+﻿/// <reference types="google.maps" />
 /// <reference path="./google-maps.d.ts" />
 
 import * as _tauri_apps_api_window from '@tauri-apps/api/window';
@@ -148,6 +148,12 @@ declare const commands$1: {
      *  (including the generated UUID) so the frontend can navigate to it immediately.
      */
     storeCreateMap: (name: string, folder: string | null) => Promise<MapData>;
+    /**  Copy a map, uncommitted edits included, into a new map named `name`. */
+    storeDuplicateMap: (id: string, name: string) => Promise<MapData>;
+    /**  The preferences new maps start from, or `null` when they start from the factory defaults. */
+    storeGetMapDefaults: () => Promise<MapSettings | null>;
+    /**  Set the preferences new maps start from; `null` restores the factory defaults. */
+    storeSetMapDefaults: (settings: MapSettings | null) => Promise<null>;
     /**  Delete a map and all its data: database rows and files on disk. */
     storeDeleteMap: (id: string) => Promise<null>;
     /**  Apply a partial update to a map's metadata; `None` fields are left unchanged. */
@@ -247,6 +253,7 @@ declare const commands$1: {
     storeCountryDistribution: (selector: Selector, level: string) => Promise<[string, number][]>;
     /**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
     storeFindNearby: (lat: number, lng: number, radiusM: number) => Promise<Location[]>;
+    /**  The closest alive location to (`lat`, `lng`), if the map has any. */
     storeFindNearest: (lat: number, lng: number) => Promise<Location | null>;
     /**
      *  For each input point, whether any existing location lies within `radius_m` metres.
@@ -276,6 +283,10 @@ declare const commands$1: {
      *  has no vertices. `west > east` means the box crosses the antimeridian.
      */
     polygonBounds: (polygon: PolygonGeometry) => Promise<[number, number, number, number] | null>;
+    /**
+     *  The polygon redrawn so none of its edges cross, covering the same area, or `null` when
+     *  it encloses none.
+     */
     polygonUntangle: (polygon: PolygonGeometry) => Promise<PolygonGeometry | null>;
     /**
      *  Pano ids in the z17 Google photometa tile that contains this point.
@@ -494,6 +505,12 @@ declare const commands$1: {
     mapMakingGetUser: (apiKey: string | null) => Promise<MmUser>;
     /**  Maps the stored key's owner can link to. Archived remotes are omitted. */
     mapMakingListMaps: () => Promise<MmRemoteMap[]>;
+    /**  Create an empty map named `name` for the stored key. */
+    mapMakingCreateMap: (name: string) => Promise<MmRemoteMap>;
+    /**  Record a settled sync pass. Only the most recent passes per provider are kept. */
+    syncLogAppend: (provider: string, mapId: string, entry: SyncLogEntry) => Promise<null>;
+    /**  A map's recorded sync passes with a provider, newest first. */
+    syncLogList: (provider: string, mapId: string) => Promise<SyncLogEntry[]>;
     /**
      *  Commit the map's uncommitted changes and return the new commit id.
      *  `message` None auto-generates a `+a -r ~m` summary.
@@ -1096,7 +1113,6 @@ type EditorImportResult = {
  *  Configuration for JSON export. Controls which fields are included and
  *  whether the export covers all locations or a specific selection.
  */
-type ExportShape = "geoguessr" | "mapMaking" | "local";
 type ExportOpts = {
     exportZoom: boolean;
     exportUnpanned: boolean;
@@ -1120,6 +1136,14 @@ type ExportProgress = {
     total: number;
     mapName: string;
 };
+/**  How much of a location a JSON export keeps. Each shape keeps everything the one before it does. */
+type ExportShape = 
+/**  Coordinates, camera and pinned panoramas. */
+"geoguessr" | 
+/**  Adds tags, unpinned panoramas and capture months. No custom fields. */
+"mapMaking" | 
+/**  Everything, including custom fields. */
+"local";
 /**  Why an expression failed to parse. The sentence is TS's to write. */
 type ExprError = {
     kind: "invalidNumber";
@@ -1322,6 +1346,11 @@ type ImportedMapInfo = {
     locationCount: number;
     tagCount: number;
 };
+/** Counts for one field: each distinct key, and how many rows produced any key. */
+type CountBy = {
+    counts: [string, number][];
+    covered: number;
+};
 /**  How a field value becomes a group key. Wire-mirrors the JS `KeySpec`. */
 type KeySpec = 
 /**  String value of the field (enum/string/month "YYYY-MM"/number). */
@@ -1516,7 +1545,7 @@ type MapMeta_Deserialize = {
     };
     labels: string[];
     locationCount: number;
-    pending: CommitDiff;
+    pending: PendingCounts;
     createdAt: string;
     updatedAt: string;
     lastOpenedAt: string | null;
@@ -1538,7 +1567,7 @@ type MapMeta = {
     };
     labels: string[];
     locationCount: number;
-    pending: CommitDiff;
+    pending: PendingCounts;
     createdAt: string;
     updatedAt: string;
     lastOpenedAt: string | null;
@@ -1591,6 +1620,8 @@ type MapSettings_Deserialize = {
     reviewOrder?: string | null;
     /**  Alternate Street View providers (Apple Look Around, …). */
     providers?: ProvidersSettings_Deserialize;
+    /**  What each plugin keeps with this map, by plugin id and then key. */
+    pluginData?: { [key in string]: { [key in string]: unknown } };
 };
 /**
  *  Per-map editor preferences. Controls Street View lookup behavior (official vs
@@ -1636,6 +1667,8 @@ type MapSettings = {
     reviewOrder: string | null;
     /**  Alternate Street View providers (Apple Look Around, …). */
     providers: ProvidersSettings;
+    /**  What each plugin keeps with this map, by plugin id and then key. */
+    pluginData: { [key in string]: { [key in string]: unknown } };
 };
 /**  When a move target already holds a value, which side survives. */
 type MergeWinner = "from" | "to";
@@ -1714,6 +1747,12 @@ type PartitionBucket = {
     key: string;
     ids: number[];
     bin: [number, number] | null;
+};
+/**  Uncommitted edits since the last commit, shown on the map list. */
+type PendingCounts = {
+    added: number;
+    removed: number;
+    modified: number;
 };
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
@@ -1923,6 +1962,7 @@ type PullCreate = {
 type PullUpdate = {
     localId: number;
     patch: SyncPatch;
+    /**  Written by JS only after the patch lands, so a map switch mid-pull cannot mark it synced. */
     remoteId: number;
     hash: string;
 };
@@ -2233,7 +2273,7 @@ type Selector = {
 } | {
     type: "ValidationState";
     locations: number[];
-    state: number;
+    category: string;
 } | {
     type: "Reviewed";
     locations: number[];
@@ -2274,6 +2314,18 @@ type SideCounts = {
     create: number;
     update: number;
     delete: number;
+};
+/** What started a sync pass. */
+type SyncTrigger = "manual" | "live" | "link" | "resolve";
+/** How a sync pass ended. */
+type SyncLogResult = { kind: "ok"; pushed: SideCounts; pulled: SideCounts; adopted: number; conflicts: number } | { kind: "error"; message: string };
+/** One settled sync pass. */
+type SyncLogEntry = {
+    trigger: SyncTrigger;
+    /** When the pass started, in milliseconds since 1970. */
+    startedAt: number;
+    durationMs: number;
+    result: SyncLogResult;
 };
 type SidecarDone = {
     reqId: number;
@@ -2479,6 +2531,7 @@ type ValiProgress = {
  */
 type VirtualTag = {
     color?: string | null;
+    order?: number | null;
 };
 
 /** Street View camera orientation (POV). */
@@ -2508,16 +2561,18 @@ declare const enum PanoType {
     Unknown = 3,
     UserUploaded = 10
 }
-/** Outcome of a Street View coverage check, as `validate` answers it per row. */
-declare enum ValidationState {
-    Ok = 0,
-    UpdateAvailable = 1,
-    UpdateApplied = 2,
-    NotFound = 3,
-    PanoIdBroke = 4,
-    Unofficial = 5,
-    GoodcamAvailable = 6
-}
+/** One finding of a Street View coverage check, combined into one number. */
+declare const ValidationFlag: {
+    readonly None: 0;
+    readonly Newer: 1;
+    readonly OffDefault: 2;
+    readonly DefaultStale: 4;
+    readonly PanoIdBroke: 8;
+    readonly Unofficial: 16;
+    readonly GoodcamAvailable: 32;
+    readonly NotFound: 64;
+};
+type ValidationFlag = (typeof ValidationFlag)[keyof typeof ValidationFlag];
 /** The `extra` fields an enrichment run derives for a pano, from `panoFields`. */
 export interface PanoExtra {
     altitude: number;
@@ -2644,8 +2699,8 @@ export type types_SvCoverageType = SvCoverageType;
 export type types_SvThickness = SvThickness;
 export type types_TagSortMode = TagSortMode;
 declare const types_VIRTUAL_FLAGS: typeof VIRTUAL_FLAGS;
-export type types_ValidationState = ValidationState;
-declare const types_ValidationState: typeof ValidationState;
+export type types_ValidationFlag = ValidationFlag;
+declare const types_ValidationFlag: typeof ValidationFlag;
 export type types_WorkArea = WorkArea;
 declare const types_applyLocationPatch: typeof applyLocationPatch;
 declare const types_bboxTupleToBounds: typeof bboxTupleToBounds;
@@ -2950,6 +3005,7 @@ declare function sampleFrom(selector: Selector, n: number): Promise<number[]>;
 declare function fieldValues(selector: Selector, field: string): Promise<string[]>;
 /** Group by a derived key and count, without shipping member ids. */
 declare function countBy(selector: Selector, field: string, key: KeySpec): Promise<[string, number][]>;
+declare function countBy(selector: Selector, fields: string[], key: KeySpec): Promise<CountBy[]>;
 /** How many locations carry each `extra` key, key-sorted. */
 declare function fieldCoverage(selector: Selector): Promise<[string, number][]>;
 /** Group the selected location set by a derived key - entirely in Rust, no locations fetched.
@@ -4566,9 +4622,18 @@ export interface PluginStorage {
 declare function createPluginStorage(id: string): PluginStorage;
 /** Alias used by plugins as `MMA.storage`. */
 declare const storage: typeof createPluginStorage;
+/** A plugin's store in the open map. Writes resolve once they are saved. */
+export interface MapPluginStorage {
+    get<T = unknown>(key: string, fallback?: T): T;
+    set(key: string, value: unknown): Promise<void>;
+    remove(key: string): Promise<void>;
+    keys(): string[];
+}
+/** Persistent key-value storage a plugin keeps with the open map, so every map has its own.
+ *  Throws when no map is open. */
+declare function mapStorage(id: string): MapPluginStorage;
 /** useState persisted through the plugin's namespaced store. UI state saved this
- *  way survives sidebar unmount and app restart. Values are global, not per-map —
- *  callers must fall back gracefully when a stored value doesn't resolve against
+ *  way survives sidebar unmount and app restart. Values are global, not per-map —  *  callers must fall back gracefully when a stored value doesn't resolve against
  *  the current map (e.g. a field key or saved-selection id). */
 declare function usePluginState<T>(pluginId: string, key: string, initial: T | (() => T)): readonly [T, (action: SetStateAction<T>) => void];
 declare function getPluginSetting<T = unknown>(plugin: Plugin, key: string): T;
@@ -4608,10 +4673,11 @@ declare const registry_setPendingManifest: typeof setPendingManifest;
 declare const registry_setPluginEnabled: typeof setPluginEnabled;
 declare const registry_setPluginSetting: typeof setPluginSetting;
 declare const registry_storage: typeof storage;
+declare const registry_mapStorage: typeof mapStorage;
 declare const registry_unregisterPlugin: typeof unregisterPlugin;
 declare const registry_usePluginState: typeof usePluginState;
 declare namespace registry {
-  export { registry_PLUGIN_REGISTRY_URL as PLUGIN_REGISTRY_URL, registry_activatePlugin as activatePlugin, registry_activatePlugins as activatePlugins, registry_autoUpdatePlugin as autoUpdatePlugin, registry_createPluginStorage as createPluginStorage, registry_deactivatePlugin as deactivatePlugin, registry_deactivatePlugins as deactivatePlugins, registry_fetchPluginRegistry as fetchPluginRegistry, registry_getEnabledPlugins as getEnabledPlugins, registry_getPlugin as getPlugin, registry_getPluginSetting as getPluginSetting, registry_getPlugins as getPlugins, registry_isBackgroundPlugin as isBackgroundPlugin, registry_isPluginCompatible as isPluginCompatible, registry_isPluginEnabled as isPluginEnabled, registry_isPluginUpdatable as isPluginUpdatable, registry_needsBuildUpdate as needsBuildUpdate, registry_needsUpdate as needsUpdate, registry_registerPlugin as registerPlugin, registry_resolveBuild as resolveBuild, registry_setPendingManifest as setPendingManifest, registry_setPluginEnabled as setPluginEnabled, registry_setPluginSetting as setPluginSetting, registry_storage as storage, registry_unregisterPlugin as unregisterPlugin, registry_usePluginState as usePluginState };
+  export { registry_PLUGIN_REGISTRY_URL as PLUGIN_REGISTRY_URL, registry_activatePlugin as activatePlugin, registry_activatePlugins as activatePlugins, registry_autoUpdatePlugin as autoUpdatePlugin, registry_createPluginStorage as createPluginStorage, registry_deactivatePlugin as deactivatePlugin, registry_deactivatePlugins as deactivatePlugins, registry_fetchPluginRegistry as fetchPluginRegistry, registry_getEnabledPlugins as getEnabledPlugins, registry_getPlugin as getPlugin, registry_getPluginSetting as getPluginSetting, registry_getPlugins as getPlugins, registry_isBackgroundPlugin as isBackgroundPlugin, registry_isPluginCompatible as isPluginCompatible, registry_isPluginEnabled as isPluginEnabled, registry_isPluginUpdatable as isPluginUpdatable, registry_needsBuildUpdate as needsBuildUpdate, registry_needsUpdate as needsUpdate, registry_registerPlugin as registerPlugin, registry_resolveBuild as resolveBuild, registry_setPendingManifest as setPendingManifest, registry_setPluginEnabled as setPluginEnabled, registry_setPluginSetting as setPluginSetting, registry_storage as storage, registry_mapStorage as mapStorage, registry_unregisterPlugin as unregisterPlugin, registry_usePluginState as usePluginState };
   export type { registry_Plugin as Plugin, registry_PluginBehavior as PluginBehavior, registry_PluginIdentity as PluginIdentity, registry_PluginSettingDef as PluginSettingDef, registry_PluginStorage as PluginStorage, registry_ResolvedBuild as ResolvedBuild };
 }
 
@@ -5625,20 +5691,26 @@ declare namespace pinPano {
 
 export interface ValidateConfig {
     radius?: number;
-    checkPinned?: boolean;
 }
-declare function validateOne(loc: Location, signal?: AbortSignal, config?: ValidateConfig): Promise<ValidationState>;
+export interface ValidationAnswer {
+    flags: number;
+    pinned: boolean;
+}
+declare function validateOne(loc: Location, signal?: AbortSignal, config?: ValidateConfig): Promise<ValidationAnswer>;
 export interface ValidationProgress {
     progress: number;
-    results: Map<ValidationState, Location[]>;
 }
-/** Check that each location's Street View coverage still exists; returns locations grouped
- *  by validation state. */
+export interface ValidationOutcome {
+    categories: Map<string, number[]>;
+}
+/** Check that each location's Street View coverage still exists, grouping locations into
+ *  the asked-for categories (the standard ones when omitted). */
 declare function validateLocations(locations: Location[], opts?: {
     signal?: AbortSignal;
     onProgress?: (p: ValidationProgress) => void;
     config?: ValidateConfig;
-}): Promise<Map<ValidationState, Location[]>>;
+    categories?: readonly string[];
+}): Promise<ValidationOutcome>;
 
 export type validate_ValidateConfig = ValidateConfig;
 export type validate_ValidationProgress = ValidationProgress;
@@ -5652,8 +5724,8 @@ declare namespace validate {
 /**
  * The surface a procedure module runs against: the global `mma` object and the values
  * that cross the boundary. Every host call is synchronous -- the guest blocks while the
- * host works, which is how `fetchMany` (never a loop over `fetch`) buys a procedure its
- * request concurrency.
+ * host works, which is how one `fetch` of a list (never a loop over single requests)
+ * buys a procedure its request concurrency.
  *
  * A procedure is an ES module bundled to one file. Its named exports are the entry
  * points: `request` + `map` (RequestMap), `map` (MapOnly) or `run` (Run), plus the
@@ -5674,7 +5746,7 @@ export interface ProcedureResponse {
 }
 export interface ProcedureHost {
     fetch(req: ProcedureRequest): ProcedureResponse;
-    fetchMany(reqs: ProcedureRequest[]): ProcedureResponse[];
+    fetch(reqs: ProcedureRequest[]): ProcedureResponse[];
     classify(dataset: string, lat: number, lng: number): string | null;
     /** Run one sidecar command. `onLine` sees each output line as it arrives, so a
      *  procedure can report progress mid-run; the lines are also returned together. */
@@ -5687,7 +5759,7 @@ export interface ProcedureHost {
     aborted(): boolean;
 }
 declare global {
-    /** Reachable inside a procedure module only. `fetch`, `fetchMany` and `sidecar` are
+    /** Reachable inside a procedure module only. `fetch` and `sidecar` are
      *  detached outside `run` and `query`; calling one elsewhere throws. */
     const mma: ProcedureHost;
 }

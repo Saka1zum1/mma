@@ -21,6 +21,8 @@ vi.mock("@/lib/commands", () => ({
 		getDataLocation: vi.fn().mockResolvedValue({ path: "/data", default_path: "/data" }),
 		openDataFolder: vi.fn(),
 		openLogFile: vi.fn(),
+		storeGetMapDefaults: vi.fn().mockResolvedValue(null),
+		storeSetMapDefaults: vi.fn().mockResolvedValue(undefined),
 	},
 }));
 
@@ -55,10 +57,9 @@ const qa = (sel: string) => [...document.querySelectorAll(sel)];
 function search(text: string) {
 	const input = q(".settings-rail__search") as HTMLInputElement;
 	act(() => {
-		const setter = Object.getOwnPropertyDescriptor(
-			HTMLInputElement.prototype,
-			"value",
-		)!.set!.bind(input);
+		const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.bind(
+			input,
+		);
 		setter(text);
 		input.dispatchEvent(new Event("input", { bubbles: true }));
 	});

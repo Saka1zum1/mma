@@ -318,6 +318,7 @@ fn merge_settings_overlays_present_keys_only() {
         "Europe".into(),
         crate::map_meta::VirtualTag {
             color: Some("#existing".into()),
+            order: None,
         },
     );
 

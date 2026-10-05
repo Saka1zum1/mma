@@ -3,6 +3,7 @@ import { useEffect, useEffectEvent, useState, type Dispatch, type SetStateAction
 type DialogPayloads = {
 	commit: void;
 	export: void;
+	"save-as": void;
 	import: void;
 	history: void;
 	seen: void;

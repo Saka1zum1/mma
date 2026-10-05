@@ -31,7 +31,7 @@ export const LAYER_DEFAULTS: Omit<HeatmapLayerSettings, "id" | "source"> = {
   gradientId: DEFAULT_GRADIENT_ID,
 };
 
-const store = MMA.storage("heatmap");
+const store = MMA.mapStorage("heatmap");
 
 function defaultSource(): SelectorPick {
   return MMA.getMapState().selectedLocationIds.size > 0

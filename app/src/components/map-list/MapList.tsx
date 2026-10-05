@@ -6,6 +6,8 @@ import {
 	useMapList,
 	useMapBadges,
 	createMap,
+	copyName,
+	duplicateMap,
 	deleteMap,
 	renameFolder,
 	deleteFolder,
@@ -26,6 +28,7 @@ import { Icon } from "@/components/primitives/Icon";
 import {
 	mdiChevronDown,
 	mdiChevronRight,
+	mdiContentCopy,
 	mdiPencil,
 	mdiFolder,
 	mdiDelete,
@@ -149,8 +152,7 @@ function renderMarkdown(md: string): React.ReactNode[] {
 let changelogPromise: Promise<ChangelogSection[] | null> | null = null;
 
 /** Fork changelog URL; bundled local file wins when it has a newer tip (unpushed / tauri dev). */
-const FORK_CHANGELOG_URL =
-	"https://raw.githubusercontent.com/Saka1zum1/mma/master/CHANGELOG.md";
+const FORK_CHANGELOG_URL = "https://raw.githubusercontent.com/Saka1zum1/mma/master/CHANGELOG.md";
 
 function sectionsFromMd(md: string | null | undefined): ChangelogSection[] | null {
 	if (!md) return null;
@@ -595,6 +597,17 @@ const MapEntry = React.memo(function MapEntry({
 			</button>
 			<button
 				className="map-list__edit icon-button"
+				aria-label={t("Duplicate map")}
+				onClick={() => {
+					void duplicateMap(meta.id, copyName(meta.name)).catch((e: unknown) => {
+						toast(t("Could not save a copy: {error}", { error: String(e) }));
+					});
+				}}
+			>
+				<Icon path={mdiContentCopy} />
+			</button>
+			<button
+				className="map-list__edit icon-button"
 				aria-label={t("Delete map")}
 				onClick={() => onAction({ type: "delete", id: meta.id, name: meta.name, labels: [] })}
 			>
@@ -825,9 +838,7 @@ function ImportPreviewModal({
 									t({ one: ", {n} tag", other: ", {n} tags" }, { n: entry.tagCount })}
 								{entry.folder && ` [${entry.folder}]`}
 							</span>
-							{entry.isDuplicate && (
-								<span className="import-preview__badge">{t("duplicate")}</span>
-							)}
+							{entry.isDuplicate && <span className="import-preview__badge">{t("duplicate")}</span>}
 						</li>
 					))}
 				</ul>

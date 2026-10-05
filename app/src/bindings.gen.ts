@@ -138,6 +138,12 @@ export const commands = {
 	 *  (including the generated UUID) so the frontend can navigate to it immediately.
 	 */
 	storeCreateMap: (name: string, folder: string | null) => __TAURI_INVOKE<MapData>("store_create_map", { name, folder }).then((v) => (({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:({...v.meta.settings.providers,apple:v.meta.settings.providers.apple==null?v.meta.settings.providers.apple:v.meta.settings.providers.apple,baidu:v.meta.settings.providers.baidu==null?v.meta.settings.providers.baidu:v.meta.settings.providers.baidu,tencent:v.meta.settings.providers.tencent==null?v.meta.settings.providers.tencent:v.meta.settings.providers.tencent,yandex:v.meta.settings.providers.yandex==null?v.meta.settings.providers.yandex:v.meta.settings.providers.yandex})}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
+	/**  Copy a map, uncommitted edits included, into a new map named `name`. Version history, edit history, sync links, and review sessions stay with the original. */
+	storeDuplicateMap: (id: string, name: string) => __TAURI_INVOKE<MapData>("store_duplicate_map", { id, name }),
+	/**  The preferences new maps start from, or `null` when they start from the factory defaults. */
+	storeGetMapDefaults: () => __TAURI_INVOKE<MapSettings | null>("store_get_map_defaults"),
+	/**  Set the preferences new maps start from; `null` restores the factory defaults. Maps that already exist keep their own. Only the portable settings are kept. */
+	storeSetMapDefaults: (settings: MapSettings | null) => __TAURI_INVOKE<null>("store_set_map_defaults", { settings }),
 	/**  Delete a map and all its data: database rows and files on disk. */
 	storeDeleteMap: (id: string) => __TAURI_INVOKE<null>("store_delete_map", { id }),
 	/**  Apply a partial update to a map's metadata; `None` fields are left unchanged. */
@@ -193,7 +199,7 @@ export const commands = {
 	/**  Group by a derived key, returning `{ key, ids, bin }` per group. */
 	storeGroupBy: (selector: Selector, field: string, key: KeySpec) => __TAURI_INVOKE<PartitionBucket[]>("store_group_by", { selector, field, key }).then((v) => (v.map(i=>({...i,bin:i.bin==null?i.bin:i.bin.map(i=>i)})) as typeof v)),
 	/**  Group by a derived key, returning counts only -- no member ids on the wire. */
-	storeCountBy: (selector: Selector, field: string, key: KeySpec) => __TAURI_INVOKE<([string, number])[]>("store_count_by", { selector, field, key }),
+	storeCountBy: (selector: Selector, fields: string[], key: KeySpec) => __TAURI_INVOKE<CountBy[]>("store_count_by", { selector, fields, key }),
 	/**  Distinct values of `field` across the selected set, sorted. */
 	storeValues: (selector: Selector, field: string) => __TAURI_INVOKE<string[]>("store_values", { selector, field }),
 	/**  How many rows carry each top-level `extra` key, key-sorted. */
@@ -237,7 +243,8 @@ export const commands = {
 	storeCountryDistribution: (selector: Selector, level: string) => __TAURI_INVOKE<([string, number])[]>("store_country_distribution", { selector, level }),
 	/**  Find all locations within `radius_m` metres of (`lat`, `lng`). */
 	storeFindNearby: (lat: number, lng: number, radiusM: number) => __TAURI_INVOKE<Location[]>("store_find_nearby", { lat, lng, radiusM }).then((v) => (v.map(i=>i) as typeof v)),
-	storeFindNearest: (lat: number, lng: number) => __TAURI_INVOKE<Location | null>("store_find_nearest", { lat, lng }).then((v) => (v==null?v:(v) as typeof v)),
+	/**  The closest alive location to (`lat`, `lng`), if the map has any. */
+	storeFindNearest: (lat: number, lng: number) => __TAURI_INVOKE<Location | null>("store_find_nearest", { lat, lng }).then((v) => (v==null?v:v as typeof v)),
 	/**
 	 *  For each input point, whether any existing location lies within `radius_m` metres.
 	 *  Bulk form so callers probing many coordinates (e.g. the map generator skipping
@@ -266,7 +273,11 @@ export const commands = {
 	 *  has no vertices. `west > east` means the box crosses the antimeridian.
 	 */
 	polygonBounds: (polygon: PolygonGeometry) => __TAURI_INVOKE<[number, number, number, number] | null>("polygon_bounds", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:v.map(i=>i) as typeof v)),
-	polygonUntangle: (polygon: PolygonGeometry) => __TAURI_INVOKE<PolygonGeometry | null>("polygon_untangle", { polygon: ({...polygon, coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:(v) as typeof v)),
+	/**
+	 *  The polygon redrawn so none of its edges cross, covering the same area, or `null` when
+	 *  it encloses none.
+	 */
+	polygonUntangle: (polygon: PolygonGeometry) => __TAURI_INVOKE<PolygonGeometry | null>("polygon_untangle", { polygon: ({...polygon,coordinates:polygon.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:polygon.extraPolygons==null?polygon.extraPolygons:polygon.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) }).then((v) => (v==null?v:({...v,coordinates:v.coordinates.map(i=>i.map(i=>i.map(i=>i))),extraPolygons:v.extraPolygons==null?v.extraPolygons:v.extraPolygons.map(i=>i.map(i=>i.map(i=>i.map(i=>i))))}) as typeof v)),
 	/**
 	 *  Pano ids in the z17 Google photometa tile that contains this point.
 	 *  An empty tile or an unreadable body is an empty list; a transport failure
@@ -484,6 +495,12 @@ export const commands = {
 	mapMakingGetUser: (apiKey: string | null) => __TAURI_INVOKE<MmUser>("map_making_get_user", { apiKey }),
 	/**  Maps the stored key's owner can link to. Archived remotes are omitted. */
 	mapMakingListMaps: () => __TAURI_INVOKE<MmRemoteMap[]>("map_making_list_maps"),
+	/**  Create an empty map named `name` for the stored key. */
+	mapMakingCreateMap: (name: string) => __TAURI_INVOKE<MmRemoteMap>("map_making_create_map", { name }),
+	/**  Record a settled sync pass. Only the most recent passes per provider are kept. */
+	syncLogAppend: (provider: string, mapId: string, entry: SyncLogEntry) => __TAURI_INVOKE<null>("sync_log_append", { provider, mapId, entry }),
+	/**  A map's recorded sync passes with a provider, newest first. */
+	syncLogList: (provider: string, mapId: string) => __TAURI_INVOKE<SyncLogEntry[]>("sync_log_list", { provider, mapId }),
 	/**
 	 *  Commit the map's uncommitted changes and return the new commit id.
 	 *  `message` None auto-generates a `+a -r ~m` summary.
@@ -812,8 +829,6 @@ export type EditorImportResult = {
  *  Configuration for JSON export. Controls which fields are included and
  *  whether the export covers all locations or a specific selection.
  */
-export type ExportShape = "geoguessr" | "mapMaking" | "local";
-
 export type ExportOpts = {
 	exportZoom: boolean,
 	exportUnpanned: boolean,
@@ -838,6 +853,15 @@ export type ExportProgress = {
 	total: number,
 	mapName: string,
 };
+
+/**  How much of a location a JSON export keeps. Each shape keeps everything the one before it does. */
+export type ExportShape = 
+/**  Coordinates, camera and pinned panoramas. */
+"geoguessr" | 
+/**  Adds tags, unpinned panoramas and capture months. No custom fields. */
+"mapMaking" | 
+/**  Everything, including custom fields. */
+"local";
 
 /**  Why an expression failed to parse. The sentence is TS's to write. */
 export type ExprError = { kind: "invalidNumber"; position: number } | { kind: "unterminatedString" } | { kind: "unexpectedCharacter"; character: string; position: number } | { kind: "expectedSymbol"; symbol: string } | { kind: "chainedComparison" } | { kind: "unexpectedEnd" } | { kind: "missingLeftOperand" } | { kind: "hasTakesFieldName" } | { kind: "unknownFunction"; name: string } | { kind: "wrongArgCount"; name: string; expected: number } | { kind: "unexpectedToken"; token: string } | { kind: "trailingToken"; token: string };
@@ -1009,6 +1033,9 @@ export type ImportedMapInfo = {
 };
 
 /**  How a field value becomes a group key. Wire-mirrors the JS `KeySpec`. */
+/** Counts for one field: each distinct key, and how many rows produced any key. */
+export type CountBy = { counts: [string, number][]; covered: number };
+
 export type KeySpec = 
 /**  String value of the field (enum/string/month "YYYY-MM"/number). */
 { kind: "value" } | 
@@ -1195,7 +1222,7 @@ export type MapMeta_Deserialize = {
 	tags: { [key in string]: Tag },
 	labels: string[],
 	locationCount: number,
-	pending: CommitDiff,
+	pending: PendingCounts,
 	createdAt: string,
 	updatedAt: string,
 	lastOpenedAt: string | null,
@@ -1216,7 +1243,7 @@ export type MapMeta = {
 	tags: { [key in string]: Tag },
 	labels: string[],
 	locationCount: number,
-	pending: CommitDiff,
+	pending: PendingCounts,
 	createdAt: string,
 	updatedAt: string,
 	lastOpenedAt: string | null,
@@ -1267,6 +1294,8 @@ export type MapSettings_Deserialize = {
 	reviewOrder?: string | null,
 	/**  Alternate Street View providers (Apple Look Around, …). */
 	providers?: ProvidersSettings_Deserialize,
+	/**  What each plugin keeps with this map, by plugin id and then key. */
+	pluginData?: { [key in string]: { [key in string]: unknown } },
 };
 
 /**
@@ -1309,6 +1338,8 @@ export type MapSettings = {
 	reviewOrder: string | null,
 	/**  Alternate Street View providers (Apple Look Around, …). */
 	providers: ProvidersSettings,
+	/**  What each plugin keeps with this map, by plugin id and then key. */
+	pluginData: { [key in string]: { [key in string]: unknown } },
 };
 
 /**  When a move target already holds a value, which side survives. */
@@ -1385,6 +1416,13 @@ export type PartitionBucket = {
 	key: string,
 	ids: number[],
 	bin: [number, number] | null,
+};
+
+/**  Uncommitted edits since the last commit, shown on the map list. */
+export type PendingCounts = {
+	added: number,
+	removed: number,
+	modified: number,
 };
 
 /**  Metadata for a user-installed plugin, read from `plugins/{id}/manifest.json`. */
@@ -1610,6 +1648,7 @@ export type PullCreate = {
 export type PullUpdate = {
 	localId: number,
 	patch: SyncPatch,
+	/**  Written by JS only after the patch lands, so a map switch mid-pull cannot mark it synced. */
 	remoteId: number,
 	hash: string,
 };
@@ -1906,7 +1945,7 @@ export type SelectionSync = {
  *   parallel batch scans. Composites (Intersection, Union, Invert) recursively resolve
  *  children. Duplicates uses a grid-accelerated spatial scan.
  */
-export type Selector = { type: "Locations"; locations: number[]; name: string | null } | { type: "Everything" } | { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean } | { type: "Tag"; tagId: number } | { type: "Untagged" } | { type: "Unpanned" } | { type: "PanoIds" } | { type: "NotPanoIds" } | { type: "Uncommitted" } | { type: "Manual"; locations: number[] } | { type: "Duplicates"; distance: number } | { type: "ValidationState"; locations: number[]; state: number } | { type: "Reviewed"; locations: number[]; sessionId: string; mode: string } | { type: "Intersection"; selections: Selection[] } | { type: "Union"; selections: Selection[] } | { type: "Invert"; selections: Selection[] } | { type: "Filter"; field: string; op: FilterOp; value: any; value2?: any | null; tzLocal?: boolean } | 
+export type Selector = { type: "Locations"; locations: number[]; name: string | null } | { type: "Everything" } | { type: "Polygon"; polygon: PolygonGeometry; includeInformational: boolean } | { type: "Tag"; tagId: number } | { type: "Untagged" } | { type: "Unpanned" } | { type: "PanoIds" } | { type: "NotPanoIds" } | { type: "Uncommitted" } | { type: "Manual"; locations: number[] } | { type: "Duplicates"; distance: number } | { type: "ValidationState"; locations: number[]; category: string } | { type: "Reviewed"; locations: number[]; sessionId: string; mode: string } | { type: "Intersection"; selections: Selection[] } | { type: "Union"; selections: Selection[] } | { type: "Invert"; selections: Selection[] } | { type: "Filter"; field: string; op: FilterOp; value: any; value2?: any | null; tzLocal?: boolean } | 
 /**
  *  Rank a selection by a `field_expr`, optionally keeping only the first `k`. Emits
  *  a ranked root in rank order, where every other selector answers ascending. With no
@@ -1921,6 +1960,21 @@ export type SideCounts = {
 	create: number,
 	update: number,
 	delete: number,
+};
+
+/** What started a sync pass. */
+export type SyncTrigger = "manual" | "live" | "link" | "resolve";
+
+/** How a sync pass ended. */
+export type SyncLogResult = { kind: "ok"; pushed: SideCounts; pulled: SideCounts; adopted: number; conflicts: number } | { kind: "error"; message: string };
+
+/** One settled sync pass. */
+export type SyncLogEntry = {
+	trigger: SyncTrigger,
+	/** When the pass started, in milliseconds since 1970. */
+	startedAt: number,
+	durationMs: number,
+	result: SyncLogResult,
 };
 
 export type SidecarDone = {
@@ -2124,6 +2178,7 @@ export type ValiProgress = { kind: "workItems"; total: number } | { kind: "workI
  */
 export type VirtualTag = {
 	color?: string | null,
+	order?: number | null,
 };
 
 /* Tauri Specta runtime */

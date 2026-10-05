@@ -4,6 +4,7 @@ import {
 	mdiFileImportOutline,
 	mdiFileExportOutline,
 	mdiContentSave,
+	mdiContentSaveEdit,
 	mdiSelectRemove,
 	mdiSetCenter,
 	mdiSetAll,
@@ -97,6 +98,13 @@ const stepBasemap = (n: number) => () => {
 
 /** Every editor command (palette entries; all are hotkey-bindable in Settings). */
 const COMMANDS = {
+	saveAs: {
+		label: msg("Save as"),
+		icon: mdiContentSaveEdit,
+		group: msg("Map"),
+		execute: () => openDialog("save-as"),
+		enabled: requiresMap,
+	},
 	save: {
 		label: msg("Commit map"),
 		icon: mdiContentSave,

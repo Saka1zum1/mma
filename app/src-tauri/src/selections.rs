@@ -59,7 +59,7 @@ pub enum Selector {
     },
     ValidationState {
         locations: Vec<u32>,
-        state: u8,
+        category: String,
     },
     #[serde(rename_all = "camelCase")]
     Reviewed {
@@ -2001,18 +2001,111 @@ fn partition_keyed(
     groups
 }
 
-/// Group counts without the member ids. Delegates to `partition` so key derivation
-/// keeps one definition.
+/// Counts for one field: each distinct key and how many selected rows produced it, plus
+/// how many rows produced any key. A list-valued field (tags included) counts each member
+/// and still covers the row once.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct CountBy {
+    pub counts: Vec<(String, u32)>,
+    pub covered: u32,
+}
+
+/// Group counts without the member ids. One result per field, in `fields` order.
+/// Keyed specs count every field in one pass over the rows.
+pub fn count_by_fields(
+    view: &LocView,
+    fields: &[String],
+    spec: &KeySpec,
+    set: Option<&RoaringBitmap>,
+) -> Vec<CountBy> {
+    if let KeySpec::NumericBin { binning } = spec {
+        return fields
+            .iter()
+            .map(|field| {
+                let counts: Vec<(String, u32)> = partition_numeric(view, field, binning, set)
+                    .into_iter()
+                    .map(|g| (g.key, g.ids.len() as u32))
+                    .collect();
+                let covered = counts.iter().map(|(_, n)| n).sum();
+                CountBy { counts, covered }
+            })
+            .collect();
+    }
+    let mut tallies: Vec<(HashMap<String, usize>, CountBy)> = fields
+        .iter()
+        .map(|_| {
+            (
+                HashMap::new(),
+                CountBy {
+                    counts: Vec::new(),
+                    covered: 0,
+                },
+            )
+        })
+        .collect();
+    view.for_each_within(set, |row| {
+        for (field, (index, tally)) in fields.iter().zip(tallies.iter_mut()) {
+            let keys = row_keys(&row, field, spec);
+            if !keys.is_empty() {
+                tally.covered += 1;
+            }
+            for k in keys {
+                match index.get(&k) {
+                    Some(&i) => tally.counts[i].1 += 1,
+                    None => {
+                        index.insert(k.clone(), tally.counts.len());
+                        tally.counts.push((k, 1));
+                    }
+                }
+            }
+        }
+    });
+    tallies.into_iter().map(|(_, tally)| tally).collect()
+}
+
+/// The keys one row contributes for `field`. A list yields each member once; tags are the
+/// location's tag ids.
+fn row_keys(row: &RowRef, field: &str, spec: &KeySpec) -> Vec<String> {
+    let mut keys = match spec {
+        KeySpec::Value if field == "tags" => {
+            let mut ids = Vec::new();
+            row.for_each_tag(|t| ids.push(t.to_string()));
+            ids
+        }
+        KeySpec::Value => match row.resolve_field(field) {
+            Some(serde_json::Value::Array(members)) => {
+                members.iter().filter_map(value_key).collect()
+            }
+            v => v.as_ref().and_then(value_key).into_iter().collect(),
+        },
+        KeySpec::DatePart { part, tz_local } => {
+            let key = if *tz_local {
+                let (fv, tz) = row.resolve_field_and_tz(field);
+                date_part_key(fv.as_ref(), *part, true, tz.as_deref())
+            } else {
+                date_part_key(row.resolve_field(field).as_ref(), *part, false, None)
+            };
+            key.into_iter().collect()
+        }
+        KeySpec::NumericBin { .. } => Vec::new(),
+    };
+    let mut seen = HashSet::new();
+    keys.retain(|k| !k.is_empty() && seen.insert(k.clone()));
+    keys
+}
+
+/// Group counts without the member ids, for one field. Delegates to [`count_by_fields`].
 pub fn count_by(
     view: &LocView,
     field: &str,
     spec: &KeySpec,
     set: Option<&RoaringBitmap>,
 ) -> Vec<(String, u32)> {
-    partition(view, field, spec, set)
+    count_by_fields(view, &[field.to_string()], spec, set)
         .into_iter()
-        .map(|g| (g.key, g.ids.len() as u32))
-        .collect()
+        .next()
+        .map(|c| c.counts)
+        .unwrap_or_default()
 }
 
 /// How many selected rows carry each top-level `extra` key, key-sorted. Answers "which

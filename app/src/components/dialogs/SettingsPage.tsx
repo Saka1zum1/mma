@@ -83,8 +83,11 @@ import { getMapBadgeSources, useMapBadges } from "@/store/mapList";
 import { matches } from "@/lib/search";
 import { formatBytes } from "@/lib/util/format";
 import { errText } from "@/lib/util/util";
+import { useMapState } from "@/store/useMapStore";
+import type { MapSettings } from "@/bindings.gen";
 import { Trans } from "@/components/primitives/Trans";
 import { collectDiagnostics } from "@/lib/diagnostics";
+import { bytesToHex } from "@/lib/util/color";
 
 /** Non-row section content. Hidden during search unless the section title
  *  matched, or `match` (a keyword string for content with no SettingRows)
@@ -374,8 +377,7 @@ function KeyboardBody() {
 			</Aux>
 			{GROUPS.map((group) => {
 				const defs = allBindings.filter(
-					(d) =>
-						d.group === group && matches(needle, hotkeyLabel(d), getBinding(d.action)),
+					(d) => d.group === group && matches(needle, hotkeyLabel(d), getBinding(d.action)),
 				);
 				if (defs.length === 0) return null;
 				return (
@@ -518,10 +520,47 @@ function StreetViewBody() {
 	);
 }
 
+function NewMapDefaultsRow() {
+	const map = useMapState((state) => state.map);
+	const [saved, setSaved] = useState<boolean | null>(null);
+	useEffect(() => {
+		void cmd.storeGetMapDefaults().then((defaults) => setSaved(defaults !== null));
+	}, []);
+	const save = (settings: MapSettings | null) =>
+		cmd.storeSetMapDefaults(settings).then(
+			() => setSaved(settings !== null),
+			(e) => toast(t("Could not save the new map defaults: {error}", { error: errText(e) })),
+		);
+	return (
+		<>
+			<GroupHeading>{t("Defaults")}</GroupHeading>
+			<SettingRow
+				label={t("New maps")}
+				description={
+					saved
+						? t("New maps start from the saved preferences. Existing maps keep their own.")
+						: t("New maps start from the factory preferences.")
+				}
+				control={
+					<span style={{ display: "flex", gap: "0.5rem" }}>
+						<Button disabled={!map} onClick={() => map && void save(map.meta.settings)}>
+							{t("Use current map")}
+						</Button>
+						<Button disabled={!saved} onClick={() => void save(null)}>
+							{t("Reset")}
+						</Button>
+					</span>
+				}
+			/>
+		</>
+	);
+}
+
 function MapBody() {
 	const s = useSettings();
 	return (
 		<>
+			<NewMapDefaultsRow />
 			<GroupHeading>{t("Navigation")}</GroupHeading>
 			<SettingRow
 				label={t("Pan speed")}
@@ -573,9 +612,7 @@ function MapBody() {
 			<SettingRow
 				setting="enterOpensCenter"
 				label={t("Enter opens location at map center")}
-				description={t(
-					"With no location open, Enter opens the location at the center of the map.",
-				)}
+				description={t("With no location open, Enter opens the location at the center of the map.")}
 			/>
 
 			<GroupHeading>{t("Markers")}</GroupHeading>
@@ -1187,9 +1224,7 @@ function CustomCssBlock() {
 }
 
 function generateApiKey(): string {
-	const bytes = new Uint8Array(24);
-	crypto.getRandomValues(bytes);
-	return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+	return bytesToHex(crypto.getRandomValues(new Uint8Array(24)));
 }
 
 function IntegrationsBody() {
@@ -1377,7 +1412,12 @@ const SECTIONS: Section[] = [
 		icon: mdiApplicationOutline,
 		Body: ApplicationBody,
 	},
-	{ id: "integrations", title: msg("Integrations"), icon: mdiPuzzleOutline, Body: IntegrationsBody },
+	{
+		id: "integrations",
+		title: msg("Integrations"),
+		icon: mdiPuzzleOutline,
+		Body: IntegrationsBody,
+	},
 	{ id: "advanced", title: msg("Advanced"), icon: mdiWrenchOutline, Body: AdvancedBody },
 ];
 
@@ -1392,12 +1432,16 @@ function SectionShell({
 	query: string;
 	hidden?: boolean;
 }) {
-	const sectionMatched =
-		mode === "single" || query === "" || matches(query, t(section.title));
+	const sectionMatched = mode === "single" || query === "" || matches(query, t(section.title));
 	const Body = section.Body;
 	return (
 		<SettingsSearchContext.Provider
-			value={{ query, searching: mode === "search", sectionMatched, sectionTitle: t(section.title) }}
+			value={{
+				query,
+				searching: mode === "search",
+				sectionMatched,
+				sectionTitle: t(section.title),
+			}}
 		>
 			<section
 				className={`settings-section${mode === "search" ? " settings-section--search" : ""}`}
@@ -1426,11 +1470,7 @@ export function SettingsPage({ open, onOpenChange }: DialogProps) {
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent
-				title={t("Settings")}
-				className="settings-page"
-				initialFocus={searchRef}
-			>
+			<DialogContent title={t("Settings")} className="settings-page" initialFocus={searchRef}>
 				<nav className="settings-rail">
 					<TextInput
 						ref={searchRef}

@@ -1,4 +1,4 @@
-﻿import { useCallback } from "react";
+import { useCallback } from "react";
 import type { CommitDiff, MapMeta } from "@/bindings.gen";
 import { emit as tauriEmit } from "@tauri-apps/api/event";
 import { cmd } from "@/lib/commands";
@@ -43,6 +43,19 @@ export function setCachedMapList(list: MapMeta[]) {
 /** Create a new empty map and return its metadata. */
 export async function createMap(name: string, folder: string | null = null) {
 	const { meta } = await cmd.storeCreateMap(name, folder);
+	await invalidateMapList();
+	return meta;
+}
+
+/** A name for a copy of `name`. */
+export function copyName(name: string): string {
+	const base = name.trim();
+	return base ? `${base} (copy)` : t("(copy)");
+}
+
+/** Copy a map, uncommitted edits included, and return the new metadata. */
+export async function duplicateMap(id: string, name: string) {
+	const { meta } = await cmd.storeDuplicateMap(id, name);
 	await invalidateMapList();
 	return meta;
 }

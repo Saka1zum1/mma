@@ -320,10 +320,11 @@ fn resolve_key(api_key: Option<String>) -> AppResult<String> {
     }
 }
 
-fn json_get<T: serde::de::DeserializeOwned>(path: &str, api_key: &str) -> AppResult<T> {
-    let url = format!("{BASE_URL}{path}");
-    let resp = crate::sync_client()
-        .get(&url)
+fn json_send<T: serde::de::DeserializeOwned>(
+    builder: reqwest::blocking::RequestBuilder,
+    api_key: &str,
+) -> AppResult<T> {
+    let resp = builder
         .header("authorization", format!("API {api_key}"))
         .header("accept", "application/json")
         .send()?;
@@ -333,6 +334,28 @@ fn json_get<T: serde::de::DeserializeOwned>(path: &str, api_key: &str) -> AppRes
         return Err(api_error(status, &body));
     }
     Ok(serde_json::from_slice(&body)?)
+}
+
+fn json_get<T: serde::de::DeserializeOwned>(path: &str, api_key: &str) -> AppResult<T> {
+    let url = format!("{BASE_URL}{path}");
+    json_send(crate::sync_client().get(&url), api_key)
+}
+
+fn create_remote_map(api_key: &str, name: &str) -> AppResult<MmRemoteMap> {
+    let url = format!("{BASE_URL}/api/maps");
+    let body = serde_json::json!({ "name": name, "description": "" });
+    let row: RawRemoteMap = json_send(
+        crate::sync_client()
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(serde_json::to_vec(&body)?),
+        api_key,
+    )?;
+    Ok(MmRemoteMap {
+        id: row.id,
+        name: row.name,
+        location_count: Some(row.location_count.unwrap_or(0)),
+    })
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> AppResult<T> {
@@ -369,6 +392,17 @@ pub async fn map_making_get_user(api_key: Option<String>) -> AppResult<MmUser> {
     blocking(move || {
         let key = resolve_key(api_key)?;
         json_get("/api/user", &key)
+    })
+    .await?
+}
+
+/// Create an empty map named `name` for the stored key.
+#[tauri::command]
+#[specta::specta]
+pub async fn map_making_create_map(name: String) -> AppResult<MmRemoteMap> {
+    blocking(move || {
+        let key = resolve_key(None)?;
+        create_remote_map(&key, &name)
     })
     .await?
 }

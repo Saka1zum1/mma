@@ -57,7 +57,6 @@ mod export;
 mod field_expr;
 mod gdoc;
 mod geo_cmd;
-mod sv_net;
 mod geocoder;
 mod geoguessr;
 mod import;
@@ -73,11 +72,13 @@ mod review;
 mod saved_selections;
 mod seen;
 mod sidecar;
+mod sv_net;
 mod sync;
 mod sync_diff;
 mod sync_engine;
 mod sync_geoguessr;
 mod sync_keying;
+mod sync_log;
 mod sync_map_making;
 #[cfg(test)]
 mod test_util;
@@ -785,6 +786,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             map_meta::store_list_maps,
             map_meta::store_get_map,
             map_meta::store_create_map,
+            map_meta::store_duplicate_map,
+            map_meta::store_get_map_defaults,
+            map_meta::store_set_map_defaults,
             map_meta::store_delete_map,
             map_meta::store_update_map_meta,
             map_meta::store_touch_map_opened,
@@ -898,6 +902,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sync_map_making::map_making_clear_key,
             sync_map_making::map_making_get_user,
             sync_map_making::map_making_list_maps,
+            sync_map_making::map_making_create_map,
+            sync_log::sync_log_append,
+            sync_log::sync_log_list,
             vcs::store_commit,
             vcs::store_list_commits,
             vcs::store_checkout_commit,
