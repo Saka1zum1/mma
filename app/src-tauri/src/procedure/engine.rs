@@ -928,6 +928,9 @@ pub(crate) struct RunCtx<'a> {
     pub deps: &'a EngineDeps,
     pub progress: Arc<ProgressSink>,
     pub results: Arc<ResultSink>,
+    /// Set once this run has pushed an undo entry. Every provider's pages fold into it,
+    /// so one enrichment run is one undo step even though providers run side by side.
+    pub undo_open: Arc<std::sync::Mutex<bool>>,
 }
 
 impl RunCtx<'_> {
@@ -968,6 +971,7 @@ pub(crate) fn run_all(
     progress: Arc<ProgressSink>,
     results: Arc<ResultSink>,
 ) {
+    let undo_open = Arc::new(std::sync::Mutex::new(false));
     let gates = producers(&providers);
     let (tx, rx) = mpsc::channel::<usize>();
     let mut pending: Vec<usize> = (0..providers.len()).collect();
@@ -985,6 +989,7 @@ pub(crate) fn run_all(
                 deps,
                 progress: progress.clone(),
                 results: results.clone(),
+                undo_open: undo_open.clone(),
             };
             let tx = tx.clone();
             *running += 1;
@@ -1207,17 +1212,13 @@ enum Produced {
 }
 
 /// Write one page: patches to the store, answers and failed ids to the caller.
-/// `undo_open` is set once this run has pushed an undo entry; later pages fold into it.
-fn deliver_page(
-    ctx: &RunCtx,
-    decl: &ProviderDecl,
-    page: PageOutput,
-    undo_open: &mut bool,
-) -> AppResult<()> {
+/// The first page of the run pushes an undo entry; every later page, from any provider, folds in.
+fn deliver_page(ctx: &RunCtx, decl: &ProviderDecl, page: PageOutput) -> AppResult<()> {
     if !page.updates.is_empty() {
         let result = {
             let mut mgr = ctx.state.lock()?;
             let store = mgr.store_for_map(&ctx.map_id)?;
+            let mut undo_open = ctx.undo_open.lock()?;
             if *undo_open {
                 apply_updates_extending_undo(store, &page.updates)
             } else {
@@ -1263,7 +1264,6 @@ fn apply_pages(ctx: &RunCtx, decl: &ProviderDecl, rx: mpsc::Receiver<Produced>) 
         out: PageOutput,
     }
     let mut pages: HashMap<usize, Pending> = HashMap::new();
-    let mut undo_open = false;
     while let Ok(msg) = rx.recv() {
         match msg {
             Produced::PageStart { page, batches } => {
@@ -1284,7 +1284,7 @@ fn apply_pages(ctx: &RunCtx, decl: &ProviderDecl, rx: mpsc::Receiver<Produced>) 
                 p.out.failed.extend(failed);
                 if p.expected > 0 && p.seen == p.expected {
                     let done = pages.remove(&page).expect("just inserted");
-                    deliver_page(ctx, decl, done.out, &mut undo_open)?;
+                    deliver_page(ctx, decl, done.out)?;
                 }
             }
         }
@@ -1292,7 +1292,7 @@ fn apply_pages(ctx: &RunCtx, decl: &ProviderDecl, rx: mpsc::Receiver<Produced>) 
     let mut left: Vec<(usize, Pending)> = pages.into_iter().collect();
     left.sort_by_key(|(page, _)| *page);
     for (_, p) in left {
-        deliver_page(ctx, decl, p.out, &mut undo_open)?;
+        deliver_page(ctx, decl, p.out)?;
     }
     Ok(())
 }

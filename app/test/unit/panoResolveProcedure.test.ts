@@ -21,7 +21,10 @@ const searchBody = new TextEncoder().encode(JSON.stringify([[0], JSON_CAR[1][0]]
 
 function withHost<T>(run: () => T): T {
 	(globalThis as any).mma = {
-		fetchMany: (reqs: unknown[]) => reqs.map(() => ({ status: 200, body: searchBody })),
+		fetch: (req: unknown) =>
+			Array.isArray(req)
+				? req.map(() => ({ status: 200, body: searchBody }))
+				: { status: 200, body: searchBody },
 		log: () => {},
 		progress: () => {},
 		fail: () => {},

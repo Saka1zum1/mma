@@ -200,6 +200,7 @@ impl Harness {
                 let sink = self.delivered.clone();
                 Arc::new(Box::new(move |r| sink.lock().unwrap().push(r)))
             },
+            undo_open: Arc::new(std::sync::Mutex::new(false)),
         }
     }
 }
@@ -1035,6 +1036,7 @@ fn run_shape_reaches_the_host_fetch() {
         deps: &deps,
         progress: Arc::new(Box::new(|_| {})),
         results: Arc::new(Box::new(|_| {})),
+        undo_open: Arc::new(std::sync::Mutex::new(false)),
     };
     run_provider(&ctx, &d).unwrap();
     assert_eq!(calls.load(Ordering::Relaxed), 1);
@@ -1236,6 +1238,7 @@ fn every_procedure_the_engine_creates_is_configured() {
         deps: &deps,
         progress: Arc::new(Box::new(|_| {})),
         results: Arc::new(Box::new(|_| {})),
+        undo_open: Arc::new(std::sync::Mutex::new(false)),
     };
     run_provider(&ctx, &d).unwrap();
 
@@ -1287,6 +1290,7 @@ fn a_real_js_procedure_reads_the_batch_as_json_rows() {
         deps: &deps,
         progress: Arc::new(Box::new(|_| {})),
         results: Arc::new(Box::new(|_| {})),
+        undo_open: Arc::new(std::sync::Mutex::new(false)),
     };
     run_provider(&ctx, &decl("p", BatchMode::Chunk { size: 10 })).unwrap();
 
@@ -1435,6 +1439,7 @@ fn engine_throughput_probe() {
             deps: &deps,
             progress: Arc::new(Box::new(|_| {})),
             results: Arc::new(Box::new(|_| {})),
+            undo_open: Arc::new(std::sync::Mutex::new(false)),
         };
         let t = std::time::Instant::now();
         run_provider(&ctx, &d).unwrap();

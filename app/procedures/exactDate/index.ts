@@ -8,10 +8,7 @@
 // anything this module decides. `query` answers the same question for a single point.
 
 import type { Location, Update, LocationPatch_Deserialize as LocationPatch } from "@/bindings.gen";
-import type {
-	ProcedureRequest,
-	ProcedureResponse,
-	} from "@/lib/data/procedureHost";
+import type { ProcedureRequest, ProcedureResponse } from "@/lib/data/procedureHost";
 import { SV_SEARCH_RADIUS } from "@/lib/sv/constants";
 import { SIS_NO_IMAGES, timestampSearchRequest } from "@/lib/sv/singleImageSearch";
 import { isGoogleImagery } from "@/lib/sv/getMetadata";
@@ -108,7 +105,7 @@ function narrow(batch: Search[]): void {
 
 	// One query over each whole window first: a pano that is not a candidate at all
 	// costs one request instead of twenty.
-	const seed = mma.fetchMany(
+	const seed = mma.fetch(
 		batch.map((s) => timestampSearchRequest(s.lat, s.lng, SV_SEARCH_RADIUS, s.lo, s.hi)),
 	);
 	batch.forEach((s, i) => {
@@ -122,9 +119,10 @@ function narrow(batch: Search[]): void {
 		const reqs: ProcedureRequest[] = [];
 		for (const s of live) {
 			s.cuts = cutsFor(s);
-			for (const c of s.cuts) reqs.push(timestampSearchRequest(s.lat, s.lng, SV_SEARCH_RADIUS, s.lo, c));
+			for (const c of s.cuts)
+				reqs.push(timestampSearchRequest(s.lat, s.lng, SV_SEARCH_RADIUS, s.lo, c));
 		}
-		const res = mma.fetchMany(reqs);
+		const res = mma.fetch(reqs);
 
 		let at = 0;
 		for (const s of live) {

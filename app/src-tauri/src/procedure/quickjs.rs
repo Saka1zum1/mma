@@ -8,10 +8,10 @@
 //! every borrower of a pooled procedure. The boundary is JSON: a batch arrives as
 //! `JSON.parse`d rows and every entry point answers with plain JS values.
 //!
-//! Host services live on a global `mma` object: `fetch`, `fetchMany`, `classify`,
+//! Host services live on a global `mma` object: `fetch`, `classify`,
 //! `sidecar`, `log`, `progress`, `fail`, `aborted`. They are synchronous -- the guest
 //! blocks while the host works, which is how a procedure gets request width out of
-//! `fetchMany`. `fetch`, `fetchMany` and `sidecar` reach outside the process, so they
+//! one `fetch` of a list. `fetch` and `sidecar` reach outside the process, so they
 //! are limited to `run` and `query`; the rest are open to `map` as well. `request`
 //! runs against no host at all: it is pure by construction.
 //!
@@ -486,13 +486,7 @@ fn install_mma<'js>(
     match bridge {
         Some(b) => install_host_calls(ctx, &obj, b, allow_effects),
         None => [
-            "fetch",
-            "fetchMany",
-            "classify",
-            "sidecar",
-            "progress",
-            "fail",
-            "aborted",
+            "fetch", "classify", "sidecar", "progress", "fail", "aborted",
         ]
         .iter()
         .try_for_each(|n| stub(ctx, &obj, n, "procedure has no host attached".into())),
@@ -514,46 +508,38 @@ fn install_host_calls<'js>(
             Function::new(
                 ctx.clone(),
                 value_fn(move |ctx: Ctx<'_>, req: Value<'_>| {
+                    // One request answers one response; a list answers a list, in order.
+                    if let Ok(arr) = Array::from_value(req.clone()) {
+                        let mut specs = Vec::with_capacity(arr.len());
+                        for item in arr.iter::<Value>() {
+                            specs.push(read_request(&item?).map_err(|e| throw(&ctx, e))?);
+                        }
+                        let results = match b.call(HostReq::FetchMany(specs)) {
+                            Ok(HostRep::FetchMany(r)) => r,
+                            Ok(_) => return Err(throw(&ctx, "host answered the wrong call")),
+                            Err(e) => return Err(throw(&ctx, e)),
+                        };
+                        let out = Array::new(ctx.clone())?;
+                        for (i, r) in results.iter().enumerate() {
+                            let resp = match r {
+                                Ok(resp) => response_to_js(&ctx, resp)?,
+                                Err(e) => {
+                                    if e.0 != super::engine::CANCELLED {
+                                        log::debug!("[procedure] fetch: {e}");
+                                    }
+                                    response_to_js(&ctx, &failed_response())?
+                                }
+                            };
+                            out.set(i, resp)?;
+                        }
+                        return Ok(out.into_value());
+                    }
                     let spec = read_request(&req).map_err(|e| throw(&ctx, e))?;
                     match b.call(HostReq::Fetch(spec)) {
                         Ok(HostRep::Fetch(Ok(r))) => response_to_js(&ctx, &r),
                         Ok(HostRep::Fetch(Err(e))) | Err(e) => Err(throw(&ctx, e)),
                         Ok(_) => Err(throw(&ctx, "host answered the wrong call")),
                     }
-                }),
-            )?,
-        )?;
-        let b = bridge.clone();
-        obj.set(
-            "fetchMany",
-            Function::new(
-                ctx.clone(),
-                value_fn(move |ctx: Ctx<'_>, reqs: Value<'_>| {
-                    let arr = Array::from_value(reqs)
-                        .map_err(|_| throw(&ctx, "mma.fetchMany expects an array of requests"))?;
-                    let mut specs = Vec::with_capacity(arr.len());
-                    for item in arr.iter::<Value>() {
-                        specs.push(read_request(&item?).map_err(|e| throw(&ctx, e))?);
-                    }
-                    let results = match b.call(HostReq::FetchMany(specs)) {
-                        Ok(HostRep::FetchMany(r)) => r,
-                        Ok(_) => return Err(throw(&ctx, "host answered the wrong call")),
-                        Err(e) => return Err(throw(&ctx, e)),
-                    };
-                    let out = Array::new(ctx.clone())?;
-                    for (i, r) in results.iter().enumerate() {
-                        let resp = match r {
-                            Ok(resp) => response_to_js(&ctx, resp)?,
-                            Err(e) => {
-                                if e.0 != super::engine::CANCELLED {
-                                    log::debug!("[procedure] fetchMany: {e}");
-                                }
-                                response_to_js(&ctx, &failed_response())?
-                            }
-                        };
-                        out.set(i, resp)?;
-                    }
-                    Ok(out.into_value())
                 }),
             )?,
         )?;
@@ -598,7 +584,7 @@ fn install_host_calls<'js>(
             )?,
         )?;
     } else {
-        for name in ["fetch", "fetchMany", "sidecar"] {
+        for name in ["fetch", "sidecar"] {
             stub(
                 ctx,
                 obj,

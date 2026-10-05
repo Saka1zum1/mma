@@ -68,7 +68,7 @@ function installHost(respond, { abortAfter = Infinity } = {}) {
 
 	globalThis.mma = {
 		fetch: answer,
-		fetchMany(reqs) {
+		fetch(reqs) {
 			hostCalls++;
 			return reqs.map(answer);
 		},
@@ -243,7 +243,10 @@ test("with needs configured, a row that holds every wanted field is left alone",
 	];
 	const config = { radius: 50, needs: ["countryCode", "panoType"] };
 	const done = runProcedure(rows, () => found("x1"), { config });
-	assert.deepEqual(done.patches.map((p) => p.id), [2, 3]);
+	assert.deepEqual(
+		done.patches.map((p) => p.id),
+		[2, 3],
+	);
 	assert.equal(done.calls.length, 2);
 	// Without needs (pinning, heading) every row without a pano is resolved.
 	const all = runProcedure(rows, () => found("x1"), { config: { radius: 50 } });

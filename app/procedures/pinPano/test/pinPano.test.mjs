@@ -16,7 +16,7 @@ let failed = [];
 let progress = 0;
 
 globalThis.mma = {
-	fetchMany(reqs) {
+	fetch(reqs) {
 		return reqs.map((req) => {
 			const decoded = readGetMetadataRequest(new PbfReader(req.body));
 			calls.push({ req, keys: decoded.key.map((k) => k.key.id) });
@@ -213,9 +213,13 @@ test("rows sharing a pano are fetched once but keep their own flags", () => {
 			]),
 		],
 	});
-	const { patches, calls } = runProcedure([row(1, OFFICIAL_A, 0), row(2, OFFICIAL_A, 4)], () => body, {
-		config: { useLatest: true },
-	});
+	const { patches, calls } = runProcedure(
+		[row(1, OFFICIAL_A, 0), row(2, OFFICIAL_A, 4)],
+		() => body,
+		{
+			config: { useLatest: true },
+		},
+	);
 	assert.equal(calls.length, 1);
 	assert.deepEqual(patches, [
 		{ id: 1, patch: { panoId: OFFICIAL_C, flags: 1 } },

@@ -399,7 +399,7 @@ fn fetch_many_answers_in_order_and_reports_a_failure_as_status_zero() {
     let mut proc = loaded(
         "export function run(rows) {
            const d = new TextDecoder();
-           const rs = mma.fetchMany([
+           const rs = mma.fetch([
              { method: 'GET', url: 'https://example.test/a' },
              { method: 'GET', url: 'https://example.test/b' },
              { method: 'GET', url: 'https://example.test/c' },
@@ -588,7 +588,7 @@ const EFFECTS: [(&str, &str); 3] = [
         "fetch",
         "mma.fetch({ method: 'GET', url: 'https://x.test/' })",
     ),
-    ("fetchMany", "mma.fetchMany([])"),
+    ("fetch", "mma.fetch([])"),
     ("sidecar", "mma.sidecar('p', 'c', '{}')"),
 ];
 

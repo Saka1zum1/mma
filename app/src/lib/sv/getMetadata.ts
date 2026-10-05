@@ -149,7 +149,11 @@ const pad = (n: number, width: number) => String(n).padStart(width, "0");
 function civilDate(d: PanoDate | null | undefined): string {
 	if (!d || d.year <= 0) return "";
 	const y = d.year;
-	return [pad(y <= 99 ? y + 1900 : y, 4), pad(d.month > 0 ? d.month : 1, 2), pad(d.day > 0 ? d.day : 1, 2)].join("-");
+	return [
+		pad(y <= 99 ? y + 1900 : y, 4),
+		pad(d.month > 0 ? d.month : 1, 2),
+		pad(d.day > 0 ? d.day : 1, 2),
+	].join("-");
 }
 
 /** The image's own capture month as `YYYY-MM`, "" when it carries no date. */
@@ -347,7 +351,7 @@ function metadataRequest(panos: string[], span: Span): ProcedureRequest {
  *  bad pano, so those spans split and retry. A successful all-null decode means
  *  the panos are gone and is accepted as-is. */
 function fetchRound(panos: string[], spans: Span[], out: FetchedMetadata): Span[] {
-	const res = mma.fetchMany(spans.map((s) => metadataRequest(panos, s)));
+	const res = mma.fetch(spans.map((s) => metadataRequest(panos, s)));
 	const retry: Span[] = [];
 	for (let i = 0; i < spans.length; i++) {
 		const span = spans[i];
@@ -384,7 +388,7 @@ function fetchRound(panos: string[], spans: Span[], out: FetchedMetadata): Span[
 }
 
 /** Metadata for every pano, in request order, at most `META_BATCH_SIZE` per request.
- *  Every request a round needs goes to the host in one `fetchMany`: this module decides
+ *  Every request a round needs goes to the host in one `fetch`: this module decides
  *  what to ask for, the host decides how much of it runs at once. */
 export function fetchMetadata(panos: string[]): FetchedMetadata {
 	const out: FetchedMetadata = {

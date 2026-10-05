@@ -1,8 +1,8 @@
 /**
  * The surface a procedure module runs against: the global `mma` object and the values
  * that cross the boundary. Every host call is synchronous -- the guest blocks while the
- * host works, which is how `fetchMany` (never a loop over `fetch`) buys a procedure its
- * request concurrency.
+ * host works, which is how one `fetch` of a list (never a loop over single requests)
+ * buys a procedure its request concurrency.
  *
  * A procedure is an ES module bundled to one file. Its named exports are the entry
  * points: `request` + `map` (RequestMap), `map` (MapOnly) or `run` (Run), plus the
@@ -26,7 +26,7 @@ export interface ProcedureResponse {
 
 export interface ProcedureHost {
 	fetch(req: ProcedureRequest): ProcedureResponse;
-	fetchMany(reqs: ProcedureRequest[]): ProcedureResponse[];
+	fetch(reqs: ProcedureRequest[]): ProcedureResponse[];
 	classify(dataset: string, lat: number, lng: number): string | null;
 	/** Run one sidecar command. `onLine` sees each output line as it arrives, so a
 	 *  procedure can report progress mid-run; the lines are also returned together. */
@@ -45,7 +45,7 @@ export interface ProcedureHost {
 }
 
 declare global {
-	/** Reachable inside a procedure module only. `fetch`, `fetchMany` and `sidecar` are
+	/** Reachable inside a procedure module only. `fetch` and `sidecar` are
 	 *  detached outside `run` and `query`; calling one elsewhere throws. */
 	const mma: ProcedureHost;
 }

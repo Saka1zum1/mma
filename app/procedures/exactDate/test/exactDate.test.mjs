@@ -46,7 +46,9 @@ const row = (id, lat, lng, extra) => ({
 function install(respond, { abortAfter = Infinity, onRound = null } = {}) {
 	const state = { calls: [], failed: [], progress: 0 };
 	globalThis.mma = {
-		fetchMany(reqs) {
+		fetch(reqOrReqs) {
+			const many = Array.isArray(reqOrReqs);
+			const reqs = many ? reqOrReqs : [reqOrReqs];
 			const out = reqs.map((req) => {
 				const parsed = JSON.parse(req.body);
 				const [start, end] = parsed[2][0][10];
@@ -65,9 +67,8 @@ function install(respond, { abortAfter = Infinity, onRound = null } = {}) {
 				return { status, body: encoder.encode(typeof r === "object" ? r.body : r) };
 			});
 			onRound?.(out.length);
-			return out;
+			return many ? out : out[0];
 		},
-		fetch: (req) => globalThis.mma.fetchMany([req])[0],
 		log: () => {},
 		progress: (units) => {
 			state.progress += units;

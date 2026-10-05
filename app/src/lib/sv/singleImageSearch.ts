@@ -129,7 +129,7 @@ function searchRequest(body: string): ProcedureRequest {
 	};
 }
 
-/** One coverage probe over (start, end], ready for `mma.fetchMany`. */
+/** One coverage probe over (start, end], ready for `mma.fetch`. */
 export function timestampSearchRequest(
 	lat: number,
 	lng: number,
@@ -150,7 +150,7 @@ export function panosAtCoords(
 	radius: number,
 	opts?: SearchOpts,
 ): (Pano | null)[] {
-	const res = mma.fetchMany(
+	const res = mma.fetch(
 		points.map((p) => searchRequest(buildLocationSearchBody(p.lat, p.lng, radius, opts))),
 	);
 	return points.map((_, i) => {

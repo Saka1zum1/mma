@@ -14,7 +14,7 @@ let failed = [];
 let progress = 0;
 
 globalThis.mma = {
-	fetchMany(reqs) {
+	fetch(reqs) {
 		return reqs.map((req) => {
 			const decoded = readGetMetadataRequest(new PbfReader(req.body));
 			calls.push({ req, keys: decoded.key.map((k) => k.key.id) });

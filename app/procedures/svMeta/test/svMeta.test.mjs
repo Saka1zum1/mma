@@ -57,7 +57,11 @@ function refRequestBytes(panoIds) {
 }
 
 function b64url(bytes) {
-  return Buffer.from(bytes).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+	return Buffer.from(bytes)
+		.toString("base64")
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
 }
 
 /** A pano id that is a base64url-encoded binary ImageKey. */
@@ -147,7 +151,7 @@ function install(respond, { abortAfter = Infinity, fields = null } = {}) {
 
   globalThis.mma = {
     fetch: answer,
-    fetchMany(reqs) {
+		fetch(reqs) {
       hostCalls++;
       return reqs.map(answer);
     },
@@ -257,23 +261,18 @@ test("a full row yields all eight fields with sorted coverage dates", () => {
 });
 
 test("coverage dates are the protobuf civil months, ascending", () => {
-  const times = [
-    { target: 1, date: { year: 2019, month: 5, day: 1 } },
-    { target: 2, date: { year: 2015, month: 12, day: 31 } },
-    // 0 is the protobuf default for both, i.e. year only.
-    { target: 3, date: { year: 2016, month: 0, day: 0 } },
-    // No date at all: not a capture the history can place.
-    { target: 4 },
-  ];
-  const { patches } = runProcedure(rowsFor([CLASSIC_A]), () =>
-    responseBytes({ metadata: [meta({ time: times, date: { year: 2021, month: 6, day: 15 } })] }),
-  );
-  assert.deepEqual(patches[0].patch.coverageDates, [
-    "2015-12",
-    "2016-01",
-    "2019-05",
-    "2021-06",
-  ]);
+	const times = [
+		{ target: 1, date: { year: 2019, month: 5, day: 1 } },
+		{ target: 2, date: { year: 2015, month: 12, day: 31 } },
+		// 0 is the protobuf default for both, i.e. year only.
+		{ target: 3, date: { year: 2016, month: 0, day: 0 } },
+		// No date at all: not a capture the history can place.
+		{ target: 4 },
+	];
+	const { patches } = runProcedure(rowsFor([CLASSIC_A]), () =>
+		responseBytes({ metadata: [meta({ time: times, date: { year: 2021, month: 6, day: 15 } })] }),
+	);
+	assert.deepEqual(patches[0].patch.coverageDates, ["2015-12", "2016-01", "2019-05", "2021-06"]);
 });
 
 test("missing optional fields collapse to nulls and defaults", () => {
@@ -360,34 +359,39 @@ test("a single-pano all-null response is not bisected", () => {
 });
 
 test("a non-2xx response is split, not written off whole", () => {
-  const rows = [
-    { id: 1, panoId: CLASSIC_A },
-    { id: 2, panoId: CLASSIC_B },
-    { id: 3, panoId: CLASSIC_A },
-  ];
-  const { patches, failed, progress, calls } = runProcedure(rows, () => ({
-    status: 500,
-    body: Buffer.alloc(0),
-  }));
-  // The pair goes out together, then once each after the split.
-  assert.equal(calls.length, 3);
-  assert.deepEqual(patches, []);
-  assert.deepEqual([...failed].sort((a, b) => a - b), [1, 2, 3]);
-  assert.equal(progress, 3);
+	const rows = [
+		{ id: 1, panoId: CLASSIC_A },
+		{ id: 2, panoId: CLASSIC_B },
+		{ id: 3, panoId: CLASSIC_A },
+	];
+	const { patches, failed, progress, calls } = runProcedure(rows, () => ({
+		status: 500,
+		body: Buffer.alloc(0),
+	}));
+	// The pair goes out together, then once each after the split.
+	assert.equal(calls.length, 3);
+	assert.deepEqual(patches, []);
+	assert.deepEqual(
+		[...failed].sort((a, b) => a - b),
+		[1, 2, 3],
+	);
+	assert.equal(progress, 3);
 });
 
 test("a failed request isolates to the pano that caused it", () => {
-  const panos = [CLASSIC_A, CLASSIC_B, FIFE, BINARY];
-  const poisoned = (keys) => keys.some((k) => k.endsWith(CLASSIC_B));
-  const { patches, failed } = runProcedure(rowsFor(panos), (c) =>
-    poisoned(c.keys) ? { status: 500, body: Buffer.alloc(0) } : responseBytes({ metadata: c.keys.map(() => meta()) }),
-  );
-  // Only the poison pano ends up failed; its neighbours still resolve.
-  assert.deepEqual(failed, [2]);
-  assert.deepEqual(
-    patches.map((p) => p.id),
-    [1, 3, 4],
-  );
+	const panos = [CLASSIC_A, CLASSIC_B, FIFE, BINARY];
+	const poisoned = (keys) => keys.some((k) => k.endsWith(CLASSIC_B));
+	const { patches, failed } = runProcedure(rowsFor(panos), (c) =>
+		poisoned(c.keys)
+			? { status: 500, body: Buffer.alloc(0) }
+			: responseBytes({ metadata: c.keys.map(() => meta()) }),
+	);
+	// Only the poison pano ends up failed; its neighbours still resolve.
+	assert.deepEqual(failed, [2]);
+	assert.deepEqual(
+		patches.map((p) => p.id),
+		[1, 3, 4],
+	);
 });
 
 /** 22-char official-looking pano ids, distinct per index. */
@@ -513,58 +517,56 @@ test("a row with no extra never adds staleness keys", () => {
 // --- Camera type ---
 
 test("camera type known answers", () => {
-  const cases = [
-    ["gen1 height", { height: 1664 }, "gen1"],
-    ["gen2 height", { height: 6656 }, "gen2"],
-    ["gen4 height", { height: 8192 }, "gen4"],
-    ["unknown height", { height: 9999 }, null],
-    ["gen4 + scout", { height: 8192, source: "scout" }, "trekker"],
-    ["gen1 + scout stays gen1", { height: 1664, source: "scout" }, "gen1"],
-    ["gen2 + scout", { height: 6656, source: "scout" }, "trekker"],
-    ["gen2 + level", { height: 6656, level: { id: 1 } }, "tripod"],
-    ["gen2 + level, no id", { height: 6656, level: {} }, "tripod"],
-    ["gen2 + scout + level prefers tripod", { height: 6656, source: "scout", level: { id: 1 } }, "tripod"],
-  ];
-  for (const [label, over, expected] of cases) {
-    const { patches } = runProcedure(rowsFor([CLASSIC_A]), () =>
-      responseBytes({ metadata: [meta(over)] }),
-    );
-    assert.equal(patches[0].patch.cameraType, expected, label);
-  }
+	const cases = [
+		["gen1 height", { height: 1664 }, "gen1"],
+		["gen2 height", { height: 6656 }, "gen2"],
+		["gen4 height", { height: 8192 }, "gen4"],
+		["unknown height", { height: 9999 }, null],
+		["gen4 + scout", { height: 8192, source: "scout" }, "trekker"],
+		["gen1 + scout stays gen1", { height: 1664, source: "scout" }, "gen1"],
+		["gen2 + scout", { height: 6656, source: "scout" }, "trekker"],
+		["gen2 + level", { height: 6656, level: { id: 1 } }, "tripod"],
+		["gen2 + level, no id", { height: 6656, level: {} }, "tripod"],
+		[
+			"gen2 + scout + level prefers tripod",
+			{ height: 6656, source: "scout", level: { id: 1 } },
+			"tripod",
+		],
+	];
+	for (const [label, over, expected] of cases) {
+		const { patches } = runProcedure(rowsFor([CLASSIC_A]), () =>
+			responseBytes({ metadata: [meta(over)] }),
+		);
+		assert.equal(patches[0].patch.cameraType, expected, label);
+	}
 });
 
 test("badcam thresholds", () => {
-  const cases = [
-    ["GB after 2021-01", "GB", { year: 2021, month: 6 }, 51, "badcam"],
-    ["GB before 2021-01", "GB", { year: 2020, month: 6 }, 51, "gen2"],
-    ["US above 52N after 2019-01", "US", { year: 2020, month: 1 }, 60, "badcam"],
-    ["US below 52N", "US", { year: 2020, month: 1 }, 40, "gen2"],
-    ["CY always", "CY", { year: 2005, month: 1 }, 35, "badcam"],
-    ["JP never", "JP", { year: 2023, month: 1 }, 35, "gen2"],
-    ["no date is not badcam", "GB", undefined, 51, "gen2"],
-  ];
-  for (const [label, cc, date, lat, expected] of cases) {
-    const m = meta({ height: 6656, date: date ?? { year: 0, month: 0, day: 0 } });
-    m.information[0].location.countryCode = cc;
-    m.information[0].location.location = { lat, lng: 0 };
-    const { patches } = runProcedure(rowsFor([CLASSIC_A]), () =>
-      responseBytes({ metadata: [m] }),
-    );
-    assert.equal(patches[0].patch.cameraType, expected, label);
-  }
+	const cases = [
+		["GB after 2021-01", "GB", { year: 2021, month: 6 }, 51, "badcam"],
+		["GB before 2021-01", "GB", { year: 2020, month: 6 }, 51, "gen2"],
+		["US above 52N after 2019-01", "US", { year: 2020, month: 1 }, 60, "badcam"],
+		["US below 52N", "US", { year: 2020, month: 1 }, 40, "gen2"],
+		["CY always", "CY", { year: 2005, month: 1 }, 35, "badcam"],
+		["JP never", "JP", { year: 2023, month: 1 }, 35, "gen2"],
+		["no date is not badcam", "GB", undefined, 51, "gen2"],
+	];
+	for (const [label, cc, date, lat, expected] of cases) {
+		const m = meta({ height: 6656, date: date ?? { year: 0, month: 0, day: 0 } });
+		m.information[0].location.countryCode = cc;
+		m.information[0].location.location = { lat, lng: 0 };
+		const { patches } = runProcedure(rowsFor([CLASSIC_A]), () => responseBytes({ metadata: [m] }));
+		assert.equal(patches[0].patch.cameraType, expected, label);
+	}
 });
 
 // --- Abort ---
 
 test("abort between sub-chunks stops fetching", () => {
-  const panos = [CLASSIC_A, CLASSIC_B, FIFE, BINARY];
-  const { calls, patches } = runProcedure(
-    rowsFor(panos),
-    () => EMPTY_RESPONSE,
-    { abortAfter: 1 },
-  );
-  assert.equal(calls.length, 1);
-  assert.deepEqual(patches, []);
+	const panos = [CLASSIC_A, CLASSIC_B, FIFE, BINARY];
+	const { calls, patches } = runProcedure(rowsFor(panos), () => EMPTY_RESPONSE, { abortAfter: 1 });
+	assert.equal(calls.length, 1);
+	assert.deepEqual(patches, []);
 });
 
 // --- Field selection ---
@@ -604,27 +606,32 @@ test("a fully deselected provider with nothing stale writes nothing", () => {
 
 /** The full metadata a query can decode, including everything `run` never reads. */
 function richMeta(over = {}) {
-  const base = meta(over);
-  return {
-    ...base,
-    tiles: { worldSize: { height: 8192, width: 16384 }, tileSize: { tileSize: { height: 512, width: 512 } } },
-    description: { description: [{ text: "Main Street" }, { text: "Springfield" }] },
-    attribution: {
-      item: [{ name: { name: "© 2021 Google" } }],
-      author: [{ name: { text: "Some Uploader" } }],
-    },
-    information: [
-      {
-        ...base.information[0],
-        relations: { pano: [{ key: { frontend: 2, id: CLASSIC_B } }, { key: { frontend: 3, id: "AF1Qz" } }] },
-        link: [
-          { target: 0, properties: { heading: 90 } },
-          { target: 1, properties: { heading: 270 } },
-        ],
-        time: [{ target: 0, date: { year: 2019, month: 5, day: 1 } }],
-      },
-    ],
-  };
+	const base = meta(over);
+	return {
+		...base,
+		tiles: {
+			worldSize: { height: 8192, width: 16384 },
+			tileSize: { tileSize: { height: 512, width: 512 } },
+		},
+		description: { description: [{ text: "Main Street" }, { text: "Springfield" }] },
+		attribution: {
+			item: [{ name: { name: "© 2021 Google" } }],
+			author: [{ name: { text: "Some Uploader" } }],
+		},
+		information: [
+			{
+				...base.information[0],
+				relations: {
+					pano: [{ key: { frontend: 2, id: CLASSIC_B } }, { key: { frontend: 3, id: "AF1Qz" } }],
+				},
+				link: [
+					{ target: 0, properties: { heading: 90 } },
+					{ target: 1, properties: { heading: 270 } },
+				],
+				time: [{ target: 0, date: { year: 2019, month: 5, day: 1 } }],
+			},
+		],
+	};
 }
 
 test("query metadata answers the full pano shape", () => {
