@@ -29,7 +29,7 @@ export interface TagTreeNode {
 	children: TagTreeNode[];
 	descendantTagIds: number[];
 	/** Min `order` across descendant tags — used for "default" sort parity with flat mode.
-	 *  MAX_SAFE_INTEGER for a subtree with no tags (declared empty folders), sorting it last. */
+	 *  A subtree with no tags (declared empty folders) sorts by its own stored order, else last. */
 	sortOrder: number;
 	/** A synthetic leaf placing a real tag at a second tree location. Reuses `tag`, but is
 	 *  not draggable and never contributes its id to reorder (the real leaf owns that). */
@@ -42,10 +42,7 @@ export interface TagTreeNode {
 export const isLeafTag = (n: TagTreeNode) => n.children.length === 0 && n.tag != null;
 
 /** Initial `virtualTags` entry when the user creates an empty folder. */
-export function defaultVirtualFolderEntry(
-	path: string,
-	mode: TagFolderColorMode,
-): VirtualTag {
+export function defaultVirtualFolderEntry(path: string, mode: TagFolderColorMode): VirtualTag {
 	if (mode === "random") return { color: colorForName(path) };
 	return {};
 }
@@ -263,6 +260,7 @@ export function buildTagTree(
 			if (c.minOrder < minOrder) minOrder = c.minOrder;
 		}
 		node.descendantTagIds = ids;
+		if (ids.length === 0) minOrder = virtualTags[node.fullPath]?.order ?? minOrder;
 		node.sortOrder = minOrder === Number.POSITIVE_INFINITY ? Number.MAX_SAFE_INTEGER : minOrder;
 		return { ids, minOrder: node.sortOrder };
 	}
@@ -559,6 +557,55 @@ export function canDropInto(tree: TagTreeNode[], dragPaths: string[], targetPath
 	return nodes[0].parentPath !== targetPath;
 }
 
+/** The full tag order, and the declared empty folders re-placed among it. */
+export interface FlatOrder {
+	orderedIds: number[];
+	virtualTags: Record<string, VirtualTag>;
+}
+
+/** A tag, or a folder with no tags, in display order. */
+type FlatItem = { tagId: number } | { folder: string };
+
+/** One DFS step: a node's own tag, or the node itself when its subtree holds no tags. */
+function flatItem(
+	n: TagTreeNode,
+	aliased: ReadonlySet<number>,
+	path = n.fullPath,
+	empty = n.descendantTagIds.length === 0,
+): FlatItem | null {
+	if (tagIdInDfsOrder(n, aliased)) return { tagId: n.tag!.id };
+	return empty ? { folder: path } : null;
+}
+
+/** The tag ids in order, and every declared empty folder among them placed on the same scale:
+ *  a reorder gives the tag at position k order k, so folders just before it sit between k-1 and k. */
+function flatten(items: FlatItem[], virtualTags: Record<string, VirtualTag>): FlatOrder {
+	const orderedIds: number[] = [];
+	const next = { ...virtualTags };
+	let pending: string[] = [];
+	const place = () => {
+		const k = orderedIds.length;
+		pending.forEach((path, j) => {
+			next[path] = { ...next[path], order: k - 1 + (j + 1) / (pending.length + 1) };
+		});
+		pending = [];
+	};
+	for (const item of items) {
+		if ("tagId" in item) {
+			place();
+			orderedIds.push(item.tagId);
+		} else if (item.folder in virtualTags) {
+			pending.push(item.folder);
+		}
+	}
+	place();
+	return { orderedIds, virtualTags: next };
+}
+
+function targetInside(targetPath: string, folder: string): boolean {
+	return targetPath === folder || (folder !== "" && targetPath.startsWith(`${folder}/`));
+}
+
 export interface TagMoveResult {
 	tagRenames: TagNameChange[];
 	virtualTags: Record<string, VirtualTag>;
@@ -653,28 +700,42 @@ export function moveIntoFolder(
 	}
 
 	const dragSet = new Set(dragPaths);
-	const orderedIds: number[] = [];
 	const aliased = aliasedTagIds(workingAliases);
-	const emitSubtree = (n: TagTreeNode) => {
-		if (tagIdInDfsOrder(n, aliased)) orderedIds.push(n.tag!.id);
-		for (const c of n.children) emitSubtree(c);
+	const movedIds = new Set(nodes.flatMap((b) => b.descendantTagIds));
+	const emptyAfterMove = (n: TagTreeNode) =>
+		n.descendantTagIds.every((id) => movedIds.has(id)) &&
+		!(movedIds.size > 0 && targetInside(targetPath, n.fullPath));
+	const items: FlatItem[] = [];
+	const push = (item: FlatItem | null) => {
+		if (item) items.push(item);
+	};
+	const emitSubtree = (n: TagTreeNode, oldRoot: string, newRoot: string) => {
+		push(flatItem(n, aliased, newRoot + n.fullPath.slice(oldRoot.length)));
+		for (const c of n.children) emitSubtree(c, oldRoot, newRoot);
+	};
+	const emitBlock = () => {
+		for (const b of nodes) {
+			const newPath = targetPath === "" ? b.segment : `${targetPath}/${b.segment}`;
+			emitSubtree(b, b.fullPath, newPath);
+		}
 	};
 	const walk = (level: TagTreeNode[]) => {
 		for (const n of level) {
 			if (dragSet.has(n.fullPath)) continue;
-			if (tagIdInDfsOrder(n, aliased)) orderedIds.push(n.tag!.id);
+			push(flatItem(n, aliased, n.fullPath, emptyAfterMove(n)));
 			walk(n.children);
-			if (n.fullPath === targetPath) for (const b of nodes) emitSubtree(b);
+			if (n.fullPath === targetPath) emitBlock();
 		}
 	};
 	walk(tree);
-	if (targetPath === "") for (const b of nodes) emitSubtree(b);
+	if (targetPath === "") emitBlock();
+	const flat = flatten(items, workingVT);
 
 	return {
 		tagRenames: [...renameById].map(([id, name]) => ({ id, name })),
-		virtualTags: workingVT,
+		virtualTags: flat.virtualTags,
 		aliases: workingAliases,
-		orderedIds,
+		orderedIds: flat.orderedIds,
 		pathRemaps,
 	};
 }
@@ -685,12 +746,8 @@ export function removeLeavesFromFolder(
 	virtualTags: Record<string, VirtualTag>,
 	aliases: Record<string, number> = {},
 ): TagMoveResult | null {
-	const nodes = leafPaths
-		.map((p) => findByPath(tree, p))
-		.filter((n): n is TagTreeNode => !!n);
-	const leaves = nodes.filter(
-		(n) => isLeafTag(n) && !n.isAlias && n.parentPath !== "",
-	);
+	const nodes = leafPaths.map((p) => findByPath(tree, p)).filter((n): n is TagTreeNode => !!n);
+	const leaves = nodes.filter((n) => isLeafTag(n) && !n.isAlias && n.parentPath !== "");
 	if (leaves.length === 0) return null;
 
 	// Strip one structural folder level: `<parent>/<segment>` -> `<segment>`. The leaf
@@ -747,6 +804,7 @@ interface OrderNode {
 	tag: { id: number } | null;
 	children: OrderNode[];
 	isAlias?: boolean;
+	descendantTagIds?: number[];
 }
 
 function siblingsAt<T extends OrderNode>(tree: T[], parent: string): T[] {
@@ -795,7 +853,8 @@ export function stepSiblingFlatOrder<T extends OrderNode>(
 	parent: string,
 	delta: -1 | 1,
 	aliased: ReadonlySet<number> = new Set(),
-): number[] | null {
+	virtualTags: Record<string, VirtualTag> = {},
+): FlatOrder | null {
 	const siblings = siblingsAt(tree, parent);
 	const from = siblings.findIndex((n) => n.fullPath === path);
 	if (from === -1) return null;
@@ -809,6 +868,7 @@ export function stepSiblingFlatOrder<T extends OrderNode>(
 		delta < 0 ? "before" : "after",
 		parent,
 		aliased,
+		virtualTags,
 	);
 }
 
@@ -819,7 +879,8 @@ export function reorderSiblingsFlatOrder<T extends OrderNode>(
 	position: "before" | "after",
 	parent: string,
 	aliased: ReadonlySet<number> = new Set(),
-): number[] | null {
+	virtualTags: Record<string, VirtualTag> = {},
+): FlatOrder | null {
 	const dragSet = new Set(dragPaths);
 	if (dragSet.has(dropPath)) return null;
 
@@ -833,14 +894,22 @@ export function reorderSiblingsFlatOrder<T extends OrderNode>(
 	if (position === "after") idx++;
 	without.splice(idx, 0, ...block);
 
-	const out: number[] = [];
+	const items: FlatItem[] = [];
 	const dfs = (nodes: OrderNode[], cur: string) => {
 		const ordered = cur === parent ? without : nodes;
 		for (const n of ordered) {
-			if (n.tag && tagIdInDfsOrder(n as TagTreeNode, aliased)) out.push(n.tag.id);
+			const node = n as TagTreeNode;
+			if (node.descendantTagIds) {
+				const item = flatItem(node, aliased);
+				if (item) items.push(item);
+			} else if (n.tag && tagIdInDfsOrder(node, aliased)) {
+				items.push({ tagId: n.tag.id });
+			} else if (!n.tag && n.children.length === 0) {
+				items.push({ folder: n.fullPath });
+			}
 			dfs(n.children, n.fullPath);
 		}
 	};
 	dfs(tree, "");
-	return out;
+	return flatten(items, virtualTags);
 }

@@ -50,6 +50,7 @@ import {
 	stripFolderPrefix,
 	type TagTreeNode,
 	type TagMoveResult,
+	type FlatOrder,
 } from "./tagTreeRange";
 import { useT } from "@/lib/i18n";
 import { matches } from "@/lib/search";
@@ -121,13 +122,14 @@ export function TagManager() {
 		[addOptimisticTags],
 	);
 	const commitReorder = useCallback(
-		(orderedIds: number[]) => {
+		({ orderedIds, virtualTags }: FlatOrder) => {
 			startTransition(async () => {
 				addOptimisticTags(orderedIds.map((id, i) => ({ id, patch: { order: i } })));
 				await reorderTags(orderedIds);
 			});
+			setVirtualTags(virtualTags);
 		},
-		[addOptimisticTags],
+		[addOptimisticTags, setVirtualTags],
 	);
 	const commitMoveInto = useCallback(
 		(move: TagMoveResult) => {
@@ -171,7 +173,7 @@ export function TagManager() {
 		}
 		commitTags(tagUpdates);
 		const nextVT = { ...virtualTags };
-		for (const f of folders) nextVT[f] = { color };
+		for (const f of folders) nextVT[f] = { ...nextVT[f], color };
 		setVirtualTags(nextVT);
 	};
 	const addAlias = useCallback((tag: { id: number; name: string }) => setAddingAliasFor(tag), []);
@@ -208,12 +210,11 @@ export function TagManager() {
 		(path: string) => {
 			const vt = getMapState().map?.meta.settings.virtualTags ?? {};
 			const aliases = getMapState().map?.meta.settings.aliases ?? {};
-			const { tagRenames, virtualTags: nextVT, aliases: nextAliases } = stripFolderPrefix(
-				path,
-				tags,
-				vt,
-				aliases,
-			);
+			const {
+				tagRenames,
+				virtualTags: nextVT,
+				aliases: nextAliases,
+			} = stripFolderPrefix(path, tags, vt, aliases);
 			if (tagRenames.length)
 				commitTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
 			setVirtualTags(nextVT);
@@ -222,10 +223,7 @@ export function TagManager() {
 		[tags, commitTags, setVirtualTags, setAliases],
 	);
 	// Drop real leaves dragged out of their folder: strips their folder prefix.
-	const removeLeaves = useCallback(
-		(move: TagMoveResult) => commitMoveInto(move),
-		[commitMoveInto],
-	);
+	const removeLeaves = useCallback((move: TagMoveResult) => commitMoveInto(move), [commitMoveInto]);
 
 	// Collapsed-state pill preview only; the open list is rendered by TagTreeView.
 	const sortedTags = useMemo(() => {
@@ -288,7 +286,11 @@ export function TagManager() {
 						>
 							{t("New folder")}
 						</Button>
-						<span className="tag-manager__sort button-group" role="radiogroup" aria-label={t("Sort tags")}>
+						<span
+							className="tag-manager__sort button-group"
+							role="radiogroup"
+							aria-label={t("Sort tags")}
+						>
 							{(
 								[
 									["default", t("default")],
@@ -389,12 +391,15 @@ export function TagManager() {
 							} = cascadeRename(editingVirtualPath, newPath, tags, virtualTags, aliases);
 							if (tagRenames.length)
 								commitTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
-							nextVT[newPath] = { color };
+							nextVT[newPath] = { ...nextVT[newPath], color };
 							setVirtualTags(nextVT);
 							setAliases(nextAliases);
 							treeRef.current?.remapExpanded(editingVirtualPath, newPath);
 						} else {
-							setVirtualTags({ ...virtualTags, [editingVirtualPath]: { color } });
+							setVirtualTags({
+								...virtualTags,
+								[editingVirtualPath]: { ...virtualTags[editingVirtualPath], color },
+							});
 						}
 						setEditingVirtualPath(null);
 					}}
@@ -680,9 +685,15 @@ function EditTagDialog({
 						{cascade && (
 							<label className="edit-tag-modal__cascade">
 								<Checkbox checked={cascadeOn} onChange={(e) => setCascadeOn(e.target.checked)} />
-								{t({ one: "Rename {count} tag inside", other: "Rename {count} tags inside" }, { n: cascade.descendantCount, ...{
-									count: fmt.format(cascade.descendantCount),
-								} })}
+								{t(
+									{ one: "Rename {count} tag inside", other: "Rename {count} tags inside" },
+									{
+										n: cascade.descendantCount,
+										...{
+											count: fmt.format(cascade.descendantCount),
+										},
+									},
+								)}
 							</label>
 						)}
 					</div>
@@ -713,9 +724,15 @@ function EditTagDialog({
 									onClose();
 								}}
 							>
-								{t({ one: "Apply to {count} tag inside", other: "Apply to {count} tags inside" }, { n: cascade.descendantCount, ...{
-									count: fmt.format(cascade.descendantCount),
-								} })}
+								{t(
+									{ one: "Apply to {count} tag inside", other: "Apply to {count} tags inside" },
+									{
+										n: cascade.descendantCount,
+										...{
+											count: fmt.format(cascade.descendantCount),
+										},
+									},
+								)}
 							</Button>
 						)}
 					</div>
@@ -729,7 +746,11 @@ function EditTagDialog({
 							<p className="edit-tag-modal__hotkey-note">
 								{holderTag && <>{t("Takes the key from \"{name}\".", { name: holderTag.name })} </>}
 								{globalConflicts.length > 0 && (
-									<>{t("Overrides \"{label}\" while this map is open.", { label: globalConflicts[0].label })}</>
+									<>
+										{t('Overrides "{label}" while this map is open.', {
+											label: globalConflicts[0].label,
+										})}
+									</>
 								)}
 							</p>
 						)}
@@ -814,9 +835,15 @@ function VirtualTagDialog({
 								className="edit-tag-modal__apply-color"
 								onClick={() => onApplyColor(hexValue)}
 							>
-								{t({ one: "Apply to {count} tag inside", other: "Apply to {count} tags inside" }, { n: descendantCount, ...{
-									count: fmt.format(descendantCount),
-								} })}
+								{t(
+									{ one: "Apply to {count} tag inside", other: "Apply to {count} tags inside" },
+									{
+										n: descendantCount,
+										...{
+											count: fmt.format(descendantCount),
+										},
+									},
+								)}
 							</Button>
 						)}
 					</div>
@@ -848,9 +875,11 @@ function NewTagDialog({
 	const [name, setName] = useState("");
 	const [busy, setBusy] = useState(false);
 
-	const trimmed = name.trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
-	const collision =
-		!!trimmed && tags.some((x) => x.name.toLowerCase() === trimmed.toLowerCase());
+	const trimmed = name
+		.trim()
+		.replace(/^\/+|\/+$/g, "")
+		.replace(/\/{2,}/g, "/");
+	const collision = !!trimmed && tags.some((x) => x.name.toLowerCase() === trimmed.toLowerCase());
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>

@@ -42,6 +42,7 @@ import {
 	saveExpanded,
 	type TagTreeNode,
 	type TagMoveResult,
+	type FlatOrder,
 } from "./tagTreeRange";
 import type { TagSortMode } from "@/types";
 import type { Tag, VirtualTag } from "@/bindings.gen";
@@ -99,9 +100,9 @@ interface TagTreeViewProps {
 	onRenameTag: (tag: { id: number; name: string }) => void;
 	onAddAlias?: (tag: { id: number; name: string }) => void;
 	onRemoveAlias: (aliasPath: string) => void;
-	/** Commit a drag reorder (full DFS tag-id order). Must render the new order
-	 *  optimistically -- the drop handler clears its drag state synchronously. */
-	onReorder: (orderedIds: number[]) => void;
+	/** Commit a drag reorder (full DFS tag-id order, empty folders placed among it). Must
+	 *  render the new order optimistically -- the drop handler clears its drag state synchronously. */
+	onReorder: (order: FlatOrder) => void;
 	/** Commit a drag-into-folder move (leaf → alias, or folder cascade rename).
 	 *  Same optimistic contract as onReorder. */
 	onMoveInto: (move: TagMoveResult) => void;
@@ -367,12 +368,7 @@ export function TagTreeView({
 					if (node.isAlias) {
 						onRemoveAliases([...block]);
 					} else if (isLeafTag(node) && node.parentPath !== "") {
-						const move = removeLeavesFromFolder(
-							treeRef.current,
-							[...block],
-							virtualTags,
-							aliases,
-						);
+						const move = removeLeavesFromFolder(treeRef.current, [...block], virtualTags, aliases);
 						if (move) onRemoveLeaves(move);
 					}
 				} else if (dropT.position === "into") {
@@ -393,6 +389,7 @@ export function TagTreeView({
 						dropT.position,
 						node.parentPath,
 						aliasedTagIds(aliases),
+						virtualTags,
 					);
 					if (order) onReorder(order);
 				}
@@ -428,9 +425,7 @@ export function TagTreeView({
 			if (
 				reorderEnabled &&
 				src.parentPath === node.parentPath &&
-				isLeafTag(src) === isLeafTag(node) &&
-				src.descendantTagIds.length > 0 &&
-				node.descendantTagIds.length > 0
+				isLeafTag(src) === isLeafTag(node)
 			) {
 				const rect = el.getBoundingClientRect();
 				const position = horizontal
@@ -475,6 +470,7 @@ export function TagTreeView({
 			node.parentPath,
 			e.key === "ArrowUp" ? -1 : 1,
 			aliasedTagIds(aliases),
+			virtualTags,
 		);
 		if (!order) return;
 		e.preventDefault();
