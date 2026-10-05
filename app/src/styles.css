@@ -4677,22 +4677,33 @@ body:not(.mm-tag-dragging) .tag-tree__edit:hover {
 .sv-opacity-control__slider {
 	width: 6rem;
 }
-.opacity-target-toggle {
+.opacity-targets {
+	display: flex;
+	align-self: stretch;
+}
+.opacity-target {
+	position: relative;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	align-self: stretch;
-	width: 40px;
-	border: none;
-	background: transparent;
-	padding: 0;
-	cursor: pointer;
-	color: #666;
 	border-radius: 2px;
 }
-.opacity-target-toggle:hover {
+.opacity-target:hover,
+.opacity-target[aria-pressed="true"] {
 	background: #ebebeb;
 	color: #000;
+}
+.opacity-target svg {
+	opacity: calc(0.35 + 0.65 * var(--layer-opacity, 1));
+}
+.opacity-target[data-hidden]::after {
+	content: "";
+	position: absolute;
+	left: 25%;
+	right: 25%;
+	top: 50%;
+	border-top: 2px solid currentColor;
+	transform: rotate(-45deg);
 }
 .sv-preview-control {
 	height: auto;
@@ -4848,7 +4859,6 @@ body:not(.mm-tag-dragging) .tag-tree__edit:hover {
 .command-palette[open],
 .command-palette[data-open] {
 	color: var(--text-1);
-	z-index: 10;
 	background: var(--surface-3);
 	border: 1px solid var(--border-subtle);
 	border-radius: var(--radius-3);
@@ -6722,6 +6732,20 @@ body {
 	background: transparent;
 	color: inherit;
 	cursor: pointer;
+}
+
+.sync-history {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-size: 0.8125rem;
+}
+.sync-history__error {
+	color: var(--red-9, #e5484d);
+	overflow-wrap: anywhere;
 }
 
 .plugin-section {
