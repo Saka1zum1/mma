@@ -104,7 +104,10 @@ vi.mock("@/store/useMapStore", () => ({
 		} as unknown as Selection,
 	],
 	useMapState: (sel: (s: unknown) => unknown) => sel(undefined),
-	getMapState: () => ({ fieldDefs: {} }),
+	getMapState: () => ({
+		fieldDefs: {},
+		map: { meta: { settings: { pluginData: { "map-generator": h.saved } } } },
+	}),
 	createTags: (names: string[]) => Promise.resolve(names.map((name, i) => ({ id: i + 1, name }))),
 	setPluginMode: () => {},
 }));

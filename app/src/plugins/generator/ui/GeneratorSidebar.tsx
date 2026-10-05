@@ -7,7 +7,10 @@ import { google } from "@/lib/sv/opensv";
 import { getActiveSelections, useMapState } from "@/store/useMapStore";
 import { usePluginEvent } from "@/plugins/pluginEvents";
 import type { Selection } from "@/bindings.gen";
-import { storage } from "@/plugins/pluginStorage";
+import { mapStorage } from "@/plugins/registry";
+import { readGeneratorPreset, writeGeneratorPreset } from "../presetFile";
+import { downloadBlob } from "@/lib/util/util";
+import { addPolygonSelections } from "@/lib/map/addPolygonSelections";
 import { Bar } from "@/components/primitives/Bar";
 import { Sidebar, Section } from "@/components/primitives/Sidebar";
 import { searchCoverage } from "../searchCoverage";
@@ -62,7 +65,7 @@ function openTraverseRegion(meta: GeneratorRegionMeta): GeneratorRegion {
 	};
 }
 
-const genStore = storage("map-generator");
+const genStore = mapStorage("map-generator");
 
 function loadSettings(): GeneratorSettings {
 	const saved = genStore.get<Partial<GeneratorSettings>>("settings");
@@ -182,7 +185,10 @@ function TraverseProgress({ settings }: { settings: GeneratorSettings }) {
 					{formatTraverseSpeed(scan.perSec)}
 				</span>
 				<span className="traverse-progress__count mono">
-					{t("{done} / {total}", { done: fmt.format(scan.finished), total: fmt.format(scan.total) })}
+					{t("{done} / {total}", {
+						done: fmt.format(scan.finished),
+						total: fmt.format(scan.total),
+					})}
 				</span>
 			</div>
 			<Bar value={scan.finished / scan.total} size="md" />
@@ -455,6 +461,37 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 
 	const polygonSelections = selections.filter((s) => s.selector.type === "Polygon");
 
+	const exportPreset = () => {
+		const polygons = polygonSelections.flatMap((s) =>
+			s.selector.type === "Polygon" ? [s.selector.polygon] : [],
+		);
+		const preset = writeGeneratorPreset(settings, tagName, polygons);
+		downloadBlob(
+			new Blob([JSON.stringify(preset)], { type: "application/geo+json" }),
+			"generator-preset.geojson",
+		);
+	};
+	const importPreset = () => {
+		const input = document.createElement("input");
+		input.type = "file";
+		input.accept = ".json,.geojson";
+		input.onchange = async () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			const preset = readGeneratorPreset(JSON.parse(await file.text()));
+			if (preset.settings) {
+				setSettings(preset.settings);
+				saveSettings(preset.settings);
+			}
+			if (preset.tagName != null) {
+				setTagName(preset.tagName);
+				void genStore.set("tagName", preset.tagName);
+			}
+			if (preset.polygons.length) await addPolygonSelections(preset.polygons);
+		};
+		input.click();
+	};
+
 	return (
 		<Sidebar
 			title={t("Map Generator")}
@@ -485,9 +522,17 @@ export function GeneratorSidebar({ onClose }: { onClose: () => void }) {
 			}
 		>
 			<Section title={t("Regions ({n})", { n: polygonSelections.length })}>
+				<div className="generator-sidebar__actions">
+					<Button onClick={importPreset}>{t("Import preset")}</Button>
+					<Button onClick={exportPreset} disabled={polygonSelections.length === 0}>
+						{t("Export preset")}
+					</Button>
+				</div>
 				{isTraverse(settings) && polygonSelections.length === 0 && (
 					<Hint>
-						{t("Traverse scans pano ids and does not need a polygon. The default target is how many locations to keep.")}
+						{t(
+							"Traverse scans pano ids and does not need a polygon. The default target is how many locations to keep.",
+						)}
 					</Hint>
 				)}
 				<RegionSelector
