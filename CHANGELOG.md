@@ -1,3 +1,19 @@
+## v0.11.7 - 2026-10-06
+- **Street View coverage**, ordinary markers, and the selection each have their own opacity. Faded markers stay see-through instead of erasing the map underneath
+- Empty **tag folders** keep the order you saved, and move with the rest of the tree
+- **New maps** can start from the preferences of the map you have open. Shortcuts, tag folders, aliases, and plugin data stay on the map they belong to
+- The map list can **duplicate** a map. An open map can be **saved as** a new one, including uncommitted edits, without its version history, edit history, or sync link
+- **Heatmap**, the **map generator**, and **Vali** keep their own settings on each map
+- The map generator can **import and export a preset**: regions and settings in one GeoJSON file
+- The bundled **Vali** editor is 3.2.1, and each map keeps its own definitions and tags
+- One **enrichment** run is a single undo step
+- **Sync** keeps a short history of recent runs. From a linked map you can create a new **GeoGuessr** draft or a new **map-making.app** map
+- **Validate locations** can report several findings on the same place: newer coverage, a pin away from the default, a default that is not the newest, a broken panorama id, unofficial coverage, a better camera, or no coverage
+- **Disambiguate** ranks groups from counts that do not overlap
+- The **command palette** stays clickable when it opens over a dialog
+- Pasting a **Google Maps** link keeps the panorama, camera, and tags
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.11.6 - 2026-09-29
 - **Export** can target **GeoGuessr**, **map-making.app**, or **this app**. GeoGuessr stays coordinates and panorama ids; map-making.app adds tags; this app also keeps extra fields, field definitions, and doclinks. Alternative provider sources stay on every format
 - **Map click** can create a location, select only, or select the nearest location. The hotkey cycles the three
