@@ -3555,8 +3555,8 @@ pub async fn store_save_dirty(
     let write = tokio::task::spawn_blocking(move || {
         persist_dirty(&map_id2, delta_data, alive, tags_json, pending)
     })
-            .await
-            .unwrap_or_else(|e| Err(e.into()));
+    .await
+    .unwrap_or_else(|e| Err(e.into()));
     if write.is_err() && wrote_tags {
         if let Ok(store) = state.lock()?.store_for_window(webview.label()) {
             store.tags.dirty = true;
@@ -4534,7 +4534,7 @@ pub fn store_count_by(
 ) -> AppResult<Vec<selections::CountBy>> {
     selector_read!(webview, state, selector, |view, set| {
         selections::count_by_fields(&view, &fields, &key, set)
-    ))
+    })
 }
 
 /// Distinct values of `field` across the selected set, sorted.

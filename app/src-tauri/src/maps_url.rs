@@ -232,7 +232,7 @@ fn parse_expanded(url: &Url) -> Option<ParsedStep> {
                 heading,
                 pitch,
                 zoom,
-                pano_id: (!pano_id.is_empty()).then_some(pano_id),
+                pano_id: (!pano_id.is_empty()).then(|| pano_id.clone()),
                 flags,
                 tags: tags.clone(),
                 provider: google_provider(),
@@ -276,7 +276,7 @@ fn parse_expanded(url: &Url) -> Option<ParsedStep> {
                 pano_id,
                 tags,
                 provider: google_provider(),
-            });
+            }));
         }
 
         if query_first(url, "layer").as_deref() == Some("c") {
@@ -294,7 +294,7 @@ fn parse_expanded(url: &Url) -> Option<ParsedStep> {
                     flags: LocationFlags::empty(),
                     tags,
                     provider: google_provider(),
-                });
+                }));
             }
         }
     } else if host.starts_with("artsandculture.google.") {
@@ -309,7 +309,7 @@ fn parse_expanded(url: &Url) -> Option<ParsedStep> {
                 flags: LocationFlags::LOAD_AS_PANO_ID,
                 tags,
                 provider: google_provider(),
-            });
+            }));
         }
     }
 
