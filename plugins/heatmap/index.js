@@ -1180,7 +1180,7 @@ var LAYER_DEFAULTS = {
   threshold: 0.05,
   gradientId: DEFAULT_GRADIENT_ID
 };
-var store = MMA.storage("heatmap");
+var store = MMA.mapStorage("heatmap");
 function defaultSource() {
   return MMA.getMapState().selectedLocationIds.size > 0 ? { pick: "selection" } : { pick: "all" };
 }
