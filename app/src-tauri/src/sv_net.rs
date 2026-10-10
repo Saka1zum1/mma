@@ -18,6 +18,31 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
+fn transport_lost(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect() || err.is_request()
+}
+
+/// Send a read again when the connection fails or the body never arrives. An HTTP
+/// status is an answer and is returned as-is.
+async fn send_read(
+    build: impl Fn() -> reqwest::RequestBuilder,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let mut delay = std::time::Duration::from_millis(50);
+    let mut last = None;
+    for attempt in 0..3u32 {
+        match build().send().await {
+            Ok(resp) => return Ok(resp),
+            Err(e) if transport_lost(&e) && attempt + 1 < 3 => {
+                tokio::time::sleep(delay).await;
+                delay = delay.saturating_mul(2);
+                last = Some(e);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.expect("the retry loop records the last transport error"))
+}
+
 /// Baidu `qt=sdata`. HTTP/1.1 with a deep idle pool: one HTTP/2 connection is capped by
 /// the server's stream limit (often ~100), which is slower than the script's hundreds of
 /// keep-alive connections. Browser headers match what that script sends.
@@ -112,17 +137,16 @@ pub async fn photometa_pano_ids(lat: f64, lng: f64) -> AppResult<Vec<String>> {
     let url = format!(
         "https://www.google.com/maps/photometa/ac/v1?pb=!1m1!1smaps_sv.tactile!6m3!1i{x}!2i{y}!3i17!8b1"
     );
-    let text = http_client()
-        .get(url)
-        .header(
+    let text = send_read(|| {
+        http_client().get(&url).header(
             "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         )
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    })
+    .await?
+    .error_for_status()?
+    .text()
+    .await?;
     Ok(pano_ids_from_photometa(&text))
 }
 
@@ -990,17 +1014,16 @@ pub async fn coverage_tile_alpha(url: String, x: u32, y: u32) -> AppResult<bool>
             "coverage_tile_alpha: url is not a coverage tile",
         ));
     }
-    let bytes = http_client()
-        .get(&url)
-        .header(
+    let bytes = send_read(|| {
+        http_client().get(&url).header(
             "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         )
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
+    })
+    .await?
+    .error_for_status()?
+    .bytes()
+    .await?;
     let alpha = png_alpha_at(&bytes, x, y)
         .ok_or_else(|| AppError::from("coverage_tile_alpha: unreadable tile"))?;
     Ok(alpha > 0)
@@ -1017,16 +1040,17 @@ async fn post_metadata(ids: &[String]) -> AppResult<Vec<GoogleBatchPano>> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let response = http_client()
-        .post("https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata")
-        .header("content-type", "application/json+protobuf")
-        .header("x-user-agent", "grpc-web-javascript/0.1")
-        .body(metadata_payload(ids))
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let response = send_read(|| {
+        http_client()
+            .post("https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata")
+            .header("content-type", "application/json+protobuf")
+            .header("x-user-agent", "grpc-web-javascript/0.1")
+            .body(metadata_payload(ids))
+    })
+    .await?
+    .error_for_status()?
+    .text()
+    .await?;
     let json: serde_json::Value = serde_json::from_str(&response)?;
     Ok(parse_google_batch(&json))
 }

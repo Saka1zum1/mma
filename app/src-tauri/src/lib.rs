@@ -575,11 +575,40 @@ pub(crate) fn write_upload(path: &str, body: &[u8]) -> tauri::http::Response<Vec
     }
 }
 
+/// A tile or coverage GET lost in transit (timeout, reset) is sent again. The sleep
+/// is short: this runs on a blocking scheme thread, and the webview cancels by
+/// dropping the image rather than by an abort flag we can poll.
+fn send_idempotent(
+    build: impl Fn() -> reqwest::blocking::RequestBuilder,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    let mut delay = std::time::Duration::from_millis(50);
+    let mut last = None;
+    for attempt in 0..3 {
+        match build().send() {
+            Ok(resp) => return Ok(resp),
+            Err(e) if (e.is_timeout() || e.is_connect() || e.is_request()) && attempt + 1 < 3 => {
+                std::thread::sleep(delay);
+                delay = delay.saturating_mul(2);
+                last = Some(e);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.expect("the retry loop records the last transport error"))
+}
+
+fn gmaps_read(method: &reqwest::Method, url: &str) -> bool {
+    *method == reqwest::Method::GET
+        || url.contains("MapsJsInternalService/GetMetadata")
+        || url.contains("MapsJsInternalService/SingleImageSearch")
+        || url.contains("/maps/photometa/")
+}
+
 /// svtile: StreetView photosphere tiles via lh3.ggpht.com.
 /// Paths under `gps-csg/` are unofficial tiles and must hit the ggpht root
 /// (not `/jsapi2/a/b/c/…`), otherwise Google returns 400.
 pub(crate) fn fetch_svtile(url: &str) -> tauri::http::Response<Vec<u8>> {
-    match proxy_client().get(url).send() {
+    match send_idempotent(|| proxy_client().get(url)) {
         Ok(resp) => {
             let mut out = relay(resp, "image/jpeg");
             if let Ok(v) = "private, max-age=86400".parse() {
@@ -600,13 +629,23 @@ pub(crate) fn proxy_gmaps(
     user_agent: String,
     body: Vec<u8>,
 ) -> tauri::http::Response<Vec<u8>> {
-    match proxy_client()
-        .request(method, url)
-        .header(reqwest::header::CONTENT_TYPE, content_type)
-        .header(reqwest::header::USER_AGENT, user_agent)
-        .body(body)
-        .send()
-    {
+    let send = if gmaps_read(&method, url) {
+        send_idempotent(|| {
+            proxy_client()
+                .request(method.clone(), url)
+                .header(reqwest::header::CONTENT_TYPE, content_type.clone())
+                .header(reqwest::header::USER_AGENT, user_agent.clone())
+                .body(body.clone())
+        })
+    } else {
+        proxy_client()
+            .request(method, url)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .header(reqwest::header::USER_AGENT, user_agent)
+            .body(body)
+            .send()
+    };
+    match send {
         Ok(resp) => relay(resp, "text/plain"),
         Err(e) => proxy_error(format!("gmaps fetch error: {e}")),
     }
@@ -614,7 +653,7 @@ pub(crate) fn proxy_gmaps(
 
 /// bmaps: forward a request to j.map.baidu.com (Baidu share short-link API).
 pub(crate) fn proxy_bmaps(url: &str) -> tauri::http::Response<Vec<u8>> {
-    match proxy_client().get(url).send() {
+    match send_idempotent(|| proxy_client().get(url)) {
         Ok(resp) => relay(resp, "application/json"),
         Err(e) => proxy_error(format!("bmaps fetch error: {e}")),
     }

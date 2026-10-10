@@ -452,6 +452,21 @@ impl RateLimiter {
 /// What a request declined by a cancelling run answers with.
 pub(super) const CANCELLED: &str = "procedure: run cancelled";
 
+/// The request never produced an HTTP status: the connection timed out, reset, or the
+/// body stopped arriving. A status, even 500, is an answer and uses the status policy.
+fn lost_in_transit(err: &AppError) -> bool {
+    err.0.contains("procedure: request failed:") || err.0.contains("procedure: body read failed:")
+}
+
+/// Street View reads that are safe to send again. Procedure-authored requests stay
+/// out of this list: repeating one could repeat a write.
+fn idempotent_read(req: &HttpRequestSpec) -> bool {
+    let url = req.url.as_str();
+    url.contains("MapsJsInternalService/GetMetadata")
+        || url.contains("MapsJsInternalService/SingleImageSearch")
+        || url.contains("/maps/photometa/")
+}
+
 async fn abortable_sleep(
     aborted: &(dyn Fn() -> bool + Sync),
     mut delay: Duration,
@@ -593,7 +608,7 @@ async fn fetch_one(
         if aborted() {
             return Err(AppError(CANCELLED.into()));
         }
-        let resp = {
+        let answered = {
             let _slot = budget.admit(cost, aborted).await?;
             // Recheck holding the slot: a request that won the race with cancel
             // must not be sent.
@@ -602,10 +617,16 @@ async fn fetch_one(
             }
             let answered = (deps.fetch)(req.clone()).await;
             record_fetch();
-            answered?
+            answered
         };
-        if !retry_on.contains(&resp.status) || attempt + 1 == attempts {
-            return Ok(resp);
+        let retry = match &answered {
+            Ok(resp) => retry_on.contains(&resp.status),
+            // A metadata or tile read lost in transit is sent again. A procedure's own
+            // request fails on the first loss, so a non-idempotent POST is not repeated.
+            Err(e) => lost_in_transit(e) && idempotent_read(req),
+        };
+        if !retry || attempt + 1 == attempts {
+            return answered;
         }
         budget.state.retries.fetch_add(1, Ordering::Relaxed);
         abortable_sleep(aborted, delay).await?;

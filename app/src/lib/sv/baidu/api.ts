@@ -2,6 +2,7 @@ import { BAIDU_META_URL, BAIDU_SEARCH_URL } from "./endpoints";
 import { baiduCmToMap, mapToBaiduMeters } from "./crs";
 import { supportsBaiduAt } from "./chinaPolygon";
 import { stripBaidu } from "./prefix";
+import { fetchRead } from "@/lib/sv/fetchRead";
 
 export interface BaiduLink {
 	pid: string;
@@ -315,7 +316,7 @@ export async function fetchBaiduMeta(sid: string): Promise<BaiduPanoMeta | null>
 	const work = (async (): Promise<BaiduPanoMeta | null> => {
 		const url = new URL(BAIDU_META_URL);
 		url.searchParams.set("sid", id);
-		const res = await fetch(url.href, { signal: AbortSignal.timeout(15_000) });
+		const res = await fetchRead(url.href, 15_000);
 		if (!res.ok) return null;
 		const data = (await res.json()) as { content?: SdataPano[] };
 		const raw = data.content?.[0];
@@ -345,7 +346,7 @@ export async function searchBaiduPano(
 	url.searchParams.set("x", String(x));
 	url.searchParams.set("y", String(y));
 	url.searchParams.set("r", String(r));
-	const res = await fetch(url.href, { signal: AbortSignal.timeout(15_000) });
+	const res = await fetchRead(url.href, 15_000);
 	if (!res.ok) return null;
 	const data = (await res.json()) as { content?: { id?: string } };
 	return data.content?.id ?? null;

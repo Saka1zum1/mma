@@ -3,6 +3,7 @@ import { tencentToGcj02 } from "./crs";
 import { supportsBaiduAt } from "@/lib/sv/baidu/chinaPolygon";
 import { bearingDeg } from "@/lib/sv/baidu/api";
 import { stripTencent } from "./prefix";
+import { fetchRead } from "@/lib/sv/fetchRead";
 
 export { supportsBaiduAt as supportsTencentAt };
 
@@ -305,7 +306,7 @@ export async function fetchTencentMeta(svid: string): Promise<TencentPanoMeta | 
 	const work = (async (): Promise<TencentPanoMeta | null> => {
 		const url = new URL(TENCENT_META_URL);
 		url.searchParams.set("svid", id);
-		const res = await fetch(url.href, { signal: AbortSignal.timeout(15_000) });
+		const res = await fetchRead(url.href, 15_000);
 		if (!res.ok) return null;
 		const data = (await res.json()) as { detail?: TencentMetaDetail };
 		if (!data.detail?.basic?.svid) return null;
@@ -331,7 +332,7 @@ export async function searchTencentPano(
 	url.searchParams.set("lat", lat.toFixed(6));
 	url.searchParams.set("lng", lng.toFixed(6));
 	url.searchParams.set("r", String(r));
-	const res = await fetch(url.href, { signal: AbortSignal.timeout(15_000) });
+	const res = await fetchRead(url.href, 15_000);
 	if (!res.ok) return null;
 	const data = (await res.json()) as { detail?: { svid?: string } };
 	return data.detail?.svid ?? null;

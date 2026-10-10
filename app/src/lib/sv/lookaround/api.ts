@@ -1,5 +1,6 @@
 import { LOOKMAP_ORIGIN } from "./endpoints";
 import { fixProjectionIfNecessary } from "./psv/misc";
+import { fetchRead } from "@/lib/sv/fetchRead";
 
 export interface LookaroundPano {
 	panoid: string;
@@ -97,9 +98,7 @@ export class LookaroundApi {
 	}
 
 	async fetchCoverageTile(x: number, y: number): Promise<CoverageTileResponse> {
-		const res = await fetch(`${this.tileBase}/tiles/coverage/${x}/${y}/`, {
-			signal: AbortSignal.timeout(30_000),
-		});
+		const res = await fetchRead(`${this.tileBase}/tiles/coverage/${x}/${y}/`, 30_000);
 		if (!res.ok) throw new Error(`Coverage tile HTTP ${res.status}`);
 		return parseServerJson<CoverageTileResponse>(await res.text());
 	}
@@ -121,7 +120,7 @@ export class LookaroundApi {
 		const task = (async () => {
 			let url = `${this.metaBase}/closest?lat=${lat}&lon=${lon}&radius=${radius}&limit=${limit}`;
 			if (meta.length) url += `&meta=${meta.join(",")}`;
-			const res = await fetch(url, { signal: AbortSignal.timeout(45_000) });
+			const res = await fetchRead(url, 45_000);
 			if (!res.ok) {
 				const body = await res.text().catch(() => "");
 				throw new Error(

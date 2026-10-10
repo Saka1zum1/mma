@@ -2,6 +2,7 @@ import { distMeters } from "@/lib/geo/geo";
 import { bearingDeg } from "@/lib/sv/baidu/api";
 import { yandexMetaUrl, yandexSearchUrl } from "./endpoints";
 import { stripYandex } from "./prefix";
+import { fetchRead } from "@/lib/sv/fetchRead";
 
 export interface YandexLink {
 	oid: string;
@@ -225,7 +226,7 @@ export async function fetchYandexMeta(oid: string): Promise<YandexPanoMeta | nul
 	if (pending) return pending;
 
 	const work = (async (): Promise<YandexPanoMeta | null> => {
-		const res = await fetch(yandexMetaUrl(id), { signal: AbortSignal.timeout(15_000) });
+		const res = await fetchRead(yandexMetaUrl(id), 15_000);
 		if (!res.ok) return null;
 		const json = (await res.json()) as { data?: YandexApiPayload };
 		if (!json.data) return null;
@@ -261,8 +262,8 @@ export async function resolveYandexNear(
 	const staUrl = yandexSearchUrl("sta", lng, lat);
 	try {
 		const [stvRes, staRes] = await Promise.all([
-			fetch(stvUrl, { signal: AbortSignal.timeout(15_000) }),
-			fetch(staUrl, { signal: AbortSignal.timeout(15_000) }),
+			fetchRead(stvUrl, 15_000),
+			fetchRead(staUrl, 15_000),
 		]);
 		const stvJson = stvRes.ok ? ((await stvRes.json()) as { data?: YandexApiPayload }) : null;
 		const staJson = staRes.ok ? ((await staRes.json()) as { data?: YandexApiPayload }) : null;

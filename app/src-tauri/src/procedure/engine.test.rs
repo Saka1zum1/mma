@@ -93,6 +93,7 @@ struct MockProc {
     on_map: MapFn,
     /// Reported to the host from `map`, proving `map` reaches the real host.
     fail_id: Option<u32>,
+    url: &'static str,
 }
 
 impl MockProc {
@@ -112,8 +113,8 @@ impl Procedure for MockProc {
     }
     fn request(&mut self, _batch: &[u8]) -> AppResult<HttpRequestSpec> {
         Ok(HttpRequestSpec {
-            method: "GET".into(),
-            url: "https://example.invalid/".into(),
+            method: "POST".into(),
+            url: self.url.into(),
             headers: Vec::new(),
             body: None,
         })
@@ -168,6 +169,7 @@ impl Harness {
                         seen: seen_f.clone(),
                         on_map: on_map.clone(),
                         fail_id,
+                        url: "https://example.invalid/",
                     }) as Box<dyn Procedure>)
                 }),
                 fetch,
@@ -516,6 +518,65 @@ fn retry_repeats_a_declared_status() {
         vec![500, 200],
     );
     assert_eq!(calls, 2);
+}
+
+fn lost_then_ok(url: &'static str) -> (AppResult<()>, u32) {
+    let calls = Arc::new(AtomicU32::new(0));
+    let c = calls.clone();
+    let fetch = sync_fetch(move |_| {
+        let i = c.fetch_add(1, Ordering::Relaxed);
+        if i == 0 {
+            Err(AppError(
+                "procedure: request failed: connection reset".into(),
+            ))
+        } else {
+            Ok(HttpResponse {
+                status: 200,
+                body: Vec::new(),
+            })
+        }
+    });
+    let (state, map_id) = setup(&[loc(1, 0.0, 0.0)]);
+    let d = decl("retrier", BatchMode::PerRow);
+    let seen: Arc<Mutex<Vec<Vec<u32>>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen_f = seen.clone();
+    let h = Harness {
+        deps: EngineDeps {
+            factory: Box::new(move |_| {
+                Ok(Box::new(MockProc {
+                    shape: ProcShape::RequestMap,
+                    seen: seen_f.clone(),
+                    on_map: patch_all("{}"),
+                    fail_id: None,
+                    url,
+                }) as Box<dyn Procedure>)
+            }),
+            fetch,
+            backoff: Duration::from_millis(1),
+        },
+        seen,
+        cancel: Arc::new(AtomicBool::new(false)),
+        delivered: Arc::new(Mutex::new(Vec::new())),
+    };
+    (
+        run_provider(&h.ctx(&state, &map_id), &d),
+        calls.load(Ordering::Relaxed),
+    )
+}
+
+#[test]
+fn a_lost_metadata_read_is_sent_again() {
+    let (result, calls) = lost_then_ok(
+        "https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata",
+    );
+    result.expect("the second try answers");
+    assert_eq!(calls, 2);
+}
+
+#[test]
+fn a_lost_procedure_request_is_not_repeated() {
+    let (result, calls) = lost_then_ok("https://example.invalid/write");
+    assert_eq!(calls, 1, "{result:?}");
 }
 
 #[test]
@@ -1649,6 +1710,7 @@ fn run_query_surfaces_a_module_without_the_export() {
                 seen: Arc::new(Mutex::new(Vec::new())),
                 on_map: patch_all("{}"),
                 fail_id: None,
+                url: "https://example.invalid/",
             }) as Box<dyn Procedure>)
         }),
         fetch: sync_fetch(|_| Err(AppError("no fetch expected".into()))),
