@@ -7,6 +7,9 @@ cd app
 # Format + lint staged files
 npx lint-staged || exit 1
 
+# Browser runtime compatibility
+npm run check:browser-compat || exit 1
+
 # Format staged Rust files
 STAGED_RS=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs' | grep '^app/src-tauri/src/')
 if [ -n "$STAGED_RS" ]; then

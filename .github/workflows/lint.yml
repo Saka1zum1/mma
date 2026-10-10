@@ -6,12 +6,14 @@ on:
   pull_request:
 
 jobs:
-  eslint:
+  oxlint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: npx eslint src/
+      - run: npx oxlint src
+        working-directory: app
+      - run: npm run check:browser-compat
         working-directory: app
 
   typecheck:

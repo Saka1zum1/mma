@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import { ts, withProgram } from "./native-ts.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src");
@@ -74,6 +74,12 @@ function i18nBindings(sf) {
 }
 
 /** Message sources keyed by catalog key, plus the files each was seen in (for error messages). */
+/** Runs `use(sourceOf)` with every file in `files` parsed by the native compiler. */
+const parsed = (files, use) =>
+	withProgram(files, { noResolve: true, noLib: true, types: [], jsx: "preserve" }, ({ program }) =>
+		use((file) => program.getSourceFile(file)),
+	);
+
 export function extract(files) {
 	const messages = new Map();
 	const seenIn = new Map();
@@ -91,18 +97,14 @@ export function extract(files) {
 		if (!seenIn.has(key)) seenIn.set(key, file);
 	};
 
-	for (const file of files) {
-		const rel = path.relative(ROOT, file).replace(/\\/g, "/");
-		const sf = ts.createSourceFile(
-			file,
-			fs.readFileSync(file, "utf8"),
-			ts.ScriptTarget.Latest,
-			true,
-			file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-		);
+	parsed(files, (sourceOf) => {
+		for (const file of files) {
+			const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+			const sf = sourceOf(file);
+			if (!sf) continue;
 
-		const bound = i18nBindings(sf);
-		if (!bound) continue;
+			const bound = i18nBindings(sf);
+			if (!bound) continue;
 
 		const take = (node) => {
 			const text = literal(node);
@@ -124,10 +126,11 @@ export function extract(files) {
 				if (init && ts.isJsxExpression(init)) take(init.expression);
 				else take(init);
 			}
-			ts.forEachChild(n, visit);
+			n.forEachChild(visit);
 		};
 		visit(sf);
-	}
+		}
+	});
 	return messages;
 }
 
@@ -135,23 +138,26 @@ export function extract(files) {
  *  bindings, so extraction reads them from there -- the bindings stay the single source. */
 function bindingLabels() {
 	const file = path.join(SRC, "bindings.gen.ts");
-	const sf = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
-	const labels = [];
-	for (const st of sf.statements) {
-		if (!ts.isVariableStatement(st)) continue;
-		for (const decl of st.declarationList.declarations) {
-			const name = decl.name.getText();
-			if (name !== "BUILTIN_FIELDS" && name !== "KNOWN_FIELDS") continue;
-			const init = ts.isAsExpression(decl.initializer)
-				? decl.initializer.expression
-				: decl.initializer;
-			for (const f of JSON.parse(init.getText(sf))) {
-				if (f.label) labels.push(f.label);
-				for (const [, label] of f.labels ?? []) labels.push(label);
+	return parsed([file], (sourceOf) => {
+		const sf = sourceOf(file);
+		const labels = [];
+		if (!sf) return labels;
+		for (const st of sf.statements) {
+			if (!ts.isVariableStatement(st)) continue;
+			for (const decl of st.declarationList.declarations) {
+				const name = decl.name.getText();
+				if (name !== "BUILTIN_FIELDS" && name !== "KNOWN_FIELDS") continue;
+				const init = ts.isAsExpression(decl.initializer)
+					? decl.initializer.expression
+					: decl.initializer;
+				for (const f of JSON.parse(init.getText(sf))) {
+					if (f.label) labels.push(f.label);
+					for (const [, label] of f.labels ?? []) labels.push(label);
+				}
 			}
 		}
-	}
-	return labels;
+		return labels;
+	});
 }
 
 const ACCENTS = {
@@ -223,15 +229,11 @@ const COPY_CALLS = new Set(["toast"]);
  *  coverage gate: once a file reads zero here, it cannot silently regain a hardcoded string. */
 export function auditUnwrapped(files) {
 	const perFile = new Map();
+	parsed(files, (sourceOf) => {
 	for (const file of files) {
 		const rel = path.relative(ROOT, file).replace(/\\/g, "/");
-		const sf = ts.createSourceFile(
-			file,
-			fs.readFileSync(file, "utf8"),
-			ts.ScriptTarget.Latest,
-			true,
-			file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-		);
+		const sf = sourceOf(file);
+		if (!sf) continue;
 		const hits = [];
 		// A migrated string is no longer a bare literal here: JSX text becomes `{t("…")}` (an
 		// expression, not JsxText), `title="…"` becomes `title={t("…")}`, and `label: "…"` becomes
@@ -285,18 +287,19 @@ export function auditUnwrapped(files) {
 			) {
 				leaves(n.arguments[0], "call");
 			} else if (
-				(ts.isParameter(n) || ts.isBindingElement(n)) &&
+				(ts.isParameterDeclaration(n) || ts.isBindingElement(n)) &&
 				n.initializer &&
 				ts.isIdentifier(n.name) &&
 				DISPLAY_PROPS.has(n.name.text)
 			) {
 				leaves(n.initializer, "prop");
 			}
-			ts.forEachChild(n, visit);
+			n.forEachChild(visit);
 		};
 		visit(sf);
 		if (hits.length) perFile.set(rel, hits);
 	}
+	});
 	return perFile;
 }
 
