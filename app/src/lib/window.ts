@@ -163,10 +163,13 @@ export function syncTitle(mapName: string | null): void {
 const WINDOW_STATE_FLAGS = 0b110011;
 const maximizedKey = (label: string) => `win-maximized:${label}`;
 
-/** Persist this window's geometry, plus the maximized bit the plugin no longer tracks. */
+/** Persist this window's geometry, plus the maximized bit the plugin no longer tracks.
+ *  A minimized window reads as unmaximized, so that reading must not overwrite the
+ *  last visible state — otherwise a maximized window closed from the taskbar reopens small. */
 export async function saveWindowState(): Promise<void> {
 	try {
-		localStorage.setItem(maximizedKey(appWindow.label), String(await appWindow.isMaximized()));
+		if (!(await appWindow.isMinimized()))
+			localStorage.setItem(maximizedKey(appWindow.label), String(await appWindow.isMaximized()));
 	} catch {
 		/* geometry still restores; only the maximized bit is lost */
 	}
