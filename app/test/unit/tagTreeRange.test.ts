@@ -630,14 +630,14 @@ describe("cascadeRename", () => {
 
 	it("moves virtualTags color keys under the renamed prefix", () => {
 		const vt = {
-			Europe: { color: "#111" },
-			"Europe/France": { color: "#222" },
+			Europe: { color: "#111", order: 1.5 },
+			"Europe/France": { color: "#222", order: 2 },
 			Asia: { color: "#333" },
 		};
 		const { virtualTags } = cascadeRename("Europe", "EU", [], vt);
 		expect(virtualTags).toEqual({
-			EU: { color: "#111" },
-			"EU/France": { color: "#222" },
+			EU: { color: "#111", order: 1.5 },
+			"EU/France": { color: "#222", order: 2 },
 			Asia: { color: "#333" },
 		});
 	});

@@ -391,7 +391,10 @@ export function TagManager() {
 							} = cascadeRename(editingVirtualPath, newPath, tags, virtualTags, aliases);
 							if (tagRenames.length)
 								commitTags(tagRenames.map((r) => ({ id: r.id, patch: { name: r.name } })));
-							nextVT[newPath] = { ...nextVT[newPath], color };
+							// The whole folder, not just color: a colliding key at `newPath` would
+							// otherwise keep its own order and drop the folder that was renamed.
+							const prev = virtualTags[editingVirtualPath];
+							nextVT[newPath] = { ...nextVT[newPath], ...prev, color };
 							setVirtualTags(nextVT);
 							setAliases(nextAliases);
 							treeRef.current?.remapExpanded(editingVirtualPath, newPath);
