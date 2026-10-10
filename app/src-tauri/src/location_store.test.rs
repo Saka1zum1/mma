@@ -1014,6 +1014,38 @@ fn paged_updates_share_one_undo_entry() {
     }
 }
 
+#[test]
+fn a_group_that_grows_after_a_save_is_a_new_generation() {
+    let rows: Vec<Location> = (1..=4)
+        .map(|id| loc_with_heading(id, id as f64, 0.0, 0.0))
+        .collect();
+    let mut store = setup_store_with(&rows);
+    let page = |ids: [u32; 2]| -> Vec<Update<LocationPatch>> {
+        ids.into_iter()
+            .map(|id| Update {
+                id,
+                patch: patch!(heading: 90.0),
+            })
+            .collect()
+    };
+
+    apply_updates(&mut store, &page([1, 2]), true);
+    let partial = rmp_serde::to_vec_named(&store.edits.undo).unwrap();
+    store.edits.saved_gen = store.edits.gen;
+
+    apply_updates_extending_undo(&mut store, &page([3, 4]));
+    assert_eq!(store.edits.undo.len(), 1);
+    assert_ne!(
+        store.edits.gen, store.edits.saved_gen,
+        "the grown group must be stored again"
+    );
+    let grown = rmp_serde::to_vec_named(&store.edits.undo).unwrap();
+    let partial_stack: Vec<EditEntry> = rmp_serde::from_slice(&partial).unwrap();
+    let grown_stack: Vec<EditEntry> = rmp_serde::from_slice(&grown).unwrap();
+    assert_eq!(partial_stack[0].created.len(), 2);
+    assert_eq!(grown_stack[0].created.len(), 4);
+}
+
 // -----------------------------------------------------------------------
 // Edge case: re-add a previously removed ID
 // -----------------------------------------------------------------------

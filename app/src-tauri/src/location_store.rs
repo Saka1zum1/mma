@@ -420,6 +420,11 @@ pub(crate) struct TagState {
 pub(crate) struct EditStacks {
     pub undo: Vec<EditEntry>,
     pub redo: Vec<EditEntry>,
+    /// Bumped on every stack change. Autosave writes history only while this differs
+    /// from `saved_gen`, so a group that grows after a mid-run save is stored again
+    /// instead of leaving the partial row as the one a reopen undoes.
+    pub gen: u64,
+    pub saved_gen: u64,
 }
 
 pub struct Store {
@@ -604,6 +609,8 @@ impl Store {
             edits: EditStacks {
                 undo: Vec::new(),
                 redo: Vec::new(),
+                gen: 0,
+                saved_gen: 0,
             },
             bounds_cache: None,
             bounds_dirty: true,
@@ -1042,6 +1049,7 @@ impl Store {
             if let Some(last) = self.edits.undo.last_mut() {
                 merge_update_undo(last, changed_old, changed_new);
                 self.edits.redo.clear();
+                self.note_edits();
                 return true;
             }
         }
@@ -1268,6 +1276,12 @@ impl Store {
         id
     }
 
+    /// The stacks changed. A save that already wrote the previous generation must
+    /// write this one too; mutating an entry in place is still a new generation.
+    fn note_edits(&mut self) {
+        self.edits.gen = self.edits.gen.wrapping_add(1);
+    }
+
     /// Push an edit onto the undo stack, capping at MAX_UNDO_ENTRIES. O(1) amortized.
     pub(crate) fn push_undo(&mut self, entry: EditEntry) {
         self.edits.undo.push(entry);
@@ -1276,6 +1290,7 @@ impl Store {
                 .undo
                 .drain(..self.edits.undo.len() - MAX_UNDO_ENTRIES);
         }
+        self.note_edits();
     }
 
     /// Look up a location by ID across patches, overlay_adds (binary search), and batch.
@@ -3520,11 +3535,11 @@ pub async fn store_save_dirty(
 ) -> AppResult<SaveResult> {
     let _t = std::time::Instant::now();
     log::debug!("[cmd] store_save_dirty ENTER");
-    let (map_id, delta_data, alive, tags_json, rev, pending) = {
+    let (map_id, delta_data, alive, tags_json, rev, pending, history) = {
         let mut mgr = state.lock()?;
         let store = mgr.store_for_window(webview.label())?;
         let map_id = store.map_id.clone().ok_or("no map open")?;
-        if !store.overlay.dirty && !store.tags.dirty {
+        if !store.overlay.dirty && !store.tags.dirty && store.edits.gen == store.edits.saved_gen {
             return Ok(SaveResult { saved_bytes: 0 });
         }
         let delta_data = store
@@ -3538,6 +3553,13 @@ pub async fn store_save_dirty(
         } else {
             None
         };
+        let history = (store.edits.gen != store.edits.saved_gen).then(|| {
+            (
+                store.edits.undo.clone(),
+                store.edits.redo.clone(),
+                store.edits.gen,
+            )
+        });
         (
             map_id,
             delta_data,
@@ -3545,15 +3567,24 @@ pub async fn store_save_dirty(
             tags_json,
             store.overlay.rev,
             store.overlay_diff_counts(),
+            history,
         )
     };
 
     let size = delta_data.as_ref().map_or(0, |d| d.len());
     let wrote_delta = delta_data.is_some();
     let wrote_tags = tags_json.is_some();
+    let wrote_content = wrote_delta || wrote_tags;
+    let history_gen = history.as_ref().map(|(_, _, gen)| *gen);
     let map_id2 = map_id.clone();
-    let write = tokio::task::spawn_blocking(move || {
-        persist_dirty(&map_id2, delta_data, alive, tags_json, pending)
+    let write = tokio::task::spawn_blocking(move || -> AppResult<()> {
+        if wrote_content {
+            persist_dirty(&map_id2, delta_data, alive, tags_json, pending)?;
+        }
+        if let Some((undo, redo, _)) = history {
+            save_edit_history(&map_id2, &undo, &redo)?;
+        }
+        Ok(())
     })
     .await
     .unwrap_or_else(|e| Err(e.into()));
@@ -3564,13 +3595,20 @@ pub async fn store_save_dirty(
     }
     write?;
 
-    if wrote_delta {
+    if wrote_delta || history_gen.is_some() {
         let mut mgr = state.lock()?;
         // The window may have closed or switched maps during the write; the map_id
         // check stops a fresh store (rev 0) from being cleared by a stale save.
         if let Ok(store) = mgr.store_for_window(webview.label()) {
-            if store.overlay.rev == rev && store.map_id.as_deref() == Some(map_id.as_str()) {
-                store.overlay.dirty = false;
+            if store.map_id.as_deref() == Some(map_id.as_str()) {
+                if wrote_delta && store.overlay.rev == rev {
+                    store.overlay.dirty = false;
+                }
+                if let Some(gen) = history_gen {
+                    if store.edits.gen == gen {
+                        store.edits.saved_gen = gen;
+                    }
+                }
             }
         }
     }
@@ -3586,12 +3624,12 @@ pub async fn store_save_dirty(
 /// Write an open map's uncommitted overlay and tags to disk. No-op when the map
 /// is not open or nothing is dirty. Used before copying so the copy includes edits.
 pub(crate) fn flush_open_map(state: &StoreState, id: &str) -> AppResult<()> {
-    let (delta_data, alive, tags_json, rev, pending) = {
+    let (delta_data, alive, tags_json, rev, pending, history) = {
         let mut mgr = state.lock()?;
         let Some(store) = mgr.stores.get_mut(id) else {
             return Ok(());
         };
-        if !store.overlay.dirty && !store.tags.dirty {
+        if !store.overlay.dirty && !store.tags.dirty && store.edits.gen == store.edits.saved_gen {
             return Ok(());
         }
         let delta_data = store
@@ -3605,27 +3643,48 @@ pub(crate) fn flush_open_map(state: &StoreState, id: &str) -> AppResult<()> {
         } else {
             None
         };
+        let history = (store.edits.gen != store.edits.saved_gen).then(|| {
+            (
+                store.edits.undo.clone(),
+                store.edits.redo.clone(),
+                store.edits.gen,
+            )
+        });
         (
             delta_data,
             store.alive_count,
             tags_json,
             store.overlay.rev,
             store.overlay_diff_counts(),
+            history,
         )
     };
     let wrote_delta = delta_data.is_some();
     let wrote_tags = tags_json.is_some();
-    let result = persist_dirty(id, delta_data, alive, tags_json, pending);
+    let result = (|| -> AppResult<()> {
+        if wrote_delta || wrote_tags {
+            persist_dirty(id, delta_data, alive, tags_json, pending)?;
+        }
+        if let Some((undo, redo, _)) = &history {
+            save_edit_history(id, undo, redo)?;
+        }
+        Ok(())
+    })();
     if result.is_err() && wrote_tags {
         if let Some(store) = state.lock()?.stores.get_mut(id) {
             store.tags.dirty = true;
         }
     }
     result?;
-    if wrote_delta {
+    if wrote_delta || history.is_some() {
         if let Some(store) = state.lock()?.stores.get_mut(id) {
-            if store.overlay.rev == rev {
+            if wrote_delta && store.overlay.rev == rev {
                 store.overlay.dirty = false;
+            }
+            if let Some((_, _, gen)) = history {
+                if store.edits.gen == gen {
+                    store.edits.saved_gen = gen;
+                }
             }
         }
     }
@@ -4084,6 +4143,7 @@ pub fn store_undo(
             changes.removed.len()
         );
         store.edits.redo.push(entry);
+        store.note_edits();
         Ok(store.finish_mutation(&changes))
     })
 }
@@ -4139,6 +4199,7 @@ pub fn store_reset_undo(
     with_store!(webview, state, |store| {
         store.edits.undo.clear();
         store.edits.redo.clear();
+        store.note_edits();
         Ok(())
     })
 }
