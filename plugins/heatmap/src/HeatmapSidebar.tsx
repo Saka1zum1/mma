@@ -183,6 +183,7 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 
   const allCount = MMA.useMapState((s) => s.locationCount);
   const selectedIds = MMA.useMapState((s) => s.selectedLocationIds);
+  const [resetArmed, setResetArmed] = useState(false);
 
 	return (
 		<section className="map-sidebar heatmap-sidebar">
@@ -192,8 +193,19 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 				</button>
 				<h2 className="heatmap-sidebar__title">{MMA.t("Heatmap")}</h2>
 				<span style={{ flex: 1 }} />
-				<button className="heatmap-sidebar__reset" onClick={resetLayers}>
-					{MMA.t("Reset")}
+				<button
+					className="heatmap-sidebar__reset"
+					onClick={() => {
+						if (!resetArmed) {
+							setResetArmed(true);
+							return;
+						}
+						setResetArmed(false);
+						resetLayers();
+					}}
+					onBlur={() => setResetArmed(false)}
+				>
+					{resetArmed ? MMA.t("Are you sure?") : MMA.t("Reset")}
 				</button>
 			</header>
 

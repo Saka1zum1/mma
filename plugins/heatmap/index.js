@@ -1488,12 +1488,28 @@ function HeatmapSidebar({ onClose }) {
   }, []);
   const allCount = MMA.useMapState((s) => s.locationCount);
   const selectedIds = MMA.useMapState((s) => s.selectedLocationIds);
+  const [resetArmed, setResetArmed] = (0, import_react.useState)(false);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { className: "map-sidebar heatmap-sidebar", children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", { className: "heatmap-sidebar__header", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "icon-button", onClick: onClose, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { path: ARROW_LEFT }) }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "heatmap-sidebar__title", children: MMA.t("Heatmap") }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { className: "heatmap-sidebar__reset", onClick: resetLayers, children: MMA.t("Reset") })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+        "button",
+        {
+          className: "heatmap-sidebar__reset",
+          onClick: () => {
+            if (!resetArmed) {
+              setResetArmed(true);
+              return;
+            }
+            setResetArmed(false);
+            resetLayers();
+          },
+          onBlur: () => setResetArmed(false),
+          children: resetArmed ? MMA.t("Are you sure?") : MMA.t("Reset")
+        }
+      )
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "heatmap-sidebar__body", children: [
       layers2.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
