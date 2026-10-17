@@ -275,6 +275,9 @@ fn http_client() -> &'static reqwest::Client {
     let pool = POOL.get_or_init(|| {
         (0..HTTP_CONNECTIONS)
             .map(|_| {
+                // The webview follows the Windows proxy. This client has to as well:
+                // on a network that only reaches Google that way, a direct connection
+                // never completes and metadata never arrives.
                 reqwest::Client::builder()
                     .use_rustls_tls()
                     .timeout(Duration::from_secs(30))
