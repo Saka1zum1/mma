@@ -1,3 +1,12 @@
+## v0.11.8 - 2026-10-17
+- **Enrichment metadata** works again when Google is only reachable through your system proxy or VPN. Metadata fields no longer stay on “Waiting” while copyright and other steps that do not need Google still finish
+- Street View **metadata and tile reads** retry when the connection drops before an answer arrives
+- **Heatmap** asks for confirmation before a reset clears its layers
+- Renaming a **tag folder** keeps the order you saved for that folder
+- **Undo** can group edits again after an autosave lands in the same group
+- A **maximized map window** stays maximized when you close it from the taskbar while minimized
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.11.7 - 2026-10-06
 - **Street View coverage**, ordinary markers, and the selection each have their own opacity. Faded markers stay see-through instead of erasing the map underneath
 - Empty **tag folders** keep the order you saved, and move with the rest of the tree
