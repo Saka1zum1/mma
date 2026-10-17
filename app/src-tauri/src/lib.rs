@@ -22,21 +22,81 @@ pub fn promote_serialize_bindings(path: &std::path::Path) {
         {
             continue;
         }
-        let mut line = line.replace("_Serialize", "");
-        // Specta expands optional nested `providers` as
-        // `providers:({...patch.settings.providers,apple:patch.settings.providers.apple==null?...})`
-        // which is a no-op transform and crashes `tsc` when `providers` is undefined.
-        // Collapse back to a plain pass-through (same as pre-altproviders output).
-        if line.contains("patch.settings.providers.apple==null") {
-            line = line.replace(
-                "providers:({...patch.settings.providers,apple:patch.settings.providers.apple==null?patch.settings.providers.apple:patch.settings.providers.apple,baidu:patch.settings.providers.baidu==null?patch.settings.providers.baidu:patch.settings.providers.baidu,tencent:patch.settings.providers.tencent==null?patch.settings.providers.tencent:patch.settings.providers.tencent,yandex:patch.settings.providers.yandex==null?patch.settings.providers.yandex:patch.settings.providers.yandex})",
-                "providers:patch.settings.providers",
-            );
-        }
+        let line = line.replace("_Serialize", "");
+        // Specta's deserialize path rewrites optional maps with an identity transform:
+        // `providers:({...x.providers,apple:x.providers.apple==null?x.providers.apple:x.providers.apple,...})`
+        // and `virtualTags:Object.fromEntries(Object.entries(x.virtualTags).map(...))`.
+        // Both are no-ops, and both crash `tsc` when the map is omitted (`undefined`
+        // is not a valid `Object.entries` argument, and `.apple` is not valid on it).
+        let line = collapse_identity_maps(&line);
         out.push_str(&line);
         out.push('\n');
     }
     std::fs::write(path, out.as_bytes()).expect("write bindings");
+}
+
+/// Drop Specta's identity rewrites of optional maps. `expr` is the property path
+/// (`settings.providers`, `patch.settings.virtualTags`, …).
+fn collapse_identity_maps(line: &str) -> String {
+    let line = collapse_identity_providers(line);
+    collapse_identity_virtual_tags(&line)
+}
+
+fn collapse_identity_providers(line: &str) -> String {
+    const MARKER: &str = "providers:({...";
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find(MARKER) {
+        let expr_at = start + MARKER.len();
+        let Some(rel) = rest[expr_at..].find(",apple:") else {
+            out.push_str(&rest[..expr_at]);
+            rest = &rest[expr_at..];
+            continue;
+        };
+        let expr = &rest[expr_at..expr_at + rel];
+        let expected = format!(
+            ",apple:{expr}.apple==null?{expr}.apple:{expr}.apple,baidu:{expr}.baidu==null?{expr}.baidu:{expr}.baidu,tencent:{expr}.tencent==null?{expr}.tencent:{expr}.tencent,yandex:{expr}.yandex==null?{expr}.yandex:{expr}.yandex}})"
+        );
+        let tail = expr_at + rel;
+        if rest[tail..].starts_with(&expected) {
+            out.push_str(&rest[..start]);
+            out.push_str("providers:");
+            out.push_str(expr);
+            rest = &rest[tail + expected.len()..];
+        } else {
+            out.push_str(&rest[..expr_at]);
+            rest = &rest[expr_at..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn collapse_identity_virtual_tags(line: &str) -> String {
+    const MARKER: &str = "virtualTags:Object.fromEntries(Object.entries(";
+    const SUFFIX: &str = ").map(([k,v])=>[k,({...v,order:v.order==null?v.order:v.order})]))";
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find(MARKER) {
+        let expr_at = start + MARKER.len();
+        let Some(rel) = rest[expr_at..].find(SUFFIX) else {
+            out.push_str(&rest[..expr_at]);
+            rest = &rest[expr_at..];
+            continue;
+        };
+        let expr = &rest[expr_at..expr_at + rel];
+        if expr.contains(')') {
+            out.push_str(&rest[..expr_at]);
+            rest = &rest[expr_at..];
+            continue;
+        }
+        out.push_str(&rest[..start]);
+        out.push_str("virtualTags:");
+        out.push_str(expr);
+        rest = &rest[expr_at + rel + SUFFIX.len()..];
+    }
+    out.push_str(rest);
+    out
 }
 
 mod arrow_bridge;
@@ -1280,4 +1340,26 @@ pub fn run() {
                 presence::shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod bindings_export {
+    use super::collapse_identity_maps;
+
+    #[test]
+    fn optional_map_identity_rewrites_pass_the_value_through() {
+        let providers = "storeSetMapDefaults: (settings: MapSettings_Deserialize | null) => ({ settings: settings==null?settings:({...settings,virtualTags:Object.fromEntries(Object.entries(settings.virtualTags).map(([k,v])=>[k,({...v,order:v.order==null?v.order:v.order})])),providers:({...settings.providers,apple:settings.providers.apple==null?settings.providers.apple:settings.providers.apple,baidu:settings.providers.baidu==null?settings.providers.baidu:settings.providers.baidu,tencent:settings.providers.tencent==null?settings.providers.tencent:settings.providers.tencent,yandex:settings.providers.yandex==null?settings.providers.yandex:settings.providers.yandex})}) })";
+        assert_eq!(
+            collapse_identity_maps(providers),
+            "storeSetMapDefaults: (settings: MapSettings_Deserialize | null) => ({ settings: settings==null?settings:({...settings,virtualTags:settings.virtualTags,providers:settings.providers}) })"
+        );
+        let patch = "virtualTags:Object.fromEntries(Object.entries(patch.settings.virtualTags).map(([k,v])=>[k,({...v,order:v.order==null?v.order:v.order})])),providers:patch.settings.providers";
+        assert_eq!(
+            collapse_identity_maps(patch),
+            "virtualTags:patch.settings.virtualTags,providers:patch.settings.providers"
+        );
+        // A real null guard stays: that map is already safe for tsc.
+        let guarded = "fields:x.fields==null?x.fields:Object.fromEntries(Object.entries(x.fields).map(([k,v])=>[k,v]))";
+        assert_eq!(collapse_identity_maps(guarded), guarded);
+    }
 }

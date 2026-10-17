@@ -130,24 +130,30 @@ export const commands = {
 	/**  Lightweight status query: location count, version, and dirty flag. */
 	storeGetSummary: () => __TAURI_INVOKE<SummaryResult>("store_get_summary"),
 	/**  Return metadata for every map in the database. */
-	storeListMaps: () => __TAURI_INVOKE<MapMeta[]>("store_list_maps").then((v) => (v.map(i=>({...i,settings:({...i.settings,providers:({...i.settings.providers,apple:i.settings.providers.apple==null?i.settings.providers.apple:i.settings.providers.apple,baidu:i.settings.providers.baidu==null?i.settings.providers.baidu:i.settings.providers.baidu,tencent:i.settings.providers.tencent==null?i.settings.providers.tencent:i.settings.providers.tencent,yandex:i.settings.providers.yandex==null?i.settings.providers.yandex:i.settings.providers.yandex})}),extra:({...i.extra,fields:i.extra.fields==null?i.extra.fields:Object.fromEntries(Object.entries(i.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})) as typeof v)),
+	storeListMaps: () => __TAURI_INVOKE<MapMeta[]>("store_list_maps").then((v) => (v.map(i=>({...i,settings:({...i.settings,virtualTags:i.settings.virtualTags,providers:i.settings.providers}),extra:({...i.extra,fields:i.extra.fields==null?i.extra.fields:Object.fromEntries(Object.entries(i.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})) as typeof v)),
 	/**  Fetch a single map's metadata by ID. Returns `None` if not found. */
-	storeGetMap: (id: string) => __TAURI_INVOKE<MapData | null>("store_get_map", { id }).then((v) => (v==null?v:({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:({...v.meta.settings.providers,apple:v.meta.settings.providers.apple==null?v.meta.settings.providers.apple:v.meta.settings.providers.apple,baidu:v.meta.settings.providers.baidu==null?v.meta.settings.providers.baidu:v.meta.settings.providers.baidu,tencent:v.meta.settings.providers.tencent==null?v.meta.settings.providers.tencent:v.meta.settings.providers.tencent,yandex:v.meta.settings.providers.yandex==null?v.meta.settings.providers.yandex:v.meta.settings.providers.yandex})}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
+	storeGetMap: (id: string) => __TAURI_INVOKE<MapData | null>("store_get_map", { id }).then((v) => (v==null?v:({...v,meta:({...v.meta,settings:({...v.meta.settings,virtualTags:v.meta.settings.virtualTags,providers:v.meta.settings.providers}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
 	/**
 	 *  Create a new empty map with default settings. Returns the full metadata
 	 *  (including the generated UUID) so the frontend can navigate to it immediately.
 	 */
-	storeCreateMap: (name: string, folder: string | null) => __TAURI_INVOKE<MapData>("store_create_map", { name, folder }).then((v) => (({...v,meta:({...v.meta,settings:({...v.meta.settings,providers:({...v.meta.settings.providers,apple:v.meta.settings.providers.apple==null?v.meta.settings.providers.apple:v.meta.settings.providers.apple,baidu:v.meta.settings.providers.baidu==null?v.meta.settings.providers.baidu:v.meta.settings.providers.baidu,tencent:v.meta.settings.providers.tencent==null?v.meta.settings.providers.tencent:v.meta.settings.providers.tencent,yandex:v.meta.settings.providers.yandex==null?v.meta.settings.providers.yandex:v.meta.settings.providers.yandex})}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
-	/**  Copy a map, uncommitted edits included, into a new map named `name`. Version history, edit history, sync links, and review sessions stay with the original. */
-	storeDuplicateMap: (id: string, name: string) => __TAURI_INVOKE<MapData>("store_duplicate_map", { id, name }),
+	storeCreateMap: (name: string, folder: string | null) => __TAURI_INVOKE<MapData>("store_create_map", { name, folder }).then((v) => (({...v,meta:({...v.meta,settings:({...v.meta.settings,virtualTags:v.meta.settings.virtualTags,providers:v.meta.settings.providers}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
+	/**
+	 *  Copy a map, uncommitted edits included, into a new map named `name`. Version history,
+	 *  edit history, sync links, and review sessions stay with the original.
+	 */
+	storeDuplicateMap: (id: string, name: string) => __TAURI_INVOKE<MapData>("store_duplicate_map", { id, name }).then((v) => (({...v,meta:({...v.meta,settings:({...v.meta.settings,virtualTags:v.meta.settings.virtualTags,providers:v.meta.settings.providers}),extra:({...v.meta.extra,fields:v.meta.extra.fields==null?v.meta.extra.fields:Object.fromEntries(Object.entries(v.meta.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})})}) as typeof v)),
 	/**  The preferences new maps start from, or `null` when they start from the factory defaults. */
-	storeGetMapDefaults: () => __TAURI_INVOKE<MapSettings | null>("store_get_map_defaults"),
-	/**  Set the preferences new maps start from; `null` restores the factory defaults. Maps that already exist keep their own. Only the portable settings are kept. */
-	storeSetMapDefaults: (settings: MapSettings | null) => __TAURI_INVOKE<null>("store_set_map_defaults", { settings }),
+	storeGetMapDefaults: () => __TAURI_INVOKE<MapSettings | null>("store_get_map_defaults").then((v) => (v==null?v:({...v,virtualTags:v.virtualTags,providers:v.providers}) as typeof v)),
+	/**
+	 *  Set the preferences new maps start from; `null` restores the factory defaults.
+	 *  Maps that already exist keep their own. Only the portable settings are kept.
+	 */
+	storeSetMapDefaults: (settings: MapSettings_Deserialize | null) => __TAURI_INVOKE<null>("store_set_map_defaults", { settings: settings==null?settings:({...settings,virtualTags:settings.virtualTags,providers:settings.providers}) }),
 	/**  Delete a map and all its data: database rows and files on disk. */
 	storeDeleteMap: (id: string) => __TAURI_INVOKE<null>("store_delete_map", { id }),
 	/**  Apply a partial update to a map's metadata; `None` fields are left unchanged. */
-	storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => __TAURI_INVOKE<null>("store_update_map_meta", { id, patch: ({...patch,settings:patch.settings==null?patch.settings:({...patch.settings,providers:patch.settings.providers}),scoreBounds:patch.scoreBounds==null?patch.scoreBounds:patch.scoreBounds,extra:patch.extra==null?patch.extra:({...patch.extra,fields:patch.extra.fields==null?patch.extra.fields:Object.fromEntries(Object.entries(patch.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})}) }),
+	storeUpdateMapMeta: (id: string, patch: MapMetaPatch_Deserialize) => __TAURI_INVOKE<null>("store_update_map_meta", { id, patch: ({...patch,settings:patch.settings==null?patch.settings:({...patch.settings,virtualTags:patch.settings.virtualTags,providers:patch.settings.providers}),scoreBounds:patch.scoreBounds==null?patch.scoreBounds:patch.scoreBounds,extra:patch.extra==null?patch.extra:({...patch.extra,fields:patch.extra.fields==null?patch.extra.fields:Object.fromEntries(Object.entries(patch.extra.fields).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))})}) }),
 	/**
 	 *  Update `last_opened_at` to the current timestamp. Used to sort the map
 	 *  list by recency in the dashboard.
@@ -396,7 +402,10 @@ export const commands = {
 	 *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
 	storeImportFile: (droppedFields: string[], tagName: string | null) => __TAURI_INVOKE<EditorImportResult>("store_import_file", { droppedFields, tagName }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
-	/**  The location a pasted Maps URL names, short links resolved. */
+	/**
+	 *  The location a pasted Maps URL names, short links resolved. A link that names only a
+	 *  panorama takes its position from that panorama's metadata.
+	 */
 	parseMapsUrl: (input: string) => __TAURI_INVOKE<ParsedLocation | null>("parse_maps_url", { input }).then((v) => (v==null?v:v as typeof v)),
 	/**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
 	storeExportJson: (opts: ExportOpts) => __TAURI_INVOKE<string>("store_export_json", { opts }),
@@ -497,7 +506,7 @@ export const commands = {
 	mapMakingListMaps: () => __TAURI_INVOKE<MmRemoteMap[]>("map_making_list_maps"),
 	/**  Create an empty map named `name` for the stored key. */
 	mapMakingCreateMap: (name: string) => __TAURI_INVOKE<MmRemoteMap>("map_making_create_map", { name }),
-	/**  Record a settled sync pass. Only the most recent passes per provider are kept. */
+	/**  Record a settled sync pass for a map. Only the most recent passes per provider are kept. */
 	syncLogAppend: (provider: string, mapId: string, entry: SyncLogEntry) => __TAURI_INVOKE<null>("sync_log_append", { provider, mapId, entry }),
 	/**  A map's recorded sync passes with a provider, newest first. */
 	syncLogList: (provider: string, mapId: string) => __TAURI_INVOKE<SyncLogEntry[]>("sync_log_list", { provider, mapId }),
@@ -758,6 +767,16 @@ export type CopyToMapResult = {
 	copied: number,
 	skipped: number,
 	targetName: string,
+};
+
+/**
+ *  Counts for one field: each distinct key and how many selected rows produced it, plus
+ *  how many rows produced any key. A list-valued field (tags included) counts each member
+ *  and still covers the row once.
+ */
+export type CountBy = {
+	counts: ([string, number])[],
+	covered: number,
 };
 
 /**  The active and default data-folder paths, plus whether a custom override is in effect. */
@@ -1033,9 +1052,6 @@ export type ImportedMapInfo = {
 };
 
 /**  How a field value becomes a group key. Wire-mirrors the JS `KeySpec`. */
-/** Counts for one field: each distinct key, and how many rows produced any key. */
-export type CountBy = { counts: [string, number][]; covered: number };
-
 export type KeySpec = 
 /**  String value of the field (enum/string/month "YYYY-MM"/number). */
 { kind: "value" } | 
@@ -1269,7 +1285,7 @@ export type MapSettings_Deserialize = {
 	exportZoom?: boolean,
 	exportUnpanned?: boolean,
 	exportExtras?: boolean,
-	/**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+	/**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `export_extras`. */
 	exportShape?: string,
 	searchRadius?: number | null,
 	enrichMetadata?: boolean,
@@ -1313,7 +1329,7 @@ export type MapSettings = {
 	exportZoom: boolean,
 	exportUnpanned: boolean,
 	exportExtras: boolean,
-	/**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+	/**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `export_extras`. */
 	exportShape: string,
 	searchRadius: number | null,
 	enrichMetadata: boolean,
@@ -1962,21 +1978,6 @@ export type SideCounts = {
 	delete: number,
 };
 
-/** What started a sync pass. */
-export type SyncTrigger = "manual" | "live" | "link" | "resolve";
-
-/** How a sync pass ended. */
-export type SyncLogResult = { kind: "ok"; pushed: SideCounts; pulled: SideCounts; adopted: number; conflicts: number } | { kind: "error"; message: string };
-
-/** One settled sync pass. */
-export type SyncLogEntry = {
-	trigger: SyncTrigger,
-	/** When the pass started, in milliseconds since 1970. */
-	startedAt: number,
-	durationMs: number,
-	result: SyncLogResult,
-};
-
 export type SidecarDone = {
 	reqId: number,
 	error: string | null,
@@ -2045,6 +2046,22 @@ export type SummaryResult = {
 	dirtyCount: number,
 };
 
+/**  One settled sync pass. */
+export type SyncLogEntry = {
+	trigger: SyncTrigger,
+	/**  When the pass started, in milliseconds since 1970. */
+	startedAt: number,
+	durationMs: number,
+	result: SyncLogResult,
+};
+
+/**  How a sync pass ended. */
+export type SyncLogResult = 
+/**  The pass finished, with what it changed on each side. */
+{ kind: "ok"; pushed: SideCounts; pulled: SideCounts; adopted: number; conflicts: number } | 
+/**  The pass stopped with this error. */
+{ kind: "error"; message: string };
+
 /**
  *  Only the fields a pull genuinely changes. A field the provider cannot represent reads as empty
  *  on the remote side and must not overwrite local data, so absent fields are left untouched.
@@ -2076,6 +2093,17 @@ export type SyncReconcileResult = {
 	pullDeleteIds: number[],
 	mirrorLocalDeleteIds: number[],
 };
+
+/**  What started a sync pass. */
+export type SyncTrigger = 
+/**  Sync now was pressed. */
+"manual" | 
+/**  Live sync ran it, after an edit or on its schedule. */
+"live" | 
+/**  Linking the map ran its first sync. */
+"link" | 
+/**  Resolving held conflicts ran it. */
+"resolve";
 
 /**
  *  A user-defined label that can be applied to any number of locations.
@@ -2178,6 +2206,7 @@ export type ValiProgress = { kind: "workItems"; total: number } | { kind: "workI
  */
 export type VirtualTag = {
 	color?: string | null,
+	/**  Place among the tag order. Empty folders have no tags to borrow an order from. */
 	order?: number | null,
 };
 

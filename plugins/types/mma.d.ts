@@ -1,4 +1,4 @@
-﻿/// <reference types="google.maps" />
+/// <reference types="google.maps" />
 /// <reference path="./google-maps.d.ts" />
 
 import * as _tauri_apps_api_window from '@tauri-apps/api/window';
@@ -148,12 +148,18 @@ declare const commands$1: {
      *  (including the generated UUID) so the frontend can navigate to it immediately.
      */
     storeCreateMap: (name: string, folder: string | null) => Promise<MapData>;
-    /**  Copy a map, uncommitted edits included, into a new map named `name`. */
+    /**
+     *  Copy a map, uncommitted edits included, into a new map named `name`. Version history,
+     *  edit history, sync links, and review sessions stay with the original.
+     */
     storeDuplicateMap: (id: string, name: string) => Promise<MapData>;
     /**  The preferences new maps start from, or `null` when they start from the factory defaults. */
     storeGetMapDefaults: () => Promise<MapSettings | null>;
-    /**  Set the preferences new maps start from; `null` restores the factory defaults. */
-    storeSetMapDefaults: (settings: MapSettings | null) => Promise<null>;
+    /**
+     *  Set the preferences new maps start from; `null` restores the factory defaults.
+     *  Maps that already exist keep their own. Only the portable settings are kept.
+     */
+    storeSetMapDefaults: (settings: MapSettings_Deserialize | null) => Promise<null>;
     /**  Delete a map and all its data: database rows and files on disk. */
     storeDeleteMap: (id: string) => Promise<null>;
     /**  Apply a partial update to a map's metadata; `None` fields are left unchanged. */
@@ -209,7 +215,7 @@ declare const commands$1: {
     /**  Group by a derived key, returning `{ key, ids, bin }` per group. */
     storeGroupBy: (selector: Selector, field: string, key: KeySpec) => Promise<PartitionBucket[]>;
     /**  Group by a derived key, returning counts only -- no member ids on the wire. */
-    storeCountBy: (selector: Selector, field: string, key: KeySpec) => Promise<[string, number][]>;
+    storeCountBy: (selector: Selector, fields: string[], key: KeySpec) => Promise<CountBy[]>;
     /**  Distinct values of `field` across the selected set, sorted. */
     storeValues: (selector: Selector, field: string) => Promise<string[]>;
     /**  How many rows carry each top-level `extra` key, key-sorted. */
@@ -406,7 +412,10 @@ declare const commands$1: {
      *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
      */
     storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<EditorImportResult>;
-    /**  The location a pasted Maps URL names, short links resolved. */
+    /**
+     *  The location a pasted Maps URL names, short links resolved. A link that names only a
+     *  panorama takes its position from that panorama's metadata.
+     */
     parseMapsUrl: (input: string) => Promise<ParsedLocation | null>;
     /**  Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs. */
     storeExportJson: (opts: ExportOpts) => Promise<string>;
@@ -507,7 +516,7 @@ declare const commands$1: {
     mapMakingListMaps: () => Promise<MmRemoteMap[]>;
     /**  Create an empty map named `name` for the stored key. */
     mapMakingCreateMap: (name: string) => Promise<MmRemoteMap>;
-    /**  Record a settled sync pass. Only the most recent passes per provider are kept. */
+    /**  Record a settled sync pass for a map. Only the most recent passes per provider are kept. */
     syncLogAppend: (provider: string, mapId: string, entry: SyncLogEntry) => Promise<null>;
     /**  A map's recorded sync passes with a provider, newest first. */
     syncLogList: (provider: string, mapId: string) => Promise<SyncLogEntry[]>;
@@ -1048,6 +1057,15 @@ type CopyToMapResult = {
     skipped: number;
     targetName: string;
 };
+/**
+ *  Counts for one field: each distinct key and how many selected rows produced it, plus
+ *  how many rows produced any key. A list-valued field (tags included) counts each member
+ *  and still covers the row once.
+ */
+type CountBy = {
+    counts: ([string, number])[];
+    covered: number;
+};
 /**  The active and default data-folder paths, plus whether a custom override is in effect. */
 type DataLocation = {
     /**  Folder currently in use this session (default or override). */
@@ -1346,11 +1364,6 @@ type ImportedMapInfo = {
     locationCount: number;
     tagCount: number;
 };
-/** Counts for one field: each distinct key, and how many rows produced any key. */
-type CountBy = {
-    counts: [string, number][];
-    covered: number;
-};
 /**  How a field value becomes a group key. Wire-mirrors the JS `KeySpec`. */
 type KeySpec = 
 /**  String value of the field (enum/string/month "YYYY-MM"/number). */
@@ -1591,7 +1604,7 @@ type MapSettings_Deserialize = {
     exportZoom?: boolean;
     exportUnpanned?: boolean;
     exportExtras?: boolean;
-    /**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+    /**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `export_extras`. */
     exportShape?: string;
     searchRadius?: number | null;
     enrichMetadata?: boolean;
@@ -1621,7 +1634,11 @@ type MapSettings_Deserialize = {
     /**  Alternate Street View providers (Apple Look Around, …). */
     providers?: ProvidersSettings_Deserialize;
     /**  What each plugin keeps with this map, by plugin id and then key. */
-    pluginData?: { [key in string]: { [key in string]: unknown } };
+    pluginData?: {
+        [key in string]: {
+            [key in string]: unknown;
+        };
+    };
 };
 /**
  *  Per-map editor preferences. Controls Street View lookup behavior (official vs
@@ -1638,7 +1655,7 @@ type MapSettings = {
     exportZoom: boolean;
     exportUnpanned: boolean;
     exportExtras: boolean;
-    /**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `exportExtras`. */
+    /**  `"geoguessr"`, `"mapMaking"`, or `"local"`. Empty means derive from `export_extras`. */
     exportShape: string;
     searchRadius: number | null;
     enrichMetadata: boolean;
@@ -1668,7 +1685,11 @@ type MapSettings = {
     /**  Alternate Street View providers (Apple Look Around, …). */
     providers: ProvidersSettings;
     /**  What each plugin keeps with this map, by plugin id and then key. */
-    pluginData: { [key in string]: { [key in string]: unknown } };
+    pluginData: {
+        [key in string]: {
+            [key in string]: unknown;
+        };
+    };
 };
 /**  When a move target already holds a value, which side survives. */
 type MergeWinner = "from" | "to";
@@ -2315,18 +2336,6 @@ type SideCounts = {
     update: number;
     delete: number;
 };
-/** What started a sync pass. */
-type SyncTrigger = "manual" | "live" | "link" | "resolve";
-/** How a sync pass ended. */
-type SyncLogResult = { kind: "ok"; pushed: SideCounts; pulled: SideCounts; adopted: number; conflicts: number } | { kind: "error"; message: string };
-/** One settled sync pass. */
-type SyncLogEntry = {
-    trigger: SyncTrigger;
-    /** When the pass started, in milliseconds since 1970. */
-    startedAt: number;
-    durationMs: number;
-    result: SyncLogResult;
-};
 type SidecarDone = {
     reqId: number;
     error: string | null;
@@ -2390,6 +2399,29 @@ type SummaryResult = {
     version: number;
     dirtyCount: number;
 };
+/**  One settled sync pass. */
+type SyncLogEntry = {
+    trigger: SyncTrigger;
+    /**  When the pass started, in milliseconds since 1970. */
+    startedAt: number;
+    durationMs: number;
+    result: SyncLogResult;
+};
+/**  How a sync pass ended. */
+type SyncLogResult = 
+/**  The pass finished, with what it changed on each side. */
+{
+    kind: "ok";
+    pushed: SideCounts;
+    pulled: SideCounts;
+    adopted: number;
+    conflicts: number;
+} | 
+/**  The pass stopped with this error. */
+{
+    kind: "error";
+    message: string;
+};
 /**
  *  Only the fields a pull genuinely changes. A field the provider cannot represent reads as empty
  *  on the remote side and must not overwrite local data, so absent fields are left untouched.
@@ -2420,6 +2452,16 @@ type SyncReconcileResult = {
     pullDeleteIds: number[];
     mirrorLocalDeleteIds: number[];
 };
+/**  What started a sync pass. */
+type SyncTrigger = 
+/**  Sync now was pressed. */
+"manual" | 
+/**  Live sync ran it, after an edit or on its schedule. */
+"live" | 
+/**  Linking the map ran its first sync. */
+"link" | 
+/**  Resolving held conflicts ran it. */
+"resolve";
 /**
  *  A user-defined label that can be applied to any number of locations.
  *
@@ -2531,6 +2573,7 @@ type ValiProgress = {
  */
 type VirtualTag = {
     color?: string | null;
+    /**  Place among the tag order. Empty folders have no tags to borrow an order from. */
     order?: number | null;
 };
 
@@ -2561,18 +2604,29 @@ declare const enum PanoType {
     Unknown = 3,
     UserUploaded = 10
 }
-/** One finding of a Street View coverage check, combined into one number. */
+/**
+ * One finding of a Street View coverage check. `validate` answers each row with the
+ * findings that apply, combined into one number.
+ */
 declare const ValidationFlag: {
+    /** No findings: the location's coverage checked out. */
     readonly None: 0;
+    /** Official coverage newer than the location's stored pano exists. */
     readonly Newer: 1;
+    /** The location is pinned to a pano other than the one its coordinates load. */
     readonly OffDefault: 2;
+    /** The pano the location's coordinates load is not the newest capture there. */
     readonly DefaultStale: 4;
+    /** The location's pinned pano no longer loads, though coverage still exists at its coordinates. */
     readonly PanoIdBroke: 8;
+    /** The coverage the location shows is unofficial. */
     readonly Unofficial: 16;
+    /** The location shows bad-camera coverage, but its timeline holds a better camera capture. */
     readonly GoodcamAvailable: 32;
+    /** No coverage was found, neither the stored pano nor any within the search radius. */
     readonly NotFound: 64;
 };
-type ValidationFlag = (typeof ValidationFlag)[keyof typeof ValidationFlag];
+export type ValidationFlag = (typeof ValidationFlag)[keyof typeof ValidationFlag];
 /** The `extra` fields an enrichment run derives for a pano, from `panoFields`. */
 export interface PanoExtra {
     altitude: number;
@@ -2700,7 +2754,6 @@ export type types_SvThickness = SvThickness;
 export type types_TagSortMode = TagSortMode;
 declare const types_VIRTUAL_FLAGS: typeof VIRTUAL_FLAGS;
 export type types_ValidationFlag = ValidationFlag;
-declare const types_ValidationFlag: typeof ValidationFlag;
 export type types_WorkArea = WorkArea;
 declare const types_applyLocationPatch: typeof applyLocationPatch;
 declare const types_bboxTupleToBounds: typeof bboxTupleToBounds;
@@ -2717,8 +2770,8 @@ declare const types_isWorldBounds: typeof isWorldBounds;
 declare const types_locId: typeof locId;
 declare const types_scoreTupleToBounds: typeof scoreTupleToBounds;
 declare namespace types {
-  export { types_LocationFlag as LocationFlag, types_PanoType as PanoType, types_VIRTUAL_FLAGS as VIRTUAL_FLAGS, types_ValidationState as ValidationState, types_applyLocationPatch as applyLocationPatch, types_bboxTupleToBounds as bboxTupleToBounds, types_boundsToScoreTuple as boundsToScoreTuple, types_createLocation as createLocation, types_dropLocation as dropLocation, types_hasLoadAsPanoId as hasLoadAsPanoId, types_isImportPreview as isImportPreview, types_isInformational as isInformational, types_isPinnedToPano as isPinnedToPano, types_isSeenPreview as isSeenPreview, types_isVirtualLocation as isVirtualLocation, types_isWorldBounds as isWorldBounds, types_locId as locId, types_scoreTupleToBounds as scoreTupleToBounds };
-  export type { types_Bounds as Bounds, types_LatLng as LatLng, types_LocationPOV as LocationPOV, types_MapTypeKey as MapTypeKey, types_MarkerStyle as MarkerStyle, types_MaybeLocation as MaybeLocation, types_Pano as Pano, types_PanoCapture as PanoCapture, types_PanoExtra as PanoExtra, types_PanoView as PanoView, types_SortMode as SortMode, types_SvColor as SvColor, types_SvCoverageType as SvCoverageType, types_SvThickness as SvThickness, types_TagSortMode as TagSortMode, types_WorkArea as WorkArea };
+  export { types_LocationFlag as LocationFlag, types_PanoType as PanoType, types_VIRTUAL_FLAGS as VIRTUAL_FLAGS, types_applyLocationPatch as applyLocationPatch, types_bboxTupleToBounds as bboxTupleToBounds, types_boundsToScoreTuple as boundsToScoreTuple, types_createLocation as createLocation, types_dropLocation as dropLocation, types_hasLoadAsPanoId as hasLoadAsPanoId, types_isImportPreview as isImportPreview, types_isInformational as isInformational, types_isPinnedToPano as isPinnedToPano, types_isSeenPreview as isSeenPreview, types_isVirtualLocation as isVirtualLocation, types_isWorldBounds as isWorldBounds, types_locId as locId, types_scoreTupleToBounds as scoreTupleToBounds };
+  export type { types_Bounds as Bounds, types_LatLng as LatLng, types_LocationPOV as LocationPOV, types_MapTypeKey as MapTypeKey, types_MarkerStyle as MarkerStyle, types_MaybeLocation as MaybeLocation, types_Pano as Pano, types_PanoCapture as PanoCapture, types_PanoExtra as PanoExtra, types_PanoView as PanoView, types_SortMode as SortMode, types_SvColor as SvColor, types_SvCoverageType as SvCoverageType, types_SvThickness as SvThickness, types_TagSortMode as TagSortMode, types_ValidationFlag as ValidationFlag, types_WorkArea as WorkArea };
 }
 
 /** Per-cell, per-selection membership: a dense bitmask or a sparse selected-index list. */
@@ -3005,6 +3058,7 @@ declare function sampleFrom(selector: Selector, n: number): Promise<number[]>;
 declare function fieldValues(selector: Selector, field: string): Promise<string[]>;
 /** Group by a derived key and count, without shipping member ids. */
 declare function countBy(selector: Selector, field: string, key: KeySpec): Promise<[string, number][]>;
+/** Group each field by a derived key and count, one result per field, in one pass. */
 declare function countBy(selector: Selector, fields: string[], key: KeySpec): Promise<CountBy[]>;
 /** How many locations carry each `extra` key, key-sorted. */
 declare function fieldCoverage(selector: Selector): Promise<[string, number][]>;
@@ -3355,6 +3409,13 @@ declare const hasSelection: () => boolean;
 declare const hasAnySelections: () => boolean;
 /** Every editor command (palette entries; all are hotkey-bindable in Settings). */
 declare const COMMANDS: {
+    saveAs: {
+        label: "Save as";
+        icon: string;
+        group: "Map";
+        execute: () => void;
+        enabled: typeof requiresMap;
+    };
     save: {
         label: "Commit map";
         icon: string;
@@ -3733,7 +3794,8 @@ export type RGB = {
     g: number;
     b: number;
 };
-/** Parse "#rrggbb" to an [r, g, b] byte tuple. Single source for hex parsing. */
+declare function bytesToHex(bytes: Uint8Array): string;
+/** Parse "#rrggbb" or "#rgb" to an [r, g, b] byte tuple; black when it is not hex. */
 declare function hexToRgb(hex: string): [number, number, number];
 declare function textColorFor(bg: string): string;
 /** SV line colors were historically Open Props ramp names ("cyan"); stored
@@ -3756,13 +3818,14 @@ declare function rgbCss([r, g, b]: [number, number, number]): string;
 declare function hexToRgbObj(hex: string): RGB;
 /** Accept the live `{r,g,b}` shape or a leftover `[r,g,b]` tuple from an older persist. */
 declare function asRgb(color: unknown): RGB | null;
-declare function rgbToHex(color: RGB): string;
+declare function rgbToHex(color: RGB | [number, number, number]): string;
 /** A label's color: a user override if set, else a deterministic color from its name. */
 declare function labelColor(name: string, overrides: Record<string, string>): string;
 
 export type colorUtils_RGB = RGB;
 declare const colorUtils_applyAccentColor: typeof applyAccentColor;
 declare const colorUtils_asRgb: typeof asRgb;
+declare const colorUtils_bytesToHex: typeof bytesToHex;
 declare const colorUtils_colorForName: typeof colorForName;
 declare const colorUtils_hexToHsl: typeof hexToHsl;
 declare const colorUtils_hexToRgb: typeof hexToRgb;
@@ -3775,7 +3838,7 @@ declare const colorUtils_rgbCss: typeof rgbCss;
 declare const colorUtils_rgbToHex: typeof rgbToHex;
 declare const colorUtils_textColorFor: typeof textColorFor;
 declare namespace colorUtils {
-  export { colorUtils_applyAccentColor as applyAccentColor, colorUtils_asRgb as asRgb, colorUtils_colorForName as colorForName, colorUtils_hexToHsl as hexToHsl, colorUtils_hexToRgb as hexToRgb, colorUtils_hexToRgbObj as hexToRgbObj, colorUtils_hslToHex as hslToHex, colorUtils_hslToRgb as hslToRgb, colorUtils_labelColor as labelColor, colorUtils_resolveSvColorHex as resolveSvColorHex, colorUtils_rgbCss as rgbCss, colorUtils_rgbToHex as rgbToHex, colorUtils_textColorFor as textColorFor };
+  export { colorUtils_applyAccentColor as applyAccentColor, colorUtils_asRgb as asRgb, colorUtils_bytesToHex as bytesToHex, colorUtils_colorForName as colorForName, colorUtils_hexToHsl as hexToHsl, colorUtils_hexToRgb as hexToRgb, colorUtils_hexToRgbObj as hexToRgbObj, colorUtils_hslToHex as hslToHex, colorUtils_hslToRgb as hslToRgb, colorUtils_labelColor as labelColor, colorUtils_resolveSvColorHex as resolveSvColorHex, colorUtils_rgbCss as rgbCss, colorUtils_rgbToHex as rgbToHex, colorUtils_textColorFor as textColorFor };
   export type { colorUtils_RGB as RGB };
 }
 
@@ -4390,6 +4453,10 @@ declare function invalidateMapList(): Promise<void>;
 declare function setCachedMapList(list: MapMeta[]): void;
 /** Create a new empty map and return its metadata. */
 declare function createMap(name: string, folder?: string | null): Promise<MapMeta>;
+/** A name for a copy of `name`. */
+declare function copyName(name: string): string;
+/** Copy a map, uncommitted edits included, and return the new metadata. */
+declare function duplicateMap(id: string, name: string): Promise<MapMeta>;
 /** Permanently delete a map and all its data. Not undoable. */
 declare function deleteMap$1(id: string): Promise<void>;
 declare function renameFolder(from: string, to: string): Promise<void>;
@@ -4418,8 +4485,10 @@ declare function useMapBadges(): (mapId: string) => MapBadge[];
 
 export type mapList_BadgeSource = BadgeSource;
 export type mapList_MapBadge = MapBadge;
+declare const mapList_copyName: typeof copyName;
 declare const mapList_createMap: typeof createMap;
 declare const mapList_deleteFolder: typeof deleteFolder;
+declare const mapList_duplicateMap: typeof duplicateMap;
 declare const mapList_getMapBadgeSources: typeof getMapBadgeSources;
 declare const mapList_getMapBadges: typeof getMapBadges;
 declare const mapList_getMapList: typeof getMapList;
@@ -4432,7 +4501,7 @@ declare const mapList_setCachedMapList: typeof setCachedMapList;
 declare const mapList_useMapBadges: typeof useMapBadges;
 declare const mapList_useMapList: typeof useMapList;
 declare namespace mapList {
-  export { mapList_createMap as createMap, mapList_deleteFolder as deleteFolder, deleteMap$1 as deleteMap, mapList_getMapBadgeSources as getMapBadgeSources, mapList_getMapBadges as getMapBadges, mapList_getMapList as getMapList, mapList_invalidateMapList as invalidateMapList, mapList_moveMapToFolder as moveMapToFolder, mapList_registerMapBadges as registerMapBadges, mapList_reloadMapList as reloadMapList, mapList_renameFolder as renameFolder, mapList_setCachedMapList as setCachedMapList, mapList_useMapBadges as useMapBadges, mapList_useMapList as useMapList };
+  export { mapList_copyName as copyName, mapList_createMap as createMap, mapList_deleteFolder as deleteFolder, deleteMap$1 as deleteMap, mapList_duplicateMap as duplicateMap, mapList_getMapBadgeSources as getMapBadgeSources, mapList_getMapBadges as getMapBadges, mapList_getMapList as getMapList, mapList_invalidateMapList as invalidateMapList, mapList_moveMapToFolder as moveMapToFolder, mapList_registerMapBadges as registerMapBadges, mapList_reloadMapList as reloadMapList, mapList_renameFolder as renameFolder, mapList_setCachedMapList as setCachedMapList, mapList_useMapBadges as useMapBadges, mapList_useMapList as useMapList };
   export type { mapList_BadgeSource as BadgeSource, mapList_MapBadge as MapBadge };
 }
 
@@ -4633,7 +4702,8 @@ export interface MapPluginStorage {
  *  Throws when no map is open. */
 declare function mapStorage(id: string): MapPluginStorage;
 /** useState persisted through the plugin's namespaced store. UI state saved this
- *  way survives sidebar unmount and app restart. Values are global, not per-map —  *  callers must fall back gracefully when a stored value doesn't resolve against
+ *  way survives sidebar unmount and app restart. Values are global, not per-map —
+ *  callers must fall back gracefully when a stored value doesn't resolve against
  *  the current map (e.g. a field key or saved-selection id). */
 declare function usePluginState<T>(pluginId: string, key: string, initial: T | (() => T)): readonly [T, (action: SetStateAction<T>) => void];
 declare function getPluginSetting<T = unknown>(plugin: Plugin, key: string): T;
@@ -4643,6 +4713,7 @@ declare function deactivatePlugins(): void;
 declare function activatePlugin(id: string): void;
 declare function deactivatePlugin(id: string): void;
 
+export type registry_MapPluginStorage = MapPluginStorage;
 declare const registry_PLUGIN_REGISTRY_URL: typeof PLUGIN_REGISTRY_URL;
 export type registry_Plugin = Plugin;
 export type registry_PluginBehavior = PluginBehavior;
@@ -4665,6 +4736,7 @@ declare const registry_isBackgroundPlugin: typeof isBackgroundPlugin;
 declare const registry_isPluginCompatible: typeof isPluginCompatible;
 declare const registry_isPluginEnabled: typeof isPluginEnabled;
 declare const registry_isPluginUpdatable: typeof isPluginUpdatable;
+declare const registry_mapStorage: typeof mapStorage;
 declare const registry_needsBuildUpdate: typeof needsBuildUpdate;
 declare const registry_needsUpdate: typeof needsUpdate;
 declare const registry_registerPlugin: typeof registerPlugin;
@@ -4673,12 +4745,11 @@ declare const registry_setPendingManifest: typeof setPendingManifest;
 declare const registry_setPluginEnabled: typeof setPluginEnabled;
 declare const registry_setPluginSetting: typeof setPluginSetting;
 declare const registry_storage: typeof storage;
-declare const registry_mapStorage: typeof mapStorage;
 declare const registry_unregisterPlugin: typeof unregisterPlugin;
 declare const registry_usePluginState: typeof usePluginState;
 declare namespace registry {
-  export { registry_PLUGIN_REGISTRY_URL as PLUGIN_REGISTRY_URL, registry_activatePlugin as activatePlugin, registry_activatePlugins as activatePlugins, registry_autoUpdatePlugin as autoUpdatePlugin, registry_createPluginStorage as createPluginStorage, registry_deactivatePlugin as deactivatePlugin, registry_deactivatePlugins as deactivatePlugins, registry_fetchPluginRegistry as fetchPluginRegistry, registry_getEnabledPlugins as getEnabledPlugins, registry_getPlugin as getPlugin, registry_getPluginSetting as getPluginSetting, registry_getPlugins as getPlugins, registry_isBackgroundPlugin as isBackgroundPlugin, registry_isPluginCompatible as isPluginCompatible, registry_isPluginEnabled as isPluginEnabled, registry_isPluginUpdatable as isPluginUpdatable, registry_needsBuildUpdate as needsBuildUpdate, registry_needsUpdate as needsUpdate, registry_registerPlugin as registerPlugin, registry_resolveBuild as resolveBuild, registry_setPendingManifest as setPendingManifest, registry_setPluginEnabled as setPluginEnabled, registry_setPluginSetting as setPluginSetting, registry_storage as storage, registry_mapStorage as mapStorage, registry_unregisterPlugin as unregisterPlugin, registry_usePluginState as usePluginState };
-  export type { registry_Plugin as Plugin, registry_PluginBehavior as PluginBehavior, registry_PluginIdentity as PluginIdentity, registry_PluginSettingDef as PluginSettingDef, registry_PluginStorage as PluginStorage, registry_ResolvedBuild as ResolvedBuild };
+  export { registry_PLUGIN_REGISTRY_URL as PLUGIN_REGISTRY_URL, registry_activatePlugin as activatePlugin, registry_activatePlugins as activatePlugins, registry_autoUpdatePlugin as autoUpdatePlugin, registry_createPluginStorage as createPluginStorage, registry_deactivatePlugin as deactivatePlugin, registry_deactivatePlugins as deactivatePlugins, registry_fetchPluginRegistry as fetchPluginRegistry, registry_getEnabledPlugins as getEnabledPlugins, registry_getPlugin as getPlugin, registry_getPluginSetting as getPluginSetting, registry_getPlugins as getPlugins, registry_isBackgroundPlugin as isBackgroundPlugin, registry_isPluginCompatible as isPluginCompatible, registry_isPluginEnabled as isPluginEnabled, registry_isPluginUpdatable as isPluginUpdatable, registry_mapStorage as mapStorage, registry_needsBuildUpdate as needsBuildUpdate, registry_needsUpdate as needsUpdate, registry_registerPlugin as registerPlugin, registry_resolveBuild as resolveBuild, registry_setPendingManifest as setPendingManifest, registry_setPluginEnabled as setPluginEnabled, registry_setPluginSetting as setPluginSetting, registry_storage as storage, registry_unregisterPlugin as unregisterPlugin, registry_usePluginState as usePluginState };
+  export type { registry_MapPluginStorage as MapPluginStorage, registry_Plugin as Plugin, registry_PluginBehavior as PluginBehavior, registry_PluginIdentity as PluginIdentity, registry_PluginSettingDef as PluginSettingDef, registry_PluginStorage as PluginStorage, registry_ResolvedBuild as ResolvedBuild };
 }
 
 export type Disposable = () => void;
@@ -5689,22 +5760,26 @@ declare namespace pinPano {
   export type { pinPano_PinPanoConfig as PinPanoConfig };
 }
 
-export interface ValidateConfig {
-    radius?: number;
-}
+/** What validation answers for one location: its `ValidationFlag`s, and whether it was
+ *  pinned when checked. */
 export interface ValidationAnswer {
     flags: number;
     pinned: boolean;
+}
+
+export interface ValidateConfig {
+    radius?: number;
 }
 declare function validateOne(loc: Location, signal?: AbortSignal, config?: ValidateConfig): Promise<ValidationAnswer>;
 export interface ValidationProgress {
     progress: number;
 }
+/** What a validation run answered: the ids in each asked-for category, keyed by category. */
 export interface ValidationOutcome {
     categories: Map<string, number[]>;
 }
-/** Check that each location's Street View coverage still exists, grouping locations into
- *  the asked-for categories (the standard ones when omitted). */
+/** Check that each location's Street View coverage still exists, grouping the locations
+ *  into `categories` (keys of `VALIDATION_CATEGORIES`; the standard ones when omitted). */
 declare function validateLocations(locations: Location[], opts?: {
     signal?: AbortSignal;
     onProgress?: (p: ValidationProgress) => void;
@@ -5713,12 +5788,13 @@ declare function validateLocations(locations: Location[], opts?: {
 }): Promise<ValidationOutcome>;
 
 export type validate_ValidateConfig = ValidateConfig;
+export type validate_ValidationOutcome = ValidationOutcome;
 export type validate_ValidationProgress = ValidationProgress;
 declare const validate_validateLocations: typeof validateLocations;
 declare const validate_validateOne: typeof validateOne;
 declare namespace validate {
   export { validate_validateLocations as validateLocations, validate_validateOne as validateOne };
-  export type { validate_ValidateConfig as ValidateConfig, validate_ValidationProgress as ValidationProgress };
+  export type { validate_ValidateConfig as ValidateConfig, validate_ValidationOutcome as ValidationOutcome, validate_ValidationProgress as ValidationProgress };
 }
 
 /**
@@ -5831,6 +5907,8 @@ export interface MapEmbedPrefs {
     markerStyle: MarkerStyle;
     markerOpacity: number;
     markerVisible: boolean;
+    selectedOpacity: number;
+    selectedVisible: boolean;
     markerSize: number;
     showSvCoverage: boolean;
     showPerfectScoreCircle: boolean;
@@ -6496,4 +6574,4 @@ declare global {
 }
 
 export { BUILTIN_FIELDS, DEFAULT_DUPLICATE_SCORE, KNOWN_FIELDS, MMA as MMAApi, PROJECTIONS, PanoType, commands$1 as commands, events };
-export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BaiduTraverseChunk, BaiduTraverseRequest, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExportShape, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, GoogleBatchLink, GoogleBatchPano, GoogleBatchTime, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, LearnableMetaClue, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncPatch, SyncReconcileResult, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
+export type { AltBasemapSettings, AltBasemapSlot, AltProviderSettings, AltProviderSettings_Deserialize, BaiduTraverseChunk, BaiduTraverseRequest, BatchMode, CameraType, CellRemoval, Columns, CommitDelta, CommitDiff, CommitInfo, ComparisonType, Conflict, ConflictKind, CopyToMapResult, CountBy, DataLocation, DatePart, DbStats, DbTableInfo, EditorImportPreview, EditorImportResult, ExportOpts, ExportProgress, ExportShape, ExprError, ExternalMutation, ExtraFieldDef, ExtraFieldType, FieldCount, FieldOp, FieldOpResult, FilterOp, FirstSyncMode, GeoResult, GgUser, GoogleBatchLink, GoogleBatchPano, GoogleBatchTime, HoneycombRun, ImportPreviewEntry, ImportProgress, ImportedMapInfo, KeySpec, LearnableMetaClue, Location, LocationPatch, LocationPatch_Deserialize, MapData, MapData_Deserialize, MapExtra, MapKeyAction, MapKeyBinding, MapMeta, MapMetaPatch, MapMetaPatch_Deserialize, MapMeta_Deserialize, MapSettings, MapSettings_Deserialize, MergeWinner, MmRemoteMap, MmUser, MutationResult, NormalizedSyncLocation, NumericBinning, ParsedLocation, PartitionBucket, PendingCounts, PluginManifest, PluginManifest_Deserialize, PluginSidecar, PluginSidecar_Deserialize, PolygonGeometry, PresenceActivity, ProcedureActivity, ProcedureProgress, ProcedureResult, ProviderActivity, ProviderDecl, ProvidersSettings, ProvidersSettings_Deserialize, PullCreate, PullUpdate, QueryActivity, RateCost, RateSpec, RemoteMappingRow, RenderDelta, RenderEntry, RenderPatchEntry, RenderRequest, ResolutionSide, ResultEntry, RetrySpec, ReviewCreate, ReviewSession, ReviewUpdate, Rows, SaveResult, SavedSelection, SavedSelectionInfo, ScoreBounds, SeenEntry, SeenFilter, SeenMapInfo, SeenWriteEntry, SelPaint, Selection, SelectionInput, SelectionSync, Selector, SideCounts, SidecarDone, SidecarLine, SidecarLog, SidecarProgress, Sink, SpacedPickResult, StoreStatus, StoreWarning, SummaryResult, SyncLogEntry, SyncLogResult, SyncPatch, SyncReconcileResult, SyncTrigger, Tag, TagPatch, Update, UpdateAvailable, UpdateProgress, ValiCountryStatus, ValiLocation, ValiLocation_Deserialize, ValiProgress, VirtualTag };
