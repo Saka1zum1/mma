@@ -261,9 +261,10 @@ fn location_to_coord(
 
 /// Export locations as a `{name, customCoordinates}` JSON file, including tags and field defs.
 // Heading of exactly 0 is written as 0.001 when `export_unpanned` is set ("no heading" convention).
+// Async so writing the file does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_export_json(
+pub async fn store_export_json(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     opts: ExportOpts,
@@ -317,9 +318,10 @@ pub fn store_export_json(
 }
 
 /// Export locations as a minimal lat/lng CSV file.
+// Async so writing the file does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_export_csv(
+pub async fn store_export_csv(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     selector: Selector,
@@ -343,7 +345,7 @@ pub fn store_export_csv(
 /// Each feature carries its tag names in `properties.tags`.
 #[tauri::command]
 #[specta::specta]
-pub fn store_export_geojson(
+pub async fn store_export_geojson(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     selector: Selector,

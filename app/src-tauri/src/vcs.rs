@@ -219,9 +219,10 @@ pub async fn store_list_commits(map_id: String) -> AppResult<Vec<CommitInfo>> {
 /// the map afterwards (undo/redo is cleared).
 // Materializes the commit by replaying ancestor deltas, rewrites the base Arrow file,
 // and clears the uncommitted delta.
+// Async so replaying a version does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_checkout_commit(
+pub async fn store_checkout_commit(
     state: State<'_, StoreState>,
     map_id: String,
     commit_id: String,

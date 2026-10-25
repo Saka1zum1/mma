@@ -1715,6 +1715,7 @@ pub async fn store_import_file(
     state: tauri::State<'_, location_store::StoreState>,
     dropped_fields: Vec<String>,
     tag_name: Option<String>,
+    dropped_tags: Option<Vec<String>>,
 ) -> AppResult<EditorImportResult> {
     let t0 = std::time::Instant::now();
     let label = webview.label().to_string();
@@ -1723,6 +1724,25 @@ pub async fn store_import_file(
         .unwrap()
         .remove(&label)
         .ok_or("no cached import — call store_import_preview first")?;
+
+    if let Some(names) = dropped_tags.as_ref().filter(|names| !names.is_empty()) {
+        let drop_names: std::collections::HashSet<&str> =
+            names.iter().map(|s| s.as_str()).collect();
+        let drop_ids: std::collections::HashSet<u32> = parsed
+            .tags
+            .iter()
+            .filter(|tag| drop_names.contains(tag.name.as_str()))
+            .map(|tag| tag.id)
+            .collect();
+        parsed
+            .tags
+            .retain(|tag| !drop_names.contains(tag.name.as_str()));
+        if !drop_ids.is_empty() {
+            for loc in &mut parsed.locations {
+                loc.tags.retain(|id| !drop_ids.contains(id));
+            }
+        }
+    }
 
     let drop_set: std::collections::HashSet<&str> =
         dropped_fields.iter().map(|s| s.as_str()).collect();

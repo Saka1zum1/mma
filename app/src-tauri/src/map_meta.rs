@@ -907,9 +907,10 @@ pub async fn store_duplicate_map(
 // Evicts live in-memory state so an open window or racing autosave can't flush the overlay
 // back after the files are gone. The manager lock is held across the whole delete so a
 // concurrent store_open_map can't reload the map mid-deletion and resurrect it.
+// Async so deleting files does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_delete_map(state: tauri::State<'_, StoreState>, id: String) -> AppResult<()> {
+pub async fn store_delete_map(state: tauri::State<'_, StoreState>, id: String) -> AppResult<()> {
     let mut mgr = state.lock()?;
     mgr.stores.remove(&id);
     mgr.window_map.retain(|_, v| v != &id);
@@ -1044,29 +1045,73 @@ pub async fn store_touch_map_opened(map_id: String) -> AppResult<()> {
     .await
 }
 
-/// Rename a folder across all maps that reference it.
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+/// Rename a folder across all maps that reference it, including slash-nested children.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_rename_folder(from: String, to: String) -> AppResult<()> {
     storage::with_db(move |conn| {
-        conn.execute(
-            "UPDATE maps SET folder = ?1 WHERE folder = ?2",
-            params![to, from],
+        let like = format!("{}/%%", escape_like(&from));
+        let mut stmt = conn.prepare(
+            "SELECT id, folder FROM maps WHERE folder = ?1 OR folder LIKE ?2 ESCAPE '\\'",
         )?;
+        let rows = stmt.query_map(params![from, like], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let rows: Vec<(String, String)> = rows.collect::<Result<_, _>>()?;
+        drop(stmt);
+        for (id, folder) in rows {
+            let next = if folder == from {
+                to.clone()
+            } else {
+                format!("{to}{}", &folder[from.len()..])
+            };
+            conn.execute(
+                "UPDATE maps SET folder = ?1 WHERE id = ?2",
+                params![next, id],
+            )?;
+        }
         Ok(())
     })
     .await
 }
 
-/// Delete a folder by setting all its maps' folder to `NULL` (moves them to root).
+/// Delete a folder. Maps in it move up to the parent path. Nested children keep their tail.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_delete_folder(name: String) -> AppResult<()> {
     storage::with_db(move |conn| {
-        conn.execute(
-            "UPDATE maps SET folder = NULL WHERE folder = ?1",
-            params![name],
+        let parent = name.rfind('/').map(|i| name[..i].to_string());
+        let like = format!("{}/%%", escape_like(&name));
+        let mut stmt = conn.prepare(
+            "SELECT id, folder FROM maps WHERE folder = ?1 OR folder LIKE ?2 ESCAPE '\\'",
         )?;
+        let rows = stmt.query_map(params![name, like], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let rows: Vec<(String, String)> = rows.collect::<Result<_, _>>()?;
+        drop(stmt);
+        for (id, folder) in rows {
+            let next = if folder == name {
+                parent.clone()
+            } else {
+                let rest = &folder[name.len() + 1..];
+                Some(match &parent {
+                    Some(p) => format!("{p}/{rest}"),
+                    None => rest.to_string(),
+                })
+            };
+            conn.execute(
+                "UPDATE maps SET folder = ?1 WHERE id = ?2",
+                params![next, id],
+            )?;
+        }
         Ok(())
     })
     .await

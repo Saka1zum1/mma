@@ -175,9 +175,10 @@ export const commands = {
 	/**
 	 *  Apply partial patches to existing locations. `record_undo` defaults to true;
 	 *  set to false for ephemeral updates (e.g., plugin-driven batch modifications
-	 *  that manage their own undo).
+	 *  that manage their own undo). `extend_undo` folds an undoable patch into the
+	 *  newest undo step.
 	 */
-	storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null) => __TAURI_INVOKE<MutationResult>("store_update_locations", { updates, recordUndo }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null, extendUndo?: boolean | null) => __TAURI_INVOKE<MutationResult>("store_update_locations", { updates, recordUndo, extendUndo: extendUndo ?? null }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  Set (or clear) the active location. Fire-and-forget from JS; no re-render triggered.
 	 *  JS patches the cell buffer synchronously to hide/show the active marker.
@@ -401,7 +402,7 @@ export const commands = {
 	 *  `store_import_preview`/`store_import_paste_preview`. Fields in `dropped_fields`
 	 *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
 	 */
-	storeImportFile: (droppedFields: string[], tagName: string | null) => __TAURI_INVOKE<EditorImportResult>("store_import_file", { droppedFields, tagName }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
+	storeImportFile: (droppedFields: string[], tagName: string | null, droppedTags?: string[] | null) => __TAURI_INVOKE<EditorImportResult>("store_import_file", { droppedFields, tagName, droppedTags: droppedTags ?? null }).then((v) => (({...v,delta:({...v.delta,added:v.delta.added.map(i=>i),updated:v.delta.updated.map(i=>({...i,lng:i.lng==null?i.lng:i.lng,lat:i.lat==null?i.lat:i.lat,heading:i.heading==null?i.heading:i.heading}))}),newFieldDefs:v.newFieldDefs==null?v.newFieldDefs:Object.fromEntries(Object.entries(v.newFieldDefs).map(([k,v])=>[k,({...v,comparison:v.comparison==null?v.comparison:v.comparison})]))}) as typeof v)),
 	/**
 	 *  The location a pasted Maps URL names, short links resolved. A link that names only a
 	 *  panorama takes its position from that panorama's metadata.

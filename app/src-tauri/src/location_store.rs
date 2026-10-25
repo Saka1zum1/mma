@@ -2236,6 +2236,17 @@ async fn open_claimed_map(
     state: tauri::State<'_, StoreState>,
     map_id: String,
 ) -> AppResult<StoreStatus> {
+    // A map already open in another window keeps that live store. Reloading from
+    // disk here would drop uncommitted edits the other window has not flushed.
+    if let Some(status) = state
+        .lock()?
+        .stores
+        .get(&map_id)
+        .map(|store| store.store_status())
+    {
+        log::debug!("[store_open] {map_id} already open, sharing the live store");
+        return Ok(status);
+    }
     let map_id2 = map_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -2538,7 +2549,8 @@ pub fn store_remove_locations(
 
 /// Apply partial patches to existing locations. `record_undo` defaults to true;
 /// set to false for ephemeral updates (e.g., plugin-driven batch modifications
-/// that manage their own undo).
+/// that manage their own undo). `extend_undo` folds an undoable patch into the
+/// newest undo step.
 #[tauri::command]
 #[specta::specta]
 pub async fn store_update_locations(
@@ -2546,12 +2558,18 @@ pub async fn store_update_locations(
     state: tauri::State<'_, StoreState>,
     updates: Vec<Update<LocationPatch>>,
     record_undo: Option<bool>,
+    extend_undo: Option<bool>,
 ) -> AppResult<MutationResult> {
     let record_undo = record_undo.unwrap_or(true);
+    let extend_undo = extend_undo.unwrap_or(false) && record_undo;
     let _t = std::time::Instant::now();
     with_store!(webview, state, |store| {
         let n = updates.len();
-        let result = apply_updates(store, &updates, record_undo);
+        let result = if extend_undo {
+            apply_updates_extending_undo(store, &updates)
+        } else {
+            apply_updates(store, &updates, record_undo)
+        };
         log::debug!(
             "[cmd] store_update_locations n={} undo={} total={}ms",
             n,
@@ -3297,9 +3315,10 @@ pub(crate) fn reconcile_tags_by_name(
 }
 
 /// Copy locations already stored in this map into another map.
+// Async so the copy does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_copy_locations_to_map(
+pub async fn store_copy_locations_to_map(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     target_map_id: String,
@@ -3311,9 +3330,10 @@ pub fn store_copy_locations_to_map(
 /// Copy caller-supplied location data into another map. Tag ids are read against this
 /// map's tag table, so the values may differ from any row it holds -- that is how the
 /// editor sends the pano you are currently looking at rather than the one on disk.
+// Async so a large paste does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_add_locations_to_map(
+pub async fn store_add_locations_to_map(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     target_map_id: String,
@@ -4686,9 +4706,10 @@ pub fn store_collect(
 
 /// Transitive spatial duplicate groups (connected components, size >= 2) within `distance`
 /// metres. Read-only; used to preview a merge. Returns groups of location IDs.
+// Async so a whole-map scan does not run on the webview thread.
 #[tauri::command]
 #[specta::specta]
-pub fn store_duplicate_groups(
+pub async fn store_duplicate_groups(
     webview: tauri::Webview,
     state: tauri::State<'_, StoreState>,
     distance: f64,

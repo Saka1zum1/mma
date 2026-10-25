@@ -187,7 +187,7 @@ declare const commands$1: {
      *  set to false for ephemeral updates (e.g., plugin-driven batch modifications
      *  that manage their own undo).
      */
-    storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null) => Promise<MutationResult>;
+    storeUpdateLocations: (updates: Update<LocationPatch_Deserialize>[], recordUndo: boolean | null, extendUndo?: boolean | null) => Promise<MutationResult>;
     /**
      *  Set (or clear) the active location. Fire-and-forget from JS; no re-render triggered.
      *  JS patches the cell buffer synchronously to hide/show the active marker.
@@ -411,7 +411,7 @@ declare const commands$1: {
      *  `store_import_preview`/`store_import_paste_preview`. Fields in `dropped_fields`
      *  (e.g. `"heading"`, `"extra.countryCode"`) are zeroed/removed.
      */
-    storeImportFile: (droppedFields: string[], tagName: string | null) => Promise<EditorImportResult>;
+    storeImportFile: (droppedFields: string[], tagName: string | null, droppedTags?: string[] | null) => Promise<EditorImportResult>;
     /**
      *  The location a pasted Maps URL names, short links resolved. A link that names only a
      *  panorama takes its position from that panorama's metadata.
@@ -3101,6 +3101,7 @@ declare function removeLocations(ids: ReadonlyIdSet): Promise<void>;
  *  per-key (null deletes a key). Undoable by default. */
 declare function updateLocations(updates: Update<LocationPatch_Deserialize>[], opts?: {
     undoable?: boolean;
+    extendUndo?: boolean;
 }): Promise<void>;
 /** Rename or merge extra-field `from` into `to` across all locations, then migrate
  *  its definition and every selection that references it. Merge ≡ rename; `winner`
