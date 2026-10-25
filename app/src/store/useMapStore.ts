@@ -291,6 +291,7 @@ function clearEditState() {
 	});
 	resetImportState();
 	resetCommitDiffState();
+	resetSelectionHistory();
 }
 
 /** State fields every (re)open derives from the meta snapshot + open status. */
@@ -331,6 +332,7 @@ export async function openMap(id: string) {
 			log.error("[openMap] store_open_map failed:", e);
 			setState({ mapId: null, map: null });
 			emitEvent("store:changed");
+			emitEvent("map:open-failed", e instanceof Error ? e.message : String(e));
 			return;
 		}
 		cmd.storeTouchMapOpened(id);
@@ -639,11 +641,13 @@ export async function removeLocations(ids: ReadonlyIdSet) {
  *  per-key (null deletes a key). Undoable by default. */
 export async function updateLocations(
 	updates: Update<LocationPatch>[],
-	opts?: { undoable?: boolean },
+	opts?: { undoable?: boolean; extendUndo?: boolean },
 ) {
 	if (updates.length === 0) return;
 	if (updates.some((u) => isVirtualLocation(u))) return;
-	await mutate(() => cmd.storeUpdateLocations(updates, opts?.undoable ?? true));
+	await mutate(() =>
+		cmd.storeUpdateLocations(updates, opts?.undoable ?? true, opts?.extendUndo ?? null),
+	);
 	emitEvent("location:update", updates);
 	if (state.activeLocation && updates.some((u) => u.id === state.activeLocationId)) {
 		const activePatch = updates.find((u) => u.id === state.activeLocationId)?.patch;
@@ -737,7 +741,13 @@ function buildSyncInputs() {
 async function applySelectionUpdate(updater: (sels: Selection[]) => Selection[]) {
 	if (!state.map) return;
 	const t = trace("selection", { summary: true });
-	const selections = updater(state.selections);
+	const before = state.selections;
+	const selections = updater(before);
+	if (!applyingSelectionHistory && !selectionsEqual(before, selections)) {
+		selectionUndo.push(cloneSelections(before));
+		if (selectionUndo.length > SELECTION_HISTORY_LIMIT) selectionUndo.shift();
+		selectionRedo = [];
+	}
 	setState({
 		selections,
 		ghostedSelections: pruneGhosted(selections, state.ghostedSelections),
@@ -750,6 +760,62 @@ async function applySelectionUpdate(updater: (sels: Selection[]) => Selection[])
 	t.step("apply");
 	t.end({ selected: result.selectedCount });
 	emitEvent("selection:change", selections);
+}
+
+const SELECTION_HISTORY_LIMIT = 50;
+let selectionUndo: Selection[][] = [];
+let selectionRedo: Selection[][] = [];
+let applyingSelectionHistory = false;
+
+function cloneSelections(sels: Selection[]): Selection[] {
+	return sels.map((s) => ({ ...s, selector: structuredClone(s.selector) }));
+}
+
+function selectionsEqual(a: Selection[], b: Selection[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i].key !== b[i].key) return false;
+		const ca = a[i].color;
+		const cb = b[i].color;
+		if (ca[0] !== cb[0] || ca[1] !== cb[1] || ca[2] !== cb[2]) return false;
+		if (JSON.stringify(a[i].selector) !== JSON.stringify(b[i].selector)) return false;
+	}
+	return true;
+}
+
+/** Whether a selection edit can be stepped back without touching location history. */
+export function canUndoSelection(): boolean {
+	return selectionUndo.length > 0;
+}
+
+/** Whether a stepped-back selection edit can be reapplied. */
+export function canRedoSelection(): boolean {
+	return selectionRedo.length > 0;
+}
+
+function stepSelectionHistory(from: Selection[][], to: Selection[][]) {
+	const next = from.pop();
+	if (!next) return;
+	to.push(cloneSelections(state.selections));
+	applyingSelectionHistory = true;
+	return applySelectionUpdate(() => cloneSelections(next)).finally(() => {
+		applyingSelectionHistory = false;
+	});
+}
+
+/** Restore the previous selection list. Location undo is left alone. */
+export function undoSelection() {
+	return stepSelectionHistory(selectionUndo, selectionRedo);
+}
+
+/** Reapply a selection list undone with {@link undoSelection}. */
+export function redoSelection() {
+	return stepSelectionHistory(selectionRedo, selectionUndo);
+}
+
+export function resetSelectionHistory() {
+	selectionUndo = [];
+	selectionRedo = [];
 }
 
 /** Drop ghosted keys that no longer correspond to a live selection. */
@@ -790,6 +856,20 @@ export function toggleGhostAllSelections() {
 		ghostedSelections: allGhosted ? new Set() : state.ghostedSelections.union(keys),
 	});
 	return applySelectionUpdate((sels) => sels);
+}
+
+/** Replace one polygon selection in a single selection-undo step. */
+export function replacePolygonSelection(
+	key: string,
+	polygon: Extract<Selector, { type: "Polygon" }>["polygon"],
+	includeInformational: boolean,
+) {
+	return applySelectionUpdate((sels) =>
+		addSel(
+			removeSel(sels, key),
+			{ type: "Polygon", polygon, includeInformational },
+		),
+	);
 }
 
 /** Add selections to the sidebar and highlight their locations. Same-key selections replace. */

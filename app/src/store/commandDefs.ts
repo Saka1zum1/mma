@@ -57,6 +57,10 @@ import { registerCommand, type CommandDef } from "./commands";
 import {
 	undo,
 	redo,
+	undoSelection,
+	redoSelection,
+	canUndoSelection,
+	canRedoSelection,
 	addSelections,
 	selectInverse,
 	selectIntersection,
@@ -169,6 +173,26 @@ const COMMANDS = {
 		defaultBinding: "Mod+y, Mod+Shift+z",
 		execute: redo,
 		enabled: () => getMapState().canRedo,
+	},
+	undoSelection: {
+		label: msg("Undo selection"),
+		icon: mdiUndo,
+		group: msg("Selections"),
+		defaultBinding: "Mod+Alt+d",
+		execute: () => {
+			void undoSelection();
+		},
+		enabled: canUndoSelection,
+	},
+	redoSelection: {
+		label: msg("Redo selection"),
+		icon: mdiRedo,
+		group: msg("Selections"),
+		defaultBinding: "Mod+Alt+Shift+d",
+		execute: () => {
+			void redoSelection();
+		},
+		enabled: canRedoSelection,
 	},
 	export: {
 		label: msg("Export"),
