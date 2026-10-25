@@ -1,3 +1,16 @@
+## v0.13.1 - 2026-10-26
+- **Street View** keeps a **pinned panorama** when a lookup fails, **validates locations at the pin**, and **cancels tile downloads** when you stop the job. Pointing north keeps pitch, trail geocode stays put while you walk links, and enrichment can fold into the same undo step as a save
+- **Import** preview lists tags with checkboxes so you choose which file tags to bring in
+- **Selection undo and redo** are separate from location edits (Mod+Alt+D / Mod+Alt+Shift+D)
+- **Polygon selections** share one fill and stroke overlay; with the polygon tool active you can **drag vertices** or **click a vertex to remove** it
+- **Heavy map work** (reopen, export, copy, delete, checkout, nested folder rename and delete) runs off the UI thread so the editor stays responsive
+- The **measure tool** removes a node on a click; dragging still moves it once you pass the click slop
+- **App zoom** has rebindable shortcuts and a reset command; built-in webview zoom hotkeys are disabled so they do not fight the map
+- **Dialogs** anchor from the top of the window. Failed boot or map open shows an error with a way back; **mouse back and forward** work in-app
+- **Sun Position** can draw sun-direction rays for the **current selection** as well as all locations. **Heatmap** and **Vali** reset actions behave as icon buttons with confirmation; **LocalGuessr** countdown can go down to five seconds
+- The **Gen4 camera classifier** plugin is removed; Street View Gen4 generation labels are unchanged
+- Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
+
 ## v0.11.8 - 2026-10-17
 - **Enrichment metadata** works again when Google is only reachable through your system proxy or VPN. Metadata fields no longer stay on “Waiting” while copyright and other steps that do not need Google still finish
 - Street View **metadata and tile reads** retry when the connection drops before an answer arrives
