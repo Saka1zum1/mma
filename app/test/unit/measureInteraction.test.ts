@@ -102,14 +102,23 @@ describe("measure drag then click", () => {
 		]);
 	});
 
-	it("still suppresses the click of a stationary press on a node", async () => {
+	it("deletes a node on a stationary press, and its click adds nothing", async () => {
 		mountMeasuring({ lat: 0.01, lng: 0.01 });
 
 		down(10, 10);
 		up();
 		// The engine does fire a click for a stationary press; it must not add a point.
 		expect(await tryInterceptClick(0.01, 0.01)).toBe(true);
-		expect(getMeasurePoints()).toEqual([[0.01, 0.01]]);
+		expect(getMeasurePoints()).toEqual([]);
+	});
+
+	it("moves a node that is dragged past the click slop instead of deleting it", async () => {
+		mountMeasuring({ lat: 0.01, lng: 0.01 });
+
+		down(10, 10);
+		move(20, 10);
+		up();
+		expect(getMeasurePoints()).toEqual([[0.02, 0.01]]);
 	});
 });
 
