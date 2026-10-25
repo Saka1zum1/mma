@@ -269,7 +269,8 @@ var DEFAULT_OVERLAY = {
   visible: true,
   lengthKm: 2,
   width: 2,
-  color: { r: 255, g: 196, b: 64 }
+  color: { r: 255, g: 196, b: 64 },
+  selectionOnly: false
 };
 var overlayStore = MMA.storage("sunPosition");
 function loadOverlay() {
@@ -281,7 +282,8 @@ function loadOverlay() {
     color: color && Number.isFinite(color.r) && Number.isFinite(color.g) && Number.isFinite(color.b) ? color : DEFAULT_OVERLAY.color,
     lengthKm: typeof stored.lengthKm === "number" && stored.lengthKm > 0 ? stored.lengthKm : DEFAULT_OVERLAY.lengthKm,
     width: typeof stored.width === "number" && stored.width > 0 ? stored.width : DEFAULT_OVERLAY.width,
-    visible: stored.visible !== false
+    visible: stored.visible !== false,
+    selectionOnly: stored.selectionOnly === true
   };
 }
 var overlaySettings = loadOverlay();
@@ -319,12 +321,23 @@ async function rebuildRays() {
   }
   let locs = [];
   try {
-    locs = await MMA.fetchLocations({
-      type: "Filter",
-      field: "sunAzimuth",
-      op: "has",
-      value: true
-    });
+    if (overlaySettings.selectionOnly) {
+      const selection = MMA.currentSelection();
+      if (selection.type === "Union" && selection.selections.length === 0) {
+        if (token === rebuildToken && overlayHandle) overlayHandle.setProps({ layers: [] });
+        return;
+      }
+      locs = (await MMA.fetchLocations(selection)).filter(
+        (loc) => typeof loc.extra?.sunAzimuth === "number"
+      );
+    } else {
+      locs = await MMA.fetchLocations({
+        type: "Filter",
+        field: "sunAzimuth",
+        op: "has",
+        value: true
+      });
+    }
   } catch {
     if (token === rebuildToken && overlayHandle) overlayHandle.setProps({ layers: [] });
     return;
@@ -375,6 +388,11 @@ function attachOverlay(host) {
     "scene:changed"
   ];
   const unsubs = events.map((e) => MMA.on(e, onChange));
+  unsubs.push(
+    MMA.on("selection:change", () => {
+      if (overlaySettings.selectionOnly) void rebuildRays();
+    })
+  );
   return () => {
     unsubs.forEach((u) => u());
     overlayHandle?.finalize();
@@ -398,6 +416,14 @@ function OverlaySidebar({ onClose }) {
         label: MMA.t("Show rays"),
         checked: settings.visible,
         onChange: (visible) => setOverlaySettings({ visible })
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+      SwitchRow,
+      {
+        label: MMA.t("Only the selection"),
+        checked: settings.selectionOnly,
+        onChange: (selectionOnly) => setOverlaySettings({ selectionOnly })
       }
     ),
     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, { label: MMA.t("Ray length"), row: true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(

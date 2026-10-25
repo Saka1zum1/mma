@@ -157,6 +157,8 @@ function removeCSS() {
   }
 }
 
+const RESTORE =
+	"M13,3A9,9 0 0,0 4,12H1L4.89,15.89L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z";
 const ARROW_LEFT =
   "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
 
@@ -194,7 +196,9 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 				<h2 className="heatmap-sidebar__title">{MMA.t("Heatmap")}</h2>
 				<span style={{ flex: 1 }} />
 				<button
-					className="heatmap-sidebar__reset"
+					className="icon-button heatmap-sidebar__reset"
+					aria-label={resetArmed ? MMA.t("Are you sure?") : MMA.t("Reset")}
+					title={resetArmed ? MMA.t("Are you sure?") : MMA.t("Reset")}
 					onClick={() => {
 						if (!resetArmed) {
 							setResetArmed(true);
@@ -205,7 +209,7 @@ export function HeatmapSidebar({ onClose }: { onClose: () => void }) {
 					}}
 					onBlur={() => setResetArmed(false)}
 				>
-					{resetArmed ? MMA.t("Are you sure?") : MMA.t("Reset")}
+					<Icon path={RESTORE} />
 				</button>
 			</header>
 

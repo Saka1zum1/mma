@@ -50,6 +50,8 @@ interface OverlaySettings {
 	lengthKm: number;
 	width: number;
 	color: RGB;
+	/** Draw rays only for the current selection. */
+	selectionOnly: boolean;
 }
 
 const DEFAULT_OVERLAY: OverlaySettings = {
@@ -57,6 +59,7 @@ const DEFAULT_OVERLAY: OverlaySettings = {
 	lengthKm: 2,
 	width: 2,
 	color: { r: 255, g: 196, b: 64 },
+	selectionOnly: false,
 };
 
 const overlayStore = MMA.storage("sunPosition");
@@ -78,6 +81,7 @@ function loadOverlay(): OverlaySettings {
 		width:
 			typeof stored.width === "number" && stored.width > 0 ? stored.width : DEFAULT_OVERLAY.width,
 		visible: stored.visible !== false,
+		selectionOnly: stored.selectionOnly === true,
 	};
 }
 
@@ -123,12 +127,23 @@ async function rebuildRays() {
 
 	let locs: Location[] = [];
 	try {
-		locs = await MMA.fetchLocations({
-			type: "Filter",
-			field: "sunAzimuth",
-			op: "has",
-			value: true,
-		});
+		if (overlaySettings.selectionOnly) {
+			const selection = MMA.currentSelection();
+			if (selection.type === "Union" && selection.selections.length === 0) {
+				if (token === rebuildToken && overlayHandle) overlayHandle.setProps({ layers: [] });
+				return;
+			}
+			locs = (await MMA.fetchLocations(selection)).filter(
+				(loc) => typeof loc.extra?.sunAzimuth === "number",
+			);
+		} else {
+			locs = await MMA.fetchLocations({
+				type: "Filter",
+				field: "sunAzimuth",
+				op: "has",
+				value: true,
+			});
+		}
 	} catch {
 		if (token === rebuildToken && overlayHandle) overlayHandle.setProps({ layers: [] });
 		return;
@@ -183,6 +198,11 @@ function attachOverlay(host: { createDeckOverlay: () => DeckOverlayHandle }): ()
 		"scene:changed",
 	] as const;
 	const unsubs = events.map((e) => MMA.on(e, onChange));
+	unsubs.push(
+		MMA.on("selection:change", () => {
+			if (overlaySettings.selectionOnly) void rebuildRays();
+		}),
+	);
 	return () => {
 		unsubs.forEach((u) => u());
 		overlayHandle?.finalize();
@@ -209,6 +229,11 @@ function OverlaySidebar({ onClose }: { onClose: () => void }) {
 					label={MMA.t("Show rays")}
 					checked={settings.visible}
 					onChange={(visible) => setOverlaySettings({ visible })}
+				/>
+				<SwitchRow
+					label={MMA.t("Only the selection")}
+					checked={settings.selectionOnly}
+					onChange={(selectionOnly) => setOverlaySettings({ selectionOnly })}
 				/>
 				<Field label={MMA.t("Ray length")} row>
 					<Slider

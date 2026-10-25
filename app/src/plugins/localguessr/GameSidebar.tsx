@@ -249,12 +249,12 @@ export function GameSidebar({ onClose }: { onClose: () => void }) {
 									})}
 								>
 									<Slider
-										min={15}
+										min={5}
 										max={300}
 										step={5}
 										value={config.timeLimit}
 										onChange={(e) =>
-											patch({ timeLimit: Number(e.target.value) })
+											patch({ timeLimit: Math.max(5, Number(e.target.value)) })
 										}
 									/>
 								</Field>

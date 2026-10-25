@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useRef, useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { mdiCloudDownloadOutline } from "@mdi/js";
+import { mdiCloudDownloadOutline, mdiRestore } from "@mdi/js";
 import { cmd } from "@/lib/commands";
 import type { ValiCountryStatus, ValiLocation } from "@/bindings.gen";
 import { createLocation, LocationFlag } from "@/types";
@@ -171,8 +171,14 @@ export function ValiSidebar({ onClose }: { onClose: () => void }) {
 			flush
 			actions={
 				<>
-					<ConfirmButton variant="ghost" disabled={busy === "generate"} onConfirm={reset}>
-						{t("Reset")}
+					<ConfirmButton
+						variant="ghost"
+						disabled={busy === "generate"}
+						onConfirm={reset}
+						aria-label={t("Reset")}
+						title={t("Reset")}
+					>
+						<Icon path={mdiRestore} />
 					</ConfirmButton>
 					<Tooltip
 						content={outdated ? t("Coverage data is out of date") : t("Download coverage data")}
