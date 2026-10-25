@@ -33,10 +33,12 @@ function pano(opts: {
 	cameraType?: string | null;
 	time?: { pano: string; date?: Date }[];
 	imageDate?: string;
+	lat?: number;
+	lng?: number;
 }): Pano {
-	const { pano: id, cameraType = "gen4", time = [], imageDate = "2022-01" } = opts;
+	const { pano: id, cameraType = "gen4", time = [], imageDate = "2022-01", lat = 0, lng = 0 } = opts;
 	return {
-		location: { latLng: { lat: () => 0, lng: () => 0 }, pano: id },
+		location: { latLng: { lat: () => lat, lng: () => lng }, pano: id },
 		imageDate,
 		time: time.map((t) => ({ pano: t.pano, date: t.date ?? new Date(0) })),
 		tiles: { worldSize: { width: 0, height: 8192 } },
@@ -161,6 +163,27 @@ describe("pinned pano resolution failures", () => {
 		expect(await validateOne(pinned(OFFICIAL_OLD))).toEqual(
 			answer(ValidationFlag.PanoIdBroke, true),
 		);
+	});
+
+	it("a failed metadata lookup is not a missing pano", async () => {
+		mockFetch.mockRejectedValue(new Error("offline"));
+		expect(await validateOne(pinned(OFFICIAL_OLD))).toEqual(answer(ValidationFlag.None, true));
+		expect(mockCoords).not.toHaveBeenCalled();
+	});
+
+	it("a pin whose row sits on a neighbouring frame is judged at the pin's own position", async () => {
+		mockCoords.mockResolvedValue(OFFICIAL_OLD);
+		byId({
+			[OFFICIAL_OLD]: pano({
+				pano: OFFICIAL_OLD,
+				lat: 1.0001,
+				lng: 2,
+				time: [{ pano: OFFICIAL_OLD }],
+			}),
+		});
+		const loc = { ...pinned(OFFICIAL_OLD), lat: 9, lng: 9 };
+		expect(await validateOne(loc)).toEqual(answer(ValidationFlag.None, true));
+		expect(mockCoords).toHaveBeenCalledWith(1.0001, 2, undefined);
 	});
 
 	it("pinned pano fails and the coordinate has no coverage -> NotFound (beats PanoIdBroke)", async () => {

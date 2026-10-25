@@ -11,27 +11,30 @@ import type { PanoDownloadConfig, RenderedPanoImage } from "@/lib/sv/panoDownloa
 const TILE = 512;
 const MAX_ZOOM = 3;
 
-async function fetchBaiduBitmap(url: string): Promise<ImageBitmap | null> {
+async function fetchBaiduBitmap(url: string, signal?: AbortSignal): Promise<ImageBitmap | null> {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
-			const resp = await fetch(url);
+			signal?.throwIfAborted();
+			const resp = await fetch(url, { signal });
 			if (!resp.ok) continue;
 			// mapsv often returns Content-Type: text — force JPEG for decode.
 			const jpeg = new Blob([await resp.arrayBuffer()], { type: "image/jpeg" });
 			return await createImageBitmap(jpeg);
-		} catch {
-			/* retry */
+		} catch (e) {
+			if (signal?.aborted) throw e;
 		}
 	}
 	return null;
 }
 
-async function fetchBaiduBlob(url: string): Promise<Blob | null> {
+async function fetchBaiduBlob(url: string, signal?: AbortSignal): Promise<Blob | null> {
 	try {
-		const resp = await fetch(url);
+		signal?.throwIfAborted();
+		const resp = await fetch(url, { signal });
 		if (!resp.ok) return null;
 		return new Blob([await resp.arrayBuffer()], { type: "image/jpeg" });
-	} catch {
+	} catch (e) {
+		if (signal?.aborted) throw e;
 		return null;
 	}
 }
@@ -40,6 +43,7 @@ async function fetchBaiduBlob(url: string): Promise<Blob | null> {
 export async function stitchBaiduPano(
 	panoId: string,
 	zoom: number,
+	signal?: AbortSignal,
 ): Promise<HTMLCanvasElement | null> {
 	const sid = stripBaidu(panoId);
 	if (!sid) return null;
@@ -62,7 +66,7 @@ export async function stitchBaiduPano(
 		for (let x = 0; x < cols; x++) {
 			loads.push(
 				(async () => {
-					const bmp = await fetchBaiduBitmap(baiduTileUrlAtZoom(sid, z, x, y));
+					const bmp = await fetchBaiduBitmap(baiduTileUrlAtZoom(sid, z, x, y), signal);
 					if (!bmp) return;
 					ctx.drawImage(bmp, x * TILE, y * TILE, TILE, TILE);
 					bmp.close();
@@ -88,6 +92,7 @@ export async function renderBaiduLocationImage(
 	loc: Location,
 	panoId: string,
 	config: PanoDownloadConfig,
+	signal?: AbortSignal,
 ): Promise<RenderedPanoImage | null> {
 	const sid = stripBaidu(panoId);
 	if (!sid) return null;
@@ -95,7 +100,10 @@ export async function renderBaiduLocationImage(
 
 	if (config.mode === "tile") {
 		const z = Math.min(Math.max(Math.round(config.zoom), 1), MAX_ZOOM);
-		const blob = await fetchBaiduBlob(baiduTileUrlAtZoom(sid, z, config.tileX, config.tileY));
+		const blob = await fetchBaiduBlob(
+			baiduTileUrlAtZoom(sid, z, config.tileX, config.tileY),
+			signal,
+		);
 		return blob
 			? { blob, fileName: `${name}_z${z}_x${config.tileX}_y${config.tileY}.jpg` }
 			: null;
@@ -110,6 +118,7 @@ export async function renderBaiduLocationImage(
 				height: 768,
 				fovy: 125,
 			}),
+			signal,
 		);
 		return blob ? { blob, fileName: `${name}.jpg` } : null;
 	}
@@ -123,11 +132,12 @@ export async function renderBaiduLocationImage(
 				height: 1080,
 				fovy: 125,
 			}),
+			signal,
 		);
 		return blob ? { blob, fileName: `${name}.jpg` } : null;
 	}
 
-	const canvas = await stitchBaiduPano(sid, config.zoom);
+	const canvas = await stitchBaiduPano(sid, config.zoom, signal);
 	if (!canvas) return null;
 	const blob = await canvasToBlob(canvas, "image/jpeg", 0.95);
 	return blob ? { blob, fileName: `${name}.jpg` } : null;

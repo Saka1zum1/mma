@@ -24,17 +24,21 @@ function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchTileBitmap(url: string): Promise<ImageBitmap | null> {
+async function fetchTileBitmap(url: string, signal?: AbortSignal): Promise<ImageBitmap | null> {
+	const timeout = AbortSignal.timeout(20_000);
+	const stop = signal ? AbortSignal.any([signal, timeout]) : timeout;
 	for (let attempt = 0; attempt < TILE_RETRIES; attempt += 1) {
 		try {
-			const resp = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+			signal?.throwIfAborted();
+			const resp = await fetch(url, { signal: stop });
 			if (!resp.ok) {
 				await delay(150 * (attempt + 1) + Math.random() * 100);
 				continue;
 			}
 			return await createImageBitmap(await resp.blob());
-		} catch {
-			// ERR_INSUFFICIENT_RESOURCES / abort / network — back off and retry.
+		} catch (e) {
+			if (signal?.aborted) throw e;
+			// ERR_INSUFFICIENT_RESOURCES / network — back off and retry.
 			await delay(200 * (attempt + 1) + Math.random() * 150);
 		}
 	}
@@ -49,6 +53,7 @@ function cacheKey(imageId: string, level: number): string {
 export async function stitchYandexLevel(
 	meta: YandexPanoMeta,
 	level: number,
+	signal?: AbortSignal,
 ): Promise<{ url: string; width: number; height: number }> {
 	const lvl = Math.min(Math.max(0, level), Math.max(0, meta.zooms.length - 1));
 	const { width, height } = levelSize(meta, lvl);
@@ -89,13 +94,16 @@ export async function stitchYandexLevel(
 			await runConcurrent(
 				coords,
 				async ({ x, y }) => {
-					const bmp = await fetchTileBitmap(yandexPanoTileUrl(meta.imageId, lvl, x, y));
+					const bmp = await fetchTileBitmap(
+						yandexPanoTileUrl(meta.imageId, lvl, x, y),
+						signal,
+					);
 					if (!bmp) return;
 					ctx.drawImage(bmp, x * tileW, y * tileH);
 					bmp.close();
 					loaded += 1;
 				},
-				{ concurrency: TILE_CONCURRENCY },
+				{ concurrency: TILE_CONCURRENCY, signal },
 			);
 			if (loaded === 0) throw new Error("Yandex stitch: no tiles loaded");
 

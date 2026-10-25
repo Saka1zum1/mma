@@ -1,7 +1,7 @@
 import { cmd } from "@/lib/commands";
 import { getSettings } from "@/store/settings";
 import { log } from "@/lib/util/log";
-import { useAsync } from "@/lib/hooks/useAsync";
+import { useAsyncSticky } from "@/lib/hooks/useAsync";
 
 export interface GeoDisplay {
 	address: string;
@@ -44,10 +44,12 @@ export function useReverseGeocode(
 	lat: number,
 	lng: number,
 	panoGeo?: GeoDisplay | null,
+	/** Same location keeps the last address while the next lookup is in flight. */
+	holdKey: unknown = null,
 ): GeoDisplay | null {
 	const provider = getSettings().geocodeProvider;
 
-	const asyncResult = useAsync(async () => {
+	const looked = useAsyncSticky(async () => {
 		if (provider === "google") return null;
 		const fn = provider === "nominatim" ? geocodeNominatim : geocodeLocal;
 		try {
@@ -56,8 +58,8 @@ export function useReverseGeocode(
 			log.warn("[geocode] reverse geocode failed:", e);
 			return null;
 		}
-	}, [lat, lng, provider]).data;
+	}, [lat, lng, provider], holdKey);
 
 	if (provider === "google") return panoGeo ?? null;
-	return asyncResult;
+	return looked;
 }

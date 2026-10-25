@@ -37,18 +37,21 @@ async function fetchYandexTileBlob(
 	level: number,
 	x: number,
 	y: number,
+	signal?: AbortSignal,
 ): Promise<Blob | null> {
+	const timeout = AbortSignal.timeout(20_000);
+	const stop = signal ? AbortSignal.any([signal, timeout]) : timeout;
 	for (let attempt = 0; attempt < 4; attempt += 1) {
 		try {
-			const resp = await fetch(yandexPanoTileUrl(imageId, level, x, y), {
-				signal: AbortSignal.timeout(20_000),
-			});
+			signal?.throwIfAborted();
+			const resp = await fetch(yandexPanoTileUrl(imageId, level, x, y), { signal: stop });
 			if (!resp.ok) {
 				await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
 				continue;
 			}
 			return new Blob([await resp.arrayBuffer()], { type: "image/jpeg" });
-		} catch {
+		} catch (e) {
+			if (signal?.aborted) throw e;
 			await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
 		}
 	}
@@ -56,16 +59,19 @@ async function fetchYandexTileBlob(
 }
 
 /** Stitch Yandex tiles into a full equirect at the highest-res Zooms level. */
-export async function stitchYandexPano(panoId: string): Promise<HTMLCanvasElement | null> {
+export async function stitchYandexPano(
+	panoId: string,
+	signal?: AbortSignal,
+): Promise<HTMLCanvasElement | null> {
 	const oid = stripYandex(panoId);
 	if (!oid) return null;
 	const meta = await fetchYandexMeta(oid);
 	if (!meta?.imageId) return null;
 
 	// Level 0 = full resolution; cols/rows derived from tileWidth/tileHeight inside stitch.
-	const { url, width, height } = await stitchYandexLevel(meta, 0);
+	const { url, width, height } = await stitchYandexLevel(meta, 0, signal);
 	try {
-		const resp = await fetch(url);
+		const resp = await fetch(url, { signal });
 		if (!resp.ok) return null;
 		const bmp = await createImageBitmap(await resp.blob());
 		const canvas = document.createElement("canvas");
@@ -88,6 +94,7 @@ export async function renderYandexLocationImage(
 	loc: Location,
 	panoId: string,
 	config: PanoDownloadConfig,
+	signal?: AbortSignal,
 ): Promise<RenderedPanoImage | null> {
 	const oid = stripYandex(panoId);
 	if (!oid) return null;
@@ -104,13 +111,14 @@ export async function renderYandexLocationImage(
 			level,
 			config.tileX,
 			config.tileY,
+			signal,
 		);
 		return blob
 			? { blob, fileName: `${name}_z${level}_x${config.tileX}_y${config.tileY}.jpg` }
 			: null;
 	}
 
-	const canvas = await stitchYandexPano(panoId);
+	const canvas = await stitchYandexPano(panoId, signal);
 	if (!canvas) return null;
 
 	if (config.mode === "perspective") {

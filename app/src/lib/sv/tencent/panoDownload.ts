@@ -14,26 +14,29 @@ const FULL_COLS = 16;
 const FULL_ROWS = 8;
 const TILE_LEVEL = 1;
 
-async function fetchTencentBitmap(url: string): Promise<ImageBitmap | null> {
+async function fetchTencentBitmap(url: string, signal?: AbortSignal): Promise<ImageBitmap | null> {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
-			const resp = await fetch(url);
+			signal?.throwIfAborted();
+			const resp = await fetch(url, { signal });
 			if (!resp.ok) continue;
 			const jpeg = new Blob([await resp.arrayBuffer()], { type: "image/jpeg" });
 			return await createImageBitmap(jpeg);
-		} catch {
-			/* retry */
+		} catch (e) {
+			if (signal?.aborted) throw e;
 		}
 	}
 	return null;
 }
 
-async function fetchTencentBlob(url: string): Promise<Blob | null> {
+async function fetchTencentBlob(url: string, signal?: AbortSignal): Promise<Blob | null> {
 	try {
-		const resp = await fetch(url);
+		signal?.throwIfAborted();
+		const resp = await fetch(url, { signal });
 		if (!resp.ok) return null;
 		return new Blob([await resp.arrayBuffer()], { type: "image/jpeg" });
-	} catch {
+	} catch (e) {
+		if (signal?.aborted) throw e;
 		return null;
 	}
 }
@@ -50,6 +53,7 @@ function canvasToBlob(
 export async function stitchTencentPano(
 	panoId: string,
 	_zoom = 5,
+	signal?: AbortSignal,
 ): Promise<HTMLCanvasElement | null> {
 	const svid = stripTencent(panoId);
 	if (!svid) return null;
@@ -70,6 +74,7 @@ export async function stitchTencentPano(
 				(async () => {
 					const bmp = await fetchTencentBitmap(
 						tencentPanoTileUrl(svid, TILE_LEVEL, x, y),
+						signal,
 					);
 					if (!bmp) return;
 					ctx.drawImage(bmp, x * TILE, y * TILE, TILE, TILE);
@@ -87,6 +92,7 @@ export async function renderTencentLocationImage(
 	loc: Location,
 	panoId: string,
 	config: PanoDownloadConfig,
+	signal?: AbortSignal,
 ): Promise<RenderedPanoImage | null> {
 	const svid = stripTencent(panoId);
 	if (!svid) return null;
@@ -96,6 +102,7 @@ export async function renderTencentLocationImage(
 		// Native equirect tiles are level 1 (16×8 @ 512). Other zooms use the same grid.
 		const blob = await fetchTencentBlob(
 			tencentPanoTileUrl(svid, TILE_LEVEL, config.tileX, config.tileY),
+			signal,
 		);
 		return blob
 			? {
@@ -106,11 +113,11 @@ export async function renderTencentLocationImage(
 	}
 
 	if (config.mode === "thumbnail") {
-		const blob = await fetchTencentBlob(tencentDownloadThumbUrl(svid));
+		const blob = await fetchTencentBlob(tencentDownloadThumbUrl(svid), signal);
 		return blob ? { blob, fileName: `${name}.jpg` } : null;
 	}
 
-	const canvas = await stitchTencentPano(panoId, config.zoom);
+	const canvas = await stitchTencentPano(panoId, config.zoom, signal);
 	if (!canvas) return null;
 
 	if (config.mode === "perspective") {

@@ -100,7 +100,9 @@ export function applyResolved(
 	result: ResolvedPano,
 	loc: Location,
 ) {
-	if (result.pano?.location?.pano) {
+	if (result.keepPanoId) {
+		sv.setPano(result.keepPanoId);
+	} else if (result.pano?.location?.pano) {
 		sv.setPano(result.pano.location.pano);
 	} else {
 		sv.setPosition({ lat: loc.lat, lng: loc.lng });

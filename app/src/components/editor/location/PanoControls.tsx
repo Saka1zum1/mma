@@ -25,7 +25,7 @@ import { useBinding } from "@/lib/util/hotkeys";
 import { useHotkeyRef } from "@/lib/hooks/useHotkey";
 import { usePanoEvent } from "@/lib/hooks/usePanoEvent";
 import { open } from "@tauri-apps/plugin-shell";
-import { tweenPov } from "@/lib/sv/tweenPov";
+import { pointNorthFrame, tweenPov } from "@/lib/sv/tweenPov";
 import { snapshotPanoView, renderPanoView, canvasToBlob } from "@/lib/sv/panoCapture";
 import { downloadBlob, copyImageToClipboard } from "@/lib/util/util";
 import { toast } from "@/lib/util/toast";
@@ -321,12 +321,10 @@ export function CompassControl({
 				if (next) animatePov({ heading: next.heading!, pitch: 0 });
 				return;
 			}
-			const targetHeading = animRef.current?.target.heading ?? panorama.getPov().heading;
-			if (targetHeading === 0) {
-				animatePov({ heading: 0, pitch: -90 });
-			} else {
-				animatePov({ heading: 0, pitch: 0 });
-			}
+			const pov = animRef.current?.target ?? panorama.getPov();
+			const next = pointNorthFrame(pov.heading ?? 0, pov.pitch ?? 0);
+			if (next.lookDown) panorama.setZoom(PANO_ZOOM.min);
+			animatePov(next);
 		},
 		[panorama, links, animatePov],
 	);

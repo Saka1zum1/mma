@@ -1,5 +1,20 @@
 const TWEEN_DURATION = 160;
 
+/** Smallest turn from `heading` to north, in `[0, 180]`. */
+export function degreesFromNorth(heading: number): number {
+	const h = ((heading % 360) + 360) % 360;
+	return Math.min(h, 360 - h);
+}
+
+/** Face north and keep the pitch. Within two degrees of north, look straight down. */
+export function pointNorthFrame(
+	heading: number,
+	pitch: number,
+): { heading: number; pitch: number; lookDown: boolean } {
+	if (degreesFromNorth(heading) < 2) return { heading: 0, pitch: -90, lookDown: true };
+	return { heading: 0, pitch, lookDown: false };
+}
+
 export function tweenPov(
 	pano: google.maps.StreetViewPanorama,
 	target: { heading: number; pitch: number },

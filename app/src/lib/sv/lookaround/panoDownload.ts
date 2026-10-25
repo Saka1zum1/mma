@@ -55,14 +55,15 @@ export function lookaroundFaceUrl(
 	return `${origin}/pano/${panoid}/${buildId}/${faceZoom}/${faceIdx}/`;
 }
 
-async function fetchFaceBitmap(url: string): Promise<ImageBitmap | null> {
+async function fetchFaceBitmap(url: string, signal?: AbortSignal): Promise<ImageBitmap | null> {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
-			const resp = await fetch(url);
+			signal?.throwIfAborted();
+			const resp = await fetch(url, { signal });
 			if (!resp.ok) continue;
 			return await createImageBitmap(await resp.blob());
-		} catch {
-			/* retry */
+		} catch (e) {
+			if (signal?.aborted) throw e;
 		}
 	}
 	return null;
@@ -280,11 +281,13 @@ async function loadFaces(
 	panoid: string,
 	buildId: string,
 	faceZoom: number,
+	signal?: AbortSignal,
 ): Promise<ImageBitmap[] | null> {
+	signal?.throwIfAborted();
 	const base = getApi().getLookmapBaseUrl();
 	const results = await Promise.all(
 		Array.from({ length: NUM_FACES }, (_, i) =>
-			fetchFaceBitmap(lookaroundFaceUrl(panoid, buildId, faceZoom, i, base)),
+			fetchFaceBitmap(lookaroundFaceUrl(panoid, buildId, faceZoom, i, base), signal),
 		),
 	);
 	if (results.some((b) => !b)) {
@@ -306,11 +309,12 @@ export async function stitchLookaroundPano(
 	loc: Location,
 	panoId: string,
 	zoom: number,
+	signal?: AbortSignal,
 ): Promise<HTMLCanvasElement | null> {
 	const pano = await resolvePano(loc, panoId);
 	if (!pano?.panoid || !pano.buildId || !pano.cameraMetadata?.length) return null;
 	const faceZoom = googleZoomToFaceZoom(zoom);
-	const faces = await loadFaces(pano.panoid, pano.buildId, faceZoom);
+	const faces = await loadFaces(pano.panoid, pano.buildId, faceZoom, signal);
 	if (!faces) return null;
 	try {
 		return facesToEquirect(faces, pano.cameraMetadata);
@@ -324,6 +328,7 @@ export async function renderLookaroundLocationImage(
 	loc: Location,
 	panoId: string,
 	config: PanoDownloadConfig,
+	signal?: AbortSignal,
 ): Promise<RenderedPanoImage | null> {
 	if (config.mode === "tile" || config.mode === "thumbnail") return null;
 
@@ -332,7 +337,7 @@ export async function renderLookaroundLocationImage(
 	const name = pano.panoid;
 	const faceZoom = googleZoomToFaceZoom(config.zoom);
 
-	const faces = await loadFaces(pano.panoid, pano.buildId, faceZoom);
+	const faces = await loadFaces(pano.panoid, pano.buildId, faceZoom, signal);
 	if (!faces) return null;
 	let canvas: HTMLCanvasElement | null;
 	try {

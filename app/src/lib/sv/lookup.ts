@@ -39,19 +39,38 @@ export function parsePanoDate(d: Date | { year?: number; month?: number } | stri
 	return new Date(0);
 }
 
-/** Fetch panorama data via StreetViewService. Returns null on failure or missing location. */
-export async function fetchPanoData(
+function panoMissing(e: unknown): boolean {
+	const code =
+		e && typeof e === "object" && "code" in e ? String((e as { code: unknown }).code) : "";
+	const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+	return /ZERO_RESULTS/i.test(`${code} ${message}`);
+}
+
+/** Fetch panorama data via StreetViewService. `failed` is a lookup that never answered,
+ *  which is not the same as a pano that does not exist. */
+export async function fetchPanoDataOutcome(
 	request: google.maps.StreetViewPanoRequest | google.maps.StreetViewLocationRequest,
-): Promise<google.maps.StreetViewResolvedPanoramaData | null> {
+): Promise<{ data: google.maps.StreetViewResolvedPanoramaData | null; failed: boolean }> {
 	try {
 		const sv = new google.maps.StreetViewService();
 		const result = await sv.getPanorama(request);
 		const data = result?.data;
-		if (data?.location?.latLng) return data as google.maps.StreetViewResolvedPanoramaData;
-		return null;
-	} catch {
-		return null;
+		if (data?.location?.latLng) {
+			return { data: data as google.maps.StreetViewResolvedPanoramaData, failed: false };
+		}
+		return { data: null, failed: false };
+	} catch (e) {
+		if (panoMissing(e)) return { data: null, failed: false };
+		return { data: null, failed: true };
 	}
+}
+
+/** Fetch panorama data via StreetViewService. Returns null when the pano is missing or the
+ *  lookup fails. Callers that must keep a pin use {@link fetchPanoDataOutcome}. */
+export async function fetchPanoData(
+	request: google.maps.StreetViewPanoRequest | google.maps.StreetViewLocationRequest,
+): Promise<google.maps.StreetViewResolvedPanoramaData | null> {
+	return (await fetchPanoDataOutcome(request)).data;
 }
 
 export async function getPanoAtCoords(
@@ -78,6 +97,8 @@ export async function getPanoAtCoords(
 export interface ResolvedPano {
 	pano: google.maps.StreetViewResolvedPanoramaData | null;
 	isFallback: boolean;
+	/** Pinned id whose lookup failed. Show this id; do not fall back to coordinates. */
+	keepPanoId?: string | null;
 }
 
 export async function resolvePano(loc: Location): Promise<ResolvedPano> {
@@ -90,13 +111,21 @@ export async function resolvePano(loc: Location): Promise<ResolvedPano> {
 		const viewerId = loc.panoId ? viewerPanoId(provider, loc.panoId) : null;
 		const strip = provider === "baidu" ? stripBaidu : stripTencent;
 		let resolved: google.maps.StreetViewResolvedPanoramaData | null = null;
+		let failed = false;
 		if (viewerId) {
-			resolved = await fetchPanoData({ pano: viewerId });
+			const outcome = await fetchPanoDataOutcome({ pano: viewerId });
+			resolved = outcome.data;
+			failed = outcome.failed;
 		}
-		resolved ??= await fetchPanoData({
-			location: { lat: loc.lat, lng: loc.lng },
-			radius: SV_SEARCH_RADIUS,
-		});
+		if (failed && pinned && viewerId) {
+			return { pano: null, isFallback: false, keepPanoId: viewerId };
+		}
+		if (!resolved) {
+			resolved = await fetchPanoData({
+				location: { lat: loc.lat, lng: loc.lng },
+				radius: SV_SEARCH_RADIUS,
+			});
+		}
 		const got = resolved?.location?.pano ?? null;
 		const isFallback =
 			Boolean(pinned && viewerId) &&
@@ -107,13 +136,21 @@ export async function resolvePano(loc: Location): Promise<ResolvedPano> {
 
 	const pinned = hasLoadAsPanoId(loc);
 	let resolved: google.maps.StreetViewResolvedPanoramaData | null = null;
+	let failed = false;
 	if (pinned && loc.panoId) {
-		resolved = await fetchPanoData({ pano: loc.panoId });
+		const outcome = await fetchPanoDataOutcome({ pano: loc.panoId });
+		resolved = outcome.data;
+		failed = outcome.failed;
 	}
-	resolved ??= await fetchPanoData({
-		location: { lat: loc.lat, lng: loc.lng },
-		radius: SV_SEARCH_RADIUS,
-	});
+	if (failed && loc.panoId) {
+		return { pano: null, isFallback: false, keepPanoId: loc.panoId };
+	}
+	if (!resolved) {
+		resolved = await fetchPanoData({
+			location: { lat: loc.lat, lng: loc.lng },
+			radius: SV_SEARCH_RADIUS,
+		});
+	}
 	return {
 		pano: resolved,
 		isFallback: pinned && loc.panoId != null && resolved?.location?.pano !== loc.panoId,

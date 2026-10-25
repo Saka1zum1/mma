@@ -78,15 +78,17 @@ async function fetchPanoTile(
 	x: number,
 	y: number,
 	z: number,
+	signal?: AbortSignal,
 ): Promise<ImageBitmap | null> {
 	const url = panoTileUrl(panoId, x, y, z);
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
-			const resp = await fetch(url);
+			signal?.throwIfAborted();
+			const resp = await fetch(url, { signal });
 			if (!resp.ok) continue;
 			return await createImageBitmap(await resp.blob());
-		} catch {
-			// retry
+		} catch (e) {
+			if (signal?.aborted) throw e;
 		}
 	}
 	return null;
@@ -97,6 +99,7 @@ export async function stitchPano(
 	panoId: string,
 	meta: PanoData | null | undefined,
 	zoom: number,
+	signal?: AbortSignal,
 ): Promise<HTMLCanvasElement | null> {
 	const { zoom: z, cols, rows, width, height, tile } = panoTileLayout(zoom, meta?.tiles?.worldSize);
 
@@ -112,7 +115,7 @@ export async function stitchPano(
 		for (let x = 0; x < cols; x++) {
 			loads.push(
 				(async () => {
-					const bmp = await fetchPanoTile(panoId, x, y, z);
+					const bmp = await fetchPanoTile(panoId, x, y, z, signal);
 					if (!bmp) return;
 					ctx.drawImage(bmp, x * tile, y * tile);
 					bmp.close();
@@ -202,11 +205,13 @@ function canvasToBlob(
 	return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
-async function fetchImage(url: string): Promise<Blob | null> {
+async function fetchImage(url: string, signal?: AbortSignal): Promise<Blob | null> {
 	try {
-		const resp = await fetch(url);
+		signal?.throwIfAborted();
+		const resp = await fetch(url, { signal });
 		return resp.ok ? await resp.blob() : null;
-	} catch {
+	} catch (e) {
+		if (signal?.aborted) throw e;
 		return null;
 	}
 }
@@ -217,24 +222,28 @@ async function renderGoogleLocationImage(
 	panoId: string,
 	meta: PanoData | null,
 	config: PanoDownloadConfig,
+	signal?: AbortSignal,
 ): Promise<RenderedPanoImage | null> {
 	const name = panoId;
 
 	if (config.mode === "thumbnail") {
 		const url = new URL(svThumbnailUrl(panoId, loc.heading, 1024, 768));
 		url.searchParams.set("pitch", String(loc.pitch));
-		const blob = await fetchImage(url.toString());
+		const blob = await fetchImage(url.toString(), signal);
 		return blob ? { blob, fileName: `${name}.png` } : null;
 	}
 
 	if (config.mode === "tile") {
-		const blob = await fetchImage(panoTileUrl(panoId, config.tileX, config.tileY, config.zoom));
+		const blob = await fetchImage(
+			panoTileUrl(panoId, config.tileX, config.tileY, config.zoom),
+			signal,
+		);
 		return blob
 			? { blob, fileName: `${name}_z${config.zoom}_x${config.tileX}_y${config.tileY}.jpg` }
 			: null;
 	}
 
-	const canvas = await stitchPano(panoId, meta, config.zoom);
+	const canvas = await stitchPano(panoId, meta, config.zoom, signal);
 	if (!canvas) return null;
 
 	if (config.mode === "perspective") {
@@ -272,14 +281,16 @@ async function renderLocationImage(
 	panoId: string,
 	meta: PanoData | null,
 	config: PanoDownloadConfig,
+	signal?: AbortSignal,
 ): Promise<RenderedPanoImage | null> {
 	if (shouldSkipPanoDownload(loc, config)) return null;
+	signal?.throwIfAborted();
 	const provider = getLocationProvider(loc);
-	if (provider === "baidu") return renderBaiduLocationImage(loc, panoId, config);
-	if (provider === "tencent") return renderTencentLocationImage(loc, panoId, config);
-	if (provider === "yandex") return renderYandexLocationImage(loc, panoId, config);
-	if (provider === "apple") return renderLookaroundLocationImage(loc, panoId, config);
-	return renderGoogleLocationImage(loc, panoId, meta, config);
+	if (provider === "baidu") return renderBaiduLocationImage(loc, panoId, config, signal);
+	if (provider === "tencent") return renderTencentLocationImage(loc, panoId, config, signal);
+	if (provider === "yandex") return renderYandexLocationImage(loc, panoId, config, signal);
+	if (provider === "apple") return renderLookaroundLocationImage(loc, panoId, config, signal);
+	return renderGoogleLocationImage(loc, panoId, meta, config, signal);
 }
 
 // --- Bulk orchestration ---
@@ -470,6 +481,7 @@ export async function bulkDownloadPanoramas(
 					panoId,
 					metaMap.get(panoId) ?? null,
 					config,
+					signal,
 				);
 				let ok = false;
 				if (image) {

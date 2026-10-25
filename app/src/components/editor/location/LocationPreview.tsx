@@ -59,7 +59,7 @@ import { PluginLocationPanels } from "@/plugins/PluginPanels";
 import { relativeTime } from "@/lib/util/format";
 import { type PanoReference, resolvePano, fetchPanoData, parsePanoDate, showToast } from "@/lib/sv/lookup";
 import { isOfficialPano } from "@/lib/sv/panoId";
-import { enrich } from "@/lib/sv/enrich";
+import { enrich, type EnrichLanding } from "@/lib/sv/enrich";
 import { FullscreenMiniMap } from "@/components/editor/location/FullscreenMiniMap";
 import { FullscreenMiniLocationPreview } from "@/components/editor/location/FullscreenMiniLocationPreview";
 import { FullscreenTagBar } from "@/components/editor/location/FullscreenTagBar";
@@ -296,9 +296,17 @@ export function LocationPreview() {
 	const [pendingTags, setPendingTags] = useState<string[]>(() => idsToNames(location?.tags ?? []));
 	const visibleTags = useMapState(getVisibleTags);
 	const [panoGeo, setPanoGeo] = useState<GeoDisplay | null>(null);
-	const geoResult = useReverseGeocode(location?.lat ?? 0, location?.lng ?? 0, panoGeo);
+	const geoResult = useReverseGeocode(
+		location?.lat ?? 0,
+		location?.lng ?? 0,
+		panoGeo,
+		location?.id ?? null,
+	);
 	const cancelTweenRef = useRef<(() => void) | null>(null);
 	const enrichAbortRef = useRef<AbortController | null>(null);
+	const enrichLandingRef = useRef<EnrichLanding | null>(null);
+	/** Save keeps the in-flight enrich alive so its answer lands on the stored row. */
+	const keepEnrichRef = useRef(false);
 	const getGeoResult = useEffectEvent(() => geoResult);
 	useEffect(() => {
 		document.body.classList.toggle("pano-fullscreen", isFullscreen);
@@ -831,6 +839,8 @@ export function LocationPreview() {
 
 		const enrichAc = new AbortController();
 		enrichAbortRef.current = enrichAc;
+		const landing: EnrichLanding = { id: location?.id ?? 0, extendUndo: false };
+		enrichLandingRef.current = landing;
 		void svMetadata([loc.pano]).then(([data]) => {
 			if (cancelled || !data) return;
 			setPanoAltitude(data.altitude);
@@ -839,7 +849,7 @@ export function LocationPreview() {
 				countryCode: data.countryCode?.toUpperCase() ?? null,
 			});
 			const active = getMapState().activeLocation;
-			if (active) void enrich(active, data, enrichAc.signal).catch((e: unknown) => {
+			if (active) void enrich(active, data, enrichAc.signal, landing).catch((e: unknown) => {
 				if (e instanceof Error && e.name === "AbortError") return;
 				throw e;
 			});
@@ -847,7 +857,8 @@ export function LocationPreview() {
 
 	return () => {
 		cancelled = true;
-		enrichAc.abort();
+		if (!keepEnrichRef.current) enrichAc.abort();
+		keepEnrichRef.current = false;
 	};
 }, [location?.id, currentPano?.location?.pano, providerSession, setCoverageDefaultPanoId, setCoverageDefaultDate]);
 
@@ -895,7 +906,6 @@ export function LocationPreview() {
 	);
 
 	const handleSave = useCallback(async () => {
-		enrichAbortRef.current?.abort();
 		if (!location || !effectivePano) return;
 		// Staged (virtual) location: updateLocation no-ops, cursorId can't match a
 		// negative id, so this falls through to setActiveLocation(null) = close.
@@ -938,19 +948,23 @@ export function LocationPreview() {
 						: {};
 
 		if (isSeenPreview(location)) {
-			await addLocations([
-				createLocation({
-					...live,
-					panoId: savedPanoId,
-					provider: isAltProvider || isInjectAlt ? providerId : (location.provider ?? "google"),
-					flags: location.flags & ~VIRTUAL_FLAGS, // keep LoadAsPanoId; drop the preview-kind bits
-					tags: (await createTags(pendingTags)).map((t) => t.id),
-					extra: {
-						...location.extra,
-						...saveExtra,
-					},
-				}),
-			]);
+			enrichAbortRef.current?.abort();
+			const created = createLocation({
+				...live,
+				panoId: savedPanoId,
+				provider: isAltProvider || isInjectAlt ? providerId : (location.provider ?? "google"),
+				flags: location.flags & ~VIRTUAL_FLAGS, // keep LoadAsPanoId; drop the preview-kind bits
+				tags: (await createTags(pendingTags)).map((t) => t.id),
+				extra: {
+					...location.extra,
+					...saveExtra,
+				},
+			});
+			await addLocations([created]);
+			void enrich(created).catch((e: unknown) => {
+				if (e instanceof Error && e.name === "AbortError") return;
+				log.error("[viewer] enrichment failed:", e);
+			});
 			setActiveLocation(null);
 			return;
 		}
@@ -960,7 +974,7 @@ export function LocationPreview() {
 			...(panoChanged ? ["panoId"] : []),
 			...(live.lat !== location.lat || live.lng !== location.lng ? ["lat", "lng"] : []),
 		];
-		updateLocations([
+		await updateLocations([
 			{
 				id: location.id,
 				patch: {
@@ -975,6 +989,8 @@ export function LocationPreview() {
 				},
 			},
 		]);
+		if (enrichLandingRef.current) enrichLandingRef.current.extendUndo = true;
+		keepEnrichRef.current = true;
 		if (isReviewMode && reviewSession?.cursorId === location.id) {
 			reviewNext();
 		} else {
@@ -991,6 +1007,7 @@ export function LocationPreview() {
 	]);
 
 	const handleClose = useCallback(() => {
+		keepEnrichRef.current = false;
 		enrichAbortRef.current?.abort();
 		if (exitPanoFullscreen()) return;
 		if (exitFullscreenMap()) return;

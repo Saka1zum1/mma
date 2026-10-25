@@ -13,7 +13,7 @@ import { useHotkey } from "@/lib/hooks/useHotkey";
 import { useBinding } from "@/lib/util/hotkeys";
 import { getSettings, setSetting, MOVEMENT_CYCLE, MOVEMENT_MODES } from "@/store/settings";
 import { PANO_ZOOM, zoomInStep, zoomOutStep } from "@/lib/sv/constants";
-import { tweenPov } from "@/lib/sv/tweenPov";
+import { pointNorthFrame, tweenPov } from "@/lib/sv/tweenPov";
 import { type PanoReference, nearestLinkHeading, followLinkedPanos } from "@/lib/sv/lookup";
 import { toast } from "@/lib/util/toast";
 import { t } from "@/lib/i18n";
@@ -99,12 +99,10 @@ export function useLocationHotkeys(deps: LocationHotkeyDeps) {
 		const pano = getPano();
 		if (!pano) return;
 		cancelTweenRef.current?.();
-		const h = pano.getPov().heading;
-		if (Math.abs(h) < 1 && Math.abs(pano.getPov().pitch) < 1) {
-			cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: -90 });
-		} else {
-			cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: 0 });
-		}
+		const pov = pano.getPov();
+		const next = pointNorthFrame(pov.heading, pov.pitch);
+		if (next.lookDown) pano.setZoom(PANO_ZOOM.min);
+		cancelTweenRef.current = tweenPov(pano, next);
 	});
 	useHotkey(useBinding("centerRoad"), () => {
 		const pano = getPano();

@@ -55,6 +55,11 @@ export function moveMeasureNode(index: number, latLng: LatLng) {
 	commit({ points });
 }
 
+export function removeMeasureNode(index: number) {
+	if (index < 0 || index >= mState.points.length) return;
+	commit({ points: mState.points.filter((_, i) => i !== index) });
+}
+
 export function getMeasurePoints(): number[][] {
 	return mState.points;
 }
@@ -122,7 +127,7 @@ export function useMeasure(): boolean {
 }
 
 /** Binds the drawing interaction while a measurement is running: click to place a node,
- *  drag a node to move it, Escape to finish. */
+ *  drag a node to move it, click a node to remove it, Escape to finish. */
 export function useMeasureInteraction(host: MapHost | null) {
 	const isMeasuring = useIsMeasuring();
 
@@ -153,6 +158,10 @@ export function useMeasureInteraction(host: MapHost | null) {
 			host.setCursor(v ? "pointer" : null);
 		};
 
+		// A press on a node that never travels past this many pixels is a click, which deletes it.
+		const CLICK_SLOP_PX = 3;
+		let pressedAt: { x: number; y: number } | null = null;
+
 		const onDown = (e: PointerEvent) => {
 			// A drag's click doesn't always fire (the engine drops it after real movement);
 			// a new gesture starting means the stale flag must not eat this one's click.
@@ -160,6 +169,7 @@ export function useMeasureInteraction(host: MapHost | null) {
 			if (e.button !== 0) return;
 			const ll = at(e);
 			dragIndex = ll ? hitNode(host, ll) : null;
+			pressedAt = { x: e.clientX, y: e.clientY };
 		};
 
 		const onMove = (e: PointerEvent) => {
@@ -169,12 +179,18 @@ export function useMeasureInteraction(host: MapHost | null) {
 				arm(hitNode(host, ll) !== null);
 				return;
 			}
+			if (pressedAt) {
+				if (Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) <= CLICK_SLOP_PX) return;
+				pressedAt = null;
+			}
 			moveMeasureNode(dragIndex, ll);
 		};
 
 		const onUp = () => {
 			if (dragIndex === null) return;
+			if (pressedAt) removeMeasureNode(dragIndex);
 			dragIndex = null;
+			pressedAt = null;
 			suppressClick = true;
 		};
 

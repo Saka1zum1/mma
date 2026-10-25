@@ -28,12 +28,20 @@ import {
 import { cmd } from "@/lib/commands";
 import { toast } from "@/lib/util/toast";
 import type { Location, Selector } from "@/bindings.gen";
+import { isVirtualLocation } from "@/types";
 import { msg, t } from "@/lib/i18n";
 
 /** True when the location is missing any of the given enrich fields (default: the enabled set). */
 export function needsEnrichment(loc: Location, enrichFields?: string[]): boolean {
 	const fields = enrichFields ?? getDefaultEnrichKeys();
 	return fields.some((key) => loc.extra?.[key] == null);
+}
+
+/** Where an in-flight enrich should land. Save flips `extendUndo` and may retarget `id`
+ *  after the draft becomes a stored row. */
+export interface EnrichLanding {
+	id: number;
+	extendUndo: boolean;
 }
 
 /** Enrich a single location (used on pano load). `data` is the answer the caller
@@ -43,6 +51,7 @@ export async function enrich(
 	loc: Location,
 	data?: Pano | null,
 	signal?: AbortSignal,
+	landing?: EnrichLanding,
 ): Promise<boolean> {
 	signal?.throwIfAborted();
 	if (!data) {
@@ -60,17 +69,26 @@ export async function enrich(
 			([key, value]) => JSON.stringify(loc.extra?.[key] ?? null) !== JSON.stringify(value),
 		),
 	);
-	if (Object.keys(patch).length > 0) {
+	const id = landing?.id ?? loc.id;
+	if (Object.keys(patch).length > 0 && !isVirtualLocation({ id })) {
 		signal?.throwIfAborted();
-		await updateLocations([{ id: loc.id, patch: { extra: patch } }], { undoable: false });
-	} else if (!needsEnrichment(loc, enrichFields)) {
+		const extend = landing?.extendUndo ?? false;
+		await updateLocations([{ id, patch: { extra: patch } }], {
+			undoable: extend,
+			extendUndo: extend,
+		});
+	} else if (!needsEnrichment(loc, enrichFields) && isVirtualLocation({ id })) {
+		return true;
+	} else if (Object.keys(patch).length === 0 && !needsEnrichment(loc, enrichFields)) {
 		return true;
 	}
 
 	signal?.throwIfAborted();
+	const landedId = landing?.id ?? loc.id;
+	if (isVirtualLocation({ id: landedId })) return true;
 	// svMeta is excluded: its fields are the answer this was handed.
-	const selector = { type: "Locations" as const, locations: [loc.id], name: null };
-	await runProvidersForIds([loc.id], { enrichFields, excludeIds: ["svMeta"], signal });
+	const selector = { type: "Locations" as const, locations: [landedId], name: null };
+	await runProvidersForIds([landedId], { enrichFields, excludeIds: ["svMeta"], signal });
 	await runJsEnrichers(selector, { enrichFields, signal });
 	return true;
 }

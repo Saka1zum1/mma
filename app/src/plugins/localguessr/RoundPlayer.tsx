@@ -8,7 +8,8 @@ import { useT } from "@/lib/i18n";
 import { getSettings, setSetting, useSettings } from "@/store/settings";
 import { getPanorama } from "@/lib/sv/panoSingleton";
 import { google } from "@/lib/sv/opensv";
-import { tweenPov } from "@/lib/sv/tweenPov";
+import { PANO_ZOOM } from "@/lib/sv/constants";
+import { pointNorthFrame, tweenPov } from "@/lib/sv/tweenPov";
 import { sendHideCar, CompassControl, CompassTape } from "@/components/editor/location/PanoControls";
 import { emit } from "@/lib/events";
 import type { LatLng } from "@/types";
@@ -283,12 +284,10 @@ export function RoundPlayer({
 				const pano = panoRef.current?.getPanorama() ?? getPanorama();
 				if (!pano) return;
 				cancelTweenRef.current?.();
-				const h = pano.getPov().heading;
-				if (Math.abs(h) < 1 && Math.abs(pano.getPov().pitch) < 1) {
-					cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: -90 });
-				} else {
-					cancelTweenRef.current = tweenPov(pano, { heading: 0, pitch: 0 });
-				}
+				const pov = pano.getPov();
+				const next = pointNorthFrame(pov.heading, pov.pitch);
+				if (next.lookDown) pano.setZoom(PANO_ZOOM.min);
+				cancelTweenRef.current = tweenPov(pano, next);
 				return;
 			}
 			if (key === LG.returnToSpawn && !shift) {
