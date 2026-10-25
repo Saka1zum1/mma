@@ -986,13 +986,18 @@ input[type="range"]:disabled {
 	z-index: 10050;
 	color: var(--text-1);
 	border: none;
-	place-content: center;
 	display: flex;
+	align-items: flex-start;
+	justify-content: center;
 	position: fixed;
-	inset: 0;
-	margin: auto;
+	top: 8vh;
+	right: 0;
+	bottom: auto;
+	left: 0;
+	margin: 0 auto;
 	width: fit-content;
 	height: fit-content;
+	max-height: calc(100vh - 10vh);
 }
 /* Radix parks focus on the content element (tabindex -1) whenever a child unmounts;
    it is never a tab stop, so its ring is noise. */
@@ -1016,7 +1021,8 @@ input[type="range"]:disabled {
 	border-radius: var(--radius-3);
 	grid-template-rows: min-content 1fr;
 	grid-template-columns: 100%;
-	max-height: 90vh;
+	max-height: calc(100vh - 10vh);
+	overflow: auto;
 	padding: 1rem 0;
 	animation: 0.15s cubic-bezier(0.16, 1, 0.3, 1) modalShow;
 	display: grid;

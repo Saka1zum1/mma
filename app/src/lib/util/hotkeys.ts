@@ -20,7 +20,8 @@ export type HotkeyGroup =
 	| "Map Navigation"
 	| "Location Editor"
 	| "Quicktag"
-	| "Review";
+	| "Review"
+	| "App";
 
 export interface HotkeyDef {
 	action: HotkeyAction;
@@ -117,6 +118,24 @@ const STATIC_HOTKEY_DEFS = [
 		defaultBinding: "b",
 	},
 	{ action: "zoomIn", label: msg("Zoom in"), group: msg("Location Editor"), defaultBinding: "+" },
+	{
+		action: "appZoomIn",
+		label: msg("Zoom the app in"),
+		group: msg("App"),
+		defaultBinding: "Mod+=",
+	},
+	{
+		action: "appZoomOut",
+		label: msg("Zoom the app out"),
+		group: msg("App"),
+		defaultBinding: "Mod+-",
+	},
+	{
+		action: "appZoomReset",
+		label: msg("Reset app zoom"),
+		group: msg("App"),
+		defaultBinding: "Mod+0",
+	},
 	{ action: "zoomOut", label: msg("Zoom out"), group: msg("Location Editor"), defaultBinding: "-" },
 	{
 		action: "panoZoomReset",

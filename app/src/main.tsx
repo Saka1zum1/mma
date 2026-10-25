@@ -85,6 +85,15 @@ async function boot() {
 
 	const win = getCurrentWindow();
 	document.addEventListener("contextmenu", (e) => e.preventDefault());
+	document.addEventListener("mouseup", (e) => {
+		if (e.button !== 3 && e.button !== 4) return;
+		e.preventDefault();
+		if (e.button === 3) history.back();
+		else history.forward();
+	});
+	document.addEventListener("auxclick", (e) => {
+		if (e.button === 3 || e.button === 4) e.preventDefault();
+	});
 
 	document.addEventListener("keydown", (e) => {
 		if (e.key === "F11") {
@@ -133,4 +142,19 @@ function restoreSession() {
 	}
 }
 
-boot();
+boot().catch((err: unknown) => {
+	const root = document.getElementById("root");
+	if (!root) return;
+	root.replaceChildren();
+	const wrap = document.createElement("div");
+	wrap.style.cssText =
+		"padding:2rem;font:16px/1.4 sans-serif;color:#eee;background:#252521;min-height:100vh";
+	const p = document.createElement("p");
+	p.textContent = err instanceof Error ? err.message : String(err);
+	const button = document.createElement("button");
+	button.type = "button";
+	button.textContent = "Reload";
+	button.onclick = () => location.reload();
+	wrap.append(p, button);
+	root.append(wrap);
+});

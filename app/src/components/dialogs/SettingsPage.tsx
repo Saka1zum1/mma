@@ -343,6 +343,7 @@ const GROUPS: HotkeyGroup[] = [
 	msg("Location Editor"),
 	msg("Quicktag"),
 	msg("Review"),
+	msg("App"),
 ];
 
 /** The dialog-wide search drives the same filter as the local one, so shortcuts are reachable

@@ -36,6 +36,7 @@ const EVENT_DEFS = {
 	"selection:change": event<Selection[]>(),
 	"active:change": event<number | null>(),
 	"map:open": event<MapData>(),
+	"map:open-failed": event<string>(),
 	"map:close": event<void>(),
 	"store:changed": event<void>(),
 	"render:delta": event<RenderDelta>(),

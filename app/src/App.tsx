@@ -37,7 +37,7 @@ import { useDiscordPresence } from "@/lib/discord/presence";
 import { initRemoteHost } from "@/lib/remote/host";
 import { cmd } from "@/lib/commands";
 import { log } from "@/lib/util/log";
-import { subscribe } from "@/lib/events";
+import { subscribe, useEventValue } from "@/lib/events";
 import "@/plugins";
 import { t } from "@/lib/i18n";
 
@@ -55,6 +55,17 @@ const WINDOW_STATE_ALL = 0b111111;
 
 const BLANK_STYLE: CSSProperties = { position: "fixed", inset: 0, background: "var(--surface-0)" };
 const Blank = () => <div style={BLANK_STYLE} />;
+
+let appZoom = 1;
+
+function setAppZoom(next: number) {
+	appZoom = Math.min(2, Math.max(0.5, Math.round(next * 20) / 20));
+	document.documentElement.style.zoom = appZoom === 1 ? "" : String(appZoom);
+}
+
+function stepAppZoom(delta: number) {
+	setAppZoom(appZoom + delta);
+}
 
 // The URL is the role authority — `targetMapId` picks editor vs list on BOTH Tauri and web.
 // The window label only adds Tauri's "close my window when I back out" behavior.
@@ -96,13 +107,32 @@ export default function App() {
  *  placeholder while either is still resolving. */
 function EditorRoot() {
 	const map = useMapState((s) => s.map);
+	const openError = useEventValue("map:open-failed", () => mapOpenError);
 	const [MapEditor, setMapEditor] = useState<ComponentType | null>(null);
 	useEffect(() => {
 		mapEditorModule.then((m) => setMapEditor(() => m.MapEditor));
 	}, []);
+	if (openError && !map) {
+		return (
+			<div style={{ ...BLANK_STYLE, padding: "2rem" }}>
+				<p>{openError}</p>
+				<button className="button" type="button" onClick={() => goToList()}>
+					{t("Close")}
+				</button>
+			</div>
+		);
+	}
 	if (!map || !MapEditor) return <Blank />;
 	return <MapEditor />;
 }
+
+let mapOpenError: string | null = null;
+subscribe("map:open-failed", (message) => {
+	mapOpenError = message;
+});
+subscribe("map:open", () => {
+	mapOpenError = null;
+});
 
 /** Floating UI shared by both window roles: settings/plugins gears, update pill, and the
  *  app-level dialogs. Hidden by App while a window is self-destructing. */
@@ -117,6 +147,9 @@ function AppChrome() {
 	const [showPlugins, setShowPlugins] = useState(false);
 	const [manualSearchOpen, setManualSearchOpen] = useState(false);
 
+	useHotkey(useBinding("appZoomIn"), () => stepAppZoom(0.1));
+	useHotkey(useBinding("appZoomOut"), () => stepAppZoom(-0.1));
+	useHotkey(useBinding("appZoomReset"), () => setAppZoom(1));
 	useHotkey(useBinding("toggleStats"), () => setShowStats((s) => !s));
 	useHotkey(useBinding("openManualSearch"), () => setManualSearchOpen((v) => !v));
 	useHotkey(useBinding("toggleSettings"), () => setShowSettings((v) => !v));
