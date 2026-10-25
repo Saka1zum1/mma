@@ -51,7 +51,6 @@
 - **Auto tagging** can label a find with the provider, year, month, update type, country, country code, subdivision, road name, polygon name, Baidu panorama id, and publish date
 - Google generation can show a **desktop notification** and post the same news to a **Discord** webhook
 - **LocalGuessr** can show a **Learnable Meta** clue after each round when you turn it on and set a map id
-- **Gen4 Camera** is an experimental plugin that classifies a Gen4 rig (normal, smallcam, truck, trekker) from the downward blur
 - Alternative Street View providers (Baidu, Tencent, Yandex, Apple Look Around) remain fully supported
 
 ## v0.11.3 - 2026-09-22

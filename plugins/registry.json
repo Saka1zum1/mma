@@ -13,24 +13,11 @@
 		}
 	},
 	{
-		"id": "gen4cam",
-		"name": "Gen4 Camera",
-		"description": "Experimental classifier for Gen4 Street View rigs (normal, smallcam, truck, trekker) from the nadir blur",
-		"icon": "M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z",
-		"version": "0.1.1",
-		"main": "index.js",
-		"experimental": true,
-		"sidecar": {
-			"name": "mma-gen4cam",
-			"version": "0.1.0"
-		}
-	},
-	{
 		"id": "heatmap",
 		"name": "Heatmap",
 		"description": "Visualize location density as a heatmap overlay",
 		"icon": "M14,6L10.25,11L13.1,14.8L11.5,16C9.81,13.75 7,10 7,10L1,18H23L14,6Z",
-		"version": "1.2.5",
+		"version": "1.2.6",
 		"main": "index.js"
 	},
 	{
@@ -46,7 +33,7 @@
 		"name": "Sun Position",
 		"description": "Calculate sun azimuth and altitude from exact capture date",
 		"icon": "M13.8 5.2C13 5 12.2 5 11.4 5L14.6 2.3L16 6.3C15.3 5.8 14.6 5.5 13.8 5.2M7 7.1C7.6 6.5 8.3 6 9 5.7L4.9 4.9L5.6 9C6 8.3 6.4 7.6 7 7.1M5.2 13.8C5 13 5 12.2 5 11.4L2.3 14.6L6.3 16C5.8 15.4 5.4 14.6 5.2 13.8M22 19V21H3L8.4 15.5C6.5 13.5 6.5 10.4 8.4 8.4C10.3 6.5 13.5 6.5 15.4 8.4L18.4 5.4L19.8 6.8L7.7 19H22Z",
-		"version": "1.1.0",
+		"version": "1.1.1",
 		"main": "index.js"
 	},
 	{
