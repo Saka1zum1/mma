@@ -554,6 +554,35 @@ const MapEntry = React.memo(function MapEntry({
 			<a
 				href="#"
 				className="map-link"
+				onPointerDown={(e) => {
+					if (e.button !== 0) return;
+					const startX = e.clientX;
+					const startY = e.clientY;
+					let started = false;
+					const move = (ev: PointerEvent) => {
+						if (started) return;
+						if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+						started = true;
+						onDragStart(
+							{ id: meta.id, folder: meta.folder, name: meta.name || "(unnamed)" },
+							e,
+						);
+					};
+					const up = () => {
+						window.removeEventListener("pointermove", move);
+						window.removeEventListener("pointerup", up);
+						if (started) {
+							const blockClick = (ev: MouseEvent) => {
+								ev.preventDefault();
+								ev.stopPropagation();
+								window.removeEventListener("click", blockClick, true);
+							};
+							window.addEventListener("click", blockClick, true);
+						}
+					};
+					window.addEventListener("pointermove", move);
+					window.addEventListener("pointerup", up);
+				}}
 				onClick={(e) => {
 					e.preventDefault();
 					openMapWindow(meta.id, meta.name);
@@ -623,9 +652,54 @@ interface FolderAction {
 	mapCount: number;
 }
 
+interface FolderNode {
+	path: string;
+	name: string;
+	maps: MapMeta[];
+	children: FolderNode[];
+}
+
+function buildFolderTree(entries: [string, MapMeta[]][]): FolderNode[] {
+	const nodes = new Map<string, FolderNode>();
+	const roots: FolderNode[] = [];
+	for (const [path, maps] of [...entries].sort(([a], [b]) => a.localeCompare(b))) {
+		const parts = path.split("/").filter(Boolean);
+		if (parts.length === 0) continue;
+		let parent = roots;
+		let acc = "";
+		for (let i = 0; i < parts.length; i++) {
+			acc = acc ? `${acc}/${parts[i]}` : parts[i];
+			let node = nodes.get(acc);
+			if (!node) {
+				node = { path: acc, name: parts[i], maps: [], children: [] };
+				nodes.set(acc, node);
+				parent.push(node);
+			}
+			if (i === parts.length - 1) node.maps = maps;
+			parent = node.children;
+		}
+	}
+	return roots;
+}
+
+function folderTotals(node: FolderNode): { maps: number; locations: number } {
+	let maps = node.maps.length;
+	let locations = node.maps.reduce((n, m) => n + m.locationCount, 0);
+	for (const child of node.children) {
+		const totals = folderTotals(child);
+		maps += totals.maps;
+		locations += totals.locations;
+	}
+	return { maps, locations };
+}
+
 const FolderEntry = React.memo(function FolderEntry({
 	name,
+	label,
 	maps,
+	childFolders,
+	mapCount,
+	locationCount,
 	dragId,
 	onDragStart,
 	onMapAction,
@@ -636,7 +710,11 @@ const FolderEntry = React.memo(function FolderEntry({
 	searching,
 }: {
 	name: string;
+	label: string;
 	maps: MapMeta[];
+	childFolders: FolderNode[];
+	mapCount: number;
+	locationCount: number;
 	dragId: string | null;
 	onDragStart: (item: DragItem, e: React.PointerEvent) => void;
 	onMapAction: (action: MapAction) => void;
@@ -655,7 +733,6 @@ const FolderEntry = React.memo(function FolderEntry({
 		if (searching) return;
 		setCollapsed((prev) => (v ? prev.filter((f) => f !== name) : [...prev, name]));
 	};
-	const count = useMemo(() => maps.reduce((a, m) => a + m.locationCount, 0), [maps]);
 
 	return (
 		<Collapsible.Root
@@ -673,32 +750,54 @@ const FolderEntry = React.memo(function FolderEntry({
 						<Icon path={open ? mdiChevronDown : mdiChevronRight} />
 					</Collapsible.Trigger>
 					<label htmlFor={triggerId}>
-						<strong>{name}</strong>
+						<strong>{label}</strong>
 						<span className="map-list__folder-count">
 							{" "}
 							·{" "}
 							{t("{maps} maps · {locations} locations", {
-								maps: fmt.format(maps.length),
-								locations: fmt.format(count),
+								maps: fmt.format(mapCount),
+								locations: fmt.format(locationCount),
 							})}
 						</span>
 					</label>
 					<button
 						className="map-list__edit icon-button"
 						aria-label={t("Rename folder")}
-						onClick={() => onFolderAction({ type: "rename-folder", name, mapCount: maps.length })}
+						onClick={() => onFolderAction({ type: "rename-folder", name, mapCount })}
 					>
 						<Icon path={mdiPencil} />
 					</button>
 					<button
 						className="map-list__edit icon-button"
 						aria-label={t("Delete folder")}
-						onClick={() => onFolderAction({ type: "delete-folder", name, mapCount: maps.length })}
+						onClick={() => onFolderAction({ type: "delete-folder", name, mapCount })}
 					>
 						<Icon path={mdiFolderRemove} />
 					</button>
 				</div>
 				<Collapsible.Panel render={<ul className="map-sublist" />}>
+					{childFolders.map((child) => {
+						const totals = folderTotals(child);
+						return (
+							<FolderEntry
+								key={child.path}
+								name={child.path}
+								label={child.name}
+								maps={child.maps}
+								childFolders={child.children}
+								mapCount={totals.maps}
+								locationCount={totals.locations}
+								dragId={dragId}
+								onDragStart={onDragStart}
+								onMapAction={onMapAction}
+								onFolderAction={onFolderAction}
+								onLabelClick={onLabelClick}
+								fields={fields}
+								badgesFor={badgesFor}
+								searching={searching}
+							/>
+						);
+					})}
 					{maps.map((m) => (
 						<MapEntry
 							key={m.id}
@@ -1154,6 +1253,7 @@ export function MapList() {
 		[grouped, sortMode],
 	);
 	const rootMaps = useMemo(() => sortMaps(grouped.get(null) ?? [], sortMode), [grouped, sortMode]);
+	const folderTree = useMemo(() => buildFolderTree(folderEntries), [folderEntries]);
 
 	const [activeAction, setActiveAction] = useState<(MapAction | FolderAction) | null>(null);
 
@@ -1344,11 +1444,17 @@ export function MapList() {
 				</p>
 
 				<ul className="map-list" data-drop-folder="" ref={listRef}>
-					{folderEntries.map(([name, maps]) => (
+					{folderTree.map((node) => {
+						const totals = folderTotals(node);
+						return (
 						<FolderEntry
-							key={name}
-							name={name!}
-							maps={maps}
+							key={node.path}
+							name={node.path}
+							label={node.name}
+							maps={node.maps}
+							childFolders={node.children}
+							mapCount={totals.maps}
+							locationCount={totals.locations}
 							dragId={dragItem?.id ?? null}
 							onDragStart={handleDragStart}
 							onMapAction={handleMapAction}
@@ -1358,7 +1464,8 @@ export function MapList() {
 							badgesFor={badgesFor}
 							searching={hasFilter}
 						/>
-					))}
+						);
+					})}
 					{rootMaps.map((m) => (
 						<MapEntry
 							key={m.id}
@@ -1463,7 +1570,11 @@ export function MapList() {
 							<RenameForm
 								name={activeAction.name}
 								onRename={(from, to) =>
-									setSyntheticFolders((prev) => prev.map((f) => (f === from ? to : f)))
+									setSyntheticFolders((prev) =>
+										prev.map((f) =>
+											f === from ? to : f.startsWith(`${from}/`) ? to + f.slice(from.length) : f,
+										),
+									)
 								}
 							/>
 						)}
@@ -1472,9 +1583,9 @@ export function MapList() {
 								<p>
 									{t(
 										{
-											one: 'Delete folder "{name}"? The {n} map inside will be moved to the root.',
+											one: 'Delete folder "{name}"? The {n} map inside will move up one level.',
 											other:
-												'Delete folder "{name}"? The {n} maps inside will be moved to the root.',
+												'Delete folder "{name}"? The {n} maps inside will move up one level.',
 										},
 										{ name: activeAction.name, n: (activeAction as FolderAction).mapCount },
 									)}
@@ -1488,7 +1599,9 @@ export function MapList() {
 										onClick={async () => {
 											const name = activeAction.name;
 											setActiveAction(null);
-											setSyntheticFolders((prev) => prev.filter((f) => f !== name));
+											setSyntheticFolders((prev) =>
+												prev.filter((f) => f !== name && !f.startsWith(`${name}/`)),
+											);
 											await deleteFolder(name);
 										}}
 									>

@@ -8,6 +8,9 @@ import { densifyRing, unwrapLng } from "@/lib/geo/geo";
 import { POLYGON_CLOSE_VERTEX_PX } from "@/lib/render/buildSceneLayers";
 import { clamp } from "@/types/util";
 import type { LatLng } from "@/types";
+import type { PolygonGeometry } from "@/bindings.gen";
+import { getMapState, removeSelections, replacePolygonSelection } from "@/store/useMapStore";
+import { subscribe } from "@/lib/events";
 import { t } from "@/lib/i18n";
 
 type DrawMode = "polygon" | "rectangle" | "freehand" | null;
@@ -214,8 +217,147 @@ export function PolygonTools({
 		// including a press the engine took as a pan and never clicked for, so a double-click only
 		// closes when its second press came after the vertex its first one placed.
 		let presses = 0;
+		let suppressClick = false;
+		const VERTEX_SLOP_PX = 3;
+
+		const openRing = (ring: number[][]): number[][] => {
+			if (ring.length < 2) return ring;
+			const a = ring[0];
+			const b = ring[ring.length - 1];
+			return a[0] === b[0] && a[1] === b[1] ? ring.slice(0, -1) : ring.slice();
+		};
+
+		const editable = () => {
+			const found: {
+				key: string;
+				includeInformational: boolean;
+				polygon: PolygonGeometry;
+				which: number;
+				ring: number[][];
+			}[] = [];
+			for (const sel of getMapState().selections) {
+				if (sel.selector.type !== "Polygon") continue;
+				const polygon = sel.selector.polygon;
+				const rings: { which: number; ring: number[][] | undefined }[] = [
+					{ which: -1, ring: polygon.coordinates[0] },
+				];
+				(polygon.extraPolygons ?? []).forEach((poly, i) =>
+					rings.push({ which: i, ring: poly[0] }),
+				);
+				for (const entry of rings) {
+					if (!entry.ring || openRing(entry.ring).length < 3) continue;
+					found.push({
+						key: sel.key,
+						includeInformational: sel.selector.includeInformational,
+						polygon,
+						which: entry.which,
+						ring: openRing(entry.ring),
+					});
+				}
+			}
+			return found;
+		};
+
+		const withRing = (polygon: PolygonGeometry, which: number, closed: number[][]): PolygonGeometry => {
+			const ring = closed as [number, number][];
+			if (which < 0) {
+				return { ...polygon, coordinates: [ring, ...polygon.coordinates.slice(1)] };
+			}
+			const extra = (polygon.extraPolygons ?? []).map((poly, i) =>
+				i === which ? [ring, ...poly.slice(1)] : poly,
+			);
+			return { ...polygon, extraPolygons: extra };
+		};
+
+		const showExisting = () => {
+			if (points.length > 0) return;
+			const verts = editable().flatMap((poly) => poly.ring);
+			polygonVerticesRef.current = verts.length ? verts : null;
+			emitUpdate();
+		};
+
+		const hitVertex = (lat: number, lng: number) => {
+			const scale = 2 ** host.getZoom();
+			const p = latLngToWorld({ lat, lng });
+			let best: (ReturnType<typeof editable>[number] & { index: number }) | null = null;
+			let bestD = POLYGON_CLOSE_VERTEX_PX;
+			for (const poly of editable()) {
+				for (let i = 0; i < poly.ring.length; i++) {
+					const [vlng, vlat] = poly.ring[i];
+					const v = latLngToWorld({ lat: vlat, lng: unwrapLng(vlng, lng) });
+					const d = Math.hypot((p.x - v.x) * scale, (p.y - v.y) * scale);
+					if (d <= bestD) {
+						bestD = d;
+						best = { ...poly, index: i };
+					}
+				}
+			}
+			return best;
+		};
+
+		const onVertexDown = (e: MouseEvent) => {
+			if (e.button !== 0 || points.length > 0) return;
+			const rect = host.container.getBoundingClientRect();
+			const ll = host.containerPxToLatLng(e.clientX - rect.left, e.clientY - rect.top);
+			if (!ll) return;
+			const hit = hitVertex(ll.lat, ll.lng);
+			if (!hit) return;
+			e.preventDefault();
+			e.stopPropagation();
+			suppressClick = true;
+			const originX = e.clientX;
+			const originY = e.clientY;
+			let moved = false;
+			let ring = hit.ring.map((p) => [p[0], p[1]]);
+			const onMove = (ev: PointerEvent) => {
+				if (Math.hypot(ev.clientX - originX, ev.clientY - originY) <= VERTEX_SLOP_PX) return;
+				moved = true;
+				const box = host.container.getBoundingClientRect();
+				const at = host.containerPxToLatLng(ev.clientX - box.left, ev.clientY - box.top);
+				if (!at) return;
+				ring = ring.map((p, i) =>
+					i === hit.index ? [unwrapLng(at.lng, ring[0][0]), at.lat] : p,
+				);
+				polygonVerticesRef.current = ring;
+				freehandPathRef.current = finishRing(ring);
+				emitUpdate();
+			};
+			const onUp = () => {
+				window.removeEventListener("pointermove", onMove);
+				window.removeEventListener("pointerup", onUp);
+				const closed = moved
+					? finishRing(ring)
+					: finishRing(ring.filter((_, i) => i !== hit.index));
+				const open = closed.length >= 2 && closed[0][0] === closed[closed.length - 1][0] && closed[0][1] === closed[closed.length - 1][1]
+					? closed.slice(0, -1)
+					: closed;
+				freehandPathRef.current = null;
+				if (!moved && open.length < 3) void removeSelections([hit.key]);
+				else if (open.length >= 3)
+					void replacePolygonSelection(
+						hit.key,
+						withRing(hit.polygon, hit.which, finishRing(open)),
+						hit.includeInformational,
+					);
+				else showExisting();
+				emitUpdate();
+				setTimeout(() => {
+					suppressClick = false;
+				}, 0);
+			};
+			window.addEventListener("pointermove", onMove);
+			window.addEventListener("pointerup", onUp);
+		};
+
+		showExisting();
+		const offSelections = subscribe("selection:change", showExisting);
+		host.container.addEventListener("mousedown", onVertexDown, true);
 
 		const releaseClicks = claimClicks((lat, lng) => {
+			if (suppressClick) {
+				suppressClick = false;
+				return;
+			}
 			const v = nextVertex(lng, lat);
 			if (points.length >= 3) {
 				const start = points[0];
@@ -257,6 +399,8 @@ export function PolygonTools({
 		return () => {
 			releaseClicks();
 			offMove();
+			offSelections();
+			host.container.removeEventListener("mousedown", onVertexDown, true);
 			host.container.removeEventListener("mousedown", onDown, true);
 			host.container.removeEventListener("dblclick", onDblClick, true);
 			document.removeEventListener("keydown", onKey, true);

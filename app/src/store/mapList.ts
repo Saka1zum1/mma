@@ -67,8 +67,18 @@ export async function deleteMap(id: string) {
 	tauriEmit("map-deleted", id);
 }
 
+function rewriteFolder(folder: string | null, from: string, to: string): string | null {
+	if (!folder) return folder;
+	if (folder === from) return to;
+	if (folder.startsWith(`${from}/`)) return to + folder.slice(from.length);
+	return folder;
+}
+
 export async function renameFolder(from: string, to: string) {
-	cachedMapList = cachedMapList.map((m) => (m.folder === from ? { ...m, folder: to } : m));
+	cachedMapList = cachedMapList.map((m) => {
+		const folder = rewriteFolder(m.folder, from, to);
+		return folder === m.folder ? m : { ...m, folder };
+	});
 	emitEvent("map-list:changed");
 	await cmd.storeRenameFolder(from, to);
 	await invalidateMapList();

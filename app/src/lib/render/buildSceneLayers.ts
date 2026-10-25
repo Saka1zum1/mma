@@ -102,6 +102,8 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		sel.selector.type === "Intersection" ? sel.selector.selections : [sel],
 	);
 	const livePolygonKeys = new Set<string>();
+	const polygonFills: { polygon: Position[][]; color: [number, number, number, number] }[] = [];
+	const polygonStrokes: { path: Position[]; color: [number, number, number, number] }[] = [];
 	for (const sel of polygonSels) {
 		if (sel.selector.type !== "Polygon") continue;
 		const poly = sel.selector.polygon;
@@ -116,21 +118,29 @@ export function buildSceneLayers(cm: CellManager, ctx: SceneContext): Layer[] {
 		}
 		const fillColor: [number, number, number, number] = [...sel.color, 26];
 		const strokeColor: [number, number, number, number] = [...sel.color, 153];
+		for (const polygon of geom.fill) polygonFills.push({ polygon, color: fillColor });
+		for (const path of geom.stroke) polygonStrokes.push({ path, color: strokeColor });
+	}
+	if (polygonFills.length) {
 		layers.push(
-			new PolygonLayer<Position[][]>({
-				id: `selectionPolygonFill:${sel.key}`,
-				data: geom.fill,
-				getPolygon: (d) => d,
-				getFillColor: fillColor,
+			new PolygonLayer<(typeof polygonFills)[number]>({
+				id: "selection-polygon-fill",
+				data: polygonFills,
+				getPolygon: (d) => d.polygon,
+				getFillColor: (d) => d.color,
 				stroked: false,
 				pickable: false,
 				opacity: 1,
 			}),
-			new PathLayer<Position[]>({
-				id: `selectionPolygonStroke:${sel.key}`,
-				data: geom.stroke,
-				getPath: (d) => d,
-				getColor: strokeColor,
+		);
+	}
+	if (polygonStrokes.length) {
+		layers.push(
+			new PathLayer<(typeof polygonStrokes)[number]>({
+				id: "selection-polygon-stroke",
+				data: polygonStrokes,
+				getPath: (d) => d.path,
+				getColor: (d) => d.color,
 				getWidth: 4,
 				widthUnits: "pixels",
 				jointRounded: true,
