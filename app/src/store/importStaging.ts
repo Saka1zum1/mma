@@ -66,11 +66,15 @@ export async function beginImportPaste(text: string) {
 }
 
 /** Commit the staged import, optionally dropping fields and applying a bulk tag. */
-export async function confirmImport(droppedFields: string[], tagName?: string) {
+export async function confirmImport(
+	droppedFields: string[],
+	tagName?: string,
+	droppedTags?: string[],
+) {
 	if (!importState.staging) return null;
 	await waitForInflightPersist();
 
-	const r = await cmd.storeImportFile(droppedFields, tagName?.trim() || null);
+	const r = await cmd.storeImportFile(droppedFields, tagName?.trim() || null, droppedTags ?? []);
 	cancelImport();
 	await mutate(() => Promise.resolve(r));
 

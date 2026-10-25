@@ -30,6 +30,7 @@ export function ImportSidebar() {
 	const staging = useEventValue("import-markers:changed", getImportStaging);
 	const visibleTags = useMapState(getVisibleTags);
 	const [droppedFields, setDroppedFields] = useState(loadDroppedFields);
+	const [droppedTags, setDroppedTags] = useState<Set<string>>(new Set());
 	const [tagInput, setTagInput] = useState("");
 	const [importing, setImporting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -68,7 +69,7 @@ export function ImportSidebar() {
 		setError(null);
 		const t = trace("import");
 		try {
-			const r = await confirmImport([...droppedFields], bulkTag);
+			const r = await confirmImport([...droppedFields], bulkTag, [...droppedTags]);
 			t.end({ imported: r?.importedCount ?? 0 });
 		} catch (e: unknown) {
 			log.error("[import] failed:", e);
@@ -96,8 +97,16 @@ export function ImportSidebar() {
 				<div className="import-sidebar__section">
 					<span className="import-sidebar__label">{t("Tags in file")}</span>
 					<ul className="tag-list">
-						{preview.tags.map((t) => (
-							<TagPill as="li" key={t.id} small color={t.color} label={t.name} />
+						{preview.tags.map((tag) => (
+							<li key={tag.id}>
+								<label className="importer__field">
+									<Checkbox
+										checked={!droppedTags.has(tag.name)}
+										onChange={() => setDroppedTags((prev) => toggleInSet(prev, tag.name))}
+									/>
+									<TagPill small color={tag.color} label={tag.name} />
+								</label>
+							</li>
 						))}
 					</ul>
 				</div>
