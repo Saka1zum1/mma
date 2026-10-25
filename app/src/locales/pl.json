@@ -2490,5 +2490,17 @@
 		"few": "Zaktualizowano {n} lokalizacje.",
 		"many": "Zaktualizowano {n} lokalizacji.",
 		"other": "Zaktualizowano {n} lokalizacji."
-	}
+	},
+	"App": "App",
+	"Delete folder \"{name}\"? The {n} maps inside will move up one level.": {
+		"few": "Delete folder \"{name}\"? The {n} maps inside will move up one level.",
+		"many": "Delete folder \"{name}\"? The {n} maps inside will move up one level.",
+		"one": "Delete folder \"{name}\"? The {n} map inside will move up one level.",
+		"other": "Delete folder \"{name}\"? The {n} maps inside will move up one level."
+	},
+	"Redo selection": "Redo selection",
+	"Reset app zoom": "Reset app zoom",
+	"Undo selection": "Undo selection",
+	"Zoom the app in": "Zoom the app in",
+	"Zoom the app out": "Zoom the app out"
 }

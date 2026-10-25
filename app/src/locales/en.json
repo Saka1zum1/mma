@@ -152,6 +152,7 @@
 	"Animate tags during drag reorder": "Animate tags during drag reorder",
 	"Any date": "Any date",
 	"Any year": "Any year",
+	"App": "App",
 	"Appears as": "Appears as",
 	"Appears as {path}": "Appears as {path}",
 	"Apple": "Apple",
@@ -474,6 +475,10 @@
 	"Delete folder \"{name}\"? The {n} maps inside will be moved to the root.": {
 		"one": "Delete folder \"{name}\"? The {n} map inside will be moved to the root.",
 		"other": "Delete folder \"{name}\"? The {n} maps inside will be moved to the root."
+	},
+	"Delete folder \"{name}\"? The {n} maps inside will move up one level.": {
+		"one": "Delete folder \"{name}\"? The {n} map inside will move up one level.",
+		"other": "Delete folder \"{name}\"? The {n} maps inside will move up one level."
 	},
 	"Delete location": "Delete location",
 	"Delete map": "Delete map",
@@ -1390,6 +1395,7 @@
 	"Recently played": "Recently played",
 	"Recolor": "Recolor",
 	"Redo": "Redo",
+	"Redo selection": "Redo selection",
 	"Refresh": "Refresh",
 	"Refresh document": "Refresh document",
 	"Refresh panorama": "Refresh panorama",
@@ -1461,6 +1467,7 @@
 	"Reset": "Reset",
 	"Reset all settings": "Reset all settings",
 	"Reset all to defaults": "Reset all to defaults",
+	"Reset app zoom": "Reset app zoom",
 	"Reset every app setting to its default? Key bindings are kept.": "Reset every app setting to its default? Key bindings are kept.",
 	"Reset roll": "Reset roll",
 	"Reset to default": "Reset to default",
@@ -1889,6 +1896,7 @@
 	"Uncommitted changes could not be read and were set aside as a .corrupt file. The map opened from its last committed state.": "Uncommitted changes could not be read and were set aside as a .corrupt file. The map opened from its last committed state.",
 	"Undo": "Undo",
 	"Undo move": "Undo move",
+	"Undo selection": "Undo selection",
 	"Unexpected \"{token}\"": "Unexpected \"{token}\"",
 	"Unexpected \"{token}\" after expression": "Unexpected \"{token}\" after expression",
 	"Unexpected character \"{char}\" at position {position}": "Unexpected character \"{char}\" at position {position}",
@@ -2025,6 +2033,8 @@
 	"Zoom level": "Zoom level",
 	"Zoom must be between -3 and 4.": "Zoom must be between -3 and 4.",
 	"Zoom out": "Zoom out",
+	"Zoom the app in": "Zoom the app in",
+	"Zoom the app out": "Zoom the app out",
 	"Zoom to bounds": "Zoom to bounds",
 	"Zoom to selected locations": "Zoom to selected locations",
 	"Zoom to selection bounds": "Zoom to selection bounds",

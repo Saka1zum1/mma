@@ -152,6 +152,7 @@
 	"Animate tags during drag reorder": "[Åñîɱåţé ţåǧş ðüŕîñǧ ðŕåǧ ŕéöŕðéŕ åéîöüåéîöüåéî]",
 	"Any date": "[Åñý ðåţé åéîö]",
 	"Any year": "[Åñý ýéåŕ åéîö]",
+	"App": "[Åƥƥ åé]",
 	"Appears as": "[Åƥƥéåŕş åş åéîö]",
 	"Appears as {path}": "[Åƥƥéåŕş åş {path} åéîöü]",
 	"Apple": "[Åƥƥĺé åé]",
@@ -474,6 +475,10 @@
 	"Delete folder \"{name}\"? The {n} maps inside will be moved to the root.": {
 		"one": "[Ðéĺéţé ƒöĺðéŕ \"{name}\"? Ţĥé {n} ɱåƥ îñşîðé ŵîĺĺ ƀé ɱöṽéð ţö ţĥé ŕööţ. åéîöüåéîöüåéîöüåéîöüåéîö]",
 		"other": "[Ðéĺéţé ƒöĺðéŕ \"{name}\"? Ţĥé {n} ɱåƥş îñşîðé ŵîĺĺ ƀé ɱöṽéð ţö ţĥé ŕööţ. åéîöüåéîöüåéîöüåéîöüåéîöü]"
+	},
+	"Delete folder \"{name}\"? The {n} maps inside will move up one level.": {
+		"one": "[Ðéĺéţé ƒöĺðéŕ \"{name}\"? Ţĥé {n} ɱåƥ îñşîðé ŵîĺĺ ɱöṽé üƥ öñé ĺéṽéĺ. åéîöüåéîöüåéîöüåéîöüåéî]",
+		"other": "[Ðéĺéţé ƒöĺðéŕ \"{name}\"? Ţĥé {n} ɱåƥş îñşîðé ŵîĺĺ ɱöṽé üƥ öñé ĺéṽéĺ. åéîöüåéîöüåéîöüåéîöüåéîö]"
 	},
 	"Delete location": "[Ðéĺéţé ĺöçåţîöñ åéîöüå]",
 	"Delete map": "[Ðéĺéţé ɱåƥ åéîö]",
@@ -1390,6 +1395,7 @@
 	"Recently played": "[Ŕéçéñţĺý ƥĺåýéð åéîöüå]",
 	"Recolor": "[Ŕéçöĺöŕ åéî]",
 	"Redo": "[Ŕéðö åé]",
+	"Redo selection": "[Ŕéðö şéĺéçţîöñ åéîöüå]",
 	"Refresh": "[Ŕéƒŕéşĥ åéî]",
 	"Refresh document": "[Ŕéƒŕéşĥ ðöçüɱéñţ åéîöüåé]",
 	"Refresh panorama": "[Ŕéƒŕéşĥ ƥåñöŕåɱå åéîöüåé]",
@@ -1461,6 +1467,7 @@
 	"Reset": "[Ŕéşéţ åé]",
 	"Reset all settings": "[Ŕéşéţ åĺĺ şéţţîñǧş åéîöüåéî]",
 	"Reset all to defaults": "[Ŕéşéţ åĺĺ ţö ðéƒåüĺţş åéîöüåéîö]",
+	"Reset app zoom": "[Ŕéşéţ åƥƥ žööɱ åéîöüå]",
 	"Reset every app setting to its default? Key bindings are kept.": "[Ŕéşéţ éṽéŕý åƥƥ şéţţîñǧ ţö îţş ðéƒåüĺţ? Ķéý ƀîñðîñǧş åŕé ķéƥţ. åéîöüåéîöüåéîöüåéîöüåéîöü]",
 	"Reset roll": "[Ŕéşéţ ŕöĺĺ åéîö]",
 	"Reset to default": "[Ŕéşéţ ţö ðéƒåüĺţ åéîöüåé]",
@@ -1889,6 +1896,7 @@
 	"Uncommitted changes could not be read and were set aside as a .corrupt file. The map opened from its last committed state.": "[Üñçöɱɱîţţéð çĥåñǧéş çöüĺð ñöţ ƀé ŕéåð åñð ŵéŕé şéţ åşîðé åş å .çöŕŕüƥţ ƒîĺé. Ţĥé ɱåƥ öƥéñéð ƒŕöɱ îţş ĺåşţ çöɱɱîţţéð şţåţé. åéîöüåéîöüåéîöüåéîöüåéîöüåéîöüåéîöüåéîöüåéîöüåéîö]",
 	"Undo": "[Üñðö åé]",
 	"Undo move": "[Üñðö ɱöṽé åéîö]",
+	"Undo selection": "[Üñðö şéĺéçţîöñ åéîöüå]",
 	"Unexpected \"{token}\"": "[Üñéẋƥéçţéð \"{token}\" åéîöüå]",
 	"Unexpected \"{token}\" after expression": "[Üñéẋƥéçţéð \"{token}\" åƒţéŕ éẋƥŕéşşîöñ åéîöüåéîöüåé]",
 	"Unexpected character \"{char}\" at position {position}": "[Üñéẋƥéçţéð çĥåŕåçţéŕ \"{char}\" åţ ƥöşîţîöñ {position} åéîöüåéîöüåéîöü]",
@@ -2025,6 +2033,8 @@
 	"Zoom level": "[Žööɱ ĺéṽéĺ åéîö]",
 	"Zoom must be between -3 and 4.": "[Žööɱ ɱüşţ ƀé ƀéţŵééñ -3 åñð 4. åéîöüåéîöüåé]",
 	"Zoom out": "[Žööɱ öüţ åéîö]",
+	"Zoom the app in": "[Žööɱ ţĥé åƥƥ îñ åéîöüå]",
+	"Zoom the app out": "[Žööɱ ţĥé åƥƥ öüţ åéîöüåé]",
 	"Zoom to bounds": "[Žööɱ ţö ƀöüñðş åéîöüå]",
 	"Zoom to selected locations": "[Žööɱ ţö şéĺéçţéð ĺöçåţîöñş åéîöüåéîöüå]",
 	"Zoom to selection bounds": "[Žööɱ ţö şéĺéçţîöñ ƀöüñðş åéîöüåéîöü]",

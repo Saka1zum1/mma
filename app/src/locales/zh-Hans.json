@@ -2273,5 +2273,14 @@
 	"Zoom must be between -3 and 4.": "缩放必须在 -3 到 4 之间。",
 	"Updated {n} locations.": {
 		"other": "已更新 {n} 个位置。"
-	}
+	},
+	"App": "App",
+	"Delete folder \"{name}\"? The {n} maps inside will move up one level.": {
+		"other": "Delete folder \"{name}\"? The {n} maps inside will move up one level."
+	},
+	"Redo selection": "Redo selection",
+	"Reset app zoom": "Reset app zoom",
+	"Undo selection": "Undo selection",
+	"Zoom the app in": "Zoom the app in",
+	"Zoom the app out": "Zoom the app out"
 }
